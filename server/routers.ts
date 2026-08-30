@@ -348,6 +348,12 @@ import {
   listTrackedAssets,
   softDeleteTrackedAsset,
   listTrackedAssetPositions,
+  createSignalSensor,
+  updateSignalSensor,
+  softDeleteSignalSensor,
+  listSignalSensors,
+  listSignalDetections,
+  listDeviceDetectionHistory,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -493,6 +499,18 @@ const trackedAssetFieldsSchema = {
     .optional()
     .nullable(),
   simulatedLoopSeconds: z.number().optional().nullable(),
+  metadataJson: z.string().optional().nullable(),
+};
+
+const signalSensorFieldsSchema = {
+  connectorId: z.number(),
+  operationId: z.number().optional().nullable(),
+  externalSensorId: z.string().optional().nullable(),
+  name: z.string().min(1),
+  sensorType: z.string().optional().nullable(),
+  latitude: z.number().optional().nullable(),
+  longitude: z.number().optional().nullable(),
+  locationName: z.string().optional().nullable(),
   metadataJson: z.string().optional().nullable(),
 };
 
@@ -7201,6 +7219,68 @@ export const appRouter = router({
         .query(async ({ input }) => {
           return listTrackedAssetPositions(input.trackedAssetId, input.sinceMs);
         }),
+    }),
+
+    signal: router({
+      sensors: router({
+        list: adminProcedure
+          .input(z.object({ connectorId: z.number().optional() }).optional())
+          .query(async ({ input }) => {
+            return listSignalSensors(input?.connectorId ?? null);
+          }),
+
+        create: adminProcedure
+          .input(z.object(signalSensorFieldsSchema))
+          .mutation(async ({ ctx, input }) => {
+            const id = await createSignalSensor(input);
+            await createConnectorAuditLog({
+              connectorId: input.connectorId,
+              userId: ctx.user.id,
+              userCIN: ctx.user.cin ?? undefined,
+              action: "signal_sensor_created",
+              detail: `Created signal sensor "${input.name}"`,
+            });
+            return { id };
+          }),
+
+        update: adminProcedure
+          .input(z.object({ id: z.number(), ...signalSensorFieldsSchema }))
+          .mutation(async ({ input }) => {
+            const { id, ...data } = input;
+            await updateSignalSensor(id, data);
+            return { ok: true };
+          }),
+
+        delete: adminProcedure
+          .input(z.object({ id: z.number() }))
+          .mutation(async ({ ctx, input }) => {
+            await softDeleteSignalSensor(input.id, ctx.user.cin ?? "Unknown");
+            return { ok: true };
+          }),
+      }),
+
+      detections: router({
+        // Advances the SignalDemoConnector simulation for this connector
+        // (a no-op for a non-simulated connector) before returning.
+        list: adminProcedure
+          .input(
+            z.object({
+              connectorId: z.number(),
+              sensorId: z.number().optional(),
+              status: z.enum(["ACTIVE", "LOST"]).optional(),
+            })
+          )
+          .query(async ({ input }) => {
+            return listSignalDetections(input);
+          }),
+
+        // Full sensor-hop trail for one device reference, oldest first.
+        history: adminProcedure
+          .input(z.object({ deviceReference: z.string() }))
+          .query(async ({ input }) => {
+            return listDeviceDetectionHistory(input.deviceReference);
+          }),
+      }),
     }),
   }),
 });

@@ -1896,3 +1896,70 @@ export const trackedAssetPositions = mysqlTable("tracked_asset_positions", {
 export type TrackedAssetPosition = typeof trackedAssetPositions.$inferSelect;
 export type InsertTrackedAssetPosition =
   typeof trackedAssetPositions.$inferInsert;
+
+// Fixed-location sensor belonging to a SIGNAL connector (a real platform in
+// a later phase, or the SignalDemoConnector simulation for now). sensorType
+// is a free string (CELLULAR/WIFI/BLUETOOTH/OTHER_RF...) — descriptive
+// categories for incoming data, not something this app implements.
+export const signalSensors = mysqlTable("signal_sensors", {
+  id: int("id").autoincrement().primaryKey(),
+  connectorId: int("connectorId").notNull(),
+  operationId: int("operationId"),
+  externalSensorId: varchar("externalSensorId", { length: 255 }),
+  name: varchar("name", { length: 255 }).notNull(),
+  sensorType: varchar("sensorType", { length: 32 }),
+  latitude: double("latitude"),
+  longitude: double("longitude"),
+  locationName: varchar("locationName", { length: 255 }),
+  status: mysqlEnum("status", ["ONLINE", "OFFLINE", "UNKNOWN"])
+    .default("UNKNOWN")
+    .notNull(),
+  lastSeen: bigint("lastSeen", { mode: "number" }),
+  metadataJson: text("metadataJson"),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+
+  // Soft-delete
+  deletedAt: bigint("deletedAt", { mode: "number" }),
+  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
+});
+
+export type SignalSensor = typeof signalSensors.$inferSelect;
+export type InsertSignalSensor = typeof signalSensors.$inferInsert;
+
+// One row per device sighting at a sensor. A device's detection stays
+// ACTIVE while at the same sensor; when it moves to a different sensor the
+// old row is marked LOST and a new ACTIVE row opens — the resulting rows
+// for one externalDeviceReference, ordered by time, are its detection
+// history / movement trail (see plan §30).
+export const signalDetections = mysqlTable("signal_detections", {
+  id: int("id").autoincrement().primaryKey(),
+  operationId: int("operationId"),
+  connectorId: int("connectorId").notNull(),
+  sensorId: int("sensorId").notNull(),
+  externalDeviceReference: varchar("externalDeviceReference", {
+    length: 255,
+  }).notNull(),
+  signalType: varchar("signalType", { length: 32 }).notNull(),
+  latitude: double("latitude"),
+  longitude: double("longitude"),
+  confidence: int("confidence"), // 0-100, nullable
+  signalStrength: int("signalStrength"), // dBm, nullable
+  firstDetectedAt: bigint("firstDetectedAt", { mode: "number" }).notNull(),
+  lastDetectedAt: bigint("lastDetectedAt", { mode: "number" }).notNull(),
+  direction: varchar("direction", { length: 32 }),
+  status: mysqlEnum("status", ["ACTIVE", "LOST"]).default("ACTIVE").notNull(),
+  associatedEntityId: int("associatedEntityId"),
+  metadataJson: text("metadataJson"),
+
+  // Structural quarantine for Demo Mode data — same convention as
+  // externalEvents.isSimulated. Every read path that could feed a report or
+  // court document must filter this, not just display a badge.
+  isSimulated: boolean("isSimulated").default(false).notNull(),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SignalDetection = typeof signalDetections.$inferSelect;
+export type InsertSignalDetection = typeof signalDetections.$inferInsert;

@@ -13,6 +13,7 @@ import AuditLogPage from "./pages/AuditLogPage";
 import AdminPage from "./pages/AdminPage";
 import IntegrationsConnectorsPage from "./pages/IntegrationsConnectorsPage";
 import IntegrationsTrackedAssetsPage from "./pages/IntegrationsTrackedAssetsPage";
+import IntegrationsSignalPage from "./pages/IntegrationsSignalPage";
 import LoginPage from "./pages/LoginPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import MyProfilePage from "./pages/MyProfilePage";
@@ -267,6 +268,7 @@ function Router() {
         path="/integrations/gps"
         component={IntegrationsTrackedAssetsPage}
       />
+      <Route path="/integrations/signal" component={IntegrationsSignalPage} />
       <Route path="/administration/smeac" component={SmeacBriefingListPage} />
       <Route
         path="/administration/smeac/new"

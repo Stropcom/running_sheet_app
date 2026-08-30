@@ -15,6 +15,7 @@ import {
 import { drizzle } from "drizzle-orm/mysql2";
 import { createPool as createPromisePool } from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt, fingerprintVaultKey } from "./wipcVault";
+import { encryptCredentials, decryptCredentials } from "./connectorVault";
 import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
 import {
@@ -119,6 +120,13 @@ import {
   InsertSmeacBriefing,
   smeacAcknowledgements,
   SmeacAcknowledgement,
+  connectors,
+  Connector,
+  InsertConnector,
+  externalEvents,
+  ExternalEvent,
+  connectorAuditLog,
+  InsertConnectorAuditEntry,
 } from "../drizzle/schema";
 import {
   findPossibleDuplicates,
@@ -14299,4 +14307,319 @@ export async function computeWitnessListData(
     producedAt: Date.now(),
     certifierCin,
   };
+}
+
+// ─── External Systems Integration Framework ────────────────────────────────
+// Connector registry + generic external event model — see drizzle/schema.ts
+// for the connectors/externalEvents/connectorAuditLog table definitions.
+// Connector-type-specific tables (cameras, tracked_assets, signal_sensors,
+// ...) are added in later phases and reference connectors.id; this file
+// only holds the provider-independent framework itself.
+
+export interface ConnectorView
+  extends Omit<Connector, "configuration" | "credentialsRef"> {
+  configuration: Record<string, unknown>;
+  // Never the credentials themselves — just whether any are set, so the UI
+  // can show a "configured" state without the secret ever reaching the
+  // browser. Use getConnectorCredentials for server-side-only access to the
+  // real values.
+  hasCredentials: boolean;
+}
+
+function toConnectorView(row: Connector): ConnectorView {
+  const { configuration: rawConfig, credentialsRef, ...rest } = row;
+  let configuration: Record<string, unknown> = {};
+  if (rawConfig) {
+    try {
+      const parsed = JSON.parse(rawConfig);
+      if (parsed && typeof parsed === "object") configuration = parsed;
+    } catch {
+      // leave as {}
+    }
+  }
+  return { ...rest, configuration, hasCredentials: !!credentialsRef };
+}
+
+export interface UpsertConnectorInput {
+  name: string;
+  connectorType: Connector["connectorType"];
+  provider: string;
+  description?: string | null;
+  operationId?: number | null;
+  configuration?: Record<string, unknown>;
+  // undefined = leave existing credentials untouched (update only); null or
+  // {} = clear them; an object = replace them. Always plaintext in, encrypted
+  // before storage.
+  credentials?: Record<string, unknown> | null;
+}
+
+export async function createConnector(
+  data: UpsertConnectorInput,
+  createdBy: number,
+  createdByCIN: string | null
+): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(connectors).values({
+    name: data.name,
+    connectorType: data.connectorType,
+    provider: data.provider,
+    description: data.description ?? null,
+    operationId: data.operationId ?? null,
+    configuration: JSON.stringify(data.configuration ?? {}),
+    credentialsRef: encryptCredentials(data.credentials ?? null),
+    createdBy,
+    createdByCIN: createdByCIN ?? null,
+  });
+  return result.insertId as number;
+}
+
+export async function updateConnector(
+  id: number,
+  data: UpsertConnectorInput
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const setValues: Partial<InsertConnector> = {
+    name: data.name,
+    connectorType: data.connectorType,
+    provider: data.provider,
+    description: data.description ?? null,
+    operationId: data.operationId ?? null,
+    configuration: JSON.stringify(data.configuration ?? {}),
+  };
+  if (data.credentials !== undefined) {
+    setValues.credentialsRef = encryptCredentials(data.credentials);
+  }
+  await db.update(connectors).set(setValues).where(eq(connectors.id, id));
+}
+
+export async function getConnectorById(
+  id: number
+): Promise<ConnectorView | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db
+    .select()
+    .from(connectors)
+    .where(and(eq(connectors.id, id), isNull(connectors.deletedAt)))
+    .limit(1);
+  return row ? toConnectorView(row) : undefined;
+}
+
+/**
+ * Decrypts and returns a connector's plaintext credentials, for internal
+ * server use only (e.g. a later phase's connector actually opening a
+ * connection). Never call this from a router procedure whose result goes
+ * back to the client — use getConnectorById / ConnectorView for that.
+ */
+export async function getConnectorCredentials(
+  id: number
+): Promise<Record<string, unknown> | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [row] = await db
+    .select({ credentialsRef: connectors.credentialsRef })
+    .from(connectors)
+    .where(and(eq(connectors.id, id), isNull(connectors.deletedAt)))
+    .limit(1);
+  if (!row) return null;
+  return decryptCredentials(row.credentialsRef);
+}
+
+export async function listConnectors(
+  operationId?: number | null
+): Promise<ConnectorView[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows =
+    operationId != null
+      ? await db
+          .select()
+          .from(connectors)
+          .where(
+            and(
+              isNull(connectors.deletedAt),
+              eq(connectors.operationId, operationId)
+            )
+          )
+          .orderBy(desc(connectors.createdAt))
+      : await db
+          .select()
+          .from(connectors)
+          .where(isNull(connectors.deletedAt))
+          .orderBy(desc(connectors.createdAt));
+  return rows.map(toConnectorView);
+}
+
+export async function setConnectorEnabled(
+  id: number,
+  enabled: boolean
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(connectors)
+    .set({
+      enabled,
+      connectionStatus: enabled ? "DISCONNECTED" : "DISABLED",
+      healthStatus: enabled ? "UNKNOWN" : "OFFLINE",
+    })
+    .where(eq(connectors.id, id));
+}
+
+/**
+ * Phase 1 stub — later phases replace this with each connector type's real
+ * handshake (MediaMTX/RTSP reachability, a Traccar API ping, etc). For now
+ * it just records a connection attempt so the framework and UI can be
+ * exercised end-to-end before any real integration exists.
+ */
+export async function recordConnectorTestConnection(
+  id: number,
+  ok: boolean
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const now = Date.now();
+  await db
+    .update(connectors)
+    .set({
+      connectionStatus: ok ? "CONNECTED" : "ERROR",
+      healthStatus: ok ? "HEALTHY" : "DEGRADED",
+      ...(ok ? { lastConnectedAt: now } : {}),
+    })
+    .where(eq(connectors.id, id));
+}
+
+export async function softDeleteConnector(
+  id: number,
+  deletedByCIN: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(connectors)
+    .set({ deletedAt: Date.now(), deletedByCIN })
+    .where(eq(connectors.id, id));
+}
+
+export async function createConnectorAuditLog(
+  data: InsertConnectorAuditEntry
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(connectorAuditLog).values(data);
+}
+
+export async function listConnectorAuditLog(
+  connectorId: number,
+  limit = 100
+): Promise<(typeof connectorAuditLog.$inferSelect)[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(connectorAuditLog)
+    .where(eq(connectorAuditLog.connectorId, connectorId))
+    .orderBy(desc(connectorAuditLog.createdAt))
+    .limit(limit);
+}
+
+// ─── External Events ────────────────────────────────────────────────────────
+// One generic table for every connector type — see drizzle/schema.ts.
+// eventType is a free string (GPS_POSITION, CAMERA_ONLINE, SIGNAL_DETECTED,
+// ...) so later phases can introduce new event types without a migration.
+
+export interface CreateExternalEventInput {
+  operationId?: number | null;
+  connectorId: number;
+  sourceType: ExternalEvent["sourceType"];
+  sourceProvider?: string | null;
+  sourceDeviceId?: string | null;
+  eventType: string;
+  eventTime: number;
+  latitude?: number | null;
+  longitude?: number | null;
+  altitude?: number | null;
+  heading?: number | null;
+  speed?: number | null;
+  accuracy?: number | null;
+  title?: string | null;
+  description?: string | null;
+  entityType?: string | null;
+  entityId?: number | null;
+  confidence?: number | null;
+  severity?: string | null;
+  metadataJson?: string | null;
+  rawEventReference?: string | null;
+  // Structural quarantine for Demo Mode data — defaults false. Every read
+  // path that could feed a report or court document must filter this.
+  isSimulated?: boolean;
+}
+
+export async function createExternalEvent(
+  data: CreateExternalEventInput
+): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(externalEvents).values({
+    operationId: data.operationId ?? null,
+    connectorId: data.connectorId,
+    sourceType: data.sourceType,
+    sourceProvider: data.sourceProvider ?? null,
+    sourceDeviceId: data.sourceDeviceId ?? null,
+    eventType: data.eventType,
+    eventTime: data.eventTime,
+    receivedTime: Date.now(),
+    latitude: data.latitude ?? null,
+    longitude: data.longitude ?? null,
+    altitude: data.altitude ?? null,
+    heading: data.heading ?? null,
+    speed: data.speed ?? null,
+    accuracy: data.accuracy ?? null,
+    title: data.title ?? null,
+    description: data.description ?? null,
+    entityType: data.entityType ?? null,
+    entityId: data.entityId ?? null,
+    confidence: data.confidence ?? null,
+    severity: data.severity ?? null,
+    metadataJson: data.metadataJson ?? null,
+    rawEventReference: data.rawEventReference ?? null,
+    isSimulated: data.isSimulated ?? false,
+  });
+  return result.insertId as number;
+}
+
+export interface ListExternalEventsFilter {
+  operationId?: number | null;
+  connectorId?: number | null;
+  sourceType?: ExternalEvent["sourceType"] | null;
+  limit?: number;
+}
+
+export async function listExternalEvents(
+  filter: ListExternalEventsFilter = {}
+): Promise<ExternalEvent[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (filter.operationId != null)
+    conditions.push(eq(externalEvents.operationId, filter.operationId));
+  if (filter.connectorId != null)
+    conditions.push(eq(externalEvents.connectorId, filter.connectorId));
+  if (filter.sourceType)
+    conditions.push(eq(externalEvents.sourceType, filter.sourceType));
+  const limit = filter.limit ?? 200;
+  return conditions.length
+    ? await db
+        .select()
+        .from(externalEvents)
+        .where(and(...conditions))
+        .orderBy(desc(externalEvents.eventTime))
+        .limit(limit)
+    : await db
+        .select()
+        .from(externalEvents)
+        .orderBy(desc(externalEvents.eventTime))
+        .limit(limit);
 }

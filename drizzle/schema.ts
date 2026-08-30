@@ -1684,3 +1684,136 @@ export const smeacAcknowledgements = mysqlTable(
 export type SmeacAcknowledgement = typeof smeacAcknowledgements.$inferSelect;
 export type InsertSmeacAcknowledgement =
   typeof smeacAcknowledgements.$inferInsert;
+
+// ─── External Systems Integration Framework ────────────────────────────────
+// Generic, provider-independent connector registry for external
+// camera/GPS/signal-detection systems (Eufy/MediaMTX, Traccar, a signal
+// demo connector, etc). Connectors are configured here; connector-type-
+// specific tables (cameras, tracked_assets, signal_sensors...) come in
+// later phases and reference connectors.id.
+
+export const connectors = mysqlTable("connectors", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  connectorType: mysqlEnum("connectorType", [
+    "CAMERA",
+    "GPS",
+    "SIGNAL",
+    "SENSOR",
+    "VMS",
+    "OTHER",
+  ]).notNull(),
+  provider: varchar("provider", { length: 255 }).notNull(), // e.g. "MediaMTX", "Traccar", "RunLog GPS Simulator"
+  description: text("description"),
+  enabled: boolean("enabled").default(true).notNull(),
+  connectionStatus: mysqlEnum("connectionStatus", [
+    "CONNECTED",
+    "DISCONNECTED",
+    "CONNECTING",
+    "ERROR",
+    "DISABLED",
+  ])
+    .default("DISCONNECTED")
+    .notNull(),
+  healthStatus: mysqlEnum("healthStatus", [
+    "HEALTHY",
+    "DEGRADED",
+    "OFFLINE",
+    "UNKNOWN",
+  ])
+    .default("UNKNOWN")
+    .notNull(),
+  lastConnectedAt: bigint("lastConnectedAt", { mode: "number" }),
+  lastDataReceivedAt: bigint("lastDataReceivedAt", { mode: "number" }),
+  // Nullable — a connector can be global/unassigned rather than tied to one
+  // operation.
+  operationId: int("operationId"),
+  // Non-secret settings (URLs, polling intervals, connector-specific
+  // options) as a JSON blob — same text+JSON.stringify pattern used
+  // elsewhere in this schema (e.g. smeacBriefings.extraLocations).
+  configuration: text("configuration"),
+  // Secret fields (API keys, RTSP passwords, etc), AES-256-GCM encrypted via
+  // connectorVault.ts before storage — never plaintext, never returned to
+  // the browser. Null when a connector has no credentials.
+  credentialsRef: text("credentialsRef"),
+
+  createdBy: int("createdBy").notNull(),
+  createdByCIN: varchar("createdByCIN", { length: 64 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+
+  // Soft-delete
+  deletedAt: bigint("deletedAt", { mode: "number" }),
+  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
+});
+
+export type Connector = typeof connectors.$inferSelect;
+export type InsertConnector = typeof connectors.$inferInsert;
+
+// Generic external event model — every camera/GPS/signal connector writes
+// into this one table rather than each getting its own. eventType is a free
+// varchar (not a closed enum) so future connectors can introduce new event
+// types without a schema migration.
+export const externalEvents = mysqlTable("external_events", {
+  id: int("id").autoincrement().primaryKey(),
+  operationId: int("operationId"),
+  connectorId: int("connectorId").notNull(),
+  sourceType: mysqlEnum("sourceType", [
+    "CAMERA",
+    "GPS",
+    "SIGNAL",
+    "SENSOR",
+    "VMS",
+    "OTHER",
+  ]).notNull(),
+  sourceProvider: varchar("sourceProvider", { length: 255 }),
+  sourceDeviceId: varchar("sourceDeviceId", { length: 255 }),
+  eventType: varchar("eventType", { length: 64 }).notNull(), // e.g. GPS_POSITION, CAMERA_ONLINE, SIGNAL_DETECTED
+  eventTime: bigint("eventTime", { mode: "number" }).notNull(),
+  receivedTime: bigint("receivedTime", { mode: "number" }).notNull(),
+
+  latitude: double("latitude"),
+  longitude: double("longitude"),
+  altitude: double("altitude"),
+  heading: double("heading"),
+  speed: double("speed"),
+  accuracy: double("accuracy"),
+
+  title: varchar("title", { length: 255 }),
+  description: text("description"),
+
+  entityType: varchar("entityType", { length: 64 }), // e.g. "target", "vehicle", "member"
+  entityId: int("entityId"),
+
+  confidence: int("confidence"), // 0-100, nullable
+  severity: varchar("severity", { length: 32 }),
+
+  metadataJson: text("metadataJson"),
+  rawEventReference: text("rawEventReference"),
+
+  // Structural quarantine for Demo Mode data — never a UI label alone.
+  // Every read path that could feed a report or court document must filter
+  // this, not just display a badge.
+  isSimulated: boolean("isSimulated").default(false).notNull(),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ExternalEvent = typeof externalEvents.$inferSelect;
+export type InsertExternalEvent = typeof externalEvents.$inferInsert;
+
+// Mirrors wipcAuditLog's shape (open varchar action, not the closed
+// auditLogs.action enum) so new connector/action types never require a
+// schema migration to the core legal audit trail.
+export const connectorAuditLog = mysqlTable("connector_audit_log", {
+  id: int("id").autoincrement().primaryKey(),
+  connectorId: int("connectorId"),
+  userId: int("userId").notNull(),
+  userCIN: varchar("userCIN", { length: 64 }),
+  action: varchar("action", { length: 64 }).notNull(), // e.g. connector_created, connector_enabled, connector_test_connection
+  detail: varchar("detail", { length: 512 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ConnectorAuditEntry = typeof connectorAuditLog.$inferSelect;
+export type InsertConnectorAuditEntry = typeof connectorAuditLog.$inferInsert;

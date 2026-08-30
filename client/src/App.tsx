@@ -11,6 +11,7 @@ import OperationDetail from "./pages/OperationDetail";
 import SheetDetail from "./pages/SheetDetail";
 import AuditLogPage from "./pages/AuditLogPage";
 import AdminPage from "./pages/AdminPage";
+import IntegrationsConnectorsPage from "./pages/IntegrationsConnectorsPage";
 import LoginPage from "./pages/LoginPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import MyProfilePage from "./pages/MyProfilePage";
@@ -260,6 +261,7 @@ function Router() {
       />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
+      <Route path="/integrations" component={IntegrationsConnectorsPage} />
       <Route path="/administration/smeac" component={SmeacBriefingListPage} />
       <Route
         path="/administration/smeac/new"

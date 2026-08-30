@@ -34,6 +34,8 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
 import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
+import { LiveCameraDockPanel } from "@/components/LiveCameraDockPanel";
+import { ExternalEventsPanel } from "@/components/ExternalEventsPanel";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
 import { OperationProfileContent } from "@/components/OperationProfileContent";
 // The Images page's own folder/gallery levels, reused verbatim so the pane and
@@ -1441,6 +1443,28 @@ export default function IntelligenceMapping() {
   // each line starts where they started rather than showing earlier history.
   const trackStartsRef = useRef<Map<number, number>>(new Map());
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+
+  // External Systems Integration layers (Cameras / Live Tracking / Signal
+  // Detection) — admin-only for now, off by default per the plan's "don't
+  // overload the map automatically" caution. Same per-layer
+  // ref-Map-plus-effect pattern as every other marker layer on this page;
+  // deliberately NOT persisted to LS_MAP_SETTINGS_KEY yet (defaulting to
+  // off each session is the more conservative choice for a first cut).
+  const [showCameraLayer, setShowCameraLayer] = useState(false);
+  const [showGpsTrackingLayer, setShowGpsTrackingLayer] = useState(false);
+  const [showSignalLayer, setShowSignalLayer] = useState(false);
+  const cameraMarkersRef = useRef<
+    Map<number, google.maps.marker.AdvancedMarkerElement>
+  >(new Map());
+  const gpsTrackingMarkersRef = useRef<
+    Map<number, google.maps.marker.AdvancedMarkerElement>
+  >(new Map());
+  const signalSensorMarkersRef = useRef<
+    Map<number, google.maps.marker.AdvancedMarkerElement>
+  >(new Map());
+  const [dockedCameraId, setDockedCameraId] = useState<number | null>(null);
+  const [externalEventsPanelOpen, setExternalEventsPanelOpen] = useState(false);
+
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   const geocodeQueueRef = useRef<IntelMapLocation[]>([]);
   const geocodeIndexRef = useRef(0);
@@ -1606,6 +1630,29 @@ export default function IntelligenceMapping() {
     return undefined;
   }, [selectedOpIds, opsExplicitlySet, rsSelectedOpId]);
   const utils = trpc.useUtils();
+
+  // External Systems Integration layers — single-operation scoped (unlike
+  // the multi-op-capable queries above), admin-only, off by default. See
+  // the refs/toggles declared above with mapReady/infoWindowRef.
+  const effectiveOperationId = effectiveOpIdsForMarkers?.[0] ?? null;
+  const isIntegrationsAdmin = user?.role === "admin";
+  const { data: cameraLayerData } = trpc.integrations.cameras.list.useQuery(
+    undefined,
+    { enabled: isIntegrationsAdmin && showCameraLayer, refetchInterval: 8000 }
+  );
+  const { data: gpsTrackingLayerData } =
+    trpc.integrations.trackedAssets.list.useQuery(
+      { operationId: effectiveOperationId ?? undefined },
+      {
+        enabled: isIntegrationsAdmin && showGpsTrackingLayer,
+        refetchInterval: 5000,
+      }
+    );
+  const { data: signalSensorLayerData } =
+    trpc.integrations.signal.sensors.list.useQuery(undefined, {
+      enabled: isIntegrationsAdmin && showSignalLayer,
+      refetchInterval: 8000,
+    });
   // Paused while a marker is being dragged/confirmed (movingMarkerId !== null)
   // so the 5s poll can't land mid-move and hand the render effect below a
   // stale (pre-update) position — which snapped the marker straight back to
@@ -2827,6 +2874,159 @@ export default function IntelligenceMapping() {
     });
   }, [customMarkers, mapReady]);
 
+  // ── External Systems Integration layers ──────────────────────────────────
+  // Same ref-Map-plus-effect pattern as every layer above: diff query data
+  // against a Map<id, marker> ref, add/update/remove AdvancedMarkerElements.
+  // Admin-only and off by default — see the toggles/refs declared earlier.
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    if (!showCameraLayer || !cameraLayerData) {
+      cameraMarkersRef.current.forEach(m => (m.map = null));
+      cameraMarkersRef.current.clear();
+      return;
+    }
+    const seen = new Set<number>();
+    cameraLayerData.forEach(cam => {
+      seen.add(cam.id);
+      if (cam.latitude == null || cam.longitude == null) return;
+      const position = { lat: cam.latitude, lng: cam.longitude };
+      let marker = cameraMarkersRef.current.get(cam.id);
+      if (!marker) {
+        const pin = new google.maps.marker.PinElement({
+          background: "#f59e0b",
+          borderColor: "#b45309",
+          glyphColor: "#ffffff",
+        });
+        marker = new google.maps.marker.AdvancedMarkerElement({
+          map,
+          position,
+          title: cam.name,
+          content: pin.element,
+        });
+        marker.addListener("click", () => setDockedCameraId(cam.id));
+        cameraMarkersRef.current.set(cam.id, marker);
+      } else {
+        marker.position = position;
+      }
+    });
+    Array.from(cameraMarkersRef.current.entries()).forEach(([id, marker]) => {
+      if (!seen.has(id)) {
+        marker.map = null;
+        cameraMarkersRef.current.delete(id);
+      }
+    });
+  }, [cameraLayerData, showCameraLayer, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    if (!showGpsTrackingLayer || !gpsTrackingLayerData) {
+      gpsTrackingMarkersRef.current.forEach(m => (m.map = null));
+      gpsTrackingMarkersRef.current.clear();
+      return;
+    }
+    const seen = new Set<number>();
+    gpsTrackingLayerData.forEach(asset => {
+      seen.add(asset.id);
+      if (asset.latitude == null || asset.longitude == null) return;
+      const position = { lat: asset.latitude, lng: asset.longitude };
+      let marker = gpsTrackingMarkersRef.current.get(asset.id);
+      const isSimulated = asset.simulatedWaypoints.length > 0;
+      if (!marker) {
+        const pin = new google.maps.marker.PinElement({
+          background: isSimulated ? "#0891b2" : "#dc2626",
+          borderColor: isSimulated ? "#0e7490" : "#991b1b",
+          glyphColor: "#ffffff",
+        });
+        marker = new google.maps.marker.AdvancedMarkerElement({
+          map,
+          position,
+          title: asset.name,
+          content: pin.element,
+        });
+        marker.addListener("click", () => {
+          if (!infoWindowRef.current) return;
+          infoWindowRef.current.setContent(
+            `<div style="font-size:12px;line-height:1.5">` +
+              `<strong>${asset.name}</strong>${isSimulated ? " (simulated)" : ""}<br/>` +
+              `${asset.assetType} · ${asset.onlineStatus}<br/>` +
+              (asset.speed != null
+                ? `Speed: ${asset.speed.toFixed(0)}<br/>`
+                : "") +
+              `Last update: ${asset.lastPositionTime ? new Date(asset.lastPositionTime).toLocaleTimeString() : "—"}` +
+              `</div>`
+          );
+          infoWindowRef.current.open(map, marker);
+        });
+        gpsTrackingMarkersRef.current.set(asset.id, marker);
+      } else {
+        marker.position = position;
+      }
+    });
+    Array.from(gpsTrackingMarkersRef.current.entries()).forEach(
+      ([id, marker]) => {
+        if (!seen.has(id)) {
+          marker.map = null;
+          gpsTrackingMarkersRef.current.delete(id);
+        }
+      }
+    );
+  }, [gpsTrackingLayerData, showGpsTrackingLayer, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    if (!showSignalLayer || !signalSensorLayerData) {
+      signalSensorMarkersRef.current.forEach(m => (m.map = null));
+      signalSensorMarkersRef.current.clear();
+      return;
+    }
+    const seen = new Set<number>();
+    signalSensorLayerData.forEach(sensor => {
+      seen.add(sensor.id);
+      if (sensor.latitude == null || sensor.longitude == null) return;
+      const position = { lat: sensor.latitude, lng: sensor.longitude };
+      let marker = signalSensorMarkersRef.current.get(sensor.id);
+      if (!marker) {
+        const pin = new google.maps.marker.PinElement({
+          background: "#7c3aed",
+          borderColor: "#5b21b6",
+          glyphColor: "#ffffff",
+          glyph: "S",
+        });
+        marker = new google.maps.marker.AdvancedMarkerElement({
+          map,
+          position,
+          title: sensor.name,
+          content: pin.element,
+        });
+        marker.addListener("click", () => {
+          if (!infoWindowRef.current) return;
+          infoWindowRef.current.setContent(
+            `<div style="font-size:12px;line-height:1.5">` +
+              `<strong>${sensor.name}</strong><br/>` +
+              `${sensor.sensorType ?? "OTHER_RF"} · ${sensor.status}` +
+              `</div>`
+          );
+          infoWindowRef.current.open(map, marker);
+        });
+        signalSensorMarkersRef.current.set(sensor.id, marker);
+      } else {
+        marker.position = position;
+      }
+    });
+    Array.from(signalSensorMarkersRef.current.entries()).forEach(
+      ([id, marker]) => {
+        if (!seen.has(id)) {
+          marker.map = null;
+          signalSensorMarkersRef.current.delete(id);
+        }
+      }
+    );
+  }, [signalSensorLayerData, showSignalLayer, mapReady]);
+
   // Global RS Quick Entry handler for merged marker popup
   useEffect(() => {
     (window as any).__cmRsQuickEntry = (id: number) => {
@@ -3633,6 +3833,24 @@ export default function IntelligenceMapping() {
           {smeacId && (
             <SmeacMapOverlay briefingId={smeacId} onClose={closeSmeacOverlay} />
           )}
+
+          {/* Camera layer's docked live viewer — same absolute-positioned
+            shell as SmeacMapOverlay above, reused unchanged per the
+            integrations plan. Not made mutually exclusive with the SMEAC
+            overlay (both are same-side, similar-width panels) — an edge
+            case left as-is rather than over-engineered for a first cut. */}
+          {dockedCameraId &&
+            (() => {
+              const cam = cameraLayerData?.find(c => c.id === dockedCameraId);
+              return cam ? (
+                <LiveCameraDockPanel
+                  name={cam.name}
+                  webRtcUrl={cam.webRtcUrl}
+                  hlsUrl={cam.hlsUrl}
+                  onClose={() => setDockedCameraId(null)}
+                />
+              ) : null;
+            })()}
 
           {/* Loading overlay */}
           {locsLoading && (
@@ -4952,11 +5170,64 @@ export default function IntelligenceMapping() {
                 </div>
               </div>
               {/* end TEAMS */}
+
+              {/* ── External Systems Integration layers (admin-only, off by
+                  default — see the plan's "don't overload the map
+                  automatically" caution) ── */}
+              {isIntegrationsAdmin && (
+                <div className="px-3 py-3 border-b border-border space-y-3">
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                    Layers
+                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-foreground">Cameras</span>
+                    <Switch
+                      checked={showCameraLayer}
+                      onCheckedChange={setShowCameraLayer}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-foreground">
+                      Live Tracking
+                    </span>
+                    <Switch
+                      checked={showGpsTrackingLayer}
+                      onCheckedChange={setShowGpsTrackingLayer}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-foreground">
+                      Signal Detection
+                    </span>
+                    <Switch
+                      checked={showSignalLayer}
+                      onCheckedChange={setShowSignalLayer}
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => setExternalEventsPanelOpen(true)}
+                  >
+                    External Events
+                  </Button>
+                </div>
+              )}
+              {/* end Layers */}
             </div>
           )}
           {/* end Pane Body */}
         </div>
         {/* end RS Actions Right Pane */}
+
+        {isIntegrationsAdmin && (
+          <ExternalEventsPanel
+            operationId={effectiveOperationId}
+            open={externalEventsPanelOpen}
+            onClose={() => setExternalEventsPanelOpen(false)}
+          />
+        )}
 
         {/* ── Quick-Link Editor Modal ── */}
         {editingQuickLinks && (

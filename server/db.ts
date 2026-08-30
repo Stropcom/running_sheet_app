@@ -14730,6 +14730,22 @@ async function advanceSimulatedTrackedAssets(
         heading: computed.heading,
         recordedAt: now,
       });
+      await db.insert(externalEvents).values({
+        operationId: row.operationId,
+        connectorId: row.connectorId,
+        sourceType: "GPS",
+        sourceDeviceId: row.externalDeviceId,
+        eventType: "GPS_POSITION",
+        eventTime: now,
+        receivedTime: now,
+        latitude: computed.latitude,
+        longitude: computed.longitude,
+        heading: computed.heading,
+        title: row.name,
+        entityType: "trackedAsset",
+        entityId: row.id,
+        isSimulated: true,
+      });
     }
     // Reflect the fresh values on the in-memory row so callers (list/get)
     // don't need a second round-trip to see them.
@@ -15026,6 +15042,25 @@ async function syncTraccarConnector(connectorId: number): Promise<void> {
         accuracy: position.accuracy ?? null,
         recordedAt: newFixTime as number,
       });
+      await db.insert(externalEvents).values({
+        operationId: existing.operationId,
+        connectorId,
+        sourceType: "GPS",
+        sourceDeviceId: externalDeviceId,
+        eventType: "GPS_POSITION",
+        eventTime: newFixTime as number,
+        receivedTime: Date.now(),
+        latitude: position.latitude,
+        longitude: position.longitude,
+        altitude: position.altitude ?? null,
+        speed: position.speed ?? null,
+        heading: position.course ?? null,
+        accuracy: position.accuracy ?? null,
+        title: device.name,
+        entityType: "trackedAsset",
+        entityId: existing.id,
+        isSimulated: false,
+      });
     }
   }
 }
@@ -15278,8 +15313,22 @@ async function advanceSimulatedSignalDetections(
         .update(signalDetections)
         .set({ status: "LOST" })
         .where(eq(signalDetections.id, activeDetection.id));
+      await db.insert(externalEvents).values({
+        operationId: activeDetection.operationId,
+        connectorId,
+        sourceType: "SIGNAL",
+        sourceDeviceId: deviceRef,
+        eventType: "SIGNAL_LOST",
+        eventTime: now,
+        receivedTime: now,
+        title: deviceRef,
+        description: `Lost at sensor #${activeDetection.sensorId}`,
+        isSimulated: true,
+      });
     }
     const seed = hashString(`${deviceRef}-${currentSensor.id}-${dwellWindow}`);
+    const confidence = 65 + (seed % 30); // 65-94
+    const signalStrength = -(50 + (seed % 40)); // -50 to -89 dBm
     await db.insert(signalDetections).values({
       operationId: currentSensor.operationId,
       connectorId,
@@ -15288,11 +15337,26 @@ async function advanceSimulatedSignalDetections(
       signalType: currentSensor.sensorType ?? "CELLULAR",
       latitude: currentSensor.latitude,
       longitude: currentSensor.longitude,
-      confidence: 65 + (seed % 30), // 65-94
-      signalStrength: -(50 + (seed % 40)), // -50 to -89 dBm
+      confidence,
+      signalStrength,
       firstDetectedAt: now,
       lastDetectedAt: now,
       status: "ACTIVE",
+      isSimulated: true,
+    });
+    await db.insert(externalEvents).values({
+      operationId: currentSensor.operationId,
+      connectorId,
+      sourceType: "SIGNAL",
+      sourceDeviceId: deviceRef,
+      eventType: "SIGNAL_DETECTED",
+      eventTime: now,
+      receivedTime: now,
+      latitude: currentSensor.latitude,
+      longitude: currentSensor.longitude,
+      title: deviceRef,
+      description: `Detected at ${currentSensor.name}`,
+      confidence,
       isSimulated: true,
     });
   }
@@ -15476,13 +15540,36 @@ export async function recordCameraTestConnection(
 ): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  const now = Date.now();
   await db
     .update(cameras)
     .set({
       status: ok ? "ONLINE" : "OFFLINE",
-      lastSeen: ok ? Date.now() : undefined,
+      lastSeen: ok ? now : undefined,
     })
     .where(eq(cameras.id, id));
+  const [camera] = await db
+    .select()
+    .from(cameras)
+    .where(eq(cameras.id, id))
+    .limit(1);
+  if (camera) {
+    await db.insert(externalEvents).values({
+      operationId: camera.operationId,
+      connectorId: camera.connectorId,
+      sourceType: "CAMERA",
+      sourceDeviceId: camera.externalCameraId,
+      eventType: ok ? "CAMERA_ONLINE" : "CAMERA_OFFLINE",
+      eventTime: now,
+      receivedTime: now,
+      latitude: camera.latitude,
+      longitude: camera.longitude,
+      title: camera.name,
+      entityType: "camera",
+      entityId: camera.id,
+      isSimulated: false,
+    });
+  }
 }
 
 export async function softDeleteCamera(

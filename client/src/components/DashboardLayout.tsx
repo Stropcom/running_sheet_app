@@ -95,6 +95,7 @@ import {
   Database,
   Cable,
   MapPinned,
+  Radio,
 } from "lucide-react";
 import React, {
   CSSProperties,
@@ -1380,6 +1381,10 @@ function IntegrationsNavTile({
           <MapPinned className="h-4 w-4 mr-2" />
           GPS Tracking
         </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setLocation("/integrations/signal")}>
+          <Radio className="h-4 w-4 mr-2" />
+          Signal Detection
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -2325,6 +2330,15 @@ function DashboardLayoutContent({
                           >
                             <MapPinned className="h-3.5 w-3.5 shrink-0 text-foreground" />
                             GPS Tracking
+                          </button>
+                          <button
+                            onClick={() => setLocation("/integrations/signal")}
+                            className={subItemClass(
+                              location === "/integrations/signal"
+                            )}
+                          >
+                            <Radio className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                            Signal Detection
                           </button>
                         </div>
                       )}

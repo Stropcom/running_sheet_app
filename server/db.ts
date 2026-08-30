@@ -131,6 +131,10 @@ import {
   TrackedAsset,
   trackedAssetPositions,
   TrackedAssetPosition,
+  signalSensors,
+  SignalSensor,
+  signalDetections,
+  SignalDetection,
 } from "../drizzle/schema";
 import {
   findPossibleDuplicates,
@@ -14871,4 +14875,255 @@ export async function listTrackedAssetPositions(
     .where(and(...conditions))
     .orderBy(asc(trackedAssetPositions.recordedAt))
     .limit(500);
+}
+
+// ─── Signal Sensors & Detections ────────────────────────────────────────────
+// See drizzle/schema.ts. SignalDemoConnector simulation: a connector marked
+// `{ "simulated": true }` in its configuration cycles a small set of demo
+// device references through its own registered sensors, dwelling at each
+// for `dwellSeconds` — deterministic from a wall-clock time bucket (not a
+// cron job, not truly random), read-driven and throttled just like the GPS
+// simulator in advanceSimulatedTrackedAssets above.
+
+export interface UpsertSignalSensorInput {
+  connectorId: number;
+  operationId?: number | null;
+  externalSensorId?: string | null;
+  name: string;
+  sensorType?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  locationName?: string | null;
+  metadataJson?: string | null;
+}
+
+export async function createSignalSensor(
+  data: UpsertSignalSensorInput
+): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(signalSensors).values({
+    connectorId: data.connectorId,
+    operationId: data.operationId ?? null,
+    externalSensorId: data.externalSensorId ?? null,
+    name: data.name,
+    sensorType: data.sensorType ?? null,
+    latitude: data.latitude ?? null,
+    longitude: data.longitude ?? null,
+    locationName: data.locationName ?? null,
+    metadataJson: data.metadataJson ?? null,
+    status: "ONLINE",
+    lastSeen: Date.now(),
+  });
+  return result.insertId as number;
+}
+
+export async function updateSignalSensor(
+  id: number,
+  data: UpsertSignalSensorInput
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(signalSensors)
+    .set({
+      connectorId: data.connectorId,
+      operationId: data.operationId ?? null,
+      externalSensorId: data.externalSensorId ?? null,
+      name: data.name,
+      sensorType: data.sensorType ?? null,
+      latitude: data.latitude ?? null,
+      longitude: data.longitude ?? null,
+      locationName: data.locationName ?? null,
+      metadataJson: data.metadataJson ?? null,
+    })
+    .where(eq(signalSensors.id, id));
+}
+
+export async function softDeleteSignalSensor(
+  id: number,
+  deletedByCIN: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(signalSensors)
+    .set({ deletedAt: Date.now(), deletedByCIN })
+    .where(eq(signalSensors.id, id));
+}
+
+export async function listSignalSensors(
+  connectorId?: number | null
+): Promise<SignalSensor[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return connectorId != null
+    ? db
+        .select()
+        .from(signalSensors)
+        .where(
+          and(
+            isNull(signalSensors.deletedAt),
+            eq(signalSensors.connectorId, connectorId)
+          )
+        )
+        .orderBy(desc(signalSensors.createdAt))
+    : db
+        .select()
+        .from(signalSensors)
+        .where(isNull(signalSensors.deletedAt))
+        .orderBy(desc(signalSensors.createdAt));
+}
+
+interface SignalConnectorConfig {
+  simulated?: boolean;
+  deviceCount?: number;
+  dwellSeconds?: number;
+}
+
+function parseSignalConnectorConfig(raw: string | null): SignalConnectorConfig {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+// Small, dependency-free string hash so simulated confidence/signal-strength
+// values are stable within a given time bucket instead of jittering on
+// every read, without pulling in a real RNG for what's explicitly demo data.
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  }
+  return h;
+}
+
+async function advanceSimulatedSignalDetections(
+  connectorId: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const [connectorRow] = await db
+    .select()
+    .from(connectors)
+    .where(eq(connectors.id, connectorId))
+    .limit(1);
+  if (!connectorRow) return;
+  const config = parseSignalConnectorConfig(connectorRow.configuration);
+  if (!config.simulated) return;
+
+  const sensors = await db
+    .select()
+    .from(signalSensors)
+    .where(
+      and(
+        eq(signalSensors.connectorId, connectorId),
+        isNull(signalSensors.deletedAt)
+      )
+    )
+    .orderBy(asc(signalSensors.id));
+  if (sensors.length === 0) return;
+
+  const deviceCount = config.deviceCount ?? 3;
+  const dwellSeconds = config.dwellSeconds ?? 20;
+  const now = Date.now();
+
+  for (let i = 0; i < deviceCount; i++) {
+    const deviceRef = `DEVICE-${String(i + 1).padStart(4, "0")}`;
+    // Stagger devices (offset in dwell-window units) so they don't all move
+    // between sensors in lockstep.
+    const dwellWindow = Math.floor(now / 1000 / dwellSeconds) + i * 3;
+    const currentSensor = sensors[dwellWindow % sensors.length];
+
+    const [activeDetection] = await db
+      .select()
+      .from(signalDetections)
+      .where(
+        and(
+          eq(signalDetections.connectorId, connectorId),
+          eq(signalDetections.externalDeviceReference, deviceRef),
+          eq(signalDetections.status, "ACTIVE")
+        )
+      )
+      .orderBy(desc(signalDetections.lastDetectedAt))
+      .limit(1);
+
+    if (activeDetection && activeDetection.sensorId === currentSensor.id) {
+      // Still at the same sensor — refresh lastDetectedAt, throttled.
+      if (now - activeDetection.lastDetectedAt >= 5000) {
+        await db
+          .update(signalDetections)
+          .set({ lastDetectedAt: now })
+          .where(eq(signalDetections.id, activeDetection.id));
+      }
+      continue;
+    }
+
+    // Device moved (or first sighting) — close out the old detection at its
+    // previous sensor, open a new one at the current sensor.
+    if (activeDetection) {
+      await db
+        .update(signalDetections)
+        .set({ status: "LOST" })
+        .where(eq(signalDetections.id, activeDetection.id));
+    }
+    const seed = hashString(`${deviceRef}-${currentSensor.id}-${dwellWindow}`);
+    await db.insert(signalDetections).values({
+      operationId: currentSensor.operationId,
+      connectorId,
+      sensorId: currentSensor.id,
+      externalDeviceReference: deviceRef,
+      signalType: currentSensor.sensorType ?? "CELLULAR",
+      latitude: currentSensor.latitude,
+      longitude: currentSensor.longitude,
+      confidence: 65 + (seed % 30), // 65-94
+      signalStrength: -(50 + (seed % 40)), // -50 to -89 dBm
+      firstDetectedAt: now,
+      lastDetectedAt: now,
+      status: "ACTIVE",
+      isSimulated: true,
+    });
+  }
+}
+
+export interface ListSignalDetectionsFilter {
+  connectorId: number;
+  sensorId?: number | null;
+  status?: "ACTIVE" | "LOST" | null;
+}
+
+export async function listSignalDetections(
+  filter: ListSignalDetectionsFilter
+): Promise<SignalDetection[]> {
+  const db = await getDb();
+  if (!db) return [];
+  await advanceSimulatedSignalDetections(filter.connectorId);
+  const conditions = [eq(signalDetections.connectorId, filter.connectorId)];
+  if (filter.sensorId != null)
+    conditions.push(eq(signalDetections.sensorId, filter.sensorId));
+  if (filter.status)
+    conditions.push(eq(signalDetections.status, filter.status));
+  return db
+    .select()
+    .from(signalDetections)
+    .where(and(...conditions))
+    .orderBy(desc(signalDetections.lastDetectedAt))
+    .limit(200);
+}
+
+export async function listDeviceDetectionHistory(
+  deviceReference: string
+): Promise<SignalDetection[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(signalDetections)
+    .where(eq(signalDetections.externalDeviceReference, deviceReference))
+    .orderBy(asc(signalDetections.firstDetectedAt))
+    .limit(200);
 }

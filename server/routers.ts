@@ -342,6 +342,12 @@ import {
   listConnectorAuditLog,
   createExternalEvent,
   listExternalEvents,
+  createTrackedAsset,
+  updateTrackedAsset,
+  getTrackedAssetById,
+  listTrackedAssets,
+  softDeleteTrackedAsset,
+  listTrackedAssetPositions,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -463,6 +469,31 @@ const connectorFieldsSchema = {
   // Omitted entirely = leave existing credentials untouched. Explicit null =
   // clear them. An object = replace them.
   credentials: z.record(z.string(), z.unknown()).optional().nullable(),
+};
+
+const trackedAssetFieldsSchema = {
+  name: z.string().min(1),
+  assetType: z.enum([
+    "VEHICLE",
+    "MEMBER",
+    "DEVICE",
+    "EQUIPMENT",
+    "TARGET",
+    "OTHER",
+  ]),
+  connectorId: z.number(),
+  operationId: z.number().optional().nullable(),
+  externalDeviceId: z.string().optional().nullable(),
+  assignedEntityId: z.number().optional().nullable(),
+  assignedVehicleId: z.number().optional().nullable(),
+  assignedMemberId: z.number().optional().nullable(),
+  // Empty/omitted = a real (non-simulated) asset.
+  simulatedWaypoints: z
+    .array(z.object({ lat: z.number(), lng: z.number() }))
+    .optional()
+    .nullable(),
+  simulatedLoopSeconds: z.number().optional().nullable(),
+  metadataJson: z.string().optional().nullable(),
 };
 
 // ─── App Router ───────────────────────────────────────────────────────────────
@@ -7101,6 +7132,74 @@ export const appRouter = router({
         .mutation(async ({ input }) => {
           const id = await createExternalEvent(input);
           return { id };
+        }),
+    }),
+
+    trackedAssets: router({
+      list: adminProcedure
+        .input(
+          z
+            .object({
+              operationId: z.number().optional(),
+              connectorId: z.number().optional(),
+            })
+            .optional()
+        )
+        .query(async ({ input }) => {
+          return listTrackedAssets(input ?? {});
+        }),
+
+      getById: adminProcedure
+        .input(z.object({ id: z.number() }))
+        .query(async ({ input }) => {
+          const asset = await getTrackedAssetById(input.id);
+          if (!asset)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Tracked asset not found.",
+            });
+          return asset;
+        }),
+
+      create: adminProcedure
+        .input(z.object(trackedAssetFieldsSchema))
+        .mutation(async ({ ctx, input }) => {
+          const id = await createTrackedAsset(input);
+          await createConnectorAuditLog({
+            connectorId: input.connectorId,
+            userId: ctx.user.id,
+            userCIN: ctx.user.cin ?? undefined,
+            action: "tracked_asset_created",
+            detail: `Created tracked asset "${input.name}"`,
+          });
+          return { id };
+        }),
+
+      update: adminProcedure
+        .input(z.object({ id: z.number(), ...trackedAssetFieldsSchema }))
+        .mutation(async ({ input }) => {
+          const { id, ...data } = input;
+          await updateTrackedAsset(id, data);
+          return { ok: true };
+        }),
+
+      delete: adminProcedure
+        .input(z.object({ id: z.number() }))
+        .mutation(async ({ ctx, input }) => {
+          await softDeleteTrackedAsset(input.id, ctx.user.cin ?? "Unknown");
+          return { ok: true };
+        }),
+
+      // Track tail — recent position history for one asset.
+      positions: adminProcedure
+        .input(
+          z.object({
+            trackedAssetId: z.number(),
+            sinceMs: z.number().optional(),
+          })
+        )
+        .query(async ({ input }) => {
+          return listTrackedAssetPositions(input.trackedAssetId, input.sinceMs);
         }),
     }),
   }),

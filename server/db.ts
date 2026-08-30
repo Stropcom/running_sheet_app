@@ -127,6 +127,10 @@ import {
   ExternalEvent,
   connectorAuditLog,
   InsertConnectorAuditEntry,
+  trackedAssets,
+  TrackedAsset,
+  trackedAssetPositions,
+  TrackedAssetPosition,
 } from "../drizzle/schema";
 import {
   findPossibleDuplicates,
@@ -14622,4 +14626,249 @@ export async function listExternalEvents(
         .from(externalEvents)
         .orderBy(desc(externalEvents.eventTime))
         .limit(limit);
+}
+
+// ─── Tracked Assets (GPS) ───────────────────────────────────────────────────
+// See drizzle/schema.ts for trackedAssets/trackedAssetPositions. A tracked
+// asset is either real (fed by a connector like Traccar) or simulated
+// (simulatedWaypoints/simulatedLoopSeconds set) — a simulated asset's
+// position is computed as a pure function of wall-clock time in
+// computeSimulatedPosition below, so no setInterval/cron is needed to make
+// it "move" (references/periodic-updates.md forbids in-process timers).
+
+export interface SimWaypoint {
+  lat: number;
+  lng: number;
+}
+
+function parseSimWaypoints(raw: string | null): SimWaypoint[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Computes where a simulated asset sits along its loop at a given instant.
+ * The asset travels through `waypoints` in order, looping back to the
+ * first, completing one full loop every `loopSeconds` — a pure function of
+ * `atTimeMs`, so the exact same instant always yields the exact same
+ * position (survives a server restart, needs no stored "current leg" state).
+ */
+export function computeSimulatedPosition(
+  waypoints: SimWaypoint[],
+  loopSeconds: number,
+  atTimeMs: number
+): { latitude: number; longitude: number; heading: number } | null {
+  if (waypoints.length < 2 || loopSeconds <= 0) return null;
+  const segmentCount = waypoints.length; // last waypoint loops back to the first
+  const loopProgress = (atTimeMs / 1000 / loopSeconds) % 1; // 0..1 through the whole loop
+  const segmentProgress = loopProgress * segmentCount; // 0..segmentCount
+  const segmentIndex = Math.floor(segmentProgress) % segmentCount;
+  const withinSegment = segmentProgress - Math.floor(segmentProgress);
+  const from = waypoints[segmentIndex];
+  const to = waypoints[(segmentIndex + 1) % segmentCount];
+  const latitude = from.lat + (to.lat - from.lat) * withinSegment;
+  const longitude = from.lng + (to.lng - from.lng) * withinSegment;
+  const headingRad = Math.atan2(to.lng - from.lng, to.lat - from.lat);
+  const heading = ((headingRad * 180) / Math.PI + 360) % 360;
+  return { latitude, longitude, heading };
+}
+
+// Don't insert a new position-history row more than once per this many ms
+// per asset, even though position is recomputed on every read — otherwise a
+// busy admin polling the test map would flood tracked_asset_positions with
+// near-duplicate rows.
+const SIMULATED_POSITION_THROTTLE_MS = 5000;
+
+async function advanceSimulatedTrackedAssets(
+  rows: TrackedAsset[]
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const now = Date.now();
+  for (const row of rows) {
+    if (!row.simulatedWaypoints || !row.simulatedLoopSeconds) continue;
+    const waypoints = parseSimWaypoints(row.simulatedWaypoints);
+    const computed = computeSimulatedPosition(
+      waypoints,
+      row.simulatedLoopSeconds,
+      now
+    );
+    if (!computed) continue;
+    const dueForNewPosition =
+      !row.lastPositionTime ||
+      now - row.lastPositionTime >= SIMULATED_POSITION_THROTTLE_MS;
+    await db
+      .update(trackedAssets)
+      .set({
+        latitude: computed.latitude,
+        longitude: computed.longitude,
+        heading: computed.heading,
+        onlineStatus: "ONLINE",
+        lastPositionTime: now,
+        lastReceivedTime: now,
+      })
+      .where(eq(trackedAssets.id, row.id));
+    if (dueForNewPosition) {
+      await db.insert(trackedAssetPositions).values({
+        trackedAssetId: row.id,
+        operationId: row.operationId,
+        latitude: computed.latitude,
+        longitude: computed.longitude,
+        heading: computed.heading,
+        recordedAt: now,
+      });
+    }
+    // Reflect the fresh values on the in-memory row so callers (list/get)
+    // don't need a second round-trip to see them.
+    row.latitude = computed.latitude;
+    row.longitude = computed.longitude;
+    row.heading = computed.heading;
+    row.onlineStatus = "ONLINE";
+    row.lastPositionTime = now;
+    row.lastReceivedTime = now;
+  }
+}
+
+export interface UpsertTrackedAssetInput {
+  name: string;
+  assetType: TrackedAsset["assetType"];
+  connectorId: number;
+  operationId?: number | null;
+  externalDeviceId?: string | null;
+  assignedEntityId?: number | null;
+  assignedVehicleId?: number | null;
+  assignedMemberId?: number | null;
+  // Empty/omitted = a real (non-simulated) asset.
+  simulatedWaypoints?: SimWaypoint[] | null;
+  simulatedLoopSeconds?: number | null;
+  metadataJson?: string | null;
+}
+
+export async function createTrackedAsset(
+  data: UpsertTrackedAssetInput
+): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(trackedAssets).values({
+    name: data.name,
+    assetType: data.assetType,
+    connectorId: data.connectorId,
+    operationId: data.operationId ?? null,
+    externalDeviceId: data.externalDeviceId ?? null,
+    assignedEntityId: data.assignedEntityId ?? null,
+    assignedVehicleId: data.assignedVehicleId ?? null,
+    assignedMemberId: data.assignedMemberId ?? null,
+    simulatedWaypoints: data.simulatedWaypoints?.length
+      ? JSON.stringify(data.simulatedWaypoints)
+      : null,
+    simulatedLoopSeconds: data.simulatedLoopSeconds ?? null,
+    metadataJson: data.metadataJson ?? null,
+  });
+  return result.insertId as number;
+}
+
+export async function updateTrackedAsset(
+  id: number,
+  data: UpsertTrackedAssetInput
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(trackedAssets)
+    .set({
+      name: data.name,
+      assetType: data.assetType,
+      connectorId: data.connectorId,
+      operationId: data.operationId ?? null,
+      externalDeviceId: data.externalDeviceId ?? null,
+      assignedEntityId: data.assignedEntityId ?? null,
+      assignedVehicleId: data.assignedVehicleId ?? null,
+      assignedMemberId: data.assignedMemberId ?? null,
+      simulatedWaypoints: data.simulatedWaypoints?.length
+        ? JSON.stringify(data.simulatedWaypoints)
+        : null,
+      simulatedLoopSeconds: data.simulatedLoopSeconds ?? null,
+      metadataJson: data.metadataJson ?? null,
+    })
+    .where(eq(trackedAssets.id, id));
+}
+
+export interface TrackedAssetView
+  extends Omit<TrackedAsset, "simulatedWaypoints"> {
+  simulatedWaypoints: SimWaypoint[];
+}
+
+function toTrackedAssetView(row: TrackedAsset): TrackedAssetView {
+  return {
+    ...row,
+    simulatedWaypoints: parseSimWaypoints(row.simulatedWaypoints),
+  };
+}
+
+export async function getTrackedAssetById(
+  id: number
+): Promise<TrackedAssetView | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db
+    .select()
+    .from(trackedAssets)
+    .where(and(eq(trackedAssets.id, id), isNull(trackedAssets.deletedAt)))
+    .limit(1);
+  if (!row) return undefined;
+  await advanceSimulatedTrackedAssets([row]);
+  return toTrackedAssetView(row);
+}
+
+export async function listTrackedAssets(
+  filter: { operationId?: number | null; connectorId?: number | null } = {}
+): Promise<TrackedAssetView[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [isNull(trackedAssets.deletedAt)];
+  if (filter.operationId != null)
+    conditions.push(eq(trackedAssets.operationId, filter.operationId));
+  if (filter.connectorId != null)
+    conditions.push(eq(trackedAssets.connectorId, filter.connectorId));
+  const rows = await db
+    .select()
+    .from(trackedAssets)
+    .where(and(...conditions))
+    .orderBy(desc(trackedAssets.createdAt));
+  await advanceSimulatedTrackedAssets(rows);
+  return rows.map(toTrackedAssetView);
+}
+
+export async function softDeleteTrackedAsset(
+  id: number,
+  deletedByCIN: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(trackedAssets)
+    .set({ deletedAt: Date.now(), deletedByCIN })
+    .where(eq(trackedAssets.id, id));
+}
+
+export async function listTrackedAssetPositions(
+  trackedAssetId: number,
+  sinceMs?: number
+): Promise<TrackedAssetPosition[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(trackedAssetPositions.trackedAssetId, trackedAssetId)];
+  if (sinceMs != null)
+    conditions.push(gt(trackedAssetPositions.recordedAt, sinceMs));
+  return db
+    .select()
+    .from(trackedAssetPositions)
+    .where(and(...conditions))
+    .orderBy(asc(trackedAssetPositions.recordedAt))
+    .limit(500);
 }

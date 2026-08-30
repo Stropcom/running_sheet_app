@@ -94,6 +94,7 @@ import {
   ShieldAlert,
   Database,
   Cable,
+  MapPinned,
 } from "lucide-react";
 import React, {
   CSSProperties,
@@ -1348,10 +1349,7 @@ function UserMgmtNavTile({
 
 // Admin-only entry point into the Integrations side (external systems
 // connector management) — the "persistent switcher" between Operational and
-// Integrations. Only one destination exists in Phase 1, so this navigates
-// directly rather than opening a dropdown like Administration/User
-// Management do; later phases can promote it to a dropdown as more
-// Integrations pages are added.
+// Integrations.
 function IntegrationsNavTile({
   location,
   setLocation,
@@ -1359,14 +1357,31 @@ function IntegrationsNavTile({
   location: string;
   setLocation: (path: string) => void;
 }) {
+  const isActive = location.startsWith("/integrations");
   return (
-    <NavTileShell
-      icon={<Cable className="h-5 w-5 text-cyan-400" />}
-      label="Integrations"
-      isActive={location.startsWith("/integrations")}
-      activeBorderClass="data-[active=true]:border-cyan-400/60"
-      onClick={() => setLocation("/integrations")}
-    />
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <div className="w-full">
+          <NavTileShell
+            icon={<Cable className="h-5 w-5 text-cyan-400" />}
+            label="Integrations"
+            isActive={isActive}
+            hasSub
+            activeBorderClass="data-[active=true]:border-cyan-400/60"
+          />
+        </div>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-48">
+        <DropdownMenuItem onClick={() => setLocation("/integrations")}>
+          <Cable className="h-4 w-4 mr-2" />
+          Connectors
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setLocation("/integrations/gps")}>
+          <MapPinned className="h-4 w-4 mr-2" />
+          GPS Tracking
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -1714,6 +1729,8 @@ function DashboardLayoutContent({
   );
   const [adminFolderExpanded, setAdminFolderExpanded] = useState(false);
   const [userMgmtFolderExpanded, setUserMgmtFolderExpanded] = useState(false);
+  const [integrationsFolderExpanded, setIntegrationsFolderExpanded] =
+    useState(false);
 
   // ── Active RS from map localStorage ─────────────────────────────────────
   const LS_MAP_SETTINGS_KEY = "runlog_map_settings";
@@ -2262,8 +2279,12 @@ function DashboardLayoutContent({
                   {user?.role === "admin" && (
                     <SidebarMenuItem>
                       <SidebarMenuButton
-                        isActive={location.startsWith("/integrations")}
-                        onClick={() => setLocation("/integrations")}
+                        isActive={
+                          integrationsFolderExpanded && !isCollapsed
+                            ? false
+                            : location.startsWith("/integrations")
+                        }
+                        onClick={() => setIntegrationsFolderExpanded(v => !v)}
                         tooltip="Integrations"
                         className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-cyan-400/50 shadow-sm"
                       >
@@ -2277,7 +2298,36 @@ function DashboardLayoutContent({
                         >
                           Integrations
                         </span>
+                        {!isCollapsed &&
+                          (integrationsFolderExpanded ? (
+                            <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+                          ))}
                       </SidebarMenuButton>
+
+                      {integrationsFolderExpanded && !isCollapsed && (
+                        <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+                          <button
+                            onClick={() => setLocation("/integrations")}
+                            className={subItemClass(
+                              location === "/integrations"
+                            )}
+                          >
+                            <Cable className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                            Connectors
+                          </button>
+                          <button
+                            onClick={() => setLocation("/integrations/gps")}
+                            className={subItemClass(
+                              location === "/integrations/gps"
+                            )}
+                          >
+                            <MapPinned className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                            GPS Tracking
+                          </button>
+                        </div>
+                      )}
                     </SidebarMenuItem>
                   )}
                 </SidebarMenu>

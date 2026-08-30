@@ -1817,3 +1817,82 @@ export const connectorAuditLog = mysqlTable("connector_audit_log", {
 
 export type ConnectorAuditEntry = typeof connectorAuditLog.$inferSelect;
 export type InsertConnectorAuditEntry = typeof connectorAuditLog.$inferInsert;
+
+// Tracked assets — GPS-style live position for a vehicle/member/device/
+// equipment/target, sourced from a connector (Traccar, a phone tracker, or
+// the RunLog GPS simulator). Current-state row; trackedAssetPositions below
+// holds the append-only history.
+export const trackedAssets = mysqlTable("tracked_assets", {
+  id: int("id").autoincrement().primaryKey(),
+  operationId: int("operationId"),
+  connectorId: int("connectorId").notNull(),
+  externalDeviceId: varchar("externalDeviceId", { length: 255 }),
+  name: varchar("name", { length: 255 }).notNull(),
+  assetType: mysqlEnum("assetType", [
+    "VEHICLE",
+    "MEMBER",
+    "DEVICE",
+    "EQUIPMENT",
+    "TARGET",
+    "OTHER",
+  ]).notNull(),
+  // Optional links into RunLog's own entity architecture — nullable, not
+  // wired into any picker UI yet (a later phase's work, not required now).
+  assignedEntityId: int("assignedEntityId"),
+  assignedVehicleId: int("assignedVehicleId"),
+  assignedMemberId: int("assignedMemberId"),
+
+  latitude: double("latitude"),
+  longitude: double("longitude"),
+  altitude: double("altitude"),
+  speed: double("speed"),
+  heading: double("heading"),
+  accuracy: double("accuracy"),
+  batteryLevel: int("batteryLevel"), // 0-100, nullable
+  ignitionStatus: varchar("ignitionStatus", { length: 16 }), // "on"|"off", nullable
+  onlineStatus: mysqlEnum("onlineStatus", ["ONLINE", "OFFLINE", "UNKNOWN"])
+    .default("UNKNOWN")
+    .notNull(),
+
+  lastPositionTime: bigint("lastPositionTime", { mode: "number" }),
+  lastReceivedTime: bigint("lastReceivedTime", { mode: "number" }),
+
+  // Simulator-only fields: the deterministic path this asset loops through
+  // and how long one full loop takes, in seconds. Null for a real
+  // (non-simulated) tracked asset — see computeSimulatedPosition in db.ts.
+  // Position is computed as a pure function of wall-clock time rather than
+  // advanced by a background job, so this needs no setInterval/cron.
+  simulatedWaypoints: text("simulatedWaypoints"),
+  simulatedLoopSeconds: int("simulatedLoopSeconds"),
+
+  metadataJson: text("metadataJson"),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+
+  // Soft-delete
+  deletedAt: bigint("deletedAt", { mode: "number" }),
+  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
+});
+
+export type TrackedAsset = typeof trackedAssets.$inferSelect;
+export type InsertTrackedAsset = typeof trackedAssets.$inferInsert;
+
+// Append-only position history — never overwrite previous rows. Powers the
+// "track tail" recent-movement line on the test map.
+export const trackedAssetPositions = mysqlTable("tracked_asset_positions", {
+  id: int("id").autoincrement().primaryKey(),
+  trackedAssetId: int("trackedAssetId").notNull(),
+  operationId: int("operationId"),
+  latitude: double("latitude").notNull(),
+  longitude: double("longitude").notNull(),
+  altitude: double("altitude"),
+  speed: double("speed"),
+  heading: double("heading"),
+  accuracy: double("accuracy"),
+  recordedAt: bigint("recordedAt", { mode: "number" }).notNull(),
+});
+
+export type TrackedAssetPosition = typeof trackedAssetPositions.$inferSelect;
+export type InsertTrackedAssetPosition =
+  typeof trackedAssetPositions.$inferInsert;

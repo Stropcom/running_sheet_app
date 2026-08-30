@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -44,6 +45,7 @@ import {
   Trash2,
   PlugZap,
   ScrollText,
+  MapPinned,
 } from "lucide-react";
 
 type ConnectorType = "CAMERA" | "GPS" | "SIGNAL" | "SENSOR" | "VMS" | "OTHER";
@@ -116,6 +118,7 @@ function formatTimestamp(ms: number | null | undefined): string {
 }
 
 export default function IntegrationsConnectorsPage() {
+  const [, setLocation] = useLocation();
   const { user: currentUser, isAuthenticated } = useAuth();
   const utils = trpc.useUtils();
   const isAdmin = isAuthenticated && currentUser?.role === "admin";
@@ -393,6 +396,16 @@ export default function IntegrationsConnectorsPage() {
                       <ScrollText className="w-3.5 h-3.5 mr-1" />
                       Logs
                     </Button>
+                    {c.connectorType === "GPS" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setLocation("/integrations/gps")}
+                      >
+                        <MapPinned className="w-3.5 h-3.5 mr-1" />
+                        Tracked Assets
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"

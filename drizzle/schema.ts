@@ -1963,3 +1963,44 @@ export const signalDetections = mysqlTable("signal_detections", {
 
 export type SignalDetection = typeof signalDetections.$inferSelect;
 export type InsertSignalDetection = typeof signalDetections.$inferInsert;
+
+// A live camera belonging to a CAMERA connector (MediaMTX/Eufy today, any
+// RTSP/VMS source later — see connectorVault.ts for how rtspSourceRef is
+// encrypted). webRtcUrl/hlsUrl are the public-facing playback endpoints
+// MediaMTX exposes per camera path — not secret, safe to send to the
+// browser; rtspSourceRef (the actual RTSP URL + credentials) never is.
+export const cameras = mysqlTable("cameras", {
+  id: int("id").autoincrement().primaryKey(),
+  connectorId: int("connectorId").notNull(),
+  operationId: int("operationId"),
+  externalCameraId: varchar("externalCameraId", { length: 255 }),
+  name: varchar("name", { length: 255 }).notNull(),
+  manufacturer: varchar("manufacturer", { length: 255 }),
+  model: varchar("model", { length: 255 }),
+  locationName: varchar("locationName", { length: 255 }),
+  latitude: double("latitude"),
+  longitude: double("longitude"),
+  description: text("description"),
+  // MediaMTX path identifier this camera is registered under.
+  mediaPath: varchar("mediaPath", { length: 255 }),
+  // AES-256-GCM encrypted RTSP URL + credentials via connectorVault.ts —
+  // never plaintext, never returned to the browser.
+  rtspSourceRef: text("rtspSourceRef"),
+  webRtcUrl: varchar("webRtcUrl", { length: 500 }),
+  hlsUrl: varchar("hlsUrl", { length: 500 }),
+  status: mysqlEnum("status", ["ONLINE", "OFFLINE", "UNKNOWN"])
+    .default("UNKNOWN")
+    .notNull(),
+  lastSeen: bigint("lastSeen", { mode: "number" }),
+  enabled: boolean("enabled").default(true).notNull(),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+
+  // Soft-delete
+  deletedAt: bigint("deletedAt", { mode: "number" }),
+  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
+});
+
+export type Camera = typeof cameras.$inferSelect;
+export type InsertCamera = typeof cameras.$inferInsert;

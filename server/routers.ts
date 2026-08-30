@@ -354,6 +354,13 @@ import {
   listSignalSensors,
   listSignalDetections,
   listDeviceDetectionHistory,
+  createCamera,
+  updateCamera,
+  getCameraById,
+  listCameras,
+  setCameraEnabled,
+  recordCameraTestConnection,
+  softDeleteCamera,
 } from "./db";
 
 // ─── Role Guards ──────────────────────────────────────────────────────────────
@@ -512,6 +519,24 @@ const signalSensorFieldsSchema = {
   longitude: z.number().optional().nullable(),
   locationName: z.string().optional().nullable(),
   metadataJson: z.string().optional().nullable(),
+};
+
+const cameraFieldsSchema = {
+  connectorId: z.number(),
+  operationId: z.number().optional().nullable(),
+  externalCameraId: z.string().optional().nullable(),
+  name: z.string().min(1),
+  manufacturer: z.string().optional().nullable(),
+  model: z.string().optional().nullable(),
+  locationName: z.string().optional().nullable(),
+  latitude: z.number().optional().nullable(),
+  longitude: z.number().optional().nullable(),
+  description: z.string().optional().nullable(),
+  mediaPath: z.string().optional().nullable(),
+  webRtcUrl: z.string().optional().nullable(),
+  hlsUrl: z.string().optional().nullable(),
+  // Omitted entirely = leave existing RTSP credentials untouched.
+  rtspCredentials: z.record(z.string(), z.unknown()).optional().nullable(),
 };
 
 // ─── App Router ───────────────────────────────────────────────────────────────
@@ -7281,6 +7306,78 @@ export const appRouter = router({
             return listDeviceDetectionHistory(input.deviceReference);
           }),
       }),
+    }),
+
+    cameras: router({
+      list: adminProcedure
+        .input(z.object({ connectorId: z.number().optional() }).optional())
+        .query(async ({ input }) => {
+          return listCameras(input?.connectorId ?? null);
+        }),
+
+      getById: adminProcedure
+        .input(z.object({ id: z.number() }))
+        .query(async ({ input }) => {
+          const camera = await getCameraById(input.id);
+          if (!camera)
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Camera not found.",
+            });
+          return camera;
+        }),
+
+      create: adminProcedure
+        .input(z.object(cameraFieldsSchema))
+        .mutation(async ({ ctx, input }) => {
+          const id = await createCamera(input);
+          await createConnectorAuditLog({
+            connectorId: input.connectorId,
+            userId: ctx.user.id,
+            userCIN: ctx.user.cin ?? undefined,
+            action: "camera_created",
+            detail: `Created camera "${input.name}"`,
+          });
+          return { id };
+        }),
+
+      update: adminProcedure
+        .input(z.object({ id: z.number(), ...cameraFieldsSchema }))
+        .mutation(async ({ input }) => {
+          const { id, ...data } = input;
+          await updateCamera(id, data);
+          return { ok: true };
+        }),
+
+      setEnabled: adminProcedure
+        .input(z.object({ id: z.number(), enabled: z.boolean() }))
+        .mutation(async ({ input }) => {
+          await setCameraEnabled(input.id, input.enabled);
+          return { ok: true };
+        }),
+
+      // Phase 4 stub — no live MediaMTX/camera exists anywhere in this build
+      // to actually test reachability against. See recordCameraTestConnection.
+      testConnection: adminProcedure
+        .input(z.object({ id: z.number() }))
+        .mutation(async ({ ctx, input }) => {
+          await recordCameraTestConnection(input.id, true);
+          await createConnectorAuditLog({
+            connectorId: input.id,
+            userId: ctx.user.id,
+            userCIN: ctx.user.cin ?? undefined,
+            action: "camera_test_connection",
+            detail: "Phase 4 stub — no real connection attempted",
+          });
+          return { ok: true };
+        }),
+
+      delete: adminProcedure
+        .input(z.object({ id: z.number() }))
+        .mutation(async ({ ctx, input }) => {
+          await softDeleteCamera(input.id, ctx.user.cin ?? "Unknown");
+          return { ok: true };
+        }),
     }),
   }),
 });

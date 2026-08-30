@@ -14,6 +14,8 @@ import AdminPage from "./pages/AdminPage";
 import IntegrationsConnectorsPage from "./pages/IntegrationsConnectorsPage";
 import IntegrationsTrackedAssetsPage from "./pages/IntegrationsTrackedAssetsPage";
 import IntegrationsSignalPage from "./pages/IntegrationsSignalPage";
+import IntegrationsCamerasPage from "./pages/IntegrationsCamerasPage";
+import IntegrationsCameraFullPage from "./pages/IntegrationsCameraFullPage";
 import LoginPage from "./pages/LoginPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import MyProfilePage from "./pages/MyProfilePage";
@@ -269,6 +271,11 @@ function Router() {
         component={IntegrationsTrackedAssetsPage}
       />
       <Route path="/integrations/signal" component={IntegrationsSignalPage} />
+      <Route path="/integrations/cameras" component={IntegrationsCamerasPage} />
+      <Route
+        path="/integrations/cameras/:id/view"
+        component={IntegrationsCameraFullPage}
+      />
       <Route path="/administration/smeac" component={SmeacBriefingListPage} />
       <Route
         path="/administration/smeac/new"

@@ -96,6 +96,7 @@ import {
   Cable,
   MapPinned,
   Radio,
+  Camera as CameraIcon,
 } from "lucide-react";
 import React, {
   CSSProperties,
@@ -1385,6 +1386,10 @@ function IntegrationsNavTile({
           <Radio className="h-4 w-4 mr-2" />
           Signal Detection
         </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setLocation("/integrations/cameras")}>
+          <CameraIcon className="h-4 w-4 mr-2" />
+          Cameras
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -2339,6 +2344,15 @@ function DashboardLayoutContent({
                           >
                             <Radio className="h-3.5 w-3.5 shrink-0 text-foreground" />
                             Signal Detection
+                          </button>
+                          <button
+                            onClick={() => setLocation("/integrations/cameras")}
+                            className={subItemClass(
+                              location.startsWith("/integrations/cameras")
+                            )}
+                          >
+                            <CameraIcon className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                            Cameras
                           </button>
                         </div>
                       )}

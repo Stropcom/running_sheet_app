@@ -416,6 +416,16 @@ export default function IntegrationsConnectorsPage() {
                         Sensors
                       </Button>
                     )}
+                    {c.connectorType === "CAMERA" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setLocation("/integrations/cameras")}
+                      >
+                        <Camera className="w-3.5 h-3.5 mr-1" />
+                        Cameras
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="outline"

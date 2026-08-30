@@ -13,6 +13,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import axios from "axios";
 import { createPool as createPromisePool } from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt, fingerprintVaultKey } from "./wipcVault";
 import { encryptCredentials, decryptCredentials } from "./connectorVault";
@@ -14832,11 +14833,211 @@ export async function getTrackedAssetById(
   return toTrackedAssetView(row);
 }
 
+// ─── Traccar (real GPS sources) ─────────────────────────────────────────────
+// RunLog talks to Traccar rather than individual tracker protocols — a
+// phone-tracking client, a physical GPS tracker (e.g. Teltonika), or any
+// other Traccar-supported device all normalize to the same Traccar API, so
+// one connector implementation covers all three of the plan's GPS
+// demonstration sources. A connector is Traccar-backed when its
+// configuration is `{ "traccar": true, "baseUrl": "..." }` with
+// `{ "username": "...", "password": "..." }` credentials (HTTP Basic Auth,
+// what Traccar's REST API expects directly, no separate login step needed).
+//
+// Sync is read-driven off listTrackedAssets, same as the GPS simulator —
+// no polling loop, no cron. A connector not configured for Traccar is a
+// no-op here, so this coexists with simulated assets on the exact same
+// tracked_assets table.
+
+interface TraccarConnectorConfig {
+  traccar?: boolean;
+  baseUrl?: string;
+}
+
+function parseTraccarConfig(raw: string | null): TraccarConnectorConfig {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+interface TraccarDevice {
+  id: number;
+  name: string;
+  status: string; // "online" | "offline" | "unknown"
+}
+
+interface TraccarPosition {
+  deviceId: number;
+  latitude: number;
+  longitude: number;
+  altitude?: number;
+  speed?: number;
+  course?: number;
+  accuracy?: number;
+  fixTime: string;
+  attributes?: { batteryLevel?: number; ignition?: boolean };
+}
+
+async function syncTraccarConnector(connectorId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const [connectorRow] = await db
+    .select()
+    .from(connectors)
+    .where(eq(connectors.id, connectorId))
+    .limit(1);
+  if (!connectorRow) return;
+  const config = parseTraccarConfig(connectorRow.configuration);
+  if (!config.traccar || !config.baseUrl) return;
+
+  const credentials = (await getConnectorCredentials(connectorId)) as {
+    username?: string;
+    password?: string;
+  } | null;
+  if (!credentials?.username || !credentials?.password) return;
+  const auth = {
+    username: credentials.username,
+    password: credentials.password,
+  };
+  const baseUrl = config.baseUrl.replace(/\/$/, "");
+
+  let devices: TraccarDevice[];
+  let positions: TraccarPosition[];
+  try {
+    const [devicesRes, positionsRes] = await Promise.all([
+      axios.get<TraccarDevice[]>(`${baseUrl}/api/devices`, {
+        auth,
+        timeout: 10_000,
+      }),
+      axios.get<TraccarPosition[]>(`${baseUrl}/api/positions`, {
+        auth,
+        timeout: 10_000,
+      }),
+    ]);
+    devices = devicesRes.data;
+    positions = positionsRes.data;
+  } catch {
+    await db
+      .update(connectors)
+      .set({ connectionStatus: "ERROR", healthStatus: "DEGRADED" })
+      .where(eq(connectors.id, connectorId));
+    return;
+  }
+
+  await db
+    .update(connectors)
+    .set({
+      connectionStatus: "CONNECTED",
+      healthStatus: "HEALTHY",
+      lastConnectedAt: Date.now(),
+      lastDataReceivedAt: Date.now(),
+    })
+    .where(eq(connectors.id, connectorId));
+
+  const positionByDevice = new Map(positions.map(p => [p.deviceId, p]));
+
+  for (const device of devices) {
+    const externalDeviceId = String(device.id);
+    const [existing] = await db
+      .select()
+      .from(trackedAssets)
+      .where(
+        and(
+          eq(trackedAssets.connectorId, connectorId),
+          eq(trackedAssets.externalDeviceId, externalDeviceId)
+        )
+      )
+      .limit(1);
+
+    const position = positionByDevice.get(device.id);
+    const onlineStatus =
+      device.status === "online"
+        ? "ONLINE"
+        : device.status === "offline"
+          ? "OFFLINE"
+          : "UNKNOWN";
+    const ignitionStatus =
+      position?.attributes?.ignition == null
+        ? null
+        : position.attributes.ignition
+          ? "on"
+          : "off";
+
+    if (!existing) {
+      await db.insert(trackedAssets).values({
+        connectorId,
+        externalDeviceId,
+        name: device.name,
+        assetType: "VEHICLE",
+        latitude: position?.latitude ?? null,
+        longitude: position?.longitude ?? null,
+        altitude: position?.altitude ?? null,
+        speed: position?.speed ?? null,
+        heading: position?.course ?? null,
+        accuracy: position?.accuracy ?? null,
+        batteryLevel: position?.attributes?.batteryLevel ?? null,
+        ignitionStatus,
+        onlineStatus,
+        lastPositionTime: position ? Date.parse(position.fixTime) : null,
+        lastReceivedTime: Date.now(),
+      });
+      continue;
+    }
+
+    const newFixTime = position ? Date.parse(position.fixTime) : null;
+    const isNewPosition =
+      newFixTime != null &&
+      (!existing.lastPositionTime || newFixTime > existing.lastPositionTime);
+
+    await db
+      .update(trackedAssets)
+      .set({
+        name: device.name,
+        onlineStatus,
+        lastReceivedTime: Date.now(),
+        ...(position
+          ? {
+              latitude: position.latitude,
+              longitude: position.longitude,
+              altitude: position.altitude ?? null,
+              speed: position.speed ?? null,
+              heading: position.course ?? null,
+              accuracy: position.accuracy ?? null,
+              batteryLevel: position.attributes?.batteryLevel ?? null,
+              ignitionStatus,
+            }
+          : {}),
+        ...(isNewPosition ? { lastPositionTime: newFixTime } : {}),
+      })
+      .where(eq(trackedAssets.id, existing.id));
+
+    if (isNewPosition && position) {
+      await db.insert(trackedAssetPositions).values({
+        trackedAssetId: existing.id,
+        operationId: existing.operationId,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        altitude: position.altitude ?? null,
+        speed: position.speed ?? null,
+        heading: position.course ?? null,
+        accuracy: position.accuracy ?? null,
+        recordedAt: newFixTime as number,
+      });
+    }
+  }
+}
+
 export async function listTrackedAssets(
   filter: { operationId?: number | null; connectorId?: number | null } = {}
 ): Promise<TrackedAssetView[]> {
   const db = await getDb();
   if (!db) return [];
+  if (filter.connectorId != null) {
+    await syncTraccarConnector(filter.connectorId);
+  }
   const conditions = [isNull(trackedAssets.deletedAt)];
   if (filter.operationId != null)
     conditions.push(eq(trackedAssets.operationId, filter.operationId));
@@ -14849,6 +15050,10 @@ export async function listTrackedAssets(
     .orderBy(desc(trackedAssets.createdAt));
   await advanceSimulatedTrackedAssets(rows);
   return rows.map(toTrackedAssetView);
+}
+
+export async function triggerTraccarSync(connectorId: number): Promise<void> {
+  await syncTraccarConnector(connectorId);
 }
 
 export async function softDeleteTrackedAsset(

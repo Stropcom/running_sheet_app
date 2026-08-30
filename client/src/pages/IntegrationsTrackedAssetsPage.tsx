@@ -30,6 +30,7 @@ import {
   Trash2,
   MapPin,
   Wand2,
+  RefreshCw,
 } from "lucide-react";
 
 type AssetType =
@@ -105,11 +106,25 @@ export default function IntegrationsTrackedAssetsPage() {
   );
 
   const [connectorFilter, setConnectorFilter] = useState<string>("all");
+  const selectedConnector =
+    connectorFilter === "all"
+      ? undefined
+      : gpsConnectors.find(c => String(c.id) === connectorFilter);
+  const isTraccarConnector = selectedConnector?.configuration?.traccar === true;
+
   const { data: assets, isLoading } =
     trpc.integrations.trackedAssets.list.useQuery(
       connectorFilter === "all" ? {} : { connectorId: Number(connectorFilter) },
       { enabled: isAdmin, refetchInterval: 4000 }
     );
+
+  const syncTraccar = trpc.integrations.trackedAssets.syncTraccar.useMutation({
+    onSuccess: () => {
+      toast.success("Synced with Traccar.");
+      utils.integrations.trackedAssets.list.invalidate();
+    },
+    onError: e => toast.error(e.message),
+  });
 
   const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
   const [tailMinutes, setTailMinutes] = useState(0);
@@ -303,17 +318,49 @@ export default function IntegrationsTrackedAssetsPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={openCreate} disabled={gpsConnectors.length === 0}>
-              <Plus className="w-4 h-4 mr-1.5" />
-              New Tracked Asset
-            </Button>
+            {isTraccarConnector ? (
+              <Button
+                variant="outline"
+                disabled={syncTraccar.isPending}
+                onClick={() =>
+                  syncTraccar.mutate({
+                    connectorId: Number(connectorFilter),
+                  })
+                }
+              >
+                <RefreshCw
+                  className={`w-4 h-4 mr-1.5 ${syncTraccar.isPending ? "animate-spin" : ""}`}
+                />
+                Sync Now
+              </Button>
+            ) : (
+              <Button
+                onClick={openCreate}
+                disabled={gpsConnectors.length === 0}
+              >
+                <Plus className="w-4 h-4 mr-1.5" />
+                New Tracked Asset
+              </Button>
+            )}
           </div>
         </div>
 
         {gpsConnectors.length === 0 && (
           <div className="text-center py-4 mb-4 text-sm text-muted-foreground border border-dashed rounded-xl">
             No GPS connectors yet — create one on the Integrations page first
-            (type "GPS", provider e.g. "RunLog GPS Simulator").
+            (type "GPS", provider e.g. "RunLog GPS Simulator", or "Traccar" with
+            configuration <code>{'{"traccar": true, "baseUrl": "..."}'}</code>{" "}
+            and credentials{" "}
+            <code>{'{"username": "...", "password": "..."}'}</code>
+            ).
+          </div>
+        )}
+        {isTraccarConnector && (
+          <div className="text-center py-3 mb-4 text-sm text-muted-foreground border border-dashed rounded-xl">
+            Devices sync automatically from Traccar as they're read (every poll)
+            — no manual creation needed. No live Traccar server exists to verify
+            this against in this build; test it against a real one before
+            trusting it.
           </div>
         )}
 

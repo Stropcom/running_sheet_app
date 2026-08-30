@@ -135,6 +135,9 @@ import {
   SignalSensor,
   signalDetections,
   SignalDetection,
+  cameras,
+  Camera,
+  InsertCamera,
 } from "../drizzle/schema";
 import {
   findPossibleDuplicates,
@@ -15126,4 +15129,165 @@ export async function listDeviceDetectionHistory(
     .where(eq(signalDetections.externalDeviceReference, deviceReference))
     .orderBy(asc(signalDetections.firstDetectedAt))
     .limit(200);
+}
+
+// ─── Cameras ─────────────────────────────────────────────────────────────────
+// See drizzle/schema.ts. RTSP credentials are encrypted via connectorVault
+// (same helpers reused from the connectors table) and never returned to the
+// browser — CameraView strips rtspSourceRef entirely, same pattern as
+// ConnectorView's hasCredentials flag above.
+
+export interface CameraView extends Omit<Camera, "rtspSourceRef"> {
+  hasRtspCredentials: boolean;
+}
+
+function toCameraView(row: Camera): CameraView {
+  const { rtspSourceRef, ...rest } = row;
+  return { ...rest, hasRtspCredentials: !!rtspSourceRef };
+}
+
+export interface UpsertCameraInput {
+  connectorId: number;
+  operationId?: number | null;
+  externalCameraId?: string | null;
+  name: string;
+  manufacturer?: string | null;
+  model?: string | null;
+  locationName?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  description?: string | null;
+  mediaPath?: string | null;
+  webRtcUrl?: string | null;
+  hlsUrl?: string | null;
+  // undefined = leave existing RTSP credentials untouched (update only).
+  rtspCredentials?: Record<string, unknown> | null;
+}
+
+export async function createCamera(data: UpsertCameraInput): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(cameras).values({
+    connectorId: data.connectorId,
+    operationId: data.operationId ?? null,
+    externalCameraId: data.externalCameraId ?? null,
+    name: data.name,
+    manufacturer: data.manufacturer ?? null,
+    model: data.model ?? null,
+    locationName: data.locationName ?? null,
+    latitude: data.latitude ?? null,
+    longitude: data.longitude ?? null,
+    description: data.description ?? null,
+    mediaPath: data.mediaPath ?? null,
+    webRtcUrl: data.webRtcUrl ?? null,
+    hlsUrl: data.hlsUrl ?? null,
+    rtspSourceRef: encryptCredentials(data.rtspCredentials ?? null),
+  });
+  return result.insertId as number;
+}
+
+export async function updateCamera(
+  id: number,
+  data: UpsertCameraInput
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const setValues: Partial<InsertCamera> = {
+    connectorId: data.connectorId,
+    operationId: data.operationId ?? null,
+    externalCameraId: data.externalCameraId ?? null,
+    name: data.name,
+    manufacturer: data.manufacturer ?? null,
+    model: data.model ?? null,
+    locationName: data.locationName ?? null,
+    latitude: data.latitude ?? null,
+    longitude: data.longitude ?? null,
+    description: data.description ?? null,
+    mediaPath: data.mediaPath ?? null,
+    webRtcUrl: data.webRtcUrl ?? null,
+    hlsUrl: data.hlsUrl ?? null,
+  };
+  if (data.rtspCredentials !== undefined) {
+    setValues.rtspSourceRef = encryptCredentials(data.rtspCredentials);
+  }
+  await db.update(cameras).set(setValues).where(eq(cameras.id, id));
+}
+
+export async function getCameraById(
+  id: number
+): Promise<CameraView | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db
+    .select()
+    .from(cameras)
+    .where(and(eq(cameras.id, id), isNull(cameras.deletedAt)))
+    .limit(1);
+  return row ? toCameraView(row) : undefined;
+}
+
+export async function listCameras(
+  connectorId?: number | null
+): Promise<CameraView[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows =
+    connectorId != null
+      ? await db
+          .select()
+          .from(cameras)
+          .where(
+            and(isNull(cameras.deletedAt), eq(cameras.connectorId, connectorId))
+          )
+          .orderBy(desc(cameras.createdAt))
+      : await db
+          .select()
+          .from(cameras)
+          .where(isNull(cameras.deletedAt))
+          .orderBy(desc(cameras.createdAt));
+  return rows.map(toCameraView);
+}
+
+export async function setCameraEnabled(
+  id: number,
+  enabled: boolean
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(cameras)
+    .set({ enabled, status: enabled ? "UNKNOWN" : "OFFLINE" })
+    .where(eq(cameras.id, id));
+}
+
+/**
+ * Phase 4 stub — no live MediaMTX/camera exists anywhere to actually test
+ * reachability against in this build. A later pass replaces this with a
+ * real MediaMTX/RTSP handshake, exactly like connectors' testConnection.
+ */
+export async function recordCameraTestConnection(
+  id: number,
+  ok: boolean
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(cameras)
+    .set({
+      status: ok ? "ONLINE" : "OFFLINE",
+      lastSeen: ok ? Date.now() : undefined,
+    })
+    .where(eq(cameras.id, id));
+}
+
+export async function softDeleteCamera(
+  id: number,
+  deletedByCIN: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(cameras)
+    .set({ deletedAt: Date.now(), deletedByCIN })
+    .where(eq(cameras.id, id));
 }

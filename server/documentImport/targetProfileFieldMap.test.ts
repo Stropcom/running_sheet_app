@@ -415,6 +415,88 @@ describe("mapDocxToTargetProfile", () => {
       bornDate: "03/11/1990",
       confident: true,
     });
+
+    // The same document's "ADDRESS REGISTER" section is a real table with
+    // each sub-label as its own row ([label, address]) rather than one
+    // cell bundling every address under a single "LOCATION OF INTEREST"
+    // label — findAddressRegisterRows' shape.
+    expect(result.addresses).toHaveLength(4);
+    expect(result.addresses[0]).toMatchObject({
+      label: "Current Address",
+      houseNo: "64",
+      streetName: "Matheson",
+      suburb: "APPLECROSS",
+    });
+    expect(result.addresses[1]).toMatchObject({
+      label: "Previous Address",
+      houseNo: "14A",
+      streetName: "Lawler",
+      suburb: "NORTH PERTH",
+    });
+    expect(result.addresses[2]).toMatchObject({
+      label: "Office Address",
+      unitNo: "4",
+      houseNo: "18",
+      streetName: "Riseley",
+      suburb: "ARDROSS",
+    });
+    expect(result.addresses[3]).toMatchObject({
+      label: "Secondary Location",
+      houseNo: "31",
+      streetName: "Division",
+      suburb: "WELSHPOOL",
+    });
+
+    // The document's associates are a real 4-column table ("PERSON /
+    // ENTITY | RELATIONSHIP | LOCATION / VEHICLE | CONTACT / IDENTIFIER")
+    // rather than a dash-separated or vertical-block paragraph —
+    // findAssociateTableRows' shape. Two person rows and two business rows
+    // (no legal suffix on either), each with its address/vehicle pulled
+    // out of the shared detail cell.
+    expect(result.associateBlocks).toHaveLength(4);
+    const tan = result.associateBlocks.find(a => a.surname === "TAN");
+    expect(tan).toMatchObject({ firstNames: "Emily Grace", surname: "TAN" });
+    expect(tan!.address).toMatchObject({ houseNo: "8A", suburb: "MELVILLE" });
+    expect(tan!.vehicle).toMatchObject({ registration: "1EGT221" });
+
+    const donovan = result.associateBlocks.find(a => a.surname === "DONOVAN");
+    expect(donovan!.address).toMatchObject({
+      houseNo: "31",
+      suburb: "WELSHPOOL",
+    });
+    expect(donovan!.vehicle).toMatchObject({ registration: "1MDV730" });
+
+    const blueArc = result.associateBlocks.find(
+      a => a.businessName === "Blue Arc Imports Pty Ltd"
+    );
+    expect(blueArc!.address).toMatchObject({
+      unitNo: "6",
+      houseNo: "73",
+      suburb: "OSBORNE PARK",
+    });
+
+    const northernGate = result.associateBlocks.find(
+      a => a.businessName === "Northern Gate Trading"
+    );
+    expect(northernGate!.address).toMatchObject({
+      houseNo: "19",
+      suburb: "BELLEVUE",
+    });
+
+    // Now that the real associate table is read, TAN/DONOVAN's own bare
+    // narrative mentions (repeated across the case narrative and the
+    // observation log) don't also surface as duplicate low-confidence
+    // candidates.
+    const personCandidates = result.candidateEntities
+      .filter(c => c.type === "person")
+      .map(c => c.value);
+    expect(personCandidates).not.toContain("Emily Grace TAN");
+    expect(personCandidates).not.toContain("Marcus Lee DONOVAN");
+
+    // Regression: "silver Lexus NX wagon" used to read as a bare person
+    // candidate ("Lexus" as a firstname, "NX" as an ALL-CAPS surname) —
+    // same false-positive class as "Mazda CX" found earlier this session.
+    expect(personCandidates).not.toContain("Lexus NX");
   });
 });
 

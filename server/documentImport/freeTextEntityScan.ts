@@ -58,6 +58,34 @@ const PERSON_SURNAME_STOPLIST = new Set([
   "PROMIS",
 ]);
 
+// A vehicle make immediately followed by a short ALL-CAPS trim/model code
+// reads exactly like "Firstname SURNAME" ("Lexus NX", "Mazda CX") — two
+// real false positives found against actual training documents. Checked
+// against just the first word of the firstNames group, so a genuine
+// person whose real first name happens to also be a make elsewhere isn't
+// affected by this list existing.
+const PERSON_FIRSTNAME_STOPLIST = new Set([
+  "Toyota",
+  "Mazda",
+  "Honda",
+  "Nissan",
+  "Ford",
+  "Holden",
+  "Hyundai",
+  "Kia",
+  "Subaru",
+  "Mitsubishi",
+  "Suzuki",
+  "Lexus",
+  "Isuzu",
+  "Volvo",
+  "Renault",
+  "Peugeot",
+  "Skoda",
+  "Chrysler",
+  "Dodge",
+]);
+
 /** "Firstname [Middlename] SURNAME" — one to three genuinely title-case
  * words (capital first letter, lowercase rest — NOT "[A-Z][a-zA-Z]+", which
  * an all-caps word like "WHITE" also satisfies since it starts with a
@@ -114,6 +142,11 @@ const LOOSE_MOBILE_RE = /(?<!\d)0?4\d{8}(?!\d)/g;
 
 function isRejectedSurname(surname: string): boolean {
   return AU_STATES.has(surname) || PERSON_SURNAME_STOPLIST.has(surname);
+}
+
+function isRejectedFirstname(firstNames: string): boolean {
+  const firstWord = firstNames.trim().split(/\s+/)[0] ?? "";
+  return PERSON_FIRSTNAME_STOPLIST.has(firstWord);
 }
 
 // A relationship word instead of (or alongside) "Associates:" — a document
@@ -200,7 +233,7 @@ export function matchWholeLinePersonName(
   const m = stripRelationshipLabel(line).match(WHOLE_LINE_PERSON_RE);
   if (!m) return null;
   const surname = m[2];
-  if (isRejectedSurname(surname)) return null;
+  if (isRejectedSurname(surname) || isRejectedFirstname(m[1])) return null;
   return { firstNames: m[1], surname };
 }
 
@@ -212,7 +245,7 @@ export function findCandidatePersons(text: string): CandidateEntity[] {
   let m: RegExpExecArray | null;
   while ((m = PERSON_RE.exec(text)) !== null) {
     const surname = m[2];
-    if (isRejectedSurname(surname)) continue;
+    if (isRejectedSurname(surname) || isRejectedFirstname(m[1])) continue;
     out.push({
       type: "person",
       value: `${m[1]} ${surname}`,

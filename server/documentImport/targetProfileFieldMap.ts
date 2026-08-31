@@ -323,6 +323,99 @@ function parseAddressBlock(text: string): {
   return { addresses, unparsed };
 }
 
+const ADDRESS_ROW_LABEL_RE = /\b(address|location|site)\b/i;
+
+/** Some documents put their whole address register as a real table — each
+ * row its own (sub-label, address) pair, e.g. a row literally
+ * `["Current Address", "64 Matheson Road, APPLECROSS WA 6153."]` — rather
+ * than bundling every address into one "LOCATION OF INTEREST" cell's text
+ * (parseAddressBlock's shape) or a paragraph section. Detected by the
+ * row's own first cell containing "address"/"location"/"site" — the same
+ * vocabulary parseAddressBlock's inline "Label: value" shape already
+ * recognises — then reconstructed into that exact "Label: value" line
+ * format so both table shapes share one parser rather than needing a
+ * second one. */
+function findAddressRegisterRows(rows: string[][]): string {
+  const lines: string[] = [];
+  for (const row of rows) {
+    if (row.length < 2) continue;
+    const label = row[0].trim();
+    const value = row[1].trim();
+    if (!label || !value || !ADDRESS_ROW_LABEL_RE.test(label)) continue;
+    lines.push(`${label}: ${value}`);
+  }
+  return lines.join("\n");
+}
+
+/** Some documents put their known associates/entities in a real table —
+ * a "PERSON / ENTITY | RELATIONSHIP | LOCATION / VEHICLE | CONTACT /
+ * IDENTIFIER"-style header row, then one row per associate — rather than
+ * a dash-separated or vertical-block paragraph (see findAssociateBlocks/
+ * findDashSeparated*). Detected by header keywords rather than exact
+ * column names, since real documents word these differently. The name
+ * column may hold a person ("Emily Grace TAN" — matched the same way
+ * every other person-shaped name in this file is) or a business/place
+ * with no such shape ("Blue Arc Imports Pty Ltd") — businessName takes
+ * its place, same convention as findDashSeparatedBusinesses. The detail
+ * column can bundle an address AND a vehicle on separate lines within the
+ * one cell; relationship/contact columns have no field to carry them, so
+ * — same "only keep what has somewhere to go" rule every matcher here
+ * follows — they're simply never claimed. */
+function findAssociateTableRows(
+  tables: DocxReadResult["tables"]
+): FreeTextAssociate[] {
+  const out: FreeTextAssociate[] = [];
+  for (const table of tables) {
+    if (table.rows.length < 2) continue;
+    const header = table.rows[0];
+    const nameColIdx = header.findIndex(c =>
+      /PERSON|ENTITY|ASSOCIATE/i.test(c)
+    );
+    const detailColIdx = header.findIndex(c =>
+      /LOCATION|ADDRESS|VEHICLE/i.test(c)
+    );
+    if (nameColIdx === -1 || detailColIdx === -1) continue;
+
+    for (let i = 1; i < table.rows.length; i++) {
+      const row = table.rows[i];
+      const nameCell = (row[nameColIdx] ?? "").trim();
+      if (!nameCell) continue;
+
+      let address: ParsedAddressLine | null = null;
+      let vehicle: ParsedVehicleLine | null = null;
+      for (const line of (row[detailColIdx] ?? "").split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (!address) {
+          address = parseAddressLine(trimmed) ?? parseAddressLineLoose(trimmed);
+        }
+        if (!vehicle) vehicle = parseVehicleLine(trimmed);
+      }
+      if (!address && !vehicle) continue;
+
+      const person = matchWholeLinePersonName(nameCell);
+      out.push(
+        person
+          ? {
+              firstNames: person.firstNames,
+              surname: person.surname,
+              businessName: "",
+              address,
+              vehicle,
+            }
+          : {
+              firstNames: "",
+              surname: "",
+              businessName: nameCell,
+              address,
+              vehicle,
+            }
+      );
+    }
+  }
+  return out;
+}
+
 /** Scans free text for a name sitting on its own line, immediately
  * followed (within the next couple of lines) by that person's address
  * and/or vehicle — the shape a target profile document uses for an
@@ -685,6 +778,9 @@ export function mapDocxToTargetProfile(
       LOCATION_HEADING_RE
     );
   }
+  if (!locationValue) {
+    locationValue = findAddressRegisterRows(rows);
+  }
   let { addresses, unparsed: unparsedAddresses } =
     parseAddressBlock(locationValue);
 
@@ -743,6 +839,7 @@ export function mapDocxToTargetProfile(
   // costs nothing when only one shape is actually present.
   const associateBlocks = dedupeBy(
     [
+      ...findAssociateTableRows(result.tables),
       ...findAssociateBlocks(freeText),
       ...findDashSeparatedAssociates(freeText),
       ...findDashSeparatedBusinesses(freeText),

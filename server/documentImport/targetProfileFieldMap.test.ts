@@ -16,6 +16,10 @@ const ECHOPOINT_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-training-echopoint.docx"
 );
+const LANTERN_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-training-lantern.docx"
+);
 
 describe("mapDocxToTargetProfile", () => {
   it("maps the real training document end-to-end", async () => {
@@ -258,7 +262,7 @@ describe("mapDocxToTargetProfile", () => {
     // Associates written as one dense paragraph each ("Name - address.
     // Vehicle: X. Mobile: Y. Email: Z.") rather than a vertical block —
     // both still resolve to a full name+address+vehicle record.
-    expect(result.associateBlocks).toHaveLength(3);
+    expect(result.associateBlocks).toHaveLength(5);
     expect(result.associateBlocks[0]).toMatchObject({
       firstNames: "Benjamin Cole",
       surname: "WATTS",
@@ -305,6 +309,32 @@ describe("mapDocxToTargetProfile", () => {
       suburb: "O'CONNOR",
     });
 
+    // Two more businesses in the same section, written under their plain
+    // trading name with no legal suffix at all — findDashSeparatedEntities'
+    // last-resort fallback, tried only once neither the person shape nor
+    // the suffixed-business shape matched.
+    expect(result.associateBlocks[3]).toMatchObject({
+      firstNames: "",
+      surname: "",
+      businessName: "West Coast Device Supply",
+    });
+    expect(result.associateBlocks[3].address).toMatchObject({
+      houseNo: "220",
+      unitNo: "3",
+      streetName: "Albany",
+      suburb: "VICTORIA PARK",
+    });
+    expect(result.associateBlocks[4]).toMatchObject({
+      firstNames: "",
+      surname: "",
+      businessName: "Harbourline Rentals",
+    });
+    expect(result.associateBlocks[4].address).toMatchObject({
+      houseNo: "12",
+      streetName: "Queen Victoria",
+      suburb: "FREMANTLE",
+    });
+
     // Nothing silently lost — every vehicle/address the document clearly
     // meant either parsed cleanly or would have shown up here.
     expect(result.needsReview).toEqual([]);
@@ -315,6 +345,46 @@ describe("mapDocxToTargetProfile", () => {
       .filter(c => c.type === "person")
       .map(c => c.value);
     expect(personValues).not.toContain("Aisha Noor RAHMAN");
+  });
+
+  // Regression: a third real training document (LANTERN) uses "SUBJECT" as
+  // the table label for the person's name/DOB row instead of "NAME" — the
+  // subject was silently dropped entirely (both the table lookup and the
+  // paragraph-heading fallback only recognised "NAME"). It also has a
+  // business associate written under its plain trading name, with no
+  // "Pty Ltd"/"Ltd"/... suffix at all ("Westline Freight Solutions"),
+  // unlike the ECHOPOINT fixture's suffixed "Echo Point Technology Pty
+  // Ltd" — findDashSeparatedBusinesses' required suffix meant this business
+  // matched neither the person shape nor the business shape and vanished
+  // entirely.
+  it("maps a document using SUBJECT (not NAME) for the subject, and a business associate with no legal suffix", async () => {
+    const buffer = readFileSync(LANTERN_FIXTURE_PATH);
+    const read = await readDocxTables(buffer);
+    const result = mapDocxToTargetProfile(read);
+
+    expect(result.name).toMatchObject({
+      firstNames: "Mia Elizabeth",
+      surname: "HART",
+      bornDate: "14/02/1986",
+      confident: true,
+    });
+
+    const westline = result.associateBlocks.find(
+      a => a.businessName === "Westline Freight Solutions"
+    );
+    expect(westline).toBeDefined();
+    expect(westline!.address).toMatchObject({
+      houseNo: "5",
+      streetName: "Kewdale",
+      suburb: "KEWDALE",
+    });
+
+    // The suffixed business from the same section still resolves too — the
+    // new no-suffix fallback doesn't come at the cost of the existing shape.
+    const pacificRoute = result.associateBlocks.find(
+      a => a.businessName === "Pacific Route Services Pty Ltd"
+    );
+    expect(pacificRoute).toBeDefined();
   });
 });
 

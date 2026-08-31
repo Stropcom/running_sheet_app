@@ -476,6 +476,55 @@ function findDashSeparatedBusinesses(text: string): FreeTextAssociate[] {
   return out;
 }
 
+// Deliberately looser than DASH_BUSINESS_RE — no required legal suffix —
+// since a real business is just as often written under its plain trading
+// name ("Westline Freight Solutions") as its registered one ("... Pty
+// Ltd"). Anchored to the start of the line, one associate per line by this
+// section's own convention, so it can't reach backward across unrelated
+// text the way a scan across a whole paragraph could.
+const DASH_ENTITY_RE =
+  /^([A-Z][A-Za-z0-9&'.]*(?:\s+[A-Za-z0-9&'.]+){0,5})\s*[-–]\s*(.+)$/;
+
+/** Last-resort dash-separated shape, tried only once both
+ * findDashSeparatedAssociates (needs a trailing ALL-CAPS surname) and
+ * findDashSeparatedBusinesses (needs a Pty Ltd/Ltd/Inc/... suffix) have
+ * already failed on a line — see DASH_ENTITY_RE. A title-case run with no
+ * ALL-CAPS surname is never a person under this document family's own
+ * naming convention, so whatever this catches is treated as a
+ * business/place associate — businessName, same as
+ * findDashSeparatedBusinesses. Only claims a line whose remainder actually
+ * yields a real address or vehicle, same "only claim what it can attach
+ * something concrete to" rule every matcher in this file follows — a
+ * title-case phrase followed by an unrelated dash-joined sentence is left
+ * alone. */
+function findDashSeparatedEntities(text: string): FreeTextAssociate[] {
+  const out: FreeTextAssociate[] = [];
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (DASH_ASSOCIATE_RE.test(line) || DASH_BUSINESS_RE.test(line)) continue;
+    const m = line.match(DASH_ENTITY_RE);
+    if (!m) continue;
+    const businessName = m[1].trim();
+
+    let address: ParsedAddressLine | null = null;
+    let vehicle: ParsedVehicleLine | null = null;
+    for (const sentence of splitIntoSentences(m[2])) {
+      if (!address) {
+        address = parseAddressLine(sentence) ?? parseAddressLineLoose(sentence);
+      }
+      if (!vehicle) {
+        vehicle = parseVehicleLine(sentence);
+      }
+    }
+
+    if (address || vehicle) {
+      out.push({ firstNames: "", surname: "", businessName, address, vehicle });
+    }
+  }
+  return out;
+}
+
 const STATE_BRACKET_RE = /\(\s*(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s*\)/g;
 
 /** Two distinct ways a VEHICLES cell can lose a vehicle entirely rather
@@ -572,7 +621,12 @@ export function mapDocxToTargetProfile(
   const rows = result.tables.flatMap(t => t.rows);
   const paragraphSections = findAllParagraphSections(result);
 
-  const nameValue = findLabelledValue(rows, "NAME");
+  // A real training document ("LANTERN") uses "SUBJECT" as the table label
+  // for the person's name instead of "NAME" — same field, different word.
+  // Tried second so a document that genuinely has both keeps "NAME" as the
+  // authoritative one.
+  const nameValue =
+    findLabelledValue(rows, "NAME") ?? findLabelledValue(rows, "SUBJECT");
   const dobValue = findLabelledValue(rows, "DOB") ?? "";
   let name: ParsedPersonName | null = null;
   if (nameValue) {
@@ -667,6 +721,7 @@ export function mapDocxToTargetProfile(
       ...findAssociateBlocks(freeText),
       ...findDashSeparatedAssociates(freeText),
       ...findDashSeparatedBusinesses(freeText),
+      ...findDashSeparatedEntities(freeText),
     ],
     a => a.businessName || `${a.firstNames} ${a.surname}`
   );

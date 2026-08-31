@@ -20,6 +20,10 @@ const LANTERN_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-training-lantern.docx"
 );
+const QUARRY_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-training-quarry.docx"
+);
 
 describe("mapDocxToTargetProfile", () => {
   it("maps the real training document end-to-end", async () => {
@@ -385,6 +389,32 @@ describe("mapDocxToTargetProfile", () => {
       a => a.businessName === "Pacific Route Services Pty Ltd"
     );
     expect(pacificRoute).toBeDefined();
+  });
+
+  // Regression: a fourth real training document (QUARRY) bundles its whole
+  // subject card into a single table cell — "Target\nOliver James BISHOP\n
+  // DOB: 03/11/1990\nCOB: United Kingdom\nRole: Finance facilitator" — a
+  // shape not seen in the other three fixtures. Two compounding bugs hid
+  // the subject entirely: isHeadingLine didn't recognise a bare "Target"
+  // line as a heading (it isn't ALL-CAPS like every other heading in this
+  // document family), and even once it did, "DOB: 03/11/1990" was itself
+  // misread as a second heading (no lowercase letters, so it passed the
+  // ALL-CAPS rule), splitting the section apart right after the name.
+  // Separately, findSubjectFromParagraphs gave up entirely at the first
+  // SUBJECT-matching heading it found — this document's own title line,
+  // "PERSON OF INTEREST PROFILE - TRAINING DATA", which has no lines under
+  // it — instead of trying the real "Target" section further down.
+  it("maps a document whose subject card is bundled into one table cell under a bare 'Target' heading", async () => {
+    const buffer = readFileSync(QUARRY_FIXTURE_PATH);
+    const read = await readDocxTables(buffer);
+    const result = mapDocxToTargetProfile(read);
+
+    expect(result.name).toMatchObject({
+      firstNames: "Oliver James",
+      surname: "BISHOP",
+      bornDate: "03/11/1990",
+      confident: true,
+    });
   });
 });
 

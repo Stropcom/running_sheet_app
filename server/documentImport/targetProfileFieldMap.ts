@@ -183,6 +183,22 @@ function isHeadingLine(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed || trimmed.length > 70) return false;
   if (/^\d+[.)]\s*\S/.test(trimmed)) return true;
+  // A bare "Target"/"Subject" line is a real heading in some document
+  // families even though it isn't ALL-CAPS like every other heading here
+  // — e.g. a real training document (QUARRY) bundles the whole subject
+  // card into one table cell as "Target\nOliver James BISHOP\nDOB: ...".
+  // Matched by exact word rather than loosening the general ALL-CAPS rule
+  // below, which would risk misreading an ordinary Title Case sentence
+  // fragment elsewhere as a heading.
+  if (/^(target|subject|person of interest)$/i.test(trimmed)) return true;
+  // A "Label: value" content line (a DOB, an ID number, a phone) is never
+  // a heading, even when the value itself happens to contain no lowercase
+  // letters (a date, a numeric ID) — without this, "DOB: 03/11/1990" or
+  // "PROMIS ID: 9084417" reads as a heading under the ALL-CAPS rule below,
+  // splitting a real section (e.g. the "Target" subject card above) apart
+  // right after its first line. None of this document family's actual
+  // headings use a colon.
+  if (trimmed.includes(":")) return false;
   if (/[a-z]/.test(trimmed)) return false;
   if (/[.!?]$/.test(trimmed)) return false;
   return /[A-Z]/.test(trimmed);
@@ -580,18 +596,27 @@ const LOCATION_HEADING_RE = /LOCATIONS?\s+OF\s+INTEREST|^ADDRESSES?\b/i;
 function findSubjectFromParagraphs(
   sections: ParagraphSection[]
 ): ParsedPersonName | null {
-  const section = sections.find(s => SUBJECT_HEADING_RE.test(s.heading));
-  if (!section) return null;
-  for (const line of section.lines) {
-    const person = matchWholeLinePersonName(line);
-    if (!person) continue;
-    const dobMatch = section.lines.join("\n").match(DOB_RE);
-    return {
-      firstNames: person.firstNames,
-      surname: person.surname,
-      bornDate: dobMatch ? dobMatch[1] : "",
-      confident: !!(person.firstNames && person.surname),
-    };
+  // More than one section heading can match SUBJECT_HEADING_RE — a
+  // document's own title line ("PERSON OF INTEREST PROFILE - TRAINING
+  // DATA") matches just as well as a real "Target"/"Subject" card heading
+  // further down, but carries no lines under it. Try every match in order
+  // rather than stopping at the first (a real training document — QUARRY —
+  // has exactly this: the title comes first, empty, and the real subject
+  // card is a later section).
+  for (const section of sections.filter(s =>
+    SUBJECT_HEADING_RE.test(s.heading)
+  )) {
+    for (const line of section.lines) {
+      const person = matchWholeLinePersonName(line);
+      if (!person) continue;
+      const dobMatch = section.lines.join("\n").match(DOB_RE);
+      return {
+        firstNames: person.firstNames,
+        surname: person.surname,
+        bornDate: dobMatch ? dobMatch[1] : "",
+        confident: !!(person.firstNames && person.surname),
+      };
+    }
   }
   return null;
 }

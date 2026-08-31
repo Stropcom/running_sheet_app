@@ -27,6 +27,7 @@ import {
   type IntelAssocEntity,
 } from "@/components/IntelEntityChip";
 import { IndicesBadge } from "@/components/IndicesBadge";
+import type { DocumentImportPrefill } from "@/components/ImportTargetDocumentDialog";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
@@ -394,6 +395,20 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
   const [expandedBackgrounds, setExpandedBackgrounds] = useState<
     Record<number, boolean>
   >({});
+  const [expandedBackgroundHistory, setExpandedBackgroundHistory] = useState<
+    Record<number, boolean>
+  >({});
+  // Every document import for this target, across all its operations — one
+  // query backs every operation's background panel below rather than one
+  // query per operation (which would violate the rules of hooks inside the
+  // .map() that renders them). Only the previous entries (all but the
+  // latest, which operationTargetLinks.background already shows above) are
+  // used, so this is purely "N earlier versions" history.
+  const { data: documentImports } =
+    trpc.target.registry.documentImportsForTarget.useQuery(
+      { targetId },
+      { enabled: targetId > 0 }
+    );
   const { data: photosData } = trpc.attachment.byEntity.useQuery(
     { category: "target", targetId },
     { enabled: targetId > 0 }
@@ -591,6 +606,15 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
             .filter(op => op.background?.trim())
             .map(op => {
               const expanded = expandedBackgrounds[op.id] ?? false;
+              const historyOpen = expandedBackgroundHistory[op.id] ?? false;
+              // All imports recorded for this (target, operation) — the last
+              // one is what operationTargetLinks.background already shows
+              // above (it's kept in sync on every import), so only the
+              // earlier ones are "history" here.
+              const versionsForOp = (documentImports ?? []).filter(
+                (i: any) => i.operationId === op.id
+              );
+              const earlierVersions = versionsForOp.slice(0, -1);
               return (
                 <div
                   key={`background-${op.id}`}
@@ -613,9 +637,67 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                     />
                   </button>
                   {expanded && (
-                    <p className="text-sm text-foreground whitespace-pre-wrap mt-3 pt-3 border-t border-border/50">
-                      {op.background}
-                    </p>
+                    <>
+                      <p className="text-sm text-foreground whitespace-pre-wrap mt-3 pt-3 border-t border-border/50">
+                        {op.background}
+                      </p>
+                      {earlierVersions.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-border/50">
+                          <button
+                            onClick={() =>
+                              setExpandedBackgroundHistory(prev => ({
+                                ...prev,
+                                [op.id]: !historyOpen,
+                              }))
+                            }
+                            className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                          >
+                            {historyOpen ? "Hide" : "Show"}{" "}
+                            {earlierVersions.length} earlier version
+                            {earlierVersions.length !== 1 ? "s" : ""}
+                          </button>
+                          {historyOpen && (
+                            <div className="mt-2 space-y-2">
+                              {earlierVersions
+                                .slice()
+                                .reverse()
+                                .map((imp: any, idx: number) => {
+                                  let snapshot: DocumentImportPrefill | null =
+                                    null;
+                                  try {
+                                    snapshot = JSON.parse(imp.snapshotJson);
+                                  } catch {
+                                    snapshot = null;
+                                  }
+                                  const text =
+                                    snapshot?.background?.trim() ?? "";
+                                  if (!text) return null;
+                                  return (
+                                    <div
+                                      key={imp.id}
+                                      className="rounded-lg border border-border/40 bg-muted/20 p-2.5"
+                                    >
+                                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">
+                                        Version {earlierVersions.length - idx} —{" "}
+                                        {new Date(
+                                          imp.uploadedAt
+                                        ).toLocaleDateString("en-AU", {
+                                          day: "2-digit",
+                                          month: "short",
+                                          year: "numeric",
+                                        })}
+                                      </p>
+                                      <p className="text-xs text-foreground whitespace-pre-wrap">
+                                        {text}
+                                      </p>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               );

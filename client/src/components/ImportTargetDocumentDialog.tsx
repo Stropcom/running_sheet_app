@@ -79,6 +79,11 @@ export interface DocumentImportPrefill {
   /** The document's free-text narrative, verbatim — carried through to
    * AddTargetDialog as the new target's "{Operation name} background". */
   background: string;
+  /** The uploaded file's own name — shown on the Operation/Target profile's
+   * imported-document panels so an officer can tell which document a
+   * version came from. Not the file itself; the document is never stored,
+   * see the parseDocx procedure's comment. */
+  sourceFileName: string;
 }
 
 interface PossibleMatch {
@@ -465,6 +470,7 @@ export function ImportTargetDocumentDialog({
         ],
         associates,
         background: result.freeText.trim(),
+        sourceFileName: fileName,
       });
       reset();
     } finally {

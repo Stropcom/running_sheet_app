@@ -77,6 +77,8 @@ import {
   InsertTarget,
   targetFieldHistory,
   InsertTargetFieldHistory,
+  targetDocumentImports,
+  InsertTargetDocumentImport,
   associates,
   InsertAssociate,
   users,
@@ -3150,7 +3152,14 @@ export async function createRegistryTarget(
   return { id: (result as any).insertId as number };
 }
 
-/** Link a target to an operation (idempotent) */
+/** Link a target to an operation (idempotent). When the link already exists
+ * and a non-empty `background` is supplied — a later document import for a
+ * target already linked to this operation — keep the link's background
+ * current instead of silently dropping it. This column is only ever "the
+ * latest" narrative for the Target profile's background panel; the full
+ * version history lives in targetDocumentImports (see
+ * recordTargetDocumentImport), which is written alongside this by every
+ * import call site. */
 export async function linkTargetToOperation(
   targetId: number,
   operationId: number,
@@ -3172,7 +3181,85 @@ export async function linkTargetToOperation(
     await db
       .insert(operationTargetLinks)
       .values({ targetId, operationId, background: background || null });
+  } else if (background) {
+    await db
+      .update(operationTargetLinks)
+      .set({ background })
+      .where(eq(operationTargetLinks.id, existing.id));
   }
+}
+
+/** Records one uploaded target-profile document, verbatim as parsed and
+ * confirmed by the officer — see targetDocumentImports in schema.ts. Called
+ * alongside linkTargetToOperation by every save path that can originate from
+ * "Import from Document" (create, createLinkedFromAssociate,
+ * mergeFieldDetails) whenever the client actually sent a snapshot. */
+export async function recordTargetDocumentImport(data: {
+  targetId: number;
+  operationId: number;
+  uploadedByCIN: string | null;
+  snapshotJson: string;
+  sourceFileName?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.insert(targetDocumentImports).values({
+    targetId: data.targetId,
+    operationId: data.operationId,
+    uploadedByCIN: data.uploadedByCIN,
+    snapshotJson: data.snapshotJson,
+    sourceFileName: data.sourceFileName || null,
+  });
+}
+
+/** Every document import recorded against an operation, across all its
+ * targets, oldest first — backs the Operation profile's "Imported Documents"
+ * panel. */
+export async function listTargetDocumentImportsForOperation(
+  operationId: number
+) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select({
+      id: targetDocumentImports.id,
+      targetId: targetDocumentImports.targetId,
+      targetName: targets.name,
+      operationId: targetDocumentImports.operationId,
+      uploadedByCIN: targetDocumentImports.uploadedByCIN,
+      uploadedAt: targetDocumentImports.uploadedAt,
+      sourceFileName: targetDocumentImports.sourceFileName,
+      snapshotJson: targetDocumentImports.snapshotJson,
+    })
+    .from(targetDocumentImports)
+    .leftJoin(targets, eq(targetDocumentImports.targetId, targets.id))
+    .where(eq(targetDocumentImports.operationId, operationId))
+    .orderBy(asc(targetDocumentImports.uploadedAt));
+}
+
+/** Every document import recorded for one target, oldest first — across all
+ * the operations it's linked to when `operationId` is omitted (one query
+ * backs the whole Target profile, which lists a background panel per
+ * operation, rather than one query per operation), or scoped to just one
+ * when given. Backs the Target profile background panel's version history. */
+export async function listTargetDocumentImportsForTarget(
+  targetId: number,
+  operationId?: number
+) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(targetDocumentImports)
+    .where(
+      operationId !== undefined
+        ? and(
+            eq(targetDocumentImports.targetId, targetId),
+            eq(targetDocumentImports.operationId, operationId)
+          )
+        : eq(targetDocumentImports.targetId, targetId)
+    )
+    .orderBy(asc(targetDocumentImports.uploadedAt));
 }
 
 /**

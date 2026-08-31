@@ -2183,6 +2183,7 @@ export default function TargetRegistryPage() {
         initialExtraVehicles={importPrefill?.extraVehicles}
         initialAssociates={importPrefill?.associates}
         initialBackground={importPrefill?.background}
+        initialDocumentSnapshot={importPrefill}
       />
 
       {/* Import from Document dialog */}

@@ -209,6 +209,9 @@ import {
   updateAssociate,
   softDeleteAssociate,
   linkTargetToOperation,
+  recordTargetDocumentImport,
+  listTargetDocumentImportsForOperation,
+  listTargetDocumentImportsForTarget,
   unlinkTargetFromOperation,
   ensureTargetFullyLinked,
   getLinkedOperationsForTarget,
@@ -2757,16 +2760,39 @@ export const appRouter = router({
             // from a document import — stored on the (target, operation)
             // link as its "{Operation name} background".
             background: z.string().optional().nullable(),
+            // The full parsed document snapshot (name/addresses/vehicles/
+            // associates/background), verbatim as the officer reviewed it —
+            // present only when this save came from "Import from Document".
+            // Recorded as its own version, alongside the background above,
+            // rather than folded into the target's live fields. See
+            // targetDocumentImports in schema.ts.
+            documentSnapshotJson: z.string().optional().nullable(),
+            documentSourceFileName: z.string().optional().nullable(),
             ...structuredTargetFieldsSchema,
           })
         )
         .mutation(async ({ input, ctx }) => {
-          const { linkToOperationId, background, ...data } = input;
+          const {
+            linkToOperationId,
+            background,
+            documentSnapshotJson,
+            documentSourceFileName,
+            ...data
+          } = input;
           const result = await createRegistryTarget({
             ...data,
             createdBy: ctx.user.id,
           });
           await linkTargetToOperation(result.id, linkToOperationId, background);
+          if (documentSnapshotJson) {
+            await recordTargetDocumentImport({
+              targetId: result.id,
+              operationId: linkToOperationId,
+              uploadedByCIN: ctx.user.cin ?? null,
+              snapshotJson: documentSnapshotJson,
+              sourceFileName: documentSourceFileName,
+            });
+          }
           return result;
         }),
 
@@ -2797,6 +2823,9 @@ export const appRouter = router({
             // from a document import — stored on the (target, operation)
             // link as its "{Operation name} background".
             background: z.string().optional().nullable(),
+            // See target.registry.create's documentSnapshotJson.
+            documentSnapshotJson: z.string().optional().nullable(),
+            documentSourceFileName: z.string().optional().nullable(),
             existingAssociateId: z.number(),
             ...structuredTargetFieldsSchema,
           })
@@ -2805,6 +2834,8 @@ export const appRouter = router({
           const {
             linkToOperationId,
             background,
+            documentSnapshotJson,
+            documentSourceFileName,
             existingAssociateId,
             ...data
           } = input;
@@ -2813,6 +2844,15 @@ export const appRouter = router({
             existingAssociateId
           );
           await linkTargetToOperation(result.id, linkToOperationId, background);
+          if (documentSnapshotJson) {
+            await recordTargetDocumentImport({
+              targetId: result.id,
+              operationId: linkToOperationId,
+              uploadedByCIN: ctx.user.cin ?? null,
+              snapshotJson: documentSnapshotJson,
+              sourceFileName: documentSourceFileName,
+            });
+          }
           return result;
         }),
 
@@ -2986,6 +3026,9 @@ export const appRouter = router({
             // a document import — stored on the (target, operation) link
             // the same way a plain create would.
             background: z.string().optional().nullable(),
+            // See target.registry.create's documentSnapshotJson.
+            documentSnapshotJson: z.string().optional().nullable(),
+            documentSourceFileName: z.string().optional().nullable(),
           })
         )
         .mutation(async ({ input, ctx }) => {
@@ -3002,6 +3045,15 @@ export const appRouter = router({
             input.linkToOperationId,
             input.background
           );
+          if (input.documentSnapshotJson) {
+            await recordTargetDocumentImport({
+              targetId: input.targetId,
+              operationId: input.linkToOperationId,
+              uploadedByCIN: ctx.user.cin ?? null,
+              snapshotJson: input.documentSnapshotJson,
+              sourceFileName: input.documentSourceFileName,
+            });
+          }
           return result;
         }),
 
@@ -3010,6 +3062,29 @@ export const appRouter = router({
         .input(z.object({ targetId: z.number() }))
         .query(async ({ input }) => {
           return getTargetFieldHistory(input.targetId);
+        }),
+
+      /** Every document import recorded against one operation, across all
+       * its targets — backs the Operation profile's "Imported Documents"
+       * panel. */
+      documentImportsForOperation: protectedProcedure
+        .input(z.object({ operationId: z.number() }))
+        .query(async ({ input }) => {
+          return listTargetDocumentImportsForOperation(input.operationId);
+        }),
+
+      /** Every document import recorded for one target — across all its
+       * operations when operationId is omitted, or scoped to one when given.
+       * Backs the Target profile background panel's version history. */
+      documentImportsForTarget: protectedProcedure
+        .input(
+          z.object({ targetId: z.number(), operationId: z.number().optional() })
+        )
+        .query(async ({ input }) => {
+          return listTargetDocumentImportsForTarget(
+            input.targetId,
+            input.operationId
+          );
         }),
 
       /** Parses an uploaded .docx target-profile document into a proposed

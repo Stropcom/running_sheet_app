@@ -61,6 +61,7 @@ import {
 } from "@/components/PossibleDuplicateAlert";
 import { runDuplicateChecks } from "@/lib/duplicateCheck";
 import { OperationPicker } from "@/components/OperationPicker";
+import type { DocumentImportPrefill } from "@/components/ImportTargetDocumentDialog";
 
 // Referenced only for the merge dialog's incoming.wildFields shape — Wild
 // Fields is deprecated app-wide, this dialog never collects one, but the
@@ -76,6 +77,12 @@ export interface RegistryCreatePayload {
    * "{Operation name} background", read-only, shown on the Target profile.
    * Null for a manually-added target, or an import with no narrative. */
   background: string | null;
+  /** The full parsed document snapshot, verbatim as the officer reviewed it
+   * on the import review screen — present only when this save came from
+   * "Import from Document". Recorded as its own version alongside
+   * `background` above; see targetDocumentImports in schema.ts. */
+  documentSnapshotJson: string | null;
+  documentSourceFileName: string | null;
   name: string;
   tgt: string | null;
   hbf: string | null;
@@ -133,6 +140,7 @@ export function AddTargetDialog({
   initialExtraVehicles,
   initialAssociates,
   initialBackground,
+  initialDocumentSnapshot,
 }: {
   open: boolean;
   onClose: () => void;
@@ -165,6 +173,13 @@ export function AddTargetDialog({
    * .background), same one-time-seed treatment as the other initial* import
    * fields. */
   initialBackground?: string;
+  /** The full prefill this dialog was opened with, when it came from a
+   * document import — recorded verbatim alongside the target on save (see
+   * RegistryCreatePayload.documentSnapshotJson) rather than re-derived from
+   * whatever the officer edits into the form fields below. Same one-time-
+   * seed treatment as the other initial* import fields: read once, not
+   * kept in sync with later edits in this dialog. */
+  initialDocumentSnapshot?: DocumentImportPrefill | null;
 }) {
   const [operation, setOperation] = useState<{
     id: number;
@@ -246,6 +261,10 @@ export function AddTargetDialog({
     return {
       linkToOperationId: operation!.id,
       background: initialBackground?.trim() || null,
+      documentSnapshotJson: initialDocumentSnapshot
+        ? JSON.stringify(initialDocumentSnapshot)
+        : null,
+      documentSourceFileName: initialDocumentSnapshot?.sourceFileName || null,
       name,
       tgt: tgt || null,
       hbf: hbf || null,
@@ -378,6 +397,10 @@ export function AddTargetDialog({
   }): RegistryCreatePayload => ({
     linkToOperationId: operation!.id,
     background: initialBackground?.trim() || null,
+    documentSnapshotJson: initialDocumentSnapshot
+      ? JSON.stringify(initialDocumentSnapshot)
+      : null,
+    documentSourceFileName: initialDocumentSnapshot?.sourceFileName || null,
     name: associate.name,
     tgt: associate.tgt,
     hbf: associate.hbf,
@@ -894,6 +917,14 @@ export function AddTargetDialog({
           incoming={mergeIncoming()}
           linkToOperationId={operation!.id}
           background={initialBackground?.trim() || null}
+          documentSnapshotJson={
+            initialDocumentSnapshot
+              ? JSON.stringify(initialDocumentSnapshot)
+              : null
+          }
+          documentSourceFileName={
+            initialDocumentSnapshot?.sourceFileName || null
+          }
           onMerged={() => {
             utils.target.registry.list.invalidate();
             resetAndClose();

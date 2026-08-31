@@ -101,6 +101,11 @@ interface Props {
    * document import — saved against the (existing target, this operation)
    * link the same way a plain create would. */
   background: string | null;
+  /** The full parsed document snapshot, if this merge came from a document
+   * import — recorded as its own version alongside `background` above. See
+   * AddTargetDialog's RegistryCreatePayload.documentSnapshotJson. */
+  documentSnapshotJson: string | null;
+  documentSourceFileName: string | null;
 }
 
 function parseJsonArray<T>(json: string | null | undefined): T[] {
@@ -120,6 +125,8 @@ export function TargetMergeDialog({
   onMerged,
   linkToOperationId,
   background,
+  documentSnapshotJson,
+  documentSourceFileName,
 }: Props) {
   const mergeMutation = trpc.target.registry.mergeFieldDetails.useMutation();
   const [selections, setSelections] = useState<
@@ -217,6 +224,8 @@ export function TargetMergeDialog({
         appendExtraAddresses: newExtraAddresses,
         linkToOperationId,
         background,
+        documentSnapshotJson,
+        documentSourceFileName,
       });
       toast.success(`Merged into existing target "${existing.name}"`);
       onMerged(existing.id);

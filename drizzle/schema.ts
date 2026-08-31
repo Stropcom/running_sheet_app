@@ -580,6 +580,32 @@ export type OperationTargetLink = typeof operationTargetLinks.$inferSelect;
 export type InsertOperationTargetLink =
   typeof operationTargetLinks.$inferInsert;
 
+// ─── Target Document Imports ─────────────────────────────────────────────────
+// One row per document uploaded via "Import from Document" that was actually
+// saved (create or merge-into-existing) — the full parsed snapshot (name,
+// addresses, vehicles, associates, background) exactly as the officer
+// reviewed and confirmed it, never re-derived from the target's live fields
+// (which may since have been edited). A target can be re-imported for the
+// same operation, so this is append-only — each import is its own row,
+// giving a natural version history (see snapshotJson for the full shape,
+// matching client/src/components/ImportTargetDocumentDialog.tsx's
+// DocumentImportPrefill). Read by both the Target profile (its background
+// panel) and the Operation profile (its "Imported Documents" panel).
+
+export const targetDocumentImports = mysqlTable("target_document_imports", {
+  id: int("id").autoincrement().primaryKey(),
+  targetId: int("targetId").notNull(),
+  operationId: int("operationId").notNull(),
+  uploadedByCIN: varchar("uploadedByCIN", { length: 64 }),
+  uploadedAt: timestamp("uploadedAt").defaultNow().notNull(),
+  sourceFileName: varchar("sourceFileName", { length: 255 }),
+  snapshotJson: text("snapshotJson").notNull(),
+});
+
+export type TargetDocumentImport = typeof targetDocumentImports.$inferSelect;
+export type InsertTargetDocumentImport =
+  typeof targetDocumentImports.$inferInsert;
+
 // ─── Observation Shortcuts ──────────────────────────────────────────────────
 // Global list of text shortcuts for the observation field.
 // When a user types the trigger word followed by a space, it auto-expands.

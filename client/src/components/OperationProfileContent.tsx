@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   FileDown,
   User,
+  Users,
   FileText,
   ChevronRight,
   ChevronDown,
@@ -45,9 +46,21 @@ interface OperationTarget {
   hbf: string | null;
   v1f: string | null;
   v2f: string | null;
+  extraVehicles: string | null;
+  extraAddresses: string | null;
   dep: string | null;
   arr: string | null;
   linkedSheets: Array<{ id: number; title: string }>;
+  registryAssociates: Array<{
+    id: number;
+    name: string;
+    tgt: string | null;
+    hbf: string | null;
+    hb: string | null;
+    v1f: string | null;
+    v1: string | null;
+    isIndicesOnly: boolean;
+  }>;
   assocPersons: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
   assocLocations: IntelProfileEntity[];
@@ -589,42 +602,141 @@ export function OperationProfileContent({
                           <Separator className="mt-3" />
                         </div>
                       )}
-                      {(target.hbf || target.v1f || target.v2f) && (
+                      {(target.hbf ||
+                        target.v1f ||
+                        target.v2f ||
+                        target.extraAddresses ||
+                        target.extraVehicles) &&
+                        (() => {
+                          const extraAddressList: Array<{
+                            full?: string;
+                            short?: string;
+                          }> = (() => {
+                            try {
+                              return target.extraAddresses
+                                ? JSON.parse(target.extraAddresses)
+                                : [];
+                            } catch {
+                              return [];
+                            }
+                          })();
+                          const extraVehicleList: Array<{
+                            full?: string;
+                            short?: string;
+                          }> = (() => {
+                            try {
+                              return target.extraVehicles
+                                ? JSON.parse(target.extraVehicles)
+                                : [];
+                            } catch {
+                              return [];
+                            }
+                          })();
+                          return (
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                                Registered Details
+                              </p>
+                              <div className="space-y-1 text-xs">
+                                {target.hbf && (
+                                  <div className="flex gap-2">
+                                    <span className="text-muted-foreground w-20 shrink-0">
+                                      Home
+                                    </span>
+                                    <span className="font-mono">
+                                      {formatIntelAddress(target.hbf)}
+                                    </span>
+                                  </div>
+                                )}
+                                {extraAddressList.map((ea, idx) => {
+                                  const val =
+                                    ea.full?.trim() || ea.short?.trim() || "";
+                                  if (!val) return null;
+                                  return (
+                                    <div key={idx} className="flex gap-2">
+                                      <span className="text-muted-foreground w-20 shrink-0">
+                                        Address {idx + 2}
+                                      </span>
+                                      <span className="font-mono">
+                                        {formatIntelAddress(val)}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                                {target.v1f && (
+                                  <div className="flex gap-2">
+                                    <span className="text-muted-foreground w-20 shrink-0">
+                                      Vehicle 1
+                                    </span>
+                                    <span className="font-mono">
+                                      {formatIntelVehicle(target.v1f)}
+                                    </span>
+                                  </div>
+                                )}
+                                {target.v2f && (
+                                  <div className="flex gap-2">
+                                    <span className="text-muted-foreground w-20 shrink-0">
+                                      Vehicle 2
+                                    </span>
+                                    <span className="font-mono">
+                                      {formatIntelVehicle(target.v2f)}
+                                    </span>
+                                  </div>
+                                )}
+                                {extraVehicleList.map((ev, idx) => {
+                                  const val =
+                                    ev.full?.trim() || ev.short?.trim() || "";
+                                  if (!val) return null;
+                                  return (
+                                    <div key={idx} className="flex gap-2">
+                                      <span className="text-muted-foreground w-20 shrink-0">
+                                        Vehicle {idx + 2}
+                                      </span>
+                                      <span className="font-mono">
+                                        {formatIntelVehicle(val)}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <Separator className="mt-3" />
+                            </div>
+                          );
+                        })()}
+                      {target.registryAssociates.length > 0 && (
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                            Registered Details
-                          </p>
-                          <div className="space-y-1 text-xs">
-                            {target.hbf && (
-                              <div className="flex gap-2">
-                                <span className="text-muted-foreground w-20 shrink-0">
-                                  Home
+                          <div className="flex items-center gap-2 mb-2">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                              Registered Associates
+                            </p>
+                            <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+                              {target.registryAssociates.length}
+                            </span>
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            {target.registryAssociates.map(a => (
+                              <button
+                                key={a.id}
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  navigate(
+                                    `/intelligence/associate/${encodeURIComponent(a.name)}`
+                                  );
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
+                              >
+                                <Users className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                <span className="text-xs font-medium text-foreground flex-1 truncate">
+                                  {a.name}
                                 </span>
-                                <span className="font-mono">
-                                  {formatIntelAddress(target.hbf)}
-                                </span>
-                              </div>
-                            )}
-                            {target.v1f && (
-                              <div className="flex gap-2">
-                                <span className="text-muted-foreground w-20 shrink-0">
-                                  Vehicle 1
-                                </span>
-                                <span className="font-mono">
-                                  {formatIntelVehicle(target.v1f)}
-                                </span>
-                              </div>
-                            )}
-                            {target.v2f && (
-                              <div className="flex gap-2">
-                                <span className="text-muted-foreground w-20 shrink-0">
-                                  Vehicle 2
-                                </span>
-                                <span className="font-mono">
-                                  {formatIntelVehicle(target.v2f)}
-                                </span>
-                              </div>
-                            )}
+                                {a.isIndicesOnly && <IndicesBadge />}
+                                {a.hbf && (
+                                  <span className="text-xs text-muted-foreground shrink-0 truncate max-w-[160px]">
+                                    {a.hbf}
+                                  </span>
+                                )}
+                              </button>
+                            ))}
                           </div>
                           <Separator className="mt-3" />
                         </div>

@@ -10291,6 +10291,12 @@ export interface IntelOperationProfile {
     hbf: string | null;
     v1f: string | null;
     v2f: string | null;
+    /** Extra vehicles beyond V1/V2: JSON array of {full, short}. Kept in
+     * sync with the Target profile's own Registered Details — see
+     * IntelTargetProfile.extraVehicles. */
+    extraVehicles: string | null;
+    /** Extra addresses beyond HBF: JSON array of {full, short, ...}. */
+    extraAddresses: string | null;
     dep: string | null;
     arr: string | null;
     linkedSheets: Array<{ id: number; title: string }>;
@@ -10299,6 +10305,18 @@ export interface IntelOperationProfile {
     assocLocations: IntelProfileEntity[];
     photos: OperationEntityPhoto[];
     isIndicesOnly: boolean;
+    /** Associates recorded directly on this target in the Target Registry —
+     * same guaranteed (not inferred) link as IntelTargetProfile.registryAssociates. */
+    registryAssociates: Array<{
+      id: number;
+      name: string;
+      tgt: string | null;
+      hbf: string | null;
+      hb: string | null;
+      v1f: string | null;
+      v1: string | null;
+      isIndicesOnly: boolean;
+    }>;
   }>;
   /** Cross-operation links found for any target in this operation — a
    * shared registered vehicle/address with a target on a DIFFERENT
@@ -11196,6 +11214,11 @@ export async function getIntelOperationProfile(
 
   const allEntities = await getAllIntelligenceEntities();
   const operationSheetIds = new Set(sheets.map(s => s.id));
+  const associateEntityById = new Map(
+    allEntities
+      .filter(e => e.isAssociate && e.associateId != null)
+      .map(e => [e.associateId as number, e])
+  );
 
   const targetProfilesRaw = await Promise.all(
     targetLinks.map(async ({ targetId }) => {
@@ -11250,6 +11273,17 @@ export async function getIntelOperationProfile(
       const crossLinks = crossLinksRaw.filter(
         l => l.operationId !== operationId
       );
+      const registryAssociateRows = await getAssociatesForTarget(targetId);
+      const registryAssociates = registryAssociateRows.map(a => ({
+        id: a.id,
+        name: a.name,
+        tgt: a.tgt,
+        hbf: a.hbf,
+        hb: a.hb,
+        v1f: a.v1f,
+        v1: a.v1,
+        isIndicesOnly: associateEntityById.get(a.id)?.isIndicesOnly ?? false,
+      }));
       return {
         targetId,
         name: target.name,
@@ -11257,9 +11291,12 @@ export async function getIntelOperationProfile(
         hbf: target.hbf,
         v1f: target.v1f,
         v2f: target.v2f,
+        extraVehicles: target.extraVehicles ?? null,
+        extraAddresses: target.extraAddresses ?? null,
         dep: target.dep,
         arr: target.arr,
         linkedSheets: targetSheets.map(s => ({ id: s.id, title: s.title })),
+        registryAssociates,
         assocPersons,
         assocVehicles,
         assocLocations,

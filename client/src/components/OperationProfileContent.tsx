@@ -19,7 +19,7 @@ import {
   formatIntelVehicle,
   composeAddress,
   composeVehicle,
-  composeTargetName,
+  composeAssociateName,
 } from "@/lib/addressFormat";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import {
@@ -233,7 +233,7 @@ function ImportedDocumentCard({
     .map(v => composeVehicle(v).full)
     .filter(Boolean);
   const associateNames = snapshot.associates
-    .map(a => composeTargetName(a.identity).name)
+    .map(a => composeAssociateName(a.identity, a.address.businessName).name)
     .filter(Boolean);
   const background = snapshot.background.trim();
 

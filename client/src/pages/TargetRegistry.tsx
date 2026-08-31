@@ -68,6 +68,7 @@ import {
 } from "@/components/ImportTargetDocumentDialog";
 import {
   composeTargetName,
+  composeAssociateName,
   composeAddress,
   composeVehicle,
   isoToDdMmYyyy,
@@ -1327,7 +1328,7 @@ function AssociateCard({
   });
 
   const buildPayload = () => {
-    const { name, tgt } = composeTargetName(identity);
+    const { name, tgt } = composeAssociateName(identity, address.businessName);
     const { full: hbf, short: hb } = composeAddress(address);
     const { full: v1f, short: v1 } = composeVehicle(vehicle);
     return {
@@ -1452,7 +1453,9 @@ function AssociateCard({
   const handleSave = async () => {
     const payload = buildPayload();
     if (!payload.name) {
-      toast.error("Enter both First Name/s and Surname.");
+      toast.error(
+        "Enter both First Name/s and Surname, or a Business/Place name."
+      );
       return;
     }
     if (!isNew) {
@@ -1484,7 +1487,9 @@ function AssociateCard({
 
   const saving = createMut.isPending || updateMut.isPending;
   const displayName =
-    associate?.name || composeTargetName(identity).name || "New Associate";
+    associate?.name ||
+    composeAssociateName(identity, address.businessName).name ||
+    "New Associate";
 
   return (
     <div className="rounded-lg border border-border/60 bg-muted/10 overflow-hidden">

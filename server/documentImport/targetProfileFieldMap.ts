@@ -71,6 +71,10 @@ export interface UnmappedField {
 export interface FreeTextAssociate {
   firstNames: string;
   surname: string;
+  /** Set instead of firstNames/surname when this associate is a business
+   * or place (e.g. "Pacific Route Services Pty Ltd") rather than a person —
+   * see findDashSeparatedBusinesses. Empty for a person associate. */
+  businessName: string;
   address: ParsedAddressLine | null;
   vehicle: ParsedVehicleLine | null;
 }
@@ -353,6 +357,7 @@ function findAssociateBlocks(text: string): FreeTextAssociate[] {
       out.push({
         firstNames: person.firstNames,
         surname: person.surname,
+        businessName: "",
         address,
         vehicle,
       });
@@ -418,9 +423,54 @@ function findDashSeparatedAssociates(text: string): FreeTextAssociate[] {
       out.push({
         firstNames: person.firstNames,
         surname: person.surname,
+        businessName: "",
         address,
         vehicle,
       });
+    }
+  }
+  return out;
+}
+
+// Same suffix list BUSINESS_SUFFIX_RE/BUSINESS_NAME_RE (freeTextEntityScan.ts)
+// use, but anchored the same way DASH_ASSOCIATE_RE is: "<name incl. suffix>
+// - <rest of the line>". A lazy name capture up to and including the first
+// suffix match, exactly like BUSINESS_NAME_RE, so a business name doesn't
+// swallow anything past its own suffix.
+const DASH_BUSINESS_RE =
+  /^([A-Z][A-Za-z0-9&.,'\s]{1,80}?\s*(?:Pty\.?\s*Ltd\.?|Ltd\.?|Inc\.?|LLC|Corp\.?|Corporation))\.?\s*[-–]\s*(.+)$/i;
+
+/** A business/place name (see DASH_BUSINESS_RE) followed by its own address
+ * on the same line, dash-separated — "Pacific Route Services Pty Ltd -
+ * Unit 8/41 Walters Drive, OSBORNE PARK WA 6017. ABN training reference: 63
+ * 555 281 904." Mirrors findDashSeparatedAssociates' shape for a person,
+ * but for an entity with no first name/surname to give: businessName takes
+ * their place, and — since only the first sentence of the remainder that
+ * actually parses as an address or vehicle gets kept, same as the person
+ * version — a trailing "ABN training reference: ..." clause is simply
+ * never claimed by anything, rather than being folded into the name. */
+function findDashSeparatedBusinesses(text: string): FreeTextAssociate[] {
+  const out: FreeTextAssociate[] = [];
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const m = line.match(DASH_BUSINESS_RE);
+    if (!m) continue;
+    const businessName = m[1].trim();
+
+    let address: ParsedAddressLine | null = null;
+    let vehicle: ParsedVehicleLine | null = null;
+    for (const sentence of splitIntoSentences(m[2])) {
+      if (!address) {
+        address = parseAddressLine(sentence) ?? parseAddressLineLoose(sentence);
+      }
+      if (!vehicle) {
+        vehicle = parseVehicleLine(sentence);
+      }
+    }
+
+    if (address || vehicle) {
+      out.push({ firstNames: "", surname: "", businessName, address, vehicle });
     }
   }
   return out;
@@ -616,16 +666,23 @@ export function mapDocxToTargetProfile(
     [
       ...findAssociateBlocks(freeText),
       ...findDashSeparatedAssociates(freeText),
+      ...findDashSeparatedBusinesses(freeText),
     ],
-    a => `${a.firstNames} ${a.surname}`
+    a => a.businessName || `${a.firstNames} ${a.surname}`
   );
   const excludedPersonNames = new Set(
     associateBlocks.map(a => `${a.firstNames} ${a.surname}`)
   );
   if (name) excludedPersonNames.add(`${name.firstNames} ${name.surname}`);
-  const candidateEntities = scanFreeText(freeText).filter(
-    c => !(c.type === "person" && excludedPersonNames.has(c.value))
-  );
+  const excludedBusinessNames = associateBlocks
+    .map(a => a.businessName)
+    .filter(Boolean);
+  const candidateEntities = scanFreeText(freeText).filter(c => {
+    if (c.type === "person") return !excludedPersonNames.has(c.value);
+    if (c.type === "business")
+      return !excludedBusinessNames.some(b => c.value.startsWith(b));
+    return true;
+  });
 
   return {
     name,

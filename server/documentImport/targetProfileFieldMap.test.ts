@@ -258,7 +258,7 @@ describe("mapDocxToTargetProfile", () => {
     // Associates written as one dense paragraph each ("Name - address.
     // Vehicle: X. Mobile: Y. Email: Z.") rather than a vertical block —
     // both still resolve to a full name+address+vehicle record.
-    expect(result.associateBlocks).toHaveLength(2);
+    expect(result.associateBlocks).toHaveLength(3);
     expect(result.associateBlocks[0]).toMatchObject({
       firstNames: "Benjamin Cole",
       surname: "WATTS",
@@ -286,6 +286,23 @@ describe("mapDocxToTargetProfile", () => {
       registration: "1FYK813",
       colour: "Blue",
       make: "Kia",
+    });
+
+    // A business sharing the same dense-paragraph shape as a person
+    // associate ("Name - address. Telephone: X. Training ABN: Y.") —
+    // businessName takes the place of firstNames/surname, the address
+    // resolves the same way, and the telephone/ABN clauses that follow are
+    // never claimed by anything rather than bleeding into the name.
+    expect(result.associateBlocks[2]).toMatchObject({
+      firstNames: "",
+      surname: "",
+      businessName: "Echo Point Technology Pty Ltd",
+    });
+    expect(result.associateBlocks[2].address).toMatchObject({
+      houseNo: "101",
+      unitNo: "4",
+      streetName: "Garling",
+      suburb: "O'CONNOR",
     });
 
     // Nothing silently lost — every vehicle/address the document clearly

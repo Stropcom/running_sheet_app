@@ -161,17 +161,24 @@ export function ImportTargetDocumentDialog({
       key: makeExtraId(),
       firstNames: a.firstNames,
       surname: a.surname,
-      address: a.address
-        ? {
-            unitNo: a.address.unitNo,
-            houseNo: a.address.houseNo,
-            streetName: a.address.streetName,
-            streetType: a.address.streetType,
-            suburb: a.address.suburb,
-            state: a.address.state,
-            businessName: "",
-          }
-        : null,
+      // A business/place associate (see FreeTextAssociate.businessName) has
+      // no firstNames/surname to give — its name lives on the address
+      // instead, same as everywhere else businessName is modelled — so an
+      // address object is still built here even when the parser found no
+      // street address at all, otherwise the business name would have
+      // nowhere to land.
+      address:
+        a.address || a.businessName
+          ? {
+              unitNo: a.address?.unitNo ?? "",
+              houseNo: a.address?.houseNo ?? "",
+              streetName: a.address?.streetName ?? "",
+              streetType: a.address?.streetType ?? "",
+              suburb: a.address?.suburb ?? "",
+              state: a.address?.state ?? "WA",
+              businessName: a.businessName,
+            }
+          : null,
       vehicle: a.vehicle
         ? {
             registration: a.vehicle.registration,
@@ -680,7 +687,9 @@ export function ImportTargetDocumentDialog({
                         className="flex flex-col gap-1 pb-2 border-b border-border/40 last:border-b-0 last:pb-0"
                       >
                         <span className="text-sm font-medium">
-                          {a.firstNames} {a.surname}
+                          {a.firstNames || a.surname
+                            ? `${a.firstNames} ${a.surname}`
+                            : a.address?.businessName}
                         </span>
                         {a.address && (
                           <span className="text-muted-foreground text-xs">

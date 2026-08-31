@@ -568,6 +568,29 @@ export function composeTargetName(parts: StructuredNameParts): {
   };
 }
 
+/**
+ * Same as composeTargetName, but for an associate: a business or place
+ * (e.g. "Pacific Route Services Pty Ltd") can stand in for the associate's
+ * identity in its own right, with no First Name/s or Surname to give —
+ * unlike a Target, which is always a person. Falls back to the business
+ * name only once the person-name compose comes back empty, so a record
+ * with both filled in (unusual, but not invalid) still identifies as the
+ * person.
+ */
+export function composeAssociateName(
+  parts: StructuredNameParts,
+  businessName: string | undefined
+): {
+  name: string;
+  tgt: string;
+} {
+  const person = composeTargetName(parts);
+  if (person.name) return person;
+  const business = (businessName ?? "").trim();
+  if (!business) return { name: "", tgt: "" };
+  return { name: business, tgt: business };
+}
+
 export interface StructuredAddressParts {
   unitNo: string;
   houseNo: string;

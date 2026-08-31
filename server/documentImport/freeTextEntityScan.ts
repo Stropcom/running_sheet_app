@@ -80,6 +80,18 @@ const WHOLE_LINE_PERSON_RE =
 const BUSINESS_SUFFIX_RE =
   /\b(Pty\.?\s*Ltd\.?|Ltd\.?|Inc\.?|LLC|Corp\.?|Corporation)\b/i;
 
+/** Same suffix list as BUSINESS_SUFFIX_RE, but captures the business's own
+ * name up to and including that suffix — nothing past it. A business is
+ * routinely followed on the same line by its address and other unrelated
+ * detail ("Pacific Route Services Pty Ltd - Unit 8/41 Walters Drive,
+ * OSBORNE PARK WA 6017. ABN training reference: 63 555 281 904."); without
+ * this bound, the old whole-line capture folded the address and the ABN
+ * clause straight into the "business name" value. */
+const BUSINESS_NAME_RE = new RegExp(
+  `\\b([A-Z][A-Za-z0-9&.,'\\s]{1,80}?\\s*${BUSINESS_SUFFIX_RE.source})`,
+  "i"
+);
+
 const LABELLED_EMAIL_RE = /^\s*Email\s*:\s*(.+?)\s*$/gim;
 // Domain requires one-or-more "label." groups before the final TLD segment
 // — a single "[A-Za-z0-9-]+\.[A-Za-z]{2,}" only matches the first
@@ -211,15 +223,24 @@ export function findCandidatePersons(text: string): CandidateEntity[] {
   return out;
 }
 
-/** A whole line carrying a business-entity suffix (Pty Ltd, Inc, LLC, ...)
- * is treated as the business name in full — matches how these documents
- * actually write a business (its own line, no other content). */
+/** A line carrying a business-entity suffix (Pty Ltd, Inc, LLC, ...) —
+ * BUSINESS_NAME_RE bounds the captured name to that suffix, so a business
+ * name sharing its line with an address or other detail (the common case —
+ * see BUSINESS_NAME_RE's own comment) surfaces as just the name, not the
+ * whole line. `raw` keeps the full line for context on the review screen. */
 export function findCandidateBusinesses(text: string): CandidateEntity[] {
   const out: CandidateEntity[] = [];
   for (const rawLine of text.split("\n")) {
     const line = rawLine.trim();
-    if (!line || !BUSINESS_SUFFIX_RE.test(line)) continue;
-    out.push({ type: "business", value: line, confidence: "high", raw: line });
+    if (!line) continue;
+    const m = line.match(BUSINESS_NAME_RE);
+    if (!m) continue;
+    out.push({
+      type: "business",
+      value: m[1].trim(),
+      confidence: "high",
+      raw: line,
+    });
   }
   return out;
 }

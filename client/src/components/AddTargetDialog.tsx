@@ -44,6 +44,7 @@ import {
 } from "@/components/TargetStructuredFields";
 import {
   composeTargetName,
+  composeAssociateName,
   composeAddress,
   composeVehicle,
   ddMmYyyyToIso,
@@ -299,16 +300,21 @@ export function AddTargetDialog({
   };
 
   // Creates every staged associate against the just-saved target. Skips any
-  // entry with no name (an officer who tapped "Add Associate" but left it
-  // blank shouldn't get an error). Deliberately doesn't run the
-  // possible-duplicate check AssociateCard's own save does — with several
-  // associates possibly staged at once that flow doesn't fit well inside
-  // this dialog; a genuine duplicate can still be merged afterward from the
-  // Target Registry the same way any other duplicate is.
+  // entry with no name AND no business/place name (an officer who tapped
+  // "Add Associate" but left it blank shouldn't get an error) — a business
+  // name stands in for a person's First Name/s + Surname, see
+  // composeAssociateName. Deliberately doesn't run the possible-duplicate
+  // check AssociateCard's own save does — with several associates possibly
+  // staged at once that flow doesn't fit well inside this dialog; a genuine
+  // duplicate can still be merged afterward from the Target Registry the
+  // same way any other duplicate is.
   const saveStagedAssociates = async (targetId: number) => {
     const toCreate = associates
       .map(a => {
-        const { name, tgt } = composeTargetName(a.identity);
+        const { name, tgt } = composeAssociateName(
+          a.identity,
+          a.address.businessName
+        );
         if (!name) return null;
         const { full: hbf, short: hb } = composeAddress(a.address);
         const { full: v1f, short: v1 } = composeVehicle(a.vehicle);

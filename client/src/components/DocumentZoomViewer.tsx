@@ -24,8 +24,12 @@ function clampAxis(
 
 /**
  * Renders `children` at a fixed natural width, fit-scaled to the container on load,
- * then pinch/wheel/drag zoomable and pannable — used to embed a full desktop-width
+ * then pinch/drag zoomable and pannable — used to embed a full desktop-width
  * document (e.g. the target profile) inside a narrow side pane at its native layout.
+ * The mouse wheel scrolls the content vertically (and horizontally on a trackpad)
+ * rather than zooming — zoom is still available via pinch, double-click/tap, or the
+ * on-screen +/- controls, but a plain wheel is expected to behave like scrolling any
+ * other page.
  */
 export function DocumentZoomViewer({
   contentWidth = 768,
@@ -114,13 +118,13 @@ export function DocumentZoomViewer({
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault();
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const cursor = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-      const factor = Math.exp(-e.deltaY * 0.0015);
-      zoomAround(cursor, scaleRef.current * factor);
+      const nextPos = {
+        x: posRef.current.x - e.deltaX,
+        y: posRef.current.y - e.deltaY,
+      };
+      setPos(clampPos(nextPos, scaleRef.current));
     },
-    [zoomAround]
+    [clampPos]
   );
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {

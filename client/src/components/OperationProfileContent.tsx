@@ -188,14 +188,15 @@ function ImportedDocumentCard({
   row,
   version,
   isCurrent,
-  defaultOpen,
 }: {
   row: DocumentImportRow;
   version: number;
   isCurrent: boolean;
-  defaultOpen: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  // Collapsed by default even when there's only one — an officer opening the
+  // Operation profile shouldn't be greeted with a wall of imported-document
+  // text before they've even looked at the targets themselves.
+  const [open, setOpen] = useState(false);
 
   let snapshot: DocumentImportPrefill | null = null;
   try {
@@ -205,7 +206,11 @@ function ImportedDocumentCard({
   }
   if (!snapshot) return null;
 
-  const { name } = composeTargetName(snapshot.identity);
+  const { firstNames, surname } = snapshot.identity;
+  const name =
+    firstNames.trim() && surname.trim()
+      ? `${firstNames.trim()} ${surname.trim().toUpperCase()}`
+      : "";
   const address = composeAddress(snapshot.address).full;
   const vehicle = composeVehicle(snapshot.vehicle).full;
   const extraAddresses = snapshot.extraAddresses
@@ -369,7 +374,6 @@ function ImportedDocumentsSection({ operationId }: { operationId: number }) {
               row={row}
               version={idx + 1}
               isCurrent={idx === rows.length - 1}
-              defaultOpen={rows.length === 1}
             />
           ))
         )}

@@ -12010,7 +12010,15 @@ export async function getIntelLocationProfile(
 
 export interface IntelMapLocation {
   label: string;
-  type: "target_address" | "observation";
+  /** "target_address": a target's own registered home address. "observation":
+   * genuinely mentioned in at least one running sheet row (mined from
+   * observation text — see Step 2 below). "associate_address": an
+   * associate's registered address that has never actually been observed
+   * in a running sheet — kept distinct from "observation" so the map
+   * doesn't claim something was seen that was only ever typed into a
+   * registry card. Upgraded to "observation" the moment a real occurrence
+   * is found for the same address (Step 2). */
+  type: "target_address" | "associate_address" | "observation";
   /** Targets whose registered details (HBF/V1F/V2F) include this location */
   linkedTargets: Array<{
     targetId: number;
@@ -12262,6 +12270,11 @@ export async function getIntelMappingLocations(
       }
       for (const addr of addrFields) {
         const loc = ensureLocation(addr);
+        // Registered-only until Step 2 proves an actual observation at this
+        // address — never downgrade a "target_address"/"observation" pin
+        // that's already stronger (e.g. this associate shares a target's
+        // home address, or the address was already mined from real text).
+        if (loc.type === "observation") loc.type = "associate_address";
         if (!loc.assocPersons.includes(a.name)) loc.assocPersons.push(a.name);
       }
     }
@@ -12301,6 +12314,10 @@ export async function getIntelMappingLocations(
     // exact same address with nothing behind it.
     if (locRowIds.size === 0) continue;
     const loc = ensureLocation(locEntity.shortForm);
+    // A real occurrence proves this address was actually observed — upgrade
+    // it off "associate_address" (registered-only) even if Step 1b already
+    // staked a claim here first. Never touches "target_address".
+    if (loc.type === "associate_address") loc.type = "observation";
     for (const rowId of Array.from(locRowIds)) {
       const coEntities = rowEntityMap.get(rowId) ?? [];
       for (const co of coEntities) {

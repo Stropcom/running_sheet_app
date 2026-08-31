@@ -168,7 +168,7 @@ function _getTodayPerthYmd() {
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface IntelMapLocation {
   label: string;
-  type: "target_address" | "observation";
+  type: "target_address" | "associate_address" | "observation";
   linkedTargets: Array<{
     targetId: number;
     name: string;
@@ -468,7 +468,9 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
     ? "TARGET ADDRESS"
     : isAdditionalTargetAddress
       ? "ADDITIONAL ADDRESS"
-      : "OBSERVED LOCATION";
+      : loc.type === "associate_address"
+        ? "ASSOCIATE ADDRESS"
+        : "OBSERVED LOCATION";
   const displayLabel = formatIntelAddress(loc.label);
   const encodedLabel = encodeURIComponent(loc.label);
 
@@ -695,12 +697,16 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
         /* ignore */
       }
 
+      const secTypeLabel =
+        sec.type === "associate_address"
+          ? "ASSOCIATE ADDRESS"
+          : "OBSERVED LOCATION";
       lines.push(
         `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">`
       );
       lines.push(`
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <span style="background:#7c3aed;color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">OBSERVED LOCATION</span>
+          <span style="background:#7c3aed;color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">${secTypeLabel}</span>
         </div>
         <strong style="font-size:12px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${secLabel}</strong>
       `);
@@ -2154,7 +2160,7 @@ export default function IntelligenceMapping() {
       // Because the server now sorts target_address first, the red pin is always placed
       // before the purple one arrives.
       const INTEL_DEDUP_RADIUS_M = 20;
-      if (loc.type === "observation") {
+      if (loc.type === "observation" || loc.type === "associate_address") {
         const nearbyTargetMarkerIdx = markersRef.current.findIndex((m: any) => {
           const pos = m.position as
             | google.maps.LatLng
@@ -2699,7 +2705,9 @@ export default function IntelligenceMapping() {
               const accentColor = isTarget ? "#dc2626" : "#7c3aed";
               const typeLabel = isTarget
                 ? "TARGET ADDRESS"
-                : "OBSERVED LOCATION";
+                : intel.type === "associate_address"
+                  ? "ASSOCIATE ADDRESS"
+                  : "OBSERVED LOCATION";
               lines.push(`
                 <div style="margin-top:8px;padding:8px;background:${isTarget ? "#fff5f5" : "#f8fafc"};border:1px solid ${isTarget ? "#fca5a5" : "#e2e8f0"};border-radius:6px;">
                   <div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;">
@@ -5364,7 +5372,9 @@ export default function IntelligenceMapping() {
                         <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
                           {c.loc.type === "target_address"
                             ? "Target Address"
-                            : "Observed Location"}
+                            : c.loc.type === "associate_address"
+                              ? "Associate Address"
+                              : "Observed Location"}
                         </p>
                         <p className="text-sm font-semibold text-foreground truncate">
                           {formatIntelAddress(c.loc.label)}

@@ -100,8 +100,13 @@ const NUMBER_TOKEN = `(?:(?:unit\\s+|u)?(\\d+[A-Za-z]?)\\s*[,/]\\s*)?(\\d+[A-Za-
  * consistently follow, labeled or not. Captures loosely; the street type
  * and suburb/state split happens afterward against the lists above so a
  * state or type this exact regex didn't anticipate still gets a chance. */
+// Suburb allows an apostrophe (O'Connor, and similarly-named suburbs
+// elsewhere) — without it, an otherwise well-formed address line simply
+// fails to match at all rather than parsing with a slightly wrong suburb,
+// since the missing character breaks the match before it ever reaches the
+// state code.
 const ADDRESS_SHAPE = new RegExp(
-  `\\b${NUMBER_TOKEN}\\s+([A-Za-z][A-Za-z\\s]{1,40}?),\\s*([A-Za-z][A-Za-z\\s]{1,40}?)\\s+(${Array.from(
+  `\\b${NUMBER_TOKEN}\\s+([A-Za-z][A-Za-z\\s]{1,40}?),\\s*([A-Za-z][A-Za-z\\s']{1,40}?)\\s+(${Array.from(
     AU_STATES
   ).join("|")})\\b(?:\\s+(\\d{4}))?`,
   "gi"
@@ -115,7 +120,7 @@ const ADDRESS_SHAPE = new RegExp(
  * parseAddressLineLoose below — rather than risking a false match inside a
  * longer sentence that happens to contain a comma. */
 const ADDRESS_SHAPE_LOOSE = new RegExp(
-  `\\b${NUMBER_TOKEN}\\s+([A-Za-z][A-Za-z\\s]{1,40}?),\\s*([A-Za-z][A-Za-z\\s]{1,40}?)$`,
+  `\\b${NUMBER_TOKEN}\\s+([A-Za-z][A-Za-z\\s]{1,40}?),\\s*([A-Za-z][A-Za-z\\s']{1,40}?)$`,
   "i"
 );
 

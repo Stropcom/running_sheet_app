@@ -12,6 +12,10 @@ const PAYNE_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-training-payne.docx"
 );
+const ECHOPOINT_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-training-echopoint.docx"
+);
 
 describe("mapDocxToTargetProfile", () => {
   it("maps the real training document end-to-end", async () => {
@@ -174,6 +178,126 @@ describe("mapDocxToTargetProfile", () => {
       streetName: "Other",
       suburb: "FREMANTLE",
     });
+  });
+
+  // Regression test for a real bug report: a third real training document
+  // (ECHOPOINT) is written as headed paragraphs and a two-column table
+  // whose cells each carry their own mini-heading — a genuinely different
+  // shape from the first two fixtures' row-pair tables. Before the
+  // paragraph-heading and table-cell-section fallbacks, this document's
+  // name, addresses and vehicles were all silently dropped, and its
+  // associates (written as one dense paragraph per person, not a vertical
+  // block) fell apart into disconnected mentions instead of linked
+  // records.
+  it("maps a headed-paragraph document with cell-embedded sub-sections and dash-separated associates", async () => {
+    const buffer = readFileSync(ECHOPOINT_FIXTURE_PATH);
+    const read = await readDocxTables(buffer);
+    const result = mapDocxToTargetProfile(read);
+
+    // Subject found via the "1. SUBJECT" heading, not a NAME table row.
+    expect(result.name).toMatchObject({
+      firstNames: "Aisha Noor",
+      surname: "RAHMAN",
+      bornDate: "27/06/1993",
+      confident: true,
+    });
+
+    // Vehicles found inside a table cell that bundles its own "VEHICLES"
+    // mini-heading with three content lines — not a row-pair label/value.
+    expect(result.vehicles).toHaveLength(3);
+    expect(result.vehicles[0]).toMatchObject({
+      registration: "1ANR693",
+      colour: "White",
+      make: "Volvo",
+      model: "XC60",
+    });
+    expect(result.vehicles[1]).toMatchObject({
+      registration: "1ECP118",
+      colour: "Black",
+      make: "Toyota",
+      model: "Prado",
+    });
+    expect(result.vehicles[2]).toMatchObject({
+      registration: "1NRH440",
+      colour: "Red",
+      make: "Mazda",
+    });
+
+    // Addresses found the same way, each correctly labelled from
+    // "<Label>: <address>" sharing one line — not a label-only line
+    // followed by the address on the next.
+    expect(result.addresses).toHaveLength(4);
+    expect(result.addresses[0]).toMatchObject({
+      label: "Current Address",
+      houseNo: "27",
+      streetName: "Davy",
+      suburb: "ALFRED COVE",
+    });
+    expect(result.addresses[1]).toMatchObject({
+      label: "Previous Address",
+      houseNo: "9",
+      streetName: "Araluen",
+      suburb: "DIANELLA",
+    });
+    // O'CONNOR — the suburb apostrophe that used to break the match
+    // entirely (no suburb match at all, not just a mis-split one).
+    expect(result.addresses[2]).toMatchObject({
+      label: "Business Address",
+      houseNo: "101",
+      unitNo: "4",
+      streetName: "Garling",
+      suburb: "O'CONNOR",
+    });
+    expect(result.addresses[3]).toMatchObject({
+      label: "Frequented Address",
+      houseNo: "71",
+      streetName: "Robinson",
+      suburb: "BELMONT",
+    });
+
+    // Associates written as one dense paragraph each ("Name - address.
+    // Vehicle: X. Mobile: Y. Email: Z.") rather than a vertical block —
+    // both still resolve to a full name+address+vehicle record.
+    expect(result.associateBlocks).toHaveLength(2);
+    expect(result.associateBlocks[0]).toMatchObject({
+      firstNames: "Benjamin Cole",
+      surname: "WATTS",
+    });
+    expect(result.associateBlocks[0].address).toMatchObject({
+      houseNo: "44",
+      streetName: "Brandon",
+      suburb: "SOUTH PERTH",
+    });
+    expect(result.associateBlocks[0].vehicle).toMatchObject({
+      registration: "1BCW552",
+      colour: "Grey",
+      make: "Toyota",
+    });
+    expect(result.associateBlocks[1]).toMatchObject({
+      firstNames: "Farah Yasmin",
+      surname: "KHOURY",
+    });
+    expect(result.associateBlocks[1].address).toMatchObject({
+      houseNo: "16A",
+      streetName: "Flinders",
+      suburb: "YOKINE",
+    });
+    expect(result.associateBlocks[1].vehicle).toMatchObject({
+      registration: "1FYK813",
+      colour: "Blue",
+      make: "Kia",
+    });
+
+    // Nothing silently lost — every vehicle/address the document clearly
+    // meant either parsed cleanly or would have shown up here.
+    expect(result.needsReview).toEqual([]);
+
+    // The subject's own resolved name doesn't also show up as a duplicate
+    // low-confidence candidate mention alongside the associates.
+    const personValues = result.candidateEntities
+      .filter(c => c.type === "person")
+      .map(c => c.value);
+    expect(personValues).not.toContain("Aisha Noor RAHMAN");
   });
 });
 

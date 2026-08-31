@@ -10,6 +10,7 @@
 import {
   parseAddressLine,
   parseAddressLineLoose,
+  findAddressLines,
   type ParsedAddressLine,
 } from "./addressLineParser";
 import {
@@ -153,6 +154,85 @@ function findFreeTextSection(rows: string[][], label: string): string {
   return parts.join("\n\n");
 }
 
+/** A document written as headed paragraphs rather than a table — "1.
+ * SUBJECT", "VEHICLES", "LOCATIONS OF INTEREST" each sitting on their own
+ * paragraph with the actual content in the paragraphs underneath — needs a
+ * different route to the same NAME/VEHICLES/LOCATION OF INTEREST fields
+ * findLabelledValue reads from a table row. One heading paragraph followed
+ * by every paragraph up to the next heading (or end of document). */
+interface ParagraphSection {
+  heading: string;
+  lines: string[];
+}
+
+/** A paragraph the document intends as a section heading, not body text.
+ * Deliberately permissive — a numbered heading ("1. SUBJECT", "2. VEHICLE
+ * & LOCATION OVERVIEW") or a short, mostly-capitalised line with no
+ * sentence-ending punctuation ("VEHICLES", "LOCATIONS OF INTEREST",
+ * "ASSOCIATES, BUSINESSES & CONTACTS") — rather than a fixed label list,
+ * since real documents word these differently ("VEHICLES" vs "Vehicles of
+ * Interest"). A line with any lowercase letter is never a heading by this
+ * definition, which is what keeps this from misfiring on ordinary body
+ * text (an associate's name-and-address paragraph always has lowercase
+ * words in it somewhere). */
+function isHeadingLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.length > 70) return false;
+  if (/^\d+[.)]\s*\S/.test(trimmed)) return true;
+  if (/[a-z]/.test(trimmed)) return false;
+  if (/[.!?]$/.test(trimmed)) return false;
+  return /[A-Z]/.test(trimmed);
+}
+
+function splitParagraphsIntoSections(paragraphs: string[]): ParagraphSection[] {
+  const sections: ParagraphSection[] = [];
+  let current: ParagraphSection | null = null;
+  for (const p of paragraphs) {
+    if (isHeadingLine(p)) {
+      current = { heading: p.trim(), lines: [] };
+      sections.push(current);
+    } else if (current) {
+      current.lines.push(p);
+    }
+  }
+  return sections;
+}
+
+/** The joined body text of the first paragraph section whose heading
+ * matches `keyword` — the paragraph-based equivalent of findLabelledValue
+ * for a document with no table at all. Empty string when no such section
+ * exists, matching findLabelledValue's own "not found" contract (`?? ""`
+ * at every call site). */
+function findParagraphSection(
+  sections: ParagraphSection[],
+  keyword: RegExp
+): string {
+  const match = sections.find(s => keyword.test(s.heading));
+  return match ? match.lines.join("\n") : "";
+}
+
+/** Every heading→content section found either among top-level paragraphs
+ * (splitParagraphsIntoSections over result.paragraphs) or self-contained
+ * inside ONE table cell — a genuinely different shape from the row-pair
+ * "label cell | value cell" findLabelledValue reads: a 2-column table can
+ * just as easily put a bold mini-heading plus its own list of lines in
+ * EACH cell side by side (a "VEHICLES" cell next to a "LOCATIONS OF
+ * INTEREST" cell, each cell's own paragraphs already flattened into one
+ * newline-joined string by docxTableReader.ts) instead of pairing a label
+ * cell with a separate value cell in the same row. Both shapes end up
+ * queryable through the one findParagraphSection lookup below. */
+function findAllParagraphSections(result: DocxReadResult): ParagraphSection[] {
+  const sections = splitParagraphsIntoSections(result.paragraphs);
+  for (const table of result.tables) {
+    for (const row of table.rows) {
+      for (const cell of row) {
+        sections.push(...splitParagraphsIntoSections(cell.split("\n")));
+      }
+    }
+  }
+  return sections;
+}
+
 function splitPersonName(full: string): {
   firstNames: string;
   surname: string;
@@ -169,15 +249,17 @@ function splitPersonName(full: string): {
 
 /** A "LOCATION OF INTEREST"-style cell lists one or more addresses, each
  * usually (but not always — see the module comment about "sometimes it's
- * not consistent") preceded by its own "<Something>:" label line, e.g.
- * "Current Address:\n3 Appletree Place, Woodvale WA 6026.". Falls back to
- * an unlabelled entry when a line matches the address shape with no
- * preceding label line. A line that follows a label but matches neither
- * parseAddressLine nor its loose fallback (e.g. a corner address with no
- * house number, "Cnr Smith St and Jones Ave, SUBURB WA") used to be
- * silently dropped — now it's reported via `unparsed` instead, so the
- * officer sees "we found a Current Address, couldn't read it" rather than
- * nothing at all. */
+ * not consistent") preceded by its own "<Something>:" label — either on
+ * its own line ("Current Address:\n3 Appletree Place, Woodvale WA 6026.")
+ * or, just as often in a headed-paragraph-style document, on the SAME
+ * line as the address itself ("Current Address: 27 Davy Street, ALFRED
+ * COVE WA 6154."). Falls back to an unlabelled entry when a line matches
+ * the address shape with no label at all. A line that follows/carries a
+ * label but matches neither parseAddressLine nor its loose fallback (e.g.
+ * a corner address with no house number, "Cnr Smith St and Jones Ave,
+ * SUBURB WA") used to be silently dropped — now it's reported via
+ * `unparsed` instead, so the officer sees "we found a Current Address,
+ * couldn't read it" rather than nothing at all. */
 function parseAddressBlock(text: string): {
   addresses: ParsedAddressEntry[];
   unparsed: UnparsedItem[];
@@ -190,9 +272,24 @@ function parseAddressBlock(text: string): {
   const unparsed: UnparsedItem[] = [];
   let pendingLabel = "";
   for (const line of lines) {
-    const labelMatch = line.match(/^([A-Za-z][A-Za-z\s]{1,40}):\s*$/);
+    const labelMatch = line.match(/^([A-Za-z][A-Za-z\s]{1,40}):\s*(.*)$/);
     if (labelMatch) {
-      pendingLabel = labelMatch[1].trim();
+      const label = labelMatch[1].trim();
+      const rest = labelMatch[2].trim();
+      if (!rest) {
+        // Label-only line — the address itself is on the line(s) after it.
+        pendingLabel = label;
+        continue;
+      }
+      // Label and address share one line — parse the remainder directly
+      // under this label rather than waiting for a line that never comes.
+      const parsed = parseAddressLine(rest) ?? parseAddressLineLoose(rest);
+      if (parsed) {
+        addresses.push({ ...parsed, label });
+      } else {
+        unparsed.push({ kind: "address", label, raw: rest });
+      }
+      pendingLabel = "";
       continue;
     }
     const parsed = parseAddressLine(line) ?? parseAddressLineLoose(line);
@@ -264,6 +361,71 @@ function findAssociateBlocks(text: string): FreeTextAssociate[] {
   return out;
 }
 
+/** Splits `text` on sentence-ending periods, dropping empty fragments —
+ * used to pull one dense associate paragraph ("Name - address. Vehicle:
+ * X. Mobile: Y. Email: Z.") apart into fact-sized pieces before parsing
+ * each one on its own. Parsing the whole run-on remainder in one go would
+ * let a vehicle's parsed "model" field swallow the phone/email text that
+ * follows it in the same paragraph, since none of the individual line
+ * parsers know where their own fact actually ends inside a longer string. */
+function splitIntoSentences(text: string): string[] {
+  return text
+    .split(/\.(?:\s+|$)/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+const DASH_ASSOCIATE_RE =
+  /^([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){0,2}\s+[A-Z]{2,}(?:-[A-Z]{2,})?)\s*[-–]\s*(.+)$/;
+
+/** A second "associate block" shape, alongside findAssociateBlocks' vertical
+ * one (name on its own line, then address/vehicle each on their own line
+ * below it): one dense paragraph per associate instead — "Benjamin Cole
+ * WATTS - 44 Brandon Street, SOUTH PERTH WA 6151. Vehicle: 1BCW552 (WA)
+ * 2021 grey Toyota RAV4 wagon. Mobile: ... Email: ...." — the shape an
+ * "ASSOCIATES, BUSINESSES & CONTACTS"-style section commonly uses instead.
+ * Only claims a paragraph that both matches the "Name - ..." shape AND
+ * yields at least an address or a vehicle from splitting the remainder
+ * into sentences — same "only claim what it can attach something concrete
+ * to" rule findAssociateBlocks itself follows, so a genuinely unrelated
+ * "Name - some other sentence" line is left alone for findCandidatePersons
+ * to pick up as an ordinary bare mention instead. The all-caps-surname
+ * shape this regex requires also keeps it from matching a business line —
+ * "West Coast Device Supply - Shop 3/220 ..." has no ALL-CAPS final word,
+ * so it never reaches the name check at all. */
+function findDashSeparatedAssociates(text: string): FreeTextAssociate[] {
+  const out: FreeTextAssociate[] = [];
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const m = line.match(DASH_ASSOCIATE_RE);
+    if (!m) continue;
+    const person = matchWholeLinePersonName(m[1]);
+    if (!person) continue;
+
+    let address: ParsedAddressLine | null = null;
+    let vehicle: ParsedVehicleLine | null = null;
+    for (const sentence of splitIntoSentences(m[2])) {
+      if (!address) {
+        address = parseAddressLine(sentence) ?? parseAddressLineLoose(sentence);
+      }
+      if (!vehicle) {
+        vehicle = parseVehicleLine(sentence);
+      }
+    }
+
+    if (address || vehicle) {
+      out.push({
+        firstNames: person.firstNames,
+        surname: person.surname,
+        address,
+        vehicle,
+      });
+    }
+  }
+  return out;
+}
+
 const STATE_BRACKET_RE = /\(\s*(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\s*\)/g;
 
 /** Two distinct ways a VEHICLES cell can lose a vehicle entirely rather
@@ -305,10 +467,60 @@ function findUnparsedVehicleItems(
  * this document doesn't happen to carry, or writes in a shape these parsers
  * don't recognise, is simply absent from the result rather than guessed —
  * the officer fills it in on the review screen. */
+const DOB_RE = /\bDOB\s*:?\s*(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})/i;
+const SUBJECT_HEADING_RE = /SUBJECT|TARGET|PERSON\s+OF\s+INTEREST/i;
+const VEHICLES_HEADING_RE = /^VEHICLES?\b/i;
+const LOCATION_HEADING_RE = /LOCATIONS?\s+OF\s+INTEREST|^ADDRESSES?\b/i;
+
+/** When there's no table NAME row at all, a headed-paragraph document
+ * (e.g. "1. SUBJECT" followed by the person's name on its own paragraph,
+ * then "DOB: 27/06/1993 | COB: ... " on the next) still names its subject
+ * unambiguously — it's just organised by heading instead of by table row.
+ * Takes the first whole-line name match under a SUBJECT/TARGET/PERSON OF
+ * INTEREST heading, and a DOB found anywhere in that same section's text. */
+function findSubjectFromParagraphs(
+  sections: ParagraphSection[]
+): ParsedPersonName | null {
+  const section = sections.find(s => SUBJECT_HEADING_RE.test(s.heading));
+  if (!section) return null;
+  for (const line of section.lines) {
+    const person = matchWholeLinePersonName(line);
+    if (!person) continue;
+    const dobMatch = section.lines.join("\n").match(DOB_RE);
+    return {
+      firstNames: person.firstNames,
+      surname: person.surname,
+      bornDate: dobMatch ? dobMatch[1] : "",
+      confident: !!(person.firstNames && person.surname),
+    };
+  }
+  return null;
+}
+
+/** Deduplicates a list of parsed vehicles/addresses by a caller-supplied
+ * key — used only for the free-text last-resort scan below, where the same
+ * real-world vehicle or address is often mentioned more than once across a
+ * document's narrative sections (e.g. a vehicle named once under a
+ * "VEHICLES" heading and again in an activity log entry). The labelled/
+ * headed extraction paths above never need this: each of their sources is
+ * read once, so there's nothing to collide with. */
+function dedupeBy<T>(items: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    const k = key(item);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(item);
+  }
+  return out;
+}
+
 export function mapDocxToTargetProfile(
   result: DocxReadResult
 ): TargetProfileImportResult {
   const rows = result.tables.flatMap(t => t.rows);
+  const paragraphSections = findAllParagraphSections(result);
 
   const nameValue = findLabelledValue(rows, "NAME");
   const dobValue = findLabelledValue(rows, "DOB") ?? "";
@@ -321,14 +533,30 @@ export function mapDocxToTargetProfile(
       bornDate: dobValue,
       confident: !!(firstNames && surname),
     };
+  } else {
+    // No NAME table row at all — this document may be organised as headed
+    // paragraphs instead (see findSubjectFromParagraphs).
+    name = findSubjectFromParagraphs(paragraphSections);
   }
 
-  const vehiclesValue = findLabelledValue(rows, "VEHICLES") ?? "";
-  const vehicles = findVehicleLines(vehiclesValue);
+  let vehiclesValue = findLabelledValue(rows, "VEHICLES") ?? "";
+  if (!vehiclesValue) {
+    vehiclesValue = findParagraphSection(
+      paragraphSections,
+      VEHICLES_HEADING_RE
+    );
+  }
+  let vehicles = findVehicleLines(vehiclesValue);
   const unparsedVehicles = findUnparsedVehicleItems(vehiclesValue, vehicles);
 
-  const locationValue = findLabelledValue(rows, "LOCATION OF INTEREST") ?? "";
-  const { addresses, unparsed: unparsedAddresses } =
+  let locationValue = findLabelledValue(rows, "LOCATION OF INTEREST") ?? "";
+  if (!locationValue) {
+    locationValue = findParagraphSection(
+      paragraphSections,
+      LOCATION_HEADING_RE
+    );
+  }
+  let { addresses, unparsed: unparsedAddresses } =
     parseAddressBlock(locationValue);
 
   const unmappedFields: UnmappedField[] = [];
@@ -343,12 +571,60 @@ export function mapDocxToTargetProfile(
   const freeText = [freeTextFromTable, ...result.paragraphs]
     .filter(Boolean)
     .join("\n\n");
-  const associateBlocks = findAssociateBlocks(freeText);
-  const blockNames = new Set(
+
+  // Last resort — neither a table cell nor a paragraph heading gave any
+  // vehicles/addresses at all, so this document doesn't even label these
+  // sections. Scan the narrative opportunistically rather than showing the
+  // officer nothing, one sentence of one paragraph at a time — NOT the
+  // whole joined freeText in one call, which would let findVehicleLines/
+  // findAddressLines slice all the way to the next anchor found anywhere
+  // later in an entirely unrelated later paragraph, swallowing everything
+  // in between into one garbled entry. Deduped since the same real vehicle
+  // or address is often mentioned again in narrative/activity text
+  // elsewhere in the document. Never runs when the labelled/headed paths
+  // above already found something, so a well-structured document never
+  // gets a second, redundant pass over its own already-correctly-parsed
+  // entries.
+  if (vehicles.length === 0 || addresses.length === 0) {
+    const narrativeParagraphs = [
+      ...freeTextFromTable.split("\n\n"),
+      ...result.paragraphs,
+    ].filter(Boolean);
+    const sentences = narrativeParagraphs.flatMap(splitIntoSentences);
+    if (vehicles.length === 0) {
+      vehicles = dedupeBy(
+        sentences.flatMap(findVehicleLines),
+        v => v.registration
+      );
+    }
+    if (addresses.length === 0) {
+      addresses = dedupeBy(
+        sentences.flatMap(findAddressLines).map(a => ({ ...a, label: "" })),
+        a => `${a.houseNo}|${a.streetName}|${a.suburb}`
+      );
+    }
+  }
+
+  // Associates: two different physical shapes a document groups a name
+  // with its own address/vehicle — a vertical block (name, then address,
+  // then vehicle, each its own line) or one dense paragraph ("Name -
+  // address. Vehicle: X. ..."). Merged and deduped by name since which
+  // shape a document uses is a document-wide choice, not something either
+  // matcher can tell in advance — trying both and keeping whichever fires
+  // costs nothing when only one shape is actually present.
+  const associateBlocks = dedupeBy(
+    [
+      ...findAssociateBlocks(freeText),
+      ...findDashSeparatedAssociates(freeText),
+    ],
+    a => `${a.firstNames} ${a.surname}`
+  );
+  const excludedPersonNames = new Set(
     associateBlocks.map(a => `${a.firstNames} ${a.surname}`)
   );
+  if (name) excludedPersonNames.add(`${name.firstNames} ${name.surname}`);
   const candidateEntities = scanFreeText(freeText).filter(
-    c => !(c.type === "person" && blockNames.has(c.value))
+    c => !(c.type === "person" && excludedPersonNames.has(c.value))
   );
 
   return {

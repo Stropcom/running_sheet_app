@@ -46,6 +46,7 @@ import {
   X,
   Camera,
   Pencil,
+  Star,
   Target,
   Save,
   Search,
@@ -2948,21 +2949,24 @@ export default function OperationDetail() {
               {/* CIN list */}
               {cinList.length > 0 && (
                 <div className="rounded-lg border border-border overflow-hidden">
-                  <div className="grid grid-cols-[1fr_40px_52px_40px_32px] px-3 py-2 bg-muted/40 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  <div className="grid grid-cols-[1fr_40px_40px_40px_32px] px-3 py-2 bg-muted/40 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
                     <span>CIN</span>
                     <span
-                      className="flex items-center gap-1 justify-center"
+                      className="flex items-center justify-center"
                       title="Team Leader"
                     >
-                      <span className="text-yellow-400">★</span> TL
+                      <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
                     </span>
                     <span
-                      className="flex items-center gap-1 justify-center"
+                      className="flex items-center justify-center"
                       title="Author"
                     >
-                      <span className="text-sky-400">✏</span> Author
+                      <Pencil className="w-3 h-3 text-sky-400" />
                     </span>
-                    <span className="flex items-center justify-center">
+                    <span
+                      className="flex items-center justify-center"
+                      title="Images"
+                    >
                       <Camera className="w-3 h-3" />
                     </span>
                     <span></span>
@@ -2970,7 +2974,7 @@ export default function OperationDetail() {
                   {cinList.map(entry => (
                     <div
                       key={entry.cin}
-                      className="grid grid-cols-[1fr_40px_52px_40px_32px] items-center px-3 py-2.5 border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
+                      className="grid grid-cols-[1fr_40px_40px_40px_32px] items-center px-3 py-2.5 border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
                     >
                       <span className="text-sm font-mono font-medium text-foreground">
                         {entry.cin}

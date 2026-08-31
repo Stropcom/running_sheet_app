@@ -58,6 +58,7 @@ import {
   ArrowUpDown,
   ChevronDown,
   FileDown,
+  FileUp,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -86,6 +87,10 @@ import {
   AddTargetDialog,
   type RegistryCreatePayload,
 } from "@/components/AddTargetDialog";
+import {
+  ImportTargetDocumentDialog,
+  type DocumentImportPrefill,
+} from "@/components/ImportTargetDocumentDialog";
 import {
   composeTargetName,
   composeAddress,
@@ -1946,6 +1951,18 @@ export default function OperationDetail() {
   const [newTargetId, setNewTargetId] = useState<number | null>(null);
   const [targetMode, setTargetMode] = useState<"none" | "link">("none");
   const [createTargetDialogOpen, setCreateTargetDialogOpen] = useState(false);
+
+  // "+ Add Document" header action — independent of the New Running
+  // Sheet dialog's own inline "New Target" flow above; this is its own
+  // entry point straight into "Import from Document", locked to this
+  // operation the same way TargetRegistry.tsx's own copy of this flow
+  // locks nothing (it has to ask) — see initialOperation below.
+  const [showImportDocument, setShowImportDocument] = useState(false);
+  const [importPrefill, setImportPrefill] =
+    useState<DocumentImportPrefill | null>(null);
+  const [importKey, setImportKey] = useState(0);
+  const [showImportTargetCreate, setShowImportTargetCreate] = useState(false);
+
   const [cinList, setCinList] = useState<CinEntry[]>([]);
   const [cinInput, setCinInput] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
@@ -2253,14 +2270,32 @@ export default function OperationDetail() {
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="grid grid-cols-3 gap-2 shrink-0 w-full sm:w-auto">
             <Button
               size="sm"
-              className="gap-2"
+              variant="outline"
+              className="gap-2 justify-center border-blue-500/40 text-blue-600 hover:bg-blue-500/10 dark:text-blue-400"
+              onClick={() => navigate(`/intelligence/operation/${operationId}`)}
+            >
+              <FolderOpen className="w-4 h-4" />
+              Profile
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2 justify-center border-violet-500/40 text-violet-600 hover:bg-violet-500/10 dark:text-violet-400"
+              onClick={() => setShowImportDocument(true)}
+            >
+              <FileUp className="w-4 h-4" />
+              Document
+            </Button>
+            <Button
+              size="sm"
+              className="gap-2 justify-center"
               onClick={() => setCreateOpen(true)}
             >
               <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">New Running Sheet</span>
+              <span className="hidden sm:inline">New Sheet</span>
               <span className="sm:hidden">Add</span>
             </Button>
           </div>
@@ -3023,6 +3058,46 @@ export default function OperationDetail() {
           setNewTargetId(result.id);
           setTargetMode("link");
           return result;
+        }}
+      />
+
+      {/* "+ Add Document" header action — same "Import from Document" flow
+          as Target Registry, but the operation is implicit (this one),
+          so unlike Target Registry there's no OperationPicker step. */}
+      <ImportTargetDocumentDialog
+        open={showImportDocument}
+        onClose={() => setShowImportDocument(false)}
+        onContinue={prefill => {
+          setImportPrefill(prefill);
+          setImportKey(k => k + 1);
+          setShowImportDocument(false);
+          setShowImportTargetCreate(true);
+        }}
+      />
+      <AddTargetDialog
+        key={importPrefill ? `import-${importKey}` : "blank"}
+        open={showImportTargetCreate}
+        onClose={() => {
+          setShowImportTargetCreate(false);
+          setImportPrefill(null);
+        }}
+        initialOperation={{ id: operationId, name: operation?.name ?? "" }}
+        initialIdentity={importPrefill?.identity}
+        initialAddress={importPrefill?.address}
+        initialVehicle={importPrefill?.vehicle}
+        initialExtraAddresses={importPrefill?.extraAddresses}
+        initialExtraVehicles={importPrefill?.extraVehicles}
+        initialAssociates={importPrefill?.associates}
+        initialBackground={importPrefill?.background}
+        initialDocumentSnapshot={importPrefill}
+        onSave={async (payload: RegistryCreatePayload) => {
+          const { existingAssociateId, ...rest } = payload;
+          return existingAssociateId
+            ? await createLinkedTargetForSheet.mutateAsync({
+                ...rest,
+                existingAssociateId,
+              })
+            : await createTargetForSheet.mutateAsync(rest);
         }}
       />
 

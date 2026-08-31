@@ -2046,11 +2046,6 @@ export default function IntelligencePage() {
                           {displayShortForm}
                         </p>
                         <div className="flex flex-wrap items-center gap-1 mt-1">
-                          {entity.tgtAlias && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-                              TGT: {entity.tgtAlias}
-                            </span>
-                          )}
                           {entity.isIndicesOnly && <IndicesBadge />}
                         </div>
                       </div>
@@ -2133,11 +2128,6 @@ export default function IntelligencePage() {
                           <p className="font-mono text-sm font-medium text-foreground truncate">
                             {displayShortForm}
                           </p>
-                          {entity.tgtAlias && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0">
-                              TGT: {entity.tgtAlias}
-                            </span>
-                          )}
                           {entity.lowConfidence && (
                             <span
                               title="Low confidence — classification may need review"

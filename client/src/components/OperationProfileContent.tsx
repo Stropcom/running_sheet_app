@@ -247,9 +247,9 @@ function ImportedDocumentCard({
           <FileText className="w-3.5 h-3.5" />
         </span>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <p className="text-sm font-semibold text-foreground truncate">
-              Imported for {row.targetName ?? name ?? "Unknown target"}
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-semibold text-foreground truncate min-w-0">
+              Imported for {name || row.targetName || "Unknown target"}
             </p>
             <span
               className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full shrink-0 ${

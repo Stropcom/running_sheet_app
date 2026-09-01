@@ -22,6 +22,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import {
   Search,
@@ -1848,6 +1855,9 @@ export default function TargetRegistryPage() {
   const [sortBy, setSortBy] = useState<"alpha" | "recent" | "operation">(
     "alpha"
   );
+  const [filterOperationId, setFilterOperationId] = useState<number | null>(
+    null
+  );
   const [showCreate, setShowCreate] = useState(false);
   const [linkTarget, setLinkTarget] = useState<RegistryTarget | null>(null);
   // Store just the id, not a snapshot of the target object — deriving it
@@ -1877,6 +1887,23 @@ export default function TargetRegistryPage() {
       },
     });
 
+  // Options for the Operation filter dropdown — every operation actually
+  // linked to at least one target, rather than every operation in the app
+  // (an operation with no targets would be a dead-end filter choice).
+  const operationFilterOptions = useMemo(() => {
+    if (!targets) return [];
+    const byId = new Map<number, string>();
+    for (const t of targets) {
+      for (const op of t.linkedOperations) {
+        if (!byId.has(op.operationId))
+          byId.set(op.operationId, op.operationName ?? "");
+      }
+    }
+    return Array.from(byId.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [targets]);
+
   const filtered = useMemo(() => {
     if (!targets) return [];
     const q = search.trim().toLowerCase();
@@ -1896,8 +1923,14 @@ export default function TargetRegistryPage() {
               (op.operationName ?? "").toLowerCase().includes(q)
             )
         );
+    const opFiltered =
+      filterOperationId === null
+        ? searched
+        : searched.filter(t =>
+            t.linkedOperations.some(op => op.operationId === filterOperationId)
+          );
 
-    return [...searched].sort((a, b) => {
+    return [...opFiltered].sort((a, b) => {
       if (sortBy === "alpha") {
         return a.name.localeCompare(b.name);
       }
@@ -1923,7 +1956,7 @@ export default function TargetRegistryPage() {
       }
       return 0;
     });
-  }, [targets, search, sortBy]);
+  }, [targets, search, sortBy, filterOperationId]);
 
   return (
     <DashboardLayout>
@@ -1958,16 +1991,39 @@ export default function TargetRegistryPage() {
           </div>
         </div>
 
-        {/* Search + Sort */}
-        <div className="flex flex-col sm:flex-row gap-2">
-          <div className="relative flex-1">
+        {/* Search + Filter + Sort */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div className="relative flex-1 sm:flex-none sm:w-56">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               className="pl-9"
-              placeholder="Search targets by name, details, or linked operation…"
+              placeholder="Search targets…"
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
+          </div>
+          {/* Operation filter — same control as the Intelligence folder's
+              Targets tab (Filter: All operations / a specific one). */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-xs text-muted-foreground">Filter:</span>
+            <Select
+              value={filterOperationId?.toString() ?? "all"}
+              onValueChange={v =>
+                setFilterOperationId(v === "all" ? null : Number(v))
+              }
+            >
+              <SelectTrigger className="h-9 w-auto min-w-[9rem] text-xs">
+                <SelectValue placeholder="Operation" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All operations</SelectItem>
+                {operationFilterOptions.map(op => (
+                  <SelectItem key={op.id} value={op.id.toString()}>
+                    {op.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           {/* Sort toggle buttons */}
           <div className="flex items-center gap-1 shrink-0">

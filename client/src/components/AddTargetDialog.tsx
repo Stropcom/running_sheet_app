@@ -8,7 +8,7 @@
  * and field-level merge (against an existing target) are handled internally.
  */
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -224,6 +224,16 @@ export function AddTargetDialog({
   );
   const [mergeOpen, setMergeOpen] = useState(false);
   const [checkingDup, setCheckingDup] = useState(false);
+  // Set only when dupMatch was raised by handleSave (not the early
+  // on-blur check below) — "No, different person" needs to know whether
+  // to carry on into the save pipeline or just close the prompt and let
+  // the officer keep filling in the form.
+  const [dupMatchFromSave, setDupMatchFromSave] = useState(false);
+  // The name the duplicate check has already resolved for (no match, or a
+  // match the officer confirmed was a different person) — lets handleSave
+  // skip re-asking about a name that was already cleared at the surname
+  // field's onBlur, instead of prompting the same question twice.
+  const [dupCheckedForName, setDupCheckedForName] = useState("");
 
   // ── Secondary duplicate check (name-as-person/address/vehicle), only run
   // once the target-vs-target check above has cleared — catches e.g. this
@@ -247,6 +257,9 @@ export function AddTargetDialog({
     setExtraVehicles([]);
     setAssociates([]);
     setDupMatch(null);
+    setDupMatchFromSave(false);
+    setDupCheckedForName("");
+    lastBlurCheckedNameRef.current = "";
     setExistingFull(null);
     setMergeOpen(false);
     setWarnQueue([]);
@@ -471,14 +484,23 @@ export function AddTargetDialog({
       toast.error("Enter both First Name/s and Surname.");
       return;
     }
+    // Already resolved for this exact name at the surname field's onBlur
+    // (no match, or the officer already said "different person") — don't
+    // ask again.
+    if (composedName === dupCheckedForName) {
+      await runSecondaryChecks();
+      return;
+    }
     setCheckingDup(true);
     try {
       const match = await utils.target.registry.findPossibleDuplicate.fetch({
         name: composedName,
       });
       if (match) {
+        setDupMatchFromSave(true);
         setDupMatch(match);
       } else {
+        setDupCheckedForName(composedName);
         await runSecondaryChecks();
       }
     } catch {
@@ -486,6 +508,32 @@ export function AddTargetDialog({
       await saveAsNew();
     } finally {
       setCheckingDup(false);
+    }
+  };
+
+  // Early check, fired when the officer tabs out of the Surname field —
+  // catches an obvious duplicate person before any address/vehicle detail
+  // gets typed in, rather than only at Save after that work is already
+  // done. Silent on no-match/failure; the popup only interrupts when
+  // there's actually something to confirm.
+  const lastBlurCheckedNameRef = useRef("");
+  const checkNameOnBlur = async () => {
+    if (!composedName || composedName === lastBlurCheckedNameRef.current)
+      return;
+    lastBlurCheckedNameRef.current = composedName;
+    try {
+      const match = await utils.target.registry.findPossibleDuplicate.fetch({
+        name: composedName,
+      });
+      if (match) {
+        setDupMatchFromSave(false);
+        setDupMatch(match);
+      } else {
+        setDupCheckedForName(composedName);
+      }
+    } catch {
+      // Silent — this is just an early heads-up; handleSave's own check
+      // still runs as the real gate before saving.
     }
   };
 
@@ -611,7 +659,11 @@ export function AddTargetDialog({
               />
             </div>
 
-            <TargetIdentityFields value={identity} onChange={setIdentity} />
+            <TargetIdentityFields
+              value={identity}
+              onChange={setIdentity}
+              onSurnameBlur={checkNameOnBlur}
+            />
 
             <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
               <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
@@ -886,8 +938,12 @@ export function AddTargetDialog({
               variant="outline"
               className="w-full"
               onClick={() => {
+                setDupCheckedForName(composedName);
                 setDupMatch(null);
-                runSecondaryChecks();
+                // Only the save-time check should carry on into actually
+                // saving — the early on-blur check just needed an answer,
+                // not a reason to jump ahead of the rest of the form.
+                if (dupMatchFromSave) runSecondaryChecks();
               }}
             >
               No, different person — create new

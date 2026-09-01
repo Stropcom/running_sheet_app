@@ -135,10 +135,16 @@ export function TargetIdentityFields({
   value,
   onChange,
   disabled,
+  onSurnameBlur,
 }: {
   value: StructuredNameParts;
   onChange: (v: StructuredNameParts) => void;
   disabled?: boolean;
+  /** Fired when the Surname field loses focus — lets a caller (e.g. the Add
+   * Target dialog) run a possible-duplicate check as soon as a full name is
+   * entered, rather than only at Save. Optional so callers that don't need
+   * it (editing an existing target) are unaffected. */
+  onSurnameBlur?: () => void;
 }) {
   const bornInvalid =
     value.bornDate.trim().length > 0 && !parseDdMmYyyyDate(value.bornDate);
@@ -163,6 +169,7 @@ export function TargetIdentityFields({
             onChange={e =>
               onChange({ ...value, surname: e.target.value.toUpperCase() })
             }
+            onBlur={onSurnameBlur}
             placeholder="HOGAN"
             className="uppercase"
           />

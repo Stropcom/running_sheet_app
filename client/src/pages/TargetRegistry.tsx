@@ -2002,61 +2002,68 @@ export default function TargetRegistryPage() {
               onChange={e => setSearch(e.target.value)}
             />
           </div>
-          {/* Operation filter — same control as the Intelligence folder's
-              Targets tab (Filter: All operations / a specific one). */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="text-xs text-muted-foreground">Filter:</span>
-            <Select
-              value={filterOperationId?.toString() ?? "all"}
-              onValueChange={v =>
-                setFilterOperationId(v === "all" ? null : Number(v))
-              }
-            >
-              <SelectTrigger className="h-9 w-auto min-w-[9rem] text-xs">
-                <SelectValue placeholder="Operation" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All operations</SelectItem>
-                {operationFilterOptions.map(op => (
-                  <SelectItem key={op.id} value={op.id.toString()}>
-                    {op.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {/* Sort toggle buttons */}
-          <div className="flex items-center gap-1 shrink-0">
-            <Button
-              size="sm"
-              variant={sortBy === "alpha" ? "default" : "outline"}
-              className="gap-1.5 h-9 px-3 text-xs"
-              onClick={() => setSortBy("alpha")}
-              title="Sort A–Z"
-            >
-              <ArrowDownAZ className="w-3.5 h-3.5" />
-              A–Z
-            </Button>
-            <Button
-              size="sm"
-              variant={sortBy === "recent" ? "default" : "outline"}
-              className="gap-1.5 h-9 px-3 text-xs"
-              onClick={() => setSortBy("recent")}
-              title="Sort by most recently updated"
-            >
-              <Clock className="w-3.5 h-3.5" />
-              Recent
-            </Button>
-            <Button
-              size="sm"
-              variant={sortBy === "operation" ? "default" : "outline"}
-              className="gap-1.5 h-9 px-3 text-xs"
-              onClick={() => setSortBy("operation")}
-              title="Sort by operation name"
-            >
-              <Folder className="w-3.5 h-3.5" />
-              Operation
-            </Button>
+          {/* Filter + Sort share one row even on mobile, rather than each
+              stacking onto its own line — Recent drops out below sm since
+              Filter/A–Z/Operation alone already fill a phone-width row. */}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            {/* Operation filter — same control as the Intelligence folder's
+                Targets tab (Filter: All operations / a specific one). */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="hidden sm:inline text-xs text-muted-foreground">
+                Filter:
+              </span>
+              <Select
+                value={filterOperationId?.toString() ?? "all"}
+                onValueChange={v =>
+                  setFilterOperationId(v === "all" ? null : Number(v))
+                }
+              >
+                <SelectTrigger className="h-9 w-auto min-w-[7rem] sm:min-w-[9rem] text-xs">
+                  <SelectValue placeholder="Operation" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All operations</SelectItem>
+                  {operationFilterOptions.map(op => (
+                    <SelectItem key={op.id} value={op.id.toString()}>
+                      {op.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Sort toggle buttons */}
+            <div className="flex items-center gap-1 shrink-0">
+              <Button
+                size="sm"
+                variant={sortBy === "alpha" ? "default" : "outline"}
+                className="gap-1.5 h-9 px-2 sm:px-3 text-xs"
+                onClick={() => setSortBy("alpha")}
+                title="Sort A–Z"
+              >
+                <ArrowDownAZ className="w-3.5 h-3.5" />
+                A–Z
+              </Button>
+              <Button
+                size="sm"
+                variant={sortBy === "recent" ? "default" : "outline"}
+                className="hidden sm:inline-flex gap-1.5 h-9 px-3 text-xs"
+                onClick={() => setSortBy("recent")}
+                title="Sort by most recently updated"
+              >
+                <Clock className="w-3.5 h-3.5" />
+                Recent
+              </Button>
+              <Button
+                size="sm"
+                variant={sortBy === "operation" ? "default" : "outline"}
+                className="gap-1.5 h-9 px-2 sm:px-3 text-xs"
+                onClick={() => setSortBy("operation")}
+                title="Sort by operation name"
+              >
+                <Folder className="w-3.5 h-3.5" />
+                Operation
+              </Button>
+            </div>
           </div>
         </div>
 

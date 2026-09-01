@@ -251,6 +251,7 @@ export function AddTargetDialog({
   const [warnFromSave, setWarnFromSave] = useState(false);
   const notDuplicateMutation =
     trpc.intelligence.markEntitiesNotDuplicate.useMutation();
+  const mergeEntitiesMutation = trpc.intelligence.mergeEntities.useMutation();
 
   const resetAndClose = () => {
     setOperation(initialOperation ?? null);
@@ -607,26 +608,38 @@ export function AddTargetDialog({
     setWarnIndex(0);
   };
 
-  const handleWarnLinkAndCopy = async (linkable: {
-    recordType: "target" | "associate";
-    id: number;
-  }) => {
-    // This dialog only ever creates a Target, so the only linkable match it
-    // can offer is an existing Associate record (a "target" match here
-    // would mean two Targets share a name, which is the separate merge
-    // flow above, not this one).
-    if (linkable.recordType !== "associate") return;
+  const handleWarnLinkAndCopy = async (warning: DuplicateWarning) => {
     setLinking(true);
     try {
-      const associate = await utils.associate.getById.fetch({
-        id: linkable.id,
-      });
-      if (!associate) {
-        toast.error("Couldn't load the matched associate.");
-        return;
+      // This dialog only ever creates a Target, so the only registry record
+      // it can link-and-copy from is an existing Associate (a "target"
+      // match here would mean two Targets share a name, which is the
+      // separate merge flow above, not this one).
+      if (warning.linkable?.recordType === "associate") {
+        const associate = await utils.associate.getById.fetch({
+          id: warning.linkable.id,
+        });
+        if (!associate) {
+          toast.error("Couldn't load the matched associate.");
+          return;
+        }
+        const result = await onSave(buildLinkedPayload(associate));
+        await saveStagedAssociates(result.id);
+      } else {
+        // No registry record to copy from — just a text mention (or, in
+        // theory, an associate match this dialog can't link into). Save the
+        // target as entered, then fold the mined mention in as an alias so
+        // future sightings of it are recognized as this same identity.
+        const result = await onSave(buildPayload());
+        await saveStagedAssociates(result.id);
+        if (warning.kind !== "target") {
+          await mergeEntitiesMutation.mutateAsync({
+            type: warning.kind,
+            winnerLabel: warning.candidateLabel,
+            loserLabel: warning.existingLabel,
+          });
+        }
       }
-      const result = await onSave(buildLinkedPayload(associate));
-      await saveStagedAssociates(result.id);
       setWarnQueue([]);
       setWarnIndex(0);
       resetAndClose();
@@ -1007,6 +1020,7 @@ export function AddTargetDialog({
       {/* Secondary duplicate checks — address/vehicle/name-as-person */}
       <PossibleDuplicateAlert
         warning={warnQueue[warnIndex] ?? null}
+        creates="target"
         onContinue={handleWarnContinue}
         onReview={handleWarnReview}
         onLinkAndCopy={handleWarnLinkAndCopy}

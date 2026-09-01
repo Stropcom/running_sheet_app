@@ -1258,6 +1258,7 @@ function AssociateCard({
   const [warnIndex, setWarnIndex] = useState(0);
   const notDuplicateMutation =
     trpc.intelligence.markEntitiesNotDuplicate.useMutation();
+  const mergeEntitiesMutation = trpc.intelligence.mergeEntities.useMutation();
 
   const mark = (fn: () => void) => {
     fn();
@@ -1403,18 +1404,38 @@ function AssociateCard({
 
   const [linking, setLinking] = useState(false);
 
-  const handleWarnLinkAndCopy = async (linkable: {
-    recordType: "target" | "associate";
-    id: number;
-  }) => {
-    // This card only ever creates an Associate, so the only linkable match
-    // it can offer is an existing Target record — a "person" match against
-    // another Associate has no merge/link concept here.
-    if (linkable.recordType !== "target") return;
+  const handleWarnLinkAndCopy = async (warning: DuplicateWarning) => {
+    // This card only ever creates an Associate, so the only registry record
+    // it can link-and-copy from is an existing Target — a "person" match
+    // against another Associate has no field-copy concept here (associates
+    // link to a Target, not to each other), so that falls into the same
+    // create-as-entered-and-alias path as a plain text mention below.
+    if (warning.linkable?.recordType !== "target") {
+      const payload = warnPayload.current;
+      if (!payload) return;
+      setLinking(true);
+      try {
+        createNow(payload);
+        if (warning.kind !== "target") {
+          await mergeEntitiesMutation.mutateAsync({
+            type: warning.kind,
+            winnerLabel: warning.candidateLabel,
+            loserLabel: warning.existingLabel,
+          });
+        }
+        setWarnQueue([]);
+        setWarnIndex(0);
+      } catch (err: any) {
+        toast.error(err?.message ?? "Failed to link and copy.");
+      } finally {
+        setLinking(false);
+      }
+      return;
+    }
     setLinking(true);
     try {
       const target = await utils.target.getById.fetch({
-        id: linkable.id,
+        id: warning.linkable.id,
       });
       if (!target) {
         toast.error("Couldn't load the matched target.");
@@ -1795,6 +1816,7 @@ function AssociateCard({
 
       <PossibleDuplicateAlert
         warning={warnQueue[warnIndex] ?? null}
+        creates="associate"
         onContinue={handleWarnContinue}
         onReview={handleWarnReview}
         onLinkAndCopy={handleWarnLinkAndCopy}

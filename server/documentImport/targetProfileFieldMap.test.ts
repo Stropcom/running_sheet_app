@@ -24,6 +24,10 @@ const QUARRY_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-training-quarry.docx"
 );
+const BLUEGUM_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-training-bluegum.docx"
+);
 
 describe("mapDocxToTargetProfile", () => {
   it("maps the real training document end-to-end", async () => {
@@ -497,6 +501,61 @@ describe("mapDocxToTargetProfile", () => {
     // candidate ("Lexus" as a firstname, "NX" as an ALL-CAPS surname) —
     // same false-positive class as "Mazda CX" found earlier this session.
     expect(personCandidates).not.toContain("Lexus NX");
+  });
+
+  it("maps a document whose identity block is a column-headed table, without garbling its reference codes into fake associates", async () => {
+    const buffer = readFileSync(BLUEGUM_FIXTURE_PATH);
+    const read = await readDocxTables(buffer);
+    const result = mapDocxToTargetProfile(read);
+
+    // The identity block has no NAME/SUBJECT label:value row at all — it's
+    // a header row ("PRIMARY IDENTITY | OPERATIONAL DESCRIPTION |
+    // REFERENCE IDENTIFIERS") followed by one data row underneath, name
+    // included — findIdentityColumnTableValue's shape.
+    expect(result.name).toMatchObject({
+      firstNames: "Leila Mariam",
+      surname: "HASSAN",
+      confident: true,
+    });
+
+    // Regression: a compact reference/event code with no surrounding
+    // whitespace around its hyphen ("Reference BLU-7719", "BLU-E01— ...")
+    // used to be misread by the last-resort dash matcher as a "<name> -
+    // <detail>" associate line, producing a fake "BLU" business associate
+    // that also swallowed a real address into a garbled vehicle field.
+    expect(result.associateBlocks.some(a => a.businessName === "BLU")).toBe(
+      false
+    );
+
+    const personCandidates = result.candidateEntities
+      .filter(c => c.type === "person")
+      .map(c => c.value);
+
+    // Regression: "Operation BLUEGUM" / "Reference BLU" (a Title-Case word
+    // immediately followed by an ALL-CAPS code) used to match the same
+    // shape as a real name and surface as fake person candidates.
+    expect(personCandidates).not.toContain("Operation BLUEGUM");
+    expect(personCandidates).not.toContain("Reference BLU");
+
+    // Regression: the same two real associates are named across four
+    // different sections of this document (an entity register table, the
+    // narrative, a communications table, an event cross-reference list) —
+    // each used to surface as its own separate low-confidence candidate
+    // instead of being recognised as the same person.
+    expect(personCandidates.filter(v => v === "Marcus Anthony DUNN")).toEqual([
+      "Marcus Anthony DUNN",
+    ]);
+    expect(personCandidates.filter(v => v === "Yasmin Noor ABDALLA")).toEqual([
+      "Yasmin Noor ABDALLA",
+    ]);
+
+    // Regression: "Contact: Mobile 0491 570 121; email marcus.dunn@..."
+    // used to be captured whole as the "phone" value — it now stops at the
+    // semicolon that introduces the email clause.
+    const phone = result.candidateEntities.find(
+      c => c.type === "phone" && c.value.includes("0491 570 121")
+    );
+    expect(phone?.value).toBe("Mobile 0491 570 121");
   });
 });
 

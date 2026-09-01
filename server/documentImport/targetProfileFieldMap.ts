@@ -481,10 +481,17 @@ function findAssociateBlocks(text: string): FreeTextAssociate[] {
  * each one on its own. Parsing the whole run-on remainder in one go would
  * let a vehicle's parsed "model" field swallow the phone/email text that
  * follows it in the same paragraph, since none of the individual line
- * parsers know where their own fact actually ends inside a longer string. */
+ * parsers know where their own fact actually ends inside a longer string.
+ * Also splits on a semicolon (e.g. "... utility.; Suite 4/88 ...", "HASSAN;
+ * DUNN; 1DUN44 (WA) ...") — some documents use it as a clause separator
+ * within one dense sentence rather than only between sentences, and without
+ * this a period immediately followed by a semicolon (no space between
+ * them) isn't recognised as a sentence break at all, so the next clause
+ * gets swallowed into whatever fact was being parsed out of the previous
+ * one. */
 function splitIntoSentences(text: string): string[] {
   return text
-    .split(/\.(?:\s+|$)/)
+    .split(/[.;](?:\s+|$)/)
     .map(s => s.trim())
     .filter(Boolean);
 }
@@ -590,9 +597,17 @@ function findDashSeparatedBusinesses(text: string): FreeTextAssociate[] {
 // name ("Westline Freight Solutions") as its registered one ("... Pty
 // Ltd"). Anchored to the start of the line, one associate per line by this
 // section's own convention, so it can't reach backward across unrelated
-// text the way a scan across a whole paragraph could.
+// text the way a scan across a whole paragraph could. The dash requires
+// real whitespace on both sides (unlike DASH_ASSOCIATE_RE/DASH_BUSINESS_RE,
+// which don't need this guard — their ALL-CAPS-surname/legal-suffix
+// requirement already rules out the case below): being the loosest of the
+// three dash matchers, this one would otherwise also match a compact
+// reference/event code with no legal name shape at all ("BLU-E01",
+// "Reference BLU-7719") as if the hyphen were the "Name - detail"
+// separator, corrupting whatever real address/vehicle text followed it
+// elsewhere in the same paragraph.
 const DASH_ENTITY_RE =
-  /^([A-Z][A-Za-z0-9&'.]*(?:\s+[A-Za-z0-9&'.]+){0,5})\s*[-–]\s*(.+)$/;
+  /^([A-Z][A-Za-z0-9&'.]*(?:\s+[A-Za-z0-9&'.]+){0,5})\s+[-–]\s+(.+)$/;
 
 /** Last-resort dash-separated shape, tried only once both
  * findDashSeparatedAssociates (needs a trailing ALL-CAPS surname) and
@@ -679,6 +694,35 @@ const DOB_RE = /\bDOB\s*:?\s*(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})/i;
 const SUBJECT_HEADING_RE = /SUBJECT|TARGET|PERSON\s+OF\s+INTEREST/i;
 const VEHICLES_HEADING_RE = /^VEHICLES?\b/i;
 const LOCATION_HEADING_RE = /LOCATIONS?\s+OF\s+INTEREST|^ADDRESSES?\b/i;
+const IDENTITY_HEADER_RE = /^(PRIMARY\s+IDENTITY|IDENTITY|SUBJECT|NAME)$/i;
+
+/** A fourth identity shape, alongside a NAME/SUBJECT label:value row
+ * (findLabelledValue) and a SUBJECT/TARGET heading with the name on its own
+ * paragraph (findSubjectFromParagraphs): a column-HEADED identity table —
+ * a header row naming each field ("PRIMARY IDENTITY | OPERATIONAL
+ * DESCRIPTION | REFERENCE IDENTIFIERS"), then one data row underneath
+ * carrying the actual values, name included — rather than a label sitting
+ * in the same row as its own value. Tried last, only once neither of the
+ * other two shapes found anything, since a document that already has a
+ * plain NAME row should never fall through to this. The name column's cell
+ * often bundles more than the name alone ("Leila Mariam HASSAN\nDOB 27 July
+ * 1991\nCOB Australia", one fact per line) — the first line is the name,
+ * the whole cell is returned too so the caller can still pull a DOB (via
+ * DOB_RE, same as findSubjectFromParagraphs) out of the lines underneath. */
+function findIdentityColumnTableValue(
+  tables: DocxReadResult["tables"]
+): { nameLine: string; cell: string } | null {
+  for (const table of tables) {
+    if (table.rows.length < 2) continue;
+    const header = table.rows[0];
+    const idx = header.findIndex(c => IDENTITY_HEADER_RE.test(c.trim()));
+    if (idx === -1) continue;
+    const cell = (table.rows[1][idx] ?? "").trim();
+    const nameLine = cell.split("\n")[0]?.trim();
+    if (nameLine) return { nameLine, cell };
+  }
+  return null;
+}
 
 /** When there's no table NAME row at all, a headed-paragraph document
  * (e.g. "1. SUBJECT" followed by the person's name on its own paragraph,
@@ -757,8 +801,24 @@ export function mapDocxToTargetProfile(
     };
   } else {
     // No NAME table row at all — this document may be organised as headed
-    // paragraphs instead (see findSubjectFromParagraphs).
+    // paragraphs instead (see findSubjectFromParagraphs), or as a
+    // column-headed identity table (see findIdentityColumnTableValue).
     name = findSubjectFromParagraphs(paragraphSections);
+    if (!name) {
+      const identityColumn = findIdentityColumnTableValue(result.tables);
+      if (identityColumn) {
+        const { firstNames, surname } = splitPersonName(
+          identityColumn.nameLine
+        );
+        const dobMatch = identityColumn.cell.match(DOB_RE);
+        name = {
+          firstNames,
+          surname,
+          bornDate: dobMatch ? dobMatch[1] : "",
+          confident: !!(firstNames && surname),
+        };
+      }
+    }
   }
 
   let vehiclesValue = findLabelledValue(rows, "VEHICLES") ?? "";
@@ -854,12 +914,21 @@ export function mapDocxToTargetProfile(
   const excludedBusinessNames = associateBlocks
     .map(a => a.businessName)
     .filter(Boolean);
-  const candidateEntities = scanFreeText(freeText).filter(c => {
-    if (c.type === "person") return !excludedPersonNames.has(c.value);
-    if (c.type === "business")
-      return !excludedBusinessNames.some(b => c.value.startsWith(b));
-    return true;
-  });
+  // The same real person/business/email/phone is routinely named more than
+  // once across a document's different sections (an entity register table,
+  // a narrative paragraph, a communications table, a cross-reference list
+  // all naming the same three people) — dedupe by type+value so the review
+  // screen shows each one once, not once per section it happens to appear
+  // in.
+  const candidateEntities = dedupeBy(
+    scanFreeText(freeText).filter(c => {
+      if (c.type === "person") return !excludedPersonNames.has(c.value);
+      if (c.type === "business")
+        return !excludedBusinessNames.some(b => c.value.startsWith(b));
+      return true;
+    }),
+    c => `${c.type}:${c.value.toLowerCase()}`
+  );
 
   return {
     name,

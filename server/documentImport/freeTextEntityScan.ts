@@ -60,10 +60,13 @@ const PERSON_SURNAME_STOPLIST = new Set([
 
 // A vehicle make immediately followed by a short ALL-CAPS trim/model code
 // reads exactly like "Firstname SURNAME" ("Lexus NX", "Mazda CX") — two
-// real false positives found against actual training documents. Checked
-// against just the first word of the firstNames group, so a genuine
-// person whose real first name happens to also be a make elsewhere isn't
-// affected by this list existing.
+// real false positives found against actual training documents. A document's
+// own reference furniture ("Operation BLUEGUM", "Reference BLU-7719") reads
+// the same way for the same reason: a Title-Case word immediately followed
+// by an ALL-CAPS code. Checked against just the first word of the firstNames
+// group, so a genuine person whose real first name happens to also be a
+// make (or "Operation"/"Reference") elsewhere isn't affected by this list
+// existing.
 const PERSON_FIRSTNAME_STOPLIST = new Set([
   "Toyota",
   "Mazda",
@@ -84,6 +87,12 @@ const PERSON_FIRSTNAME_STOPLIST = new Set([
   "Skoda",
   "Chrysler",
   "Dodge",
+  "Operation",
+  "Reference",
+  "Case",
+  "File",
+  "Report",
+  "Exhibit",
 ]);
 
 /** "Firstname [Middlename] SURNAME" — one to three genuinely title-case
@@ -130,7 +139,13 @@ const LABELLED_EMAIL_RE = /^\s*Email\s*:\s*(.+?)\s*$/gim;
 // duplicate.
 const BARE_EMAIL_RE = /\b[\w.+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b/g;
 
-const LABELLED_PHONE_RE = /^\s*(?:Mobile|Phone|Tel|Contact)\s*:\s*(.+?)\s*$/gim;
+// The value stops at a trailing "; email ..." clause rather than swallowing
+// it — "Contact:" (unlike "Mobile"/"Phone"/"Tel") is loose enough to
+// introduce more than just a phone number on the same line ("Contact:
+// Mobile 0491 570 121; email marcus.dunn@bluegum.example."), and without
+// this the whole remainder of the line becomes the "phone" value.
+const LABELLED_PHONE_RE =
+  /^\s*(?:Mobile|Phone|Tel|Contact)\s*:\s*(.+?)(?:\s*;.*)?\s*$/gim;
 // Deliberately not anchored to a label: catches the same shape even when a
 // second mention of a number is folded into a sentence with a stray
 // non-digit character stuck to the front (e.g. "recorded his number as

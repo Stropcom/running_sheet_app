@@ -2214,7 +2214,7 @@ export default function OperationDetail() {
         </div>
 
         {/* Header */}
-        <div className="flex items-start justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
           <div>
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2.5 rounded-lg bg-blue-700/10 border border-blue-700/20">

@@ -3706,12 +3706,24 @@ export function extractEntitiesFromText(text: string): Array<{
     // Also classify airport terminals, train stations, bus stops, ports, and
     // numbered terminals (e.g. "Terminal 2", "Gate 3", "Platform 5") as addresses.
     // Also handles cnr/corner-of addresses and lot numbers.
-    const STREET_TYPES =
-      /\b(st|street|rd|road|ave|avenue|dr|drive|way|ct|court|pl|place|cl|close|cres|crescent|blvd|boulevard|hwy|highway|fwy|freeway|ln|lane|tce|terrace|pde|parade|cct|circuit|gr|grove|rise|loop|link|walk|track|row|mews|quay|esplanade|promenade)\b/i;
+    const STREET_TYPE_WORDS =
+      "st|street|rd|road|ave|avenue|dr|drive|way|ct|court|pl|place|cl|close|cres|crescent|blvd|boulevard|hwy|highway|fwy|freeway|ln|lane|tce|terrace|pde|parade|cct|circuit|gr|grove|rise|loop|link|walk|track|row|mews|quay|esplanade|promenade";
+    const STREET_TYPES = new RegExp(`\\b(${STREET_TYPE_WORDS})\\b`, "i");
     const addressInFull =
-      /\b\d{1,5}[A-Za-z]?\s+\w[\w\s]*(street|road|ave|avenue|drive|way|court|place|close|crescent|boulevard|highway|freeway|lane|terrace|parade|circuit)\b/i.test(
-        lastSentence
-      ) ||
+      // Reuses the same STREET_TYPE_WORDS list as STREET_TYPES below rather
+      // than a second, separately-maintained word list — a previous
+      // hand-typed duplicate here was missing several words STREET_TYPES
+      // already had (esplanade, promenade, quay, grove, rise, loop, link,
+      // walk, track, row, mews, and every abbreviated form), so a full
+      // street address in the sentence using one of those went completely
+      // undetected as an address and fell through to being classified as
+      // a bare business name instead (e.g. "Balthazar, 6 The Esplanade,
+      // PERTH WA (Balthazar)" — no postcode, no other address signal, and
+      // "esplanade" wasn't in the old inline list).
+      new RegExp(
+        `\\b\\d{1,5}[A-Za-z]?\\s+\\w[\\w\\s]*(${STREET_TYPE_WORDS})\\b`,
+        "i"
+      ).test(lastSentence) ||
       STREET_TYPES.test(shortForm) ||
       /^\d{1,5}\s/.test(shortForm) ||
       // cnr / corner of addresses: "cnr Smith St and Jones Ave"

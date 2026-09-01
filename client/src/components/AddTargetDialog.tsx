@@ -524,6 +524,24 @@ export function AddTargetDialog({
   // gets typed in, rather than only at Save after that work is already
   // done. Silent on no-match/failure; the popup only interrupts when
   // there's actually something to confirm.
+  //
+  // v1.31.0 shipped this checking only target-vs-target
+  // (findPossibleDuplicate) — real-world gap found in v1.33.3: a name that
+  // already exists as a registered Associate, or as a person already mined
+  // from observation text (e.g. "Heath HARRIS" sitting in the Intelligence
+  // folder's Associates tab without yet being a registered Target), was
+  // never caught here at all — that was a *different* check
+  // (runDuplicateChecks's "person" kind) that only ran inside handleSave's
+  // secondary pass at Save. Fixed by having this same blur handler also
+  // run that person-vs-associate check below.
+  //
+  // Side effect: PossibleDuplicateAlert's warnQueue can now open mid-form
+  // instead of only right before saving, so its "No, this is different —
+  // continue" button can no longer unconditionally jump to saveAsNew() once
+  // the queue empties (see handleWarnContinue) — the officer may not have
+  // filled in address/vehicle/operation yet. warnFromSave gates that: only
+  // true when the queue came from handleSave's own runSecondaryChecks, not
+  // from this early check.
   const lastBlurCheckedNameRef = useRef("");
   const checkNameOnBlur = async () => {
     if (!composedName || composedName === lastBlurCheckedNameRef.current)

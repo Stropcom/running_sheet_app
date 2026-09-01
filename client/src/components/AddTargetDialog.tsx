@@ -243,6 +243,12 @@ export function AddTargetDialog({
   // just confirms and moves on.
   const [warnQueue, setWarnQueue] = useState<DuplicateWarning[]>([]);
   const [warnIndex, setWarnIndex] = useState(0);
+  // Set only when the current warnQueue came from handleSave's full
+  // secondary check — "No, this is different" only carries on into
+  // actually saving when that's true; the early on-blur check below
+  // raises the same queue/dialog just to surface a match sooner, not to
+  // push the officer toward saving before the rest of the form is filled in.
+  const [warnFromSave, setWarnFromSave] = useState(false);
   const notDuplicateMutation =
     trpc.intelligence.markEntitiesNotDuplicate.useMutation();
 
@@ -264,6 +270,7 @@ export function AddTargetDialog({
     setMergeOpen(false);
     setWarnQueue([]);
     setWarnIndex(0);
+    setWarnFromSave(false);
     setLinking(false);
     onClose();
   };
@@ -468,6 +475,7 @@ export function AddTargetDialog({
       })),
     ]);
     if (warnings.length > 0) {
+      setWarnFromSave(true);
       setWarnQueue(warnings);
       setWarnIndex(0);
     } else {
@@ -528,6 +536,22 @@ export function AddTargetDialog({
       if (match) {
         setDupMatchFromSave(false);
         setDupMatch(match);
+        return;
+      }
+      // No target-vs-target match — this name might still already be a
+      // known Associate, or a person already mined from observation text
+      // (e.g. "Heath HARRIS" showing up in the Intelligence folder's
+      // Associates tab without yet being a registered Target). That's the
+      // same check handleSave's fuller secondary pass performs later; run
+      // it here too so it surfaces right after the name rather than only
+      // after address/vehicle/etc. get typed in as well.
+      const warnings = await runDuplicateChecks(utils, [
+        { kind: "person", label: composedName },
+      ]);
+      if (warnings.length > 0) {
+        setWarnFromSave(false);
+        setWarnQueue(warnings);
+        setWarnIndex(0);
       } else {
         setDupCheckedForName(composedName);
       }
@@ -552,7 +576,11 @@ export function AddTargetDialog({
     } else {
       setWarnQueue([]);
       setWarnIndex(0);
-      await saveAsNew();
+      // Only the save-time check should carry on into actually saving —
+      // the early on-blur check just needed an answer, not a reason to
+      // jump ahead of the rest of the form (address/vehicle/operation may
+      // not even be filled in yet).
+      if (warnFromSave) await saveAsNew();
     }
   };
 

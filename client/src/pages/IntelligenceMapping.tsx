@@ -107,6 +107,7 @@ import {
   Clock,
   Image as ImageIcon,
   Undo2,
+  Keyboard,
   Car,
 } from "lucide-react";
 
@@ -3297,6 +3298,18 @@ export default function IntelligenceMapping() {
     });
   };
 
+  // Explicit on/off control for the same tap-only/typing switch as
+  // enableInlineTyping above — lets a touch-device officer deliberately
+  // drop back to chip-click-only instead of typing mode being one-way.
+  const toggleInlineTyping = () => {
+    if (rsInlineTypingMode) {
+      setRsInlineTypingMode(false);
+      rsInlineInputRef.current?.blur();
+    } else {
+      enableInlineTyping();
+    }
+  };
+
   // Snapshot the observation text before a change is applied, so undoInlineText
   // can step back to it. Call with the pre-change value.
   const pushInlineUndo = (prevText: string) => {
@@ -6058,16 +6071,41 @@ export default function IntelligenceMapping() {
                             <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">
                               Observation
                             </span>
-                            <button
-                              type="button"
-                              onClick={undoInlineText}
-                              disabled={rsInlineUndoStack.length === 0}
-                              title="Undo"
-                              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border border-border text-muted-foreground transition-all active:scale-95 hover:bg-accent/50 disabled:opacity-40 disabled:pointer-events-none"
-                            >
-                              <Undo2 className="h-3 w-3" />
-                              Undo
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              {/* Only meaningful on touch devices — desktop's
+                                  observation field is always editable (see
+                                  useIsTouchDevice above), so this toggle
+                                  would have nothing to switch there. */}
+                              {isTouchDevice && (
+                                <button
+                                  type="button"
+                                  onClick={toggleInlineTyping}
+                                  title={
+                                    rsInlineTypingMode
+                                      ? "Switch back to chip-click only"
+                                      : "Switch to keyboard typing"
+                                  }
+                                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-all active:scale-95 hover:bg-accent/50 ${
+                                    rsInlineTypingMode
+                                      ? "border-primary/50 text-primary bg-primary/10"
+                                      : "border-border text-muted-foreground"
+                                  }`}
+                                >
+                                  <Keyboard className="h-3 w-3" />
+                                  Keyboard
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={undoInlineText}
+                                disabled={rsInlineUndoStack.length === 0}
+                                title="Undo"
+                                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border border-border text-muted-foreground transition-all active:scale-95 hover:bg-accent/50 disabled:opacity-40 disabled:pointer-events-none"
+                              >
+                                <Undo2 className="h-3 w-3" />
+                                Undo
+                              </button>
+                            </div>
                           </div>
                           <textarea
                             ref={rsInlineInputRef}

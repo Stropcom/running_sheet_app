@@ -6366,6 +6366,18 @@ export async function getAllIntelligenceEntities(): Promise<
   const db = await getDb();
   if (!db) return [];
 
+  // "business" and "address" are the same category of location entity from
+  // an officer's point of view — which one a given mention gets classified
+  // as depends only on whether that particular sentence happened to spell
+  // out the street address, not on what the place actually is (see the
+  // type classification in extractEntitiesFromText above). Bucket both
+  // under the same key prefix everywhere an entity type key gets built
+  // below, so a location mentioned once with its street address and once
+  // without ("The Reveley, 1 Barrack Street, PERTH WA (The Reveley)" vs
+  // just "The Reveley (The Reveley)") merges into one entity instead of
+  // forking into two separate profiles for the same real place.
+  const locationKeyType = (t: string) => (t === "business" ? "address" : t);
+
   // Confirmed entity-alias merges (fuzzy-duplicate prompt "Yes", or the manual
   // Merge Entities tool) — fold the loser's occurrences into the winner the
   // same way TGT aliases fold into their canonical target below. loserLabel
@@ -6374,8 +6386,9 @@ export async function getAllIntelligenceEntities(): Promise<
   const aliasRows = await db.select().from(entityAliases);
   const entityAliasMap = new Map<string, { key: string; label: string }>();
   for (const a of aliasRows) {
-    entityAliasMap.set(`${a.type}::${a.loserKey}`, {
-      key: `${a.type}::${a.winnerKey}`,
+    const aliasType = locationKeyType(a.type);
+    entityAliasMap.set(`${aliasType}::${a.loserKey}`, {
+      key: `${aliasType}::${a.winnerKey}`,
       label: a.winnerLabel,
     });
   }
@@ -7041,7 +7054,7 @@ export async function getAllIntelligenceEntities(): Promise<
       e.type === "vehicle"
         ? vehicleRegoKey(e.shortForm)
         : e.shortForm.toLowerCase().replace(/\s+/g, " ").trim();
-    let key = `${e.type}::${normShortForm}`;
+    let key = `${locationKeyType(e.type)}::${normShortForm}`;
 
     // Confirmed entity-alias merge (fuzzy-duplicate prompt "Yes", or the
     // manual Merge Entities tool) — redirect this occurrence to the winner
@@ -7066,6 +7079,12 @@ export async function getAllIntelligenceEntities(): Promise<
       // the confirmed canonical display form and shouldn't be overwritten by
       // whatever the loser's raw text happened to say.
       const existing = entityMap.get(key)!;
+      // Prefer "address" over "business" once a mention with real street
+      // detail shows up — address is strictly more informative and this is
+      // the same real-world place (see locationKeyType above).
+      if (existing.type === "business" && e.type === "address") {
+        existing.type = "address";
+      }
       const shouldUpgrade =
         e.type === "vehicle"
           ? preferVehicleShortForm(

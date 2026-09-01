@@ -10411,6 +10411,11 @@ export interface IntelVehicleProfile {
 
 export interface IntelLocationProfile {
   label: string;
+  /** A fuller "<street>, SUBURB STATE" form of this address, recovered from
+   * an occurrence's free text, for geocoding — `label` alone is often just
+   * a business/place name (see composeAddress's bracketCode) with no
+   * suburb or street, which is far too ambiguous to geocode reliably. */
+  fullAddress: string | null;
   linkedTargets: Array<{ targetId: number; name: string }>;
   /** Every registered associate that lists this address — mirrors
    * linkedTargets above but for an associate's own address field. */
@@ -11856,6 +11861,25 @@ export async function getIntelLocationProfile(
   const assocRowIds = new Set(observationOccs.map(o => o.rowId));
   const labelLower = label.toLowerCase();
 
+  // entity.shortForm (== label here) is composeAddress's bracketCode —
+  // when the address has a business/place name, that's ALL it is (e.g.
+  // "Balthazar", no street or suburb at all — see composeAddress in
+  // shared/addressFormat.ts). Geocoding a bare business name is unreliable
+  // (the Geocoding API expects a structured address, not a place-name
+  // search), so recover a fuller "<street>, SUBURB STATE" form from an
+  // occurrence's fullDescription — the free text immediately preceding
+  // this entity's bracket, which composeAddress always writes as
+  // "<street>, SUBURB STATE" (see extractEntitiesFromText above).
+  const LOCATION_SUBURB_STATE_RE =
+    /,\s*[A-Za-z][\w\s]*?\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b/;
+  let fullAddress: string | null = null;
+  for (const occ of entity.occurrences) {
+    if (LOCATION_SUBURB_STATE_RE.test(occ.fullDescription)) {
+      fullAddress = occ.fullDescription.trim();
+      break;
+    }
+  }
+
   const allTargets = await db
     .select({
       id: targets.id,
@@ -11995,6 +12019,7 @@ export async function getIntelLocationProfile(
 
   return {
     label: entity.shortForm,
+    fullAddress,
     linkedTargets,
     linkedAssociates,
     linkedOperations: Array.from(opMap.values()),

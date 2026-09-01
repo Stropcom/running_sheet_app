@@ -33,6 +33,7 @@ type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 type IntelProfileEntity = IntelAssocEntity;
 interface IntelLocationProfile {
   label: string;
+  fullAddress: string | null;
   linkedTargets: Array<{ targetId: number; name: string }>;
   linkedAssociates: Array<{
     associateId: number;
@@ -156,10 +157,16 @@ export default function IntelligenceLocationProfile() {
     mapRef.current = map;
     if (!label) return;
     const geocoder = new window.google.maps.Geocoder();
-    // Append ", Western Australia, Australia" to improve geocoding accuracy for WA addresses
-    const searchQuery = label.match(/,\s*(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)/)
-      ? label
-      : `${label}, Western Australia, Australia`;
+    // `label` is often just a business/place name with no street or suburb
+    // at all (composeAddress's bracketCode — see shared/addressFormat.ts),
+    // which the Geocoding API can't resolve reliably on its own. Prefer the
+    // fuller "<street>, SUBURB STATE" form the server recovers from an
+    // observation's free text; only fall back to the bare label + a blanket
+    // "Western Australia" when no fuller form is available.
+    const baseQuery = profile?.fullAddress || label;
+    const searchQuery = /\b(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b/.test(baseQuery)
+      ? `${baseQuery}, Australia`
+      : `${baseQuery}, Western Australia, Australia`;
     geocoder.geocode({ address: searchQuery }, (results, status) => {
       if (status === "OK" && results && results[0]) {
         const loc = results[0].geometry.location;

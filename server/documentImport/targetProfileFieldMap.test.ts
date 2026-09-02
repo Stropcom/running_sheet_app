@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { readDocxTables } from "./docxTableReader";
-import { mapDocxToTargetProfile } from "./targetProfileFieldMap";
+import { readPdfText } from "./pdfTextReader";
+import { mapDocumentToTargetProfile } from "./targetProfileFieldMap";
 
 const FIXTURE_PATH = join(
   __dirname,
@@ -28,12 +29,20 @@ const BLUEGUM_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-training-bluegum.docx"
 );
+const PDF_COLON_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-colon.pdf"
+);
+const PDF_TABLE_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-table.pdf"
+);
 
-describe("mapDocxToTargetProfile", () => {
+describe("mapDocumentToTargetProfile", () => {
   it("maps the real training document end-to-end", async () => {
     const buffer = readFileSync(FIXTURE_PATH);
     const read = await readDocxTables(buffer);
-    const result = mapDocxToTargetProfile(read);
+    const result = mapDocumentToTargetProfile(read);
 
     expect(result.name).toMatchObject({
       firstNames: "John Alawishes",
@@ -100,7 +109,7 @@ describe("mapDocxToTargetProfile", () => {
   it("attaches an associate's address and vehicle from a free-text block, without false-positiving on an all-caps suburb", async () => {
     const buffer = readFileSync(PAYNE_FIXTURE_PATH);
     const read = await readDocxTables(buffer);
-    const result = mapDocxToTargetProfile(read);
+    const result = mapDocumentToTargetProfile(read);
 
     expect(result.name).toMatchObject({
       firstNames: "Thomas David",
@@ -139,12 +148,12 @@ describe("mapDocxToTargetProfile", () => {
   });
 
   it("reports an empty needsReview for both real fixtures — no false positives", async () => {
-    const trainingResult = mapDocxToTargetProfile(
+    const trainingResult = mapDocumentToTargetProfile(
       await readDocxTables(readFileSync(FIXTURE_PATH))
     );
     expect(trainingResult.needsReview).toEqual([]);
 
-    const payneResult = mapDocxToTargetProfile(
+    const payneResult = mapDocumentToTargetProfile(
       await readDocxTables(readFileSync(PAYNE_FIXTURE_PATH))
     );
     expect(payneResult.needsReview).toEqual([]);
@@ -156,7 +165,7 @@ describe("mapDocxToTargetProfile", () => {
   // name+address+vehicle block end-to-end through the orchestrator, not
   // just at the matchWholeLinePersonName unit level.
   it("finds an associate block with no title and one introduced by a relationship word", () => {
-    const result = mapDocxToTargetProfile({
+    const result = mapDocumentToTargetProfile({
       tables: [
         {
           rows: [["", "SUMMARY"]],
@@ -204,7 +213,7 @@ describe("mapDocxToTargetProfile", () => {
   it("maps a headed-paragraph document with cell-embedded sub-sections and dash-separated associates", async () => {
     const buffer = readFileSync(ECHOPOINT_FIXTURE_PATH);
     const read = await readDocxTables(buffer);
-    const result = mapDocxToTargetProfile(read);
+    const result = mapDocumentToTargetProfile(read);
 
     // Subject found via the "1. SUBJECT" heading, not a NAME table row.
     expect(result.name).toMatchObject({
@@ -368,7 +377,7 @@ describe("mapDocxToTargetProfile", () => {
   it("maps a document using SUBJECT (not NAME) for the subject, and a business associate with no legal suffix", async () => {
     const buffer = readFileSync(LANTERN_FIXTURE_PATH);
     const read = await readDocxTables(buffer);
-    const result = mapDocxToTargetProfile(read);
+    const result = mapDocumentToTargetProfile(read);
 
     expect(result.name).toMatchObject({
       firstNames: "Mia Elizabeth",
@@ -411,7 +420,7 @@ describe("mapDocxToTargetProfile", () => {
   it("maps a document whose subject card is bundled into one table cell under a bare 'Target' heading", async () => {
     const buffer = readFileSync(QUARRY_FIXTURE_PATH);
     const read = await readDocxTables(buffer);
-    const result = mapDocxToTargetProfile(read);
+    const result = mapDocumentToTargetProfile(read);
 
     expect(result.name).toMatchObject({
       firstNames: "Oliver James",
@@ -506,7 +515,7 @@ describe("mapDocxToTargetProfile", () => {
   it("maps a document whose identity block is a column-headed table, without garbling its reference codes into fake associates", async () => {
     const buffer = readFileSync(BLUEGUM_FIXTURE_PATH);
     const read = await readDocxTables(buffer);
-    const result = mapDocxToTargetProfile(read);
+    const result = mapDocumentToTargetProfile(read);
 
     // The identity block has no NAME/SUBJECT label:value row at all — it's
     // a header row ("PRIMARY IDENTITY | OPERATIONAL DESCRIPTION |
@@ -559,13 +568,13 @@ describe("mapDocxToTargetProfile", () => {
   });
 });
 
-describe("mapDocxToTargetProfile — needsReview", () => {
+describe("mapDocumentToTargetProfile — needsReview", () => {
   // A "LOCATION OF INTEREST" line under a recognised sub-label that matches
   // neither parseAddressLine nor its loose fallback (no leading house
   // number, e.g. a corner address) used to just vanish. It should now be
   // reported so the officer knows something was there.
   it("reports an address line under a label that nothing could parse", () => {
-    const result = mapDocxToTargetProfile({
+    const result = mapDocumentToTargetProfile({
       tables: [
         {
           rows: [
@@ -595,7 +604,7 @@ describe("mapDocxToTargetProfile — needsReview", () => {
   // now tolerates that comma directly, so both anchor independently and
   // neither needs the needsReview safety net below.
   it("splits a comma-before-bracket vehicle into its own entry, not a needsReview fallback", () => {
-    const result = mapDocxToTargetProfile({
+    const result = mapDocumentToTargetProfile({
       tables: [
         {
           rows: [
@@ -627,7 +636,7 @@ describe("mapDocxToTargetProfile — needsReview", () => {
   // (e.g. "Rego 1MXP920, ..." with the state never bracketed) currently
   // produces zero vehicle entries — the whole cell should be reported.
   it("reports a whole VEHICLES cell with no anchor at all", () => {
-    const result = mapDocxToTargetProfile({
+    const result = mapDocumentToTargetProfile({
       tables: [
         {
           rows: [
@@ -648,10 +657,67 @@ describe("mapDocxToTargetProfile — needsReview", () => {
   });
 
   it("reports nothing for a blank VEHICLES cell", () => {
-    const result = mapDocxToTargetProfile({
+    const result = mapDocumentToTargetProfile({
       tables: [{ rows: [["", "VEHICLES", ""]] }],
       paragraphs: [],
     });
     expect(result.needsReview).toEqual([]);
+  });
+});
+
+// A .pdf goes through a different reader (pdfTextReader.ts, which
+// reconstructs structure from on-page text position instead of walking a
+// real <w:tbl> tree) but must land on the same mapDocumentToTargetProfile
+// pipeline and produce the same shape of result — these two fixtures carry
+// identical content in the two real-world shapes a typed-text PDF actually
+// uses (see pdfTextReader.test.ts's own module comment), proving the two
+// readers are interchangeable inputs to the mapper.
+describe("mapDocumentToTargetProfile — PDF documents", () => {
+  it("maps a colon-style PDF (NAME: value) end-to-end", async () => {
+    const read = await readPdfText(readFileSync(PDF_COLON_FIXTURE_PATH));
+    const result = mapDocumentToTargetProfile(read);
+
+    expect(result.name).toMatchObject({
+      firstNames: "Sarah Jane",
+      surname: "MILLER",
+      bornDate: "14/03/1990",
+      confident: true,
+    });
+    expect(result.unmappedFields).toContainEqual({
+      label: "PROMIS ID",
+      value: "5551234",
+    });
+    expect(result.unmappedFields).toContainEqual({
+      label: "ROLE",
+      value: "Person of Interest",
+    });
+    expect(result.addresses).toHaveLength(1);
+    expect(result.addresses[0]).toMatchObject({
+      houseNo: "22",
+      streetName: "Bridge",
+      streetType: "Road",
+    });
+  });
+
+  it("maps a two-column table-style PDF (no colon) to the same result", async () => {
+    const read = await readPdfText(readFileSync(PDF_TABLE_FIXTURE_PATH));
+    const result = mapDocumentToTargetProfile(read);
+
+    expect(result.name).toMatchObject({
+      firstNames: "Sarah Jane",
+      surname: "MILLER",
+      bornDate: "14/03/1990",
+      confident: true,
+    });
+    expect(result.unmappedFields).toContainEqual({
+      label: "PROMIS ID",
+      value: "5551234",
+    });
+    expect(result.addresses).toHaveLength(1);
+    expect(result.addresses[0]).toMatchObject({
+      houseNo: "22",
+      streetName: "Bridge",
+      streetType: "Road",
+    });
   });
 });

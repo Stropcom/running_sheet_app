@@ -315,7 +315,8 @@ import { generateStatDecDocx } from "./statDecGenerator";
 import { generateWipcRequestDocx } from "./wipcRequestGenerator";
 import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
 import { readDocxTables } from "./documentImport/docxTableReader";
-import { mapDocxToTargetProfile } from "./documentImport/targetProfileFieldMap";
+import { readPdfText } from "./documentImport/pdfTextReader";
+import { mapDocumentToTargetProfile } from "./documentImport/targetProfileFieldMap";
 import {
   createWipcAuditEntry,
   getWipcAuditLog,
@@ -3090,29 +3091,37 @@ export const appRouter = router({
           );
         }),
 
-      /** Parses an uploaded .docx target-profile document into a proposed
-       * set of structured fields for the review screen (see
+      /** Parses an uploaded .docx or .pdf target-profile document into a
+       * proposed set of structured fields for the review screen (see
        * server/documentImport/) — deterministic table/text parsing only,
        * no AI/LLM call, per CLAUDE.md's Golden Rule. Nothing is persisted
        * here and the document itself isn't stored; the officer reviews and
        * confirms the parsed fields, then saves through the normal
-       * create/update mutations above. */
-      parseDocx: protectedProcedure
+       * create/update mutations above. Which reader runs is decided by the
+       * uploaded file's own name — the client never asks the officer to
+       * choose a document type. */
+      parseDocument: protectedProcedure
         .input(
           z.object({
+            fileName: z.string().min(1),
             dataBase64: z.string().min(1),
           })
         )
         .mutation(async ({ input }) => {
           const buffer = Buffer.from(input.dataBase64, "base64");
-          const read = await readDocxTables(buffer);
+          const isPdf = /\.pdf$/i.test(input.fileName);
+          const read = isPdf
+            ? await readPdfText(buffer)
+            : await readDocxTables(buffer);
           if (read.tables.length === 0 && read.paragraphs.length === 0) {
             throw new TRPCError({
               code: "BAD_REQUEST",
-              message: "Couldn't read this file as a Word document (.docx).",
+              message: isPdf
+                ? "Couldn't read any text in this PDF — it may be a scanned image with no selectable text, which isn't supported yet."
+                : "Couldn't read this file as a Word document (.docx).",
             });
           }
-          return mapDocxToTargetProfile(read);
+          return mapDocumentToTargetProfile(read);
         }),
     }),
   }),

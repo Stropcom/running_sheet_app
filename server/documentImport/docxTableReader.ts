@@ -2,9 +2,11 @@
 // from its OOXML — no PDF, no OCR, no conversion step. A .docx is a zip of
 // XML; word/document.xml already contains genuine <w:tbl>/<w:tr>/<w:tc>
 // table markup, so this walks that tree instead of approximating table
-// layout from visual positioning (which is what a PDF reader has to do —
-// see documentImport/README.md for why the two formats need separate
-// readers rather than converting one into the other).
+// layout from visual positioning (which is what pdfTextReader.ts has to do
+// for a .pdf, which has no equivalent native table markup — see that
+// file's module comment for why the two formats need separate readers
+// rather than converting one into the other, both producing the same
+// DocumentReadResult shape for targetProfileFieldMap.ts to consume).
 import JSZip from "jszip";
 import { XMLParser } from "fast-xml-parser";
 
@@ -117,9 +119,7 @@ export async function readDocxTables(buffer: Buffer): Promise<DocxReadResult> {
         const cells = findAll(trNode["w:tr"], "w:tc");
         return cells.map(tcNode => {
           const paras = findAll(tcNode["w:tc"], "w:p");
-          return cleanText(
-            paras.map(p => collectText(p["w:p"])).join("\n")
-          );
+          return cleanText(paras.map(p => collectText(p["w:p"])).join("\n"));
         });
       });
       return { rows };

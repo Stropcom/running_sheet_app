@@ -1,8 +1,10 @@
 // Orchestrates the individual document-import parsers into the shape the
-// review screen needs: turn a target-profile-style .docx's raw table/
-// paragraph text (from docxTableReader.ts) into structured fields the Add
-// Target form already understands (StructuredNameParts / StructuredAddress-
-// Parts / StructuredVehicleParts — see client/src/lib/addressFormat.ts),
+// review screen needs: turn a target-profile-style document's raw table/
+// paragraph text (from docxTableReader.ts for .docx, pdfTextReader.ts for
+// .pdf — both produce the same DocumentReadResult shape) into structured
+// fields the Add Target form already understands (StructuredNameParts /
+// StructuredAddressParts / StructuredVehicleParts — see
+// client/src/lib/addressFormat.ts),
 // plus whatever this document format carries that the schema has no field
 // for yet (PROMIS ID, OCG, COB, ...) shown read-only, plus free-text
 // candidate entities for a human to confirm. Nothing here writes to the
@@ -23,7 +25,7 @@ import {
   matchWholeLinePersonName,
   type CandidateEntity,
 } from "./freeTextEntityScan";
-import type { DocxReadResult } from "./docxTableReader";
+import type { DocumentReadResult } from "./documentReadResult";
 
 /** Labels this document format uses for fields the schema has no place for
  * today (see CLAUDE.md's Golden Rule discussion / the "Schema gap" decision
@@ -39,7 +41,7 @@ const UNMAPPED_LABELS = [
   "IDs",
 ] as const;
 
-const ALL_KNOWN_LABELS = new Set<string>([
+export const ALL_KNOWN_LABELS = new Set<string>([
   "NAME",
   "DOB",
   "VEHICLES",
@@ -179,7 +181,7 @@ interface ParagraphSection {
  * definition, which is what keeps this from misfiring on ordinary body
  * text (an associate's name-and-address paragraph always has lowercase
  * words in it somewhere). */
-function isHeadingLine(line: string): boolean {
+export function isHeadingLine(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed || trimmed.length > 70) return false;
   if (/^\d+[.)]\s*\S/.test(trimmed)) return true;
@@ -241,7 +243,9 @@ function findParagraphSection(
  * newline-joined string by docxTableReader.ts) instead of pairing a label
  * cell with a separate value cell in the same row. Both shapes end up
  * queryable through the one findParagraphSection lookup below. */
-function findAllParagraphSections(result: DocxReadResult): ParagraphSection[] {
+function findAllParagraphSections(
+  result: DocumentReadResult
+): ParagraphSection[] {
   const sections = splitParagraphsIntoSections(result.paragraphs);
   for (const table of result.tables) {
     for (const row of table.rows) {
@@ -362,7 +366,7 @@ function findAddressRegisterRows(rows: string[][]): string {
  * — same "only keep what has somewhere to go" rule every matcher here
  * follows — they're simply never claimed. */
 function findAssociateTableRows(
-  tables: DocxReadResult["tables"]
+  tables: DocumentReadResult["tables"]
 ): FreeTextAssociate[] {
   const out: FreeTextAssociate[] = [];
   for (const table of tables) {
@@ -710,7 +714,7 @@ const IDENTITY_HEADER_RE = /^(PRIMARY\s+IDENTITY|IDENTITY|SUBJECT|NAME)$/i;
  * the whole cell is returned too so the caller can still pull a DOB (via
  * DOB_RE, same as findSubjectFromParagraphs) out of the lines underneath. */
 function findIdentityColumnTableValue(
-  tables: DocxReadResult["tables"]
+  tables: DocumentReadResult["tables"]
 ): { nameLine: string; cell: string } | null {
   for (const table of tables) {
     if (table.rows.length < 2) continue;
@@ -777,8 +781,8 @@ function dedupeBy<T>(items: T[], key: (item: T) => string): T[] {
   return out;
 }
 
-export function mapDocxToTargetProfile(
-  result: DocxReadResult
+export function mapDocumentToTargetProfile(
+  result: DocumentReadResult
 ): TargetProfileImportResult {
   const rows = result.tables.flatMap(t => t.rows);
   const paragraphSections = findAllParagraphSections(result);

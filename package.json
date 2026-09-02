@@ -1,6 +1,6 @@
 {
   "name": "running_sheet_app",
-  "version": "1.36.3",
+  "version": "1.37.0",
   "type": "module",
   "license": "MIT",
   "scripts": {
@@ -80,6 +80,7 @@
     "nanoid": "^5.1.5",
     "next-themes": "^0.4.6",
     "onnxruntime-node": "^1.27.0",
+    "pdfjs-dist": "^6.3.289",
     "react": "^19.2.1",
     "react-big-calendar": "^1.20.0",
     "react-day-picker": "^9.11.1",
@@ -113,6 +114,7 @@
     "autoprefixer": "^10.4.20",
     "drizzle-kit": "^0.31.4",
     "esbuild": "^0.25.0",
+    "pdf-lib": "^1.17.1",
     "pnpm": "^10.15.1",
     "postcss": "^8.4.47",
     "prettier": "^3.6.2",

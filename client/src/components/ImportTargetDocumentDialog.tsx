@@ -1,5 +1,7 @@
 /**
- * "Import from Document" — upload a .docx target-profile document, parse it
+ * "Import from Document" — upload a .docx or .pdf target-profile document
+ * (the file's own extension decides which reader runs, see the
+ * parseDocument procedure — the officer never has to pick a type), parse it
  * deterministically server-side (server/documentImport/, no AI/LLM call —
  * see CLAUDE.md's Golden Rule), and review the proposed fields before
  * handing off to AddTargetDialog to actually save. This dialog never
@@ -82,7 +84,7 @@ export interface DocumentImportPrefill {
   /** The uploaded file's own name — shown on the Operation/Target profile's
    * imported-document panels so an officer can tell which document a
    * version came from. Not the file itself; the document is never stored,
-   * see the parseDocx procedure's comment. */
+   * see the parseDocument procedure's comment. */
   sourceFileName: string;
 }
 
@@ -135,7 +137,7 @@ export function ImportTargetDocumentDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState("");
-  const parseMut = trpc.target.registry.parseDocx.useMutation();
+  const parseMut = trpc.target.registry.parseDocument.useMutation();
   const utils = trpc.useUtils();
   const updateAssociateMut = trpc.associate.update.useMutation();
 
@@ -225,15 +227,13 @@ export function ImportTargetDocumentDialog({
   const handleFilePicked = async (file: File) => {
     setError("");
     setFileName(file.name);
-    if (!/\.docx$/i.test(file.name)) {
-      setError(
-        "Only Word (.docx) documents are supported right now — PDF support is planned."
-      );
+    if (!/\.(docx|pdf)$/i.test(file.name)) {
+      setError("Only Word (.docx) or PDF (.pdf) documents are supported.");
       return;
     }
     try {
       const dataBase64 = await readFileAsBase64(file);
-      await parseMut.mutateAsync({ dataBase64 });
+      await parseMut.mutateAsync({ fileName: file.name, dataBase64 });
     } catch (err: any) {
       setError(
         err?.message ??
@@ -499,14 +499,15 @@ export function ImportTargetDocumentDialog({
           {!result && (
             <>
               <p className="text-sm text-muted-foreground">
-                Upload a Word (.docx) document with target/associate details —
-                fields it recognises will pre-fill the Add Target form for you
-                to review and confirm. Nothing is saved automatically.
+                Upload a Word (.docx) or PDF (.pdf) document with
+                target/associate details — fields it recognises will pre-fill
+                the Add Target form for you to review and confirm. Nothing is
+                saved automatically.
               </p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".docx"
+                accept=".docx,.pdf"
                 className="hidden"
                 onChange={e => {
                   const file = e.target.files?.[0];
@@ -524,7 +525,9 @@ export function ImportTargetDocumentDialog({
                 ) : (
                   <Upload className="w-4 h-4" />
                 )}
-                {parseMut.isPending ? "Reading document…" : "Choose .docx file"}
+                {parseMut.isPending
+                  ? "Reading document…"
+                  : "Choose .docx or .pdf file"}
               </Button>
               {fileName && !parseMut.isPending && (
                 <p className="text-xs text-muted-foreground">{fileName}</p>

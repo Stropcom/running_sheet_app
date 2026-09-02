@@ -1656,7 +1656,18 @@ export default function IntelligenceMapping() {
   // persisted past a refresh, let alone showed up on another device. See
   // the intelPinOverrides schema comment.
   const { data: pinOverrides, refetch: refetchPinOverrides } =
-    trpc.intelligence.getPinOverrides.useQuery();
+    trpc.intelligence.getPinOverrides.useQuery(undefined, {
+      // Without this, a correction saved on one device only ever reached
+      // another device when that device's own component happened to
+      // remount (navigating out of the map and back in) — this query had
+      // no poll at all, unlike locations (30s) and customMarkers (5s).
+      // Paused during an active move/rotate on THIS device for the same
+      // reason customMarkers' poll pauses then — a poll landing mid-drag
+      // could hand the render effect a position that hasn't caught up to
+      // what's being dragged yet.
+      refetchInterval:
+        movingMarkerId === null && movingIntelLabel === null ? 5000 : false,
+    });
   const pinOverridesRef = useRef<Map<string, any>>(new Map());
   useEffect(() => {
     const map = new Map<string, any>();
@@ -2444,6 +2455,29 @@ export default function IntelligenceMapping() {
       renderLocations(locations);
     }
   }, [locations, renderLocations, mapReady]);
+
+  // Re-render pins when a pin override changes on ANOTHER device (a move or
+  // appearance edit synced in by the poll above). The pinOverridesRef effect
+  // keeps the *data* fresh, but nothing else re-draws an already-placed pin
+  // from it — without this, a teammate's correction only ever became visible
+  // once something else forced a full rebuild (e.g. navigating out of the
+  // map and back in), which is exactly the "have to leave and come back for
+  // it to take effect" symptom this fixes. Skips the very first load, which
+  // the effect above already covers once pinOverridesRef is populated (it
+  // runs first — declared earlier in the component).
+  const pinOverridesLoadedOnceRef = useRef(false);
+  useEffect(() => {
+    if (!pinOverrides) return;
+    if (!pinOverridesLoadedOnceRef.current) {
+      pinOverridesLoadedOnceRef.current = true;
+      return;
+    }
+    if (locations && mapRef.current && geocoderRef.current) {
+      mergedIntelRef.current.clear();
+      renderLocations(locations);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinOverrides]);
 
   // ── Live user marker rendering ───────────────────────────────────────────────
   useEffect(() => {

@@ -6279,6 +6279,10 @@ export default function IntelligenceMapping() {
                             ref={rsInlineInputRef}
                             value={rsInlineText}
                             readOnly={inlineReadOnly}
+                            autoCapitalize="off"
+                            autoCorrect="off"
+                            autoComplete="off"
+                            spellCheck={false}
                             onClick={() => {
                               if (inlineReadOnly) enableInlineTyping();
                             }}

@@ -303,6 +303,7 @@ import {
   getSmeacRosterPrefill,
   type SmeacTeamSlot,
 } from "./db";
+import { scanIntelligenceEntities } from "./intelligenceScan";
 
 import {
   makeRequest,
@@ -3302,6 +3303,28 @@ export const appRouter = router({
     /** List all extracted entities from all observation rows */
     getEntities: protectedProcedure.query(async () => {
       return getAllIntelligenceEntities();
+    }),
+
+    /** Manual backup check over every mined entity, run on demand from the
+     * admin's own profile page — see intelligenceScan.ts for the rules.
+     * Notifies only the admin who ran it (never the wider team), with one
+     * notification per finding so each can be reviewed and dismissed on
+     * its own. */
+    runEntityScan: adminProcedure.mutation(async ({ ctx }) => {
+      const entities = await getAllIntelligenceEntities();
+      const findings = scanIntelligenceEntities(entities);
+      if (findings.length > 0) {
+        await createNotificationsForUsers([ctx.user.id], {
+          title: `Intelligence scan: ${findings.length} possible issue${findings.length > 1 ? "s" : ""}`,
+          body: findings
+            .slice(0, 5)
+            .map(f => f.reason)
+            .join(" • "),
+          url: "/profile",
+          sourceModule: "intelligenceScan",
+        });
+      }
+      return { findings };
     }),
 
     /** Heat Map: location visit counts + coordinates for one Operation,

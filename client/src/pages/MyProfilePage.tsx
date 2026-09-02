@@ -18,11 +18,27 @@ import {
   Sun,
   Moon,
   Phone,
+  ScanSearch,
+  ExternalLink,
+  CheckCheck,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { Link } from "wouter";
 import { useTheme } from "@/contexts/ThemeContext";
 import { COLOR_PALETTES, DEFAULT_COLOR_PALETTE } from "@shared/const";
+
+// Where each entity type's profile page lives — see App.tsx's
+// /intelligence/{associate,vehicle,location}/:label routes. "business"
+// entities share the location profile with "address" ones (they're merged
+// under the same key server-side — see getAllIntelligenceEntities).
+const ENTITY_PROFILE_PATH: Record<string, string> = {
+  person: "associate",
+  vehicle: "vehicle",
+  address: "location",
+  business: "location",
+  unknown: "associate",
+};
 
 const ROLE_LABELS: Record<
   string,
@@ -244,6 +260,22 @@ export default function MyProfilePage() {
     updateColorPaletteMutation.mutate({ palette: id });
   };
 
+  // ── Intelligence entity scan (admin-only) ──────────────────────────────
+  const [scanResults, setScanResults] = useState<any[] | null>(null);
+  const runScanMutation = trpc.intelligence.runEntityScan.useMutation({
+    onSuccess: result => {
+      setScanResults(result.findings);
+      if (result.findings.length === 0) {
+        toast.success("Scan complete — nothing flagged.");
+      } else {
+        toast.success(
+          `Scan complete — ${result.findings.length} possible issue${result.findings.length > 1 ? "s" : ""} flagged.`
+        );
+      }
+    },
+    onError: err => toast.error(err.message),
+  });
+
   return (
     <DashboardLayout>
       <div className="max-w-2xl mx-auto px-4 py-8">
@@ -325,6 +357,89 @@ export default function MyProfilePage() {
             </div>
           )}
         </div>
+
+        {/* Intelligence Entity Scan Card — admin-only */}
+        {profile?.role === "admin" && (
+          <div className="rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
+            <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
+              <ScanSearch className="w-4 h-4 text-primary" />
+              Intelligence Entity Scan
+            </h2>
+            <p className="text-xs text-muted-foreground mb-4">
+              A backup check over every entity mined into the Intelligence
+              folder — flags shapes that suggest a parsing slip (a placeholder
+              code like UM1/UF1 that landed as a real entity, a vehicle rego
+              with a stray comma in it, and similar) rather than a genuine
+              person/vehicle/address/business, so they can be checked against
+              the running sheet that produced them. Only you see the results —
+              nothing changes automatically.
+            </p>
+            <Button
+              onClick={() => runScanMutation.mutate()}
+              disabled={runScanMutation.isPending}
+              className="gap-2"
+            >
+              <ScanSearch className="w-4 h-4" />
+              {runScanMutation.isPending
+                ? "Scanning…"
+                : "Run Intelligence Scan"}
+            </Button>
+
+            {scanResults !== null && (
+              <div className="mt-5">
+                {scanResults.length === 0 ? (
+                  <div className="flex items-center gap-2 text-sm text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-lg px-3 py-2.5">
+                    <CheckCheck className="w-4 h-4 shrink-0" />
+                    Nothing flagged — every mined entity looks structurally
+                    sound.
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      {scanResults.length} possible issue
+                      {scanResults.length > 1 ? "s" : ""}
+                    </p>
+                    {scanResults.map((f, i) => (
+                      <div
+                        key={i}
+                        className="rounded-lg border border-border/60 bg-muted/20 p-3"
+                      >
+                        <p className="text-sm text-foreground mb-2">
+                          {f.reason}
+                        </p>
+                        <div className="flex flex-col gap-1.5">
+                          {f.occurrences.length === 0 ? (
+                            <p className="text-xs text-muted-foreground italic">
+                              No linked running sheet row to check.
+                            </p>
+                          ) : (
+                            f.occurrences.map((o: any, j: number) => (
+                              <Link
+                                key={j}
+                                href={`/sheet/${o.sheetId}`}
+                                className="text-xs text-primary hover:underline flex items-center gap-1"
+                              >
+                                <ExternalLink className="w-3 h-3 shrink-0" />
+                                {o.operationName} — {o.sheetTitle}
+                              </Link>
+                            ))
+                          )}
+                          <Link
+                            href={`/intelligence/${ENTITY_PROFILE_PATH[f.type]}/${encodeURIComponent(f.shortForm)}`}
+                            className="text-xs text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1"
+                          >
+                            <ExternalLink className="w-3 h-3 shrink-0" />
+                            View entity profile
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Appearance Card */}
         {toggleTheme && (

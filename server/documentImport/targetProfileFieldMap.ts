@@ -762,6 +762,50 @@ function findSubjectFromParagraphs(
   return null;
 }
 
+// Matches an inline "Subject: <name>" narrative label anywhere in a
+// paragraph — the fourth shape a document declares its primary identity
+// in, after a NAME/SUBJECT table row, a bare "Subject" heading paragraph
+// (findSubjectFromParagraphs), and a column-headed identity table
+// (findIdentityColumnTableValue). Seen in a real training document (a
+// short "OPERATION IRONBARK" narrative brief opening with "Subject:
+// Callum Peter REID • Reporting period: 04–19 August 2026") — without
+// this, the document's actual subject never becomes the primary NAME at
+// all and instead falls through to the free-text associate scan, showing
+// up as just another "Associate Found" alongside everyone else they're
+// mentioned with.
+const INLINE_SUBJECT_RE = /\bSUBJECT\s*:\s*([^\n]+)/i;
+
+/** Finds an inline "Subject: <name>" mention across every paragraph (see
+ * INLINE_SUBJECT_RE). This is a much higher false-positive-risk context
+ * than a table cell — an ordinary quoted email header's own "Subject: RE:
+ * quarterly review" line matches the same label — so this only ever
+ * trusts what matchWholeLinePersonName's strict Firstname [Middlename]
+ * SURNAME shape accepts, after cutting the captured text at the first
+ * bullet/dash separator that introduces trailing detail ("• Reporting
+ * period: ..."), rather than treating everything after the colon as the
+ * name. */
+function findInlineSubjectMention(
+  paragraphs: string[]
+): ParsedPersonName | null {
+  for (const paragraph of paragraphs) {
+    for (const line of paragraph.split("\n")) {
+      const m = line.match(INLINE_SUBJECT_RE);
+      if (!m) continue;
+      const candidate = m[1].split(/\s*[•|]\s*|\s+[-–]\s+/)[0].trim();
+      const person = matchWholeLinePersonName(candidate);
+      if (person) {
+        return {
+          firstNames: person.firstNames,
+          surname: person.surname,
+          bornDate: "",
+          confident: !!(person.firstNames && person.surname),
+        };
+      }
+    }
+  }
+  return null;
+}
+
 /** Deduplicates a list of parsed vehicles/addresses by a caller-supplied
  * key — used only for the free-text last-resort scan below, where the same
  * real-world vehicle or address is often mentioned more than once across a
@@ -823,6 +867,9 @@ export function mapDocumentToTargetProfile(
         };
       }
     }
+  }
+  if (!name) {
+    name = findInlineSubjectMention(result.paragraphs);
   }
 
   let vehiclesValue = findLabelledValue(rows, "VEHICLES") ?? "";

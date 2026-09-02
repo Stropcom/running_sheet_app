@@ -663,6 +663,39 @@ describe("mapDocumentToTargetProfile — needsReview", () => {
     });
     expect(result.needsReview).toEqual([]);
   });
+
+  // Found reviewing a real training document (IRONBARK): its subject was
+  // declared as "Subject: Callum Peter REID • Reporting period: 04–19
+  // August 2026" — one narrative line inside an unrelated "OPERATION
+  // IRONBARK" brief, not a NAME/SUBJECT table row and not a bare "Subject"
+  // heading paragraph with the name on its own line underneath (the two
+  // shapes findSubjectFromParagraphs already handles). With no name
+  // detected at all, REID never became the primary target — he fell
+  // through to the free-text associate scan and showed up as just another
+  // "Associate Found" alongside everyone else he was mentioned with.
+  it("finds the subject from an inline 'Subject: <name>' narrative line (the IRONBARK bug)", () => {
+    const result = mapDocumentToTargetProfile({
+      tables: [],
+      paragraphs: [
+        "OPERATION IRONBARK",
+        "Subject: Callum Peter REID • Reporting period: 04–19 August 2026",
+        "Callum Peter REID is recorded as a procurement consultant associated with Ironbark Commercial Advisory.",
+      ],
+    });
+    expect(result.name).toMatchObject({
+      firstNames: "Callum Peter",
+      surname: "REID",
+      confident: true,
+    });
+  });
+
+  it("doesn't mistake an email header's own 'Subject:' line for a person's name", () => {
+    const result = mapDocumentToTargetProfile({
+      tables: [],
+      paragraphs: ["From: ops@example.com", "Subject: RE: quarterly review"],
+    });
+    expect(result.name).toBeNull();
+  });
 });
 
 // A .pdf goes through a different reader (pdfTextReader.ts, which

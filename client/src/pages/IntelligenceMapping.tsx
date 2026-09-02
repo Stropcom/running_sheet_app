@@ -2745,12 +2745,12 @@ export default function IntelligenceMapping() {
     });
 
     // Add / update markers
-    incoming.forEach((cm: any) => {
+    incoming.forEach((outerCm: any) => {
       const dataUrl = getMarkerDataUrl(
-        cm.markerIcon as MarkerIcon,
-        cm.markerColour as MarkerColour
+        outerCm.markerIcon as MarkerIcon,
+        outerCm.markerColour as MarkerColour
       );
-      const rotation = (cm.rotation ?? 0) as number;
+      const rotation = (outerCm.rotation ?? 0) as number;
       const el = document.createElement("div");
       el.style.cssText = "width:40px;height:40px;cursor:pointer;";
       const img = document.createElement("img");
@@ -2758,21 +2758,35 @@ export default function IntelligenceMapping() {
       img.style.cssText = `width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation}deg);`;
       el.appendChild(img);
       // Store direct img ref for live rotation
-      customMarkerImgRefs.current.set(cm.id, img);
+      customMarkerImgRefs.current.set(outerCm.id, img);
 
-      if (existing.has(cm.id)) {
-        const m = existing.get(cm.id)!;
-        m.position = { lat: cm.lat, lng: cm.lng };
+      if (existing.has(outerCm.id)) {
+        const m = existing.get(outerCm.id)!;
+        m.position = { lat: outerCm.lat, lng: outerCm.lng };
         m.content = el;
       } else {
         const marker = new google.maps.marker.AdvancedMarkerElement({
           map,
-          position: { lat: cm.lat, lng: cm.lng },
+          position: { lat: outerCm.lat, lng: outerCm.lng },
           content: el,
-          title: cm.label ?? MARKER_ICON_LABELS[cm.markerIcon as MarkerIcon],
+          title:
+            outerCm.label ??
+            MARKER_ICON_LABELS[outerCm.markerIcon as MarkerIcon],
         });
         marker.addListener("click", () => {
           if (!infoWindowRef.current) return;
+          // Look up this marker's CURRENT data rather than relying on the
+          // snapshot from when this listener was first attached — a
+          // marker's click listener is only ever attached once, right
+          // here; the `existing.has(outerCm.id)` branch above updates the
+          // on-map icon/position on every poll but never re-attaches it.
+          // Without this, any edit made after creation (note, label,
+          // address, associated persons/vehicles...) never actually shows
+          // up in the popup even though the icon on the map updates live.
+          const cm =
+            customMarkersDataRef.current.find(
+              (c: any) => c.id === outerCm.id
+            ) ?? outerCm;
           const lat = cm.lat;
           const lng = cm.lng;
           const iconLabel =
@@ -2963,7 +2977,7 @@ export default function IntelligenceMapping() {
           infoWindowRef.current.setContent(buildPopupHtml(currentRotation));
           infoWindowRef.current.open(map, marker);
         });
-        existing.set(cm.id, marker);
+        existing.set(outerCm.id, marker);
       }
     });
   }, [customMarkers, mapReady]);

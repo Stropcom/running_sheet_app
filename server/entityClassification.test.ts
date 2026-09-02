@@ -116,6 +116,13 @@ describe("extractEntitiesFromText — vehicle vs address disambiguation", () => 
     expect(entities.find(e => e.rawShortForm === "YC1")).toBeUndefined();
   });
 
+  it("skips UCO undercover-operative placeholders the same way", () => {
+    const text =
+      "The undercover operative (UCO1) approached IKIN outside the address.";
+    const entities = extractEntitiesFromText(text);
+    expect(entities.find(e => e.rawShortForm === "UCO1")).toBeUndefined();
+  });
+
   it("still classifies a real address after a leading sentence correctly", () => {
     // Non-regression: the address check must still fire for an address
     // whose own street-type words are in the same sentence as the bracket,

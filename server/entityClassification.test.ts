@@ -93,6 +93,23 @@ describe("extractEntitiesFromText — vehicle vs address disambiguation", () => 
     expect(vehicle?.type).toBe("vehicle");
   });
 
+  it("skips UM/UF unidentified-person placeholders instead of misreading them as a vehicle", () => {
+    // Reported bug: "IKIN and a young girl (UF1), in school uniform
+    // exited..." — UF1 (unidentified female) was never in the skip list
+    // (only UM was), so it fell through to the vehicle catch-all and
+    // showed up as a fake vehicle in the Vehicles tab.
+    const text =
+      "IKIN and a young girl (UF1), in school uniform exited the vehicle.";
+    const entities = extractEntitiesFromText(text);
+    expect(entities.find(e => e.rawShortForm === "UF1")).toBeUndefined();
+  });
+
+  it("still skips UM unidentified-male placeholders (the original case)", () => {
+    const text = "IKIN met with an unknown male (UM1) outside the address.";
+    const entities = extractEntitiesFromText(text);
+    expect(entities.find(e => e.rawShortForm === "UM1")).toBeUndefined();
+  });
+
   it("still classifies a real address after a leading sentence correctly", () => {
     // Non-regression: the address check must still fire for an address
     // whose own street-type words are in the same sentence as the bracket,

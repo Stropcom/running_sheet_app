@@ -104,6 +104,9 @@ import {
   intelligenceGeocodeCache,
   CustomMapMarker,
   InsertCustomMapMarker,
+  intelPinOverrides,
+  IntelPinOverride,
+  InsertIntelPinOverride,
   rsMappingWaypoints,
   userSidebarOrder,
   opManagerPriorityRows,
@@ -12958,6 +12961,55 @@ export async function hardDeleteCustomMarker(id: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.delete(customMapMarkers).where(eq(customMapMarkers.id, id));
+}
+
+// ─── Intel Pin Overrides ────────────────────────────────────────────────────
+// A manual position move and/or appearance change (icon/colour/rotation) for
+// an auto-generated Intelligence map pin — see the intelPinOverrides schema
+// comment for why this table exists (it replaces a per-device-only
+// in-memory ref and localStorage that never actually persisted or synced).
+
+export async function getIntelPinOverrides(): Promise<IntelPinOverride[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(intelPinOverrides);
+}
+
+export async function saveIntelPinOverride(
+  data: {
+    label: string;
+    lat?: number;
+    lng?: number;
+    address?: string;
+    markerIcon?: string;
+    markerColour?: string;
+    rotation?: number;
+  },
+  cin: string | undefined
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const update: Partial<InsertIntelPinOverride> = { updatedByCIN: cin };
+  if (data.lat !== undefined) update.lat = data.lat;
+  if (data.lng !== undefined) update.lng = data.lng;
+  if (data.address !== undefined) update.address = data.address;
+  if (data.markerIcon !== undefined) update.markerIcon = data.markerIcon;
+  if (data.markerColour !== undefined) update.markerColour = data.markerColour;
+  if (data.rotation !== undefined) update.rotation = data.rotation;
+
+  const existing = await db
+    .select({ id: intelPinOverrides.id })
+    .from(intelPinOverrides)
+    .where(eq(intelPinOverrides.label, data.label))
+    .limit(1);
+  if (existing.length > 0) {
+    await db
+      .update(intelPinOverrides)
+      .set(update)
+      .where(eq(intelPinOverrides.id, existing[0].id));
+  } else {
+    await db.insert(intelPinOverrides).values({ label: data.label, ...update });
+  }
 }
 
 // ─── Google Address Backfill ──────────────────────────────────────────────────

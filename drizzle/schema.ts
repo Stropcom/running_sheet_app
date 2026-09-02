@@ -998,6 +998,33 @@ export const customMapMarkers = mysqlTable("custom_map_markers", {
 export type CustomMapMarker = typeof customMapMarkers.$inferSelect;
 export type InsertCustomMapMarker = typeof customMapMarkers.$inferInsert;
 
+// ─── Intel Pin Overrides ────────────────────────────────────────────────────
+// A manual correction to an auto-generated Intelligence map pin — an entity
+// mined from observation text, not a customMapMarkers row. Keyed by the same
+// `label` string used everywhere else an intel entity is identified (see
+// getAllIntelligenceEntities). Previously a moved position only lived in an
+// in-memory ref (didn't survive a page refresh, let alone another device)
+// and an appearance change (icon/colour/rotation) only lived in
+// localStorage (per-device, never shared) — this table is what both should
+// have been persisting to from the start, so a correction actually stays
+// and is visible to every officer on every device.
+export const intelPinOverrides = mysqlTable("intel_pin_overrides", {
+  id: int("id").autoincrement().primaryKey(),
+  label: varchar("label", { length: 512 }).notNull().unique(),
+  lat: double("lat"), // manually-moved position (null = use the geocoded address)
+  lng: double("lng"),
+  address: varchar("address", { length: 512 }), // reverse-geocoded address at the moved position
+  markerIcon: varchar("markerIcon", { length: 64 }),
+  markerColour: varchar("markerColour", { length: 32 }),
+  rotation: int("rotation").default(0).notNull(),
+  updatedByCIN: varchar("updatedByCIN", { length: 32 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type IntelPinOverride = typeof intelPinOverrides.$inferSelect;
+export type InsertIntelPinOverride = typeof intelPinOverrides.$inferInsert;
+
 // ─── User Locations ───────────────────────────────────────────────────────────
 // Stores the last known GPS location for each user who has enabled location
 // sharing. operationIds is a JSON array of operation IDs the user has selected

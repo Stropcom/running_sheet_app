@@ -460,7 +460,14 @@ function popupVehicleLines(vehicles: string[], fontSize: string): string {
     .join("");
 }
 
-function buildInfoWindowContent(loc: IntelMapLocation): string {
+function buildInfoWindowContent(
+  loc: IntelMapLocation,
+  override?: {
+    markerIcon?: string | null;
+    markerColour?: string | null;
+    rotation?: number | null;
+  }
+): string {
   const isTarget = loc.type === "target_address";
   const isAdditionalTargetAddress =
     !isTarget && loc.linkedTargets.some(t => t.addressLabel);
@@ -475,21 +482,12 @@ function buildInfoWindowContent(loc: IntelMapLocation): string {
   const displayLabel = formatIntelAddress(loc.label);
   const encodedLabel = encodeURIComponent(loc.label);
 
-  // Load persisted appearance for this intel pin from localStorage
-  let intelIcon: string = "house_filled";
-  let intelColour: string = isTarget ? "red" : "purple";
-  let intelRotation: number = 0;
-  try {
-    const stored = localStorage.getItem(`runlog_intel_appearance_${loc.label}`);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (parsed.icon) intelIcon = parsed.icon;
-      if (parsed.colour) intelColour = parsed.colour;
-      if (typeof parsed.rotation === "number") intelRotation = parsed.rotation;
-    }
-  } catch {
-    /* ignore */
-  }
+  // Persisted appearance for this intel pin (server-saved override — see
+  // intelPinOverrides — takes priority over the type-based default).
+  const intelIcon: string = override?.markerIcon ?? "house_filled";
+  const intelColour: string =
+    override?.markerColour ?? (isTarget ? "red" : "purple");
+  const intelRotation: number = override?.rotation ?? 0;
 
   const lines: string[] = [];
 
@@ -1644,6 +1642,30 @@ export default function IntelligenceMapping() {
     },
   });
 
+  // Manual position/appearance corrections for intel pins (entities mined
+  // from observation text) — a move or an icon/colour/rotation change used
+  // to only live in an in-memory ref or localStorage, so it never actually
+  // persisted past a refresh, let alone showed up on another device. See
+  // the intelPinOverrides schema comment.
+  const { data: pinOverrides, refetch: refetchPinOverrides } =
+    trpc.intelligence.getPinOverrides.useQuery();
+  const pinOverridesRef = useRef<Map<string, any>>(new Map());
+  useEffect(() => {
+    const map = new Map<string, any>();
+    for (const o of (pinOverrides as any[] | undefined) ?? []) {
+      map.set(o.label, o);
+    }
+    pinOverridesRef.current = map;
+  }, [pinOverrides]);
+  const savePinOverrideMut = trpc.intelligence.savePinOverride.useMutation({
+    onMutate: async () => {
+      await utils.intelligence.getPinOverrides.cancel();
+    },
+    onSuccess: () => {
+      void refetchPinOverrides();
+    },
+  });
+
   // Intelligence entities for associate/vehicle dropdowns
   const { data: intelEntities } = trpc.intelligence.getEntities.useQuery();
   const assocPersonOptions = useMemo(() => {
@@ -2014,27 +2036,18 @@ export default function IntelligenceMapping() {
     const isTarget = loc.type === "target_address";
     const count = loc.linkCount;
 
-    // Read any saved appearance override (icon/colour/rotation) — same
-    // localStorage key the popup's rotation slider and Edit dialog write
-    // to — so a customization set once actually survives the pin being
-    // recreated (map data refresh, filter changes, etc.) instead of only
-    // taking visible effect until the next redraw.
-    let icon: MarkerIcon = "house_filled";
-    let colour: MarkerColour = isTarget ? "red" : "purple";
-    let rotation = 0;
-    try {
-      const stored = localStorage.getItem(
-        `runlog_intel_appearance_${loc.label}`
-      );
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.icon) icon = parsed.icon;
-        if (parsed.colour) colour = parsed.colour;
-        if (typeof parsed.rotation === "number") rotation = parsed.rotation;
-      }
-    } catch {
-      /* ignore */
-    }
+    // Apply any saved appearance override (icon/colour/rotation) — server-
+    // persisted (see intelPinOverrides), same override the popup's rotation
+    // slider and Edit dialog save to — so a customization set once actually
+    // survives the pin being recreated (map data refresh, filter changes,
+    // etc.) AND shows up for every officer on every device, not just the
+    // one that set it.
+    const override = pinOverridesRef.current.get(loc.label);
+    const icon: MarkerIcon =
+      (override?.markerIcon as MarkerIcon) ?? "house_filled";
+    const colour: MarkerColour =
+      (override?.markerColour as MarkerColour) ?? (isTarget ? "red" : "purple");
+    const rotation = override?.rotation ?? 0;
 
     const el = document.createElement("div");
     el.style.cssText = `position:relative;display:inline-flex;flex-direction:column;align-items:center;cursor:pointer;`;
@@ -2258,7 +2271,12 @@ export default function IntelligenceMapping() {
             pixelOffset: new google.maps.Size(0, -40),
           });
         }
-        infoWindowRef.current.setContent(buildInfoWindowContent(fullEnriched));
+        infoWindowRef.current.setContent(
+          buildInfoWindowContent(
+            fullEnriched,
+            pinOverridesRef.current.get(loc.label)
+          )
+        );
         infoWindowRef.current.setPosition({
           lat: position.lat,
           lng: position.lng,
@@ -2270,6 +2288,52 @@ export default function IntelligenceMapping() {
     [createPinElement, buildInfoWindowContent]
   );
 
+  // Runs after one queue item has been placed (or skipped) — restores
+  // persisted linkedIntelLabel merges once the whole queue has drained, or
+  // schedules the next item.
+  const advanceGeocodeQueue = useCallback(() => {
+    const isLast = geocodeIndexRef.current >= geocodeQueueRef.current.length;
+    if (isLast) {
+      // Restore persisted linkedIntelLabel merges for custom markers that have one saved
+      const allIntel = geocodedIntelRef.current;
+      customMarkersDataRef.current.forEach((cm: any) => {
+        if (cm.linkedIntelLabel) {
+          const entry = allIntel.get(cm.linkedIntelLabel);
+          if (entry) {
+            const existing = mergedIntelRef.current.get(cm.id) ?? [];
+            const enriched = {
+              ...entry.loc,
+              lat: entry.position.lat,
+              lng: entry.position.lng,
+            };
+            if (!existing.find(e => e.label === enriched.label)) {
+              // Remove the intel pin from the map and merge its data into the custom marker
+              const pinIdx = markersRef.current.findIndex(
+                (m: any) => m.title === cm.linkedIntelLabel
+              );
+              if (pinIdx !== -1) {
+                markersRef.current[pinIdx].map = null;
+                markersRef.current.splice(pinIdx, 1);
+              }
+              existing.push(enriched);
+              existing.sort((a, b) => {
+                if (a.type === "target_address" && b.type !== "target_address")
+                  return -1;
+                if (a.type !== "target_address" && b.type === "target_address")
+                  return 1;
+                return 0;
+              });
+              mergedIntelRef.current.set(cm.id, existing);
+            }
+          }
+        }
+      });
+    } else {
+      geocodeTimerRef.current = setTimeout(geocodeNext, 50);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const geocodeNext = useCallback(() => {
     const queue = geocodeQueueRef.current;
     const idx = geocodeIndexRef.current;
@@ -2277,6 +2341,19 @@ export default function IntelligenceMapping() {
 
     const loc = queue[idx];
     geocodeIndexRef.current = idx + 1;
+
+    // A manually-moved position (see intelPinOverrides) takes priority over
+    // the geocoded address — skip the API call entirely and place it there.
+    // Without this, the next time this location's queue runs (every poll)
+    // it would re-geocode from the address string and snap straight back to
+    // where the address geocodes to, undoing the move a moment after it
+    // last "took".
+    const override = pinOverridesRef.current.get(loc.label);
+    if (override?.lat != null && override?.lng != null) {
+      placeMarker(loc, { lat: override.lat, lng: override.lng });
+      advanceGeocodeQueue();
+      return;
+    }
 
     const query =
       loc.label.includes(",") || /\d/.test(loc.label)
@@ -2288,54 +2365,9 @@ export default function IntelligenceMapping() {
         const pos = results[0].geometry.location;
         placeMarker(loc, { lat: pos.lat(), lng: pos.lng() });
       }
-      // Check if this was the last item in the queue
-      const isLast = geocodeIndexRef.current >= geocodeQueueRef.current.length;
-      if (isLast) {
-        // Restore persisted linkedIntelLabel merges for custom markers that have one saved
-        const allIntel = geocodedIntelRef.current;
-        customMarkersDataRef.current.forEach((cm: any) => {
-          if (cm.linkedIntelLabel) {
-            const entry = allIntel.get(cm.linkedIntelLabel);
-            if (entry) {
-              const existing = mergedIntelRef.current.get(cm.id) ?? [];
-              const enriched = {
-                ...entry.loc,
-                lat: entry.position.lat,
-                lng: entry.position.lng,
-              };
-              if (!existing.find(e => e.label === enriched.label)) {
-                // Remove the intel pin from the map and merge its data into the custom marker
-                const pinIdx = markersRef.current.findIndex(
-                  (m: any) => m.title === cm.linkedIntelLabel
-                );
-                if (pinIdx !== -1) {
-                  markersRef.current[pinIdx].map = null;
-                  markersRef.current.splice(pinIdx, 1);
-                }
-                existing.push(enriched);
-                existing.sort((a, b) => {
-                  if (
-                    a.type === "target_address" &&
-                    b.type !== "target_address"
-                  )
-                    return -1;
-                  if (
-                    a.type !== "target_address" &&
-                    b.type === "target_address"
-                  )
-                    return 1;
-                  return 0;
-                });
-                mergedIntelRef.current.set(cm.id, existing);
-              }
-            }
-          }
-        });
-      } else {
-        geocodeTimerRef.current = setTimeout(geocodeNext, 50);
-      }
+      advanceGeocodeQueue();
     });
-  }, [placeMarker]);
+  }, [placeMarker, advanceGeocodeQueue]);
 
   const renderLocations = useCallback(
     (locs: IntelMapLocation[]) => {
@@ -3073,6 +3105,7 @@ export default function IntelligenceMapping() {
 
   // Inline rotation handler for intel pin popup slider
   useEffect(() => {
+    let intelRotateTimer: ReturnType<typeof setTimeout> | null = null;
     (window as any).__intelPopupRotate = (label: string, valueStr: string) => {
       const rotation = Number(valueStr);
       const encodedLabel = encodeURIComponent(label);
@@ -3106,23 +3139,18 @@ export default function IntelligenceMapping() {
           if (img) img.style.transform = `rotate(${rotation}deg)`;
         }
       }
-      // Persist to localStorage immediately
-      try {
-        const stored = localStorage.getItem(`runlog_intel_appearance_${label}`);
-        const parsed = stored ? JSON.parse(stored) : {};
-        parsed.rotation = rotation;
-        localStorage.setItem(
-          `runlog_intel_appearance_${label}`,
-          JSON.stringify(parsed)
-        );
-      } catch {
-        /* ignore */
-      }
+      // Debounce the DB save so we don't fire on every pixel of drag —
+      // same pattern as the custom marker rotation slider (__cmPopupRotate).
+      if (intelRotateTimer) clearTimeout(intelRotateTimer);
+      intelRotateTimer = setTimeout(() => {
+        savePinOverrideMut.mutate({ label, rotation });
+      }, 400);
     };
     return () => {
       delete (window as any).__intelPopupRotate;
+      if (intelRotateTimer) clearTimeout(intelRotateTimer);
     };
-  }, []);
+  }, [savePinOverrideMut]);
 
   // Move intel pin handler
   useEffect(() => {
@@ -5559,7 +5587,11 @@ export default function IntelligenceMapping() {
                           pendingIntelMoveAddress === null
                         )
                           return;
-                        // Accept: update geocodedIntelRef so the new position is used next time
+                        // Accept: update geocodedIntelRef so the new
+                        // position is used immediately (this render), and
+                        // persist it server-side so it's still there on the
+                        // next redraw and on every other device — see
+                        // intelPinOverrides.
                         const entry =
                           geocodedIntelRef.current.get(movingIntelLabel);
                         if (entry) {
@@ -5571,6 +5603,12 @@ export default function IntelligenceMapping() {
                             },
                           });
                         }
+                        savePinOverrideMut.mutate({
+                          label: movingIntelLabel,
+                          lat: pendingIntelMoveAddress.lat,
+                          lng: pendingIntelMoveAddress.lng,
+                          address: pendingIntelMoveAddress.address,
+                        });
                         const marker = markersRef.current.find(
                           (m: any) => m.title === movingIntelLabel
                         );
@@ -5775,19 +5813,14 @@ export default function IntelligenceMapping() {
                   className="flex-1"
                   onClick={() => {
                     if (!editingIntelLabel) return;
-                    // Persist to localStorage
-                    try {
-                      localStorage.setItem(
-                        `runlog_intel_appearance_${editingIntelLabel}`,
-                        JSON.stringify({
-                          icon: intelEditIcon,
-                          colour: intelEditColour,
-                          rotation: intelEditRotation,
-                        })
-                      );
-                    } catch {
-                      /* ignore */
-                    }
+                    // Persist server-side so it survives a redraw and shows
+                    // up for every officer on every device, not just this one.
+                    savePinOverrideMut.mutate({
+                      label: editingIntelLabel,
+                      markerIcon: intelEditIcon,
+                      markerColour: intelEditColour,
+                      rotation: intelEditRotation,
+                    });
                     // Update the actual map marker element immediately —
                     // direct img ref first, querySelector fallback (see
                     // intelPinImgRefs declaration).

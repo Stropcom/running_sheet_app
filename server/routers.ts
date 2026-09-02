@@ -157,6 +157,8 @@ import {
   checkCrossOperationEntity,
   markEntitiesNotDuplicate,
   mergeEntities,
+  getIntelPinOverrides,
+  saveIntelPinOverride,
   unmergeEntity,
   listEntityMerges,
   getKnownPersonNameCorrection,
@@ -3606,6 +3608,29 @@ export const appRouter = router({
             message: err instanceof Error ? err.message : "Merge failed.",
           });
         }
+        return { ok: true };
+      }),
+
+    /** Manual position/appearance corrections for auto-generated Intelligence
+     * map pins — see the intelPinOverrides schema comment. */
+    getPinOverrides: protectedProcedure.query(async () => {
+      return getIntelPinOverrides();
+    }),
+
+    savePinOverride: protectedProcedure
+      .input(
+        z.object({
+          label: z.string().min(1),
+          lat: z.number().optional(),
+          lng: z.number().optional(),
+          address: z.string().optional(),
+          markerIcon: z.string().optional(),
+          markerColour: z.string().optional(),
+          rotation: z.number().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        await saveIntelPinOverride(input, ctx.user.cin ?? undefined);
         return { ok: true };
       }),
 

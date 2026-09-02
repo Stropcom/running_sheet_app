@@ -134,3 +134,22 @@ describe("extractEntitiesFromText — vehicle vs address disambiguation", () => 
     expect(address?.type).toBe("address");
   });
 });
+
+describe("extractEntitiesFromText — vehicle description reconstruction", () => {
+  it("doesn't leak a leading ', and' into the second of two vehicles in one sentence (the reported bug)", () => {
+    // Found via the Intelligence Entity Scan: the regex boundary between
+    // two bracket matches starts the second vehicle's fullDescription right
+    // after the first bracket — comma and "and" included — producing
+    // "1DEF456 , and orange Porsche Mecan SUV" instead of a clean
+    // description. Adding "a" before the second vehicle used to work around
+    // it (gave the article-cut logic something to anchor on), but the fix
+    // shouldn't depend on officers remembering to do that.
+    const text =
+      "orange Toyota Land Cruiser 4WD, bearing WA registration 1ABC123 (Vehicle 1ABC123), and orange Porsche Mecan SUV, bearing WA registration 1DEF456 (Vehicle 1DEF456)";
+    const entities = extractEntitiesFromText(text);
+    const first = entities.find(e => e.rawShortForm === "Vehicle 1ABC123");
+    const second = entities.find(e => e.rawShortForm === "Vehicle 1DEF456");
+    expect(first?.shortForm).toBe("1ABC123 orange Toyota Land Cruiser 4WD");
+    expect(second?.shortForm).toBe("1DEF456 orange Porsche Mecan SUV");
+  });
+});

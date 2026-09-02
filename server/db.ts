@@ -3665,14 +3665,15 @@ export function extractEntitiesFromText(text: string): Array<{
     if (shortForm.length < 2) continue;
     // Skip if shortForm looks like a time (e.g. "08:00")
     if (/^\d{1,2}:\d{2}$/.test(shortForm)) continue;
-    // Skip UM/UF references (e.g. "UM1", "UF1", "UM12") — unidentified
-    // male/female placeholders that are not recorded in the intelligence
-    // folder by design. UF was missing until it was reported that "a young
-    // girl (UF1)" was falling through to the vehicle catch-all instead (a
-    // short all-caps/digit bracket with no other classification matches
-    // WA_REGO's personalised-plate shape, same failure mode as the
-    // Basil CAT bug above).
-    if (/^U[MF]\d+$/i.test(shortForm)) continue;
+    // Skip UM/UF/YC references (e.g. "UM1", "UF1", "YC1", "UM12") —
+    // unidentified male/female and young child placeholders that are not
+    // recorded in the intelligence folder by design. UF and YC were both
+    // missing until it was reported that "a young girl (UF1)" was falling
+    // through to the vehicle catch-all instead (a short all-caps/digit
+    // bracket with no other classification matches WA_REGO's
+    // personalised-plate shape, same failure mode as the Basil CAT bug
+    // above).
+    if (/^(?:U[MF]|YC)\d+$/i.test(shortForm)) continue;
 
     const lowerFull = fullDescription.toLowerCase();
     const lowerShort = shortForm.toLowerCase();

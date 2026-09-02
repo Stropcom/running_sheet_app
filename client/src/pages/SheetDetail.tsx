@@ -306,6 +306,9 @@ function exportToPDF(
   const lockedBg = "#ffffff"; // White in PDF — dark green is screen-only via CSS class
   const cb = "border-right:1px solid #e2e9f6";
   const bb = "border-bottom:1px solid #eef2fb";
+  // Reserves 2 blank lines below the observation text so printed rows read
+  // with breathing room, matching the live table's pb-10 Observation cell.
+  const OBS_TRAILING_SPACE = "<br/><br/>";
 
   // Parse TEAM roster — sort: TL first, then numerically
   let cinRoster: CinEntry[] = [];
@@ -534,7 +537,8 @@ function exportToPDF(
       if (row.members.length === 0) {
         const obsHtml =
           boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>")) +
-          attachmentImagesHtml(row.attachments);
+          attachmentImagesHtml(row.attachments) +
+          OBS_TRAILING_SPACE;
         parts.push(`<tr style="background:${rowBg}">
           <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
           <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
@@ -555,7 +559,8 @@ function exportToPDF(
       ) {
         const obsHtml =
           boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>")) +
-          attachmentImagesHtml(row.attachments);
+          attachmentImagesHtml(row.attachments) +
+          OBS_TRAILING_SPACE;
         parts.push(`<tr style="background:${rowBg}">
           <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
           <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
@@ -576,7 +581,7 @@ function exportToPDF(
             ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
             : "";
           const obsTd = isFirst
-            ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}${attachmentImagesHtml(row.attachments)}</td>`
+            ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}${attachmentImagesHtml(row.attachments)}${OBS_TRAILING_SPACE}</td>`
             : "";
           const isLast = idx === row.members.length - 1;
           const memberBb = isLast ? bb : "border-bottom:none";
@@ -4798,8 +4803,11 @@ export default function SheetDetail() {
                               />
                             </td>
 
-                            {/* Observation */}
-                            <td>
+                            {/* Observation — pb-10 reserves ~2 blank lines
+                              below the text so rows read with breathing room
+                              between them, on screen and not just in the
+                              printed/exported sheet. */}
+                            <td className="pb-10">
                               {tvLoadingRowId === row.id ? (
                                 <div className="flex items-center gap-2 py-2 px-1 text-sm text-muted-foreground">
                                   <svg

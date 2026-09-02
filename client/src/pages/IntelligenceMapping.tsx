@@ -2462,16 +2462,37 @@ export default function IntelligenceMapping() {
   // from it — without this, a teammate's correction only ever became visible
   // once something else forced a full rebuild (e.g. navigating out of the
   // map and back in), which is exactly the "have to leave and come back for
-  // it to take effect" symptom this fixes. Skips the very first load, which
-  // the effect above already covers once pinOverridesRef is populated (it
-  // runs first — declared earlier in the component).
-  const pinOverridesLoadedOnceRef = useRef(false);
+  // it to take effect" symptom this fixes.
+  //
+  // Gated on an actual content change, not just a new query response — every
+  // 5s poll returns a fresh array reference even when nothing changed, and
+  // renderLocations does a full clear-then-rebuild (unlike the customMarkers
+  // effect, which diffs in place), so without this every single poll
+  // visibly flashed all the pins off and back on again. Skips the very
+  // first load too, which the effect above already covers once
+  // pinOverridesRef is populated (it runs first — declared earlier in the
+  // component).
+  const pinOverridesSignatureRef = useRef<string | null>(null);
   useEffect(() => {
     if (!pinOverrides) return;
-    if (!pinOverridesLoadedOnceRef.current) {
-      pinOverridesLoadedOnceRef.current = true;
+    const signature = JSON.stringify(
+      (pinOverrides as any[])
+        .map(o => [
+          o.label,
+          o.lat,
+          o.lng,
+          o.markerIcon,
+          o.markerColour,
+          o.rotation,
+        ])
+        .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    );
+    if (pinOverridesSignatureRef.current === null) {
+      pinOverridesSignatureRef.current = signature;
       return;
     }
+    if (signature === pinOverridesSignatureRef.current) return;
+    pinOverridesSignatureRef.current = signature;
     if (locations && mapRef.current && geocoderRef.current) {
       mergedIntelRef.current.clear();
       renderLocations(locations);

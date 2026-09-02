@@ -109,6 +109,7 @@ import {
   Undo2,
   Keyboard,
   Car,
+  RefreshCw,
 } from "lucide-react";
 
 // Phone/tablet (touch, no physical keyboard) vs laptop/desktop (mouse +
@@ -1406,13 +1407,20 @@ export default function IntelligenceMapping() {
     address: string;
   } | null>(null);
 
-  // Intel pin move state (separate from custom marker move — intel pins are not persisted to DB)
+  // Intel pin move state (separate from custom marker move — intel pins
+  // persist to intelPinOverrides, a different table/flow than customMapMarkers)
   const [movingIntelLabel, setMovingIntelLabel] = useState<string | null>(null);
   const [pendingIntelMoveAddress, setPendingIntelMoveAddress] = useState<{
     lat: number;
     lng: number;
     address: string;
   } | null>(null);
+  // Manual "refresh map data" button — re-pulls locations/customMarkers/
+  // pinOverrides and forces a full pin rebuild, for the case where a pin
+  // fails to populate and the officer doesn't want to wait for the next
+  // poll (or worse, has to clear and reapply the operation filter to force
+  // one — see the mapReady dependency fix on the locations render effect).
+  const [mapRefreshing, setMapRefreshing] = useState(false);
 
   // Intel pin edit dialog state (appearance only — persisted to localStorage)
   const [editingIntelLabel, setEditingIntelLabel] = useState<string | null>(
@@ -2381,6 +2389,33 @@ export default function IntelligenceMapping() {
     [clearMarkers, geocodeNext]
   );
 
+  // Manual "refresh map data" button (see mapRefreshing declaration) —
+  // re-pulls locations/customMarkers/pinOverrides and force-rebuilds the
+  // pins from the fresh data, rather than waiting on the next poll or
+  // relying on a query's data reference actually changing.
+  const handleRefreshMapData = useCallback(async () => {
+    setMapRefreshing(true);
+    try {
+      const [freshLocations] = await Promise.all([
+        refetchLocations(),
+        refetchCustomMarkers(),
+        refetchPinOverrides(),
+      ]);
+      mergedIntelRef.current.clear();
+      if (freshLocations.data) renderLocations(freshLocations.data);
+      toast.success("Map refreshed");
+    } catch {
+      toast.error("Failed to refresh the map");
+    } finally {
+      setMapRefreshing(false);
+    }
+  }, [
+    refetchLocations,
+    refetchCustomMarkers,
+    refetchPinOverrides,
+    renderLocations,
+  ]);
+
   // Keep customMarkersDataRef in sync so placeMarker can access latest data without stale closure
   // NOTE: Do NOT call renderLocations here — that would create a loop:
   //   customMarkers changes → renderLocations → geocode → placeMarker stores mergedIntel
@@ -2390,15 +2425,25 @@ export default function IntelligenceMapping() {
     customMarkersDataRef.current = (customMarkers as any[] | undefined) ?? [];
   }, [customMarkers]);
 
-  // Re-render location markers when locations change
+  // Re-render location markers when locations change.
   // After geocoding completes, persisted linkedIntelLabel merges are restored in a second pass
   // (see the geocodeNext callback which calls restorePersistedMerges after the queue drains)
+  //
+  // mapReady is included (matching the customMarkers effect below) because
+  // mapRef/geocoderRef are plain refs, not state — if `locations` resolves
+  // BEFORE the Google Maps script finishes loading, this effect's guard
+  // fails on that run, and a ref becoming non-null later doesn't by itself
+  // trigger anything to re-run. Without mapReady in the deps, nothing then
+  // ever re-fires this effect until `locations` itself changes reference
+  // again (e.g. clearing and reapplying the operation filter) — which is
+  // exactly the "some/all markers don't show up until I reapply the
+  // operation" symptom this was causing.
   useEffect(() => {
     if (locations && mapRef.current && geocoderRef.current) {
       mergedIntelRef.current.clear();
       renderLocations(locations);
     }
-  }, [locations, renderLocations]);
+  }, [locations, renderLocations, mapReady]);
 
   // ── Live user marker rendering ───────────────────────────────────────────────
   useEffect(() => {
@@ -3822,6 +3867,27 @@ export default function IntelligenceMapping() {
                 );
               })}
             </div>
+
+            {/* Refresh map data — right below the Map/Sat toggle. A pin can
+              occasionally fail to populate (or only some do) if the
+              locations query resolves before the map itself is ready; this
+              gives officers an immediate, guaranteed fix instead of having
+              to clear and reapply the operation filter to force one. */}
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                void handleRefreshMapData();
+              }}
+              disabled={mapRefreshing}
+              className="absolute z-20 pointer-events-auto flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-gray-600 hover:bg-gray-50 disabled:opacity-60 transition-colors"
+              style={{ top: "52px", right: "10px" }}
+              aria-label="Refresh map data"
+              title="Refresh map data"
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${mapRefreshing ? "animate-spin" : ""}`}
+              />
+            </button>
 
             {/* Centre on me / Follow me floating buttons — top-left below search bar */}
             <div

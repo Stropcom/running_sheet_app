@@ -695,6 +695,43 @@ function findUnparsedVehicleItems(
  * don't recognise, is simply absent from the result rather than guessed —
  * the officer fills it in on the review screen. */
 const DOB_RE = /\bDOB\s*:?\s*(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})/i;
+// A written-month date ("DOB 06 December 1982") — a real training document
+// (IRONBARK) uses this instead of the numeric d/m/y shape DOB_RE alone
+// recognises. Normalised to the same DD/MM/YYYY shape as every other date
+// this pipeline produces, rather than passed through as prose, so the
+// review screen's Date of birth field reads consistently regardless of
+// which shape the source document happened to use.
+const DOB_PROSE_RE =
+  /\bDOB\s*:?\s*(\d{1,2})\s+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})/i;
+const MONTH_NUMBERS: Record<string, string> = {
+  jan: "01",
+  feb: "02",
+  mar: "03",
+  apr: "04",
+  may: "05",
+  jun: "06",
+  jul: "07",
+  aug: "08",
+  sep: "09",
+  oct: "10",
+  nov: "11",
+  dec: "12",
+};
+
+/** Finds a DOB in `text`, trying the numeric d/m/y shape first and the
+ * written-month shape second (see DOB_PROSE_RE) — always returned as
+ * DD/MM/YYYY regardless of which shape matched. */
+function matchDob(text: string): string {
+  const numeric = text.match(DOB_RE);
+  if (numeric) return numeric[1];
+  const prose = text.match(DOB_PROSE_RE);
+  if (prose) {
+    const month = MONTH_NUMBERS[prose[2].slice(0, 3).toLowerCase()];
+    if (month) return `${prose[1].padStart(2, "0")}/${month}/${prose[3]}`;
+  }
+  return "";
+}
+
 const SUBJECT_HEADING_RE = /SUBJECT|TARGET|PERSON\s+OF\s+INTEREST/i;
 const VEHICLES_HEADING_RE = /^VEHICLES?\b/i;
 const LOCATION_HEADING_RE = /LOCATIONS?\s+OF\s+INTEREST|^ADDRESSES?\b/i;
@@ -750,11 +787,10 @@ function findSubjectFromParagraphs(
     for (const line of section.lines) {
       const person = matchWholeLinePersonName(line);
       if (!person) continue;
-      const dobMatch = section.lines.join("\n").match(DOB_RE);
       return {
         firstNames: person.firstNames,
         surname: person.surname,
-        bornDate: dobMatch ? dobMatch[1] : "",
+        bornDate: matchDob(section.lines.join("\n")),
         confident: !!(person.firstNames && person.surname),
       };
     }
@@ -835,9 +871,30 @@ export function mapDocumentToTargetProfile(
   // for the person's name instead of "NAME" — same field, different word.
   // Tried second so a document that genuinely has both keeps "NAME" as the
   // authoritative one.
+  //
+  // "SUBJECT" is ambiguous in a way "NAME" isn't, though: it's also the
+  // column-header title of a genuine column-headed identity table (a real
+  // training document — IRONBARK — has one: "SUBJECT | IDENTIFIERS |
+  // CONTACT CHANNELS" as the header row, the actual name one row further
+  // down under that same column — see findIdentityColumnTableValue).
+  // findLabelledValue pairs "SUBJECT" with whatever cell sits right next
+  // to it with no awareness of that shape, so on a header row it grabs the
+  // NEXT COLUMN'S header ("IDENTIFIERS") instead of a name. Only trust the
+  // "SUBJECT" pairing when the paired value actually looks like a person's
+  // name; otherwise fall through so findIdentityColumnTableValue below can
+  // read the real column-headed shape instead.
+  const subjectCellValue = findLabelledValue(rows, "SUBJECT");
   const nameValue =
-    findLabelledValue(rows, "NAME") ?? findLabelledValue(rows, "SUBJECT");
-  const dobValue = findLabelledValue(rows, "DOB") ?? "";
+    findLabelledValue(rows, "NAME") ??
+    (subjectCellValue && matchWholeLinePersonName(subjectCellValue)
+      ? subjectCellValue
+      : null);
+  // A separate "DOB" table row is the common shape, but a column-headed
+  // identity table (IRONBARK) instead carries it inline inside the same
+  // multi-line SUBJECT cell as the name itself ("Callum Peter REID\nDOB 06
+  // December 1982\n...") — fall back to scanning that cell's own text
+  // before giving up.
+  const dobValue = findLabelledValue(rows, "DOB") || matchDob(nameValue ?? "");
   let name: ParsedPersonName | null = null;
   if (nameValue) {
     const { firstNames, surname } = splitPersonName(nameValue);
@@ -858,11 +915,10 @@ export function mapDocumentToTargetProfile(
         const { firstNames, surname } = splitPersonName(
           identityColumn.nameLine
         );
-        const dobMatch = identityColumn.cell.match(DOB_RE);
         name = {
           firstNames,
           surname,
-          bornDate: dobMatch ? dobMatch[1] : "",
+          bornDate: matchDob(identityColumn.cell),
           confident: !!(firstNames && surname),
         };
       }

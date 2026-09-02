@@ -29,6 +29,10 @@ const BLUEGUM_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-training-bluegum.docx"
 );
+const IRONBARK_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-training-ironbark.docx"
+);
 const PDF_COLON_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-pdf-colon.pdf"
@@ -565,6 +569,55 @@ describe("mapDocumentToTargetProfile", () => {
       c => c.type === "phone" && c.value.includes("0491 570 121")
     );
     expect(phone?.value).toBe("Mobile 0491 570 121");
+  });
+
+  // Regression: a sixth real training document (IRONBARK) has a genuine
+  // three-column identity table — "SUBJECT | IDENTIFIERS | CONTACT
+  // CHANNELS" as the header row, the actual name/DOB/etc. one row further
+  // down under the SUBJECT column (findIdentityColumnTableValue's shape).
+  // findLabelledValue(rows, "SUBJECT") doesn't know the difference between
+  // that header row and a genuine "SUBJECT: <name>" label:value row (the
+  // LANTERN shape, tested above) — on this document it paired "SUBJECT"
+  // with the very next cell, "IDENTIFIERS" (the next column's own header),
+  // producing a garbled name ("IDENTIFIERS" / "") instead of ever reaching
+  // findIdentityColumnTableValue at all. The subject then fell through
+  // entirely to the free-text associate scan, showing up as just another
+  // "Associate Found" alongside the two people he was mentioned with.
+  it("maps a document whose SUBJECT cell is a column-table header, not a label:value row (the IRONBARK bug)", async () => {
+    const buffer = readFileSync(IRONBARK_FIXTURE_PATH);
+    const read = await readDocxTables(buffer);
+    const result = mapDocumentToTargetProfile(read);
+
+    expect(result.name).toMatchObject({
+      firstNames: "Callum Peter",
+      surname: "REID",
+      confident: true,
+    });
+
+    // The DOB sits inline inside the same multi-line SUBJECT cell as the
+    // name ("Callum Peter REID\nDOB 06 December 1982\n...") in prose-date
+    // form, not a separate "DOB" table row and not the numeric d/m/y shape
+    // DOB_RE alone recognised — see matchDob/DOB_PROSE_RE.
+    expect(result.name?.bornDate).toBe("06/12/1982");
+
+    // The real CURRENT ADDRESS (from a genuine "CURRENT ADDRESS" table row)
+    // must come through, and REID's own name must NOT also show up as a
+    // free-text associate candidate now that he's correctly recognised as
+    // the primary subject.
+    expect(result.addresses).toContainEqual(
+      expect.objectContaining({
+        label: "CURRENT ADDRESS",
+        houseNo: "26",
+        streetName: "Jarrah",
+        suburb: "SOUTH LAKE",
+      })
+    );
+    const personCandidates = result.candidateEntities
+      .filter(c => c.type === "person")
+      .map(c => c.value);
+    expect(personCandidates).not.toContain("Callum Peter REID");
+    expect(personCandidates).toContain("Olivia Grace MCKENZIE");
+    expect(personCandidates).toContain("Tariq Samuel AZIZ");
   });
 });
 

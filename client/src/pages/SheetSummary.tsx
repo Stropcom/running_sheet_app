@@ -907,6 +907,14 @@ export default function SheetSummaryPage() {
   );
 
   const updateMutation = trpc.summary.update.useMutation({
+    // Cancel any getBySheet fetch already in flight before this mutation's
+    // own invalidate below fires its refetch — otherwise a slower, already
+    // in-flight response (from the 10s poll) can resolve AFTER this one and
+    // land last, silently reverting the field just saved. Same fix as the
+    // map marker "snapped back after Accept" bug.
+    onMutate: async () => {
+      await utils.summary.getBySheet.cancel({ sheetId });
+    },
     onSuccess: () => utils.summary.getBySheet.invalidate({ sheetId }),
     onError: () => toast.error("Failed to save change"),
   });
@@ -951,10 +959,23 @@ export default function SheetSummaryPage() {
   const timeoutsRef = useRef<
     Partial<Record<FieldKey, ReturnType<typeof setTimeout>>>
   >({});
+  // Tracks which sheet the form was last synced from the server for, so a
+  // genuinely new sheet always syncs even mid-edit.
+  const syncedSheetIdRef = useRef<number | null>(null);
 
-  // Sync local state from the server record whenever it (re)loads
+  // Sync local state from the server record whenever it (re)loads.
+  // Skipped while there's an unsaved edit in flight (a pending debounce
+  // timer in timeoutsRef) — record refetches every 10s, and every debounced
+  // field save invalidates it too, so without this guard the WHOLE form
+  // gets overwritten with the last-saved snapshot mid-keystroke, which is
+  // what made typing feel laggy / drop letters (the textarea's value keeps
+  // getting reset out from under the cursor). Always resyncs once nothing
+  // is pending, so teammates' edits to the same summary still come through.
   useEffect(() => {
     if (!record) return;
+    const hasPendingEdit = Object.keys(timeoutsRef.current).length > 0;
+    if (hasPendingEdit && syncedSheetIdRef.current === sheetId) return;
+    syncedSheetIdRef.current = sheetId;
     setForm({
       teamLabel: record.teamLabel ?? "",
       teamCins: record.teamCins ?? "",
@@ -973,7 +994,7 @@ export default function SheetSummaryPage() {
       criticalDecisions: record.criticalDecisions ?? "",
       issues: record.issues ?? "",
     });
-  }, [record]);
+  }, [record, sheetId]);
 
   function handleChange(key: FieldKey, value: string, debounce = true) {
     if (isLocked) return;
@@ -982,6 +1003,10 @@ export default function SheetSummaryPage() {
     if (timeouts[key]) clearTimeout(timeouts[key]);
     if (debounce) {
       timeouts[key] = setTimeout(() => {
+        // Clear before saving, not after — the sync effect above checks
+        // this map to decide whether an edit is still pending, and the
+        // save itself is what makes that check accurate again.
+        delete timeouts[key];
         updateMutation.mutate({ sheetId, [key]: value });
       }, 800);
     } else {

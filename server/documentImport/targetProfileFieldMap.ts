@@ -732,6 +732,39 @@ function matchDob(text: string): string {
   return "";
 }
 
+// Same two date shapes DOB_RE/DOB_PROSE_RE recognise, but anchored to the
+// START of the string with no "DOB" label required — the caller already
+// got this value from a DOB table row via findLabelledValue, which has
+// already stripped the label off, so requiring it again (as matchDob
+// does, since IT scans a wider block of free text that still carries the
+// label inline) would never match.
+const BARE_DOB_NUMERIC_RE = /^\s*(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})/;
+const BARE_DOB_PROSE_RE =
+  /^\s*(\d{1,2})\s+(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{4})/i;
+
+/** Extracts just the leading date out of a DOB table row's own value. On
+ * a narrow multi-column grid PDF (see clusterIntoCells' own comment in
+ * pdfTextReader.ts) a value cell can occasionally overrun into the next
+ * field's text before the column mismatch that would normally stop it —
+ * "18 August 1984 OCG Harbour Syndicate PASSP ORT UAE Passport N7843 021"
+ * for a DOB row that should have been just the date. Passing that whole
+ * string through as-is doesn't just read oddly, it fails the review
+ * screen's date validation outright and blocks the officer from
+ * continuing. Falls back to the value unchanged if it doesn't start with
+ * a recognisable date at all, rather than discarding a value in some
+ * other shape this doesn't yet handle. */
+function extractLeadingDob(value: string): string {
+  const trimmed = value.trim();
+  const numeric = trimmed.match(BARE_DOB_NUMERIC_RE);
+  if (numeric) return numeric[1];
+  const prose = trimmed.match(BARE_DOB_PROSE_RE);
+  if (prose) {
+    const month = MONTH_NUMBERS[prose[2].slice(0, 3).toLowerCase()];
+    if (month) return `${prose[1].padStart(2, "0")}/${month}/${prose[3]}`;
+  }
+  return trimmed;
+}
+
 const SUBJECT_HEADING_RE = /SUBJECT|TARGET|PERSON\s+OF\s+INTEREST/i;
 const VEHICLES_HEADING_RE = /^VEHICLES?\b/i;
 const LOCATION_HEADING_RE = /LOCATIONS?\s+OF\s+INTEREST|^ADDRESSES?\b/i;
@@ -893,8 +926,14 @@ export function mapDocumentToTargetProfile(
   // identity table (IRONBARK) instead carries it inline inside the same
   // multi-line SUBJECT cell as the name itself ("Callum Peter REID\nDOB 06
   // December 1982\n...") — fall back to scanning that cell's own text
-  // before giving up.
-  const dobValue = findLabelledValue(rows, "DOB") || matchDob(nameValue ?? "");
+  // before giving up. The DOB row's own value goes through
+  // extractLeadingDob rather than being used as-is — see its own comment
+  // for why a narrow multi-column grid PDF can occasionally leave trailing
+  // garbage from the next field on this specific row.
+  const dobRowValue = findLabelledValue(rows, "DOB");
+  const dobValue = dobRowValue
+    ? extractLeadingDob(dobRowValue)
+    : matchDob(nameValue ?? "");
   let name: ParsedPersonName | null = null;
   if (nameValue) {
     const { firstNames, surname } = splitPersonName(nameValue);

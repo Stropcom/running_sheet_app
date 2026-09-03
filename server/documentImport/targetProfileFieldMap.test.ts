@@ -41,6 +41,15 @@ const PDF_TABLE_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-pdf-table.pdf"
 );
+// A real training PDF (Operation HARBOUR) whose narrow-grid DOB row's own
+// value cell overran into the next fields' text before the column
+// mismatch that would normally stop it ("18 August 1984 OCG Harbour
+// Syndicate PASSP ORT UAE Passport N7843 021" instead of just "18 August
+// 1984") -- see extractLeadingDob's own comment in targetProfileFieldMap.ts.
+const PDF_DOB_OVERRUN_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-dob-overrun.pdf"
+);
 
 describe("mapDocumentToTargetProfile", () => {
   it("maps the real training document end-to-end", async () => {
@@ -804,6 +813,22 @@ describe("mapDocumentToTargetProfile — PDF documents", () => {
       houseNo: "22",
       streetName: "Bridge",
       streetType: "Road",
+    });
+  });
+
+  it("extracts just the date from a DOB row whose value overran into the next field's text, instead of failing validation on the raw string", async () => {
+    // Regression: passing the whole overrun string through as bornDate
+    // doesn't just read oddly on the review screen -- it fails the Date
+    // of birth field's own dd/mm/yyyy validation outright and blocks the
+    // officer from continuing.
+    const read = await readPdfText(readFileSync(PDF_DOB_OVERRUN_FIXTURE_PATH));
+    const result = mapDocumentToTargetProfile(read);
+
+    expect(result.name).toMatchObject({
+      firstNames: "Rafiq Hassan",
+      surname: "KADER",
+      bornDate: "18/08/1984",
+      confident: true,
     });
   });
 });

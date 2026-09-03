@@ -3460,15 +3460,26 @@ export default function SheetDetail() {
       const s = localStorage.getItem(`runsheet_field_order_${sheetId}`);
       if (s) {
         const saved: string[] = JSON.parse(s);
-        // Migrate: ensure ARR is present after DEP in any saved order
+        // Migrate: a chip added to CANONICAL_CHIP_ORDER after a sheet
+        // already had a saved order isn't in that saved order yet, so the
+        // "not in order" fallback below appends it at the very end instead
+        // of the position it was meant to sit at. Insert it right after
+        // its intended neighbour instead, same as the existing ARR/DEP fix
+        // below — new shortcuts should land next to the chip they were
+        // created next to, not the tail of the row.
         let migrated = [...saved];
-        if (!migrated.includes("ARR")) {
-          const depIdx = migrated.indexOf("DEP");
-          if (depIdx >= 0) {
-            migrated.splice(depIdx + 1, 0, "ARR");
-          } else {
-            migrated.push("ARR");
-          }
+        let changed = false;
+        const insertAfter = (id: string, after: string) => {
+          if (migrated.includes(id)) return;
+          const afterIdx = migrated.indexOf(after);
+          if (afterIdx >= 0) migrated.splice(afterIdx + 1, 0, id);
+          else migrated.push(id);
+          changed = true;
+        };
+        insertAfter("ARR", "DEP");
+        insertAfter("RP", "FP");
+        insertAfter("SPV", "DW");
+        if (changed) {
           localStorage.setItem(
             `runsheet_field_order_${sheetId}`,
             JSON.stringify(migrated)

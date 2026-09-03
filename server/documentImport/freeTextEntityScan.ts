@@ -88,6 +88,11 @@ const PERSON_FIRSTNAME_STOPLIST = new Set([
   "Skoda",
   "Chrysler",
   "Dodge",
+  "Yamaha",
+  "Mercedes",
+  "Audi",
+  "Volkswagen",
+  "Kawasaki",
   "Operation",
   "Reference",
   "Case",
@@ -130,7 +135,6 @@ const BUSINESS_NAME_RE = new RegExp(
   "i"
 );
 
-const LABELLED_EMAIL_RE = /^\s*Email\s*:\s*(.+?)\s*$/gim;
 // Domain requires one-or-more "label." groups before the final TLD segment
 // — a single "[A-Za-z0-9-]+\.[A-Za-z]{2,}" only matches the first
 // label+TLD of a multi-part domain (e.g. stops at "riverfreight.com" inside
@@ -138,7 +142,24 @@ const LABELLED_EMAIL_RE = /^\s*Email\s*:\s*(.+?)\s*$/gim;
 // LABELLED_EMAIL_RE produces a spurious second, truncated "low confidence"
 // entry for the exact same address instead of being recognised as a
 // duplicate.
-const BARE_EMAIL_RE = /\b[\w.+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b/g;
+const EMAIL_SHAPE = "[\\w.+-]+@(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,}";
+// Bounded to one whitespace-delimited token (\S+), not ".+?...$" — the
+// value has to stay unbounded-by-shape so a genuinely obfuscated email
+// ("reximportsausATgmail.com", no "@" at all — see this module's own
+// "captures the obfuscated email verbatim via its label" test) is still
+// captured purely on the strength of its "Email:" label, but a PDF import
+// can land "Email: " and the very next fact on the SAME reading-order
+// line with no real line break at all (no "\n" for the old ".+?...$"
+// pattern's "$" to anchor against), which ran the value all the way to
+// the end of an entire paragraph instead of stopping at the email — a
+// real training document (SEASTAR) produced a labelled "email" whose
+// value was the real address plus an entire following narrative sentence
+// about a different person and vehicle. Stopping at the first run of
+// non-whitespace fixes that without giving up the obfuscated-shape case,
+// since both a real email and this document family's own obfuscated form
+// are always written as a single token with no internal whitespace.
+const LABELLED_EMAIL_RE = /^\s*Email\s*:\s*(\S+)/gim;
+const BARE_EMAIL_RE = new RegExp(`\\b${EMAIL_SHAPE}\\b`, "g");
 
 // The value stops at a trailing "; email ..." clause rather than swallowing
 // it — "Contact:" (unlike "Mobile"/"Phone"/"Tel") is loose enough to

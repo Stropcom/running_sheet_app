@@ -47,6 +47,19 @@ describe("findCandidatePersons", () => {
     const result = findCandidatePersons(text);
     expect(result.map(c => c.value)).toEqual(["David GRAY"]);
   });
+
+  // Regression: a vehicle make immediately followed by a short ALL-CAPS
+  // model/trim code reads exactly like "Firstname SURNAME" — "Yamaha MT"
+  // (from "...black Yamaha MT-07 motorcycle...") and "Mercedes Benz GLC"
+  // (from "...silver Mercedes Benz GLC wagon...") both showed up as bare
+  // person candidates against real training documents (NIGHTJAR, SEASTAR).
+  it("does not false-positive on a vehicle make immediately followed by an ALL-CAPS model code", () => {
+    const text =
+      "1NIGHT7 (WA) 2021 black Yamaha MT-07 motorcycle. 1SJK09 (WA) 2022 silver Mercedes Benz GLC wagon.";
+    const result = findCandidatePersons(text);
+    expect(result.map(c => c.value)).not.toContain("Yamaha MT");
+    expect(result.map(c => c.value)).not.toContain("Mercedes Benz GLC");
+  });
 });
 
 describe("matchWholeLinePersonName", () => {
@@ -162,6 +175,24 @@ describe("findCandidateEmails", () => {
     expect(result[0]).toMatchObject({
       value: "danny.okafor@riverfreight.com.au",
       confidence: "low",
+    });
+  });
+
+  // Regression: a PDF import can land "Email: <address>" and the very next
+  // fact on the SAME reading-order line, with no real line break at all —
+  // the old ".+?...$" pattern had no "\n" for "$" to anchor against, so it
+  // ran all the way to the end of the whole paragraph instead of stopping
+  // at the email. Found against a real training document (SEASTAR): a
+  // labelled "email" whose value swallowed an entire following sentence
+  // about a different person's own vehicle and location.
+  it("stops the labelled value at the email itself, not at the end of an unbroken paragraph", () => {
+    const result = findCandidateEmails(
+      "Email: yuki.tanaka@example.com 13 August 2026: MORETTI attended 18 Rule Street, NORTH FREMANTLE WA 6159 in 1BLM92 (WA) 2020 white BMW 330i sedan."
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      value: "yuki.tanaka@example.com",
+      confidence: "high",
     });
   });
 });

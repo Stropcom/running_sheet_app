@@ -110,6 +110,24 @@ const WRAP_CONTINUATION_MAX_GAP_RATIO = 1.3;
  * why that's the signal used to tell a forced mid-word break from a real
  * word-boundary wrap. */
 const PACKED_WIDTH_RATIO = 0.9;
+/** The packed-width signal above is only trustworthy as evidence of a
+ * forced MID-WORD break in a column this narrow (in points) or less — see
+ * clusterIntoCells' own comment for why. A single ordinary English word
+ * essentially never needs more room than this, so a column any wider
+ * genuinely had space for multiple whole words on one line; a line that
+ * still ends up "packed" there (its width close to the column's own
+ * widest-ever line) is exactly what NORMAL word-wrapping produces for
+ * every full line of a paragraph except its last — not a sign anything
+ * was cut off mid-word. Found against a real training document (NIGHTJAR)
+ * whose "Associates:" section runs one long run-on paragraph (name,
+ * address, vehicle, mobile, background) all in one ~200pt-wide column:
+ * nearly every one of its wrapped lines was "packed" by this ordinary
+ * word-wrap definition, so the ratio-only check joined the vehicle
+ * sentence's own closing "." straight onto the next fact's label with no
+ * space at all ("...wagon.Mobile: 0491...") — not a narrow-grid table cell
+ * being hard-wrapped, just two adjacent complete sentences sharing a left
+ * margin. */
+const NARROW_JOIN_MAX_WIDTH = 120;
 function bucketKey(x: number): number {
   return Math.round(x / COLUMN_X_TOLERANCE) * COLUMN_X_TOLERANCE;
 }
@@ -286,7 +304,9 @@ function clusterIntoCells(lines: Line[]): {
       const gap = lastY - sj.y;
       if (gap <= 0 || gap > lastHeight * WRAP_CONTINUATION_MAX_GAP_RATIO) break;
       const max = colMaxWidth.get(bucket) ?? lastWidth;
-      const packed = lastWidth >= max * PACKED_WIDTH_RATIO;
+      const packed =
+        lastWidth <= NARROW_JOIN_MAX_WIDTH &&
+        lastWidth >= max * PACKED_WIDTH_RATIO;
       if (!packed) {
         items.push({
           str: " ",

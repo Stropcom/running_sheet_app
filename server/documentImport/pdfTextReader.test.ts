@@ -69,6 +69,22 @@ const ADJACENT_COLUMN_FIXTURE = join(
   __dirname,
   "__fixtures__/target-profile-pdf-adjacent-address-column.pdf"
 );
+// A real training PDF (Operation NIGHTJAR) whose "Associates:" section runs
+// one long run-on paragraph per associate (name, address, vehicle, mobile,
+// background) stacked as many wrapped physical lines in one ~200pt-wide
+// column. clusterIntoCells' own packed-width join heuristic (see
+// NARROW_JOIN_MAX_WIDTH) used to treat ordinary wrapped sentences in a
+// column this wide as if they were forced mid-word breaks -- normal word-
+// wrapping ALSO tends to fill a line close to its own column's widest-ever
+// line, which is exactly the same signal the heuristic used to (mis)read as
+// "this line ran out of room mid-word". That glued a vehicle sentence's own
+// closing "." straight onto the very next fact's label with zero
+// separator ("...wagon.Mobile: 0491...", "...Amarok" + "utility." with no
+// space at all).
+const WIDE_COLUMN_GLUE_FIXTURE = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-wide-column-glue.pdf"
+);
 
 describe("readPdfText", () => {
   it("reads colon-separated labelled lines as synthetic table rows", async () => {
@@ -208,6 +224,30 @@ describe("readPdfText", () => {
         "1TLN902 (WA) 2023 black Lexus NX350h wagon. Current Address:"
       );
       expect(joined).not.toContain("wagon.Current Address:");
+    });
+  });
+
+  describe("wrapped prose in a column too wide for a genuine mid-word break (Operation NIGHTJAR fixture)", () => {
+    it("keeps a space between two wrapped sentences instead of treating an ordinarily-packed line as a forced mid-word break", async () => {
+      const result = await readPdfText(readFileSync(WIDE_COLUMN_GLUE_FIXTURE));
+      const joined = result.paragraphs.join("\n");
+      expect(joined).toContain(
+        "1RJM17 (WA) 2020 silver Ford Everest wagon. Mobile: 0491 570 161"
+      );
+      expect(joined).not.toContain("wagon.Mobile:");
+    });
+
+    it("keeps a space between a vehicle's own model and its trailing type word wrapped onto the next line", async () => {
+      const result = await readPdfText(readFileSync(WIDE_COLUMN_GLUE_FIXTURE));
+      const joined = result.paragraphs.join("\n");
+      expect(joined).toContain("grey Volkswagen Amarok utility");
+      expect(joined).not.toContain("Amarokutility");
+    });
+
+    it("still treats a genuinely narrow single-word column as a forced mid-word break (no regression from widening the join gate)", async () => {
+      const result = await readPdfText(readFileSync(NARROW_GRID_FIXTURE));
+      const rows = result.tables[0].rows;
+      expect(rows.some(r => r[0] === "PASSPORT")).toBe(true);
     });
   });
 });

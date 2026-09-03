@@ -1478,7 +1478,7 @@ export default function IntelligencePage() {
   type OpSortOrder = "az" | "recent";
   const [opSortOrder, setOpSortOrder] = useState<OpSortOrder>("az");
 
-  // Operation filter (Targets/Associates tabs only) — null = all operations.
+  // Operation filter (Targets/Associates/Vehicles/Locations tabs) — null = all operations.
   const [filterOperationId, setFilterOperationId] = useState<number | null>(
     null
   );
@@ -1592,10 +1592,11 @@ export default function IntelligencePage() {
           o.observationSnippet.toLowerCase().includes(q) ||
           o.fullDescription.toLowerCase().includes(q)
       );
-    // Targets/Associates only — "only displays targets linked to that
-    // operation" (a formal operation_target_links relationship, which every
-    // target/associate occurrence already carries an operationId for, not
-    // just a text mention — see getPrimaryOperationName's comment).
+    // Every entity occurrence already carries an operationId regardless of
+    // type, not just a text mention (see getPrimaryOperationName's
+    // comment) — so this same "only show entities linked to that
+    // operation" filter applies uniformly across Targets/Associates/
+    // Vehicles/Locations rather than being a targets-specific concept.
     const matchesOperationFilter = (e: Entity) =>
       filterOperationId === null ||
       e.occurrences.some(o => o.operationId === filterOperationId);
@@ -1614,11 +1615,15 @@ export default function IntelligencePage() {
       );
     if (activeTab === "vehicle")
       return filteredEntities.filter(
-        e => e.type === "vehicle" && matchesSearch(e)
+        e =>
+          e.type === "vehicle" && matchesSearch(e) && matchesOperationFilter(e)
       );
     if (activeTab === "locations")
       return filteredEntities.filter(
-        e => (e.type === "address" || e.type === "business") && matchesSearch(e)
+        e =>
+          (e.type === "address" || e.type === "business") &&
+          matchesSearch(e) &&
+          matchesOperationFilter(e)
       );
     return filteredEntities.filter(matchesSearch);
   }, [filteredEntities, activeTab, search, filterOperationId]);
@@ -1809,7 +1814,10 @@ export default function IntelligencePage() {
             </div>
 
             <div className="flex items-center gap-1.5 flex-wrap">
-              {(activeTab === "targets" || activeTab === "associates") && (
+              {(activeTab === "targets" ||
+                activeTab === "associates" ||
+                activeTab === "vehicle" ||
+                activeTab === "locations") && (
                 <>
                   <span className="text-xs text-muted-foreground mr-1">
                     Filter:

@@ -17,7 +17,6 @@ export const NODE_COLORS: Record<string, string> = {
   unknown: "#94a3b8",
 };
 
-
 export const ENTITY_TYPES = [
   "target",
   "person",
@@ -171,6 +170,18 @@ export function computeEgoLayout(params: {
     hidden2 = candidates.length - shown.length;
 
     // Fan each parent's children out around that parent's own angle.
+    // Every ring-1 node owns an angular "slot" — the gap to its neighbours
+    // on the ring, minus a little breathing room — and a parent's ring-2
+    // cluster is never allowed to spread past its own slot. That's what
+    // stops one busy branch's labels from drifting into an adjacent
+    // branch's and overlapping it (the reported bug): however many
+    // children a parent has, its cluster is geometrically confined to the
+    // space between its own ring-1 neighbours. Within that slot the spread
+    // still grows with the child count, so a branch with many children
+    // fans out further than a quiet one rather than every branch using the
+    // same fixed spread regardless of how crowded it actually is.
+    const slotHalfWidth =
+      ring1.length > 1 ? (Math.PI / ring1.length) * 0.85 : Math.PI * 0.4;
     const byParent = new Map<string, typeof shown>();
     for (const c of shown) {
       if (!byParent.has(c.parent)) byParent.set(c.parent, []);
@@ -178,12 +189,13 @@ export function computeEgoLayout(params: {
     }
     for (const [parentId, kids] of Array.from(byParent.entries())) {
       const base = angleOf.get(parentId) ?? 0;
-      const spread = Math.min(0.9, 0.28 * kids.length);
+      const desiredHalfSpread = Math.min(1.1, 0.16 * kids.length);
+      const halfSpread = Math.min(slotHalfWidth, desiredHalfSpread);
       kids.forEach((kid, i) => {
         const offset =
           kids.length === 1
             ? 0
-            : -spread / 2 + (i / (kids.length - 1)) * spread;
+            : -halfSpread + (i / (kids.length - 1)) * halfSpread * 2;
         const angle = base + offset;
         const node = nodesById.get(kid.id);
         if (!node) return;
@@ -300,7 +312,8 @@ export function buildEgoNetworkSvg(params: {
   // Crop to content: the furthest node out, not the nominal ring radius, so
   // a 2-hop view with no second-degree hits doesn't reserve ring-2 space.
   const contentR = placed.reduce(
-    (max, p) => Math.max(max, Math.hypot(p.x, p.y) + egoNodeRadius(p.node, p.hop)),
+    (max, p) =>
+      Math.max(max, Math.hypot(p.x, p.y) + egoNodeRadius(p.node, p.hop)),
     hasRing1 ? radii.ring1 : 60
   );
   const halfW = Math.max(180, contentR + EXPORT_LABEL_PAD_X);

@@ -787,7 +787,7 @@ export default function EgoNetworkMap({
                           NODE_COLORS[focusNode.type] ?? NODE_COLORS.unknown,
                       }}
                     />
-                    <span className="text-xs font-bold text-white bg-[#0f1117]/80 px-2 py-0.5 rounded whitespace-nowrap max-w-[220px] truncate">
+                    <span className="text-xs font-bold text-white bg-[#0f1117]/80 px-2 py-0.5 rounded whitespace-normal break-words text-center leading-tight line-clamp-2 max-w-[190px]">
                       {focusNode.label}
                     </span>
                   </div>
@@ -815,11 +815,17 @@ export default function EgoNetworkMap({
                           opacity: p.hop === 1 ? 1 : 0.72,
                         }}
                       />
+                      {/* Wraps up to 2 lines (line-clamp-2) instead of
+                          truncating to one — a narrower max-width for hop-2
+                          keeps each label's own footprint smaller, which
+                          combined with computeEgoLayout's per-parent slot
+                          bound is what actually stops a busy branch's
+                          labels from overlapping its neighbours'. */}
                       <span
-                        className={`whitespace-nowrap px-1.5 py-0.5 rounded bg-[#0f1117]/75 max-w-[150px] truncate ${
+                        className={`whitespace-normal break-words px-1.5 py-0.5 rounded bg-[#0f1117]/75 text-center leading-tight line-clamp-2 ${
                           p.hop === 1
-                            ? "text-[10.5px] text-slate-200"
-                            : "text-[9.5px] text-slate-400"
+                            ? "text-[10.5px] text-slate-200 max-w-[128px]"
+                            : "text-[9px] text-slate-400 max-w-[100px]"
                         }`}
                       >
                         {p.node.label}

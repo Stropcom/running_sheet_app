@@ -99,6 +99,29 @@ describe("findVehicleLines", () => {
     expect(result).toHaveLength(1);
     expect(result[0].registration).toBe("SLICK1");
   });
+
+  // Regression: a PDF-import artifact can land an entirely unrelated
+  // sentence right after a vehicle's own description in the same text,
+  // separated by nothing but the vehicle's own closing "." and a single
+  // space (see pdfTextReader.ts's own regression test for how that
+  // happens — a table row with two value columns, neither a recognised
+  // label on its own). Without a sentence-boundary cutoff, that trailing
+  // sentence has no vehicle anchor of its own to stop at and gets
+  // swallowed whole into the model field.
+  it("stops a vehicle's own description at its first sentence-ending period, not at the next anchor or end of text", () => {
+    const text =
+      "1TLN902 (WA) 2023 black Lexus NX350h wagon. Current Address: 41 Arbour Street, COMO WA 6152.";
+    const result = findVehicleLines(text);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      registration: "1TLN902",
+      colour: "Black",
+      make: "Lexus",
+      model: "NX350h",
+      confident: true,
+      raw: "1TLN902 (WA) 2023 black Lexus NX350h wagon.",
+    });
+  });
 });
 
 describe("parseVehicleLine", () => {

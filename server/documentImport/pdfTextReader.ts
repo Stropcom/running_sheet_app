@@ -609,17 +609,40 @@ export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
       for (const unit of buildPageUnits(groupIntoLines(items))) {
         // A "row" (2+ narrow-column cells sharing a y — see
         // buildPageUnits) is tried as a genuine multi-label grid row
-        // first; a lone cell or a row with no recognised label falls
-        // back to readLine's own colon/gap-based reading over the same
-        // items, exactly as a plain physical line would use.
+        // first; a row with no recognised label falls back to being read
+        // as one flowing text line — but joined cell by cell (each cell's
+        // own columnText), never by flattening every cell's raw items
+        // into one array first. pdf.js glyphs carry no space between two
+        // adjacent CELLS' text (there was never a real character in that
+        // horizontal gap, just column spacing) — readLine's own
+        // columnText concatenates raw item strings with nothing inserted,
+        // so flattening across a cell boundary glues one cell's trailing
+        // word straight onto the next cell's first word. Concretely: a
+        // VEHICLES cell's own value sharing a row with an unrelated
+        // "Current Address:" cell (a genuine 2-column LOCATION OF
+        // INTEREST layout, see the module's own regression test) becomes
+        // "...wagon.Current Address:..." with no space or break of any
+        // kind — which then can't be told apart from one continuous
+        // sentence by anything downstream (findVehicleLines' own
+        // sentence-boundary cut relies on a real space following the
+        // vehicle's closing "."), so the unrelated address text gets
+        // silently absorbed into the vehicle's own model field. Joining
+        // per-cell text with an explicit space avoids the glue entirely.
         let text: string;
         let rows: string[][] | null;
         let y: number;
         if (unit.kind === "row") {
-          const flat = unit.cells.flatMap(c => c.items);
-          const read = readLine(flat);
-          text = read.text;
-          rows = pairRowCells(unit.cells) ?? read.rows;
+          text = unit.cells
+            .map(c => columnText(c.items))
+            .filter(Boolean)
+            .join(" ");
+          rows = pairRowCells(unit.cells);
+          if (!rows) {
+            const colonMatch = text.match(COLON_LABEL_RE);
+            if (colonMatch) {
+              rows = [[canonicalLabel(colonMatch[1]), colonMatch[2].trim()]];
+            }
+          }
           y = unit.cells[0].y;
         } else {
           const read = readLine(unit.line.items);

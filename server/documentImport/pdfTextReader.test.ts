@@ -46,6 +46,29 @@ const SHARED_BUCKET_FIXTURE = join(
   __dirname,
   "__fixtures__/target-profile-pdf-shared-bucket.pdf"
 );
+// A real training PDF (Operation TIDELINE) whose "LOCATION OF INTEREST"
+// section sits in its own column immediately to the right of VEHICLES, on
+// the exact same row -- a genuine two-column layout ("1TLN902 (WA) 2023
+// black Lexus NX350h wagon." beside "Current Address: 41 Arbour Street,
+// COMO WA 6152.", both wrapping onto their own second line first). Both
+// cells' own wrap-continuations are found and rejoined correctly; the bug
+// this guards was one level up, in how the ROW itself gets flattened to
+// plain text once neither cell is a single recognised label on its own
+// (pairRowCells only fires when a whole cell IS a label like "VEHICLES" —
+// here both cells already carry their full value, so it declines and the
+// row fell back to being read as one flat line): the fallback used to
+// flatten every cell's raw pdf.js items into one array and run the same
+// columnText() a single physical line would, which inserts nothing at all
+// between the last glyph of one cell and the first glyph of the next
+// (pdf.js never emits a space glyph across a column gap) -- gluing
+// "wagon." straight onto "Current" with zero separator. That glued text
+// then defeated vehicleLineParser's own sentence-boundary cutoff (which
+// looks for a period followed by whitespace), so the address swallowed
+// whole into the vehicle's own model field.
+const ADJACENT_COLUMN_FIXTURE = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-adjacent-address-column.pdf"
+);
 
 describe("readPdfText", () => {
   it("reads colon-separated labelled lines as synthetic table rows", async () => {
@@ -174,6 +197,17 @@ describe("readPdfText", () => {
         "VEHICLES",
         "Red Mazda 3, WA registration 2XYZ789 (Vehicle 2XYZ789)",
       ]);
+    });
+  });
+
+  describe("two value columns sharing one row, neither a recognised label on its own (Operation TIDELINE fixture)", () => {
+    it("keeps a space between an unlabelled row's own cells instead of gluing the last word of one cell straight onto the first word of the next", async () => {
+      const result = await readPdfText(readFileSync(ADJACENT_COLUMN_FIXTURE));
+      const joined = result.paragraphs.join("\n");
+      expect(joined).toContain(
+        "1TLN902 (WA) 2023 black Lexus NX350h wagon. Current Address:"
+      );
+      expect(joined).not.toContain("wagon.Current Address:");
     });
   });
 });

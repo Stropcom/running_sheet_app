@@ -224,7 +224,26 @@ export function findVehicleLines(text: string): ParsedVehicleLine[] {
   const out: ParsedVehicleLine[] = [];
   for (let i = 0; i < anchors.length; i++) {
     const anchor = anchors[i];
-    const sliceEnd = anchors[i + 1] ? anchors[i + 1].index : text.length;
+    const nextAnchorIdx = anchors[i + 1] ? anchors[i + 1].index : text.length;
+    // A vehicle's own description ends at its own sentence-terminating
+    // full stop, not merely at the next vehicle anchor (or the end of the
+    // text) -- some source documents place a wholly unrelated sentence
+    // right after a vehicle's own description with nothing but a single
+    // space between them (e.g. a PDF-import artifact that lands a
+    // "Current Address:"/"Office Address:" line in the very same
+    // paragraph as a VEHICLES entry — see pdfTextReader.ts's own
+    // regression test for the row-join this depends on). Without this,
+    // that trailing sentence has no anchor of its own to stop at and gets
+    // swallowed whole into this vehicle's model field. Falls back to the
+    // next-anchor/end-of-text cut when no sentence-ending period exists
+    // first, which is the shape most real training documents actually
+    // use — one uninterrupted sentence with the closing "." as literally
+    // its last character.
+    const descArea = text.slice(anchor.end, nextAnchorIdx);
+    const sentenceEnd = descArea.match(/\.(?=\s|$)/);
+    const sliceEnd = sentenceEnd
+      ? anchor.end + sentenceEnd.index! + 1
+      : nextAnchorIdx;
     const chunk = text.slice(anchor.index, sliceEnd);
     const description = text.slice(anchor.end, sliceEnd);
     out.push(parseDescription(anchor.token, anchor.state, chunk, description));

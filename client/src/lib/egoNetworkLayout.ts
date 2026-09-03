@@ -139,10 +139,82 @@ export function computeEgoLayout(params: {
   const seen = new Set<string>([focusNode.id, ...ring1.map(r => r.id)]);
   const placedNodes: PlacedNode[] = [];
   const angleOf = new Map<string, number>();
+  const slotWidthOf = new Map<string, number>();
 
+  // Work out each ring-1 node's ring-2 children *before* placing ring-1
+  // angles, so the angle pass can size each node's angular "slot" to how
+  // much it's actually carrying — a leaf branch (no children) only needs
+  // room for its own label, while a busy branch needs enough arc for every
+  // child to fan out. Splitting the circle evenly regardless of that (the
+  // old behaviour) is exactly what produced the reported "squashed" look:
+  // a vehicle with five address children got the same sliver as a bare
+  // leaf address next to it.
+  let ring2Shown: { id: string; parent: string; weight: number }[] = [];
+  let hidden2 = 0;
+  if (hops === 2) {
+    const candidates: { id: string; parent: string; weight: number }[] = [];
+    for (const parent of ring1) {
+      for (const nb of adjacency.get(parent.id) ?? []) {
+        if (seen.has(nb.id)) continue;
+        seen.add(nb.id);
+        candidates.push({ id: nb.id, parent: parent.id, weight: nb.weight });
+      }
+    }
+    candidates.sort((a, b) => b.weight - a.weight);
+    ring2Shown = candidates.slice(0, RING2_MAX);
+    hidden2 = candidates.length - ring2Shown.length;
+  }
+  const childCountByParent = new Map<string, number>();
+  for (const c of ring2Shown) {
+    childCountByParent.set(
+      c.parent,
+      (childCountByParent.get(c.parent) ?? 0) + 1
+    );
+  }
+
+  // Weighted angular slots: a ring-1 node's share of the circle is
+  // proportional to 1 + its child count instead of a flat 1/ring1.length,
+  // so quiet single-arm branches sit closer together and busy branches get
+  // the extra room their fan-out needs. A floor (half of what an even
+  // split would have given every node) stops a very busy branch from
+  // starving its neighbours down to nothing — any slack clawed back by the
+  // floor is taken proportionally from the branches that still have room
+  // to spare, not just chopped off the total.
+  const n = Math.max(1, ring1.length);
+  const uniformWidth = (Math.PI * 2) / n;
+  const minWidth = uniformWidth * 0.5;
+  const rawWeights = ring1.map(r => 1 + (childCountByParent.get(r.id) ?? 0));
+  const rawTotal = rawWeights.reduce((a, b) => a + b, 0) || 1;
+  const widths = rawWeights.map(w => (w / rawTotal) * Math.PI * 2);
+  let deficit = 0;
+  for (let i = 0; i < widths.length; i++) {
+    if (widths[i] < minWidth) {
+      deficit += minWidth - widths[i];
+      widths[i] = minWidth;
+    }
+  }
+  if (deficit > 0) {
+    const donorTotal = widths.reduce(
+      (sum, w) => sum + (w > minWidth ? w - minWidth : 0),
+      0
+    );
+    if (donorTotal > 0) {
+      for (let i = 0; i < widths.length; i++) {
+        if (widths[i] > minWidth) {
+          const share = (widths[i] - minWidth) / donorTotal;
+          widths[i] -= deficit * share;
+        }
+      }
+    }
+  }
+
+  let cursor = -Math.PI / 2;
   ring1.forEach((entry, i) => {
-    const angle = (i / Math.max(1, ring1.length)) * Math.PI * 2 - Math.PI / 2;
+    const width = widths[i] ?? uniformWidth;
+    const angle = cursor + width / 2;
+    cursor += width;
     angleOf.set(entry.id, angle);
+    slotWidthOf.set(entry.id, width);
     const node = nodesById.get(entry.id);
     if (!node) return;
     placedNodes.push({
@@ -154,41 +226,22 @@ export function computeEgoLayout(params: {
     });
   });
 
-  let hidden2 = 0;
   const ring2Parent = new Map<string, string>();
   if (hops === 2) {
-    const candidates: { id: string; parent: string; weight: number }[] = [];
-    for (const parent of ring1) {
-      for (const nb of adjacency.get(parent.id) ?? []) {
-        if (seen.has(nb.id)) continue;
-        seen.add(nb.id);
-        candidates.push({ id: nb.id, parent: parent.id, weight: nb.weight });
-      }
-    }
-    candidates.sort((a, b) => b.weight - a.weight);
-    const shown = candidates.slice(0, RING2_MAX);
-    hidden2 = candidates.length - shown.length;
-
-    // Fan each parent's children out around that parent's own angle.
-    // Every ring-1 node owns an angular "slot" — the gap to its neighbours
-    // on the ring, minus a little breathing room — and a parent's ring-2
-    // cluster is never allowed to spread past its own slot. That's what
-    // stops one busy branch's labels from drifting into an adjacent
-    // branch's and overlapping it (the reported bug): however many
-    // children a parent has, its cluster is geometrically confined to the
-    // space between its own ring-1 neighbours. Within that slot the spread
-    // still grows with the child count, so a branch with many children
-    // fans out further than a quiet one rather than every branch using the
-    // same fixed spread regardless of how crowded it actually is.
-    const slotHalfWidth =
-      ring1.length > 1 ? (Math.PI / ring1.length) * 0.85 : Math.PI * 0.4;
-    const byParent = new Map<string, typeof shown>();
-    for (const c of shown) {
+    // Fan each parent's children out around that parent's own angle, never
+    // past its own weighted slot (minus a little breathing room) — that's
+    // what stops one busy branch's labels from drifting into an adjacent
+    // branch's and overlapping it. Within the slot the spread still grows
+    // with the child count, so a branch with many children fans out
+    // further than a quiet one.
+    const byParent = new Map<string, typeof ring2Shown>();
+    for (const c of ring2Shown) {
       if (!byParent.has(c.parent)) byParent.set(c.parent, []);
       byParent.get(c.parent)!.push(c);
     }
     for (const [parentId, kids] of Array.from(byParent.entries())) {
       const base = angleOf.get(parentId) ?? 0;
+      const slotHalfWidth = (slotWidthOf.get(parentId) ?? uniformWidth) * 0.425;
       const desiredHalfSpread = Math.min(1.1, 0.16 * kids.length);
       const halfSpread = Math.min(slotHalfWidth, desiredHalfSpread);
       kids.forEach((kid, i) => {

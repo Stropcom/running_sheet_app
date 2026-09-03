@@ -25,7 +25,6 @@ import {
   exportRingRadii,
   buildEgoNetworkSvg,
   edgeEnds,
-  RING1_MAX,
   NODE_COLORS,
   ENTITY_TYPES,
   ENTITY_LABELS,
@@ -69,13 +68,12 @@ const SECTION_DESCRIPTIONS: Record<SectionKey, string> = {
   patternOfLife: "One time/location report per included target",
 };
 
-/** Hops used for every diagram in a package. A package is a static export —
- * unlike the live Ego Network page, the officer can't toggle to 2 hops
- * afterward if the direct-links-only picture turns out to be too shallow —
- * so it always includes second-degree links. RING2_MAX still caps how many
- * second-degree entities render per diagram (see computeEgoLayout), same
- * as the live view. */
-const PACKAGE_HOPS = 2 as const;
+/** Hops used for every diagram in a package. Direct links only (unlike the
+ * live Ego Network page's optional 2-hop view) — but every direct link,
+ * with no RING1_MAX truncation: expandRing1 below is always true, so a
+ * package is the complete first-degree picture for each target, not a
+ * capped top-12. */
+const PACKAGE_HOPS = 1 as const;
 
 export default function IntelPackages() {
   const [scope, setScope] = useState<PackageScope>("operation");
@@ -195,17 +193,18 @@ export default function IntelPackages() {
         missing.push(t.name);
         continue;
       }
-      const ring1Count = Math.min(
-        adjacency.get(focusNode.id)?.length ?? 0,
-        RING1_MAX
-      );
+      // No RING1_MAX cap here — the ring is sized to however many direct
+      // links this target actually has, so exportRingRadii can give the
+      // real count enough arc (it still clamps the radius itself at the
+      // high end, see EXPORT_RING1_MAX).
+      const ring1Count = adjacency.get(focusNode.id)?.length ?? 0;
       const radii = exportRingRadii(ring1Count);
       const layout = computeEgoLayout({
         focusNode,
         adjacency,
         nodesById,
         hops: PACKAGE_HOPS,
-        expandRing1: false,
+        expandRing1: true,
         ring1Radius: radii.ring1,
         ring2Radius: radii.ring2,
       });

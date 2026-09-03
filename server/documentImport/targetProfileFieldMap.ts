@@ -443,28 +443,24 @@ function findAssociateBlocks(text: string): FreeTextAssociate[] {
     const person = matchWholeLinePersonName(lines[i]);
     if (!person) continue;
 
-    let address: ParsedAddressLine | null = null;
-    let vehicle: ParsedVehicleLine | null = null;
-    let j = i + 1;
-    while (j < lines.length && j < i + 3 && (!address || !vehicle)) {
-      if (!address) {
-        const a = parseAddressLine(lines[j]) ?? parseAddressLineLoose(lines[j]);
-        if (a) {
-          address = a;
-          j++;
-          continue;
-        }
-      }
-      if (!vehicle) {
-        const v = parseVehicleLine(lines[j]);
-        if (v) {
-          vehicle = v;
-          j++;
-          continue;
-        }
-      }
-      break;
-    }
+    // The next couple of lines, split into sentences and searched TOGETHER
+    // as one pool (see extractAddressAndVehicleFromSentences) rather than
+    // one line at a time with an early advance — a name's address AND
+    // vehicle routinely sit in the very same dense paragraph right after
+    // it (e.g. "9 Vela Court, JANDAKOT WA 6164. 1OKS19 (WA) 2021 silver
+    // Hyundai i30 hatch. At 1128 hours, ..."), and a version that found
+    // the address there and immediately advanced past it without also
+    // checking that same paragraph for a vehicle sent the search into the
+    // FOLLOWING paragraph instead — which can easily belong to a totally
+    // different associate — and silently attributed that other person's
+    // own vehicle to this one.
+    const windowSentences = lines
+      .slice(i + 1, Math.min(i + 3, lines.length))
+      .flatMap(splitIntoSentences);
+    const { address, vehicle } = extractAddressAndVehicleFromSentences(
+      windowSentences,
+      person.surname
+    );
 
     if (address || vehicle) {
       out.push({
@@ -500,6 +496,82 @@ function splitIntoSentences(text: string): string[] {
     .filter(Boolean);
 }
 
+// Same short state list every other document-import module keeps its own
+// local copy of (see e.g. vehicleLineParser.ts/addressLineParser.ts/
+// freeTextEntityScan.ts's own AU_STATES) — used here only to exempt a
+// vehicle's own "(WA)" state bracket from mentionsOtherSurname's bare-
+// ALL-CAPS-token scan below, not to validate an address.
+const AU_STATE_CODES = new Set([
+  "WA",
+  "NSW",
+  "VIC",
+  "QLD",
+  "SA",
+  "TAS",
+  "NT",
+  "ACT",
+]);
+
+/** True when `sentence` contains a bare ALL-CAPS surname-shaped token (2+
+ * letters, optionally hyphenated) that ISN'T `ownSurname` and isn't an AU
+ * state code, checked ONLY in the text before the sentence's own vehicle
+ * registration (its first digit — a rego always starts with or otherwise
+ * contains one, e.g. "1CAL19", "1GHF389", while an ordinary English name
+ * never does) — the signal used by extractAddressAndVehicleFromSentences
+ * to tell an associate's OWN vehicle sentence ("MCKENZIE departed in
+ * 1OLI77 (WA) ...") apart from one that's actually describing a DIFFERENT
+ * named person's action instead ("REID arrived in 1CAL19 (WA) ...") in the
+ * middle of the same run-on paragraph (see that function's own comment for
+ * the real document this was found against). Scoping the scan to before
+ * the rego is what keeps this from also false-positiving on an ALL-CAPS
+ * token that's legitimately part of the vehicle description ITSELF, e.g.
+ * a make like "BYD" in "1GHF389 (WA) red BYD Sealion 6" — nothing about a
+ * person ever appears after the rego in this document family's own
+ * "<rego> (<STATE>) <description>" convention. */
+function mentionsOtherSurname(sentence: string, ownSurname: string): boolean {
+  const own = ownSurname.toUpperCase();
+  const regoIdx = sentence.search(/\d/);
+  const beforeRego = regoIdx === -1 ? sentence : sentence.slice(0, regoIdx);
+  const tokens = beforeRego.match(/\b[A-Z]{2,}(?:-[A-Z]{2,})?\b/g) ?? [];
+  return tokens.some(t => t !== own && !AU_STATE_CODES.has(t));
+}
+
+/** Scans `sentences` (see splitIntoSentences) in order for the FIRST
+ * address and the FIRST vehicle — the "keep whichever comes first, never
+ * overwrite once found" rule every associate matcher in this file follows
+ * — factored out since findAssociateBlocks, findDashSeparatedAssociates
+ * and findLeadingNameAssociates all needed the exact same scan. A vehicle-
+ * bearing sentence is skipped (left for a LATER sentence to supply the
+ * vehicle instead, not just discarded outright) when it names a DIFFERENT
+ * surname-shaped person rather than `ownSurname` — a real training
+ * document (IRONBARK) interleaves an associate's own facts with a
+ * sentence describing the TARGET's own vehicle in between ("MCKENZIE met
+ * REID at <address>. REID arrived in <REID's own vehicle>. MCKENZIE
+ * departed in <MCKENZIE's own vehicle>."). Without this, the FIRST
+ * vehicle-shaped sentence found (REID's, not MCKENZIE's) got silently
+ * misattributed to MCKENZIE instead — worse than finding no vehicle at
+ * all for an evidentiary system. The address itself is deliberately NOT
+ * filtered the same way: a sentence establishing where two people met is
+ * legitimately about both of them at once ("MCKENZIE met REID at 7
+ * Seabrook Lane...") and shouldn't be thrown away just for mentioning
+ * someone else by name too. */
+function extractAddressAndVehicleFromSentences(
+  sentences: string[],
+  ownSurname: string
+): { address: ParsedAddressLine | null; vehicle: ParsedVehicleLine | null } {
+  let address: ParsedAddressLine | null = null;
+  let vehicle: ParsedVehicleLine | null = null;
+  for (const sentence of sentences) {
+    if (!address) {
+      address = parseAddressLine(sentence) ?? parseAddressLineLoose(sentence);
+    }
+    if (!vehicle && !mentionsOtherSurname(sentence, ownSurname)) {
+      vehicle = parseVehicleLine(sentence);
+    }
+  }
+  return { address, vehicle };
+}
+
 const DASH_ASSOCIATE_RE =
   /^([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){0,2}\s+[A-Z]{2,}(?:-[A-Z]{2,})?)\s*[-–]\s*(.+)$/;
 
@@ -528,16 +600,62 @@ function findDashSeparatedAssociates(text: string): FreeTextAssociate[] {
     const person = matchWholeLinePersonName(m[1]);
     if (!person) continue;
 
-    let address: ParsedAddressLine | null = null;
-    let vehicle: ParsedVehicleLine | null = null;
-    for (const sentence of splitIntoSentences(m[2])) {
-      if (!address) {
-        address = parseAddressLine(sentence) ?? parseAddressLineLoose(sentence);
-      }
-      if (!vehicle) {
-        vehicle = parseVehicleLine(sentence);
-      }
+    const { address, vehicle } = extractAddressAndVehicleFromSentences(
+      splitIntoSentences(m[2]),
+      person.surname
+    );
+
+    if (address || vehicle) {
+      out.push({
+        firstNames: person.firstNames,
+        surname: person.surname,
+        businessName: "",
+        address,
+        vehicle,
+      });
     }
+  }
+  return out;
+}
+
+// A person's name sitting at the very START of a line/paragraph with more
+// text immediately following on the SAME line — no dash needed (unlike
+// DASH_ASSOCIATE_RE), just whitespace — and an optional "Associates:"/
+// "Associate:" section label consumed right in front of it. This is the
+// shape a target-profile document's very FIRST listed associate almost
+// always uses: the section's own "Associates:" intro sentence doubles as
+// that first entry, e.g. "Associates: Madeleine Rose FLETCHER 63 Osprey
+// Drive, YANGEBUP WA 6164. 1MRF63 (WA) 2020 blue Mazda CX-5 wagon. On 18
+// August 2026, ..." — with no name-only line anywhere for
+// findAssociateBlocks to anchor on, and no dash for findDashSeparatedAssociates
+// to anchor on either, that first associate had no matcher that could ever
+// find them at all; they fell all the way through to a bare, low-
+// confidence candidateEntity mention with no address or vehicle attached.
+const LEADING_NAME_RE =
+  /^(?:Associates?:\s*)?([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){0,2}\s+[A-Z]{2,}(?:-[A-Z]{2,})?)\s+(.+)$/;
+
+/** A third "associate block" shape: see LEADING_NAME_RE. Deliberately tried
+ * only on a per-line basis, matching at the START of that line only (never
+ * scanning mid-line/mid-paragraph for a second embedded name) — so a
+ * narrative sentence mentioning the target by name mid-paragraph ("CROSS
+ * met Madeleine Rose FLETCHER near the loading area.") is never mistaken
+ * for a NEW associate's own leading declaration; a line has to open with
+ * the name-shape itself. Same "only claim what it can attach something
+ * concrete to" rule every matcher here follows. */
+function findLeadingNameAssociates(text: string): FreeTextAssociate[] {
+  const out: FreeTextAssociate[] = [];
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const m = line.match(LEADING_NAME_RE);
+    if (!m) continue;
+    const person = matchWholeLinePersonName(m[1]);
+    if (!person) continue;
+
+    const { address, vehicle } = extractAddressAndVehicleFromSentences(
+      splitIntoSentences(m[2]),
+      person.surname
+    );
 
     if (address || vehicle) {
       out.push({
@@ -1036,21 +1154,38 @@ export function mapDocumentToTargetProfile(
     }
   }
 
-  // Associates: two different physical shapes a document groups a name
+  // Associates: three different physical shapes a document groups a name
   // with its own address/vehicle — a vertical block (name, then address,
-  // then vehicle, each its own line) or one dense paragraph ("Name -
-  // address. Vehicle: X. ..."). Merged and deduped by name since which
-  // shape a document uses is a document-wide choice, not something either
-  // matcher can tell in advance — trying both and keeping whichever fires
-  // costs nothing when only one shape is actually present.
+  // then vehicle, each its own line), one dense paragraph with a dash
+  // ("Name - address. Vehicle: X. ..."), or one dense paragraph with no
+  // dash at all, the name simply leading straight into its own address on
+  // the same line (see LEADING_NAME_RE — the shape a document's very first
+  // listed associate almost always uses, its own name embedded right in
+  // the "Associates:" intro sentence). Merged and deduped by name since
+  // which shape a document uses is a document-wide choice, not something
+  // any one matcher can tell in advance — trying all four and keeping
+  // whichever fire costs nothing when only one or two are actually
+  // present. Filters out the target's own name in case a narrative
+  // sentence happens to open with it in a shape one of these matchers
+  // would otherwise mistake for a new associate declaring itself —
+  // findLeadingNameAssociates in particular has no way to know a
+  // sentence's leading name is the document's own subject rather than
+  // someone new.
   const associateBlocks = dedupeBy(
     [
       ...findAssociateTableRows(result.tables),
       ...findAssociateBlocks(freeText),
       ...findDashSeparatedAssociates(freeText),
+      ...findLeadingNameAssociates(freeText),
       ...findDashSeparatedBusinesses(freeText),
       ...findDashSeparatedEntities(freeText),
-    ],
+    ].filter(
+      a =>
+        !name ||
+        a.businessName ||
+        a.firstNames !== name.firstNames ||
+        a.surname !== name.surname
+    ),
     a => a.businessName || `${a.firstNames} ${a.surname}`
   );
   const excludedPersonNames = new Set(

@@ -50,6 +50,24 @@ const PDF_DOB_OVERRUN_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-pdf-dob-overrun.pdf"
 );
+// A real training PDF (Operation SILVERBROOK) whose "Associates:" section
+// lists its FIRST associate inline in the section's own intro sentence
+// ("Associates: Madeleine Rose FLETCHER 63 Osprey Drive, YANGEBUP WA
+// 6164. 1MRF63 (WA) 2020 blue Mazda CX-5 wagon. ..."), never on a line of
+// its own the way findAssociateBlocks' own vertical shape needs — see
+// findLeadingNameAssociates in targetProfileFieldMap.ts.
+const PDF_LEADING_ASSOCIATE_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-shared-bucket.pdf"
+);
+// A real training PDF (Operation TIDELINE) with the same "Associates:"
+// shape as SILVERBROOK, plus a SECOND associate (KHAN) whose own name also
+// leads straight into her own address on the same paragraph, never alone
+// on its own line.
+const PDF_ADJACENT_COLUMN_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-adjacent-address-column.pdf"
+);
 
 describe("mapDocumentToTargetProfile", () => {
   it("maps the real training document end-to-end", async () => {
@@ -625,8 +643,46 @@ describe("mapDocumentToTargetProfile", () => {
       .filter(c => c.type === "person")
       .map(c => c.value);
     expect(personCandidates).not.toContain("Callum Peter REID");
-    expect(personCandidates).toContain("Olivia Grace MCKENZIE");
-    expect(personCandidates).toContain("Tariq Samuel AZIZ");
+    // Regression: findLeadingNameAssociates now recognises MCKENZIE and
+    // AZIZ as proper associates (their own name leads straight into their
+    // own address on the same line — the same shape LEADING_NAME_RE exists
+    // for), so they no longer fall through to a bare, address/vehicle-less
+    // candidateEntity mention the way they used to.
+    expect(personCandidates).not.toContain("Olivia Grace MCKENZIE");
+    expect(personCandidates).not.toContain("Tariq Samuel AZIZ");
+
+    const mckenzie = result.associateBlocks.find(a => a.surname === "MCKENZIE");
+    expect(mckenzie).toMatchObject({
+      firstNames: "Olivia Grace",
+      address: expect.objectContaining({
+        houseNo: "7",
+        streetName: "Seabrook",
+        suburb: "KARRINYUP",
+      }),
+    });
+    // Regression guard: this document interleaves MCKENZIE's own address
+    // with a sentence about REID (the target) arriving in HIS OWN vehicle,
+    // before MCKENZIE's own vehicle is mentioned in a later sentence ("...
+    // met REID at <address>. REID arrived in <REID's car>. MCKENZIE
+    // departed in <her own car>."). Without extractAddressAndVehicleFromSentences'
+    // own mentionsOtherSurname guard, the FIRST vehicle-shaped sentence
+    // found (REID's) got misattributed to MCKENZIE instead of her own.
+    expect(mckenzie!.vehicle).toMatchObject({
+      registration: "1OLI77",
+      colour: "Red",
+      make: "Volvo",
+    });
+
+    const aziz = result.associateBlocks.find(a => a.surname === "AZIZ");
+    expect(aziz).toMatchObject({
+      firstNames: "Tariq Samuel",
+      address: expect.objectContaining({
+        houseNo: "4",
+        unitNo: "11",
+        streetName: "Foundry",
+        suburb: "MIDVALE",
+      }),
+    });
   });
 });
 
@@ -829,6 +885,57 @@ describe("mapDocumentToTargetProfile — PDF documents", () => {
       surname: "KADER",
       bornDate: "18/08/1984",
       confident: true,
+    });
+  });
+
+  it("recognises the FIRST associate listed even though its name leads straight into its own address in the same sentence, rather than sitting alone on its own line (the SILVERBROOK bug)", async () => {
+    const read = await readPdfText(
+      readFileSync(PDF_LEADING_ASSOCIATE_FIXTURE_PATH)
+    );
+    const result = mapDocumentToTargetProfile(read);
+
+    expect(result.name).toMatchObject({
+      firstNames: "Nathaniel Owen",
+      surname: "CROSS",
+    });
+
+    const fletcher = result.associateBlocks.find(a => a.surname === "FLETCHER");
+    expect(fletcher).toMatchObject({
+      firstNames: "Madeleine Rose",
+      address: expect.objectContaining({
+        houseNo: "63",
+        streetName: "Osprey",
+        suburb: "YANGEBUP",
+      }),
+      vehicle: expect.objectContaining({
+        registration: "1MRF63",
+        colour: "Blue",
+      }),
+    });
+    // The document's second associate, introduced on its own name-only
+    // line, must still be found too -- no regression from adding the
+    // leading-name shape alongside it.
+    const saeed = result.associateBlocks.find(a => a.surname === "SAEED");
+    expect(saeed).toMatchObject({
+      firstNames: "Omar Khalid",
+      vehicle: expect.objectContaining({ registration: "1OKS19" }),
+    });
+  });
+
+  it("finds a SECOND run-on associate the same way, each keeping its own address and vehicle (the TIDELINE bug)", async () => {
+    const read = await readPdfText(
+      readFileSync(PDF_ADJACENT_COLUMN_FIXTURE_PATH)
+    );
+    const result = mapDocumentToTargetProfile(read);
+
+    expect(result.associateBlocks).toHaveLength(2);
+    const russo = result.associateBlocks.find(a => a.surname === "RUSSO");
+    const khan = result.associateBlocks.find(a => a.surname === "KHAN");
+    expect(russo).toMatchObject({
+      vehicle: expect.objectContaining({ registration: "1DPR27" }),
+    });
+    expect(khan).toMatchObject({
+      vehicle: expect.objectContaining({ registration: "1AZK06" }),
     });
   });
 });

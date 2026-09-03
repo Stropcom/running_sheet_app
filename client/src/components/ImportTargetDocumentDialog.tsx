@@ -157,41 +157,49 @@ export function ImportTargetDocumentDialog({
   // key — block-derived (full address/vehicle) and bare mentions alike.
   // Computed once per result so the duplicate-check effect and the
   // eventual save both work off the exact same keyed list.
+  //
+  // A business/place block (see FreeTextAssociate.businessName) is
+  // deliberately excluded here — the associates table is person-shaped
+  // (firstNames/surname/bornDate, see drizzle/schema.ts) with nowhere to
+  // record "this associate IS a business", so a business ended up saved as
+  // an Associate with a blank name and its business name tucked into the
+  // address instead. That's not just semantically wrong ("a business is
+  // obviously not an associate") — it doubled the business up in the
+  // Intelligence entity index too: once as that phantom Associate, and
+  // again as a Location from the very same address. businessLocations
+  // below carries these into Extra Addresses instead, where a business
+  // address already belongs (see the document's own "Business Address"
+  // line, handled the same way) — so the location is still kept, just not
+  // wearing a fake person record to get there.
   const associateCandidates: AssociateCandidate[] = useMemo(() => {
     if (!result) return [];
-    const blocks: AssociateCandidate[] = result.associateBlocks.map(a => ({
-      key: makeExtraId(),
-      firstNames: a.firstNames,
-      surname: a.surname,
-      // A business/place associate (see FreeTextAssociate.businessName) has
-      // no firstNames/surname to give — its name lives on the address
-      // instead, same as everywhere else businessName is modelled — so an
-      // address object is still built here even when the parser found no
-      // street address at all, otherwise the business name would have
-      // nowhere to land.
-      address:
-        a.address || a.businessName
+    const blocks: AssociateCandidate[] = result.associateBlocks
+      .filter(a => !a.businessName)
+      .map(a => ({
+        key: makeExtraId(),
+        firstNames: a.firstNames,
+        surname: a.surname,
+        address: a.address
           ? {
-              unitNo: a.address?.unitNo ?? "",
-              houseNo: a.address?.houseNo ?? "",
-              streetName: a.address?.streetName ?? "",
-              streetType: a.address?.streetType ?? "",
-              suburb: a.address?.suburb ?? "",
-              state: a.address?.state ?? "WA",
-              businessName: a.businessName,
+              unitNo: a.address.unitNo,
+              houseNo: a.address.houseNo,
+              streetName: a.address.streetName,
+              streetType: a.address.streetType,
+              suburb: a.address.suburb,
+              state: a.address.state,
             }
           : null,
-      vehicle: a.vehicle
-        ? {
-            registration: a.vehicle.registration,
-            state: a.vehicle.state,
-            colour: a.vehicle.colour,
-            make: a.vehicle.make,
-            model: a.vehicle.model,
-            vehicleType: a.vehicle.vehicleType,
-          }
-        : null,
-    }));
+        vehicle: a.vehicle
+          ? {
+              registration: a.vehicle.registration,
+              state: a.vehicle.state,
+              colour: a.vehicle.colour,
+              make: a.vehicle.make,
+              model: a.vehicle.model,
+              vehicleType: a.vehicle.vehicleType,
+            }
+          : null,
+      }));
     const bare: AssociateCandidate[] = result.candidateEntities
       .filter(c => c.type === "person")
       .map(c => {
@@ -207,6 +215,30 @@ export function ImportTargetDocumentDialog({
         };
       });
     return [...blocks, ...bare];
+  }, [result]);
+
+  // Business/place blocks pulled out of associateBlocks above — see the
+  // comment on associateCandidates for why these don't belong there. Kept
+  // as their own memo (rather than computed inline in handleContinue) so
+  // it stays next to associateCandidates as the other half of the same
+  // split.
+  const businessLocations: ExtraAddress[] = useMemo(() => {
+    if (!result) return [];
+    return result.associateBlocks
+      .filter(a => a.businessName)
+      .map(a => ({
+        id: makeExtraId(),
+        label: "",
+        businessName: a.businessName,
+        unitNo: a.address?.unitNo ?? "",
+        houseNo: a.address?.houseNo ?? "",
+        streetName: a.address?.streetName ?? "",
+        streetType: a.address?.streetType ?? "",
+        suburb: a.address?.suburb ?? "",
+        state: a.address?.state ?? "WA",
+        full: "",
+        short: "",
+      }));
   }, [result]);
 
   const reset = () => {
@@ -460,6 +492,7 @@ export function ImportTargetDocumentDialog({
             short: "",
           })),
           ...unparsedExtraAddresses,
+          ...businessLocations,
         ],
         extraVehicles: [
           ...restVehicles.map(v => ({
@@ -690,9 +723,7 @@ export function ImportTargetDocumentDialog({
                         className="flex flex-col gap-1 pb-2 border-b border-border/40 last:border-b-0 last:pb-0"
                       >
                         <span className="text-sm font-medium">
-                          {a.firstNames || a.surname
-                            ? `${a.firstNames} ${a.surname}`
-                            : a.address?.businessName}
+                          {a.firstNames} {a.surname}
                         </span>
                         {a.address && (
                           <span className="text-muted-foreground text-xs">

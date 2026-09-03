@@ -46,6 +46,7 @@ const PERSON_SURNAME_STOPLIST = new Set([
   "LLC",
   "CORP",
   "ABF",
+  "ABN",
   "EES",
   "ID",
   "IDs",

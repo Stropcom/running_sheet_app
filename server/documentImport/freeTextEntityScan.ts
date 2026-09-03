@@ -129,10 +129,39 @@ const BUSINESS_SUFFIX_RE =
  * detail ("Pacific Route Services Pty Ltd - Unit 8/41 Walters Drive,
  * OSBORNE PARK WA 6017. ABN training reference: 63 555 281 904."); without
  * this bound, the old whole-line capture folded the address and the ABN
- * clause straight into the "business name" value. */
+ * clause straight into the "business name" value.
+ *
+ * Deliberately NOT case-insensitive (no "i" flag) — that flag used to apply
+ * to the WHOLE pattern, not just the suffix alternation it was added for,
+ * which silently weakened the leading "[A-Z]" to match any letter at all.
+ * A real training document (SWITCHBACK) has this exact sentence hard-
+ * wrapped mid-word across two PDF lines ("...used in connected\ndocuments.
+ * Switchback Systems Pty Ltd..."), and with the match allowed to start on
+ * a lowercase letter, it began at "documents." instead of skipping ahead
+ * to the real, properly-capitalised start of the business name.
+ *
+ * Also capped at 25 chars (not 80) before the suffix — long enough for any
+ * real multi-word business name ("Pacific Route Services Pty Ltd" (23
+ * chars before the suffix), "Crosswind Consulting Pty Ltd" (21),
+ * "Mirage Freight Network Pty Ltd" (23), ...) but too tight for a
+ * sentence merely MENTIONING a business name partway through, or a list
+ * of several name variants strung together with commas ("An invoice
+ * issued by Crosswind Consulting Pty Ltd" (42), "Crosswind Alliance,
+ * Crosswind Consulting Pty Ltd" (31), "Switchback Systems, Switchback
+ * Systems Pty Ltd" (28)) — three more real training documents (MIRAGE,
+ * CROSSWIND, SWITCHBACK) each have an "Organisation complexity"-style
+ * sentence listing several name variants in a row, and the old 80-char
+ * cap let the lazy match run all the way from the sentence's own leading
+ * words (or an earlier variant in the list) to the LAST "Pty Ltd" it
+ * could reach, rather than stopping at the one genuine business-name
+ * mention closest to it. 25 is the tightest round number that still
+ * clears every real business name's own char count (max 23 seen so far)
+ * while sitting below every "mentions one/lists several" case found (min
+ * 28). Tightening the cap forces the failed long attempt to give up and
+ * retry from the next candidate start position, which lands on the real
+ * name every time in every case found so far. */
 const BUSINESS_NAME_RE = new RegExp(
-  `\\b([A-Z][A-Za-z0-9&.,'\\s]{1,80}?\\s*${BUSINESS_SUFFIX_RE.source})`,
-  "i"
+  `\\b([A-Z][A-Za-z0-9&.,'\\s]{1,25}?\\s*${BUSINESS_SUFFIX_RE.source})`
 );
 
 // Domain requires one-or-more "label." groups before the final TLD segment

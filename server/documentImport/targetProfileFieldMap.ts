@@ -454,6 +454,18 @@ function findAssociateBlocks(text: string): FreeTextAssociate[] {
     // FOLLOWING paragraph instead — which can easily belong to a totally
     // different associate — and silently attributed that other person's
     // own vehicle to this one.
+    //
+    // Widening this to 3 lines was tried (to reach a vehicle sitting past
+    // an intervening "DOB <date>" line in one DOCX document's own vertical
+    // block) and reverted: it fixed that one case but reopened exactly the
+    // cross-associate misattribution this window exists to prevent, in
+    // TWO other real training documents (NIGHTJAR: MERCER's own vehicle
+    // got duplicated onto AHERN's entry too; HARBOUR: a wholly new,
+    // spurious associate appeared that wasn't there before). Missing data
+    // (a null vehicle) is the safer failure for an evidentiary system than
+    // wrong data (someone else's vehicle attributed to this person), so
+    // this stays at 2 lines — the DOB-interleaved DOCX case is a known,
+    // accepted gap rather than worth the regression.
     const windowSentences = lines
       .slice(i + 1, Math.min(i + 3, lines.length))
       .flatMap(splitIntoSentences);
@@ -572,8 +584,23 @@ function extractAddressAndVehicleFromSentences(
   return { address, vehicle };
 }
 
+// The dash separator requires REAL whitespace on both sides (\s+, not
+// \s*) -- without it, a hyphenated surname with no spaces around its own
+// internal hyphen ("EL-SAYED") can satisfy this pattern on its own: the
+// surname group's optional "(?:-[A-Z]{2,})?" suffix greedily tries to
+// consume that hyphen first, but when nothing after it looks like this
+// line's own "- detail" separator, the regex engine backtracks and un-
+// commits that optional group, leaving the surname's OWN internal hyphen
+// free to satisfy "\s*[-–]\s*" instead -- silently truncating the surname
+// ("EL" instead of "EL-SAYED") and starting the "detail" half mid-word
+// ("SAYED met ..." instead of the real remainder). Requiring real
+// whitespace around the separator removes that ambiguity entirely, since
+// a hyphenated surname is never written with spaces around its own
+// internal hyphen. Every real "Name - detail" convention seen in an
+// actual training document already uses a spaced dash, so this loses
+// nothing legitimate.
 const DASH_ASSOCIATE_RE =
-  /^([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){0,2}\s+[A-Z]{2,}(?:-[A-Z]{2,})?)\s*[-–]\s*(.+)$/;
+  /^([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){0,2}\s+[A-Z]{2,}(?:-[A-Z]{2,})?)\s+[-–]\s+(.+)$/;
 
 /** A second "associate block" shape, alongside findAssociateBlocks' vertical
  * one (name on its own line, then address/vehicle each on their own line
@@ -720,14 +747,13 @@ function findDashSeparatedBusinesses(text: string): FreeTextAssociate[] {
 // Ltd"). Anchored to the start of the line, one associate per line by this
 // section's own convention, so it can't reach backward across unrelated
 // text the way a scan across a whole paragraph could. The dash requires
-// real whitespace on both sides (unlike DASH_ASSOCIATE_RE/DASH_BUSINESS_RE,
-// which don't need this guard — their ALL-CAPS-surname/legal-suffix
-// requirement already rules out the case below): being the loosest of the
-// three dash matchers, this one would otherwise also match a compact
-// reference/event code with no legal name shape at all ("BLU-E01",
-// "Reference BLU-7719") as if the hyphen were the "Name - detail"
-// separator, corrupting whatever real address/vehicle text followed it
-// elsewhere in the same paragraph.
+// real whitespace on both sides — same reason DASH_ASSOCIATE_RE now does
+// too (see its own comment for the "EL-SAYED" backtracking bug this
+// guards against): being the loosest of the three dash matchers, this one
+// would otherwise also match a compact reference/event code with no legal
+// name shape at all ("BLU-E01", "Reference BLU-7719") as if the hyphen
+// were the "Name - detail" separator, corrupting whatever real address/
+// vehicle text followed it elsewhere in the same paragraph.
 const DASH_ENTITY_RE =
   /^([A-Z][A-Za-z0-9&'.]*(?:\s+[A-Za-z0-9&'.]+){0,5})\s+[-–]\s+(.+)$/;
 

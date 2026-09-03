@@ -100,6 +100,24 @@ describe("findVehicleLines", () => {
     expect(result[0].registration).toBe("SLICK1");
   });
 
+  // Regression: an interstate/fleet-style registration with an internal
+  // hyphen ("CW-1212") anchored on just "1212", silently dropping the
+  // "CW-" prefix -- the anchor's own token pattern had no way to include a
+  // hyphen. Found against a real training document (CROSSWIND) that
+  // deliberately used this format to test registration handling.
+  it("keeps a hyphenated registration's own prefix instead of anchoring on the digits alone", () => {
+    const result = findVehicleLines(
+      "CW-1212 (NSW) 2019 white Toyota HiAce van."
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      registration: "CW-1212",
+      state: "NSW",
+      make: "Toyota",
+      model: "HiAce van",
+    });
+  });
+
   // Regression: a PDF-import artifact can land an entirely unrelated
   // sentence right after a vehicle's own description in the same text,
   // separated by nothing but the vehicle's own closing "." and a single

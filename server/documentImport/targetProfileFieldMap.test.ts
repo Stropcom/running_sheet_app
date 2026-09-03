@@ -68,6 +68,15 @@ const PDF_ADJACENT_COLUMN_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-pdf-adjacent-address-column.pdf"
 );
+// A real training PDF (Operation CROSSWIND) deliberately designed to test
+// hyphenated surnames ("EL-SAYED") and an interstate registration with an
+// internal hyphen ("CW-1212") — both tripped up regexes elsewhere in this
+// file/module that assumed a bare hyphen only ever separates "Name -
+// detail" or a rego from its state bracket, never sits INSIDE a token.
+const PDF_HYPHENATED_SURNAME_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-hyphenated-surname.pdf"
+);
 
 describe("mapDocumentToTargetProfile", () => {
   it("maps the real training document end-to-end", async () => {
@@ -937,5 +946,41 @@ describe("mapDocumentToTargetProfile — PDF documents", () => {
     expect(khan).toMatchObject({
       vehicle: expect.objectContaining({ registration: "1AZK06" }),
     });
+  });
+
+  it("keeps a hyphenated surname whole instead of splitting it at its own internal hyphen (the CROSSWIND bug)", async () => {
+    const read = await readPdfText(
+      readFileSync(PDF_HYPHENATED_SURNAME_FIXTURE_PATH)
+    );
+    const result = mapDocumentToTargetProfile(read);
+
+    expect(result.name).toMatchObject({
+      firstNames: "Fatima Noor",
+      surname: "EL-SAYED",
+    });
+
+    // Regression: findDashSeparatedAssociates' own dash-separator pattern
+    // used to backtrack into "EL-SAYED"'s own internal hyphen when no
+    // OTHER dash was available on the same line, truncating the surname
+    // to "EL" and starting the "detail" half mid-word ("SAYED met ...")
+    // instead of the real remainder -- producing a bogus SECOND,
+    // vehicle-less associate entry alongside the correct one for the same
+    // person.
+    const elSayedEntries = result.associateBlocks.filter(
+      a => a.firstNames === "Fatma Nour"
+    );
+    expect(elSayedEntries).toHaveLength(1);
+    expect(elSayedEntries[0]).toMatchObject({
+      surname: "EL-SAYED",
+      vehicle: expect.objectContaining({ registration: "1FNE14" }),
+    });
+    expect(result.associateBlocks.some(a => a.surname === "EL")).toBe(false);
+
+    // Regression: VEHICLE_ANCHOR's token pattern had no way to include a
+    // hyphen, so "CW-1212 (NSW) ..." anchored on the digits alone,
+    // silently dropping the "CW-" prefix.
+    expect(result.vehicles).toContainEqual(
+      expect.objectContaining({ registration: "CW-1212", state: "NSW" })
+    );
   });
 });

@@ -140,6 +140,53 @@ describe("findCandidateBusinesses", () => {
       true
     );
   });
+
+  // Regression: BUSINESS_NAME_RE used to carry a whole-pattern "i" flag
+  // meant only for the suffix alternation ("Pty Ltd" vs "pty ltd"), which
+  // also silently weakened the leading "[A-Z]" to match ANY letter --
+  // when a real training document (SWITCHBACK) had this sentence hard-
+  // wrapped mid-word across two PDF lines ("...used in connected\ndocuments.
+  // Switchback Systems Pty Ltd..."), the match was allowed to start on the
+  // lowercase "d" of "documents." instead of skipping ahead to the real,
+  // properly-capitalised business name.
+  it("never starts a business name mid-word on a lowercase letter", () => {
+    const result = findCandidateBusinesses(
+      "documents. Switchback Systems Pty Ltd and SB Systems are confirmed as the same organisation."
+    );
+    expect(result.map(c => c.value)).toContain("Switchback Systems Pty Ltd");
+    expect(result.map(c => c.value)).not.toContain(
+      "documents. Switchback Systems Pty Ltd"
+    );
+  });
+
+  // Regression: an "Organisation complexity"-style sentence listing several
+  // name variants in a row let the old 80-char cap run the lazy match all
+  // the way from the sentence's own leading words (or an earlier variant
+  // in the list) to the LAST "Pty Ltd" it could reach, rather than
+  // stopping at the one genuine business-name mention closest to it.
+  // Found against three real training documents (MIRAGE, CROSSWIND,
+  // SWITCHBACK), each with this exact sentence shape.
+  it("doesn't swallow a sentence's own leading words or an earlier name variant into the business name", () => {
+    const mentionedMidSentence = findCandidateBusinesses(
+      "An invoice issued by Crosswind Consulting Pty Ltd referenced account CWA-1212."
+    );
+    expect(mentionedMidSentence.map(c => c.value)).toContain(
+      "Crosswind Consulting Pty Ltd"
+    );
+    expect(mentionedMidSentence.map(c => c.value)).not.toContain(
+      "An invoice issued by Crosswind Consulting Pty Ltd"
+    );
+
+    const listedAsVariant = findCandidateBusinesses(
+      "Crosswind Alliance, Crosswind Consulting Pty Ltd, CWA Logistics and Crosswind Business Services appear in connected records."
+    );
+    expect(listedAsVariant.map(c => c.value)).toContain(
+      "Crosswind Consulting Pty Ltd"
+    );
+    expect(listedAsVariant.map(c => c.value)).not.toContain(
+      "Crosswind Alliance, Crosswind Consulting Pty Ltd"
+    );
+  });
 });
 
 describe("findCandidateEmails", () => {

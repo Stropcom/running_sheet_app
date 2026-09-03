@@ -102,9 +102,14 @@ const YEAR_RE = /^(19|20)\d{2}$/;
  * target-profile document starts with, regardless of whether the token
  * itself looks like a standard-format registration. The optional comma
  * tolerates a personalised plate written "SLICK1, (WA) ..." rather than
- * "SLICK1 (WA) ...". */
+ * "SLICK1 (WA) ...". The token itself allows one optional internal hyphen
+ * ("CW-1212") for an interstate/fleet-style prefixed registration — without
+ * it, "CW-1212 (NSW)" anchored on just "1212", silently dropping the "CW-"
+ * prefix that's the actual distinguishing part of that plate (found against
+ * a real training document, CROSSWIND, that deliberately used this format
+ * to test transposed/variant registrations). */
 const VEHICLE_ANCHOR = new RegExp(
-  `\\b([A-Za-z0-9]{2,10}),?\\s*\\((${Array.from(AU_STATES).join("|")})\\)`,
+  `\\b([A-Za-z0-9]{1,10}(?:-[A-Za-z0-9]{1,10})?),?\\s*\\((${Array.from(AU_STATES).join("|")})\\)`,
   "g"
 );
 

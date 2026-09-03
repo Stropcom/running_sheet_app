@@ -6276,7 +6276,7 @@ export default function IntelligenceMapping() {
                     <input
                       type="range"
                       min={20}
-                      max={1000}
+                      max={3000}
                       step={10}
                       value={
                         pendingShape.radiusMeters ?? DEFAULT_SHAPE_RADIUS_M

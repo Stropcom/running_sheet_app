@@ -107,6 +107,9 @@ import {
   intelPinOverrides,
   IntelPinOverride,
   InsertIntelPinOverride,
+  mapShapes,
+  MapShape,
+  InsertMapShape,
   rsMappingWaypoints,
   userSidebarOrder,
   opManagerPriorityRows,
@@ -12976,6 +12979,171 @@ export async function hardDeleteCustomMarker(id: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   await db.delete(customMapMarkers).where(eq(customMapMarkers.id, id));
+}
+
+// ─── Map Shapes ─────────────────────────────────────────────────────────────
+// Transparent annotation shapes (circle/rectangle/sector/line) a user draws
+// on the intelligence map — see the mapShapes schema comment for which
+// geometry columns apply to which shapeType. Mirrors customMapMarkers'
+// list/create/update/soft-delete pattern above.
+
+export interface MapShapeRow {
+  id: number;
+  createdBy: number;
+  operationId: number | null;
+  shapeType: "circle" | "rectangle" | "sector" | "line";
+  colour: string;
+  opacity: number;
+  label: string | null;
+  centerLat: number | null;
+  centerLng: number | null;
+  radiusMeters: number | null;
+  startAngle: number | null;
+  endAngle: number | null;
+  neLat: number | null;
+  neLng: number | null;
+  swLat: number | null;
+  swLng: number | null;
+  points: { lat: number; lng: number }[]; // parsed from JSON
+  deletedAt: number | null;
+  deletedByCIN: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function parseMapShapeRow(row: MapShape): MapShapeRow {
+  let points: { lat: number; lng: number }[] = [];
+  try {
+    points = JSON.parse(row.points || "[]");
+  } catch {
+    points = [];
+  }
+  return { ...row, points };
+}
+
+export async function getMapShapes(
+  operationIds?: number[]
+): Promise<MapShapeRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  let rows: MapShape[];
+  if (operationIds !== undefined && operationIds.length === 0) {
+    // No operations selected — return nothing (matches customMarkers/intel
+    // layer behaviour).
+    return [];
+  } else if (operationIds && operationIds.length > 0) {
+    rows = await db
+      .select()
+      .from(mapShapes)
+      .where(
+        and(
+          inArray(mapShapes.operationId, operationIds),
+          isNull(mapShapes.deletedAt)
+        )
+      )
+      .orderBy(desc(mapShapes.createdAt));
+  } else {
+    rows = await db
+      .select()
+      .from(mapShapes)
+      .where(isNull(mapShapes.deletedAt))
+      .orderBy(desc(mapShapes.createdAt));
+  }
+  return rows.map(parseMapShapeRow);
+}
+
+export async function createMapShape(data: {
+  createdBy: number;
+  operationId?: number | null;
+  shapeType: "circle" | "rectangle" | "sector" | "line";
+  colour: string;
+  opacity?: number;
+  label?: string | null;
+  centerLat?: number | null;
+  centerLng?: number | null;
+  radiusMeters?: number | null;
+  startAngle?: number | null;
+  endAngle?: number | null;
+  neLat?: number | null;
+  neLng?: number | null;
+  swLat?: number | null;
+  swLng?: number | null;
+  points?: { lat: number; lng: number }[];
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const result = await db.insert(mapShapes).values({
+    createdBy: data.createdBy,
+    operationId: data.operationId ?? null,
+    shapeType: data.shapeType,
+    colour: data.colour,
+    opacity: data.opacity ?? 30,
+    label: data.label ?? null,
+    centerLat: data.centerLat ?? null,
+    centerLng: data.centerLng ?? null,
+    radiusMeters: data.radiusMeters ?? null,
+    startAngle: data.startAngle ?? null,
+    endAngle: data.endAngle ?? null,
+    neLat: data.neLat ?? null,
+    neLng: data.neLng ?? null,
+    swLat: data.swLat ?? null,
+    swLng: data.swLng ?? null,
+    points: JSON.stringify(data.points ?? []),
+  });
+  return (result as any).insertId as number;
+}
+
+export async function updateMapShape(
+  id: number,
+  data: {
+    operationId?: number | null;
+    colour?: string;
+    opacity?: number;
+    label?: string | null;
+    centerLat?: number | null;
+    centerLng?: number | null;
+    radiusMeters?: number | null;
+    startAngle?: number | null;
+    endAngle?: number | null;
+    neLat?: number | null;
+    neLng?: number | null;
+    swLat?: number | null;
+    swLng?: number | null;
+    points?: { lat: number; lng: number }[];
+  }
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const update: Partial<InsertMapShape> = {};
+  if (data.operationId !== undefined) update.operationId = data.operationId;
+  if (data.colour !== undefined) update.colour = data.colour;
+  if (data.opacity !== undefined) update.opacity = data.opacity;
+  if (data.label !== undefined) update.label = data.label;
+  if (data.centerLat !== undefined) update.centerLat = data.centerLat;
+  if (data.centerLng !== undefined) update.centerLng = data.centerLng;
+  if (data.radiusMeters !== undefined) update.radiusMeters = data.radiusMeters;
+  if (data.startAngle !== undefined) update.startAngle = data.startAngle;
+  if (data.endAngle !== undefined) update.endAngle = data.endAngle;
+  if (data.neLat !== undefined) update.neLat = data.neLat;
+  if (data.neLng !== undefined) update.neLng = data.neLng;
+  if (data.swLat !== undefined) update.swLat = data.swLat;
+  if (data.swLng !== undefined) update.swLng = data.swLng;
+  if (data.points !== undefined) update.points = JSON.stringify(data.points);
+  if (Object.keys(update).length > 0) {
+    await db.update(mapShapes).set(update).where(eq(mapShapes.id, id));
+  }
+}
+
+export async function softDeleteMapShape(
+  id: number,
+  cin: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .update(mapShapes)
+    .set({ deletedAt: Date.now(), deletedByCIN: cin })
+    .where(eq(mapShapes.id, id));
 }
 
 // ─── Intel Pin Overrides ────────────────────────────────────────────────────

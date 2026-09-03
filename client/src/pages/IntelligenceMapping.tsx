@@ -110,6 +110,11 @@ import {
   Keyboard,
   Car,
   RefreshCw,
+  Shapes,
+  Circle as CircleIcon,
+  Square,
+  PieChart,
+  Route,
 } from "lucide-react";
 
 // Phone/tablet (touch, no physical keyboard) vs laptop/desktop (mouse +
@@ -334,6 +339,58 @@ const NAV_KEY_MAP: Record<
 
 const LS_QUICK_LINKS_KEY = "runlog_map_quick_links";
 const LS_MAP_SETTINGS_KEY = "runlog_map_settings";
+
+// ── Map Shapes ─────────────────────────────────────────────────────────────────
+// Transparent annotation shapes drawn on the map — see the mapShapes schema
+// comment for the full picture. "sector" is the pizza-slice shape — Google
+// Maps has no native overlay for one, so it's built as a Polygon from an arc
+// of points (see sectorPolygonPath below), unlike circle/rectangle/line
+// which map straight onto google.maps.Circle/Rectangle/Polyline.
+type ShapeType = "circle" | "rectangle" | "sector" | "line";
+
+const SHAPE_TYPE_LABELS: Record<ShapeType, string> = {
+  circle: "Circle",
+  rectangle: "Rectangle",
+  sector: "Pizza Slice",
+  line: "Line",
+};
+
+const DEFAULT_SHAPE_RADIUS_M = 150;
+const DEFAULT_RECT_HALF_SIDE_M = 120;
+
+/** Builds the point path for a circular sector ("pizza slice") — a Polygon
+ * fan from the center out to an arc of points between startAngle and
+ * endAngle (degrees, 0 = North, clockwise, same convention as marker
+ * rotation) and back. Google Maps has no native sector overlay, so this is
+ * the one shape type that has to be hand-built rather than using a stock
+ * Circle/Rectangle/Polyline. Walks the arc in ~6° steps — fine enough to
+ * look round at any radius this feature is used at (tens to low hundreds of
+ * metres), without generating an excessive point count. */
+function sectorPolygonPath(
+  center: google.maps.LatLngLiteral,
+  radiusMeters: number,
+  startAngle: number,
+  endAngle: number
+): google.maps.LatLngLiteral[] {
+  const path: google.maps.LatLngLiteral[] = [center];
+  const centerLatLng = new google.maps.LatLng(center.lat, center.lng);
+  // Normalise so the arc always sweeps clockwise from start to end, even
+  // when the officer has dragged endAngle back past 0/360.
+  let sweep = endAngle - startAngle;
+  if (sweep <= 0) sweep += 360;
+  const steps = Math.max(2, Math.ceil(sweep / 6));
+  for (let i = 0; i <= steps; i++) {
+    const angle = startAngle + (sweep * i) / steps;
+    const point = google.maps.geometry.spherical.computeOffset(
+      centerLatLng,
+      radiusMeters,
+      angle
+    );
+    path.push({ lat: point.lat(), lng: point.lng() });
+  }
+  path.push(center);
+  return path;
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const TEAM_COLOURS: Record<string, string> = {
@@ -1346,6 +1403,140 @@ export default function IntelligenceMapping() {
   const [cmVehicleInput, setCmVehicleInput] = useState("");
   const [cmSaving, setCmSaving] = useState(false);
   const [editingMarkerId, setEditingMarkerId] = useState<number | null>(null);
+
+  // ── Map Shape Placement State ────────────────────────────────────────────────
+  // Transparent annotation shapes (circle/rectangle/sector/line) — see the
+  // mapShapes schema comment. Purely visual (no target/person/vehicle
+  // linkage, unlike custom markers), so the draft state here is deliberately
+  // smaller than cm* above.
+  // Shown right after "Add Shape Here" — lets the officer pick which of the
+  // four shapes to place at the tapped point before a draft overlay appears.
+  const [shapeTypePicker, setShapeTypePicker] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  // The shape currently being placed (new) or edited (existing) — drives
+  // both the live draggable/resizable overlay on the map and the bottom-
+  // sheet panel. `id` is null for a new, not-yet-saved shape.
+  const [pendingShape, setPendingShape] = useState<{
+    id: number | null;
+    shapeType: ShapeType;
+    centerLat?: number;
+    centerLng?: number;
+    radiusMeters?: number;
+    startAngle?: number;
+    endAngle?: number;
+    neLat?: number;
+    neLng?: number;
+    swLat?: number;
+    swLng?: number;
+    points?: { lat: number; lng: number }[];
+  } | null>(null);
+  const [shapeColour, setShapeColour] = useState<MarkerColour>("blue");
+  const [shapeOpacity, setShapeOpacity] = useState(30); // 0-100 %
+  const [shapeLabel, setShapeLabel] = useState("");
+  const [shapeSaving, setShapeSaving] = useState(false);
+  // In-progress line: each map tap while this is set appends a vertex.
+  // Kept separate from pendingShape (which only exists once the line has at
+  // least its starting point AND the officer has tapped "Finish Line") so
+  // the map's click handler can tell "still drawing" apart from "an
+  // ordinary tap that should open the action chooser".
+  const [drawingLine, setDrawingLine] = useState<{
+    points: { lat: number; lng: number }[];
+  } | null>(null);
+  const draftShapeOverlayRef = useRef<
+    | google.maps.Circle
+    | google.maps.Rectangle
+    | google.maps.Polygon
+    | google.maps.Polyline
+    | null
+  >(null);
+  // Mirrors drawingLine for the map's click listener (set up once in
+  // handleMapReady, so it can't read the state value directly without
+  // going stale — same reasoning as customMarkersDataRef above).
+  const drawingLineRef = useRef<{
+    points: { lat: number; lng: number }[];
+  } | null>(null);
+  useEffect(() => {
+    drawingLineRef.current = drawingLine;
+  }, [drawingLine]);
+  // mapShapesDataRef itself is declared below, right after the mapShape
+  // query it mirrors (it can't be declared here — mapShapesData doesn't
+  // exist yet at this point in the component).
+
+  // Opens the edit panel for an existing shape, populating the draft state
+  // from its current saved fields.
+  const beginEditShape = useCallback((s: any) => {
+    setShapeColour((s.colour as MarkerColour) ?? "blue");
+    setShapeOpacity(s.opacity ?? 30);
+    setShapeLabel(s.label ?? "");
+    setPendingShape({
+      id: s.id,
+      shapeType: s.shapeType,
+      centerLat: s.centerLat ?? undefined,
+      centerLng: s.centerLng ?? undefined,
+      radiusMeters: s.radiusMeters ?? undefined,
+      startAngle: s.startAngle ?? undefined,
+      endAngle: s.endAngle ?? undefined,
+      neLat: s.neLat ?? undefined,
+      neLng: s.neLng ?? undefined,
+      swLat: s.swLat ?? undefined,
+      swLng: s.swLng ?? undefined,
+      points: s.points ?? undefined,
+    });
+  }, []);
+
+  // Starts placing a brand-new shape of `type` centred/anchored at the
+  // tapped point, with sensible defaults an officer can then drag/resize
+  // (circle/rectangle) or adjust via sliders (sector) before saving. Line
+  // is different — it has no single "default size", so this instead starts
+  // drawingLine's click-to-add-vertex mode rather than an immediate draft.
+  const beginCreateShape = useCallback(
+    (type: ShapeType, lat: number, lng: number) => {
+      setShapeColour("blue");
+      setShapeOpacity(30);
+      setShapeLabel("");
+      if (type === "circle") {
+        setPendingShape({
+          id: null,
+          shapeType: "circle",
+          centerLat: lat,
+          centerLng: lng,
+          radiusMeters: DEFAULT_SHAPE_RADIUS_M,
+        });
+      } else if (type === "rectangle") {
+        // Metres-per-degree approximation, fine at the scale this feature
+        // operates at (tens to low hundreds of metres) — the officer can
+        // drag-resize to the exact area needed afterwards anyway.
+        const latOffset = DEFAULT_RECT_HALF_SIDE_M / 111_320;
+        const lngOffset =
+          DEFAULT_RECT_HALF_SIDE_M /
+          (111_320 * Math.cos((lat * Math.PI) / 180));
+        setPendingShape({
+          id: null,
+          shapeType: "rectangle",
+          neLat: lat + latOffset,
+          neLng: lng + lngOffset,
+          swLat: lat - latOffset,
+          swLng: lng - lngOffset,
+        });
+      } else if (type === "sector") {
+        setPendingShape({
+          id: null,
+          shapeType: "sector",
+          centerLat: lat,
+          centerLng: lng,
+          radiusMeters: DEFAULT_SHAPE_RADIUS_M,
+          startAngle: 0,
+          endAngle: 90,
+        });
+      } else {
+        setDrawingLine({ points: [{ lat, lng }] });
+      }
+    },
+    []
+  );
+
   // Address search bar state
   const [addrSearch, setAddrSearch] = useState("");
   const [addrSuggestions, setAddrSuggestions] = useState<
@@ -1649,6 +1840,37 @@ export default function IntelligenceMapping() {
       void refetchCustomMarkers();
     },
   });
+
+  // Transparent annotation shapes (circle/rectangle/sector/line) — same
+  // operation scoping as custom markers, same reason the poll pauses while
+  // one is actively being placed/dragged/drawn.
+  const { data: mapShapesData, refetch: refetchMapShapes } =
+    trpc.mapShape.list.useQuery(
+      { operationIds: effectiveOpIdsForMarkers },
+      {
+        refetchInterval: !pendingShape && !drawingLine ? 5000 : false,
+      }
+    );
+  const createMapShapeMut = trpc.mapShape.create.useMutation({
+    onSuccess: () => void refetchMapShapes(),
+  });
+  const updateMapShapeMut = trpc.mapShape.update.useMutation({
+    onMutate: async () => {
+      await utils.mapShape.list.cancel();
+    },
+    onSuccess: () => void refetchMapShapes(),
+  });
+  const deleteMapShapeMut = trpc.mapShape.delete.useMutation({
+    onSuccess: () => void refetchMapShapes(),
+  });
+  // Latest map shapes data ref — lets a shape's click listener (attached
+  // once, at creation) read this shape's CURRENT saved fields rather than
+  // the stale snapshot captured when the listener was first attached — the
+  // exact bug this pattern fixed for custom markers earlier.
+  const mapShapesDataRef = useRef<any[]>([]);
+  useEffect(() => {
+    mapShapesDataRef.current = (mapShapesData as any[] | undefined) ?? [];
+  }, [mapShapesData]);
 
   // Manual position/appearance corrections for intel pins (entities mined
   // from observation text) — a move or an icon/colour/rotation change used
@@ -2687,6 +2909,17 @@ export default function IntelligenceMapping() {
       map.addListener(
         "click",
         (e: google.maps.MapMouseEvent & { placeId?: string }) => {
+          // While drawing a line, every tap appends a vertex instead of the
+          // usual close-InfoWindow / POI-lookup behaviour — including a tap
+          // that happens to land on a POI, since the officer is mid-draw.
+          if (drawingLineRef.current && e.latLng) {
+            const lat = e.latLng.lat();
+            const lng = e.latLng.lng();
+            setDrawingLine(d =>
+              d ? { points: [...d.points, { lat, lng }] } : d
+            );
+            return;
+          }
           if (!e.placeId) {
             infoWindowRef.current?.close();
             return;
@@ -2981,6 +3214,358 @@ export default function IntelligenceMapping() {
       }
     });
   }, [customMarkers, mapReady]);
+
+  // ── Map shape rendering (persisted shapes) ───────────────────────────────────
+  const shapesRef = useRef<
+    Map<
+      number,
+      | google.maps.Circle
+      | google.maps.Rectangle
+      | google.maps.Polygon
+      | google.maps.Polyline
+    >
+  >(new Map());
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const existing = shapesRef.current;
+    const incoming = (mapShapesData as any[] | undefined) ?? [];
+    const incomingIds = new Set(incoming.map((s: any) => s.id as number));
+
+    // Remove stale shapes (deleted, or filtered out by the operation scope)
+    existing.forEach((overlay, id) => {
+      if (!incomingIds.has(id)) {
+        overlay.setMap(null);
+        existing.delete(id);
+      }
+    });
+
+    incoming.forEach((s: any) => {
+      // The shape currently being placed/edited is rendered by its own
+      // draft overlay (draftShapeOverlayRef, see below) instead — skip it
+      // here so the two don't sit on top of each other while the officer
+      // is actively adjusting it.
+      if (pendingShape && pendingShape.id === s.id) {
+        const stale = existing.get(s.id);
+        if (stale) {
+          stale.setMap(null);
+          existing.delete(s.id);
+        }
+        return;
+      }
+
+      const fillColor =
+        MARKER_COLOURS[s.colour as MarkerColour] ?? MARKER_COLOURS.blue;
+      const opacity = (s.opacity ?? 30) / 100;
+      const openEdit = () => {
+        const latest =
+          mapShapesDataRef.current.find((x: any) => x.id === s.id) ?? s;
+        beginEditShape(latest);
+      };
+
+      if (s.shapeType === "circle") {
+        const center = { lat: s.centerLat, lng: s.centerLng };
+        let circle = existing.get(s.id) as google.maps.Circle | undefined;
+        if (circle) {
+          circle.setCenter(center);
+          circle.setRadius(s.radiusMeters);
+          circle.setOptions({
+            fillColor,
+            fillOpacity: opacity,
+            strokeColor: fillColor,
+          });
+        } else {
+          circle = new google.maps.Circle({
+            map,
+            center,
+            radius: s.radiusMeters,
+            fillColor,
+            fillOpacity: opacity,
+            strokeColor: fillColor,
+            strokeOpacity: 0.9,
+            strokeWeight: 2,
+            clickable: true,
+          });
+          circle.addListener("click", openEdit);
+          existing.set(s.id, circle);
+        }
+      } else if (s.shapeType === "rectangle") {
+        const bounds = {
+          north: s.neLat,
+          east: s.neLng,
+          south: s.swLat,
+          west: s.swLng,
+        };
+        let rect = existing.get(s.id) as google.maps.Rectangle | undefined;
+        if (rect) {
+          rect.setBounds(bounds);
+          rect.setOptions({
+            fillColor,
+            fillOpacity: opacity,
+            strokeColor: fillColor,
+          });
+        } else {
+          rect = new google.maps.Rectangle({
+            map,
+            bounds,
+            fillColor,
+            fillOpacity: opacity,
+            strokeColor: fillColor,
+            strokeOpacity: 0.9,
+            strokeWeight: 2,
+            clickable: true,
+          });
+          rect.addListener("click", openEdit);
+          existing.set(s.id, rect);
+        }
+      } else if (s.shapeType === "sector") {
+        const path = sectorPolygonPath(
+          { lat: s.centerLat, lng: s.centerLng },
+          s.radiusMeters,
+          s.startAngle,
+          s.endAngle
+        );
+        let poly = existing.get(s.id) as google.maps.Polygon | undefined;
+        if (poly) {
+          poly.setPath(path);
+          poly.setOptions({
+            fillColor,
+            fillOpacity: opacity,
+            strokeColor: fillColor,
+          });
+        } else {
+          poly = new google.maps.Polygon({
+            map,
+            paths: path,
+            fillColor,
+            fillOpacity: opacity,
+            strokeColor: fillColor,
+            strokeOpacity: 0.9,
+            strokeWeight: 2,
+            clickable: true,
+          });
+          poly.addListener("click", openEdit);
+          existing.set(s.id, poly);
+        }
+      } else {
+        // line
+        const path = (s.points ?? []) as { lat: number; lng: number }[];
+        let line = existing.get(s.id) as google.maps.Polyline | undefined;
+        if (line) {
+          line.setPath(path);
+          line.setOptions({ strokeColor: fillColor, strokeOpacity: opacity });
+        } else {
+          line = new google.maps.Polyline({
+            map,
+            path,
+            strokeColor: fillColor,
+            strokeOpacity: opacity,
+            strokeWeight: 4,
+            clickable: true,
+          });
+          line.addListener("click", openEdit);
+          existing.set(s.id, line);
+        }
+      }
+    });
+  }, [mapShapesData, mapReady, pendingShape, beginEditShape]);
+
+  // ── Draft shape overlay (create/edit in progress) ────────────────────────────
+  // Creates (once, on shape identity/type change) a live editable overlay
+  // for whatever's currently being placed or edited, wiring its own
+  // drag/resize events straight into pendingShape state. Deliberately does
+  // NOT depend on pendingShape's geometry fields — those are the very
+  // things these listeners update, and re-running this effect on every one
+  // of their changes would tear the overlay down and rebuild it mid-drag.
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !pendingShape) {
+      if (draftShapeOverlayRef.current) {
+        draftShapeOverlayRef.current.setMap(null);
+        draftShapeOverlayRef.current = null;
+      }
+      return;
+    }
+    const map = mapRef.current;
+    const fillColor = MARKER_COLOURS[shapeColour];
+    const opacity = shapeOpacity / 100;
+    let overlay:
+      | google.maps.Circle
+      | google.maps.Rectangle
+      | google.maps.Polygon
+      | google.maps.Polyline;
+
+    if (pendingShape.shapeType === "circle") {
+      const circle = new google.maps.Circle({
+        map,
+        center: { lat: pendingShape.centerLat!, lng: pendingShape.centerLng! },
+        radius: pendingShape.radiusMeters!,
+        editable: true,
+        draggable: true,
+        fillColor,
+        fillOpacity: opacity,
+        strokeColor: fillColor,
+        strokeOpacity: 0.95,
+        strokeWeight: 2,
+      });
+      circle.addListener("center_changed", () => {
+        const c = circle.getCenter();
+        if (!c) return;
+        setPendingShape(p =>
+          p ? { ...p, centerLat: c.lat(), centerLng: c.lng() } : p
+        );
+      });
+      circle.addListener("radius_changed", () => {
+        setPendingShape(p =>
+          p ? { ...p, radiusMeters: circle.getRadius() } : p
+        );
+      });
+      overlay = circle;
+    } else if (pendingShape.shapeType === "rectangle") {
+      const bounds = new google.maps.LatLngBounds(
+        { lat: pendingShape.swLat!, lng: pendingShape.swLng! },
+        { lat: pendingShape.neLat!, lng: pendingShape.neLng! }
+      );
+      const rect = new google.maps.Rectangle({
+        map,
+        bounds,
+        editable: true,
+        draggable: true,
+        fillColor,
+        fillOpacity: opacity,
+        strokeColor: fillColor,
+        strokeOpacity: 0.95,
+        strokeWeight: 2,
+      });
+      rect.addListener("bounds_changed", () => {
+        const b = rect.getBounds();
+        if (!b) return;
+        const ne = b.getNorthEast();
+        const sw = b.getSouthWest();
+        setPendingShape(p =>
+          p
+            ? {
+                ...p,
+                neLat: ne.lat(),
+                neLng: ne.lng(),
+                swLat: sw.lat(),
+                swLng: sw.lng(),
+              }
+            : p
+        );
+      });
+      overlay = rect;
+    } else if (pendingShape.shapeType === "sector") {
+      const path = sectorPolygonPath(
+        { lat: pendingShape.centerLat!, lng: pendingShape.centerLng! },
+        pendingShape.radiusMeters!,
+        pendingShape.startAngle!,
+        pendingShape.endAngle!
+      );
+      // Not editable (no free-dragging arc vertices) — a sector's shape is
+      // controlled entirely by center/radius/angles, adjusted via the panel
+      // below, so it always stays a clean pizza slice rather than something
+      // an officer could accidentally drag into a non-sector polygon. Still
+      // draggable as a whole, which moves its center.
+      const poly = new google.maps.Polygon({
+        map,
+        paths: path,
+        editable: false,
+        draggable: true,
+        fillColor,
+        fillOpacity: opacity,
+        strokeColor: fillColor,
+        strokeOpacity: 0.95,
+        strokeWeight: 2,
+      });
+      poly.addListener("dragend", () => {
+        // Our own path construction always puts the center at index 0 (see
+        // sectorPolygonPath) — read it back from there rather than trying
+        // to compute a centroid.
+        const newCenter = poly.getPath().getAt(0);
+        if (!newCenter) return;
+        setPendingShape(p =>
+          p
+            ? { ...p, centerLat: newCenter.lat(), centerLng: newCenter.lng() }
+            : p
+        );
+      });
+      overlay = poly;
+    } else {
+      // line
+      const line = new google.maps.Polyline({
+        map,
+        path: pendingShape.points ?? [],
+        editable: true,
+        draggable: true,
+        strokeColor: fillColor,
+        strokeOpacity: opacity,
+        strokeWeight: 4,
+      });
+      const syncPath = () => {
+        const pts = line
+          .getPath()
+          .getArray()
+          .map(p => ({ lat: p.lat(), lng: p.lng() }));
+        setPendingShape(p => (p ? { ...p, points: pts } : p));
+      };
+      line.getPath().addListener("set_at", syncPath);
+      line.getPath().addListener("insert_at", syncPath);
+      line.getPath().addListener("remove_at", syncPath);
+      overlay = line;
+    }
+
+    draftShapeOverlayRef.current = overlay;
+    return () => {
+      overlay.setMap(null);
+      if (draftShapeOverlayRef.current === overlay) {
+        draftShapeOverlayRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, pendingShape?.id, pendingShape?.shapeType]);
+
+  // Pushes a live colour/opacity change (from the panel's swatches/slider)
+  // onto whichever draft overlay is currently on the map, without
+  // recreating it.
+  useEffect(() => {
+    const overlay = draftShapeOverlayRef.current;
+    if (!overlay) return;
+    const fillColor = MARKER_COLOURS[shapeColour];
+    const opacity = shapeOpacity / 100;
+    if (overlay instanceof google.maps.Polyline) {
+      overlay.setOptions({ strokeColor: fillColor, strokeOpacity: opacity });
+    } else {
+      overlay.setOptions({
+        fillColor,
+        fillOpacity: opacity,
+        strokeColor: fillColor,
+      });
+    }
+  }, [shapeColour, shapeOpacity]);
+
+  // A sector's geometry is driven by the panel's radius/angle sliders
+  // rather than by dragging the polygon itself (see the "not editable"
+  // note above) — push those changes onto the draft Polygon's path live.
+  useEffect(() => {
+    const overlay = draftShapeOverlayRef.current;
+    if (!overlay || !pendingShape || pendingShape.shapeType !== "sector")
+      return;
+    if (!(overlay instanceof google.maps.Polygon)) return;
+    overlay.setPath(
+      sectorPolygonPath(
+        { lat: pendingShape.centerLat!, lng: pendingShape.centerLng! },
+        pendingShape.radiusMeters!,
+        pendingShape.startAngle!,
+        pendingShape.endAngle!
+      )
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    pendingShape?.startAngle,
+    pendingShape?.endAngle,
+    pendingShape?.radiusMeters,
+  ]);
 
   // Global RS Quick Entry handler for merged marker popup
   useEffect(() => {
@@ -3850,6 +4435,10 @@ export default function IntelligenceMapping() {
             }
             onTouchStart={e => {
               if (e.touches.length !== 1) return;
+              // A long-press while drawing a line would pop the action
+              // chooser open mid-draw — ordinary taps are how the officer
+              // adds vertices in that mode, so suppress it here.
+              if (drawingLineRef.current) return;
               const touch = e.touches[0];
               longPressTimerRef.current = setTimeout(() => {
                 // Get map coordinates from touch position
@@ -5316,6 +5905,19 @@ export default function IntelligenceMapping() {
                   </span>
                 </button>
               </div>
+              {/* Add Shape Here — full-width below the grid */}
+              <button
+                onClick={() => {
+                  setShapeTypePicker({ lat: poiTap.lat, lng: poiTap.lng });
+                  setPoiTap(null);
+                }}
+                className="mt-3 flex items-center justify-center gap-2 w-full rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/60 active:scale-95 transition-all px-4 py-3"
+              >
+                <Shapes className="h-5 w-5 text-muted-foreground" />
+                <span className="text-sm font-bold text-foreground">
+                  Add Shape Here
+                </span>
+              </button>
               {/* Navigate with Waze — full-width below the grid */}
               <a
                 href={`https://waze.com/ul?ll=${poiTap?.lat},${poiTap?.lng}&navigate=yes`}
@@ -5415,6 +6017,22 @@ export default function IntelligenceMapping() {
                   </span>
                 </button>
               </div>
+              {/* Add Shape Here — full-width below the grid */}
+              <button
+                onClick={() => {
+                  setShapeTypePicker({
+                    lat: actionChooser.lat,
+                    lng: actionChooser.lng,
+                  });
+                  setActionChooser(null);
+                }}
+                className="mt-3 flex items-center justify-center gap-2 w-full rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/60 active:scale-95 transition-all px-4 py-3"
+              >
+                <Shapes className="h-5 w-5 text-muted-foreground" />
+                <span className="text-sm font-bold text-foreground">
+                  Add Shape Here
+                </span>
+              </button>
               {/* Navigate with Waze — full-width below the grid */}
               <a
                 href={`https://waze.com/ul?ll=${actionChooser.lat},${actionChooser.lng}&navigate=yes`}
@@ -5428,6 +6046,351 @@ export default function IntelligenceMapping() {
                   Navigate with Waze
                 </span>
               </a>
+            </div>
+          </div>
+        )}
+
+        {/* ── Shape Type Picker ── */}
+        {shapeTypePicker && (
+          <div
+            className="absolute inset-0 z-40 flex items-end justify-center"
+            style={{
+              background: "rgba(0,0,0,0.55)",
+              backdropFilter: "blur(3px)",
+            }}
+            onClick={() => setShapeTypePicker(null)}
+          >
+            <div
+              className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
+                    Add Shape
+                  </p>
+                  <p className="text-sm font-semibold text-foreground">
+                    Choose a shape
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShapeTypePicker(null)}
+                  className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {(
+                  [
+                    { type: "circle" as const, Icon: CircleIcon },
+                    { type: "rectangle" as const, Icon: Square },
+                    { type: "sector" as const, Icon: PieChart },
+                    { type: "line" as const, Icon: Route },
+                  ] as const
+                ).map(({ type, Icon }) => (
+                  <button
+                    key={type}
+                    onClick={() => {
+                      beginCreateShape(
+                        type,
+                        shapeTypePicker.lat,
+                        shapeTypePicker.lng
+                      );
+                      setShapeTypePicker(null);
+                    }}
+                    className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-border bg-muted/30 hover:bg-muted/60 active:scale-95 transition-all px-4 py-5"
+                  >
+                    <Icon className="h-7 w-7 text-muted-foreground" />
+                    <span className="text-sm font-bold text-foreground">
+                      {SHAPE_TYPE_LABELS[type]}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Line drawing indicator ── */}
+        {drawingLine && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-primary text-primary-foreground text-xs font-semibold px-3 py-2 rounded-full shadow-lg">
+            <span>Tap the map to add points ({drawingLine.points.length})</span>
+            {drawingLine.points.length >= 2 && (
+              <button
+                onClick={() => {
+                  setPendingShape({
+                    id: null,
+                    shapeType: "line",
+                    points: drawingLine.points,
+                  });
+                  setDrawingLine(null);
+                }}
+                className="rounded-full bg-primary-foreground text-primary px-2.5 py-0.5 text-[11px] font-bold"
+              >
+                Finish
+              </button>
+            )}
+            {drawingLine.points.length > 1 && (
+              <button
+                onClick={() =>
+                  setDrawingLine(d =>
+                    d ? { points: d.points.slice(0, -1) } : d
+                  )
+                }
+                className="rounded-full border border-primary-foreground/50 px-2.5 py-0.5 text-[11px] font-bold"
+              >
+                Undo point
+              </button>
+            )}
+            <button
+              onClick={() => setDrawingLine(null)}
+              className="rounded-full border border-primary-foreground/50 px-2.5 py-0.5 text-[11px] font-bold"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {/* ── Shape Placement / Edit Panel ── */}
+        {pendingShape && (
+          <div
+            className="absolute inset-0 z-40 flex items-end justify-center"
+            style={{
+              background: "rgba(0,0,0,0.6)",
+              backdropFilter: "blur(4px)",
+            }}
+            onClick={() => setPendingShape(null)}
+          >
+            <div
+              className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm font-bold text-foreground">
+                    {pendingShape.id ? "Edit Shape" : "Place Shape"} —{" "}
+                    {SHAPE_TYPE_LABELS[pendingShape.shapeType]}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {pendingShape.shapeType === "circle" ||
+                    pendingShape.shapeType === "sector"
+                      ? "Drag the shape to move it, or drag its edge to resize."
+                      : pendingShape.shapeType === "rectangle"
+                        ? "Drag a corner to resize, or drag the shape to move it."
+                        : "Drag any point to reshape the line."}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setPendingShape(null)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Label */}
+              <div className="mb-4">
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+                  Label (optional)
+                </label>
+                <input
+                  type="text"
+                  value={shapeLabel}
+                  onChange={e => setShapeLabel(e.target.value)}
+                  placeholder="e.g. Search area, No-go zone, Line of sight…"
+                  className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              {/* Colour picker */}
+              <div className="mb-4">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Colour
+                </p>
+                <div className="flex gap-2">
+                  {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(col => (
+                    <button
+                      key={col}
+                      onClick={() => setShapeColour(col)}
+                      title={MARKER_COLOUR_LABELS[col]}
+                      className={`w-8 h-8 rounded-full border-2 transition-all ${
+                        shapeColour === col
+                          ? "border-foreground scale-110"
+                          : "border-transparent hover:border-foreground/40"
+                      }`}
+                      style={{ background: MARKER_COLOURS[col] }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Opacity */}
+              <div className="mb-4">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  {pendingShape.shapeType === "line"
+                    ? "Line opacity"
+                    : "Fill opacity"}{" "}
+                  — {shapeOpacity}%
+                </p>
+                <input
+                  type="range"
+                  min={5}
+                  max={100}
+                  step={5}
+                  value={shapeOpacity}
+                  onChange={e => setShapeOpacity(Number(e.target.value))}
+                  className="w-full accent-primary"
+                />
+              </div>
+
+              {/* Sector-only: radius + angle sliders (the shape isn't
+                  freely draggable-edge like circle/rectangle, so these are
+                  its only resize controls). */}
+              {pendingShape.shapeType === "sector" && (
+                <div className="mb-4 space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                      Radius — {Math.round(pendingShape.radiusMeters ?? 0)}m
+                    </p>
+                    <input
+                      type="range"
+                      min={20}
+                      max={1000}
+                      step={10}
+                      value={
+                        pendingShape.radiusMeters ?? DEFAULT_SHAPE_RADIUS_M
+                      }
+                      onChange={e =>
+                        setPendingShape(p =>
+                          p ? { ...p, radiusMeters: Number(e.target.value) } : p
+                        )
+                      }
+                      className="w-full accent-primary"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                      Start angle — {Math.round(pendingShape.startAngle ?? 0)}°
+                    </p>
+                    <input
+                      type="range"
+                      min={0}
+                      max={359}
+                      step={1}
+                      value={pendingShape.startAngle ?? 0}
+                      onChange={e =>
+                        setPendingShape(p =>
+                          p ? { ...p, startAngle: Number(e.target.value) } : p
+                        )
+                      }
+                      className="w-full accent-primary"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                      End angle — {Math.round(pendingShape.endAngle ?? 90)}°
+                    </p>
+                    <input
+                      type="range"
+                      min={0}
+                      max={359}
+                      step={1}
+                      value={pendingShape.endAngle ?? 90}
+                      onChange={e =>
+                        setPendingShape(p =>
+                          p ? { ...p, endAngle: Number(e.target.value) } : p
+                        )
+                      }
+                      className="w-full accent-primary"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Save / Cancel / Delete */}
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setPendingShape(null)}
+                >
+                  Cancel
+                </Button>
+                {pendingShape.id !== null && (
+                  <Button
+                    variant="destructive"
+                    disabled={shapeSaving}
+                    onClick={async () => {
+                      if (pendingShape.id === null) return;
+                      setShapeSaving(true);
+                      try {
+                        await deleteMapShapeMut.mutateAsync({
+                          id: pendingShape.id,
+                        });
+                        toast.success("Shape deleted");
+                        setPendingShape(null);
+                      } catch {
+                        toast.error("Couldn't delete shape");
+                      } finally {
+                        setShapeSaving(false);
+                      }
+                    }}
+                  >
+                    Delete
+                  </Button>
+                )}
+                <Button
+                  className="flex-1"
+                  disabled={shapeSaving}
+                  onClick={async () => {
+                    setShapeSaving(true);
+                    try {
+                      const common = {
+                        colour: shapeColour,
+                        opacity: shapeOpacity,
+                        label: shapeLabel.trim() || null,
+                        centerLat: pendingShape.centerLat ?? null,
+                        centerLng: pendingShape.centerLng ?? null,
+                        radiusMeters: pendingShape.radiusMeters ?? null,
+                        startAngle: pendingShape.startAngle ?? null,
+                        endAngle: pendingShape.endAngle ?? null,
+                        neLat: pendingShape.neLat ?? null,
+                        neLng: pendingShape.neLng ?? null,
+                        swLat: pendingShape.swLat ?? null,
+                        swLng: pendingShape.swLng ?? null,
+                        points: pendingShape.points ?? [],
+                      };
+                      if (pendingShape.id !== null) {
+                        await updateMapShapeMut.mutateAsync({
+                          id: pendingShape.id,
+                          ...common,
+                        });
+                        toast.success("Shape updated");
+                      } else {
+                        await createMapShapeMut.mutateAsync({
+                          shapeType: pendingShape.shapeType,
+                          operationId:
+                            effectiveOpIdsForMarkers &&
+                            effectiveOpIdsForMarkers.length === 1
+                              ? effectiveOpIdsForMarkers[0]
+                              : null,
+                          ...common,
+                        });
+                        toast.success("Shape placed");
+                      }
+                      setPendingShape(null);
+                    } catch {
+                      toast.error("Couldn't save shape");
+                    } finally {
+                      setShapeSaving(false);
+                    }
+                  }}
+                >
+                  Save
+                </Button>
+              </div>
             </div>
           </div>
         )}

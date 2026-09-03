@@ -998,6 +998,51 @@ export const customMapMarkers = mysqlTable("custom_map_markers", {
 export type CustomMapMarker = typeof customMapMarkers.$inferSelect;
 export type InsertCustomMapMarker = typeof customMapMarkers.$inferInsert;
 
+// ─── Map Shapes ─────────────────────────────────────────────────────────────
+// User-drawn transparent annotation shapes on the intelligence map — search
+// areas, no-go zones, lines of sight/movement. Purely visual: unlike
+// customMapMarkers, no target/person/vehicle linkage. Which geometry columns
+// are populated depends on shapeType — a row only ever uses the subset for
+// its own type (circle/sector: center + radius[, angles]; rectangle: the two
+// corner points; line: the ordered `points` path) rather than every row
+// carrying every shape's fields meaningfully.
+export const mapShapes = mysqlTable("map_shapes", {
+  id: int("id").autoincrement().primaryKey(),
+  createdBy: int("createdBy").notNull(), // FK → users.id
+  operationId: int("operationId"), // FK → operations.id (nullable = unscoped)
+  shapeType: mysqlEnum("shapeType", [
+    "circle",
+    "rectangle",
+    "sector",
+    "line",
+  ]).notNull(),
+  colour: varchar("colour", { length: 32 }).notNull(), // same palette as MarkerColour
+  opacity: int("opacity").default(30).notNull(), // fill opacity, 0-100 (%)
+  label: varchar("label", { length: 255 }),
+  // Circle / Sector
+  centerLat: double("centerLat"),
+  centerLng: double("centerLng"),
+  radiusMeters: double("radiusMeters"),
+  // Sector only — degrees, 0 = North, clockwise (same convention as
+  // customMapMarkers.rotation)
+  startAngle: double("startAngle"),
+  endAngle: double("endAngle"),
+  // Rectangle — two opposite corners (a google.maps.LatLngBounds)
+  neLat: double("neLat"),
+  neLng: double("neLng"),
+  swLat: double("swLat"),
+  swLng: double("swLng"),
+  // Line — JSON array of {lat, lng} points, in path order
+  points: text("points"),
+  deletedAt: bigint("deletedAt", { mode: "number" }), // soft-delete timestamp
+  deletedByCIN: varchar("deletedByCIN", { length: 32 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type MapShape = typeof mapShapes.$inferSelect;
+export type InsertMapShape = typeof mapShapes.$inferInsert;
+
 // ─── Intel Pin Overrides ────────────────────────────────────────────────────
 // A manual correction to an auto-generated Intelligence map pin — an entity
 // mined from observation text, not a customMapMarkers row. Keyed by the same

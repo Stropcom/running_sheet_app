@@ -257,11 +257,17 @@ const EXPORT_RING1_MAX = 330;
  * scaled to fit the page that shrank every ring-1 label with it.
  */
 const EXPORT_RING_GAP = 150;
-/** SVG can't ellipsize text, so long labels are cut to fit their slice. */
-const EXPORT_LABEL_MAX_CHARS = 26;
-/** Room a centred label needs either side of / below its node. */
+/** SVG has no native text wrapping, so labels are hand-wrapped onto at
+ * most this many lines (see wrapLabelLines) — one per hop, since ring-2's
+ * smaller font fits more characters per line than ring-1's. */
+const EXPORT_LABEL_MAX_LINES = 2;
+const EXPORT_LABEL_CHARS_PER_LINE_HOP1 = 20;
+const EXPORT_LABEL_CHARS_PER_LINE_HOP2 = 17;
+const EXPORT_LABEL_CHARS_PER_LINE_CENTRE = 24;
+/** Room a centred label needs either side of / below its node — Y accounts
+ * for a 2-line label, not just one. */
 const EXPORT_LABEL_PAD_X = 115;
-const EXPORT_LABEL_PAD_Y = 46;
+const EXPORT_LABEL_PAD_Y = 60;
 
 /**
  * Ring 1 grows with how many entities sit on it. Unlike the on-screen view
@@ -286,8 +292,43 @@ export function escXml(s: string | null | undefined): string {
     .replace(/"/g, "&quot;");
 }
 
-export function truncateLabel(s: string, max = EXPORT_LABEL_MAX_CHARS): string {
-  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+/**
+ * Wraps `s` onto at most `maxLines` lines of roughly `maxCharsPerLine`
+ * characters each, breaking at word boundaries — SVG <text> has no native
+ * wrapping, so the caller renders one <tspan> per returned line. Mirrors
+ * the live view's line-clamp-2 behaviour: word-wraps everything first,
+ * then only ellipsizes the last kept line if there was more text than fit
+ * in maxLines, rather than cutting off mid-word right after maxCharsPerLine
+ * the way the old single-line truncateLabel did.
+ */
+export function wrapLabelLines(
+  s: string,
+  maxCharsPerLine: number,
+  maxLines: number
+): string[] {
+  const words = s.trim().split(/\s+/).filter(Boolean);
+  const allLines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length > maxCharsPerLine && current) {
+      allLines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) allLines.push(current);
+  if (allLines.length === 0) return [""];
+  if (allLines.length <= maxLines) return allLines;
+
+  const kept = allLines.slice(0, maxLines);
+  const last = kept[maxLines - 1];
+  kept[maxLines - 1] =
+    last.length >= maxCharsPerLine
+      ? `${last.slice(0, maxCharsPerLine - 1)}…`
+      : `${last}…`;
+  return kept;
 }
 
 /**
@@ -344,17 +385,46 @@ export function buildEgoNetworkSvg(params: {
       const colour = NODE_COLORS[p.node.type] ?? NODE_COLORS.unknown;
       const fontSize = p.hop === 1 ? 11 : 10;
       const fill = p.hop === 1 ? "#1e293b" : "#64748b";
+      const charsPerLine =
+        p.hop === 1
+          ? EXPORT_LABEL_CHARS_PER_LINE_HOP1
+          : EXPORT_LABEL_CHARS_PER_LINE_HOP2;
+      const lines = wrapLabelLines(
+        p.node.label,
+        charsPerLine,
+        EXPORT_LABEL_MAX_LINES
+      );
+      const startY = p.y + r + 13;
+      const lineHeight = fontSize + 3;
+      const tspans = lines
+        .map(
+          (line, i) =>
+            `<tspan x="${p.x.toFixed(1)}" y="${(startY + i * lineHeight).toFixed(1)}">${escXml(line)}</tspan>`
+        )
+        .join("");
       return `<g>
       <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r.toFixed(1)}" fill="${colour}" fill-opacity="${p.hop === 1 ? 1 : 0.75}"/>
-      <text x="${p.x.toFixed(1)}" y="${(p.y + r + 13).toFixed(1)}" text-anchor="middle" font-size="${fontSize}" font-family="-apple-system, 'Segoe UI', Arial, sans-serif" fill="${fill}" paint-order="stroke" stroke="#ffffff" stroke-width="3" stroke-linejoin="round">${escXml(truncateLabel(p.node.label))}</text>
+      <text text-anchor="middle" font-size="${fontSize}" font-family="-apple-system, 'Segoe UI', Arial, sans-serif" fill="${fill}" paint-order="stroke" stroke="#ffffff" stroke-width="3" stroke-linejoin="round">${tspans}</text>
     </g>`;
     })
     .join("\n    ");
 
+  const centreLines = wrapLabelLines(
+    focusNode.label,
+    EXPORT_LABEL_CHARS_PER_LINE_CENTRE,
+    EXPORT_LABEL_MAX_LINES
+  );
+  const centreLineHeight = 16;
+  const centreTspans = centreLines
+    .map(
+      (line, i) =>
+        `<tspan x="0" y="${46 + i * centreLineHeight}">${escXml(line)}</tspan>`
+    )
+    .join("");
   const centre = `
     <circle cx="0" cy="0" r="34" fill="${centreColour}" fill-opacity="0.16"/>
     <circle cx="0" cy="0" r="22" fill="${centreColour}"/>
-    <text x="0" y="46" text-anchor="middle" font-size="13" font-weight="700" font-family="-apple-system, 'Segoe UI', Arial, sans-serif" fill="#0f172a" paint-order="stroke" stroke="#ffffff" stroke-width="4" stroke-linejoin="round">${escXml(truncateLabel(focusNode.label, 34))}</text>`;
+    <text text-anchor="middle" font-size="13" font-weight="700" font-family="-apple-system, 'Segoe UI', Arial, sans-serif" fill="#0f172a" paint-order="stroke" stroke="#ffffff" stroke-width="4" stroke-linejoin="round">${centreTspans}</text>`;
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}" width="100%" style="display:block" preserveAspectRatio="xMidYMid meet">
     <rect x="${-halfW}" y="${-halfH}" width="${halfW * 2}" height="${halfH * 2}" fill="#ffffff"/>

@@ -5908,7 +5908,15 @@ export async function getIntelTargetPatternOfLife(
     timeMinutes: m.timeMinutes,
     dateISO: m.dateISO,
   }));
-  const locationTimeGrid = buildLocationTimeGrid(visitEvents, 12, 6);
+  // No cap — every distinct geocoded location the target has been recorded
+  // at belongs in the picture, not just the busiest few. A one-off visit
+  // to an unusual address can matter more operationally than a routine
+  // one that happens to have a higher count.
+  const locationTimeGrid = buildLocationTimeGrid(
+    visitEvents,
+    12,
+    visitEvents.length
+  );
   const peakCell = findPeakCell(locationTimeGrid);
 
   // ── Section C: home presence — the target's registered HBF is merged by

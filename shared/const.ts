@@ -1,7 +1,7 @@
 // Displayed in the sidebar footer so a user can report which build they're
 // on. Keep in sync with package.json's "version" — bump both together on
 // each shippable change.
-export const APP_VERSION = "1.39.2";
+export const APP_VERSION = "1.39.3";
 
 export const COOKIE_NAME = "app_session_id";
 export const ONE_YEAR_MS = 1000 * 60 * 60 * 24 * 365; // kept for reference

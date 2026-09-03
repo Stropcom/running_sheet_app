@@ -6152,20 +6152,20 @@ export default function IntelligenceMapping() {
           </div>
         )}
 
-        {/* ── Shape Placement / Edit Panel ── */}
+        {/* ── Shape Placement / Edit Panel ──
+            Deliberately NOT a blocking modal (no full-screen backdrop) —
+            unlike the custom-marker placement panel, which just edits
+            fields for a marker already fixed at the tapped point, a shape
+            has to stay draggable/resizable ON THE MAP while this is open
+            (the draft overlay effect above made it editable). A full
+            backdrop would sit on top of the map and swallow every drag
+            before it ever reached the shape — see movingMarkerId's own
+            banner below for the same pointer-events-none wrapper /
+            pointer-events-auto card pattern already used for exactly this
+            "map must stay interactive underneath" situation. */}
         {pendingShape && (
-          <div
-            className="absolute inset-0 z-40 flex items-end justify-center"
-            style={{
-              background: "rgba(0,0,0,0.6)",
-              backdropFilter: "blur(4px)",
-            }}
-            onClick={() => setPendingShape(null)}
-          >
-            <div
-              className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
-              onClick={e => e.stopPropagation()}
-            >
+          <div className="absolute inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-3 pointer-events-none">
+            <div className="pointer-events-auto w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl p-5 max-h-[55vh] overflow-y-auto">
               {/* Header */}
               <div className="flex items-center justify-between mb-4">
                 <div>

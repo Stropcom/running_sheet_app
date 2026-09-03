@@ -90,6 +90,306 @@ interface Line {
   items: PositionedItem[];
 }
 
+/** How close two lines' left edges need to be (in PDF points) to count as
+ * the same visual column. */
+const COLUMN_X_TOLERANCE = 3;
+/** How close two cells' top edges need to be (in PDF points) to count as
+ * the same table row — a genuine row's cells share (almost) exactly one
+ * baseline, since they're set with the same font at the same line. */
+const ROW_Y_TOLERANCE = 2;
+/** A line-to-line vertical gap counts as "the next physical line of the
+ * same wrapped cell" only up to this multiple of the line's own text
+ * height — comfortably covers normal single-line-spacing (~1.15x height
+ * in practice) while staying well short of the gap to an unrelated row
+ * further down the same column (typically 1.5x+, since it has to clear
+ * whatever the intervening row's own cell used). */
+const WRAP_CONTINUATION_MAX_GAP_RATIO = 1.3;
+/** A line whose rendered width is at least this fraction of the widest
+ * line ever seen starting at the same x is treated as having been packed
+ * right up to its column's edge — see clusterIntoCells' own comment for
+ * why that's the signal used to tell a forced mid-word break from a real
+ * word-boundary wrap. */
+const PACKED_WIDTH_RATIO = 0.9;
+/** A column only ever counts as table-like (see clusterIntoCells) if it's
+ * BOTH narrower than this (its widest-ever line, in points) AND caught
+ * co-occurring with a different column somewhere on the page — narrowness
+ * alone isn't enough (a document's own overall content width can be
+ * narrow enough that even its ordinary flowing paragraphs look like a
+ * "cell" by width), and co-occurrence alone isn't enough either (a
+ * document can have a genuine narrow 2-column label/value table — see the
+ * module's own ECHOPOINT test fixture — sitting at the very same left
+ * margin as its body paragraphs use for everything else; co-occurrence
+ * alone would flag that shared margin as "table-like" and then swallow
+ * the entire rest of the document's paragraph flow into one cell, since
+ * ordinary single-line-spacing lines at the same margin satisfy the same
+ * wrap-continuation gap check a real wrapped cell would). Requiring both
+ * narrows this down to what a genuine wrapped grid-table cell actually
+ * looks like: narrow AND seen side by side with another column. */
+const NARROW_COLUMN_MAX_WIDTH = 120;
+
+function bucketKey(x: number): number {
+  return Math.round(x / COLUMN_X_TOLERANCE) * COLUMN_X_TOLERANCE;
+}
+
+/** One table cell, possibly rejoined from several wrapped physical lines —
+ * see clusterIntoCells. `firstIdx`/`lastIdx` are its span within the page's
+ * own `groupIntoLines` output, used to splice the cell (or the row it ends
+ * up in) back into the page's natural reading order. */
+interface Cell {
+  x0: number;
+  y: number;
+  items: PositionedItem[];
+  firstIdx: number;
+  lastIdx: number;
+}
+
+/** One visual column-segment of a raw physical line — a line carrying more
+ * than one table cell on it ("NAME  Marcus Andrew   ROLE  Principal...")
+ * has to be considered column by column, not as one unit, otherwise a
+ * wrapped continuation of a VALUE that isn't the line's own leftmost item
+ * (e.g. "VELASCO" wrapping below "Marcus Andrew", itself embedded to the
+ * right of "NAME" on that first physical line) can never be matched back
+ * to the right column — its parent line's own x0 is "NAME"'s position,
+ * nowhere near "VELASCO"'s. `lineIdx` keeps the link back to the raw line
+ * (see clusterIntoCells' `consumed` output) this segment came from. */
+interface Segment {
+  x0: number;
+  y: number;
+  width: number;
+  height: number;
+  items: PositionedItem[];
+  lineIdx: number;
+}
+
+function lineSegments(line: Line, lineIdx: number): Segment[] {
+  return splitLineIntoColumns(line.items).map(items => {
+    const last = items[items.length - 1];
+    const x0 = items[0].x;
+    const x1 = last.x + last.width;
+    const height =
+      Math.max(...items.map(i => i.height || 0)) || items[0].height || 10;
+    return { x0, y: line.y, width: x1 - x0, height, items, lineIdx };
+  });
+}
+
+/**
+ * Finds every text column that's genuinely part of a multi-column table —
+ * both narrow AND caught sharing a row with a DIFFERENT column somewhere
+ * on the page (see NARROW_COLUMN_MAX_WIDTH and the co-occurrence check
+ * below) — and rejoins each one's word-wrapped continuation lines back
+ * into a single cell. For a PDF whose table cells (or a narrow title
+ * column) are narrower than some of their own content, see the module
+ * comment's own note on genuine multi-column grid tables being out of
+ * scope, which this narrows: a document generated with a naive fixed-
+ * width text layout (seen in real training documents, e.g. a "TARGET
+ * PROFILE" header table with cells barely wider than their label) will
+ * hard-wrap a single word with no hyphen and no trailing space at all —
+ * "OPERATION" renders as two stacked lines "OPERATI" / "ON" at the exact
+ * same x position — which otherwise shatters every downstream heading/
+ * label/name match that assumes a "line" is a complete visual unit.
+ *
+ * Neither signal alone is reliable enough on its own (see
+ * NARROW_COLUMN_MAX_WIDTH's own comment for the full reasoning): a
+ * column's own content can coincidentally be short without it being a
+ * "cell" (a heading, a short paragraph line), and a genuine narrow table
+ * can sit at the exact same left margin as a document's ordinary body
+ * paragraphs, which would otherwise get swept in by a co-occurrence check
+ * alone. Requiring both narrows it down to what a real wrapped grid-table
+ * cell actually looks like. Reflowing anything else here would collapse a
+ * whole multi-sentence paragraph into one cell with no way to tell where
+ * the next paragraph, or even the next distinct standalone line (e.g. an
+ * associate's name sitting alone on its own line — see
+ * findAssociateBlocks in targetProfileFieldMap.ts, which depends on
+ * exactly that), was meant to start — it's left to the existing per-line
+ * paragraph-gap logic below instead, unmodified.
+ *
+ * Two lines are treated as one (table) cell's wrap when they start at
+ * (about) the same x and sit only one line-height apart vertically (see
+ * the two tolerances above) — that combination reliably separates "next
+ * line of the same wrapped cell" from "next row of the table", which
+ * lands either at a different x or with a distinctly bigger gap (having
+ * to clear whatever the intervening row used).
+ *
+ * Whether to rejoin two lines with a space or not can't be read off the
+ * text alone — nothing in the PDF marks which wraps happened at a real
+ * space and which cut a single word in half, and both shapes occur in the
+ * very same document (see the module test fixtures — "New"/"Zealand" is a
+ * real word-boundary wrap sitting one row away from the mid-word
+ * "PASSPO"/"RT"). The signal used instead is geometric: this generator
+ * only breaks a line early, well short of the column's own width, when it
+ * ran out of whole words that fit (a real word-boundary wrap, needing a
+ * space on rejoin) — a forced mid-word break only happens when a single
+ * token doesn't fit the column at all, which packs that line right up to
+ * the column's own widest-ever line (needing no space on rejoin, since
+ * the two fragments are one word). Not perfect — a word-boundary wrap
+ * that happens to pack tightly can still misfire — but it resolves every
+ * case found in real training documents so far.
+ */
+function clusterIntoCells(lines: Line[]): {
+  cells: Cell[];
+  consumed: boolean[];
+} {
+  const segments: Segment[] = [];
+  lines.forEach((line, i) => segments.push(...lineSegments(line, i)));
+
+  const colMaxWidth = new Map<number, number>();
+  for (const s of segments) {
+    if (s.width <= 0) continue;
+    const key = bucketKey(s.x0);
+    colMaxWidth.set(key, Math.max(colMaxWidth.get(key) ?? 0, s.width));
+  }
+
+  // A segment counts as sitting IN a table row only if it itself — at its
+  // own specific y, not just "this x anywhere on the page" — is caught
+  // beside a DIFFERENT column at (about) the same y. Checked per segment
+  // rather than aggregated into a page-level set of "table x-positions":
+  // a document's own flowing narrative can easily share its left margin
+  // with a genuine narrow table elsewhere on the SAME page (the module
+  // test fixtures' own COBALT document does exactly this — its "SUMMARY"/
+  // "Associates:" narrative starts at the very same x as the header
+  // table's own label column) — flagging that whole x-position as
+  // "table-like" would sweep the narrative in right along with the real
+  // table rows, the same failure a pure width threshold has (see the
+  // function comment for both). Only THIS row having a genuine neighbour
+  // reliably means THIS row is part of a table. O(n^2) over the page's
+  // own segments (at most a few hundred), so cheap in practice.
+  const hasRowMate = new Array(segments.length).fill(false);
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i].width <= 0) continue;
+    const bi = bucketKey(segments[i].x0);
+    for (let j = i + 1; j < segments.length; j++) {
+      if (segments[j].width <= 0) continue;
+      if (bucketKey(segments[j].x0) === bi) continue;
+      if (Math.abs(segments[i].y - segments[j].y) <= ROW_Y_TOLERANCE) {
+        hasRowMate[i] = true;
+        hasRowMate[j] = true;
+      }
+    }
+  }
+  const isNarrowColumn = (x0: number) =>
+    (colMaxWidth.get(bucketKey(x0)) ?? 0) <= NARROW_COLUMN_MAX_WIDTH;
+
+  const segConsumed = new Array(segments.length).fill(false);
+  const cells: Cell[] = [];
+
+  for (let i = 0; i < segments.length; i++) {
+    if (segConsumed[i]) continue;
+    const s0 = segments[i];
+    if (s0.width <= 0 || !hasRowMate[i] || !isNarrowColumn(s0.x0)) continue;
+    segConsumed[i] = true;
+    const bucket = bucketKey(s0.x0);
+    const items = [...s0.items];
+    let lastY = s0.y;
+    let lastWidth = s0.width;
+    let lastHeight = s0.height;
+    const firstIdx = s0.lineIdx;
+    let lastIdx = s0.lineIdx;
+
+    for (let j = i + 1; j < segments.length; j++) {
+      if (segConsumed[j]) continue;
+      const sj = segments[j];
+      if (sj.width <= 0 || bucketKey(sj.x0) !== bucket) continue;
+      const gap = lastY - sj.y;
+      if (gap <= 0 || gap > lastHeight * WRAP_CONTINUATION_MAX_GAP_RATIO) break;
+      const max = colMaxWidth.get(bucket) ?? lastWidth;
+      const packed = lastWidth >= max * PACKED_WIDTH_RATIO;
+      if (!packed) {
+        items.push({
+          str: " ",
+          x: sj.x0,
+          y: sj.y,
+          width: 0,
+          height: 0,
+          hasEOL: false,
+        });
+      }
+      items.push(...sj.items);
+      segConsumed[j] = true;
+      lastY = sj.y;
+      lastWidth = sj.width;
+      lastHeight = sj.height || lastHeight;
+      lastIdx = sj.lineIdx;
+    }
+
+    cells.push({ x0: s0.x0, y: s0.y, items, firstIdx, lastIdx });
+  }
+
+  // A raw line only counts as fully folded into cells (safe for
+  // buildPageUnits to skip outright) once EVERY segment it contributed is
+  // itself part of some cell — a line with even one wide (non-table)
+  // segment never enters the loop above at all, so it's correctly left
+  // for buildPageUnits' plain-line fallback instead, unmodified.
+  const segIdxByLine = new Map<number, number[]>();
+  segments.forEach((s, idx) => {
+    const list = segIdxByLine.get(s.lineIdx);
+    if (list) list.push(idx);
+    else segIdxByLine.set(s.lineIdx, [idx]);
+  });
+  const consumed = lines.map((_, i) => {
+    const idxs = segIdxByLine.get(i) ?? [];
+    return idxs.length > 0 && idxs.every(idx => segConsumed[idx]);
+  });
+
+  return { cells, consumed };
+}
+
+/** One physical line (ordinary flowing text) or one aligned table row
+ * (several cells from different columns sharing the same y) — the page's
+ * natural reading-order stream after clusterIntoCells has pulled the
+ * narrow-column cells out of it. `idx` is the position (in the page's own
+ * groupIntoLines output) this unit occupies, used only to keep units in
+ * the page's original top-to-bottom order. */
+type PageUnit =
+  | { kind: "line"; idx: number; line: Line }
+  | { kind: "row"; idx: number; cells: Cell[] };
+
+/**
+ * Reduces a page's physical lines to a reading-order stream of PageUnits —
+ * ordinary lines untouched, narrow-column cells (see clusterIntoCells)
+ * grouped into aligned rows wherever several of them share the same y
+ * (a genuine table row, e.g. "NAME  Marcus Andrew   ROLE  Principal..." —
+ * two label/value pairs side by side), otherwise passed through as a
+ * single-cell "row". A cell/row is spliced back in at the position of its
+ * OWN earliest line, so it reads in the same place a plain paragraph line
+ * there would have. */
+function buildPageUnits(lines: Line[]): PageUnit[] {
+  const { cells, consumed } = clusterIntoCells(lines);
+
+  const rows: { cells: Cell[]; firstIdx: number }[] = [];
+  const usedCell = new Array(cells.length).fill(false);
+  const byY = cells.map((_, i) => i).sort((a, b) => cells[b].y - cells[a].y);
+  for (const i of byY) {
+    if (usedCell[i]) continue;
+    const rowCells = [cells[i]];
+    usedCell[i] = true;
+    for (const j of byY) {
+      if (usedCell[j] || j === i) continue;
+      if (Math.abs(cells[j].y - cells[i].y) <= ROW_Y_TOLERANCE) {
+        rowCells.push(cells[j]);
+        usedCell[j] = true;
+      }
+    }
+    rowCells.sort((a, b) => a.x0 - b.x0);
+    rows.push({
+      cells: rowCells,
+      firstIdx: Math.min(...rowCells.map(c => c.firstIdx)),
+    });
+  }
+  const rowAtIdx = new Map(rows.map(r => [r.firstIdx, r]));
+
+  const units: PageUnit[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const row = rowAtIdx.get(i);
+    if (row) {
+      units.push({ kind: "row", idx: i, cells: row.cells });
+      continue;
+    }
+    if (consumed[i]) continue; // folded into some other cell/row already emitted
+    units.push({ kind: "line", idx: i, line: lines[i] });
+  }
+  return units;
+}
+
 /** Groups a page's text items (already in reading order from pdf.js) into
  * visual lines, using pdf.js's own hasEOL flag as the primary signal and a
  * y-jump as a fallback for the rare document where that flag is absent
@@ -168,34 +468,97 @@ function columnText(items: PositionedItem[]): string {
     .trim();
 }
 
-/** Renders one line's items to plain text, and — if it's a labelled
- * field — also as a synthetic [label, value] table row. Tries the
+/** Renders one line's items to plain text, and — if it carries one or more
+ * labelled fields — also as synthetic [label, value] table rows. Tries the
  * simpler colon-separated shape first ("NAME: John Smith", however many
  * text items that string happens to be split across), then falls back to
- * position-based column splitting for a genuine two-column table row with
- * no colon at all. */
+ * position-based column splitting.
+ *
+ * The column-split path returns as many [label, value] pairs as the line
+ * actually has: a genuine two-column table row (one label, one value) is
+ * the common case, but a grid-table layout — several label/value pairs
+ * side by side on one physical row, e.g. "NAME  Marcus Andrew   ROLE
+ * Principal COB..." — is walked as one label per recognised label column,
+ * with everything up to the NEXT recognised label column claimed as that
+ * label's own value. Without this, only the first pair would be kept and
+ * every later label on the same row would be swallowed into the first
+ * value instead of read as its own field. */
 function readLine(items: PositionedItem[]): {
   text: string;
-  row: string[] | null;
+  rows: string[][] | null;
 } {
   const text = columnText(items);
-  if (!text) return { text: "", row: null };
+  if (!text) return { text: "", rows: null };
 
   const colonMatch = text.match(COLON_LABEL_RE);
   if (colonMatch) {
-    return { text, row: [canonicalLabel(colonMatch[1]), colonMatch[2].trim()] };
+    return {
+      text,
+      rows: [[canonicalLabel(colonMatch[1]), colonMatch[2].trim()]],
+    };
   }
 
   const columns = splitLineIntoColumns(items);
   if (columns.length >= 2) {
-    const label = columnText(columns[0]);
-    if (LINE_LABELS.some(l => l.toUpperCase() === label.toUpperCase())) {
-      const value = columns.slice(1).map(columnText).filter(Boolean).join(" ");
-      if (value) return { text, row: [canonicalLabel(label), value] };
+    const labelIdxs: number[] = [];
+    for (let i = 0; i < columns.length; i++) {
+      const t = columnText(columns[i]);
+      if (LINE_LABELS.some(l => l.toUpperCase() === t.toUpperCase())) {
+        labelIdxs.push(i);
+      }
+    }
+    if (labelIdxs.length > 0) {
+      const rows: string[][] = [];
+      for (let k = 0; k < labelIdxs.length; k++) {
+        const startIdx = labelIdxs[k];
+        const endIdx =
+          k + 1 < labelIdxs.length ? labelIdxs[k + 1] : columns.length;
+        const label = columnText(columns[startIdx]);
+        const value = columns
+          .slice(startIdx + 1, endIdx)
+          .map(columnText)
+          .filter(Boolean)
+          .join(" ");
+        if (value) rows.push([canonicalLabel(label), value]);
+      }
+      if (rows.length > 0) return { text, rows };
     }
   }
 
-  return { text, row: null };
+  return { text, rows: null };
+}
+
+/** Turns an aligned table row's cells (see buildPageUnits) into
+ * [label, value] pairs — the grid-table equivalent of readLine's own
+ * gap-based column pairing above, but without needing to re-derive
+ * "columns" from a horizontal-gap guess: buildPageUnits has already
+ * grouped genuinely distinct columns into their own cells, so this just
+ * walks them left to right, claiming every cell up to the next
+ * recognised label as that label's value. Returns null (rather than an
+ * empty array) when none of the row's cells look like a label at all, so
+ * the caller can fall back to treating the row as flowing text instead —
+ * a row is only ever built because cells happened to share a y, which
+ * doesn't guarantee they're actually a labelled row. */
+function pairRowCells(cells: Cell[]): string[][] | null {
+  const texts = cells.map(c => columnText(c.items));
+  const labelIdxs: number[] = [];
+  for (let i = 0; i < texts.length; i++) {
+    if (LINE_LABELS.some(l => l.toUpperCase() === texts[i].toUpperCase())) {
+      labelIdxs.push(i);
+    }
+  }
+  if (labelIdxs.length === 0) return null;
+  const rows: string[][] = [];
+  for (let k = 0; k < labelIdxs.length; k++) {
+    const startIdx = labelIdxs[k];
+    const endIdx = k + 1 < labelIdxs.length ? labelIdxs[k + 1] : texts.length;
+    const value = texts
+      .slice(startIdx + 1, endIdx)
+      .filter(Boolean)
+      .join(" ");
+    if (value) rows.push([canonicalLabel(texts[startIdx]), value]);
+  }
+  return rows.length > 0 ? rows : null;
 }
 
 /** Reads every page's text from a PDF's bytes, reconstructing labelled
@@ -249,15 +612,34 @@ export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
         });
       }
 
-      for (const line of groupIntoLines(items)) {
-        const { text, row } = readLine(line.items);
+      for (const unit of buildPageUnits(groupIntoLines(items))) {
+        // A "row" (2+ narrow-column cells sharing a y — see
+        // buildPageUnits) is tried as a genuine multi-label grid row
+        // first; a lone cell or a row with no recognised label falls
+        // back to readLine's own colon/gap-based reading over the same
+        // items, exactly as a plain physical line would use.
+        let text: string;
+        let rows: string[][] | null;
+        let y: number;
+        if (unit.kind === "row") {
+          const flat = unit.cells.flatMap(c => c.items);
+          const read = readLine(flat);
+          text = read.text;
+          rows = pairRowCells(unit.cells) ?? read.rows;
+          y = unit.cells[0].y;
+        } else {
+          const read = readLine(unit.line.items);
+          text = read.text;
+          rows = read.rows;
+          y = unit.line.y;
+        }
         if (!text) {
           flushParagraph();
           prevLineY = null;
           continue;
         }
-        if (row) {
-          tableRows.push(row);
+        if (rows) {
+          tableRows.push(...rows);
           flushParagraph();
           prevLineY = null;
           continue;
@@ -278,13 +660,12 @@ export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
           prevLineY = null;
           continue;
         }
-        const gap =
-          prevLineY !== null ? Math.abs(prevLineY - line.y) : prevLineGap;
+        const gap = prevLineY !== null ? Math.abs(prevLineY - y) : prevLineGap;
         if (prevLineY !== null && gap > prevLineGap * 1.6) {
           flushParagraph();
         }
         paragraphBuffer.push(text);
-        prevLineY = line.y;
+        prevLineY = y;
         if (gap > 0) prevLineGap = gap;
       }
       flushParagraph();

@@ -69,10 +69,13 @@ const SECTION_DESCRIPTIONS: Record<SectionKey, string> = {
   patternOfLife: "One time/location report per included target",
 };
 
-/** Hops used for every diagram in a package — direct links only. Second-degree
- * rings make each diagram much larger, and a package already carries one per
- * target, so the printed page stays readable at 1 hop. */
-const PACKAGE_HOPS = 1 as const;
+/** Hops used for every diagram in a package. A package is a static export —
+ * unlike the live Ego Network page, the officer can't toggle to 2 hops
+ * afterward if the direct-links-only picture turns out to be too shallow —
+ * so it always includes second-degree links. RING2_MAX still caps how many
+ * second-degree entities render per diagram (see computeEgoLayout), same
+ * as the live view. */
+const PACKAGE_HOPS = 2 as const;
 
 export default function IntelPackages() {
   const [scope, setScope] = useState<PackageScope>("operation");
@@ -219,17 +222,30 @@ export default function IntelPackages() {
 
       const svg = buildEgoNetworkSvg({ focusNode, layout, radii });
       const ring1 = layout.placed.filter(p => p.hop === 1);
+      const ring2 = layout.placed.filter(p => p.hop === 2);
       const rows = layout.placed
         .map(
           p =>
-            `<tr><td>${escHtml(p.node.label)}</td><td>${escHtml(ENTITY_LABELS[p.node.type] ?? p.node.type)}</td><td>${p.weight}&times;</td></tr>`
+            `<tr><td>${escHtml(p.node.label)}</td><td>${escHtml(ENTITY_LABELS[p.node.type] ?? p.node.type)}</td><td>${p.hop === 1 ? `${p.weight}&times;` : "2nd degree"}</td></tr>`
         )
         .join("");
+      const statsLine = [
+        `${ring1.length} direct link${ring1.length !== 1 ? "s" : ""}`,
+        ring2.length > 0 ? `${ring2.length} second-degree` : null,
+        layout.hiddenRing1Count > 0
+          ? `${layout.hiddenRing1Count} direct not shown`
+          : null,
+        layout.hiddenRing2Count > 0
+          ? `${layout.hiddenRing2Count} second-degree not shown`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" &middot; ");
 
       blocks.push(`<div class="sub-block">
         <p class="sub-head">${escHtml(t.name)}</p>
         ${svg}
-        <div class="stats-line">${ring1.length} direct link${ring1.length !== 1 ? "s" : ""}${layout.hiddenRing1Count > 0 ? ` &middot; ${layout.hiddenRing1Count} not shown` : ""}</div>
+        <div class="stats-line">${statsLine}</div>
         <div class="legend">${legendHtml}</div>
         <table class="data-table" style="margin-top:10px">
           <thead><tr><th>Entity</th><th style="width:110px">Type</th><th style="width:110px">Co-occurrences</th></tr></thead>

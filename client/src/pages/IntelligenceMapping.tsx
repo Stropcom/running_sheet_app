@@ -2522,7 +2522,18 @@ export default function IntelligenceMapping() {
           lat: position.lat,
           lng: position.lng,
         });
-        infoWindowRef.current.open(mapRef.current!);
+        // Deferred one frame: the InfoWindow computes its on-screen pixel
+        // position (including which way to flip itself near a map edge)
+        // from its content's actual rendered size, but the browser hasn't
+        // laid out the HTML setContent() just injected until the next
+        // paint — opening in the same tick can position the bubble using a
+        // stale/zero size from whatever was in this reused singleton
+        // InfoWindow before, which is exactly the "off-centre on the first
+        // click, correct on the second" symptom this fixes (the second
+        // click's content was already painted from the first).
+        requestAnimationFrame(() => {
+          infoWindowRef.current?.open(mapRef.current!);
+        });
       });
       markersRef.current.push(marker);
     },
@@ -3208,7 +3219,15 @@ export default function IntelligenceMapping() {
           };
 
           infoWindowRef.current.setContent(buildPopupHtml(currentRotation));
-          infoWindowRef.current.open(map, marker);
+          // Deferred one frame — same reasoning as the intel pin popup's
+          // own open() above: the browser hasn't laid out the HTML
+          // setContent() just injected until the next paint, so opening in
+          // the same tick can position the bubble off-anchor using a
+          // stale/zero size from this reused singleton InfoWindow's
+          // previous content.
+          requestAnimationFrame(() => {
+            infoWindowRef.current?.open(map, marker);
+          });
         });
         existing.set(outerCm.id, marker);
       }

@@ -242,8 +242,10 @@ export default function IntelPackages() {
         .join(" &middot; ");
 
       blocks.push(`<div class="sub-block">
-        <p class="sub-head">${escHtml(t.name)}</p>
-        ${svg}
+        <div class="sub-block-figure">
+          <p class="sub-head">${escHtml(t.name)}</p>
+          ${svg}
+        </div>
         <div class="stats-line">${statsLine}</div>
         <div class="legend">${legendHtml}</div>
         <table class="data-table" style="margin-top:10px">

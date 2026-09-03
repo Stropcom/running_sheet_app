@@ -65,7 +65,10 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 
 /* ── Section framing ── */
 .pkg-section { padding:0 32px 18px; }
-.pkg-section-head { background:${PKG_BLUE_DARK} !important; color:#fff !important; padding:9px 16px; margin:0 -32px 16px; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; }
+/* break-after:avoid keeps this heading from ever being stranded alone at
+   the top of a page while its content gets pushed to the next one — see
+   the matching fix on .sub-head below for why that happens. */
+.pkg-section-head { background:${PKG_BLUE_DARK} !important; color:#fff !important; padding:9px 16px; margin:0 -32px 16px; font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; break-after:avoid; page-break-after:avoid; }
 .page-break { page-break-before:always; break-before:page; }
 
 /* ── Shared building blocks used by section bodies ── */
@@ -119,13 +122,32 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .legend-dot { width:9px; height:9px; border-radius:50%; display:inline-block; }
 
 /* ── Sub-heading used between repeated blocks (e.g. one per target) ── */
-.sub-head { font-size:13px; font-weight:700; color:${PKG_GREY_TEXT}; margin:0 0 10px; padding-bottom:6px; border-bottom:2px solid ${PKG_BLUE_MID}; }
-.sub-block { margin-bottom:22px; break-inside:avoid-page; }
+/* break-after:avoid — same reasoning as .pkg-section-head above: without
+   it, a sub-block tall enough not to fit in whatever space is left on the
+   current page gets pushed whole to the next one, leaving this heading
+   behind on its own (the reported bug — "the heading for the section, then
+   the report starts on the next page"). This keeps the heading glued to
+   whatever comes right after it instead. */
+.sub-head { font-size:13px; font-weight:700; color:${PKG_GREY_TEXT}; margin:0 0 10px; padding-bottom:6px; border-bottom:2px solid ${PKG_BLUE_MID}; break-after:avoid; page-break-after:avoid; }
+/* Deliberately no break-inside:avoid-page on the block itself (unlike the
+   heading above) — a target's Pattern of Life grids or a long Ego Network
+   entity table can easily run taller than a single page now that both are
+   uncapped, and forcing the whole block to stay in one piece just pushes
+   it wholesale onto the next page: the exact bug this replaced. Trailing
+   tables are left free to flow across the page break like any other table
+   in these exports; only the heading (via break-after:avoid) and the
+   diagram figure (via .sub-block-figure below) are kept from being split
+   away from what immediately follows them. */
+.sub-block { margin-bottom:22px; }
 /* Each target's block within a repeated section (Ego Network, Pattern of
    Life) starts on its own page rather than flowing straight into the next
    target's — but not the first one, which already starts on a fresh page
    because the section itself does. */
 .sub-block + .sub-block { page-break-before:always; break-before:page; }
+/* Wraps the sub-heading + diagram together (Ego Network only) so a
+   diagram — which can't split gracefully the way a table can — is never
+   separated from its own heading. */
+.sub-block-figure { break-inside:avoid-page; page-break-inside:avoid; }
 /* A package carries one diagram per target, so cap each one — left to scale
    with the page width a single wide graph would run over a whole page. */
 .sub-block svg { max-height:520px; }

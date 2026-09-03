@@ -31,6 +31,21 @@ const NARROW_GRID_FIXTURE = join(
   __dirname,
   "__fixtures__/target-profile-pdf-narrow-grid.pdf"
 );
+// A real training PDF (Operation SILVERBROOK) whose header table is a
+// genuine 3-column grid (label/value pairs three-wide on one row). Its
+// first value column happens to sit at the exact same x-bucket as a
+// completely unrelated, much wider "SUMMARY" narrative sentence elsewhere
+// on the page. Two different width-based eligibility checks were each
+// tried and each silently dropped the narrow NAME/DOB/ALIASES value cells
+// sharing that bucket -- not merging them wrong, just leaving them out of
+// the row entirely, since a row that succeeds for its OTHER cells still
+// claims the whole source line and nothing re-checks it for stranded
+// segments. See clusterIntoCells' own comment for why co-occurrence
+// (hasRowMate) is now the only eligibility gate.
+const SHARED_BUCKET_FIXTURE = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-shared-bucket.pdf"
+);
 
 describe("readPdfText", () => {
   it("reads colon-separated labelled lines as synthetic table rows", async () => {
@@ -134,6 +149,31 @@ describe("readPdfText", () => {
       expect(rows.some(r => r[0] === "DOB" && r[1] === "14/03/1985")).toBe(
         true
       );
+    });
+  });
+
+  describe("3-column grid table sharing an x-bucket with unrelated narrative (Operation SILVERBROOK fixture)", () => {
+    it("does not drop a narrow value cell just because its column also holds an unrelated wide narrative line elsewhere on the page", async () => {
+      const result = await readPdfText(readFileSync(SHARED_BUCKET_FIXTURE));
+      const rows = result.tables[0].rows;
+      expect(rows.some(r => r[0] === "NAME" && /CROSS/.test(r[1]))).toBe(true);
+      expect(rows.some(r => r[0] === "DOB" && r[1] === "14/03/1987")).toBe(
+        true
+      );
+    });
+
+    it("does not strand a legitimately wide, un-wrapped single-line value (e.g. VEHICLES) just because a row-mate label happens to pass a narrow-width check on its own", async () => {
+      // Regression guard for the fix that replaced a per-segment width
+      // eligibility check: that attempt fixed SILVERBROOK's NAME row but
+      // broke the pre-existing TABLE_FIXTURE's VEHICLES row, because
+      // "VEHICLES" (the label) is narrow and has a row-mate (its own
+      // value), so it alone claimed the row and stranded its wide value.
+      const result = await readPdfText(readFileSync(TABLE_FIXTURE));
+      const rows = result.tables[0].rows;
+      expect(rows).toContainEqual([
+        "VEHICLES",
+        "Red Mazda 3, WA registration 2XYZ789 (Vehicle 2XYZ789)",
+      ]);
     });
   });
 });

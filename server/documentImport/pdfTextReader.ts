@@ -110,23 +110,6 @@ const WRAP_CONTINUATION_MAX_GAP_RATIO = 1.3;
  * why that's the signal used to tell a forced mid-word break from a real
  * word-boundary wrap. */
 const PACKED_WIDTH_RATIO = 0.9;
-/** A column only ever counts as table-like (see clusterIntoCells) if it's
- * BOTH narrower than this (its widest-ever line, in points) AND caught
- * co-occurring with a different column somewhere on the page — narrowness
- * alone isn't enough (a document's own overall content width can be
- * narrow enough that even its ordinary flowing paragraphs look like a
- * "cell" by width), and co-occurrence alone isn't enough either (a
- * document can have a genuine narrow 2-column label/value table — see the
- * module's own ECHOPOINT test fixture — sitting at the very same left
- * margin as its body paragraphs use for everything else; co-occurrence
- * alone would flag that shared margin as "table-like" and then swallow
- * the entire rest of the document's paragraph flow into one cell, since
- * ordinary single-line-spacing lines at the same margin satisfy the same
- * wrap-continuation gap check a real wrapped cell would). Requiring both
- * narrows this down to what a genuine wrapped grid-table cell actually
- * looks like: narrow AND seen side by side with another column. */
-const NARROW_COLUMN_MAX_WIDTH = 120;
-
 function bucketKey(x: number): number {
   return Math.round(x / COLUMN_X_TOLERANCE) * COLUMN_X_TOLERANCE;
 }
@@ -173,35 +156,47 @@ function lineSegments(line: Line, lineIdx: number): Segment[] {
 }
 
 /**
- * Finds every text column that's genuinely part of a multi-column table —
- * both narrow AND caught sharing a row with a DIFFERENT column somewhere
- * on the page (see NARROW_COLUMN_MAX_WIDTH and the co-occurrence check
- * below) — and rejoins each one's word-wrapped continuation lines back
- * into a single cell. For a PDF whose table cells (or a narrow title
- * column) are narrower than some of their own content, see the module
- * comment's own note on genuine multi-column grid tables being out of
- * scope, which this narrows: a document generated with a naive fixed-
- * width text layout (seen in real training documents, e.g. a "TARGET
- * PROFILE" header table with cells barely wider than their label) will
- * hard-wrap a single word with no hyphen and no trailing space at all —
- * "OPERATION" renders as two stacked lines "OPERATI" / "ON" at the exact
- * same x position — which otherwise shatters every downstream heading/
- * label/name match that assumes a "line" is a complete visual unit.
+ * Finds every text segment that's genuinely part of a multi-column table —
+ * caught sitting beside a DIFFERENT column at (about) the same y,
+ * somewhere on the page (see the co-occurrence check below) — and rejoins
+ * each one's word-wrapped continuation lines back into a single cell. For
+ * a PDF whose table cells (or a narrow title column) are narrower than
+ * some of their own content, see the module comment's own note on genuine
+ * multi-column grid tables being out of scope, which this narrows: a
+ * document generated with a naive fixed-width text layout (seen in real
+ * training documents, e.g. a "TARGET PROFILE" header table with cells
+ * barely wider than their label) will hard-wrap a single word with no
+ * hyphen and no trailing space at all — "OPERATION" renders as two
+ * stacked lines "OPERATI" / "ON" at the exact same x position — which
+ * otherwise shatters every downstream heading/label/name match that
+ * assumes a "line" is a complete visual unit.
  *
- * Neither signal alone is reliable enough on its own (see
- * NARROW_COLUMN_MAX_WIDTH's own comment for the full reasoning): a
- * column's own content can coincidentally be short without it being a
- * "cell" (a heading, a short paragraph line), and a genuine narrow table
- * can sit at the exact same left margin as a document's ordinary body
- * paragraphs, which would otherwise get swept in by a co-occurrence check
- * alone. Requiring both narrows it down to what a real wrapped grid-table
- * cell actually looks like. Reflowing anything else here would collapse a
- * whole multi-sentence paragraph into one cell with no way to tell where
- * the next paragraph, or even the next distinct standalone line (e.g. an
- * associate's name sitting alone on its own line — see
- * findAssociateBlocks in targetProfileFieldMap.ts, which depends on
- * exactly that), was meant to start — it's left to the existing per-line
- * paragraph-gap logic below instead, unmodified.
+ * Co-occurrence (a real DIFFERENT column caught at this exact row) is the
+ * only eligibility signal — deliberately NOT combined with a width check
+ * on whether a segment "looks narrow enough to be a cell". Two earlier
+ * versions tried exactly that (once globally per x-position, once even
+ * per segment) and both silently dropped a genuine, complete table value
+ * instead of merely mis-joining it: a value column can coincidentally
+ * share its x with a document's own body-paragraph text lower down the
+ * page (not a coincidence — a common shared tab-stop), which poisons a
+ * global "widest line ever seen at this x" check for every segment in
+ * that bucket; and a single value that's simply LONG on its own line
+ * (needing no wrap at all, e.g. "Red Mazda 3, WA registration 2XYZ789
+ * (Vehicle 2XYZ789)") fails a per-segment width check even though it was
+ * never a wrapped cell to begin with. Either way the value never became a
+ * cell, so once its own row got built from whatever OTHER segments in the
+ * same physical line DID qualify, that whole physical line counted as
+ * "claimed" and the value's own leftover segment was never re-emitted
+ * anywhere — not mis-parsed, just gone, taking a target's own name or
+ * vehicle with it. Co-occurrence alone doesn't have this failure mode: a
+ * plain flowing paragraph never has a genuinely different column sitting
+ * at the exact same y purely by chance, narrow or not, so nothing further
+ * is needed to keep ordinary body text out of the table-reflow path (see
+ * the module test fixtures' own ECHOPOINT and COBALT documents, where
+ * this is exactly what's being told apart). Width still matters for HOW
+ * a cell's own wrap gets rejoined (see the join-heuristic paragraph
+ * below) — it just doesn't gate whether a segment enters this function's
+ * output at all anymore.
  *
  * Two lines are treated as one (table) cell's wrap when they start at
  * (about) the same x and sit only one line-height apart vertically (see
@@ -249,10 +244,9 @@ function clusterIntoCells(lines: Line[]): {
   // "Associates:" narrative starts at the very same x as the header
   // table's own label column) — flagging that whole x-position as
   // "table-like" would sweep the narrative in right along with the real
-  // table rows, the same failure a pure width threshold has (see the
-  // function comment for both). Only THIS row having a genuine neighbour
-  // reliably means THIS row is part of a table. O(n^2) over the page's
-  // own segments (at most a few hundred), so cheap in practice.
+  // table rows. Only THIS row having a genuine neighbour reliably means
+  // THIS row is part of a table. O(n^2) over the page's own segments (at
+  // most a few hundred), so cheap in practice.
   const hasRowMate = new Array(segments.length).fill(false);
   for (let i = 0; i < segments.length; i++) {
     if (segments[i].width <= 0) continue;
@@ -266,16 +260,16 @@ function clusterIntoCells(lines: Line[]): {
       }
     }
   }
-  const isNarrowColumn = (x0: number) =>
-    (colMaxWidth.get(bucketKey(x0)) ?? 0) <= NARROW_COLUMN_MAX_WIDTH;
-
   const segConsumed = new Array(segments.length).fill(false);
   const cells: Cell[] = [];
 
   for (let i = 0; i < segments.length; i++) {
     if (segConsumed[i]) continue;
     const s0 = segments[i];
-    if (s0.width <= 0 || !hasRowMate[i] || !isNarrowColumn(s0.x0)) continue;
+    // Co-occurrence (hasRowMate) is the only eligibility gate — see the
+    // function comment for why a width check here, tried twice, silently
+    // dropped genuine table values instead of just mis-joining them.
+    if (s0.width <= 0 || !hasRowMate[i]) continue;
     segConsumed[i] = true;
     const bucket = bucketKey(s0.x0);
     const items = [...s0.items];

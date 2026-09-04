@@ -90,7 +90,6 @@ import {
   Binoculars,
   RefreshCw,
   TrendingUp,
-  CalendarClock,
   ShieldAlert,
   Database,
 } from "lucide-react";
@@ -703,13 +702,6 @@ function SortableNavItem({
               <TrendingUp className="h-3.5 w-3.5 shrink-0" />
               Weekly Activity
             </button>
-            <button
-              onClick={() => setLocation("/reports/weekly-tasking")}
-              className={subItemClass(location === "/reports/weekly-tasking")}
-            >
-              <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-              Weekly Tasking
-            </button>
           </div>
         )}
       </SidebarMenuItem>
@@ -1191,12 +1183,6 @@ function SortableNavTile({
           >
             <TrendingUp className="h-4 w-4 mr-2" />
             Weekly Activity
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => setLocation("/reports/weekly-tasking")}
-          >
-            <CalendarClock className="h-4 w-4 mr-2" />
-            Weekly Tasking
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

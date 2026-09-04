@@ -106,15 +106,20 @@ function exportWeeklyActivityToPDF(params: {
       </table>`
     : `<p class="muted-note">No operational activity recorded this week.</p>`;
 
+  // Each location/vehicle is rendered as its own bounded chip, mirroring the
+  // on-screen pills — NOT joined into a comma-separated sentence. An address
+  // already contains its own comma ("149 Wellington Street, MOSMAN PARK"),
+  // so joining several of them with ", " made it impossible to tell where
+  // one entry ended and the next began once printed to plain text.
   const intelHtml = newIntelligence.length
     ? newIntelligence
         .map(
           i => `<div class="intel-op">
             <p class="intel-op-title">${esc(i.operationName)}</p>
-            <div class="detail-grid">
-              ${i.newImages ? `<div class="detail-label">New images</div><div class="detail-value">${i.newImages}</div>` : ""}
-              ${i.newLocations.length ? `<div class="detail-label">New locations</div><div class="detail-value">${esc(i.newLocations.join(", "))}</div>` : ""}
-              ${i.newVehicles.length ? `<div class="detail-label">New vehicles</div><div class="detail-value">${esc(i.newVehicles.join(", "))}</div>` : ""}
+            <div class="chip-row">
+              ${i.newImages ? `<span class="chip chip-image">${i.newImages} new image${i.newImages !== 1 ? "s" : ""}</span>` : ""}
+              ${i.newLocations.map(l => `<span class="chip chip-location">${esc(l)}</span>`).join("")}
+              ${i.newVehicles.map(v => `<span class="chip chip-vehicle">${esc(v)}</span>`).join("")}
             </div>
           </div>`
         )
@@ -162,6 +167,11 @@ tfoot { display:table-footer-group; }
 .intel-op { margin-bottom:12px; break-inside:avoid; }
 .intel-op:last-child { margin-bottom:0; }
 .intel-op-title { font-size:11px; font-weight:700; margin-bottom:6px; }
+.chip-row { display:flex; flex-wrap:wrap; gap:5px; }
+.chip { display:inline-block; font-size:9.5px; font-weight:600; padding:3px 8px; border-radius:999px; border:1px solid; }
+.chip-image { color:#1d4ed8; background:${BLUE_LIGHT} !important; border-color:${BLUE_MID}; }
+.chip-location { color:#047857; background:#d1fae5 !important; border-color:#6ee7b7; }
+.chip-vehicle { color:#b45309; background:#fef3c7 !important; border-color:#fcd34d; }
 .detail-grid { display:grid; grid-template-columns:130px 1fr; gap:0; font-size:10.5px; }
 .detail-grid > div { padding:4px 6px; }
 .detail-grid > div:nth-child(4n+1), .detail-grid > div:nth-child(4n+2) { background:#f8fafc; }

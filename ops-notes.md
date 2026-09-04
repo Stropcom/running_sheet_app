@@ -106,10 +106,11 @@ pnpm build
 pnpm exec drizzle-kit migrate
 pm2 restart runlog
 
-sleep 3
-curl -fsS localhost:3000/ > /dev/null && echo "DEPLOY OK" || {
-  echo "APP DID NOT COME UP"; pm2 logs runlog --lines 30 --nostream; exit 1;
-}
+for i in $(seq 1 15); do
+  curl -fsS localhost:3000/ > /dev/null && { echo "DEPLOY OK"; exit 0; }
+  sleep 2
+done
+echo "APP DID NOT COME UP"; pm2 logs runlog --lines 30 --nostream; exit 1
 ```
 
 Why each difference from the old line, most important first:
@@ -126,12 +127,25 @@ Why each difference from the old line, most important first:
 5. **`--frozen-lockfile`.** Refuses to resolve different versions if the
    lockfile and `package.json` disagree, rather than silently shipping them.
 6. **The `curl` check.** `pm2 restart` reports success even when the process
-   then crash-loops; this catches a failed boot in three seconds instead of
-   when an officer opens the app mid-shift. Adjust the port if nginx fronts
-   something other than 3000.
+   then crash-loops; this catches a failed boot instead of when an officer
+   opens the app mid-shift. Adjust the port if nginx fronts something other
+   than 3000.
 
 Note there is no rollback for a bad migration other than the dump, hence
 point 1. Restoring: `mysql ... running_sheet_app < ~/backups/runlog-<stamp>.sql`.
+
+**2026-09-04: the health check used to be a flat `sleep 3` before the single
+`curl`, and on this 1-CPU droplet that's not always enough** — a deploy
+right after a heavy `pnpm build` (which alone can peg the CPU at ~100%) can
+leave the box still loading TensorFlow/onnxruntime and the DB connection
+pool at the 3-second mark, so the `curl` gets `Failed to connect ... after
+0 ms` (connection refused — Node hadn't opened the port yet) even though
+the app comes up cleanly a few seconds later. Confirmed harmless in this
+instance: `pm2 status` right after showed `runlog` `online` on the new
+version with a normal restart count, and it was serving fine moments after
+the script exited 1. Replaced the flat sleep with a poll — up to 15 tries,
+2s apart (30s total) — so the check only fails if the app genuinely never
+comes up, not because it took longer than an arbitrary guess.
 
 ### Run it detached — the DO web console drops mid-deploy
 

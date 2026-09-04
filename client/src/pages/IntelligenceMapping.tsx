@@ -8281,7 +8281,44 @@ export default function IntelligenceMapping() {
                 </div>
               </div>
 
-              {/* 4. (Label moved to top, Operation/Person/Vehicle removed) */}
+              {/* 4. Operation — a marker saved with no operation is hidden
+                  from any single/multi-operation-filtered map view (only
+                  the "all operations" view shows it), so this needs to be
+                  visible and correctable rather than a silent default. The
+                  create flows below pre-fill this from the operation(s)
+                  currently selected on the map, but that pre-fill can only
+                  guess when exactly one operation is in view — with zero or
+                  several selected it falls back to "no operation", which is
+                  how a newly placed marker was disappearing from view. */}
+              <div className="mb-4">
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+                  Operation
+                </label>
+                <Select
+                  value={cmOpId === null ? "none" : String(cmOpId)}
+                  onValueChange={v =>
+                    setCmOpId(v === "none" ? null : Number(v))
+                  }
+                >
+                  <SelectTrigger className="w-full text-sm">
+                    <SelectValue placeholder="No operation" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No operation</SelectItem>
+                    {(operations as any[] | undefined)?.map(op => (
+                      <SelectItem key={op.id} value={String(op.id)}>
+                        {op.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {cmOpId === null && (
+                  <p className="text-[10px] text-amber-500 mt-1">
+                    No operation selected — this marker will only appear in the
+                    all-operations map view.
+                  </p>
+                )}
+              </div>
 
               {/* Save / Cancel */}
               <div className="flex gap-3">

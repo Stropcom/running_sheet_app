@@ -1,6 +1,6 @@
 {
   "name": "running_sheet_app",
-  "version": "1.40.11",
+  "version": "1.41.0",
   "type": "module",
   "license": "MIT",
   "scripts": {

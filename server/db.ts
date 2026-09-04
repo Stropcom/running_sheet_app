@@ -4759,10 +4759,24 @@ export async function getPendingVehicleDepartures(
 // at" (a later, short-form-only mention). Used so the "Vehicle departing"
 // chip only offers itself back at the exact location a vehicle is known to
 // have arrived at, not at every location on the map.
-function extractArrivalAddress(text: string): string | null {
-  const bracket = text.match(/\(([^)]{1,80})\)/);
+//
+// Both the bracket search and the plain-text fallback are scoped to the
+// text FROM "arrived at" onward, not the whole row — the occupant
+// description right before "arrived at" often carries its own bracket code
+// for a newly-introduced person (e.g. "Denise HOLLY (HOLLY) front
+// passenger, arrived at Bicton Tavern, 1 Point Walter Road, BICTON WA
+// (Bicton Tavern)"). Searching the whole row for the first "(...)" grabbed
+// that person's bracket instead of the address's own trailing one,
+// silently returning the wrong (and usually non-matching) "address" — a
+// business is a first-mention (full-form, bracketed) address far more
+// often than an already-established residential one, so this showed up
+// almost exclusively as "the departing chip doesn't work for businesses".
+export function extractArrivalAddress(text: string): string | null {
+  const arrivedAtIdx = text.search(/arrived at\s+/i);
+  const searchText = arrivedAtIdx >= 0 ? text.slice(arrivedAtIdx) : text;
+  const bracket = searchText.match(/\(([^)]{1,80})\)/);
   if (bracket) return bracket[1].trim();
-  const afterArrived = text.match(
+  const afterArrived = searchText.match(
     /arrived at\s+(.+?)(?:\s+and\s+\w+|[.\n]|$)/i
   );
   return afterArrived ? afterArrived[1].trim() : null;

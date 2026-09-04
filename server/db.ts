@@ -6134,12 +6134,27 @@ function parseSummaryJsonArray<T>(raw: string | null | undefined): T[] {
   }
 }
 
-/** "07:33" -> 453. Returns null for anything that doesn't match. */
-function parseHHMMToMinutes(t: string | null | undefined): number | null {
+/**
+ * "07:33" -> 453, "02:00 PM" -> 840. The Supervisor Summary's time fields
+ * are entered 12-hour with an AM/PM suffix ("07:00 AM"–"02:00 PM"), so a
+ * bare 24-hour read of the hour digits left every afternoon finish time
+ * looking earlier than its own morning start time (2 read as 2am, not
+ * 2pm) — coverage hours silently dropped to ~0 for every shift except the
+ * one where the PM hour happened to still be numerically >= 12 (12:xx PM).
+ * Returns null for anything that doesn't match.
+ */
+export function parseHHMMToMinutes(
+  t: string | null | undefined
+): number | null {
   if (!t) return null;
-  const m = t.match(/^(\d{1,2}):(\d{2})/);
+  const m = t.match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])?/);
   if (!m) return null;
-  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  let hour = parseInt(m[1], 10);
+  const minute = parseInt(m[2], 10);
+  const ampm = m[3]?.toUpperCase();
+  if (ampm === "AM" && hour === 12) hour = 0;
+  else if (ampm === "PM" && hour !== 12) hour += 12;
+  return hour * 60 + minute;
 }
 
 /** weekStart is a Monday, YYYY-MM-DD (Perth-anchored). */
@@ -6275,9 +6290,12 @@ export async function getWeeklyActivityReport(
   const investigatorByGroup = new Map<GroupKey, string>();
   const intelSupportByGroup = new Map<GroupKey, string>();
   const contactedByGroup = new Map<GroupKey, string>();
+  // Keyed by normalized "key|detail" per group — the same special project
+  // is typically re-typed into every sheet's Supervisor Summary for the
+  // week it spans, so a plain push-per-sheet duplicated it once per day.
   const specialProjectsByGroup = new Map<
     GroupKey,
-    WeeklyActivitySpecialProject[]
+    Map<string, WeeklyActivitySpecialProject>
   >();
   const objectivesByGroup = new Map<GroupKey, Set<string>>();
   const criticalDecisionsByGroup = new Map<GroupKey, WeeklyActivityIssue[]>();
@@ -6339,11 +6357,15 @@ export async function getWeeklyActivityReport(
         summary.specialProjects
       )) {
         if (!p.key?.trim()) continue;
+        const project: WeeklyActivitySpecialProject = {
+          key: p.key.trim(),
+          detail: p.detail?.trim() || null,
+        };
+        const dedupeKey = `${project.key.toLowerCase()}|${(project.detail ?? "").toLowerCase()}`;
         if (!specialProjectsByGroup.has(key))
-          specialProjectsByGroup.set(key, []);
-        specialProjectsByGroup
-          .get(key)!
-          .push({ key: p.key.trim(), detail: p.detail?.trim() || null });
+          specialProjectsByGroup.set(key, new Map());
+        if (!specialProjectsByGroup.get(key)!.has(dedupeKey))
+          specialProjectsByGroup.get(key)!.set(dedupeKey, project);
       }
       for (const o of parseSummaryJsonArray<string>(summary.objectives)) {
         if (!o.trim()) continue;
@@ -6571,7 +6593,9 @@ export async function getWeeklyActivityReport(
       investigator: investigatorByGroup.get(key) ?? null,
       intelSupport: intelSupportByGroup.get(key) ?? null,
       contacted: contactedByGroup.get(key) ?? null,
-      specialProjects: specialProjectsByGroup.get(key) ?? [],
+      specialProjects: Array.from(
+        (specialProjectsByGroup.get(key) ?? new Map()).values()
+      ),
       objectives: Array.from(objectivesByGroup.get(key) ?? []),
       criticalDecisions: (criticalDecisionsByGroup.get(key) ?? []).sort(
         (a, b) => (a.date ?? "").localeCompare(b.date ?? "")

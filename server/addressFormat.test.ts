@@ -151,6 +151,26 @@ describe("extractEntitiesFromText — address label recovery", () => {
     expect(addrs[0].rawShortForm).toBe("Pharmacy 777");
   });
 
+  it("recovers a 'Shop N/42/44' style address (unit + number range, the reported bug)", () => {
+    // Real-world WA shop numbering sometimes uses a second "/NN" instead of
+    // a hyphen for a property spanning two numbers (e.g. "42/44" for what a
+    // street sign would show as "42-44"). Before the fix, the extra slash
+    // meant no digit run in "Shop 1/42/44" was ever preceded by the
+    // required word boundary (each one sits right after a "/"), so the
+    // whole address was unreachable and the entity silently fell back to
+    // just its bracket business name with no address at all — worse than
+    // the other cases here, which at least recovered a (possibly
+    // name-less) address.
+    const obs =
+      "Vehicle 1IDX721, IKIN driver and sole occupant, arrived at Pronto Butcher, Shop 1/42/44 Gugeri Street, CLAREMONT WA (Pronto Butcher) parked in the car park.";
+    const addrs = extractAddresses(obs);
+    expect(addrs).toHaveLength(1);
+    expect(addrs[0].shortForm).toBe(
+      "Pronto Butcher, Shop 1/42/44 Gugeri Street, CLAREMONT"
+    );
+    expect(addrs[0].rawShortForm).toBe("Pronto Butcher");
+  });
+
   it("does not prepend an unrelated business name for plain (non-business) addresses", () => {
     const obs =
       "Subject departed 27 Olding Way, MELVILLE WA (27 Olding Way) at 1400 hours.";

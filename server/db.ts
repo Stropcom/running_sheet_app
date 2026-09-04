@@ -3942,8 +3942,25 @@ export function extractEntitiesFromText(text: string): Array<{
       // The street-number prefix must be preceded by a word boundary (start of string,
       // space, comma, or punctuation) to prevent partial rego digits (e.g. "905" from
       // "1HTU905") from being mistaken for a street number.
+      // The unit/number alternative allows an optional "Shop"/"Unit"/"Suite"/
+      // "Level" premises-descriptor prefix, and one optional extra "/44" or
+      // "-44" range segment after the unit/number pair (e.g. "Shop 1/42/44
+      // Gugeri Street" — unit 1, at a property spanning 42/44). Without the
+      // range segment, the whole address was unreachable: its number
+      // segments are separated by "/" rather than whitespace/comma, so
+      // neither the "\d/\d\s" nor the bare "\d\s" alternative below can
+      // start a match anywhere inside it (every digit run is preceded by
+      // "/", never the required word boundary) — extraction silently fell
+      // back to the bracket's short form alone, and a business's short form
+      // is its own name (see convertGoogleAddresses), so this showed up as
+      // a location with no address at all rather than a malformed one.
+      // Without the premises-descriptor prefix, the address itself is
+      // recoverable but the business-name-prefix recovery below no longer
+      // finds the business name directly abutting it ("...Pronto Butcher,
+      // Shop 1/42/44...", not "...Pronto Butcher, 1/42/44...") and silently
+      // drops the name instead.
       const standardAddrRe =
-        /(?:^|(?<=[\s,;]))((?:cnr\s+of\s+|cnr\s+|corner\s+of\s+|lot\s+\d+\s+|\d{1,5}[A-Za-z]?\/\d{1,5}\s+|\d{1,5}[A-Za-z]?\s+)[A-Za-z][\w\s&]*(?:,\s*[A-Za-z][\w\s]+)?(?:\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?(?:\s+\d{4})?(?:,\s*Australia)?)$/i;
+        /(?:^|(?<=[\s,;]))((?:cnr\s+of\s+|cnr\s+|corner\s+of\s+|lot\s+\d+\s+|(?:shop\s+|unit\s+|suite\s+|level\s+)?\d{1,5}[A-Za-z]?\/\d{1,5}(?:[\/-]\d{1,5}[A-Za-z]?)?\s+|\d{1,5}[A-Za-z]?\s+)[A-Za-z][\w\s&]*(?:,\s*[A-Za-z][\w\s]+)?(?:\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?(?:\s+\d{4})?(?:,\s*Australia)?)$/i;
       const intersectionAddrRe = new RegExp(
         `[A-Za-z][\\w\\s]+\\s+${STREET_TYPES_RE}\\s*&\\s*[A-Za-z][\\w\\s]+\\s+${STREET_TYPES_RE}(?:,\\s*[A-Za-z][\\w\\s]+)?(?:\\s+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))?(?:\\s+\\d{4})?(?:,\\s*Australia)?$`,
         "i"

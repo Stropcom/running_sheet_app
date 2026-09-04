@@ -7,6 +7,7 @@ import {
   TrendingUp,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Download,
   Users,
   Clock,
@@ -643,14 +644,30 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
   );
 }
 
+// Closed by default — an officer opens the operation(s) they actually want
+// to read on screen. This only affects the on-screen accordion state; the
+// PDF export builds its own HTML straight from the query data (see
+// exportWeeklyActivityToPDF above), so every operation is always fully
+// expanded there regardless of what's collapsed on screen.
 function OperationCard({ op }: { op: OperationBlock }) {
+  const [expanded, setExpanded] = useState(false);
   return (
     <section className="rounded-xl border border-border/60 bg-card/60 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 bg-muted/20">
-        <h2 className="text-sm font-bold text-foreground">
-          {op.operationName}
-        </h2>
-        <div className="flex gap-4">
+      <button
+        onClick={() => setExpanded(v => !v)}
+        className={`w-full flex items-center justify-between px-4 py-3 bg-muted/20 hover:bg-muted/30 transition-colors text-left ${expanded ? "border-b border-border/60" : ""}`}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          {expanded ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+          )}
+          <h2 className="text-sm font-bold text-foreground truncate">
+            {op.operationName}
+          </h2>
+        </div>
+        <div className="flex gap-4 shrink-0">
           <div className="text-center">
             <p className="text-sm font-bold text-foreground">
               {op.sheetsCount}
@@ -666,16 +683,17 @@ function OperationCard({ op }: { op: OperationBlock }) {
             </p>
           </div>
         </div>
-      </div>
-      {op.targets.length > 0 ? (
-        op.targets.map((t, i) => (
-          <TargetBlockView key={t.targetId ?? `none-${i}`} t={t} />
-        ))
-      ) : (
-        <p className="text-sm text-muted-foreground text-center py-4">
-          No activity recorded this week.
-        </p>
-      )}
+      </button>
+      {expanded &&
+        (op.targets.length > 0 ? (
+          op.targets.map((t, i) => (
+            <TargetBlockView key={t.targetId ?? `none-${i}`} t={t} />
+          ))
+        ) : (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No activity recorded this week.
+          </p>
+        ))}
     </section>
   );
 }

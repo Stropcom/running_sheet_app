@@ -33,12 +33,25 @@ describe("bracketCodeFromRegisteredName", () => {
 
 describe("nameWithoutBornClause", () => {
   it("drops the born-date-and-bracket clause", () => {
-    expect(
-      nameWithoutBornClause("Basil CAT, born 2 June 2005 (CAT)")
-    ).toBe("Basil CAT");
+    expect(nameWithoutBornClause("Basil CAT, born 2 June 2005 (CAT)")).toBe(
+      "Basil CAT"
+    );
   });
 
   it("falls back to the input unchanged when there's no comma", () => {
     expect(nameWithoutBornClause("No Comma Here")).toBe("No Comma Here");
+  });
+
+  it("strips a trailing bracket even with no born-date clause (the reported bug)", () => {
+    // An associate registered with no DOB on file has a registered name of
+    // just "Full Name (BRACKET)" — no comma to split on. Previously this
+    // fell all the way back to the input unchanged, leaving the bracket in
+    // the display name — searchRegisteredPersonMentions then appended
+    // " (BRACKET)" again on top of it, producing a doubled-up bracket in
+    // the inserted mention text (e.g. "Nadia Farah QURESHI (QURESHI)
+    // (QURESHI)").
+    expect(nameWithoutBornClause("Nadia Farah QURESHI (QURESHI)")).toBe(
+      "Nadia Farah QURESHI"
+    );
   });
 });

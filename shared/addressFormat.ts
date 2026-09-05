@@ -227,10 +227,15 @@ export function bracketCodeFromRegisteredName(name: string): string {
 /**
  * The display-name portion of a Target/Associate's registered name, with
  * the ", born DATE (BRACKET)" clause dropped, e.g.
- * "Basil CAT, born 2 June 2005 (CAT)" -> "Basil CAT". Falls back to the
- * input unchanged when there's no comma to split on.
+ * "Basil CAT, born 2 June 2005 (CAT)" -> "Basil CAT". When there's no born
+ * date on record, the registered name is just "Full Name (BRACKET)" with no
+ * comma — in that case, strip the trailing bracket on its own so callers
+ * that append "(BRACKET)" themselves (see searchRegisteredPersonMentions)
+ * don't double it up, e.g. "Nadia Farah QURESHI (QURESHI)" -> "Nadia Farah
+ * QURESHI". Falls back to the input unchanged when neither pattern matches.
  */
 export function nameWithoutBornClause(name: string): string {
   const commaIdx = name.indexOf(",");
-  return commaIdx > 0 ? name.slice(0, commaIdx).trim() : name.trim();
+  if (commaIdx > 0) return name.slice(0, commaIdx).trim();
+  return name.replace(/\s*\([^()]+\)\s*$/, "").trim();
 }

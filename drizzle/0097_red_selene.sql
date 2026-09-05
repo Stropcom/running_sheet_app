@@ -1,0 +1,1 @@
+ALTER TABLE `custom_map_markers` ADD `labelOnly` boolean DEFAULT false NOT NULL;

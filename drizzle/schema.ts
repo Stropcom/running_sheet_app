@@ -983,6 +983,12 @@ export const customMapMarkers = mysqlTable("custom_map_markers", {
   lat: double("lat").notNull(),
   lng: double("lng").notNull(),
   label: varchar("label", { length: 255 }), // user-typed name/business
+  // When true, the marker renders on the map as just its label pill (same
+  // look as a map shape's note label) instead of an icon — a plain text
+  // callout rather than a house/vehicle/POI marker. markerIcon/rotation are
+  // still stored (so switching back to an icon marker keeps the last pick)
+  // but are ignored for rendering while this is set.
+  labelOnly: boolean("labelOnly").default(false).notNull(),
   address: varchar("address", { length: 512 }), // reverse-geocoded or typed
   markerIcon: varchar("markerIcon", { length: 64 }).notNull(), // e.g. "house_filled"
   markerColour: varchar("markerColour", { length: 32 }).notNull(), // "red"|"yellow"|"blue"|"purple"

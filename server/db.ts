@@ -13081,6 +13081,7 @@ export interface CustomMarkerRow {
   lat: number;
   lng: number;
   label: string | null;
+  labelOnly: boolean;
   address: string | null;
   markerIcon: string;
   markerColour: string;
@@ -13160,6 +13161,7 @@ export async function createCustomMarker(data: {
   lat: number;
   lng: number;
   label?: string | null;
+  labelOnly?: boolean;
   address?: string | null;
   markerIcon: string;
   markerColour: string;
@@ -13177,6 +13179,7 @@ export async function createCustomMarker(data: {
     lat: data.lat,
     lng: data.lng,
     label: data.label ?? null,
+    labelOnly: data.labelOnly ?? false,
     address: data.address ?? null,
     markerIcon: data.markerIcon,
     markerColour: data.markerColour,
@@ -13192,6 +13195,7 @@ export async function updateCustomMarker(
   id: number,
   data: {
     label?: string | null;
+    labelOnly?: boolean;
     address?: string | null;
     lat?: number;
     lng?: number;
@@ -13208,6 +13212,7 @@ export async function updateCustomMarker(
   if (!db) throw new Error("DB unavailable");
   const update: Partial<InsertCustomMapMarker> = {};
   if (data.label !== undefined) update.label = data.label;
+  if (data.labelOnly !== undefined) update.labelOnly = data.labelOnly;
   if (data.address !== undefined) update.address = data.address;
   if (data.lat !== undefined) (update as any).lat = data.lat;
   if (data.lng !== undefined) (update as any).lng = data.lng;

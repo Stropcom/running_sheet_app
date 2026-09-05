@@ -5474,6 +5474,7 @@ export const appRouter = router({
           markerIcon: z.string().min(1),
           markerColour: z.string().min(1),
           label: z.string().optional().nullable(),
+          labelOnly: z.boolean().optional(),
           address: z.string().optional().nullable(),
           note: z.string().optional().nullable(),
           operationId: z.number().optional().nullable(),
@@ -5491,6 +5492,7 @@ export const appRouter = router({
           markerIcon: input.markerIcon,
           markerColour: input.markerColour,
           label: input.label ?? null,
+          labelOnly: input.labelOnly ?? false,
           address: input.address ?? null,
           note: input.note ?? null,
           operationId: input.operationId ?? null,
@@ -5507,6 +5509,7 @@ export const appRouter = router({
         z.object({
           id: z.number(),
           label: z.string().optional().nullable(),
+          labelOnly: z.boolean().optional(),
           address: z.string().optional().nullable(),
           lat: z.number().optional(),
           lng: z.number().optional(),

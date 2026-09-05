@@ -1460,6 +1460,10 @@ export default function IntelligenceMapping() {
   const [cmIcon, setCmIcon] = useState<MarkerIcon>("house_filled");
   const [cmColour, setCmColour] = useState<MarkerColour>("red");
   const [cmRotation, setCmRotation] = useState(0);
+  // "Label only" — the marker renders as just its label pill, no icon (see
+  // the Add Shape feature's own note-label pill, which this borrows the
+  // look of). Off by default so ordinary icon markers behave as before.
+  const [cmLabelOnly, setCmLabelOnly] = useState(false);
   const [cmPersonInput, setCmPersonInput] = useState("");
   const [cmVehicleInput, setCmVehicleInput] = useState("");
   const [cmSaving, setCmSaving] = useState(false);
@@ -3077,12 +3081,53 @@ export default function IntelligenceMapping() {
     [locations, renderLocations]
   );
 
+  // A small floating pill of text — used both for a shape's note (beside its
+  // anchor point) and a custom marker's label (either beside its icon, or,
+  // for a "label only" marker, standing in for the icon entirely). Nudged
+  // via a CSS transform rather than a real pixel offset, since
+  // AdvancedMarkerElement positioning is geographic only and has no
+  // pixel-offset option of its own — `offsetX: "-50%"` centers the pill
+  // exactly on its anchor (the "label only" case), anything else (e.g.
+  // "12px") nudges it clear of an icon/shape rendered at the same point.
+  const createLabelPillElement = useCallback(
+    (text: string, colour: string, offsetX: string = "12px") => {
+      const el = document.createElement("div");
+      el.style.cssText = `
+      transform: translate(${offsetX}, -50%);
+      display: inline-flex;
+      align-items: center;
+      max-width: 200px;
+      background: ${colour};
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+      border: 1.5px solid rgba(255,255,255,0.7);
+      cursor: pointer;
+    `;
+      el.textContent = text;
+      return el;
+    },
+    []
+  );
+
   // ── Custom marker rendering ────────────────────────────────────────────────
   const customMarkerMapRefs = useRef<
     Map<number, google.maps.marker.AdvancedMarkerElement>
   >(new Map());
   // Direct img element refs for live rotation without stale content queries
   const customMarkerImgRefs = useRef<Map<number, HTMLImageElement>>(new Map());
+  // Companion floating label pill beside a marker's icon (only when the
+  // marker has a label AND isn't itself a "label only" marker — that case
+  // uses the label as the marker's own content instead, see below).
+  const customMarkerLabelsRef = useRef<
+    Map<number, google.maps.marker.AdvancedMarkerElement>
+  >(new Map());
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -3098,32 +3143,57 @@ export default function IntelligenceMapping() {
         existing.delete(id);
       }
     });
+    customMarkerLabelsRef.current.forEach((labelMarker, id) => {
+      if (!incomingIds.has(id)) {
+        labelMarker.map = null;
+        customMarkerLabelsRef.current.delete(id);
+      }
+    });
 
     // Add / update markers
     incoming.forEach((outerCm: any) => {
-      const dataUrl = getMarkerDataUrl(
-        outerCm.markerIcon as MarkerIcon,
-        outerCm.markerColour as MarkerColour
-      );
-      const rotation = (outerCm.rotation ?? 0) as number;
-      const el = document.createElement("div");
-      el.style.cssText = "width:40px;height:40px;cursor:pointer;";
-      const img = document.createElement("img");
-      img.src = dataUrl;
-      img.style.cssText = `width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation}deg);`;
-      el.appendChild(img);
-      // Store direct img ref for live rotation
-      customMarkerImgRefs.current.set(outerCm.id, img);
+      const labelOnly = !!outerCm.labelOnly;
+      const fillColor =
+        MARKER_COLOURS[outerCm.markerColour as MarkerColour] ??
+        MARKER_COLOURS.red;
+      const labelText = (outerCm.label ?? "").trim();
+      let content: HTMLElement;
+      let rotation = 0;
+      if (labelOnly) {
+        // "Label only" — the pill itself stands in for the icon, centered
+        // exactly on the marker's point rather than nudged beside it.
+        content = createLabelPillElement(
+          labelText || "(no label)",
+          fillColor,
+          "-50%"
+        );
+        customMarkerImgRefs.current.delete(outerCm.id);
+      } else {
+        const dataUrl = getMarkerDataUrl(
+          outerCm.markerIcon as MarkerIcon,
+          outerCm.markerColour as MarkerColour
+        );
+        rotation = (outerCm.rotation ?? 0) as number;
+        const el = document.createElement("div");
+        el.style.cssText = "width:40px;height:40px;cursor:pointer;";
+        const img = document.createElement("img");
+        img.src = dataUrl;
+        img.style.cssText = `width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation}deg);`;
+        el.appendChild(img);
+        content = el;
+        // Store direct img ref for live rotation
+        customMarkerImgRefs.current.set(outerCm.id, img);
+      }
 
       if (existing.has(outerCm.id)) {
         const m = existing.get(outerCm.id)!;
         m.position = { lat: outerCm.lat, lng: outerCm.lng };
-        m.content = el;
+        m.content = content;
       } else {
         const marker = new google.maps.marker.AdvancedMarkerElement({
           map,
           position: { lat: outerCm.lat, lng: outerCm.lng },
-          content: el,
+          content,
           title:
             outerCm.label ??
             MARKER_ICON_LABELS[outerCm.markerIcon as MarkerIcon],
@@ -3162,12 +3232,16 @@ export default function IntelligenceMapping() {
 
             // Type badge row
             const hasMerged = mergedIntelList.length > 0;
-            const badgeLabel = hasMerged ? "MERGED MARKER" : "MAP MARKER";
+            const badgeLabel = hasMerged
+              ? "MERGED MARKER"
+              : cm.labelOnly
+                ? "LABEL"
+                : "MAP MARKER";
             const badgeBg = hasMerged ? "#0f766e" : "#374151";
             lines.push(`
               <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
                 <span style="background:${badgeBg};color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">${badgeLabel}</span>
-                <span style="font-size:10px;color:#6b7280;">${iconLabel}</span>
+                ${cm.labelOnly ? "" : `<span style="font-size:10px;color:#6b7280;">${iconLabel}</span>`}
               </div>
             `);
 
@@ -3268,8 +3342,10 @@ export default function IntelligenceMapping() {
             }
             // ─────────────────────────────────────────────────────────────────────────
 
-            // Rotation slider
-            lines.push(`
+            // Rotation slider — not applicable to a "label only" marker,
+            // there's no icon to rotate.
+            if (!cm.labelOnly)
+              lines.push(`
               <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">
                 <div style="display:flex;align-items:center;gap:8px;">
                   <img id="cm-popup-preview-${cm.id}" src="${dataUrl}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${rotation}deg);transition:transform 0.1s;" />
@@ -3342,8 +3418,45 @@ export default function IntelligenceMapping() {
         });
         existing.set(outerCm.id, marker);
       }
+
+      // Companion label pill beside the icon — only when there's an icon to
+      // sit beside (a "label only" marker already uses the label as its own
+      // content, above) and a label is actually set. Clicking the pill opens
+      // the same popup as the icon itself, by forwarding to its click
+      // listener rather than duplicating the popup-building logic above.
+      const iconMarker = existing.get(outerCm.id)!;
+      const existingCompanionLabel = customMarkerLabelsRef.current.get(
+        outerCm.id
+      );
+      if (labelOnly || !labelText) {
+        if (existingCompanionLabel) {
+          existingCompanionLabel.map = null;
+          customMarkerLabelsRef.current.delete(outerCm.id);
+        }
+      } else if (existingCompanionLabel) {
+        existingCompanionLabel.position = {
+          lat: outerCm.lat,
+          lng: outerCm.lng,
+        };
+        existingCompanionLabel.content = createLabelPillElement(
+          labelText,
+          fillColor,
+          "24px"
+        );
+      } else {
+        const companionLabel = new google.maps.marker.AdvancedMarkerElement({
+          map,
+          position: { lat: outerCm.lat, lng: outerCm.lng },
+          content: createLabelPillElement(labelText, fillColor, "24px"),
+          zIndex: 500,
+        });
+        companionLabel.addListener("click", () => {
+          google.maps.event.trigger(iconMarker, "click");
+        });
+        customMarkerLabelsRef.current.set(outerCm.id, companionLabel);
+      }
     });
-  }, [customMarkers, mapReady]);
+  }, [customMarkers, mapReady, createLabelPillElement]);
 
   // ── Map shape rendering (persisted shapes) ───────────────────────────────────
   const shapesRef = useRef<
@@ -3357,40 +3470,11 @@ export default function IntelligenceMapping() {
   >(new Map());
   // Floating label pill for a shape's note, keyed the same way — a shape
   // and its label are two separate map overlays (a Circle/Rectangle/etc.
-  // can't render text of its own), kept in sync side by side.
+  // can't render text of its own), kept in sync side by side. Built with
+  // createLabelPillElement above (shared with the custom-marker label).
   const shapeLabelsRef = useRef<
     Map<number, google.maps.marker.AdvancedMarkerElement>
   >(new Map());
-
-  // A small floating tag showing a shape's note — nudged beside its anchor
-  // point (not on top of it) via a CSS transform, since AdvancedMarkerElement
-  // positioning is geographic only and has no pixel-offset option of its own.
-  const createShapeLabelElement = useCallback(
-    (text: string, colour: string) => {
-      const el = document.createElement("div");
-      el.style.cssText = `
-      transform: translate(12px, -50%);
-      display: inline-flex;
-      align-items: center;
-      max-width: 200px;
-      background: ${colour};
-      color: #fff;
-      font-size: 11px;
-      font-weight: 700;
-      padding: 3px 9px;
-      border-radius: 12px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.35);
-      border: 1.5px solid rgba(255,255,255,0.7);
-      cursor: pointer;
-    `;
-      el.textContent = text;
-      return el;
-    },
-    []
-  );
 
   // A shaded shape is clickable (to open its own edit panel), which by
   // default swallows every mouse/touch gesture over its area before the
@@ -3661,12 +3745,12 @@ export default function IntelligenceMapping() {
         }
       } else if (existingLabel) {
         existingLabel.position = labelAnchor;
-        existingLabel.content = createShapeLabelElement(labelText, fillColor);
+        existingLabel.content = createLabelPillElement(labelText, fillColor);
       } else {
         const labelMarker = new google.maps.marker.AdvancedMarkerElement({
           map,
           position: labelAnchor,
-          content: createShapeLabelElement(labelText, fillColor),
+          content: createLabelPillElement(labelText, fillColor),
           zIndex: 500,
         });
         labelMarker.addListener("click", openEdit);
@@ -3678,7 +3762,7 @@ export default function IntelligenceMapping() {
     mapReady,
     pendingShape,
     beginEditShape,
-    createShapeLabelElement,
+    createLabelPillElement,
     wireShapeEditClick,
     wireShapeActionChooserGesture,
   ]);
@@ -4078,6 +4162,7 @@ export default function IntelligenceMapping() {
       setCmIcon((cm.markerIcon as MarkerIcon) ?? "house_filled");
       setCmColour((cm.markerColour as MarkerColour) ?? "red");
       setCmRotation(cm.rotation ?? 0);
+      setCmLabelOnly(!!cm.labelOnly);
       setCmLabel(cm.label ?? "");
       setCmAddress(cm.address ?? "");
       setCmNote(cm.note ?? "");
@@ -6278,6 +6363,7 @@ export default function IntelligenceMapping() {
                     setCmPersons([]);
                     setCmVehicles([]);
                     setCmRotation(0);
+                    setCmLabelOnly(false);
                     setCmPersonInput("");
                     setCmVehicleInput("");
                     setCmOpId(
@@ -6387,6 +6473,7 @@ export default function IntelligenceMapping() {
                     setCmPersons([]);
                     setCmVehicles([]);
                     setCmRotation(0);
+                    setCmLabelOnly(false);
                     setCmPersonInput("");
                     setCmVehicleInput("");
                     setCmOpId(
@@ -8735,49 +8822,78 @@ export default function IntelligenceMapping() {
                 />
               </div>
 
-              {/* 1. Icon picker */}
-              <div className="mb-4">
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                  Marker Icon
-                </p>
-                <div className="space-y-3">
-                  {MARKER_ICON_GROUPS.map(group => (
-                    <div key={group.label}>
-                      <p className="text-[10px] text-muted-foreground/70 mb-1.5">
-                        {group.label}
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {group.icons.map(iconKey => (
-                          <button
-                            key={iconKey}
-                            onClick={() => setCmIcon(iconKey as MarkerIcon)}
-                            title={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
-                            className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
-                              cmIcon === iconKey
-                                ? "border-primary bg-primary/10 scale-110"
-                                : "border-border bg-accent/30 hover:border-primary/50"
-                            }`}
-                          >
-                            <img
-                              src={getMarkerDataUrl(
-                                iconKey as MarkerIcon,
-                                cmColour
-                              )}
-                              alt={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
-                              className="w-7 h-7 object-contain"
-                            />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+              {/* 0d. Label only — the marker renders as just its label pill
+                  (same look as a shape's note label), no icon underneath.
+                  Useful for a plain text callout rather than a
+                  house/vehicle/POI icon. */}
+              <div className="mb-4 flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+                <div>
+                  <p className="text-[11px] font-semibold text-foreground">
+                    Label Only
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Show just the label as a pill — no marker icon
+                  </p>
                 </div>
+                <Switch
+                  checked={cmLabelOnly}
+                  onCheckedChange={setCmLabelOnly}
+                />
               </div>
+              {cmLabelOnly && !cmLabel.trim() && (
+                <p className="text-[10px] text-amber-500 -mt-3 mb-4">
+                  Enter a label above — a Label Only marker with no text has
+                  nothing to show on the map.
+                </p>
+              )}
 
-              {/* 2. Colour picker */}
+              {/* 1. Icon picker — not shown for a Label Only marker, which
+                  has no icon to pick. */}
+              {!cmLabelOnly && (
+                <div className="mb-4">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    Marker Icon
+                  </p>
+                  <div className="space-y-3">
+                    {MARKER_ICON_GROUPS.map(group => (
+                      <div key={group.label}>
+                        <p className="text-[10px] text-muted-foreground/70 mb-1.5">
+                          {group.label}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {group.icons.map(iconKey => (
+                            <button
+                              key={iconKey}
+                              onClick={() => setCmIcon(iconKey as MarkerIcon)}
+                              title={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
+                              className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
+                                cmIcon === iconKey
+                                  ? "border-primary bg-primary/10 scale-110"
+                                  : "border-border bg-accent/30 hover:border-primary/50"
+                              }`}
+                            >
+                              <img
+                                src={getMarkerDataUrl(
+                                  iconKey as MarkerIcon,
+                                  cmColour
+                                )}
+                                alt={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
+                                className="w-7 h-7 object-contain"
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 2. Colour picker — doubles as the label pill's background
+                  colour when Label Only is on. */}
               <div className="mb-4">
                 <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                  Colour
+                  {cmLabelOnly ? "Label Colour" : "Colour"}
                 </p>
                 <div className="flex gap-2">
                   {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(col => (
@@ -8794,66 +8910,81 @@ export default function IntelligenceMapping() {
                     />
                   ))}
                 </div>
+                {cmLabelOnly && (
+                  <div className="mt-3">
+                    <span
+                      className="inline-flex items-center max-w-[200px] truncate rounded-full border-[1.5px] px-2.5 py-1 text-[11px] font-bold text-white shadow"
+                      style={{
+                        background: MARKER_COLOURS[cmColour],
+                        borderColor: "rgba(255,255,255,0.7)",
+                      }}
+                    >
+                      {cmLabel.trim() || "(no label)"}
+                    </span>
+                  </div>
+                )}
               </div>
 
-              {/* 3. Rotation */}
-              <div className="mb-4">
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                  Rotation — {cmRotation}°
-                </p>
-                <div className="flex items-center gap-3">
-                  {/* Rotated preview */}
-                  <div className="shrink-0 w-10 h-10 flex items-center justify-center">
-                    <img
-                      src={getMarkerDataUrl(cmIcon, cmColour)}
-                      alt="preview"
-                      className="w-8 h-8 object-contain transition-transform"
-                      style={{ transform: `rotate(${cmRotation}deg)` }}
+              {/* 3. Rotation — not applicable to a Label Only marker. */}
+              {!cmLabelOnly && (
+                <div className="mb-4">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    Rotation — {cmRotation}°
+                  </p>
+                  <div className="flex items-center gap-3">
+                    {/* Rotated preview */}
+                    <div className="shrink-0 w-10 h-10 flex items-center justify-center">
+                      <img
+                        src={getMarkerDataUrl(cmIcon, cmColour)}
+                        alt="preview"
+                        className="w-8 h-8 object-contain transition-transform"
+                        style={{ transform: `rotate(${cmRotation}deg)` }}
+                      />
+                    </div>
+                    {/* Slider */}
+                    <input
+                      type="range"
+                      min={0}
+                      max={359}
+                      step={1}
+                      value={cmRotation}
+                      onChange={e => setCmRotation(Number(e.target.value))}
+                      className="flex-1 accent-primary"
                     />
-                  </div>
-                  {/* Slider */}
-                  <input
-                    type="range"
-                    min={0}
-                    max={359}
-                    step={1}
-                    value={cmRotation}
-                    onChange={e => setCmRotation(Number(e.target.value))}
-                    className="flex-1 accent-primary"
-                  />
-                  {/* Quick preset buttons */}
-                  <div className="flex gap-1">
-                    {[0, 45, 90, 135, 180, 225, 270, 315].map(deg => (
-                      <button
-                        key={deg}
-                        onClick={() => setCmRotation(deg)}
-                        title={`${deg}°`}
-                        className={`w-6 h-6 text-[9px] rounded border transition-all ${
-                          cmRotation === deg
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "border-border hover:border-primary/50 text-muted-foreground"
-                        }`}
-                      >
-                        {deg === 0
-                          ? "N"
-                          : deg === 45
-                            ? "NE"
-                            : deg === 90
-                              ? "E"
-                              : deg === 135
-                                ? "SE"
-                                : deg === 180
-                                  ? "S"
-                                  : deg === 225
-                                    ? "SW"
-                                    : deg === 270
-                                      ? "W"
-                                      : "NW"}
-                      </button>
-                    ))}
+                    {/* Quick preset buttons */}
+                    <div className="flex gap-1">
+                      {[0, 45, 90, 135, 180, 225, 270, 315].map(deg => (
+                        <button
+                          key={deg}
+                          onClick={() => setCmRotation(deg)}
+                          title={`${deg}°`}
+                          className={`w-6 h-6 text-[9px] rounded border transition-all ${
+                            cmRotation === deg
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "border-border hover:border-primary/50 text-muted-foreground"
+                          }`}
+                        >
+                          {deg === 0
+                            ? "N"
+                            : deg === 45
+                              ? "NE"
+                              : deg === 90
+                                ? "E"
+                                : deg === 135
+                                  ? "SE"
+                                  : deg === 180
+                                    ? "S"
+                                    : deg === 225
+                                      ? "SW"
+                                      : deg === 270
+                                        ? "W"
+                                        : "NW"}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* 4. Operation — a marker saved with no operation is hidden
                   from any single/multi-operation-filtered map view (only
@@ -8908,7 +9039,7 @@ export default function IntelligenceMapping() {
                 </Button>
                 <Button
                   className="flex-1"
-                  disabled={cmSaving}
+                  disabled={cmSaving || (cmLabelOnly && !cmLabel.trim())}
                   onClick={async () => {
                     if (!pendingLatLng) return;
                     setCmSaving(true);
@@ -8920,6 +9051,7 @@ export default function IntelligenceMapping() {
                           markerIcon: cmIcon,
                           markerColour: cmColour,
                           rotation: cmRotation,
+                          labelOnly: cmLabelOnly,
                           label: cmLabel.trim() || null,
                           address: cmAddress.trim() || null,
                           note: cmNote.trim() || null,
@@ -8936,6 +9068,7 @@ export default function IntelligenceMapping() {
                           markerIcon: cmIcon,
                           markerColour: cmColour,
                           rotation: cmRotation,
+                          labelOnly: cmLabelOnly,
                           label: cmLabel.trim() || null,
                           address: cmAddress.trim() || null,
                           note: cmNote.trim() || null,
@@ -8948,6 +9081,7 @@ export default function IntelligenceMapping() {
                       setPendingLatLng(null);
                       setEditingMarkerId(null);
                       setCmRotation(0);
+                      setCmLabelOnly(false);
                     } catch {
                       toast.error(
                         editingMarkerId !== null

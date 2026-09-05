@@ -154,8 +154,16 @@ const AU_STATE_CODES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
 // Segment lengths are capped rather than left open-ended (`*`) so a long
 // observation can't make this match run away and grab text from much
 // earlier in the sentence than the address actually starts at.
+// Group 1 — optional business/place name prefix (e.g. "Blend Cafe, "),
+// same shape as GOOGLE_ADDRESS_RE's own businessPrefix group in
+// client/src/lib/addressFormat.ts, kept in sync manually so a business
+// address gets the same bracket whether it's completed live by this
+// space-bar trigger or converted on paste/blur by that function. Group 2
+// — the street portion, used as the bracket instead when there's no
+// business name.
 const ADDRESS_SPACE_COMPLETION_RE = new RegExp(
-  `([0-9]{1,5}[A-Za-z]?\\s+[A-Za-z][A-Za-z'\\s]{0,40}?\\b(?:${STREET_TYPE_WORDS}))\\b,\\s*[A-Za-z][A-Za-z'\\s]{0,40}?\\s+(?:${AU_STATE_CODES})$`,
+  `((?:[^,\\d\\n][^,\\n]*,\\s*)?)` +
+    `([0-9]{1,5}[A-Za-z]?\\s+[A-Za-z][A-Za-z'\\s]{0,40}?\\b(?:${STREET_TYPE_WORDS}))\\b,\\s*[A-Za-z][A-Za-z'\\s]{0,40}?\\s+(?:${AU_STATE_CODES})$`,
   "i"
 );
 
@@ -164,10 +172,13 @@ const ADDRESS_SPACE_COMPLETION_RE = new RegExp(
  * state is finished by a space — "44 Elvira Street, PALMYRA WA " triggers
  * on the trailing space, same idea as detectVehicleMentionTrigger but for
  * addresses instead of regos: no registry lookup needed, works for a
- * location that's never been seen before. Returns just the street portion
- * (number + name + type), matching the running sheet's own bracket
- * convention of "(44 Elvira Street)" — suburb/state stay out of the
- * bracket, same as everywhere else this shape already appears.
+ * location that's never been seen before. Returns the street portion
+ * (number + name + type) as the bracket code — "(44 Elvira Street)" — UNLESS
+ * a business/place name immediately precedes the street number (e.g. "Blend
+ * Cafe, 112 Marmion Street, MELVILLE WA"), in which case the business name
+ * is the bracket instead ("(Blend Cafe)"), matching how convertGoogleAddresses
+ * already brackets a business address on paste or blur — without this, the
+ * same address got a different bracket depending on which path produced it.
  */
 export function detectAddressSpaceCompletion(
   text: string,
@@ -184,7 +195,8 @@ export function detectAddressSpaceCompletion(
   const textBefore = text.slice(0, cursorPos);
   const m = textBefore.match(ADDRESS_SPACE_COMPLETION_RE);
   if (!m) return null;
-  const addressLabel = m[1].trim();
+  const businessName = m[1] ? m[1].replace(/,\s*$/, "").trim() : "";
+  const addressLabel = businessName || m[2].trim();
   if (usedAddressLabels.has(addressLabel.toUpperCase())) return null;
   return { addressLabel };
 }
@@ -271,16 +283,24 @@ export function computeUsedVehicleRegos(
   return regos;
 }
 
-/** Address labels ("(44 Elvira Street)") already introduced somewhere in a
- * set of rows — same idea as computeUsedVehicleRegos, for
- * detectAddressSpaceCompletion's suppression. Distinguished from a vehicle
- * rego bracket by requiring a space in the content — a rego is always one
- * contiguous alphanumeric token, an address label never is. */
+/** Address labels — either a street ("(44 Elvira Street)") or, for a
+ * business/place address, its name ("(Blend Cafe)") — already introduced
+ * somewhere in a set of rows, for detectAddressSpaceCompletion's
+ * suppression. Identified by the bracket immediately following an AU state
+ * code, since that's the one shape both an address's street bracket and its
+ * business-name bracket always share (see detectAddressSpaceCompletion and
+ * convertGoogleAddresses, which both only ever bracket right after the
+ * suburb + state) — matching on that instead of the bracket content's own
+ * shape is what lets this recognise a business-name bracket too, not just
+ * a street one. */
 export function computeUsedAddressLabels(
   rows: Array<{ observation?: string | null }>
 ): Set<string> {
   const labels = new Set<string>();
-  const addrRe = /\(([0-9][A-Za-z0-9]{0,5}\s[^()]{1,60})\)/g;
+  const addrRe = new RegExp(
+    `(?:${AU_STATE_CODES})\\s*\\(([^()]{1,60})\\)`,
+    "gi"
+  );
   for (const r of rows) {
     if (!r.observation) continue;
     let m: RegExpExecArray | null;

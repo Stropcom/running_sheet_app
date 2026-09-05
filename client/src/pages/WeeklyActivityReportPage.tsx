@@ -260,6 +260,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 tfoot { display:table-footer-group; }
 .content { padding:20px 32px 8px; }
 .op-card { margin-bottom:16px; border:1px solid ${GREY_BORDER}; border-radius:8px; overflow:hidden; }
+.op-card:not(:first-child) { break-before:page; page-break-before:always; }
 .op-head { display:flex; align-items:baseline; justify-content:space-between; padding:10px 16px; background:#f8fafc; border-bottom:1px solid ${GREY_BORDER}; }
 .op-name { font-size:13px; font-weight:800; letter-spacing:0.03em; color:${BLUE_DARK} !important; }
 .op-stats { display:flex; gap:14px; }

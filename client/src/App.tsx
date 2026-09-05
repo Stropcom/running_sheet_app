@@ -61,6 +61,10 @@ import VehicleCrashPage from "@/pages/VehicleCrashPage";
 import SmeacBriefingNewPage from "@/pages/SmeacBriefingNewPage";
 import SmeacBriefingDetailPage from "@/pages/SmeacBriefingDetailPage";
 import SmeacBriefingEditPage from "@/pages/SmeacBriefingEditPage";
+import UcoGuideListPage from "@/pages/UcoGuideListPage";
+import UcoGuideNewPage from "@/pages/UcoGuideNewPage";
+import UcoGuideDetailPage from "@/pages/UcoGuideDetailPage";
+import UcoGuideEditPage from "@/pages/UcoGuideEditPage";
 import { DraftModeBanner } from "@/components/DraftModeBanner";
 import { SectionColorProvider } from "@/contexts/SectionColorContext";
 import { useEffect } from "react";
@@ -278,6 +282,16 @@ function Router() {
       <Route
         path="/administration/vehicle-crash"
         component={VehicleCrashPage}
+      />
+      <Route path="/administration/uco-guide" component={UcoGuideListPage} />
+      <Route path="/administration/uco-guide/new" component={UcoGuideNewPage} />
+      <Route
+        path="/administration/uco-guide/:id/edit"
+        component={UcoGuideEditPage}
+      />
+      <Route
+        path="/administration/uco-guide/:id"
+        component={UcoGuideDetailPage}
       />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

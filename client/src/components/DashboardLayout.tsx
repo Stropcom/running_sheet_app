@@ -1247,6 +1247,7 @@ function AdminNavTile({
     location.startsWith("/administration/smeac") ||
     location.startsWith("/administration/intel-export") ||
     location.startsWith("/administration/vehicle-crash") ||
+    location.startsWith("/administration/uco-guide") ||
     location === "/help";
   return (
     <DropdownMenu>
@@ -1293,6 +1294,12 @@ function AdminNavTile({
         >
           <Car className="h-4 w-4 mr-2" />
           Vehicle Crash
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => setLocation("/administration/uco-guide")}
+        >
+          <Eye className="h-4 w-4 mr-2" />
+          UCO Guide
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setLocation("/help")}>
           <HelpCircle className="h-4 w-4 mr-2" />
@@ -1792,6 +1799,7 @@ function DashboardLayoutContent({
       "/administration/smeac",
       "/administration/intel-export",
       "/administration/vehicle-crash",
+      "/administration/uco-guide",
     ];
     if (adminPaths.some(p => location === p || location.startsWith(p))) {
       setAdminFolderExpanded(true);
@@ -2064,6 +2072,7 @@ function DashboardLayoutContent({
                             location.startsWith(
                               "/administration/vehicle-crash"
                             ) ||
+                            location.startsWith("/administration/uco-guide") ||
                             location === "/help"
                       }
                       onClick={() => setAdminFolderExpanded(v => !v)}
@@ -2082,6 +2091,7 @@ function DashboardLayoutContent({
                           location.startsWith(
                             "/administration/vehicle-crash"
                           ) ||
+                          location.startsWith("/administration/uco-guide") ||
                           location === "/help"
                             ? "text-sidebar-foreground font-medium"
                             : "text-sidebar-foreground/80"
@@ -2179,6 +2189,19 @@ function DashboardLayoutContent({
                         >
                           <Car className="h-3.5 w-3.5 shrink-0 text-foreground" />
                           Vehicle Crash
+                        </button>
+
+                        {/* UCO Guide */}
+                        <button
+                          onClick={() =>
+                            setLocation("/administration/uco-guide")
+                          }
+                          className={subItemClass(
+                            location.startsWith("/administration/uco-guide")
+                          )}
+                        >
+                          <Eye className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          UCO Guide
                         </button>
 
                         {/* Help */}

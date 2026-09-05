@@ -127,6 +127,10 @@ import {
   InsertSmeacBriefing,
   smeacAcknowledgements,
   SmeacAcknowledgement,
+  ucoGuideBriefings,
+  UcoGuideBriefing,
+  ucoGuideAcknowledgements,
+  UcoGuideAcknowledgement,
 } from "../drizzle/schema";
 import {
   findPossibleDuplicates,
@@ -14827,6 +14831,329 @@ export async function getSmeacRosterPrefill(
       kit: "",
       isTeamLeader: false,
     };
+  });
+}
+
+// ─── UCO Surveillance Deployment Guide ─────────────────────────────────────
+
+export interface UcoGuideBriefingView
+  extends Omit<
+    UcoGuideBriefing,
+    | "accoutrements"
+    | "moeEquipment"
+    | "additionalMemberCins"
+    | "levelNotes"
+    | "recipientCins"
+  > {
+  accoutrements: string[];
+  moeEquipment: string[];
+  additionalMemberCins: string[];
+  levelNotes: string[];
+  recipientCins: string[];
+}
+
+function toUcoGuideBriefingView(row: UcoGuideBriefing): UcoGuideBriefingView {
+  return {
+    ...row,
+    accoutrements: parseSmeacStringArray(row.accoutrements),
+    moeEquipment: parseSmeacStringArray(row.moeEquipment),
+    additionalMemberCins: parseSmeacStringArray(row.additionalMemberCins),
+    levelNotes: parseSmeacStringArray(row.levelNotes),
+    recipientCins: parseSmeacStringArray(row.recipientCins),
+  };
+}
+
+export interface UpsertUcoGuideBriefingInput {
+  operationId: number;
+  sheetId?: number | null;
+  targetId?: number | null;
+  accoutrements?: string[];
+  moeEquipment?: string[];
+  opBackground?: string | null;
+  opObjective?: string | null;
+  riskAssessment?: string | null;
+  ucoPhotoRef?: string | null;
+  ucoVehiclePhotoRef?: string | null;
+  ucoNames?: string | null;
+  planObjective?: string | null;
+  planTimings?: string | null;
+  planControllerLocation?: string | null;
+  planTracking?: string | null;
+  planComms?: string | null;
+  planDangerSignal?: string | null;
+  planIngressEgress?: string | null;
+  planAuthorisedActions?: string | null;
+  teamLeaderCin?: string | null;
+  seniorOperativeCin?: string | null;
+  huxCin?: string | null;
+  ramCin?: string | null;
+  additionalMemberCins?: string[];
+  tacticsNotes?: string | null;
+  currentLevel?: number;
+  levelNotes?: string[];
+  commsVehiclePrimary?: string | null;
+  commsVehicleAlternate?: string | null;
+  commsFootPrimary?: string | null;
+  commsFootAlternate?: string | null;
+  commsNotes?: string | null;
+}
+
+function ucoGuideUpsertValues(data: UpsertUcoGuideBriefingInput) {
+  return {
+    operationId: data.operationId,
+    sheetId: data.sheetId ?? null,
+    targetId: data.targetId ?? null,
+    accoutrements: JSON.stringify(data.accoutrements ?? []),
+    moeEquipment: JSON.stringify(data.moeEquipment ?? []),
+    opBackground: data.opBackground ?? null,
+    opObjective: data.opObjective ?? null,
+    riskAssessment: data.riskAssessment ?? null,
+    ucoPhotoRef: data.ucoPhotoRef ?? null,
+    ucoVehiclePhotoRef: data.ucoVehiclePhotoRef ?? null,
+    ucoNames: data.ucoNames ?? null,
+    planObjective: data.planObjective ?? null,
+    planTimings: data.planTimings ?? null,
+    planControllerLocation: data.planControllerLocation ?? null,
+    planTracking: data.planTracking ?? null,
+    planComms: data.planComms ?? null,
+    planDangerSignal: data.planDangerSignal ?? null,
+    planIngressEgress: data.planIngressEgress ?? null,
+    planAuthorisedActions: data.planAuthorisedActions ?? null,
+    teamLeaderCin: data.teamLeaderCin ?? null,
+    seniorOperativeCin: data.seniorOperativeCin ?? null,
+    huxCin: data.huxCin ?? null,
+    ramCin: data.ramCin ?? null,
+    additionalMemberCins: JSON.stringify(data.additionalMemberCins ?? []),
+    tacticsNotes: data.tacticsNotes ?? null,
+    currentLevel: data.currentLevel ?? 2,
+    levelNotes: JSON.stringify(data.levelNotes ?? ["", "", "", "", ""]),
+    commsVehiclePrimary: data.commsVehiclePrimary ?? null,
+    commsVehicleAlternate: data.commsVehicleAlternate ?? null,
+    commsFootPrimary: data.commsFootPrimary ?? null,
+    commsFootAlternate: data.commsFootAlternate ?? null,
+    commsNotes: data.commsNotes ?? null,
+  };
+}
+
+export async function createUcoGuideDraft(
+  data: UpsertUcoGuideBriefingInput,
+  createdBy: number
+): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(ucoGuideBriefings).values({
+    ...ucoGuideUpsertValues(data),
+    status: "draft",
+    createdBy,
+  });
+  return result.insertId as number;
+}
+
+/**
+ * Updates a guide's content regardless of status — same as SMEAC, a posted
+ * guide can be corrected without that alone re-notifying anyone; re-notifying
+ * is only ever the separate, deliberate ucoGuide.post call.
+ */
+export async function updateUcoGuideBriefing(
+  id: number,
+  data: UpsertUcoGuideBriefingInput
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(ucoGuideBriefings)
+    .set({
+      ...ucoGuideUpsertValues(data),
+      revision: sql`${ucoGuideBriefings.revision} + 1`,
+    })
+    .where(eq(ucoGuideBriefings.id, id));
+}
+
+export async function getUcoGuideBriefingById(
+  id: number
+): Promise<UcoGuideBriefingView | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db
+    .select()
+    .from(ucoGuideBriefings)
+    .where(
+      and(eq(ucoGuideBriefings.id, id), isNull(ucoGuideBriefings.deletedAt))
+    )
+    .limit(1);
+  return row ? toUcoGuideBriefingView(row) : undefined;
+}
+
+export async function listUcoGuideBriefings(): Promise<UcoGuideBriefingView[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select()
+    .from(ucoGuideBriefings)
+    .where(isNull(ucoGuideBriefings.deletedAt))
+    .orderBy(desc(ucoGuideBriefings.createdAt));
+  return rows.map(toUcoGuideBriefingView);
+}
+
+/**
+ * Posts (or re-posts) a guide to an explicit, hand-picked set of users —
+ * unlike SMEAC there is no "everyone" fallback here, since the whole point
+ * is a Notify picker (roster pre-selected, everyone else opt-in). Snapshots
+ * the recipients' CINs onto the row for the red/green "sent to" display,
+ * since that must survive the roster changing after the fact.
+ */
+export async function postUcoGuideBriefing(
+  id: number,
+  postedByCIN: string,
+  notifyBody: { title: string; body: string; url: string },
+  recipientUserIds: number[]
+): Promise<{ notifiedUserIds: number[]; recipientCins: string[] } | undefined> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [existing] = await db
+    .select()
+    .from(ucoGuideBriefings)
+    .where(
+      and(eq(ucoGuideBriefings.id, id), isNull(ucoGuideBriefings.deletedAt))
+    )
+    .limit(1);
+  if (!existing) return undefined;
+
+  const allUsers = await getAllUsers();
+  const byId = new Map(allUsers.map(u => [u.id, u.cin]));
+  const recipientCins = recipientUserIds
+    .map(uid => byId.get(uid))
+    .filter((cin): cin is string => !!cin)
+    .map(cin => cin.toUpperCase());
+
+  await db
+    .update(ucoGuideBriefings)
+    .set({
+      status: "posted",
+      postedAt: Date.now(),
+      postedByCIN,
+      recipientCins: JSON.stringify(recipientCins),
+    })
+    .where(eq(ucoGuideBriefings.id, id));
+
+  await createNotificationsForUsers(recipientUserIds, {
+    title: notifyBody.title,
+    body: notifyBody.body,
+    url: notifyBody.url,
+    sourceModule: "ucoGuideBriefing",
+  });
+  return { notifiedUserIds: recipientUserIds, recipientCins };
+}
+
+/** Live update of the current surveillance level only — no revision bump, no re-notification, just an in-place status change during an active deployment. */
+export async function setUcoGuideLevel(id: number, level: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(ucoGuideBriefings)
+    .set({ currentLevel: level })
+    .where(eq(ucoGuideBriefings.id, id));
+}
+
+export async function softDeleteUcoGuideBriefing(id: number, cin: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(ucoGuideBriefings)
+    .set({ deletedAt: Date.now(), deletedByCIN: cin })
+    .where(eq(ucoGuideBriefings.id, id));
+}
+
+export async function acknowledgeUcoGuideBriefing(
+  briefingId: number,
+  userId: number,
+  cin: string,
+  revision: number
+): Promise<UcoGuideAcknowledgement> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [existing] = await db
+    .select()
+    .from(ucoGuideAcknowledgements)
+    .where(
+      and(
+        eq(ucoGuideAcknowledgements.briefingId, briefingId),
+        eq(ucoGuideAcknowledgements.userId, userId),
+        eq(ucoGuideAcknowledgements.revision, revision)
+      )
+    )
+    .limit(1);
+  if (existing) return existing;
+
+  const acknowledgedAt = Date.now();
+  const cinUpper = cin.toUpperCase();
+  await db.insert(ucoGuideAcknowledgements).values({
+    briefingId,
+    userId,
+    cin: cinUpper,
+    revision,
+    acknowledgedAt,
+  });
+  return { id: 0, briefingId, userId, cin: cinUpper, revision, acknowledgedAt };
+}
+
+export async function getUcoGuideAcknowledgementForUser(
+  briefingId: number,
+  userId: number,
+  revision: number
+): Promise<UcoGuideAcknowledgement | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db
+    .select()
+    .from(ucoGuideAcknowledgements)
+    .where(
+      and(
+        eq(ucoGuideAcknowledgements.briefingId, briefingId),
+        eq(ucoGuideAcknowledgements.userId, userId),
+        eq(ucoGuideAcknowledgements.revision, revision)
+      )
+    )
+    .limit(1);
+  return row;
+}
+
+export async function getUcoGuideAcknowledgements(
+  briefingId: number,
+  revision: number
+): Promise<UcoGuideAcknowledgement[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(ucoGuideAcknowledgements)
+    .where(
+      and(
+        eq(ucoGuideAcknowledgements.briefingId, briefingId),
+        eq(ucoGuideAcknowledgements.revision, revision)
+      )
+    )
+    .orderBy(asc(ucoGuideAcknowledgements.acknowledgedAt));
+}
+
+/** Active running sheet's roster (CIN -> display name) — the pre-selected "primary" list in the Notify picker. */
+export async function getUcoGuideRosterPrefill(
+  sheetId: number
+): Promise<{ cin: string; name: string }[]> {
+  const sheet = await getRunningSheetById(sheetId);
+  if (!sheet || !sheet.sheetCins) return [];
+  let cins: { cin: string }[] = [];
+  try {
+    const parsed = JSON.parse(sheet.sheetCins);
+    if (Array.isArray(parsed)) cins = parsed;
+  } catch {
+    return [];
+  }
+  const allUsers = await getAllUsers();
+  const byCin = new Map(allUsers.map(u => [u.cin, u.name]));
+  return cins.map(({ cin }) => {
+    const cinUpper = cin.toUpperCase();
+    return { cin: cinUpper, name: byCin.get(cinUpper) ?? cin };
   });
 }
 

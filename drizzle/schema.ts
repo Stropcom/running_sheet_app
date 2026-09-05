@@ -731,6 +731,8 @@ export const auditLogs = mysqlTable("audit_logs", {
     "summary_reopened",
     "smeac_briefing_posted",
     "smeac_briefing_deleted",
+    "uco_guide_posted",
+    "uco_guide_deleted",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),
@@ -1782,3 +1784,105 @@ export const smeacAcknowledgements = mysqlTable(
 export type SmeacAcknowledgement = typeof smeacAcknowledgements.$inferSelect;
 export type InsertSmeacAcknowledgement =
   typeof smeacAcknowledgements.$inferInsert;
+
+// ─── UCO Surveillance Deployment Guide ──────────────────────────────────────
+// Same notify/acknowledge shape as SMEAC (draft -> posted, revisioned,
+// per-user acknowledgement), but a reference document filled in per
+// deployment rather than a free-form situation brief, and recipients are an
+// explicit snapshot (recipientCins) rather than "everyone" — a posting can
+// go to a hand-picked subset of users, not the whole org.
+export const ucoGuideBriefings = mysqlTable("uco_guide_briefings", {
+  id: int("id").autoincrement().primaryKey(),
+  operationId: int("operationId").notNull(),
+  sheetId: int("sheetId"),
+  // Linked Target Registry record — person/vehicle/address chips are
+  // rendered live from its name/v1(f)/hb(f) fields, not snapshotted here.
+  targetId: int("targetId"),
+
+  // JSON arrays of strings, e.g. ["Firearm", "BSRV"] / ["HUX", "RAM"].
+  accoutrements: text("accoutrements"),
+  moeEquipment: text("moeEquipment"),
+
+  opBackground: text("opBackground"),
+  opObjective: text("opObjective"),
+  riskAssessment: text("riskAssessment"),
+  ucoPhotoRef: varchar("ucoPhotoRef", { length: 500 }),
+  ucoVehiclePhotoRef: varchar("ucoVehiclePhotoRef", { length: 500 }),
+  ucoNames: varchar("ucoNames", { length: 255 }),
+
+  planObjective: varchar("planObjective", { length: 500 }),
+  planTimings: varchar("planTimings", { length: 255 }),
+  planControllerLocation: varchar("planControllerLocation", { length: 255 }),
+  planTracking: varchar("planTracking", { length: 255 }),
+  planComms: varchar("planComms", { length: 255 }),
+  planDangerSignal: varchar("planDangerSignal", { length: 255 }),
+  planIngressEgress: text("planIngressEgress"),
+  planAuthorisedActions: text("planAuthorisedActions"),
+
+  // Team role assignments — CINs, not FKs (a role can be filled by anyone,
+  // including someone without a RunLog login).
+  teamLeaderCin: varchar("teamLeaderCin", { length: 64 }),
+  seniorOperativeCin: varchar("seniorOperativeCin", { length: 64 }),
+  huxCin: varchar("huxCin", { length: 64 }),
+  ramCin: varchar("ramCin", { length: 64 }),
+  // JSON array of CIN strings.
+  additionalMemberCins: text("additionalMemberCins"),
+  tacticsNotes: text("tacticsNotes"),
+
+  // 1 (Covert containment) .. 5 (Overt interdiction) — the level selected at
+  // post time, adjustable afterwards via ucoGuide.setLevel as the situation
+  // escalates/de-escalates, independent of revision/re-notification.
+  currentLevel: int("currentLevel").default(2).notNull(),
+  // JSON array of 5 strings, index 0 = level 1's notes .. index 4 = level 5's.
+  levelNotes: text("levelNotes"),
+
+  commsVehiclePrimary: varchar("commsVehiclePrimary", { length: 255 }),
+  commsVehicleAlternate: varchar("commsVehicleAlternate", { length: 255 }),
+  commsFootPrimary: varchar("commsFootPrimary", { length: 255 }),
+  commsFootAlternate: varchar("commsFootAlternate", { length: 255 }),
+  commsNotes: text("commsNotes"),
+
+  // JSON array of CIN strings notified at post time — the "sent to" roster
+  // shown in the read view, red/green against ucoGuideAcknowledgements.
+  recipientCins: text("recipientCins"),
+
+  status: mysqlEnum("status", ["draft", "posted"]).default("draft").notNull(),
+  revision: int("revision").default(1).notNull(),
+  postedAt: bigint("postedAt", { mode: "number" }),
+  postedByCIN: varchar("postedByCIN", { length: 64 }),
+
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+
+  // Soft-delete
+  deletedAt: bigint("deletedAt", { mode: "number" }),
+  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
+});
+
+export type UcoGuideBriefing = typeof ucoGuideBriefings.$inferSelect;
+export type InsertUcoGuideBriefing = typeof ucoGuideBriefings.$inferInsert;
+
+export const ucoGuideAcknowledgements = mysqlTable(
+  "uco_guide_acknowledgements",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    briefingId: int("briefingId").notNull(),
+    userId: int("userId").notNull(),
+    cin: varchar("cin", { length: 64 }).notNull(),
+    revision: int("revision").default(1).notNull(),
+    acknowledgedAt: bigint("acknowledgedAt", { mode: "number" }).notNull(),
+  },
+  t => [
+    uniqueIndex("uco_guide_ack_briefing_user_rev_idx").on(
+      t.briefingId,
+      t.userId,
+      t.revision
+    ),
+  ]
+);
+
+export type UcoGuideAcknowledgement =
+  typeof ucoGuideAcknowledgements.$inferSelect;
+export type InsertUcoGuideAcknowledgement =
+  typeof ucoGuideAcknowledgements.$inferInsert;

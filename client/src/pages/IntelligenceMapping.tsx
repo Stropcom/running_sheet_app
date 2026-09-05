@@ -34,6 +34,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
 import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
+import { UcoGuideMapOverlay } from "@/components/UcoGuideMapOverlay";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
 import { OperationProfileContent } from "@/components/OperationProfileContent";
 // The Images page's own folder/gallery levels, reused verbatim so the pane and
@@ -867,6 +868,15 @@ export default function IntelligenceMapping() {
     return Number.isFinite(parsed) ? parsed : null;
   })();
   const closeSmeacOverlay = () => setLocation("/intelligence/mapping");
+
+  // UCO Surveillance Deployment Guide overlay — opened via ?ucoGuide=<id>,
+  // same mechanics as the SMEAC overlay above.
+  const ucoGuideId = (() => {
+    const raw = new URLSearchParams(search).get("ucoGuide");
+    const parsed = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(parsed) ? parsed : null;
+  })();
+  const closeUcoGuideOverlay = () => setLocation("/intelligence/mapping");
 
   // Filter state — persisted in localStorage
   const [selectedOpIds, setSelectedOpIds] = useState<number[]>(() => {
@@ -4399,6 +4409,12 @@ export default function IntelligenceMapping() {
             the map's own floating controls so it always paints on top. */}
           {smeacId && (
             <SmeacMapOverlay briefingId={smeacId} onClose={closeSmeacOverlay} />
+          )}
+          {ucoGuideId && (
+            <UcoGuideMapOverlay
+              briefingId={ucoGuideId}
+              onClose={closeUcoGuideOverlay}
+            />
           )}
 
           {/* Loading overlay */}

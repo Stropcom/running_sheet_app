@@ -3316,6 +3316,42 @@ export default function IntelligenceMapping() {
       | google.maps.Polyline
     >
   >(new Map());
+  // Floating label pill for a shape's note, keyed the same way — a shape
+  // and its label are two separate map overlays (a Circle/Rectangle/etc.
+  // can't render text of its own), kept in sync side by side.
+  const shapeLabelsRef = useRef<
+    Map<number, google.maps.marker.AdvancedMarkerElement>
+  >(new Map());
+
+  // A small floating tag showing a shape's note — nudged beside its anchor
+  // point (not on top of it) via a CSS transform, since AdvancedMarkerElement
+  // positioning is geographic only and has no pixel-offset option of its own.
+  const createShapeLabelElement = useCallback(
+    (text: string, colour: string) => {
+      const el = document.createElement("div");
+      el.style.cssText = `
+      transform: translate(12px, -50%);
+      display: inline-flex;
+      align-items: center;
+      max-width: 200px;
+      background: ${colour};
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+      border: 1.5px solid rgba(255,255,255,0.7);
+      cursor: pointer;
+    `;
+      el.textContent = text;
+      return el;
+    },
+    []
+  );
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -3331,6 +3367,12 @@ export default function IntelligenceMapping() {
         existing.delete(id);
       }
     });
+    shapeLabelsRef.current.forEach((marker, id) => {
+      if (!incomingIds.has(id)) {
+        marker.map = null;
+        shapeLabelsRef.current.delete(id);
+      }
+    });
 
     incoming.forEach((s: any) => {
       // The shape currently being placed/edited is rendered by its own
@@ -3342,6 +3384,11 @@ export default function IntelligenceMapping() {
         if (stale) {
           stale.setMap(null);
           existing.delete(s.id);
+        }
+        const staleLabel = shapeLabelsRef.current.get(s.id);
+        if (staleLabel) {
+          staleLabel.map = null;
+          shapeLabelsRef.current.delete(s.id);
         }
         return;
       }
@@ -3459,8 +3506,52 @@ export default function IntelligenceMapping() {
           existing.set(s.id, line);
         }
       }
+
+      // ── Label pill — floats the shape's note beside its primary point
+      // (previously only visible after tapping the shape to edit it), so an
+      // officer glancing at the map sees what a shape is for without
+      // opening it. Anchor is each shape's own "first point": the center
+      // for a circle/sector (its only point), the geometric midpoint of
+      // its stored corners for a rectangle (equal to the point it was
+      // originally tapped at, since it's built from symmetric offsets —
+      // see beginCreateShape), and the first vertex placed for a line.
+      const labelText = (s.label ?? "").trim();
+      const labelAnchor: { lat: number; lng: number } | null =
+        s.shapeType === "circle" || s.shapeType === "sector"
+          ? { lat: s.centerLat, lng: s.centerLng }
+          : s.shapeType === "rectangle"
+            ? {
+                lat: (s.neLat + s.swLat) / 2,
+                lng: (s.neLng + s.swLng) / 2,
+              }
+            : ((s.points ?? [])[0] ?? null);
+      const existingLabel = shapeLabelsRef.current.get(s.id);
+      if (!labelText || !labelAnchor) {
+        if (existingLabel) {
+          existingLabel.map = null;
+          shapeLabelsRef.current.delete(s.id);
+        }
+      } else if (existingLabel) {
+        existingLabel.position = labelAnchor;
+        existingLabel.content = createShapeLabelElement(labelText, fillColor);
+      } else {
+        const labelMarker = new google.maps.marker.AdvancedMarkerElement({
+          map,
+          position: labelAnchor,
+          content: createShapeLabelElement(labelText, fillColor),
+          zIndex: 500,
+        });
+        labelMarker.addListener("click", openEdit);
+        shapeLabelsRef.current.set(s.id, labelMarker);
+      }
     });
-  }, [mapShapesData, mapReady, pendingShape, beginEditShape]);
+  }, [
+    mapShapesData,
+    mapReady,
+    pendingShape,
+    beginEditShape,
+    createShapeLabelElement,
+  ]);
 
   // ── Draft shape overlay (create/edit in progress) ────────────────────────────
   // Creates (once, on shape identity/type change) a live editable overlay
@@ -7584,10 +7675,12 @@ export default function IntelligenceMapping() {
                                 const pos = textarea.selectionStart ?? 0;
                                 const textBefore = rsInlineText.slice(0, pos);
                                 const match = textBefore.match(/(\S+)$/);
+                                let expanded = false;
                                 if (match) {
                                   const word = match[1].toLowerCase();
                                   const expansion = mapQeShortcutMap[word];
                                   if (expansion) {
+                                    expanded = true;
                                     e.preventDefault();
                                     const before = textBefore.slice(
                                       0,
@@ -7602,6 +7695,51 @@ export default function IntelligenceMapping() {
                                     requestAnimationFrame(() => {
                                       const newPos =
                                         before.length + expansion.length + 1;
+                                      textarea.setSelectionRange(
+                                        newPos,
+                                        newPos
+                                      );
+                                    });
+                                  }
+                                }
+                                // Deterministic vehicle-bracket completion —
+                                // same rule as the registry dropdown above
+                                // (detectVehicleMentionTrigger), but fires
+                                // unconditionally on Space so a fresh, never-
+                                // before-seen rego still gets bracketed, not
+                                // just one Intelligence already knows about.
+                                if (
+                                  !expanded &&
+                                  e.key === " " &&
+                                  rsUsedVehicleRegos
+                                ) {
+                                  const vehicleTrigger =
+                                    detectVehicleMentionTrigger(
+                                      rsInlineText,
+                                      pos,
+                                      rsUsedVehicleRegos
+                                    );
+                                  if (vehicleTrigger) {
+                                    e.preventDefault();
+                                    const { word, wordStart } = vehicleTrigger;
+                                    const before = rsInlineText.slice(
+                                      0,
+                                      wordStart
+                                    );
+                                    const after = rsInlineText.slice(pos);
+                                    const bracket = `(Vehicle ${word.toUpperCase()})`;
+                                    const newText = `${before}${word} ${bracket} ${after}`;
+                                    pushInlineUndo(rsInlineText);
+                                    setRsInlineText(newText);
+                                    resetInlineTimer();
+                                    closeRsVehicleMentionDropdown();
+                                    requestAnimationFrame(() => {
+                                      const newPos =
+                                        before.length +
+                                        word.length +
+                                        1 +
+                                        bracket.length +
+                                        1;
                                       textarea.setSelectionRange(
                                         newPos,
                                         newPos

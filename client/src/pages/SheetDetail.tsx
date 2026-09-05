@@ -2005,30 +2005,72 @@ function EditableCell({
     setEditing(false);
   };
 
-  /** Auto-expand shortcut triggers on Space or Tab */
+  /** Auto-expand shortcut triggers on Space or Tab, or — on Space only —
+   * deterministically complete a fresh vehicle registration into its
+   * "(Vehicle REGO)" bracket the instant it's typed. Unlike the registry
+   * search dropdown above (which can only suggest a rego already known to
+   * Intelligence), this works for a rego that's never been seen before —
+   * exactly the first-sighting case an officer is describing from scratch. */
   const handleShortcutKeyDown = (
     e: React.KeyboardEvent<HTMLTextAreaElement>
   ) => {
-    if (!shortcuts || (e.key !== " " && e.key !== "Tab")) return;
+    if (e.key !== " " && e.key !== "Tab") return;
     const textarea = e.currentTarget;
     const pos = textarea.selectionStart ?? 0;
     const textBefore = draft.slice(0, pos);
-    // Find the last word before the cursor
-    const match = textBefore.match(/(\S+)$/);
-    if (!match) return;
-    const word = match[1].toLowerCase();
-    const expansion = shortcuts[word];
-    if (!expansion) return;
-    e.preventDefault();
-    const before = textBefore.slice(0, textBefore.length - match[1].length);
-    const after = draft.slice(pos);
-    const newText = before + expansion + " " + after;
-    setDraft(newText);
-    // Restore cursor position after the expansion
-    requestAnimationFrame(() => {
-      const newPos = before.length + expansion.length + 1;
-      textarea.setSelectionRange(newPos, newPos);
-    });
+
+    if (shortcuts) {
+      // Find the last word before the cursor
+      const match = textBefore.match(/(\S+)$/);
+      if (match) {
+        const word = match[1].toLowerCase();
+        const expansion = shortcuts[word];
+        if (expansion) {
+          e.preventDefault();
+          const before = textBefore.slice(
+            0,
+            textBefore.length - match[1].length
+          );
+          const after = draft.slice(pos);
+          const newText = before + expansion + " " + after;
+          setDraft(newText);
+          // Restore cursor position after the expansion
+          requestAnimationFrame(() => {
+            const newPos = before.length + expansion.length + 1;
+            textarea.setSelectionRange(newPos, newPos);
+          });
+          return;
+        }
+      }
+    }
+
+    if (e.key === " " && usedVehicleRegos) {
+      // Reuses the same "does this look like a rego" rule the live
+      // registry-search dropdown uses (see detectVehicleMentionTrigger),
+      // so a word never triggers one behaviour but not the other. Already
+      // bracket-introduced regos are skipped too — a later bare re-mention
+      // of the same vehicle shouldn't get a second bracket, matching the
+      // running sheet's own "introduce once, refer to bare after" convention.
+      const vehicleTrigger = detectVehicleMentionTrigger(
+        draft,
+        pos,
+        usedVehicleRegos
+      );
+      if (vehicleTrigger) {
+        e.preventDefault();
+        const { word, wordStart } = vehicleTrigger;
+        const before = draft.slice(0, wordStart);
+        const after = draft.slice(pos);
+        const bracket = `(Vehicle ${word.toUpperCase()})`;
+        const newText = `${before}${word} ${bracket} ${after}`;
+        setDraft(newText);
+        closeVehicleMentionDropdown();
+        requestAnimationFrame(() => {
+          const newPos = before.length + word.length + 1 + bracket.length + 1;
+          textarea.setSelectionRange(newPos, newPos);
+        });
+      }
+    }
   };
 
   if (locked) {

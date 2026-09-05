@@ -301,14 +301,14 @@ export function UcoGuideMapOverlay({
                 <Users className="h-3 w-3" />
                 Surveillance team — tactics & structure
               </h3>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                <AdminField label="Team Leader" value={guide.teamLeaderCin} />
-                <AdminField
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                <RolePill label="Team Leader" value={guide.teamLeaderCin} />
+                <RolePill
                   label="Senior Operative"
                   value={guide.seniorOperativeCin}
                 />
-                <AdminField label="HUX" value={guide.huxCin} />
-                <AdminField label="RAM" value={guide.ramCin} />
+                <RolePill label="HUX" value={guide.huxCin} />
+                <RolePill label="RAM" value={guide.ramCin} />
               </div>
               {guide.additionalMemberCins.length > 0 && (
                 <div>
@@ -568,6 +568,20 @@ function AdminField({ label, value }: { label: string; value: string | null }) {
     <div>
       <p className="text-muted-foreground">{label}</p>
       <p className="font-medium">{value}</p>
+    </div>
+  );
+}
+
+function RolePill({ label, value }: { label: string; value: string | null }) {
+  if (!value) return null;
+  return (
+    <div>
+      <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+        {label}
+      </p>
+      <span className="inline-block px-2.5 py-1 rounded-full text-xs font-medium border border-border bg-muted">
+        {value}
+      </span>
     </div>
   );
 }

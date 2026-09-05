@@ -13342,6 +13342,7 @@ export async function createMapShape(data: {
   radiusMeters?: number | null;
   startAngle?: number | null;
   endAngle?: number | null;
+  innerRadiusMeters?: number | null;
   neLat?: number | null;
   neLng?: number | null;
   swLat?: number | null;
@@ -13362,6 +13363,7 @@ export async function createMapShape(data: {
     radiusMeters: data.radiusMeters ?? null,
     startAngle: data.startAngle ?? null,
     endAngle: data.endAngle ?? null,
+    innerRadiusMeters: data.innerRadiusMeters ?? null,
     neLat: data.neLat ?? null,
     neLng: data.neLng ?? null,
     swLat: data.swLat ?? null,
@@ -13383,6 +13385,7 @@ export async function updateMapShape(
     radiusMeters?: number | null;
     startAngle?: number | null;
     endAngle?: number | null;
+    innerRadiusMeters?: number | null;
     neLat?: number | null;
     neLng?: number | null;
     swLat?: number | null;
@@ -13402,6 +13405,8 @@ export async function updateMapShape(
   if (data.radiusMeters !== undefined) update.radiusMeters = data.radiusMeters;
   if (data.startAngle !== undefined) update.startAngle = data.startAngle;
   if (data.endAngle !== undefined) update.endAngle = data.endAngle;
+  if (data.innerRadiusMeters !== undefined)
+    update.innerRadiusMeters = data.innerRadiusMeters;
   if (data.neLat !== undefined) update.neLat = data.neLat;
   if (data.neLng !== undefined) update.neLng = data.neLng;
   if (data.swLat !== undefined) update.swLat = data.swLat;

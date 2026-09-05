@@ -1,0 +1,1 @@
+ALTER TABLE `map_shapes` ADD `innerRadiusMeters` double;

@@ -1029,6 +1029,11 @@ export const mapShapes = mysqlTable("map_shapes", {
   // customMapMarkers.rotation)
   startAngle: double("startAngle"),
   endAngle: double("endAngle"),
+  // Sector only, optional — null/0 draws a full pizza-slice wedge to the
+  // center as before; a value between 0 and radiusMeters instead cuts the
+  // tip off, drawing a closed annular "arc band" (outer arc + inner arc,
+  // no center vertex) between the two radii.
+  innerRadiusMeters: double("innerRadiusMeters"),
   // Rectangle — two opposite corners (a google.maps.LatLngBounds)
   neLat: double("neLat"),
   neLng: double("neLng"),

@@ -673,6 +673,13 @@
       "when": 1788590073361,
       "tag": "0095_abandoned_mimic",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "5",
+      "when": 1788613208954,
+      "tag": "0096_slippery_rogue",
+      "breakpoints": true
     }
   ]
 }

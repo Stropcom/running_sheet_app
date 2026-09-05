@@ -368,19 +368,26 @@ const DEFAULT_RECT_HALF_SIDE_M = 120;
  * Circle/Rectangle/Polyline. Walks the arc in ~6° steps — fine enough to
  * look round at any radius this feature is used at (tens to low hundreds of
  * metres), without generating an excessive point count. */
+// innerRadiusMeters, when > 0, cuts the tip off the pizza slice — instead
+// of a wedge closing at the center, it closes as a ring band between the
+// two radii (the outer arc out, then the inner arc back, no center vertex
+// at all). Kept in the same function rather than a separate shape type,
+// since it's the same sector geometry with one more parameter.
 function sectorPolygonPath(
   center: google.maps.LatLngLiteral,
   radiusMeters: number,
   startAngle: number,
-  endAngle: number
+  endAngle: number,
+  innerRadiusMeters = 0
 ): google.maps.LatLngLiteral[] {
-  const path: google.maps.LatLngLiteral[] = [center];
   const centerLatLng = new google.maps.LatLng(center.lat, center.lng);
   // Normalise so the arc always sweeps clockwise from start to end, even
   // when the officer has dragged endAngle back past 0/360.
   let sweep = endAngle - startAngle;
   if (sweep <= 0) sweep += 360;
   const steps = Math.max(2, Math.ceil(sweep / 6));
+
+  const outerArc: google.maps.LatLngLiteral[] = [];
   for (let i = 0; i <= steps; i++) {
     const angle = startAngle + (sweep * i) / steps;
     const point = google.maps.geometry.spherical.computeOffset(
@@ -388,10 +395,24 @@ function sectorPolygonPath(
       radiusMeters,
       angle
     );
-    path.push({ lat: point.lat(), lng: point.lng() });
+    outerArc.push({ lat: point.lat(), lng: point.lng() });
   }
-  path.push(center);
-  return path;
+
+  if (innerRadiusMeters <= 0) {
+    return [center, ...outerArc, center];
+  }
+
+  const innerArc: google.maps.LatLngLiteral[] = [];
+  for (let i = steps; i >= 0; i--) {
+    const angle = startAngle + (sweep * i) / steps;
+    const point = google.maps.geometry.spherical.computeOffset(
+      centerLatLng,
+      innerRadiusMeters,
+      angle
+    );
+    innerArc.push({ lat: point.lat(), lng: point.lng() });
+  }
+  return [...outerArc, ...innerArc];
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -1459,6 +1480,7 @@ export default function IntelligenceMapping() {
     radiusMeters?: number;
     startAngle?: number;
     endAngle?: number;
+    innerRadiusMeters?: number;
     neLat?: number;
     neLng?: number;
     swLat?: number;
@@ -1491,6 +1513,14 @@ export default function IntelligenceMapping() {
     | google.maps.Polyline
     | null
   >(null);
+  // A sector's draft polygon path[0] means "center" for a plain wedge but
+  // "first outer-arc point" once an inner radius is set — kept in sync
+  // wherever the path is (re)built, so its dragend handler always has a
+  // correct current reference to diff against, even after the officer has
+  // toggled the inner-radius slider since the overlay was created (see
+  // that handler for why a delta against this ref, not the point's
+  // supposed identity, is what actually stays correct).
+  const sectorDragAnchorRef = useRef<google.maps.LatLngLiteral | null>(null);
   // Mirrors drawingLine for the map's click listener (set up once in
   // handleMapReady, so it can't read the state value directly without
   // going stale — same reasoning as customMarkersDataRef above).
@@ -1519,6 +1549,7 @@ export default function IntelligenceMapping() {
       radiusMeters: s.radiusMeters ?? undefined,
       startAngle: s.startAngle ?? undefined,
       endAngle: s.endAngle ?? undefined,
+      innerRadiusMeters: s.innerRadiusMeters ?? 0,
       neLat: s.neLat ?? undefined,
       neLng: s.neLng ?? undefined,
       swLat: s.swLat ?? undefined,
@@ -1574,6 +1605,7 @@ export default function IntelligenceMapping() {
           radiusMeters: DEFAULT_SHAPE_RADIUS_M,
           startAngle: 0,
           endAngle: 90,
+          innerRadiusMeters: 0,
         });
       } else {
         setDrawingLine({ points: [{ lat, lng }] });
@@ -3462,7 +3494,8 @@ export default function IntelligenceMapping() {
           { lat: s.centerLat, lng: s.centerLng },
           s.radiusMeters,
           s.startAngle,
-          s.endAngle
+          s.endAngle,
+          s.innerRadiusMeters ?? 0
         );
         let poly = existing.get(s.id) as google.maps.Polygon | undefined;
         if (poly) {
@@ -3642,13 +3675,15 @@ export default function IntelligenceMapping() {
         { lat: pendingShape.centerLat!, lng: pendingShape.centerLng! },
         pendingShape.radiusMeters!,
         pendingShape.startAngle!,
-        pendingShape.endAngle!
+        pendingShape.endAngle!,
+        pendingShape.innerRadiusMeters ?? 0
       );
       // Not editable (no free-dragging arc vertices) — a sector's shape is
       // controlled entirely by center/radius/angles, adjusted via the panel
-      // below, so it always stays a clean pizza slice rather than something
-      // an officer could accidentally drag into a non-sector polygon. Still
-      // draggable as a whole, which moves its center.
+      // below, so it always stays a clean pizza slice (or ring band, with
+      // an inner radius set) rather than something an officer could
+      // accidentally drag into a stray polygon. Still draggable as a
+      // whole, which moves its center.
       const poly = new google.maps.Polygon({
         map,
         paths: path,
@@ -3660,15 +3695,34 @@ export default function IntelligenceMapping() {
         strokeOpacity: 0.95,
         strokeWeight: 2,
       });
+      // sectorPolygonPath's first point is the center for a plain wedge,
+      // but the first outer-arc point once an inner radius makes this a
+      // ring band with no center vertex at all — so rather than assuming
+      // a specific index IS the center, track the delta that same index
+      // moved by (uniform for every vertex when the whole polygon is
+      // dragged) and apply that delta to the stored center instead. The
+      // "before" position comes from sectorDragAnchorRef rather than this
+      // path directly, since the radius/angle-sync effect below can move
+      // path[0] (e.g. toggling the inner-radius slider off flips it back
+      // to the center) without this overlay being recreated.
+      sectorDragAnchorRef.current = path[0];
       poly.addListener("dragend", () => {
-        // Our own path construction always puts the center at index 0 (see
-        // sectorPolygonPath) — read it back from there rather than trying
-        // to compute a centroid.
-        const newCenter = poly.getPath().getAt(0);
-        if (!newCenter) return;
+        const newFirstVertex = poly.getPath().getAt(0);
+        const before = sectorDragAnchorRef.current;
+        if (!newFirstVertex || !before) return;
+        const deltaLat = newFirstVertex.lat() - before.lat;
+        const deltaLng = newFirstVertex.lng() - before.lng;
+        sectorDragAnchorRef.current = {
+          lat: newFirstVertex.lat(),
+          lng: newFirstVertex.lng(),
+        };
         setPendingShape(p =>
           p
-            ? { ...p, centerLat: newCenter.lat(), centerLng: newCenter.lng() }
+            ? {
+                ...p,
+                centerLat: (p.centerLat ?? 0) + deltaLat,
+                centerLng: (p.centerLng ?? 0) + deltaLng,
+              }
             : p
         );
       });
@@ -3734,19 +3788,24 @@ export default function IntelligenceMapping() {
     if (!overlay || !pendingShape || pendingShape.shapeType !== "sector")
       return;
     if (!(overlay instanceof google.maps.Polygon)) return;
-    overlay.setPath(
-      sectorPolygonPath(
-        { lat: pendingShape.centerLat!, lng: pendingShape.centerLng! },
-        pendingShape.radiusMeters!,
-        pendingShape.startAngle!,
-        pendingShape.endAngle!
-      )
+    const path = sectorPolygonPath(
+      { lat: pendingShape.centerLat!, lng: pendingShape.centerLng! },
+      pendingShape.radiusMeters!,
+      pendingShape.startAngle!,
+      pendingShape.endAngle!,
+      pendingShape.innerRadiusMeters ?? 0
     );
+    overlay.setPath(path);
+    // Keep the dragend delta-tracking anchor in sync — this is the only
+    // other place path[0]'s position can change without the overlay being
+    // recreated (see the dragend handler above).
+    sectorDragAnchorRef.current = path[0];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     pendingShape?.startAngle,
     pendingShape?.endAngle,
     pendingShape?.radiusMeters,
+    pendingShape?.innerRadiusMeters,
   ]);
 
   // Global RS Quick Entry handler for merged marker popup
@@ -6501,9 +6560,56 @@ export default function IntelligenceMapping() {
                       value={
                         pendingShape.radiusMeters ?? DEFAULT_SHAPE_RADIUS_M
                       }
+                      onChange={e => {
+                        const nextRadius = Number(e.target.value);
+                        setPendingShape(p =>
+                          p
+                            ? {
+                                ...p,
+                                radiusMeters: nextRadius,
+                                // An inner radius can never exceed the outer
+                                // one — clamp it down if the officer shrinks
+                                // the outer radius past it, rather than
+                                // leaving an invalid/inverted ring band.
+                                innerRadiusMeters: Math.min(
+                                  p.innerRadiusMeters ?? 0,
+                                  nextRadius
+                                ),
+                              }
+                            : p
+                        );
+                      }}
+                      className="w-full accent-primary"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                      Inner radius —{" "}
+                      {Math.round(pendingShape.innerRadiusMeters ?? 0)}m
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mb-1">
+                      0 draws a full wedge to the center point; anything higher
+                      cuts the tip off into an arc band.
+                    </p>
+                    <input
+                      type="range"
+                      min={0}
+                      max={Math.max(
+                        20,
+                        Math.round(
+                          pendingShape.radiusMeters ?? DEFAULT_SHAPE_RADIUS_M
+                        )
+                      )}
+                      step={10}
+                      value={pendingShape.innerRadiusMeters ?? 0}
                       onChange={e =>
                         setPendingShape(p =>
-                          p ? { ...p, radiusMeters: Number(e.target.value) } : p
+                          p
+                            ? {
+                                ...p,
+                                innerRadiusMeters: Number(e.target.value),
+                              }
+                            : p
                         )
                       }
                       className="w-full accent-primary"
@@ -6631,6 +6737,8 @@ export default function IntelligenceMapping() {
                         radiusMeters: pendingShape.radiusMeters ?? null,
                         startAngle: pendingShape.startAngle ?? null,
                         endAngle: pendingShape.endAngle ?? null,
+                        innerRadiusMeters:
+                          pendingShape.innerRadiusMeters ?? null,
                         neLat: pendingShape.neLat ?? null,
                         neLng: pendingShape.neLng ?? null,
                         swLat: pendingShape.swLat ?? null,

@@ -81,6 +81,18 @@ import { usePersistFn } from "@/hooks/usePersistFn";
 import { cn } from "@/lib/utils";
 import { loadGoogleMaps } from "@/lib/googleMaps";
 
+// A real Map ID (Google Cloud Console → Maps Platform → Map Management, on
+// the same project the app's Maps API key belongs to) fixes a known
+// AdvancedMarkerElement positioning-drift bug under "DEMO_MAP_ID" — Google's
+// own testing-only placeholder, which is what this falls back to when no
+// real one is configured. Drift only affects AdvancedMarkerElement-based
+// content (custom markers, their labels, live team pins); Circle/Rectangle/
+// Polygon/Polyline overlays (map shapes) render through a different, older
+// system unaffected by this, which is why only markers/labels visibly
+// drift while zooming and shapes don't.
+const GOOGLE_MAPS_MAP_ID =
+  import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID";
+
 interface MapViewProps {
   className?: string;
   initialCenter?: google.maps.LatLngLiteral;
@@ -116,7 +128,7 @@ export function MapView({
     map.current = new window.google.maps.Map(mapContainer.current, {
       zoom: initialZoom,
       center: initialCenter,
-      mapId: "DEMO_MAP_ID",
+      mapId: GOOGLE_MAPS_MAP_ID,
       mapTypeId: initialMapTypeId ?? "roadmap",
       mapTypeControl: !hideMapTypeControl,
       mapTypeControlOptions: {

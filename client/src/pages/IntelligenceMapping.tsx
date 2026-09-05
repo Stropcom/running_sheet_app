@@ -2065,6 +2065,24 @@ export default function IntelligenceMapping() {
     { operationIds: rsOpIdsForSheets },
     { enabled: rsOpIdsForSheets.length > 0 }
   );
+  // The one operation a newly-placed custom marker should default to —
+  // "the active operation" the RS Selection pane is showing. Prefers the
+  // currently-selected running sheet's own operation (unambiguous, a sheet
+  // always belongs to exactly one operation) over effectiveOpIdsForMarkers'
+  // "exactly one op selected in the top filter" heuristic, which silently
+  // fell back to no-operation (and so a marker invisible under any
+  // operation-filtered view) whenever 0 or 2+ operations were selected
+  // there even though a single sheet — and so a single operation — was
+  // clearly active in the pane below it.
+  const activeMapOperationId = useMemo((): number | null => {
+    if (rsSelectedSheetId !== null) {
+      const sheet = (rsSheetsData as any[] | undefined)?.find(
+        (s: any) => s.id === rsSelectedSheetId
+      );
+      if (sheet) return sheet.operationId ?? null;
+    }
+    return selectedOpIds.length === 1 ? selectedOpIds[0] : null;
+  }, [rsSelectedSheetId, rsSheetsData, selectedOpIds]);
   // Vehicles that departed somewhere on THIS sheet and haven't since
   // arrived anywhere — surfaced as a "Vehicle arriving" chip in RS Quick
   // Entry so the officer doesn't have to retype the occupant description.
@@ -6338,12 +6356,7 @@ export default function IntelligenceMapping() {
                     setCmLabelOnly(false);
                     setCmPersonInput("");
                     setCmVehicleInput("");
-                    setCmOpId(
-                      effectiveOpIdsForMarkers &&
-                        effectiveOpIdsForMarkers.length === 1
-                        ? effectiveOpIdsForMarkers[0]
-                        : null
-                    );
+                    setCmOpId(activeMapOperationId);
                     setPendingLatLng({ lat: poiTap.lat, lng: poiTap.lng });
                     setPoiTap(null);
                   }}
@@ -6448,12 +6461,7 @@ export default function IntelligenceMapping() {
                     setCmLabelOnly(false);
                     setCmPersonInput("");
                     setCmVehicleInput("");
-                    setCmOpId(
-                      effectiveOpIdsForMarkers &&
-                        effectiveOpIdsForMarkers.length === 1
-                        ? effectiveOpIdsForMarkers[0]
-                        : null
-                    );
+                    setCmOpId(activeMapOperationId);
                     setPendingLatLng({
                       lat: actionChooser.lat,
                       lng: actionChooser.lng,

@@ -94,8 +94,11 @@ import {
   getCaretPixelPosition,
   detectMentionTrigger,
   detectVehicleMentionTrigger,
+  detectAddressSpaceCompletion,
+  detectPersonNameSpaceCompletion,
   computeUsedBracketCodes,
   computeUsedVehicleRegos,
+  computeUsedAddressLabels,
   type PersonMentionSuggestion,
 } from "@/lib/mentionAutocomplete";
 import {
@@ -1798,6 +1801,7 @@ function EditableCell({
   shortcuts,
   usedBracketCodes,
   usedVehicleRegos,
+  usedAddressLabels,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   value: string | null;
@@ -1812,6 +1816,9 @@ function EditableCell({
   /** Vehicle regos already used elsewhere in this sheet — enables the
    * inline vehicle-mention autocomplete when provided (multiline only). */
   usedVehicleRegos?: Set<string>;
+  /** Address labels already used elsewhere in this sheet — enables the
+   * deterministic address-bracket auto-insert (multiline only). */
+  usedAddressLabels?: Set<string>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
@@ -2006,11 +2013,12 @@ function EditableCell({
   };
 
   /** Auto-expand shortcut triggers on Space or Tab, or — on Space only —
-   * deterministically complete a fresh vehicle registration into its
-   * "(Vehicle REGO)" bracket the instant it's typed. Unlike the registry
-   * search dropdown above (which can only suggest a rego already known to
-   * Intelligence), this works for a rego that's never been seen before —
-   * exactly the first-sighting case an officer is describing from scratch. */
+   * deterministically complete a fresh vehicle registration, street
+   * address, or person's name into its bracket the instant it's typed.
+   * Unlike the registry search dropdowns above (which can only suggest an
+   * entity already known to Intelligence), these work for something
+   * that's never been seen before — exactly the first-sighting case an
+   * officer is describing from scratch. */
   const handleShortcutKeyDown = (
     e: React.KeyboardEvent<HTMLTextAreaElement>
   ) => {
@@ -2044,32 +2052,69 @@ function EditableCell({
       }
     }
 
-    if (e.key === " " && usedVehicleRegos) {
-      // Reuses the same "does this look like a rego" rule the live
-      // registry-search dropdown uses (see detectVehicleMentionTrigger),
-      // so a word never triggers one behaviour but not the other. Already
-      // bracket-introduced regos are skipped too — a later bare re-mention
-      // of the same vehicle shouldn't get a second bracket, matching the
-      // running sheet's own "introduce once, refer to bare after" convention.
-      const vehicleTrigger = detectVehicleMentionTrigger(
-        draft,
-        pos,
-        usedVehicleRegos
-      );
-      if (vehicleTrigger) {
-        e.preventDefault();
-        const { word, wordStart } = vehicleTrigger;
-        const before = draft.slice(0, wordStart);
-        const after = draft.slice(pos);
-        const bracket = `(Vehicle ${word.toUpperCase()})`;
-        const newText = `${before}${word} ${bracket} ${after}`;
-        setDraft(newText);
-        closeVehicleMentionDropdown();
-        requestAnimationFrame(() => {
-          const newPos = before.length + word.length + 1 + bracket.length + 1;
-          textarea.setSelectionRange(newPos, newPos);
-        });
-      }
+    if (e.key !== " ") return;
+
+    // Reuses the same "does this look like a rego" rule the live
+    // registry-search dropdown uses (see detectVehicleMentionTrigger), so
+    // a word never triggers one behaviour but not the other. Already
+    // bracket-introduced regos are skipped too — a later bare re-mention
+    // of the same vehicle shouldn't get a second bracket, matching the
+    // running sheet's own "introduce once, refer to bare after" convention.
+    const vehicleTrigger = usedVehicleRegos
+      ? detectVehicleMentionTrigger(draft, pos, usedVehicleRegos)
+      : null;
+    if (vehicleTrigger) {
+      e.preventDefault();
+      const { word, wordStart } = vehicleTrigger;
+      const before = draft.slice(0, wordStart);
+      const after = draft.slice(pos);
+      const bracket = `(Vehicle ${word.toUpperCase()})`;
+      const newText = `${before}${word} ${bracket} ${after}`;
+      setDraft(newText);
+      closeVehicleMentionDropdown();
+      requestAnimationFrame(() => {
+        const newPos = before.length + word.length + 1 + bracket.length + 1;
+        textarea.setSelectionRange(newPos, newPos);
+      });
+      return;
+    }
+
+    // Same idea, for a street address completed by its suburb + state
+    // (see detectAddressSpaceCompletion) — "(44 Elvira Street)".
+    const addressTrigger = usedAddressLabels
+      ? detectAddressSpaceCompletion(draft, pos, usedAddressLabels)
+      : null;
+    if (addressTrigger) {
+      e.preventDefault();
+      const bracket = `(${addressTrigger.addressLabel})`;
+      const before = draft.slice(0, pos);
+      const after = draft.slice(pos);
+      const newText = `${before}${bracket} ${after}`;
+      setDraft(newText);
+      requestAnimationFrame(() => {
+        const newPos = before.length + bracket.length + 1;
+        textarea.setSelectionRange(newPos, newPos);
+      });
+      return;
+    }
+
+    // Same idea, for a fresh person's name completed by its ALL-CAPS
+    // surname (see detectPersonNameSpaceCompletion) — "(SURNAME)".
+    const personTrigger = usedBracketCodes
+      ? detectPersonNameSpaceCompletion(draft, pos, usedBracketCodes)
+      : null;
+    if (personTrigger) {
+      e.preventDefault();
+      const bracket = `(${personTrigger.surname.toUpperCase()})`;
+      const before = draft.slice(0, pos);
+      const after = draft.slice(pos);
+      const newText = `${before}${bracket} ${after}`;
+      setDraft(newText);
+      closeMentionDropdown();
+      requestAnimationFrame(() => {
+        const newPos = before.length + bracket.length + 1;
+        textarea.setSelectionRange(newPos, newPos);
+      });
     }
   };
 
@@ -3712,6 +3757,10 @@ export default function SheetDetail({
     () => computeUsedVehicleRegos(rows ?? []),
     [rows]
   );
+  const usedAddressLabels = useMemo(
+    () => computeUsedAddressLabels(rows ?? []),
+    [rows]
+  );
 
   // Edit roster state
   const [editRosterOpen, setEditRosterOpen] = useState(false);
@@ -5147,6 +5196,7 @@ export default function SheetDetail({
                                   shortcuts={shortcutMap}
                                   usedBracketCodes={usedBracketCodes}
                                   usedVehicleRegos={usedVehicleRegos}
+                                  usedAddressLabels={usedAddressLabels}
                                 />
                               )}
                               <ObservationAttachments

@@ -143,6 +143,86 @@ export function detectVehicleMentionTrigger(
   return { word, wordStart };
 }
 
+// Same list extractEntitiesFromText (server/db.ts) uses at save time for the
+// equivalent classification — kept in sync manually since this is a much
+// narrower, live-typing-only check (just the common "<number> <Street>,
+// <Suburb> <STATE>" shape, not every edge case the full extractor also
+// handles: cnr/lot addresses, terminals, Google-formatted postcodes, ...).
+const STREET_TYPE_WORDS =
+  "st|street|rd|road|ave|avenue|dr|drive|way|ct|court|pl|place|cl|close|cres|crescent|blvd|boulevard|hwy|highway|fwy|freeway|ln|lane|tce|terrace|pde|parade|cct|circuit|gr|grove|rise|loop|link|walk|track|row|mews|quay|esplanade|promenade";
+const AU_STATE_CODES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
+// Segment lengths are capped rather than left open-ended (`*`) so a long
+// observation can't make this match run away and grab text from much
+// earlier in the sentence than the address actually starts at.
+const ADDRESS_SPACE_COMPLETION_RE = new RegExp(
+  `([0-9]{1,5}[A-Za-z]?\\s+[A-Za-z][A-Za-z'\\s]{0,40}?\\b(?:${STREET_TYPE_WORDS}))\\b,\\s*[A-Za-z][A-Za-z'\\s]{0,40}?\\s+(?:${AU_STATE_CODES})$`,
+  "i"
+);
+
+/**
+ * Deterministically completes a street address the instant its suburb +
+ * state is finished by a space — "44 Elvira Street, PALMYRA WA " triggers
+ * on the trailing space, same idea as detectVehicleMentionTrigger but for
+ * addresses instead of regos: no registry lookup needed, works for a
+ * location that's never been seen before. Returns just the street portion
+ * (number + name + type), matching the running sheet's own bracket
+ * convention of "(44 Elvira Street)" — suburb/state stay out of the
+ * bracket, same as everywhere else this shape already appears.
+ */
+export function detectAddressSpaceCompletion(
+  text: string,
+  cursorPos: number,
+  usedAddressLabels: Set<string>
+): { addressLabel: string } | null {
+  // Called from onKeyDown before the just-pressed space actually lands in
+  // the text — same convention as detectVehicleMentionTrigger above — so
+  // cursorPos is the position right after the last typed character, not
+  // after a space that isn't in the string yet.
+  // Don't fire if a bracket already immediately follows — avoids double-
+  // inserting when editing text that already has one.
+  if (text.slice(cursorPos).startsWith("(")) return null;
+  const textBefore = text.slice(0, cursorPos);
+  const m = textBefore.match(ADDRESS_SPACE_COMPLETION_RE);
+  if (!m) return null;
+  const addressLabel = m[1].trim();
+  if (usedAddressLabels.has(addressLabel.toUpperCase())) return null;
+  return { addressLabel };
+}
+
+/**
+ * Deterministically completes a fresh person's name the instant it's
+ * finished being typed — the running sheet's own naming convention
+ * (capitalised first name, ALL-CAPS surname, e.g. "Jason SMITH") is
+ * detectable the same way a rego's letter+digit shape is, so this works
+ * for a person who's never been seen before, unlike the registry-search
+ * dropdown above which can only suggest someone already known to
+ * Intelligence. Deliberately narrower than the save-time name-recovery
+ * logic in extractEntitiesFromText (which can walk back up to 4 words):
+ * if ANOTHER capitalised word sits directly before the matched first name
+ * (single space, no punctuation between — e.g. "Mei Lin CHOW", "Whitney
+ * Storm STEWART"), that's actually a longer multi-word first/middle name
+ * this simple two-word check can't safely resolve, so it bails rather
+ * than risk auto-bracketing a truncated name — same guard
+ * detectMentionTrigger above already uses for the same reason.
+ */
+export function detectPersonNameSpaceCompletion(
+  text: string,
+  cursorPos: number,
+  usedBracketCodes: Set<string>
+): { surname: string } | null {
+  // Same pre-insertion calling convention as detectAddressSpaceCompletion
+  // above — see its comment.
+  if (text.slice(cursorPos).startsWith("(")) return null;
+  const textBefore = text.slice(0, cursorPos);
+  const m = textBefore.match(/\b([A-Z][a-z'-]+)\s+([A-Z]{2,}(?:[-'][A-Z]+)?)$/);
+  if (!m || m.index === undefined) return null;
+  const beforeFirstName = textBefore.slice(0, m.index);
+  if (/[A-Z][A-Za-z'-]*\s$/.test(beforeFirstName)) return null;
+  const surname = m[2];
+  if (usedBracketCodes.has(surname.toUpperCase())) return null;
+  return { surname };
+}
+
 export interface PersonMentionSuggestion {
   key: string;
   displayName: string;
@@ -189,4 +269,25 @@ export function computeUsedVehicleRegos(
     }
   }
   return regos;
+}
+
+/** Address labels ("(44 Elvira Street)") already introduced somewhere in a
+ * set of rows — same idea as computeUsedVehicleRegos, for
+ * detectAddressSpaceCompletion's suppression. Distinguished from a vehicle
+ * rego bracket by requiring a space in the content — a rego is always one
+ * contiguous alphanumeric token, an address label never is. */
+export function computeUsedAddressLabels(
+  rows: Array<{ observation?: string | null }>
+): Set<string> {
+  const labels = new Set<string>();
+  const addrRe = /\(([0-9][A-Za-z0-9]{0,5}\s[^()]{1,60})\)/g;
+  for (const r of rows) {
+    if (!r.observation) continue;
+    let m: RegExpExecArray | null;
+    addrRe.lastIndex = 0;
+    while ((m = addrRe.exec(r.observation)) !== null) {
+      labels.add(m[1].trim().toUpperCase());
+    }
+  }
+  return labels;
 }

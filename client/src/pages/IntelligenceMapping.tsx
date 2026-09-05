@@ -22,8 +22,11 @@ import {
   getCaretPixelPosition,
   detectMentionTrigger,
   detectVehicleMentionTrigger,
+  detectAddressSpaceCompletion,
+  detectPersonNameSpaceCompletion,
   computeUsedBracketCodes,
   computeUsedVehicleRegos,
+  computeUsedAddressLabels,
   type PersonMentionSuggestion,
 } from "@/lib/mentionAutocomplete";
 import { MissingLocationAlert } from "@/components/MissingLocationAlert";
@@ -1250,6 +1253,10 @@ export default function IntelligenceMapping() {
   );
   const rsUsedVehicleRegos = useMemo(
     () => computeUsedVehicleRegos(rsInlineRows ?? []),
+    [rsInlineRows]
+  );
+  const rsUsedAddressLabels = useMemo(
+    () => computeUsedAddressLabels(rsInlineRows ?? []),
     [rsInlineRows]
   );
   const [rsMentionWord, setRsMentionWord] = useState<{
@@ -7918,6 +7925,7 @@ export default function IntelligenceMapping() {
                                       rsUsedVehicleRegos
                                     );
                                   if (vehicleTrigger) {
+                                    expanded = true;
                                     e.preventDefault();
                                     const { word, wordStart } = vehicleTrigger;
                                     const before = rsInlineText.slice(
@@ -7938,6 +7946,76 @@ export default function IntelligenceMapping() {
                                         1 +
                                         bracket.length +
                                         1;
+                                      textarea.setSelectionRange(
+                                        newPos,
+                                        newPos
+                                      );
+                                    });
+                                  }
+                                }
+                                // Same idea, for a street address completed
+                                // by its suburb + state (see
+                                // detectAddressSpaceCompletion) —
+                                // "(44 Elvira Street)".
+                                if (
+                                  !expanded &&
+                                  e.key === " " &&
+                                  rsUsedAddressLabels
+                                ) {
+                                  const addressTrigger =
+                                    detectAddressSpaceCompletion(
+                                      rsInlineText,
+                                      pos,
+                                      rsUsedAddressLabels
+                                    );
+                                  if (addressTrigger) {
+                                    expanded = true;
+                                    e.preventDefault();
+                                    const bracket = `(${addressTrigger.addressLabel})`;
+                                    const before = rsInlineText.slice(0, pos);
+                                    const after = rsInlineText.slice(pos);
+                                    const newText = `${before}${bracket} ${after}`;
+                                    pushInlineUndo(rsInlineText);
+                                    setRsInlineText(newText);
+                                    resetInlineTimer();
+                                    requestAnimationFrame(() => {
+                                      const newPos =
+                                        before.length + bracket.length + 1;
+                                      textarea.setSelectionRange(
+                                        newPos,
+                                        newPos
+                                      );
+                                    });
+                                  }
+                                }
+                                // Same idea, for a fresh person's name
+                                // completed by its ALL-CAPS surname (see
+                                // detectPersonNameSpaceCompletion) —
+                                // "(SURNAME)".
+                                if (
+                                  !expanded &&
+                                  e.key === " " &&
+                                  rsUsedBracketCodes
+                                ) {
+                                  const personTrigger =
+                                    detectPersonNameSpaceCompletion(
+                                      rsInlineText,
+                                      pos,
+                                      rsUsedBracketCodes
+                                    );
+                                  if (personTrigger) {
+                                    e.preventDefault();
+                                    const bracket = `(${personTrigger.surname.toUpperCase()})`;
+                                    const before = rsInlineText.slice(0, pos);
+                                    const after = rsInlineText.slice(pos);
+                                    const newText = `${before}${bracket} ${after}`;
+                                    pushInlineUndo(rsInlineText);
+                                    setRsInlineText(newText);
+                                    resetInlineTimer();
+                                    closeRsMentionDropdown();
+                                    requestAnimationFrame(() => {
+                                      const newPos =
+                                        before.length + bracket.length + 1;
                                       textarea.setSelectionRange(
                                         newPos,
                                         newPos

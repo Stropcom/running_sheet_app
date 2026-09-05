@@ -1457,6 +1457,13 @@ export default function IntelligenceMapping() {
   const [shapeColour, setShapeColour] = useState<MarkerColour>("blue");
   const [shapeOpacity, setShapeOpacity] = useState(30); // 0-100 %
   const [shapeLabel, setShapeLabel] = useState("");
+  // A shape saved with no operation is hidden from any single/multi-
+  // operation-filtered map view — same "silent default" trap as custom
+  // markers had, see the Operation picker in the marker panel below for the
+  // full explanation. Needs to be user-visible/correctable rather than
+  // derived silently, since the derivation can only guess when exactly one
+  // operation is in view.
+  const [shapeOpId, setShapeOpId] = useState<number | null>(null);
   const [shapeSaving, setShapeSaving] = useState(false);
   // In-progress line: each map tap while this is set appends a vertex.
   // Kept separate from pendingShape (which only exists once the line has at
@@ -1492,6 +1499,7 @@ export default function IntelligenceMapping() {
     setShapeColour((s.colour as MarkerColour) ?? "blue");
     setShapeOpacity(s.opacity ?? 30);
     setShapeLabel(s.label ?? "");
+    setShapeOpId(s.operationId ?? null);
     setPendingShape({
       id: s.id,
       shapeType: s.shapeType,
@@ -1518,6 +1526,10 @@ export default function IntelligenceMapping() {
       setShapeColour("blue");
       setShapeOpacity(30);
       setShapeLabel("");
+      const currentOpIds = effectiveOpIdsForMarkersRef.current;
+      setShapeOpId(
+        currentOpIds && currentOpIds.length === 1 ? currentOpIds[0] : null
+      );
       if (type === "circle") {
         setPendingShape({
           id: null,
@@ -1831,6 +1843,14 @@ export default function IntelligenceMapping() {
     if (rsSelectedOpId !== null) return [rsSelectedOpId];
     return undefined;
   }, [selectedOpIds, opsExplicitlySet, rsSelectedOpId]);
+  // Mirrored into a ref so beginCreateShape (declared earlier in the
+  // component, before this value exists, and memoized with empty deps) can
+  // read the current selection without closing over a stale snapshot from
+  // its first render — same pattern as mapShapesDataRef/customMarkersDataRef.
+  const effectiveOpIdsForMarkersRef = useRef<number[] | undefined>(undefined);
+  useEffect(() => {
+    effectiveOpIdsForMarkersRef.current = effectiveOpIdsForMarkers;
+  }, [effectiveOpIdsForMarkers]);
   const utils = trpc.useUtils();
   // Paused while a marker is being dragged/confirmed (movingMarkerId !== null)
   // so the 5s poll can't land mid-move and hand the render effect below a
@@ -6356,6 +6376,41 @@ export default function IntelligenceMapping() {
                 </div>
               )}
 
+              {/* Operation — a shape saved with no operation is hidden from
+                  any single/multi-operation-filtered map view (only the
+                  "all operations" view shows it), same trap this fix closed
+                  for custom markers — see the Operation picker in the
+                  marker panel further down for the full explanation. */}
+              <div className="mb-4">
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+                  Operation
+                </label>
+                <Select
+                  value={shapeOpId === null ? "none" : String(shapeOpId)}
+                  onValueChange={v =>
+                    setShapeOpId(v === "none" ? null : Number(v))
+                  }
+                >
+                  <SelectTrigger className="w-full text-sm">
+                    <SelectValue placeholder="No operation" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No operation</SelectItem>
+                    {(operations as any[] | undefined)?.map(op => (
+                      <SelectItem key={op.id} value={String(op.id)}>
+                        {op.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {shapeOpId === null && (
+                  <p className="text-[10px] text-amber-500 mt-1">
+                    No operation selected — this shape will only appear in the
+                    all-operations map view.
+                  </p>
+                )}
+              </div>
+
               {/* Save / Cancel / Delete */}
               <div className="flex gap-3">
                 <Button
@@ -6398,6 +6453,7 @@ export default function IntelligenceMapping() {
                         colour: shapeColour,
                         opacity: shapeOpacity,
                         label: shapeLabel.trim() || null,
+                        operationId: shapeOpId,
                         centerLat: pendingShape.centerLat ?? null,
                         centerLng: pendingShape.centerLng ?? null,
                         radiusMeters: pendingShape.radiusMeters ?? null,
@@ -6418,11 +6474,6 @@ export default function IntelligenceMapping() {
                       } else {
                         await createMapShapeMut.mutateAsync({
                           shapeType: pendingShape.shapeType,
-                          operationId:
-                            effectiveOpIdsForMarkers &&
-                            effectiveOpIdsForMarkers.length === 1
-                              ? effectiveOpIdsForMarkers[0]
-                              : null,
                           ...common,
                         });
                         toast.success("Shape placed");

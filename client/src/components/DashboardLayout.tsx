@@ -92,6 +92,7 @@ import {
   TrendingUp,
   ShieldAlert,
   Database,
+  Car,
 } from "lucide-react";
 import React, {
   CSSProperties,
@@ -1245,6 +1246,7 @@ function AdminNavTile({
     location === "/recycle-bin" ||
     location.startsWith("/administration/smeac") ||
     location.startsWith("/administration/intel-export") ||
+    location.startsWith("/administration/vehicle-crash") ||
     location === "/help";
   return (
     <DropdownMenu>
@@ -1285,6 +1287,12 @@ function AdminNavTile({
         >
           <Database className="h-4 w-4 mr-2" />
           Intel Export
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => setLocation("/administration/vehicle-crash")}
+        >
+          <Car className="h-4 w-4 mr-2" />
+          Vehicle Crash
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setLocation("/help")}>
           <HelpCircle className="h-4 w-4 mr-2" />
@@ -1783,6 +1791,7 @@ function DashboardLayoutContent({
       "/reports",
       "/administration/smeac",
       "/administration/intel-export",
+      "/administration/vehicle-crash",
     ];
     if (adminPaths.some(p => location === p || location.startsWith(p))) {
       setAdminFolderExpanded(true);
@@ -2052,6 +2061,9 @@ function DashboardLayoutContent({
                             location.startsWith(
                               "/administration/intel-export"
                             ) ||
+                            location.startsWith(
+                              "/administration/vehicle-crash"
+                            ) ||
                             location === "/help"
                       }
                       onClick={() => setAdminFolderExpanded(v => !v)}
@@ -2067,6 +2079,9 @@ function DashboardLayoutContent({
                           location === "/recycle-bin" ||
                           location.startsWith("/administration/smeac") ||
                           location.startsWith("/administration/intel-export") ||
+                          location.startsWith(
+                            "/administration/vehicle-crash"
+                          ) ||
                           location === "/help"
                             ? "text-sidebar-foreground font-medium"
                             : "text-sidebar-foreground/80"
@@ -2151,6 +2166,19 @@ function DashboardLayoutContent({
                         >
                           <Database className="h-3.5 w-3.5 shrink-0 text-foreground" />
                           Intel Export
+                        </button>
+
+                        {/* Vehicle Crash */}
+                        <button
+                          onClick={() =>
+                            setLocation("/administration/vehicle-crash")
+                          }
+                          className={subItemClass(
+                            location.startsWith("/administration/vehicle-crash")
+                          )}
+                        >
+                          <Car className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          Vehicle Crash
                         </button>
 
                         {/* Help */}

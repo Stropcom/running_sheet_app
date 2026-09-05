@@ -3081,14 +3081,15 @@ export default function IntelligenceMapping() {
     [locations, renderLocations]
   );
 
-  // A small floating pill of text — used both for a shape's note (beside its
-  // anchor point) and a custom marker's label (below its icon, or, for a
-  // "label only" marker, standing in for the icon entirely). Nudged via a
-  // CSS transform rather than a real pixel offset, since AdvancedMarkerElement
-  // positioning is geographic only and has no pixel-offset option of its
-  // own — `transform: "translate(-50%, -50%)"` centers the pill exactly on
-  // its anchor (the "label only" case), anything else nudges it clear of an
-  // icon/shape rendered at the same point instead of sitting on top of it.
+  // A small pill of text — used for a shape's note (as its own overlay,
+  // nudged beside the shape's anchor point via a CSS transform, since that
+  // overlay can't be merged into the shape itself) and for a custom
+  // marker's label (passed "none" — it's a plain flex child stacked below
+  // the marker's icon in one combined content element instead, or, for a
+  // "label only" marker, the marker's only content — see the custom marker
+  // rendering effect below, which mirrors createUserPinElement's own
+  // plain-content-no-manual-transform approach rather than guessing at
+  // AdvancedMarkerElement's default anchor to align two separate overlays).
   const createLabelPillElement = useCallback(
     (
       text: string,
@@ -3126,12 +3127,6 @@ export default function IntelligenceMapping() {
   >(new Map());
   // Direct img element refs for live rotation without stale content queries
   const customMarkerImgRefs = useRef<Map<number, HTMLImageElement>>(new Map());
-  // Companion floating label pill beside a marker's icon (only when the
-  // marker has a label AND isn't itself a "label only" marker — that case
-  // uses the label as the marker's own content instead, see below).
-  const customMarkerLabelsRef = useRef<
-    Map<number, google.maps.marker.AdvancedMarkerElement>
-  >(new Map());
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
@@ -3147,12 +3142,6 @@ export default function IntelligenceMapping() {
         existing.delete(id);
       }
     });
-    customMarkerLabelsRef.current.forEach((labelMarker, id) => {
-      if (!incomingIds.has(id)) {
-        labelMarker.map = null;
-        customMarkerLabelsRef.current.delete(id);
-      }
-    });
 
     // Add / update markers
     incoming.forEach((outerCm: any) => {
@@ -3164,12 +3153,15 @@ export default function IntelligenceMapping() {
       let content: HTMLElement;
       let rotation = 0;
       if (labelOnly) {
-        // "Label only" — the pill itself stands in for the icon, centered
-        // exactly on the marker's point rather than nudged beside it.
+        // "Label only" — the pill itself stands in for the icon; no
+        // transform needed, same as the plain (icon-less) pill content
+        // createUserPinElement already uses for team member markers
+        // elsewhere on this map — trust the same default anchor rather
+        // than trying to re-derive it with a manual translate.
         content = createLabelPillElement(
           labelText || "(no label)",
           fillColor,
-          "translate(-50%, -50%)"
+          "none"
         );
         customMarkerImgRefs.current.delete(outerCm.id);
       } else {
@@ -3178,15 +3170,28 @@ export default function IntelligenceMapping() {
           outerCm.markerColour as MarkerColour
         );
         rotation = (outerCm.rotation ?? 0) as number;
-        const el = document.createElement("div");
-        el.style.cssText = "width:40px;height:40px;cursor:pointer;";
+        // Icon and label live in ONE flex column content element rather
+        // than as two separately-anchored overlays — align-items:center
+        // guarantees the label sits centred under the icon regardless of
+        // where Maps' own anchor point for the combined box falls, instead
+        // of us having to reverse-engineer that anchor to line up two
+        // independent overlays (which is what put the label off to the
+        // side of the icon rather than under it).
+        const wrapper = document.createElement("div");
+        wrapper.style.cssText =
+          "display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;";
         const img = document.createElement("img");
         img.src = dataUrl;
-        img.style.cssText = `width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation}deg);`;
-        el.appendChild(img);
-        content = el;
+        img.style.cssText = `width:40px;height:40px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation}deg);`;
+        wrapper.appendChild(img);
         // Store direct img ref for live rotation
         customMarkerImgRefs.current.set(outerCm.id, img);
+        if (labelText) {
+          wrapper.appendChild(
+            createLabelPillElement(labelText, fillColor, "none")
+          );
+        }
+        content = wrapper;
       }
 
       if (existing.has(outerCm.id)) {
@@ -3421,48 +3426,6 @@ export default function IntelligenceMapping() {
           });
         });
         existing.set(outerCm.id, marker);
-      }
-
-      // Companion label pill below the icon — only when there's an icon to
-      // sit under (a "label only" marker already uses the label as its own
-      // content, above) and a label is actually set. Clicking the pill opens
-      // the same popup as the icon itself, by forwarding to its click
-      // listener rather than duplicating the popup-building logic above.
-      const iconMarker = existing.get(outerCm.id)!;
-      const companionLabelTransform = "translate(-50%, 26px)";
-      const existingCompanionLabel = customMarkerLabelsRef.current.get(
-        outerCm.id
-      );
-      if (labelOnly || !labelText) {
-        if (existingCompanionLabel) {
-          existingCompanionLabel.map = null;
-          customMarkerLabelsRef.current.delete(outerCm.id);
-        }
-      } else if (existingCompanionLabel) {
-        existingCompanionLabel.position = {
-          lat: outerCm.lat,
-          lng: outerCm.lng,
-        };
-        existingCompanionLabel.content = createLabelPillElement(
-          labelText,
-          fillColor,
-          companionLabelTransform
-        );
-      } else {
-        const companionLabel = new google.maps.marker.AdvancedMarkerElement({
-          map,
-          position: { lat: outerCm.lat, lng: outerCm.lng },
-          content: createLabelPillElement(
-            labelText,
-            fillColor,
-            companionLabelTransform
-          ),
-          zIndex: 500,
-        });
-        companionLabel.addListener("click", () => {
-          google.maps.event.trigger(iconMarker, "click");
-        });
-        customMarkerLabelsRef.current.set(outerCm.id, companionLabel);
       }
     });
   }, [customMarkers, mapReady, createLabelPillElement]);

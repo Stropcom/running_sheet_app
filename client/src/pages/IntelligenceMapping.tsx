@@ -7974,13 +7974,13 @@ export default function IntelligenceMapping() {
                                     const bracket = `(${addressTrigger.addressLabel})`;
                                     const before = rsInlineText.slice(0, pos);
                                     const after = rsInlineText.slice(pos);
-                                    const newText = `${before}${bracket} ${after}`;
+                                    const newText = `${before} ${bracket} ${after}`;
                                     pushInlineUndo(rsInlineText);
                                     setRsInlineText(newText);
                                     resetInlineTimer();
                                     requestAnimationFrame(() => {
                                       const newPos =
-                                        before.length + bracket.length + 1;
+                                        before.length + 1 + bracket.length + 1;
                                       textarea.setSelectionRange(
                                         newPos,
                                         newPos
@@ -8008,14 +8008,14 @@ export default function IntelligenceMapping() {
                                     const bracket = `(${personTrigger.surname.toUpperCase()})`;
                                     const before = rsInlineText.slice(0, pos);
                                     const after = rsInlineText.slice(pos);
-                                    const newText = `${before}${bracket} ${after}`;
+                                    const newText = `${before} ${bracket} ${after}`;
                                     pushInlineUndo(rsInlineText);
                                     setRsInlineText(newText);
                                     resetInlineTimer();
                                     closeRsMentionDropdown();
                                     requestAnimationFrame(() => {
                                       const newPos =
-                                        before.length + bracket.length + 1;
+                                        before.length + 1 + bracket.length + 1;
                                       textarea.setSelectionRange(
                                         newPos,
                                         newPos

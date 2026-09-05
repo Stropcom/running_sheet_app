@@ -2089,10 +2089,10 @@ function EditableCell({
       const bracket = `(${addressTrigger.addressLabel})`;
       const before = draft.slice(0, pos);
       const after = draft.slice(pos);
-      const newText = `${before}${bracket} ${after}`;
+      const newText = `${before} ${bracket} ${after}`;
       setDraft(newText);
       requestAnimationFrame(() => {
-        const newPos = before.length + bracket.length + 1;
+        const newPos = before.length + 1 + bracket.length + 1;
         textarea.setSelectionRange(newPos, newPos);
       });
       return;
@@ -2108,11 +2108,11 @@ function EditableCell({
       const bracket = `(${personTrigger.surname.toUpperCase()})`;
       const before = draft.slice(0, pos);
       const after = draft.slice(pos);
-      const newText = `${before}${bracket} ${after}`;
+      const newText = `${before} ${bracket} ${after}`;
       setDraft(newText);
       closeMentionDropdown();
       requestAnimationFrame(() => {
-        const newPos = before.length + bracket.length + 1;
+        const newPos = before.length + 1 + bracket.length + 1;
         textarea.setSelectionRange(newPos, newPos);
       });
     }

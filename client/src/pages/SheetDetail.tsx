@@ -2342,9 +2342,23 @@ function SortableChip({
   );
 }
 
-export default function SheetDetail() {
+export default function SheetDetail({
+  sheetIdProp,
+  embedded = false,
+}: {
+  /** Overrides the route param — used when this is rendered inside another
+   * page's panel (see the map's RS Actions pane) rather than at its own
+   * /sheet/:id route. */
+  sheetIdProp?: number;
+  /** True when rendered inside another page's panel instead of its own
+   * route — hides the page chrome (back arrow, close/export controls, the
+   * Summary/Governance tabs that would navigate the whole app away from the
+   * host page) since the host page supplies its own header and close
+   * control instead. */
+  embedded?: boolean;
+} = {}) {
   const { id } = useParams<{ id: string }>();
-  const sheetId = parseInt(id ?? "0", 10);
+  const sheetId = sheetIdProp ?? parseInt(id ?? "0", 10);
   const { user, isAuthenticated } = useAuth();
   const [, navigate] = useLocation();
 
@@ -3950,167 +3964,178 @@ export default function SheetDetail() {
 
   const isLoading = sheetLoading || rowsLoading;
 
+  const Chrome = embedded ? React.Fragment : DashboardLayout;
   return (
-    <DashboardLayout>
-      <div className="p-6 lg:p-8">
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-6">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0"
-            onClick={() => window.history.back()}
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-          <div className="min-w-0 flex items-center gap-2">
-            {sheetLoading ? (
-              <Skeleton className="h-7 w-64" />
-            ) : (
-              <>
-                <div className="min-w-0">
-                  <h1 className="text-xl font-semibold text-foreground truncate">
-                    {sheet?.title}
-                  </h1>
-                </div>
-                {sheet && (
+    <Chrome>
+      <div className={embedded ? "p-4" : "p-6 lg:p-8"}>
+        {/* Header — hidden when embedded: the host panel (see the map's RS
+            Actions pane) supplies its own title/close control, and the
+            back arrow / Summary / Governance tabs here all navigate the
+            whole app away from that panel, which would defeat its "stays
+            open until explicitly closed" behaviour. */}
+        {!embedded && (
+          <>
+            <div className="flex items-center gap-4 mb-6">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0"
+                onClick={() => window.history.back()}
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </Button>
+              <div className="min-w-0 flex items-center gap-2">
+                {sheetLoading ? (
+                  <Skeleton className="h-7 w-64" />
+                ) : (
                   <>
-                    {!isClosed && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="w-7 h-7 shrink-0 text-muted-foreground hover:text-foreground"
-                        onClick={openEditSheet}
-                        title="Edit sheet title"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
-                    )}
-                    {isClosed && (
-                      <Badge
-                        variant="secondary"
-                        className="gap-1.5 bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 shrink-0"
-                      >
-                        <LockKeyhole className="w-3 h-3" />
-                        CLOSED
-                      </Badge>
+                    <div className="min-w-0">
+                      <h1 className="text-xl font-semibold text-foreground truncate">
+                        {sheet?.title}
+                      </h1>
+                    </div>
+                    {sheet && (
+                      <>
+                        {!isClosed && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="w-7 h-7 shrink-0 text-muted-foreground hover:text-foreground"
+                            onClick={openEditSheet}
+                            title="Edit sheet title"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                        {isClosed && (
+                          <Badge
+                            variant="secondary"
+                            className="gap-1.5 bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 shrink-0"
+                          >
+                            <LockKeyhole className="w-3 h-3" />
+                            CLOSED
+                          </Badge>
+                        )}
+                      </>
                     )}
                   </>
                 )}
-              </>
-            )}
-          </div>
-          <div className="ml-auto flex items-center gap-2 shrink-0">
-            {/* Offline indicator */}
-            {!isOnline && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-xs font-medium">
-                    {syncStatus === "syncing" ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <WifiOff className="w-3.5 h-3.5" />
-                    )}
-                    {hasPendingOfflineChanges
-                      ? "Offline — changes queued"
-                      : "Offline"}
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>
-                  No internet connection. Changes are saved locally and will
-                  sync automatically when you reconnect.
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {/* Close / Reopen button */}
-            {canManageClose &&
-              (isClosed ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-2 border-amber-400 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
-                      onClick={() => reopenSheet.mutate({ id: sheetId })}
-                      disabled={reopenSheet.isPending}
-                    >
-                      <LockKeyholeOpen className="w-4 h-4" />
-                      Reopen
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    Reopen this running sheet for editing
-                  </TooltipContent>
-                </Tooltip>
-              ) : (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className={`gap-2 ${
-                        canCloseSheet
-                          ? "border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950"
-                          : "opacity-40 cursor-not-allowed"
-                      }`}
-                      onClick={() =>
-                        canCloseSheet && closeSheet.mutate({ id: sheetId })
-                      }
-                      disabled={!canCloseSheet || closeSheet.isPending}
-                    >
-                      <LockKeyhole className="w-4 h-4" />
-                      Close Sheet
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {canCloseSheet
-                      ? "Close and lock this running sheet"
-                      : !canCloseByRole
-                        ? "Only the Team Leader or Admin can close this sheet"
-                        : !allRowsCertified
-                          ? "All rows must be certified before closing"
-                          : !govComplete
-                            ? "Governance must be 100% complete before closing"
-                            : "Close sheet"}
-                  </TooltipContent>
-                </Tooltip>
-              ))}
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-2"
-              disabled={exportFetching}
-              onClick={handleExport}
-            >
-              <Download className="w-4 h-4" />
-              {exportFetching ? "Preparing..." : "Export PDF"}
-            </Button>
-          </div>
-        </div>
+              </div>
+              <div className="ml-auto flex items-center gap-2 shrink-0">
+                {/* Offline indicator */}
+                {!isOnline && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-xs font-medium">
+                        {syncStatus === "syncing" ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <WifiOff className="w-3.5 h-3.5" />
+                        )}
+                        {hasPendingOfflineChanges
+                          ? "Offline — changes queued"
+                          : "Offline"}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      No internet connection. Changes are saved locally and will
+                      sync automatically when you reconnect.
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {/* Close / Reopen button */}
+                {canManageClose &&
+                  (isClosed ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-2 border-amber-400 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
+                          onClick={() => reopenSheet.mutate({ id: sheetId })}
+                          disabled={reopenSheet.isPending}
+                        >
+                          <LockKeyholeOpen className="w-4 h-4" />
+                          Reopen
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Reopen this running sheet for editing
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className={`gap-2 ${
+                            canCloseSheet
+                              ? "border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950"
+                              : "opacity-40 cursor-not-allowed"
+                          }`}
+                          onClick={() =>
+                            canCloseSheet && closeSheet.mutate({ id: sheetId })
+                          }
+                          disabled={!canCloseSheet || closeSheet.isPending}
+                        >
+                          <LockKeyhole className="w-4 h-4" />
+                          Close Sheet
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {canCloseSheet
+                          ? "Close and lock this running sheet"
+                          : !canCloseByRole
+                            ? "Only the Team Leader or Admin can close this sheet"
+                            : !allRowsCertified
+                              ? "All rows must be certified before closing"
+                              : !govComplete
+                                ? "Governance must be 100% complete before closing"
+                                : "Close sheet"}
+                      </TooltipContent>
+                    </Tooltip>
+                  ))}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2"
+                  disabled={exportFetching}
+                  onClick={handleExport}
+                >
+                  <Download className="w-4 h-4" />
+                  {exportFetching ? "Preparing..." : "Export PDF"}
+                </Button>
+              </div>
+            </div>
 
-        {/* Tab switcher */}
-        <div className="flex gap-1 mb-5 border-b border-border">
-          <button className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground border-b-2 border-primary -mb-px transition-colors">
-            <FileText className="w-4 h-4" />
-            Running Sheet
-          </button>
-          <button
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => navigate(`/summary/${sheetId}`, { replace: true })}
-          >
-            <NotebookText className="w-4 h-4" />
-            Summary
-          </button>
-          <button
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() =>
-              navigate(`/governance/${sheetId}`, { replace: true })
-            }
-          >
-            <ClipboardCheck className="w-4 h-4" />
-            Governance
-          </button>
-        </div>
+            {/* Tab switcher */}
+            <div className="flex gap-1 mb-5 border-b border-border">
+              <button className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground border-b-2 border-primary -mb-px transition-colors">
+                <FileText className="w-4 h-4" />
+                Running Sheet
+              </button>
+              <button
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() =>
+                  navigate(`/summary/${sheetId}`, { replace: true })
+                }
+              >
+                <NotebookText className="w-4 h-4" />
+                Summary
+              </button>
+              <button
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() =>
+                  navigate(`/governance/${sheetId}`, { replace: true })
+                }
+              >
+                <ClipboardCheck className="w-4 h-4" />
+                Governance
+              </button>
+            </div>
+          </>
+        )}
 
         {/* Closed banner */}
         {isClosed && sheet && (
@@ -5749,6 +5774,6 @@ export default function SheetDetail() {
         );
       })()}
       {sheetId && <FaceMatchAckDialog sheetId={sheetId} />}
-    </DashboardLayout>
+    </Chrome>
   );
 }

@@ -179,7 +179,10 @@ function Router() {
       <Route path="/profile" component={MyProfilePage} />
       <Route path="/" component={Home} />
       <Route path="/operation/:id" component={OperationDetail} />
-      <Route path="/sheet/:id" component={SheetDetail} />
+      {/* SheetDetail also takes optional sheetIdProp/embedded props when
+          rendered directly (see the map's RS Actions pane) — not part of
+          wouter's own RouteComponentProps shape, hence the cast. */}
+      <Route path="/sheet/:id" component={SheetDetail as any} />
       <Route path="/todo" component={TodoPage} />
       <Route path="/todo/images" component={TodoImagesPage} />
       <Route path="/todo/governance" component={TodoGovernancePage} />

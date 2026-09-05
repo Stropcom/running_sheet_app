@@ -261,23 +261,18 @@ export function UcoGuideMapOverlay({
               <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
                 UCO deployment plan
               </h3>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                <AdminField label="Objective" value={guide.planObjective} />
-                <AdminField label="Timings" value={guide.planTimings} />
-                <AdminField
-                  label="Controller location"
-                  value={guide.planControllerLocation}
-                />
-                <AdminField
-                  label="Tracking / iSURV"
-                  value={guide.planTracking}
-                />
-                <AdminField label="Communications" value={guide.planComms} />
-                <AdminField
-                  label="Warning / danger signal"
-                  value={guide.planDangerSignal}
-                />
-              </div>
+              <TextItem label="Objective" value={guide.planObjective} />
+              <TextItem label="Timings" value={guide.planTimings} />
+              <TextItem
+                label="Controller location"
+                value={guide.planControllerLocation}
+              />
+              <TextItem label="Tracking / iSURV" value={guide.planTracking} />
+              <TextItem label="Communications" value={guide.planComms} />
+              <TextItem
+                label="Warning / danger signal"
+                value={guide.planDangerSignal}
+              />
               <TextItem
                 label="Ingress / egress routes"
                 value={guide.planIngressEgress}

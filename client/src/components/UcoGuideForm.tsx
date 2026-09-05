@@ -251,6 +251,19 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
     (a.cin ?? "").localeCompare(b.cin ?? "", undefined, { numeric: true })
   );
   const roster = (rosterQuery.data as { cin: string; name: string }[]) ?? [];
+  // Role dropdowns (Team Leader / SO / HUX / RAM) only offer whoever's on
+  // the running sheet, plus anyone manually added below as an additional
+  // team member — not every registered user, since a role must be filled
+  // by someone actually on this deployment.
+  const rosterCinSet = new Set(roster.map(r => r.cin.toUpperCase()));
+  const additionalCinSet = new Set(
+    additionalMemberCins.filter(Boolean).map(c => c.toUpperCase())
+  );
+  const roleSelectableUsers = sortedUsers.filter(
+    u =>
+      rosterCinSet.has((u.cin ?? "").toUpperCase()) ||
+      additionalCinSet.has((u.cin ?? "").toUpperCase())
+  );
 
   const createMutation = trpc.ucoGuide.create.useMutation();
   const updateMutation = trpc.ucoGuide.update.useMutation();
@@ -564,50 +577,48 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
       {/* UCO Deployment Plan */}
       <div className="p-4 rounded-xl bg-card border border-border space-y-3">
         <SmeacLabel letter="2" label="UCO deployment plan" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Field label="Objective" compact>
-            <Input
-              value={planObjective}
-              onChange={e => setPlanObjective(e.target.value)}
-              className="h-8 text-sm"
-            />
-          </Field>
-          <Field label="Timings" compact>
-            <Input
-              value={planTimings}
-              onChange={e => setPlanTimings(e.target.value)}
-              className="h-8 text-sm"
-            />
-          </Field>
-          <Field label="Controller location" compact>
-            <Input
-              value={planControllerLocation}
-              onChange={e => setPlanControllerLocation(e.target.value)}
-              className="h-8 text-sm"
-            />
-          </Field>
-          <Field label="Tracking / iSURV" compact>
-            <Input
-              value={planTracking}
-              onChange={e => setPlanTracking(e.target.value)}
-              className="h-8 text-sm"
-            />
-          </Field>
-          <Field label="Communications" compact>
-            <Input
-              value={planComms}
-              onChange={e => setPlanComms(e.target.value)}
-              className="h-8 text-sm"
-            />
-          </Field>
-          <Field label="Warning / danger signal" compact>
-            <Input
-              value={planDangerSignal}
-              onChange={e => setPlanDangerSignal(e.target.value)}
-              className="h-8 text-sm"
-            />
-          </Field>
-        </div>
+        <Field label="Objective" compact>
+          <Textarea
+            value={planObjective}
+            onChange={e => setPlanObjective(e.target.value)}
+            className="min-h-[50px] text-sm"
+          />
+        </Field>
+        <Field label="Timings" compact>
+          <Textarea
+            value={planTimings}
+            onChange={e => setPlanTimings(e.target.value)}
+            className="min-h-[50px] text-sm"
+          />
+        </Field>
+        <Field label="Controller location" compact>
+          <Textarea
+            value={planControllerLocation}
+            onChange={e => setPlanControllerLocation(e.target.value)}
+            className="min-h-[50px] text-sm"
+          />
+        </Field>
+        <Field label="Tracking / iSURV" compact>
+          <Textarea
+            value={planTracking}
+            onChange={e => setPlanTracking(e.target.value)}
+            className="min-h-[50px] text-sm"
+          />
+        </Field>
+        <Field label="Communications" compact>
+          <Textarea
+            value={planComms}
+            onChange={e => setPlanComms(e.target.value)}
+            className="min-h-[50px] text-sm"
+          />
+        </Field>
+        <Field label="Warning / danger signal" compact>
+          <Textarea
+            value={planDangerSignal}
+            onChange={e => setPlanDangerSignal(e.target.value)}
+            className="min-h-[50px] text-sm"
+          />
+        </Field>
         <Field label="Ingress / egress routes" compact>
           <Textarea
             value={planIngressEgress}
@@ -648,27 +659,33 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
             label="Team Leader"
             value={teamLeaderCin}
             onChange={setTeamLeaderCin}
-            users={sortedUsers}
+            users={roleSelectableUsers}
           />
           <RoleSelect
             label="Senior Operative"
             value={seniorOperativeCin}
             onChange={setSeniorOperativeCin}
-            users={sortedUsers}
+            users={roleSelectableUsers}
           />
           <RoleSelect
             label="HUX"
             value={huxCin}
             onChange={setHuxCin}
-            users={sortedUsers}
+            users={roleSelectableUsers}
           />
           <RoleSelect
             label="RAM"
             value={ramCin}
             onChange={setRamCin}
-            users={sortedUsers}
+            users={roleSelectableUsers}
           />
         </div>
+        {roleSelectableUsers.length === 0 && (
+          <p className="text-[11px] text-muted-foreground -mt-1">
+            No running sheet roster loaded yet — choose an operation and running
+            sheet above, or add a member below, to fill these roles.
+          </p>
+        )}
         <div>
           <label className="text-xs font-semibold block mb-2">
             Additional team members

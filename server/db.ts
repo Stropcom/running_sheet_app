@@ -4107,15 +4107,21 @@ export function extractEntitiesFromText(text: string): Array<{
           )
           .replace(/[,;]\s*$/, "")
           .trim()
-          // Strip a leading inter-clause conjunction left over when two
+          // Strip a leading inter-clause separator left over when two
           // vehicles are described in one sentence — "...1ABC123), and
           // orange Porsche Mecan SUV, bearing WA registration 1DEF456
           // (Vehicle 1DEF456)" — the regex boundary between the two bracket
           // matches starts the second vehicle's fullDescription right after
-          // the first bracket, comma and "and" included. Doesn't depend on
-          // an article ("a"/"an"/"the") following it like the cut below
-          // does, since an officer doesn't always write one.
-          .replace(/^[,;]?\s*and\s+/i, "");
+          // the first bracket, comma (and "and", when the officer wrote one)
+          // included. A vehicle description never legitimately starts with a
+          // bare comma either — e.g. "...(Vehicle 1FRU77), White Isuzu D-MAX
+          // Utility, bearing..." with no "and" between the two vehicles
+          // — so strip a leading comma/semicolon unconditionally, then a
+          // leading "and" on whatever's left. Doesn't depend on an article
+          // ("a"/"an"/"the") following it like the cut below does, since an
+          // officer doesn't always write one.
+          .replace(/^[,;]\s*/, "")
+          .replace(/^and\s+/i, "");
 
         // A real vehicle description is a short noun phrase (colour + make +
         // model + trim + body, typically 2-5 words). When an officer embeds

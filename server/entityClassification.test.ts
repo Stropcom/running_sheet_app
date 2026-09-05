@@ -175,4 +175,21 @@ describe("extractEntitiesFromText — vehicle description reconstruction", () =>
     expect(first?.shortForm).toBe("1ABC123 orange Toyota Land Cruiser 4WD");
     expect(second?.shortForm).toBe("1DEF456 orange Porsche Mecan SUV");
   });
+
+  it("doesn't leak a leading bare comma when two vehicles are listed with no 'and' between them (the reported bug)", () => {
+    // Same root cause as the ", and" case above, but the officer didn't
+    // write a conjunction between the two vehicles at all — e.g. "...
+    // (Vehicle 1FRU77), White Isuzu D-MAX Utility, bearing WA registration
+    // 1HIB84 (Vehicle 1HIB84)" — producing "1HIB84 , White Isuzu D-MAX
+    // Utility" instead of a clean description.
+    const text =
+      "Silver Mercedes Benz Sprinter station sedan, bearing WA registration 1FRU77 (Vehicle 1FRU77), White Isuzu D-MAX Utility, bearing WA registration 1HIB84 (Vehicle 1HIB84)";
+    const entities = extractEntitiesFromText(text);
+    const first = entities.find(e => e.rawShortForm === "Vehicle 1FRU77");
+    const second = entities.find(e => e.rawShortForm === "Vehicle 1HIB84");
+    expect(first?.shortForm).toBe(
+      "1FRU77 Silver Mercedes Benz Sprinter station sedan"
+    );
+    expect(second?.shortForm).toBe("1HIB84 White Isuzu D-MAX Utility");
+  });
 });

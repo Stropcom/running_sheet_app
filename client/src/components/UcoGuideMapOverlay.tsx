@@ -19,6 +19,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { INTEL_CHIP_CLASSES } from "@/components/IntelEntityChip";
+import { SmeacLabel } from "@/components/SmeacLabel";
 import { formatIntelVehicle, formatIntelAddress } from "@/lib/addressFormat";
 import {
   X,
@@ -182,9 +183,7 @@ export function UcoGuideMapOverlay({
             {/* TARGET */}
             {guide.target && (
               <div className="space-y-1.5">
-                <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                  Target
-                </h3>
+                <SmeacLabel letter="T" label="Target" icon={Eye} />
                 <div className="flex flex-wrap gap-1.5">
                   <span
                     className={`inline-flex items-center gap-1.5 max-w-full px-3 py-1.5 rounded-full text-xs font-medium border truncate ${INTEL_CHIP_CLASSES.person}`}
@@ -231,9 +230,7 @@ export function UcoGuideMapOverlay({
 
             {/* INFORMATION & INTELLIGENCE */}
             <div className="space-y-2.5">
-              <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                Information & intelligence
-              </h3>
+              <SmeacLabel letter="1" label="Information & intelligence" />
               <TextItem
                 label="Operation background"
                 value={guide.opBackground}
@@ -258,9 +255,7 @@ export function UcoGuideMapOverlay({
 
             {/* UCO DEPLOYMENT PLAN */}
             <div className="space-y-2.5">
-              <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                UCO deployment plan
-              </h3>
+              <SmeacLabel letter="2" label="UCO deployment plan" />
               <TextItem label="Objective" value={guide.planObjective} />
               <TextItem label="Timings" value={guide.planTimings} />
               <TextItem
@@ -297,10 +292,11 @@ export function UcoGuideMapOverlay({
 
             {/* SURVEILLANCE TEAM */}
             <div className="space-y-2.5">
-              <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-                <Users className="h-3 w-3" />
-                Surveillance team — tactics & structure
-              </h3>
+              <SmeacLabel
+                letter="3"
+                label="Surveillance team — tactics & structure"
+                icon={Users}
+              />
               <div className="grid grid-cols-2 gap-x-3 gap-y-2">
                 <RolePill label="Team Leader" value={guide.teamLeaderCin} />
                 <RolePill
@@ -332,9 +328,7 @@ export function UcoGuideMapOverlay({
 
             {/* EQUIPMENT */}
             <div className="space-y-2.5">
-              <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                Member accoutrements / equipment
-              </h3>
+              <SmeacLabel letter="4" label="Member accoutrements / equipment" />
               {guide.accoutrements.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
                   {guide.accoutrements.map((a, i) => (
@@ -370,9 +364,7 @@ export function UcoGuideMapOverlay({
 
             {/* SURVEILLANCE LEVEL — the one live control */}
             <div className="space-y-2.5">
-              <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                Surveillance level
-              </h3>
+              <SmeacLabel letter="5" label="Surveillance level" />
               <div className="flex items-center gap-2 p-2.5 rounded-lg border border-border bg-background">
                 <span className="text-sm font-semibold flex-1">
                   Current: {guide.currentLevel} —{" "}
@@ -444,9 +436,7 @@ export function UcoGuideMapOverlay({
 
             {/* COMMUNICATION */}
             <div className="space-y-2.5">
-              <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                Communication
-              </h3>
+              <SmeacLabel letter="6" label="Communication" />
               <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                 <AdminField
                   label="AFP vehicle primary"

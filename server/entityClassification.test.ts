@@ -135,6 +135,29 @@ describe("extractEntitiesFromText — vehicle vs address disambiguation", () => 
   });
 });
 
+describe("extractEntitiesFromText — person name recovery", () => {
+  it("recovers the full name when the officer types the registry's own 'Full Name, born <date>' convention inline", () => {
+    // The registry convention "Full Name, born <date>" — see targetCoreName()
+    // — used to defeat name recovery when typed directly into free-text
+    // narrative: the DOB clause's digits broke the last-N-words candidate
+    // search before it ever reached the actual name, so this fell back to
+    // the bare bracket surname ("HARRIS") instead of "Heath HARRIS".
+    const text =
+      "Observed Heath HARRIS, born 12 March 2000 (HARRIS) exit the vehicle.";
+    const entities = extractEntitiesFromText(text);
+    const person = entities.find(e => e.rawShortForm === "HARRIS");
+    expect(person?.type).toBe("person");
+    expect(person?.shortForm).toBe("Heath HARRIS");
+  });
+
+  it("still recovers the full name when there is no DOB clause (the fix must not break this)", () => {
+    const text = "Observed Jason JOHNSON (JOHNSON) exit the vehicle.";
+    const entities = extractEntitiesFromText(text);
+    const person = entities.find(e => e.rawShortForm === "JOHNSON");
+    expect(person?.shortForm).toBe("Jason JOHNSON");
+  });
+});
+
 describe("extractEntitiesFromText — vehicle description reconstruction", () => {
   it("doesn't leak a leading ', and' into the second of two vehicles in one sentence (the reported bug)", () => {
     // Found via the Intelligence Entity Scan: the regex boundary between

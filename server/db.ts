@@ -4233,7 +4233,22 @@ export function extractEntitiesFromText(text: string): Array<{
         /^((?:[A-Z]\.)+)([A-Z]{2,})$/
       );
 
-      const words = fullDescription.trim().split(/\s+/);
+      // Officers sometimes type the registry's own "Full Name, born <date>"
+      // convention directly into free-text narrative (e.g. "Heath HARRIS,
+      // born 12 March 2000 (HARRIS)"). Left alone, the trailing date's
+      // digits break the last-N-words candidate search below before it
+      // ever reaches the actual name — every candidate window still
+      // containing a date word fails the all-letters "looksLikeName" check,
+      // so name recovery falls all the way back to the bare shortForm
+      // ("HARRIS") instead of "Heath HARRIS". Strip the ", born ..." clause
+      // first, same convention targetCoreName() already assumes for
+      // registry-typed names.
+      const bornClauseIdx = fullDescription.search(/,\s*born\b/i);
+      const nameSource =
+        bornClauseIdx > 0
+          ? fullDescription.slice(0, bornClauseIdx)
+          : fullDescription;
+      const words = nameSource.trim().split(/\s+/);
       // Try last 4, 3, 2 words in order — use the longest that contains shortForm
       // AND where every word looks like a name word (not a common English word)
       let bestName = "";

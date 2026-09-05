@@ -3385,6 +3385,90 @@ export default function IntelligenceMapping() {
     []
   );
 
+  // A shaded shape is clickable (to open its own edit panel), which by
+  // default swallows every mouse/touch gesture over its area before the
+  // map underneath ever sees it — so without this, an officer could never
+  // reach the map's own action chooser (RS Quick Entry / Add Marker Here /
+  // Navigate with Waze) at a point that happens to fall inside a shape.
+  // Wires the exact same gesture the open map already uses everywhere else
+  // — right-click on desktop, press-and-hold on touch — directly onto each
+  // shape overlay instead, so it behaves identically whether or not a
+  // shape is there. mousedown/mouseup ARE what touch presses normalize to
+  // in the Maps overlay event system, so the same hold-timer works for both.
+  const shapeLongPressFiredRef = useRef(false);
+  const openActionChooserAtLatLng = useCallback(
+    (latLng: google.maps.LatLng) => {
+      shapeLongPressFiredRef.current = true;
+      // Self-clearing rather than waiting for the next click to consume it
+      // — this ref is shared across every shape, so without a short expiry
+      // an unrelated later tap on a *different* shape (with no click ever
+      // arriving in between, e.g. after a desktop right-click, which never
+      // fires a follow-up click at all) would get silently swallowed too.
+      setTimeout(() => {
+        shapeLongPressFiredRef.current = false;
+      }, 350);
+      const lat = latLng.lat();
+      const lng = latLng.lng();
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+        const addr =
+          status === "OK" && results && results[0]
+            ? results[0].formatted_address
+            : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        setActionChooser({ lat, lng, address: convertGoogleAddresses(addr) });
+      });
+    },
+    []
+  );
+  const wireShapeActionChooserGesture = useCallback(
+    (
+      overlay:
+        | google.maps.Circle
+        | google.maps.Rectangle
+        | google.maps.Polygon
+        | google.maps.Polyline
+    ) => {
+      overlay.addListener("rightclick", (e: google.maps.MapMouseEvent) => {
+        if (e.latLng) openActionChooserAtLatLng(e.latLng);
+      });
+      let pressTimer: ReturnType<typeof setTimeout> | null = null;
+      overlay.addListener("mousedown", (e: google.maps.MapMouseEvent) => {
+        if (!e.latLng) return;
+        const latLng = e.latLng;
+        pressTimer = setTimeout(() => openActionChooserAtLatLng(latLng), 600);
+      });
+      overlay.addListener("mouseup", () => {
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = null;
+        }
+      });
+    },
+    [openActionChooserAtLatLng]
+  );
+  // Wraps the ordinary "open edit panel" click so a click immediately
+  // following a just-fired long-press/right-click (see above) doesn't also
+  // pop the edit panel open on top of the action chooser.
+  const wireShapeEditClick = useCallback(
+    (
+      overlay:
+        | google.maps.Circle
+        | google.maps.Rectangle
+        | google.maps.Polygon
+        | google.maps.Polyline,
+      openEdit: () => void
+    ) => {
+      overlay.addListener("click", () => {
+        if (shapeLongPressFiredRef.current) {
+          shapeLongPressFiredRef.current = false;
+          return;
+        }
+        openEdit();
+      });
+    },
+    []
+  );
+
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
     const map = mapRef.current;
@@ -3457,7 +3541,8 @@ export default function IntelligenceMapping() {
             strokeWeight: 2,
             clickable: true,
           });
-          circle.addListener("click", openEdit);
+          wireShapeEditClick(circle, openEdit);
+          wireShapeActionChooserGesture(circle);
           existing.set(s.id, circle);
         }
       } else if (s.shapeType === "rectangle") {
@@ -3486,7 +3571,8 @@ export default function IntelligenceMapping() {
             strokeWeight: 2,
             clickable: true,
           });
-          rect.addListener("click", openEdit);
+          wireShapeEditClick(rect, openEdit);
+          wireShapeActionChooserGesture(rect);
           existing.set(s.id, rect);
         }
       } else if (s.shapeType === "sector") {
@@ -3516,7 +3602,8 @@ export default function IntelligenceMapping() {
             strokeWeight: 2,
             clickable: true,
           });
-          poly.addListener("click", openEdit);
+          wireShapeEditClick(poly, openEdit);
+          wireShapeActionChooserGesture(poly);
           existing.set(s.id, poly);
         }
       } else {
@@ -3535,7 +3622,8 @@ export default function IntelligenceMapping() {
             strokeWeight: 4,
             clickable: true,
           });
-          line.addListener("click", openEdit);
+          wireShapeEditClick(line, openEdit);
+          wireShapeActionChooserGesture(line);
           existing.set(s.id, line);
         }
       }
@@ -3584,6 +3672,8 @@ export default function IntelligenceMapping() {
     pendingShape,
     beginEditShape,
     createShapeLabelElement,
+    wireShapeEditClick,
+    wireShapeActionChooserGesture,
   ]);
 
   // ── Draft shape overlay (create/edit in progress) ────────────────────────────

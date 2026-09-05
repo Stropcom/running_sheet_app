@@ -489,6 +489,7 @@ const ucoGuideBriefingFieldsSchema = {
   huxCin: z.string().optional().nullable(),
   ramCin: z.string().optional().nullable(),
   additionalMemberCins: z.array(z.string()).optional(),
+  teamMemberCins: z.array(z.string()).optional(),
   tacticsNotes: z.string().optional().nullable(),
   currentLevel: z.number().min(1).max(5).optional(),
   levelNotes: z.array(z.string()).length(5).optional(),

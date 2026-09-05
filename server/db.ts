@@ -14842,12 +14842,14 @@ export interface UcoGuideBriefingView
     | "accoutrements"
     | "moeEquipment"
     | "additionalMemberCins"
+    | "teamMemberCins"
     | "levelNotes"
     | "recipientCins"
   > {
   accoutrements: string[];
   moeEquipment: string[];
   additionalMemberCins: string[];
+  teamMemberCins: string[];
   levelNotes: string[];
   recipientCins: string[];
 }
@@ -14858,6 +14860,7 @@ function toUcoGuideBriefingView(row: UcoGuideBriefing): UcoGuideBriefingView {
     accoutrements: parseSmeacStringArray(row.accoutrements),
     moeEquipment: parseSmeacStringArray(row.moeEquipment),
     additionalMemberCins: parseSmeacStringArray(row.additionalMemberCins),
+    teamMemberCins: parseSmeacStringArray(row.teamMemberCins),
     levelNotes: parseSmeacStringArray(row.levelNotes),
     recipientCins: parseSmeacStringArray(row.recipientCins),
   };
@@ -14888,6 +14891,7 @@ export interface UpsertUcoGuideBriefingInput {
   huxCin?: string | null;
   ramCin?: string | null;
   additionalMemberCins?: string[];
+  teamMemberCins?: string[];
   tacticsNotes?: string | null;
   currentLevel?: number;
   levelNotes?: string[];
@@ -14924,6 +14928,7 @@ function ucoGuideUpsertValues(data: UpsertUcoGuideBriefingInput) {
     huxCin: data.huxCin ?? null,
     ramCin: data.ramCin ?? null,
     additionalMemberCins: JSON.stringify(data.additionalMemberCins ?? []),
+    teamMemberCins: JSON.stringify(data.teamMemberCins ?? []),
     tacticsNotes: data.tacticsNotes ?? null,
     currentLevel: data.currentLevel ?? 2,
     levelNotes: JSON.stringify(data.levelNotes ?? ["", "", "", "", ""]),

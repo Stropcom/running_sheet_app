@@ -310,13 +310,13 @@ export function UcoGuideMapOverlay({
                 <RolePill label="HUX" value={guide.huxCin} />
                 <RolePill label="RAM" value={guide.ramCin} />
               </div>
-              {guide.additionalMemberCins.length > 0 && (
+              {guide.teamMemberCins.length > 0 && (
                 <div>
                   <p className="text-[11px] font-semibold text-muted-foreground mb-1">
-                    Additional team members
+                    Team on deployment
                   </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {guide.additionalMemberCins.map((cin, i) => (
+                    {guide.teamMemberCins.map((cin, i) => (
                       <span
                         key={i}
                         className="px-2.5 py-1 rounded-full text-xs font-medium border border-border bg-muted"

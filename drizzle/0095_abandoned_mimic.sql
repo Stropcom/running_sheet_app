@@ -1,0 +1,1 @@
+ALTER TABLE `uco_guide_briefings` ADD `teamMemberCins` text;

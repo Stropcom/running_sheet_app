@@ -666,6 +666,13 @@
       "when": 1788585940591,
       "tag": "0094_dark_puppet_master",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "5",
+      "when": 1788590073361,
+      "tag": "0095_abandoned_mimic",
+      "breakpoints": true
     }
   ]
 }

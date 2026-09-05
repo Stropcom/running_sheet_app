@@ -264,6 +264,15 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
       rosterCinSet.has((u.cin ?? "").toUpperCase()) ||
       additionalCinSet.has((u.cin ?? "").toUpperCase())
   );
+  // The full "who was on this deployment" roster — running sheet roster plus
+  // any manually-added members — separate from the four named roles above
+  // (which are a subset of this) and used both as the document's team list
+  // and as the Notify picker's default-selected set below.
+  const deploymentTeamCins = Array.from(
+    new Set(Array.from(rosterCinSet).concat(Array.from(additionalCinSet)))
+  );
+  const nameForCin = (cin: string) =>
+    sortedUsers.find(u => (u.cin ?? "").toUpperCase() === cin)?.name ?? cin;
 
   const createMutation = trpc.ucoGuide.create.useMutation();
   const updateMutation = trpc.ucoGuide.update.useMutation();
@@ -294,6 +303,7 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
     huxCin: huxCin || null,
     ramCin: ramCin || null,
     additionalMemberCins: additionalMemberCins.filter(Boolean),
+    teamMemberCins: deploymentTeamCins,
     tacticsNotes: tacticsNotes.trim() || null,
     currentLevel,
     levelNotes,
@@ -374,12 +384,16 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
       toast.error("Choose an operation first");
       return;
     }
-    const rosterIds = new Set(
+    // Pre-select everyone on the deployment — running sheet roster plus any
+    // manually-added members — not just the roster, so adding someone below
+    // also puts them in the notify list by default.
+    const teamCinSet = new Set(deploymentTeamCins);
+    const preselectedIds = new Set(
       sortedUsers
-        .filter(u => roster.some(r => r.cin === (u.cin ?? "").toUpperCase()))
+        .filter(u => teamCinSet.has((u.cin ?? "").toUpperCase()))
         .map(u => u.id)
     );
-    setSelectedUserIds(rosterIds);
+    setSelectedUserIds(preselectedIds);
     setNotifyDialogOpen(true);
   };
 
@@ -740,6 +754,25 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
             </button>
           </div>
         </div>
+        <div>
+          <p className="text-xs font-semibold mb-1.5">Team on deployment</p>
+          {deploymentTeamCins.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {deploymentTeamCins.map(cin => (
+                <span
+                  key={cin}
+                  className="px-2.5 py-1 rounded-full text-xs font-medium border border-border bg-muted"
+                >
+                  {nameForCin(cin)}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              No one yet — choose a running sheet, or add a member above.
+            </p>
+          )}
+        </div>
         <Field label="Tactics notes" compact>
           <Textarea
             value={tacticsNotes}
@@ -918,7 +951,7 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
       <UcoGuideNotifyDialog
         open={notifyDialogOpen}
         onOpenChange={setNotifyDialogOpen}
-        roster={roster}
+        roster={deploymentTeamCins.map(cin => ({ cin, name: nameForCin(cin) }))}
         users={sortedUsers}
         selectedUserIds={selectedUserIds}
         setSelectedUserIds={setSelectedUserIds}
@@ -1037,12 +1070,13 @@ function UcoGuideNotifyDialog({
         <div className="py-2 space-y-3 max-h-80 overflow-y-auto">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5">
-              On active running sheet
+              On this deployment
             </p>
             {primaryUsers.length === 0 && (
               <p className="text-xs text-muted-foreground">
-                No sheet roster to pre-fill — choose an operation and running
-                sheet above.
+                No running sheet roster or additional members yet — choose an
+                operation and running sheet above, or add members in
+                Surveillance team.
               </p>
             )}
             {primaryUsers.map(u => (

@@ -1827,6 +1827,12 @@ export const ucoGuideBriefings = mysqlTable("uco_guide_briefings", {
   ramCin: varchar("ramCin", { length: 64 }),
   // JSON array of CIN strings.
   additionalMemberCins: text("additionalMemberCins"),
+  // JSON array of CIN strings — the full "who was on this deployment"
+  // roster, snapshotted at save time: the running sheet's roster at that
+  // point unioned with additionalMemberCins above. Separate from the four
+  // named role CINs (which are a subset of this) and from recipientCins
+  // (who got notified, which the poster can deliberately narrow or widen).
+  teamMemberCins: text("teamMemberCins"),
   tacticsNotes: text("tacticsNotes"),
 
   // 1 (Covert containment) .. 5 (Overt interdiction) — the level selected at

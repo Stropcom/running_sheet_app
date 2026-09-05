@@ -978,7 +978,7 @@ function CrashWizard() {
     scene.push({
       text: (
         <>
-          <b>Avoid declaring</b> AFP affiliation or true identity — and don't
+          <b>Do Not Declare</b> AFP affiliation or true identity — and don't
           declare the insurer's name.
         </>
       ),
@@ -1035,9 +1035,9 @@ function CrashWizard() {
   scene.push({
     text: (
       <>
-        Take photos before leaving the scene if possible: damage to the SU
-        vehicle, the scene/area, <b>wide-angle shots of all four sides</b>, and
-        the <b>instrument cluster/speedo</b> — the last two are required by
+        Take photos before leaving the scene: damage to the SU vehicle, the
+        scene/area, <b>wide-angle shots of all four sides</b>, and the{" "}
+        <b>instrument cluster/speedo</b> — the last two are required by
         Comcover.
       </>
     ),

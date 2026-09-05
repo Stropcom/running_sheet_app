@@ -3082,18 +3082,22 @@ export default function IntelligenceMapping() {
   );
 
   // A small floating pill of text — used both for a shape's note (beside its
-  // anchor point) and a custom marker's label (either beside its icon, or,
-  // for a "label only" marker, standing in for the icon entirely). Nudged
-  // via a CSS transform rather than a real pixel offset, since
-  // AdvancedMarkerElement positioning is geographic only and has no
-  // pixel-offset option of its own — `offsetX: "-50%"` centers the pill
-  // exactly on its anchor (the "label only" case), anything else (e.g.
-  // "12px") nudges it clear of an icon/shape rendered at the same point.
+  // anchor point) and a custom marker's label (below its icon, or, for a
+  // "label only" marker, standing in for the icon entirely). Nudged via a
+  // CSS transform rather than a real pixel offset, since AdvancedMarkerElement
+  // positioning is geographic only and has no pixel-offset option of its
+  // own — `transform: "translate(-50%, -50%)"` centers the pill exactly on
+  // its anchor (the "label only" case), anything else nudges it clear of an
+  // icon/shape rendered at the same point instead of sitting on top of it.
   const createLabelPillElement = useCallback(
-    (text: string, colour: string, offsetX: string = "12px") => {
+    (
+      text: string,
+      colour: string,
+      transform: string = "translate(12px, -50%)"
+    ) => {
       const el = document.createElement("div");
       el.style.cssText = `
-      transform: translate(${offsetX}, -50%);
+      transform: ${transform};
       display: inline-flex;
       align-items: center;
       max-width: 200px;
@@ -3165,7 +3169,7 @@ export default function IntelligenceMapping() {
         content = createLabelPillElement(
           labelText || "(no label)",
           fillColor,
-          "-50%"
+          "translate(-50%, -50%)"
         );
         customMarkerImgRefs.current.delete(outerCm.id);
       } else {
@@ -3419,12 +3423,13 @@ export default function IntelligenceMapping() {
         existing.set(outerCm.id, marker);
       }
 
-      // Companion label pill beside the icon — only when there's an icon to
-      // sit beside (a "label only" marker already uses the label as its own
+      // Companion label pill below the icon — only when there's an icon to
+      // sit under (a "label only" marker already uses the label as its own
       // content, above) and a label is actually set. Clicking the pill opens
       // the same popup as the icon itself, by forwarding to its click
       // listener rather than duplicating the popup-building logic above.
       const iconMarker = existing.get(outerCm.id)!;
+      const companionLabelTransform = "translate(-50%, 26px)";
       const existingCompanionLabel = customMarkerLabelsRef.current.get(
         outerCm.id
       );
@@ -3441,13 +3446,17 @@ export default function IntelligenceMapping() {
         existingCompanionLabel.content = createLabelPillElement(
           labelText,
           fillColor,
-          "24px"
+          companionLabelTransform
         );
       } else {
         const companionLabel = new google.maps.marker.AdvancedMarkerElement({
           map,
           position: { lat: outerCm.lat, lng: outerCm.lng },
-          content: createLabelPillElement(labelText, fillColor, "24px"),
+          content: createLabelPillElement(
+            labelText,
+            fillColor,
+            companionLabelTransform
+          ),
           zIndex: 500,
         });
         companionLabel.addListener("click", () => {

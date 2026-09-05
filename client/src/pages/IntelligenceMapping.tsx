@@ -519,6 +519,18 @@ function popupVehicleLines(vehicles: string[], fontSize: string): string {
     .join("");
 }
 
+/** Person mentions display one per line, same layout as popupVehicleLines —
+ * a comma-joined paragraph reads as a single run-on line in the popup's
+ * narrow width instead of a scannable list. */
+function popupPersonLines(persons: string[], fontSize: string): string {
+  return persons
+    .map(
+      p =>
+        `<div style="font-size:${fontSize};color:#111;padding:1px 0;">${p}</div>`
+    )
+    .join("");
+}
+
 function buildInfoWindowContent(
   loc: IntelMapLocation,
   override?: {
@@ -607,7 +619,7 @@ function buildInfoWindowContent(
 
     if (loc.assocPersons.length > 0) {
       entityLines.push(
-        `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0">${loc.assocPersons.join(", ")}</p></div>`
+        `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><div style="margin-top:2px">${popupPersonLines(loc.assocPersons, "12px")}</div></div>`
       );
     }
 
@@ -781,7 +793,7 @@ function buildInfoWindowContent(
       }
       if (sec.assocPersons.length > 0) {
         secEntityLines.push(
-          `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0">${sec.assocPersons.join(", ")}</p></div>`
+          `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><div style="margin-top:2px">${popupPersonLines(sec.assocPersons, "12px")}</div></div>`
         );
       }
       if (sec.assocVehicles.length > 0) {
@@ -3091,7 +3103,7 @@ export default function IntelligenceMapping() {
             // Persons (from custom marker)
             if (cm.assocPersons?.length)
               lines.push(
-                `<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Persons</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${(cm.assocPersons as string[]).join(", ")}</p></div>`
+                `<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Persons</span><div style="margin-top:2px">${popupPersonLines(cm.assocPersons as string[], "12px")}</div></div>`
               );
 
             // Vehicles (from custom marker)
@@ -3151,7 +3163,7 @@ export default function IntelligenceMapping() {
               }
               if (intel.assocPersons.length > 0) {
                 intelEntityLines.push(
-                  `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:3px;">Intel Persons</div><div style="font-size:11px;color:#111;">${intel.assocPersons.join(", ")}</div>`
+                  `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:3px;">Intel Persons</div><div>${popupPersonLines(intel.assocPersons, "11px")}</div>`
                 );
               }
               if (intel.assocVehicles.length > 0) {

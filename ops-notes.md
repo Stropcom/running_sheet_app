@@ -11,6 +11,58 @@ happen before."
 
 ---
 
+## 2026-09-06 — App-wide blank white screen after deploy: eager `extends google.maps.OverlayView` at module scope
+
+Deploying commit `b20f1ce` (the `AdvancedMarkerElement` → `OverlayView` map
+overlay migration, see CLAUDE.md's map-drift note) produced a **total blank
+white screen for every user, on every device** — not a map-page issue, the
+whole app. `pm2 status` showed `runlog` `online`, `curl localhost:3000`
+returned `200`, and `pm2 logs` showed a completely clean startup — the
+**Node server was never the problem**, which is why the deploy script's
+health check passed and printed `DEPLOY OK`.
+
+**Root cause:** `client/src/lib/divIconOverlay.ts` declared
+`export class DivIconOverlay extends google.maps.OverlayView { ... }` at
+module top level. `google.maps.OverlayView` only exists after the Google
+Maps JS API `<script>` has finished loading — which happens lazily, inside
+`components/Map.tsx`'s `useEffect` (`loadGoogleMaps()`), only once a map is
+actually mounted. But `divIconOverlay.ts` is imported by
+`pages/IntelligenceMapping.tsx`, which `App.tsx` imports **eagerly** (a
+plain top-level `import`, not `React.lazy`) — and the whole client build is
+one single ~2.9MB JS chunk (no route-level code splitting configured), so
+that `extends` clause evaluated on **every page load of the app**, before
+Maps had ever loaded, immediately throwing (`google`/`google.maps` is
+`undefined` at that point) and crashing the entire bundle before React ever
+called `render()`. Blank white screen, unconditionally, everywhere — a pure
+client-side JS crash that `tsc`/`pnpm check` cannot catch, since it's a
+runtime module-evaluation-order bug, not a type error.
+
+**Fix:** don't declare the `class X extends google.maps.OverlayView` at
+module scope at all. `divIconOverlay.ts` now builds that class lazily
+inside a `getImplCtor()` function, called (and cached) only the first time
+a `DivIconOverlay` is actually constructed — which can only happen from
+inside a map-rendering effect, strictly after `mapReady`, i.e. strictly
+after Maps has finished loading. The public `DivIconOverlay` export is now
+a plain composition wrapper (holds the lazily-built instance, forwards
+every property/method) rather than the `extends`-ing class itself, so none
+of the 5 call sites in `IntelligenceMapping.tsx` needed to change. Verified
+by building the production bundle locally and loading it in a real headless
+browser (`pnpm exec vite build` + serve + Playwright) — confirmed the app
+now mounts (renders the login screen) instead of crashing at module load,
+before pushing the fix.
+
+**Lesson for any future `google.maps.*` subclassing**: never write
+`class X extends google.maps.<Anything>` at module top level in a file that
+any eagerly-imported page might pull in — always defer the `extends` until
+first use (or guard the whole module behind a dynamic `import()` that only
+resolves after Maps has loaded). A `pnpm check`-clean, `pnpm test`-clean
+diff can still take the entire app down instantly on deploy this way, and
+the deploy script's own health check (`curl localhost:3000`) cannot detect
+it, because the server-side HTML response is unaffected — the crash is
+100% client-side, inside the browser, after the page has already loaded.
+
+---
+
 ## 2026-08-16 — Droplet switched from tracking the feature branch to `main`
 
 Up to this point the droplet's working copy tracked `claude/claude-md-docs-o4trnz`

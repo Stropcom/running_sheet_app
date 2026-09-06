@@ -1020,6 +1020,48 @@ export async function setRowLocked(id: number, isLocked: boolean) {
   await db.update(sheetRows).set({ isLocked }).where(eq(sheetRows.id, id));
 }
 
+// ─── Travelled Via row auto-insertion ──────────────────────────────────────
+// A vehicle-departure narrative conventionally ends "...and continued
+// via:", with the streets actually travelled logged as their own row
+// directly below it, at the SAME time — see the "TV" trigger in
+// SheetDetail.tsx's EditableCell onSave, which fills that row's text (once
+// the arrival row also exists, so a route can be computed between the
+// two). Officers had to remember to add that blank row themselves first,
+// every single time. This adds it automatically the moment "continued
+// via:" first appears in a saved row, so it's simply already there.
+const CONTINUED_VIA_PATTERN = /continued via:?/i;
+
+export function textHasContinuedVia(text: string | null | undefined): boolean {
+  return !!text && CONTINUED_VIA_PATTERN.test(text);
+}
+
+// Inserts an empty row immediately after a row on the same sheet, sharing
+// its exact time (time/timeMinutes/dayOffset/rowDate) so it sorts directly
+// beneath it in the time-ordered display (rows sort by timeMinutes then
+// rowNumber — this new row's rowNumber is always higher, so it wins the
+// tiebreak). Left empty rather than pre-filled: the officer either types
+// the streets by hand, or triggers the existing "tv" auto-fill later once
+// the arrival row exists to compute a route from.
+export async function insertTravelledViaRow(afterRow: {
+  sheetId: number;
+  time: string | null;
+  timeMinutes: number | null;
+  dayOffset: number | null;
+  rowDate: string | null;
+}): Promise<number> {
+  const existingRows = await getRowsBySheetId(afterRow.sheetId);
+  const rowNumber = existingRows.length + 1;
+  return createSheetRow({
+    sheetId: afterRow.sheetId,
+    rowNumber,
+    time: afterRow.time ?? undefined,
+    timeMinutes: afterRow.timeMinutes ?? undefined,
+    dayOffset: afterRow.dayOffset ?? 0,
+    rowDate: afterRow.rowDate ?? undefined,
+    isLocked: false,
+  });
+}
+
 // ─── Row Members ──────────────────────────────────────────────────────────────
 
 export async function getMembersByRowId(rowId: number) {

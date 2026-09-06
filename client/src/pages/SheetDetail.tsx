@@ -4930,11 +4930,23 @@ export default function SheetDetail({
                               />
                             </td>
 
-                            {/* Observation — pb-10 reserves ~2 blank lines
-                              below the text so rows read with breathing room
+                            {/* Observation — reserves ~2 blank lines below
+                              the text so rows read with breathing room
                               between them, on screen and not just in the
-                              printed/exported sheet. */}
-                            <td className="pb-10">
+                              printed/exported sheet. Uses an inline style
+                              rather than the pb-10 utility class: the
+                              global ".running-sheet-table td" rule in
+                              index.css sets its own "padding" shorthand
+                              (including padding-bottom), and that selector
+                              (class+element) has higher CSS specificity
+                              than a bare Tailwind utility class, so pb-10
+                              was silently losing to it and never actually
+                              applying — confirmed as a real, reported bug,
+                              not just a theoretical risk. An inline style
+                              always wins regardless of selector
+                              specificity, so don't "clean this up" back to
+                              a className without re-checking that. */}
+                            <td style={{ paddingBottom: "2.5rem" }}>
                               {tvLoadingRowId === row.id ? (
                                 <div className="flex items-center gap-2 py-2 px-1 text-sm text-muted-foreground">
                                   <svg

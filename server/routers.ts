@@ -134,6 +134,8 @@ import {
   setRowLocked,
   updateRunningSheet,
   updateSheetRow,
+  insertTravelledViaRow,
+  textHasContinuedVia,
   updateUser,
   updateUserRole,
   getCinCertStatusForSheet,
@@ -1421,6 +1423,29 @@ export const appRouter = router({
           details: `Row ${rowNumber} created`,
           createdAt: Date.now(),
         });
+        // See insertTravelledViaRow — a row created with "continued via:"
+        // already in its text (e.g. via the "Vehicle departing" RS Quick
+        // Entry chip) gets its empty travelled-via row right away, same as
+        // one that gains the phrase through an edit below.
+        if (textHasContinuedVia(input.observation)) {
+          const tvRowId = await insertTravelledViaRow({
+            sheetId: input.sheetId,
+            time: input.time ?? null,
+            timeMinutes: input.timeMinutes ?? null,
+            dayOffset: input.dayOffset ?? 0,
+            rowDate: rowDate ?? null,
+          });
+          await createAuditLog({
+            sheetId: input.sheetId,
+            rowId: tvRowId,
+            userId: ctx.user.id,
+            userName: ctx.user.cin ?? "Unknown",
+            userCIN: ctx.user.cin ?? undefined,
+            action: "row_created",
+            details: `Travelled-via row auto-created after row ${rowNumber}`,
+            createdAt: Date.now(),
+          });
+        }
         return { id, rowNumber };
       }),
 
@@ -1446,6 +1471,14 @@ export const appRouter = router({
             message: "Row is locked. Uncertify to edit.",
           });
         const { id, ...data } = input;
+        // See insertTravelledViaRow — only fires the FIRST time "continued
+        // via:" appears in this row's text, not on every subsequent save of
+        // an already-flagged row (which would otherwise insert a fresh
+        // empty row on every edit).
+        const gainsContinuedVia =
+          data.observation !== undefined &&
+          !textHasContinuedVia(row.observation) &&
+          textHasContinuedVia(data.observation);
         await updateSheetRow(id, data);
         await createAuditLog({
           sheetId: row.sheetId,
@@ -1457,6 +1490,25 @@ export const appRouter = router({
           details: `Row updated`,
           createdAt: Date.now(),
         });
+        if (gainsContinuedVia) {
+          const tvRowId = await insertTravelledViaRow({
+            sheetId: row.sheetId,
+            time: data.time ?? row.time ?? null,
+            timeMinutes: data.timeMinutes ?? row.timeMinutes ?? null,
+            dayOffset: data.dayOffset ?? row.dayOffset ?? 0,
+            rowDate: data.rowDate ?? row.rowDate ?? null,
+          });
+          await createAuditLog({
+            sheetId: row.sheetId,
+            rowId: tvRowId,
+            userId: ctx.user.id,
+            userName: ctx.user.cin ?? "Unknown",
+            userCIN: ctx.user.cin ?? undefined,
+            action: "row_created",
+            details: `Travelled-via row auto-created after row ${row.rowNumber}`,
+            createdAt: Date.now(),
+          });
+        }
         return { success: true };
       }),
 

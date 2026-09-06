@@ -349,6 +349,39 @@ const NAV_KEY_MAP: Record<
 
 const LS_QUICK_LINKS_KEY = "runlog_map_quick_links";
 const LS_MAP_SETTINGS_KEY = "runlog_map_settings";
+// Geocoded-address cache, keyed by the exact query string sent to
+// google.maps.Geocoder — persisted across sessions since a street
+// address's lat/lng is effectively permanent, so there is never a reason
+// to re-resolve one we've already seen. Without this, renderLocations()
+// re-geocodes every intel location from scratch on every poll (every
+// location, every ~poll-interval), which is a live network round trip per
+// pin even though almost none of them have actually changed — the
+// dominant cost of opening the map on any operation with more than a
+// handful of locations. Capped so a years-old install doesn't grow this
+// unboundedly; oldest entries (by insertion order) are evicted first.
+const GEOCODE_CACHE_KEY = "runlog_geocode_cache_v1";
+const GEOCODE_CACHE_MAX_ENTRIES = 5000;
+
+// Trims oldest entries (Map insertion order) down to the cap, then writes
+// the cache to localStorage. Takes the Map directly rather than being a
+// hook so it can be called from inside the geocode callback without
+// pulling it into a useCallback dependency array.
+function persistGeocodeCache(cache: Map<string, google.maps.LatLngLiteral>) {
+  while (cache.size > GEOCODE_CACHE_MAX_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey === undefined) break;
+    cache.delete(oldestKey);
+  }
+  try {
+    localStorage.setItem(
+      GEOCODE_CACHE_KEY,
+      JSON.stringify(Object.fromEntries(cache))
+    );
+  } catch {
+    /* localStorage quota/access can throw — the in-memory cache still
+       speeds up the rest of this session even if it doesn't persist */
+  }
+}
 
 // ── Map Shapes ─────────────────────────────────────────────────────────────────
 // Transparent annotation shapes drawn on the map — see the mapShapes schema
@@ -1754,10 +1787,35 @@ export default function IntelligenceMapping() {
   const trackStartsRef = useRef<Map<number, number>>(new Map());
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
+  // Persisted address → lat/lng cache (see GEOCODE_CACHE_KEY above) — a Map
+  // preserves insertion order, which doubles as the LRU-ish eviction order
+  // when trimming to GEOCODE_CACHE_MAX_ENTRIES.
+  const geocodeCacheRef = useRef<Map<string, google.maps.LatLngLiteral>>(
+    new Map()
+  );
   const geocodeQueueRef = useRef<IntelMapLocation[]>([]);
   const geocodeIndexRef = useRef(0);
   const geocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const watchIdRef = useRef<number | null>(null);
+
+  // Load the persisted geocode cache once on mount, before any location
+  // ever needs to be geocoded — a plain synchronous read, not a query, so
+  // there's no risk of the first renderLocations() call racing ahead of it.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(GEOCODE_CACHE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<
+          string,
+          google.maps.LatLngLiteral
+        >;
+        geocodeCacheRef.current = new Map(Object.entries(parsed));
+      }
+    } catch {
+      /* corrupt/inaccessible localStorage — just start with an empty
+         cache, every location simply falls back to a real geocode call */
+    }
+  }, []);
 
   // Persist map settings to localStorage whenever they change
   useEffect(() => {
@@ -2741,37 +2799,56 @@ export default function IntelligenceMapping() {
 
   const geocodeNext = useCallback(() => {
     const queue = geocodeQueueRef.current;
-    const idx = geocodeIndexRef.current;
-    if (idx >= queue.length || !geocoderRef.current) return;
+    if (!geocoderRef.current) return;
 
-    const loc = queue[idx];
-    geocodeIndexRef.current = idx + 1;
+    // Drain every item that doesn't need an actual network call — a manual
+    // pin-move override or an address already in the geocode cache — in one
+    // synchronous pass, with no artificial delay between them (the 50ms
+    // pacing in advanceGeocodeQueue only exists to avoid hammering the
+    // Geocoder API back-to-back; it serves no purpose between two placements
+    // that never touch the network at all). Stop and hand off to the
+    // network path the moment we hit a real cache miss, so we still only
+    // ever have one live geocode request in flight.
+    while (geocodeIndexRef.current < queue.length) {
+      const idx = geocodeIndexRef.current;
+      const loc = queue[idx];
+      geocodeIndexRef.current = idx + 1;
 
-    // A manually-moved position (see intelPinOverrides) takes priority over
-    // the geocoded address — skip the API call entirely and place it there.
-    // Without this, the next time this location's queue runs (every poll)
-    // it would re-geocode from the address string and snap straight back to
-    // where the address geocodes to, undoing the move a moment after it
-    // last "took".
-    const override = pinOverridesRef.current.get(loc.label);
-    if (override?.lat != null && override?.lng != null) {
-      placeMarker(loc, { lat: override.lat, lng: override.lng });
-      advanceGeocodeQueue();
+      // A manually-moved position (see intelPinOverrides) takes priority
+      // over the geocoded address. Without this, the next time this
+      // location's queue runs (every poll) it would re-geocode from the
+      // address string and snap straight back to where the address
+      // geocodes to, undoing the move a moment after it last "took".
+      const override = pinOverridesRef.current.get(loc.label);
+      if (override?.lat != null && override?.lng != null) {
+        placeMarker(loc, { lat: override.lat, lng: override.lng });
+        continue;
+      }
+
+      const query =
+        loc.label.includes(",") || /\d/.test(loc.label)
+          ? `${loc.label}, Western Australia, Australia`
+          : `${loc.label}, Perth, Western Australia, Australia`;
+
+      const cached = geocodeCacheRef.current.get(query);
+      if (cached) {
+        placeMarker(loc, cached);
+        continue;
+      }
+
+      geocoderRef.current.geocode({ address: query }, (results, status) => {
+        if (status === "OK" && results && results[0]) {
+          const pos = results[0].geometry.location;
+          const resolved = { lat: pos.lat(), lng: pos.lng() };
+          geocodeCacheRef.current.set(query, resolved);
+          persistGeocodeCache(geocodeCacheRef.current);
+          placeMarker(loc, resolved);
+        }
+        advanceGeocodeQueue();
+      });
       return;
     }
-
-    const query =
-      loc.label.includes(",") || /\d/.test(loc.label)
-        ? `${loc.label}, Western Australia, Australia`
-        : `${loc.label}, Perth, Western Australia, Australia`;
-
-    geocoderRef.current.geocode({ address: query }, (results, status) => {
-      if (status === "OK" && results && results[0]) {
-        const pos = results[0].geometry.location;
-        placeMarker(loc, { lat: pos.lat(), lng: pos.lng() });
-      }
-      advanceGeocodeQueue();
-    });
+    advanceGeocodeQueue();
   }, [placeMarker, advanceGeocodeQueue]);
 
   const renderLocations = useCallback(

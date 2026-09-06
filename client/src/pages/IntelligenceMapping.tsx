@@ -1649,8 +1649,7 @@ export default function IntelligenceMapping() {
   const addrSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
-  const addrSearchPinRef =
-    useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+  const addrSearchPinRef = useRef<DivIconOverlay | null>(null);
 
   // Follow-me mode: keeps own tag centred on map
   const [followMode, setFollowMode] = useState(false);
@@ -1727,16 +1726,14 @@ export default function IntelligenceMapping() {
   // Map state
   const [mapReady, setMapReady] = useState(false);
   const mapRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  const markersRef = useRef<DivIconOverlay[]>([]);
   // Direct img element refs for live rotation/icon updates without stale
   // `.content.querySelector` lookups — mirrors customMarkerImgRefs below,
   // keyed by the intel pin's location label (same key markersRef entries
   // are found by via `.title`).
   const intelPinImgRefs = useRef<Map<string, HTMLImageElement>>(new Map());
   // Key: "userId_deviceId" for per-device pins
-  const liveMarkersRef = useRef<
-    Map<string, google.maps.marker.AdvancedMarkerElement>
-  >(new Map());
+  const liveMarkersRef = useRef<Map<string, DivIconOverlay>>(new Map());
   // Key: userId — one trace polyline per traced officer
   const traceLinesRef = useRef<Map<number, google.maps.Polyline>>(new Map());
   // Remembers each user's last-known team so a trace line keeps its colour
@@ -2641,7 +2638,7 @@ export default function IntelligenceMapping() {
       // ────────────────────────────────────────────────────────────────────────────────
 
       const pinEl = createPinElement(loc);
-      const marker = new google.maps.marker.AdvancedMarkerElement({
+      const marker = new DivIconOverlay({
         map: mapRef.current,
         position,
         content: pinEl,
@@ -2932,7 +2929,7 @@ export default function IntelligenceMapping() {
           existing.content = createUserPinElement(liveUser);
         } else {
           const pinEl = createUserPinElement(liveUser);
-          const marker = new google.maps.marker.AdvancedMarkerElement({
+          const marker = new DivIconOverlay({
             map: mapRef.current,
             position: { lat: liveUser.lat, lng: liveUser.lng },
             content: pinEl,
@@ -3474,9 +3471,7 @@ export default function IntelligenceMapping() {
   // and its label are two separate map overlays (a Circle/Rectangle/etc.
   // can't render text of its own), kept in sync side by side. Built with
   // createLabelPillElement above (shared with the custom-marker label).
-  const shapeLabelsRef = useRef<
-    Map<number, google.maps.marker.AdvancedMarkerElement>
-  >(new Map());
+  const shapeLabelsRef = useRef<Map<number, DivIconOverlay>>(new Map());
 
   // A shaded shape is clickable (to open its own edit panel), which by
   // default swallows every mouse/touch gesture over its area before the
@@ -3749,11 +3744,17 @@ export default function IntelligenceMapping() {
         existingLabel.position = labelAnchor;
         existingLabel.content = createLabelPillElement(labelText, fillColor);
       } else {
-        const labelMarker = new google.maps.marker.AdvancedMarkerElement({
+        const labelMarker = new DivIconOverlay({
           map,
           position: labelAnchor,
           content: createLabelPillElement(labelText, fillColor),
           zIndex: 500,
+          // "none" — createLabelPillElement already sets its own offset
+          // transform ("translate(12px, -50%)") directly on the content
+          // element to nudge the pill beside the shape's anchor point;
+          // DivIconOverlay must not also apply a centering transform on
+          // top of that.
+          anchor: "none",
         });
         labelMarker.addListener("click", openEdit);
         shapeLabelsRef.current.set(s.id, labelMarker);
@@ -5166,13 +5167,12 @@ export default function IntelligenceMapping() {
                                 }
                                 const pinEl = document.createElement("div");
                                 pinEl.innerHTML = `<div style="width:36px;height:36px;background:#4285f4;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35)"></div>`;
-                                const pin =
-                                  new google.maps.marker.AdvancedMarkerElement({
-                                    map: mapRef.current!,
-                                    position: loc,
-                                    content: pinEl,
-                                    title: s.description,
-                                  });
+                                const pin = new DivIconOverlay({
+                                  map: mapRef.current!,
+                                  position: { lat: loc.lat(), lng: loc.lng() },
+                                  content: pinEl,
+                                  title: s.description,
+                                });
                                 addrSearchPinRef.current = pin;
                                 // Clicking the blue pin shows the action chooser
                                 pin.addListener("gmp-click", () => {

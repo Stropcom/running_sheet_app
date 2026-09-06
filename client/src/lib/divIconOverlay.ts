@@ -60,6 +60,7 @@ export class DivIconOverlay extends google.maps.OverlayView {
   private _position: google.maps.LatLngLiteral;
   private _content: HTMLElement;
   private _zIndex: number;
+  private _title: string | undefined;
   private readonly _anchor: DivIconOverlayAnchor;
   private _container: HTMLDivElement | null = null;
   private _draggable = false;
@@ -71,8 +72,20 @@ export class DivIconOverlay extends google.maps.OverlayView {
     this._content = options.content;
     this._zIndex = options.zIndex ?? 0;
     this._anchor = options.anchor ?? "center";
+    this._title = options.title;
     if (options.title) this._content.title = options.title;
     if (options.map) this.setMap(options.map);
+  }
+
+  // Intel pins are looked up by `.title` (they're kept in a plain array,
+  // not a Map keyed by id like custom markers), matching how call sites
+  // already read AdvancedMarkerElement's own `.title` property.
+  get title(): string | undefined {
+    return this._title;
+  }
+  set title(t: string | undefined) {
+    this._title = t;
+    this._content.title = t ?? "";
   }
 
   get map(): google.maps.Map | null {

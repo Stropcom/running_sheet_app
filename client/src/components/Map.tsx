@@ -100,33 +100,50 @@ const MAP_ID_VECTOR = "1c8d997128c67d9fc1a04b7e"; // "Runlog map" — vector
 const MAP_ID_RASTER = "1c8d997128c67d9fa74cfa85"; // "Runlog Map" — raster, guaranteed no vector-drift but no vector-only features (real cloud dark-mode styling, smoother fractional zoom)
 
 // Runtime toggle (no rebuild/redeploy needed) so the two can be compared
-// live: append ?mapRender=vector or ?mapRender=raster to the URL once, and
-// the choice persists per-browser via localStorage from then on. Defaults
-// to vector — the one worth testing first, since raster is the known-safe
-// fallback. An explicit VITE_GOOGLE_MAPS_MAP_ID env var, if ever set,
-// overrides both (e.g. to pin a specific ID fleet-wide regardless of each
-// device's own toggle).
+// live — see the "Map Rendering" switch in IntelligenceMapping.tsx's Map
+// Settings pane, which calls setMapRenderPreference() then reloads the page
+// (mapId can only be set when a google.maps.Map is constructed, not changed
+// on an existing instance, so switching means re-creating the map). A
+// ?mapRender=vector or ?mapRender=raster URL param is also honoured, for a
+// quick one-off check without opening the settings pane. Either way the
+// choice then persists per-browser via localStorage. Defaults to vector —
+// the one worth testing first, since raster is the known-safe fallback. An
+// explicit VITE_GOOGLE_MAPS_MAP_ID env var, if ever set, overrides both
+// (e.g. to pin a specific ID fleet-wide regardless of each device's own
+// toggle).
 const MAP_RENDER_STORAGE_KEY = "runlog_map_render_pref";
+export type MapRenderPreference = "vector" | "raster";
 
-function resolveMapId(): string {
-  const pinned = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID;
-  if (pinned) return pinned;
-  let pref: string | null = null;
+export function getMapRenderPreference(): MapRenderPreference {
   try {
     const fromQuery = new URLSearchParams(window.location.search).get(
       "mapRender"
     );
     if (fromQuery === "vector" || fromQuery === "raster") {
       localStorage.setItem(MAP_RENDER_STORAGE_KEY, fromQuery);
-      pref = fromQuery;
-    } else {
-      pref = localStorage.getItem(MAP_RENDER_STORAGE_KEY);
+      return fromQuery;
     }
+    const stored = localStorage.getItem(MAP_RENDER_STORAGE_KEY);
+    if (stored === "vector" || stored === "raster") return stored;
   } catch {
     /* localStorage/URL access can throw in some embedded contexts — fall
        back to the default below rather than breaking map load over it. */
   }
-  return pref === "raster" ? MAP_ID_RASTER : MAP_ID_VECTOR;
+  return "vector";
+}
+
+export function setMapRenderPreference(pref: MapRenderPreference): void {
+  try {
+    localStorage.setItem(MAP_RENDER_STORAGE_KEY, pref);
+  } catch {
+    /* ignore — worst case the toggle doesn't stick across a reload */
+  }
+}
+
+function resolveMapId(): string {
+  const pinned = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID;
+  if (pinned) return pinned;
+  return getMapRenderPreference() === "raster" ? MAP_ID_RASTER : MAP_ID_VECTOR;
 }
 
 interface MapViewProps {

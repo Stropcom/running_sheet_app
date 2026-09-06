@@ -35,7 +35,11 @@ import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
-import { MapView } from "@/components/Map";
+import {
+  MapView,
+  getMapRenderPreference,
+  setMapRenderPreference,
+} from "@/components/Map";
 import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
 import { UcoGuideMapOverlay } from "@/components/UcoGuideMapOverlay";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
@@ -1078,6 +1082,14 @@ export default function IntelligenceMapping() {
     }
     return false;
   });
+  // Which Google Maps Map ID (vector vs raster) this device renders the map
+  // with — see Map.tsx. Changing it needs the underlying google.maps.Map
+  // instance re-created (mapId can only be set at construction), so the
+  // toggle below just persists the new choice and reloads the page rather
+  // than trying to swap it on the live instance.
+  const [mapRenderPref, setMapRenderPrefState] = useState<"vector" | "raster">(
+    () => getMapRenderPreference()
+  );
   // Operations dropdown open state
   const [opsDropdownOpen, setOpsDropdownOpen] = useState(false);
   // GPS error
@@ -5601,6 +5613,44 @@ export default function IntelligenceMapping() {
                     </span>
                   </div>
                 </div>
+              </div>
+
+              {/* ── MAP RENDERING toggle ── */}
+              <div className="px-3 py-3 border-b border-border">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      Map Rendering
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-[11px] font-medium transition-colors ${mapRenderPref === "vector" ? "text-foreground" : "text-muted-foreground"}`}
+                    >
+                      Vector
+                    </span>
+                    <Switch
+                      checked={mapRenderPref === "raster"}
+                      onCheckedChange={useRaster => {
+                        const next = useRaster ? "raster" : "vector";
+                        setMapRenderPreference(next);
+                        setMapRenderPrefState(next);
+                        window.location.reload();
+                      }}
+                      className="scale-90"
+                    />
+                    <span
+                      className={`text-[11px] font-medium transition-colors ${mapRenderPref === "raster" ? "text-foreground" : "text-muted-foreground"}`}
+                    >
+                      Raster
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
+                  Reloads the map to apply. Raster keeps markers/labels
+                  perfectly still while zooming; Vector is smoother but can
+                  drift slightly.
+                </p>
               </div>
 
               {/* ── OPERATIONS section ── */}

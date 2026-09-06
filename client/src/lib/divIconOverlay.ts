@@ -69,8 +69,9 @@ export interface DivIconOverlayOptions {
   anchor?: DivIconOverlayAnchor;
 }
 
+// Deliberately no `map` property here — see getImplCtor's comment on why
+// the class extending google.maps.OverlayView must never define one.
 interface DivIconOverlayImpl extends google.maps.OverlayView {
-  map: google.maps.Map | null;
   position: google.maps.LatLngLiteral;
   content: HTMLElement;
   zIndex: number;
@@ -87,6 +88,17 @@ let ImplCtor: DivIconOverlayImplCtor | null = null;
 function getImplCtor(): DivIconOverlayImplCtor {
   if (ImplCtor) return ImplCtor;
 
+  // Impl must NEVER define its own `map` getter/setter. OverlayView's real
+  // setMap()/getMap() implementation reads/writes a property literally
+  // named `map` on the instance internally — defining our own `map`
+  // accessor on this class (or a subclass of it) shadows that and creates
+  // infinite recursion the instant setMap() is called (setMap -> assigns
+  // `this.map` -> invokes our setter -> calls setMap() again -> ...),
+  // surfacing as "RangeError: Maximum call stack size exceeded at
+  // t.setMap". The outer DivIconOverlay wrapper class below is a separate,
+  // non-OverlayView class, so it's safe for IT to expose `.map` — it just
+  // has to call `impl.getMap()`/`impl.setMap()` directly rather than
+  // `impl.map`.
   class Impl extends google.maps.OverlayView {
     private _position: google.maps.LatLngLiteral;
     private _content: HTMLElement;
@@ -114,13 +126,6 @@ function getImplCtor(): DivIconOverlayImplCtor {
     set title(t: string | undefined) {
       this._title = t;
       this._content.title = t ?? "";
-    }
-
-    get map(): google.maps.Map | null {
-      return (this.getMap() as google.maps.Map | null) ?? null;
-    }
-    set map(m: google.maps.Map | null) {
-      this.setMap(m);
     }
 
     get position(): google.maps.LatLngLiteral {
@@ -268,11 +273,14 @@ export class DivIconOverlay {
     this.impl = new Ctor(options);
   }
 
+  // Calls the real inherited getMap()/setMap() directly rather than a
+  // `.map` property on impl — see getImplCtor's comment on why Impl itself
+  // must never define a `map` accessor.
   get map(): google.maps.Map | null {
-    return this.impl.map;
+    return (this.impl.getMap() as google.maps.Map | null) ?? null;
   }
   set map(m: google.maps.Map | null) {
-    this.impl.map = m;
+    this.impl.setMap(m);
   }
 
   get position(): google.maps.LatLngLiteral {

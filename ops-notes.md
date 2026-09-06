@@ -61,6 +61,34 @@ the deploy script's own health check (`curl localhost:3000`) cannot detect
 it, because the server-side HTML response is unaffected — the crash is
 100% client-side, inside the browser, after the page has already loaded.
 
+**Follow-up, same day:** the fix above got the app itself loading again,
+but opening the Intelligence Mapping page then threw `RangeError: Maximum
+call stack size exceeded at t.setMap` (visible to the user as a crash
+screen specifically on that page, both desktop and mobile). Second bug in
+the same new file: the class that actually extends
+`google.maps.OverlayView` also defined its own `get map()`/`set map()`
+accessor pair (for convenience, mirroring `AdvancedMarkerElement`'s API).
+`OverlayView`'s real `setMap()`/`getMap()` implementation manages a
+property internally that is also literally named `map` — defining a same-
+named accessor on a subclass shadows that and creates infinite mutual
+recursion the instant `setMap()` is called (`setMap` touches `this.map`
+internally → invokes our setter → calls `setMap()` again → ...). **Fix:**
+the OverlayView-extending class must never define its own `map` property;
+it uses the inherited `setMap()`/`getMap()` methods directly everywhere
+internally. The separate, non-OverlayView wrapper class that the rest of
+the app actually interacts with (`DivIconOverlay` in
+`lib/divIconOverlay.ts`) still exposes a `.map` getter/setter for API
+compatibility with the old `AdvancedMarkerElement` call sites — it's just
+implemented by calling `impl.getMap()`/`impl.setMap()` directly rather than
+`impl.map`, which is safe since that wrapper class has no inheritance
+relationship to `OverlayView` at all.
+
+**General lesson reinforced:** never redeclare a property name on a
+subclass of any Google Maps MVCObject-based class (`OverlayView`,
+`Marker`, etc.) that the base class already uses for its own bindable
+state — `map` is the one every `OverlayView` subclass will hit, but the
+same trap applies to any other name the base class manages internally.
+
 ---
 
 ## 2026-08-16 — Droplet switched from tracking the feature branch to `main`

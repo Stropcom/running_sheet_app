@@ -1091,6 +1091,11 @@ export default function IntelligenceMapping() {
   const [mapRenderPref, setMapRenderPrefState] = useState<"vector" | "raster">(
     () => getMapRenderPreference()
   );
+  // 3D (tilt) view — only available under vector rendering. Kept in sync
+  // with the map's actual tilt via a "tilt_changed" listener (see
+  // handleMapReady) so the button reflects reality even if a gesture
+  // changes it directly, not just our own button clicks.
+  const [is3DActive, setIs3DActive] = useState(false);
   // Operations dropdown open state
   const [opsDropdownOpen, setOpsDropdownOpen] = useState(false);
   // GPS error
@@ -3042,6 +3047,15 @@ export default function IntelligenceMapping() {
         });
       });
 
+      // Keep the 3D button's on/off state in sync with the map's actual
+      // tilt — vector maps also let a user tilt via a two-finger drag
+      // (mobile) or Ctrl+drag (desktop) gesture directly, not just our
+      // button, and Google can itself reset tilt to 0 in some map-type/
+      // zoom combinations that don't support it.
+      map.addListener("tilt_changed", () => {
+        setIs3DActive((map.getTilt() ?? 0) > 0);
+      });
+
       // Persist map type (roadmap / satellite) whenever the user switches
       map.addListener("maptypeid_changed", () => {
         const typeId = map.getMapTypeId();
@@ -4979,6 +4993,37 @@ export default function IntelligenceMapping() {
               />
             </button>
 
+            {/* 3D (tilt) toggle — right below Refresh. Tilt only works
+              under vector rendering (see Map.tsx's MAP_ID_VECTOR/
+              MAP_ID_RASTER); disabled with an explanatory title under
+              raster so tapping it doesn't silently do nothing. */}
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                if (!mapRef.current || mapRenderPref !== "vector") return;
+                const next = is3DActive ? 0 : 45;
+                mapRef.current.setTilt(next);
+                setIs3DActive(next > 0);
+              }}
+              disabled={mapRenderPref !== "vector"}
+              className={`absolute z-20 pointer-events-auto flex items-center justify-center rounded-lg shadow-md border h-9 w-9 text-xs font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                is3DActive
+                  ? "bg-sky-600 border-sky-600 text-white"
+                  : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+              }`}
+              style={{ top: "94px", right: "10px" }}
+              aria-label="Toggle 3D view"
+              title={
+                mapRenderPref === "vector"
+                  ? is3DActive
+                    ? "Switch to flat (2D) view"
+                    : "Switch to 3D (tilted) view"
+                  : "3D view requires Vector map rendering — enable it in Map Settings"
+              }
+            >
+              3D
+            </button>
+
             {/* Centre on me / Follow me floating buttons — top-left below search bar */}
             <div
               className="absolute z-20 pointer-events-auto flex gap-1"
@@ -5647,9 +5692,9 @@ export default function IntelligenceMapping() {
                   </div>
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
-                  Reloads the map to apply. Raster keeps markers/labels
-                  perfectly still while zooming; Vector is smoother but can
-                  drift slightly.
+                  Reloads the map to apply. Vector supports the 3D tilt toggle
+                  and smoother zooming; Raster is the simpler,
+                  guaranteed-compatible fallback.
                 </p>
               </div>
 

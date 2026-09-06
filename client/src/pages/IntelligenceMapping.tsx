@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RS_CANONICAL_CHIP_ORDER } from "@/lib/rsChipOrder";
+import {
+  VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN,
+  extractArrivalAddress,
+} from "@shared/vehicleEventPatterns";
 import { DivIconOverlay } from "@/lib/divIconOverlay";
 import {
   getMarkerDataUrl,
@@ -8899,13 +8903,21 @@ export default function IntelligenceMapping() {
                             parked vehicle here and continue on foot into
                             this location ("... exited the vehicle, walked
                             [route], entered X and continued out of sight.").
-                            Only offered when a vehicle is known to be at
-                            THIS address (same arrivalsHere filter as the
-                            "Vehicle departing" chip above) — there's no
-                            vehicle to have exited otherwise. One button per
-                            vehicle here (mirrors "Vehicle departing"), since
-                            the names each button inserts now come from THAT
-                            vehicle's own occupantDesc via
+                            Offered as soon as a vehicle is known to be at
+                            THIS address — either from an already-SAVED row
+                            on this sheet (rsPendingArrivals, same as the
+                            "Vehicle departing" chip above), OR from the
+                            vehicle-arrival sentence the officer has just
+                            typed into THIS SAME still-unsaved observation
+                            (draftVehicleArrival) — this second case is what
+                            lets the walk-in continuation appear as its own
+                            paragraph below the arrival text in the SAME
+                            row, matching how officers actually write this
+                            narrative, rather than only ever on a
+                            subsequent row after the arrival was submitted.
+                            One button per vehicle here (mirrors "Vehicle
+                            departing"), since the names each button inserts
+                            come from THAT vehicle's own occupantDesc via
                             extractOccupantNames — if more than one vehicle
                             is here, each offers different names. The officer
                             can always edit the inserted names if the actual
@@ -8916,12 +8928,11 @@ export default function IntelligenceMapping() {
                             or address, the route taken genuinely varies
                             every time and can't be reused from anywhere. */}
                           {mapQeAddress &&
-                            rsPendingArrivals &&
                             (() => {
                               const appendText = (text: string) => {
                                 pushInlineUndo(rsInlineText);
                                 setRsInlineText(prev =>
-                                  prev ? `${prev} ${text}` : text
+                                  prev ? `${prev}\n\n${text}` : text
                                 );
                                 resetInlineTimer();
                                 rsInlineInputRef.current?.focus();
@@ -8937,10 +8948,51 @@ export default function IntelligenceMapping() {
                                 ? toTitleCase(bracketMatch[2])
                                 : (mapQeAddress.split(",")[0]?.trim() ??
                                   mapQeAddress);
-                              const vehiclesHere = rsPendingArrivals.filter(
-                                a =>
-                                  a.address.trim().toLowerCase() ===
-                                  shortAddr.trim().toLowerCase()
+                              const vehiclesHereByRego = new Map<
+                                string,
+                                { rego: string; occupantDesc: string }
+                              >();
+                              (rsPendingArrivals ?? [])
+                                .filter(
+                                  a =>
+                                    a.address.trim().toLowerCase() ===
+                                    shortAddr.trim().toLowerCase()
+                                )
+                                .forEach(a =>
+                                  vehiclesHereByRego.set(a.rego, a)
+                                );
+                              // Draft: a vehicle-arrival sentence already
+                              // typed into THIS unsaved observation — mined
+                              // client-side with the same patterns the
+                              // server uses on saved rows, so a vehicle just
+                              // typed above offers the chip immediately
+                              // rather than only after this row is
+                              // submitted and the next one opened. Takes
+                              // priority over a same-rego saved entry since
+                              // it reflects what's actually on screen right
+                              // now.
+                              const draftArriveMatch = rsInlineText.match(
+                                VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN
+                              );
+                              if (draftArriveMatch) {
+                                const draftAddress =
+                                  extractArrivalAddress(rsInlineText);
+                                if (
+                                  draftAddress &&
+                                  draftAddress.trim().toLowerCase() ===
+                                    shortAddr.trim().toLowerCase()
+                                ) {
+                                  vehiclesHereByRego.set(
+                                    draftArriveMatch[1].toUpperCase(),
+                                    {
+                                      rego: draftArriveMatch[1].toUpperCase(),
+                                      occupantDesc: draftArriveMatch[2].trim(),
+                                    }
+                                  );
+                                }
+                              }
+                              const vehiclesHere = Array.from(
+                                vehiclesHereByRego.values()
                               );
                               if (vehiclesHere.length === 0) return null;
                               return (

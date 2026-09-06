@@ -27,6 +27,7 @@ import {
   VEHICLE_DEPART_PATTERN,
   VEHICLE_ARRIVE_PATTERN,
   VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN,
+  extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
 import { WALK_IN_PATTERN, WALK_OUT_PATTERN } from "@shared/walkEventPatterns";
 import {
@@ -4794,35 +4795,6 @@ export async function getPendingVehicleDepartures(
   return pending
     .sort((a, b) => b.orderIdx - a.orderIdx)
     .map(({ orderIdx, ...rest }) => rest);
-}
-
-// Captures the address an "arrived" row names — prefers the canonical
-// bracketed short-form if the row includes one (a first mention of that
-// address), otherwise falls back to the plain text straight after "arrived
-// at" (a later, short-form-only mention). Used so the "Vehicle departing"
-// chip only offers itself back at the exact location a vehicle is known to
-// have arrived at, not at every location on the map.
-//
-// Both the bracket search and the plain-text fallback are scoped to the
-// text FROM "arrived at" onward, not the whole row — the occupant
-// description right before "arrived at" often carries its own bracket code
-// for a newly-introduced person (e.g. "Denise HOLLY (HOLLY) front
-// passenger, arrived at Bicton Tavern, 1 Point Walter Road, BICTON WA
-// (Bicton Tavern)"). Searching the whole row for the first "(...)" grabbed
-// that person's bracket instead of the address's own trailing one,
-// silently returning the wrong (and usually non-matching) "address" — a
-// business is a first-mention (full-form, bracketed) address far more
-// often than an already-established residential one, so this showed up
-// almost exclusively as "the departing chip doesn't work for businesses".
-export function extractArrivalAddress(text: string): string | null {
-  const arrivedAtIdx = text.search(/arrived at\s+/i);
-  const searchText = arrivedAtIdx >= 0 ? text.slice(arrivedAtIdx) : text;
-  const bracket = searchText.match(/\(([^)]{1,80})\)/);
-  if (bracket) return bracket[1].trim();
-  const afterArrived = searchText.match(
-    /arrived at\s+(.+?)(?:\s+and\s+\w+|[.\n]|$)/i
-  );
-  return afterArrived ? afterArrived[1].trim() : null;
 }
 
 export interface PendingVehicleArrival {

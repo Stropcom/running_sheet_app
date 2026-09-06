@@ -16,7 +16,7 @@
  * businesses" even though the underlying bug wasn't business-specific.
  */
 import { describe, it, expect } from "vitest";
-import { extractArrivalAddress } from "./db";
+import { extractArrivalAddress } from "@shared/vehicleEventPatterns";
 
 describe("extractArrivalAddress", () => {
   it("uses the address's own bracket, not an earlier occupant bracket (business, first mention)", () => {

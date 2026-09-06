@@ -1096,6 +1096,11 @@ export default function IntelligenceMapping() {
   // handleMapReady) so the button reflects reality even if a gesture
   // changes it directly, not just our own button clicks.
   const [is3DActive, setIs3DActive] = useState(false);
+  // Current map rotation in degrees — vector rendering also allows
+  // rotating the view (Shift+drag on desktop, twist gesture on mobile),
+  // which has no reason to auto-reset, so a "North Up" button re-aligns
+  // it on demand. Kept in sync via a "heading_changed" listener.
+  const [mapHeading, setMapHeading] = useState(0);
   // Operations dropdown open state
   const [opsDropdownOpen, setOpsDropdownOpen] = useState(false);
   // GPS error
@@ -3054,6 +3059,13 @@ export default function IntelligenceMapping() {
       // zoom combinations that don't support it.
       map.addListener("tilt_changed", () => {
         setIs3DActive((map.getTilt() ?? 0) > 0);
+      });
+
+      // Keep the North Up button's rotation/enabled state in sync with the
+      // map's actual heading — set both by our own button and by the
+      // native Shift+drag / twist rotate gesture.
+      map.addListener("heading_changed", () => {
+        setMapHeading(map.getHeading() ?? 0);
       });
 
       // Persist map type (roadmap / satellite) whenever the user switches
@@ -5022,6 +5034,36 @@ export default function IntelligenceMapping() {
               }
             >
               3D
+            </button>
+
+            {/* North Up — right below the 3D toggle. Vector rendering
+              allows rotating the map (Shift+drag on desktop, twist gesture
+              on mobile) with no auto-reset, so this re-aligns it on
+              demand. The Navigation2 arrow visually rotates to point at
+              true north given the map's current heading, so it doubles as
+              a compass, not just a button. */}
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                if (!mapRef.current || mapRenderPref !== "vector") return;
+                mapRef.current.setHeading(0);
+              }}
+              disabled={mapRenderPref !== "vector" || mapHeading === 0}
+              className="absolute z-20 pointer-events-auto flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              style={{ top: "130px", right: "10px" }}
+              aria-label="Reset map rotation to North Up"
+              title={
+                mapRenderPref !== "vector"
+                  ? "Rotation requires Vector map rendering — enable it in Map Settings"
+                  : mapHeading === 0
+                    ? "Already North Up"
+                    : "Reset rotation to North Up"
+              }
+            >
+              <Navigation2
+                className="w-4 h-4 text-sky-600 transition-transform"
+                style={{ transform: `rotate(${-mapHeading}deg)` }}
+              />
             </button>
 
             {/* Centre on me / Follow me floating buttons — top-left below search bar */}

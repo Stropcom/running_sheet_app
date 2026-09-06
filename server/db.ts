@@ -28,6 +28,7 @@ import {
   VEHICLE_ARRIVE_PATTERN,
   VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN,
 } from "@shared/vehicleEventPatterns";
+import { WALK_IN_PATTERN, WALK_OUT_PATTERN } from "@shared/walkEventPatterns";
 import {
   classifyVisitDirection,
   timeBucketLabels,
@@ -4887,6 +4888,85 @@ export async function getPendingVehicleArrivals(
     pending.push({ rego, ...a });
   }
   // Most recently arrived first.
+  return pending
+    .sort((a, b) => b.orderIdx - a.orderIdx)
+    .map(({ orderIdx, ...rest }) => rest);
+}
+
+// ─── Walk-In → Walk-Out Continuity ─────────────────────────────────────────
+// The on-foot mirror of the vehicle depart/arrive continuity above: officers
+// leave a parked vehicle, walk to a location on foot ("... exited the
+// vehicle, walked through the car park, entered Sapore Espresso Bar and
+// continued out of sight."), then later walk back to that same vehicle
+// ("... exited Sapore Espresso Bar walked through the car park to Vehicle
+// 1MGR73."). This mines the sheet's own rows for the most recent walk-in
+// per location that hasn't since been matched by a walk-out from that same
+// location, so the RS Quick Entry popup can offer the captured route text
+// back as a "Walked out" chip — the officer doesn't have to retype it,
+// mirroring how the vehicle chips reuse occupantDesc. There's no equivalent
+// reuse for who's walking (names) since, unlike a vehicle's occupants, who's
+// on foot can genuinely differ between the walk-in and the walk-out — that
+// part is always officer-typed, same as it already is in every observation.
+
+export interface PendingWalkIn {
+  /** Location as originally written in the walk-in row, e.g. "Sapore Espresso Bar". */
+  location: string;
+  /** Route clause as originally written, e.g. "through the car park". */
+  route: string;
+  sheetId: number;
+  rowId: number;
+}
+
+// Returns the most recent still-pending (not yet walked back out) walk-in
+// per location on THIS sheet, ordered most-recent first — same single-sheet
+// scoping as getPendingVehicleDepartures, for the same reason (a one-shift
+// convenience, not something that should carry into the next sheet).
+export async function getPendingWalkIns(
+  sheetId: number
+): Promise<PendingWalkIn[]> {
+  const rows = await getRowsBySheetId(sheetId);
+
+  const lastWalkInByLocationKey = new Map<
+    string,
+    {
+      location: string;
+      route: string;
+      sheetId: number;
+      rowId: number;
+      orderIdx: number;
+    }
+  >();
+  const walkedOutLocationKeys = new Set<string>();
+
+  rows.forEach((row, idx) => {
+    if (!row.observation) return;
+    const outMatch = row.observation.match(WALK_OUT_PATTERN);
+    if (outMatch) {
+      walkedOutLocationKeys.add(outMatch[1].trim().toLowerCase());
+      return;
+    }
+    const inMatch = row.observation.match(WALK_IN_PATTERN);
+    if (inMatch) {
+      const route = inMatch[1].trim();
+      const location = inMatch[2].trim();
+      const key = location.toLowerCase();
+      lastWalkInByLocationKey.set(key, {
+        location,
+        route,
+        sheetId: row.sheetId,
+        rowId: row.id,
+        orderIdx: idx,
+      });
+      walkedOutLocationKeys.delete(key);
+    }
+  });
+
+  const pending: (PendingWalkIn & { orderIdx: number })[] = [];
+  for (const key of Array.from(lastWalkInByLocationKey.keys())) {
+    if (walkedOutLocationKeys.has(key)) continue;
+    pending.push(lastWalkInByLocationKey.get(key)!);
+  }
+  // Most recently walked in first.
   return pending
     .sort((a, b) => b.orderIdx - a.orderIdx)
     .map(({ orderIdx, ...rest }) => rest);

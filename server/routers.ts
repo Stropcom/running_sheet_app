@@ -117,6 +117,7 @@ import {
   getSheetEntityChips,
   getPendingVehicleDepartures,
   getPendingVehicleArrivals,
+  getPendingWalkIns,
   isAddressAlreadyMentioned,
   findMissingLocationSuggestion,
   findVagueVehicleMatch,
@@ -1300,6 +1301,16 @@ export const appRouter = router({
       .input(z.object({ sheetId: z.number() }))
       .query(async ({ input }) => {
         return getPendingVehicleArrivals(input.sheetId);
+      }),
+
+    // Locations someone walked into on foot on this sheet and hasn't since
+    // walked back out of — the "Walked out" chip's source, so the officer
+    // doesn't have to retype the route on foot back to the vehicle. See
+    // getPendingWalkIns.
+    pendingWalkIns: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        return getPendingWalkIns(input.sheetId);
       }),
 
     // Whether an address has already been mentioned (in its full bracketed

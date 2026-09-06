@@ -2178,6 +2178,14 @@ export default function IntelligenceMapping() {
     { sheetId: rsSelectedSheetId ?? 0 },
     { enabled: mapQeOpen && !!rsSelectedSheetId }
   );
+  // Locations someone walked into on foot on this sheet and hasn't since
+  // walked back out of — surfaced as a "Walked out" chip so the officer
+  // doesn't have to retype the route back to the vehicle. See
+  // getPendingWalkIns.
+  const { data: rsPendingWalkIns } = trpc.row.pendingWalkIns.useQuery(
+    { sheetId: rsSelectedSheetId ?? 0 },
+    { enabled: mapQeOpen && !!rsSelectedSheetId }
+  );
   // Short-form of the quick-entry address (mirrors the extraction the
   // "Address chips" section below already does) — used only to check
   // whether this address has already been mentioned in the sheet, for the
@@ -4726,6 +4734,9 @@ export default function IntelligenceMapping() {
               sheetId: rsSelectedSheetId,
             });
             void utils.row.pendingVehicleArrivals.invalidate({
+              sheetId: rsSelectedSheetId,
+            });
+            void utils.row.pendingWalkIns.invalidate({
               sheetId: rsSelectedSheetId,
             });
           }
@@ -8854,6 +8865,151 @@ export default function IntelligenceMapping() {
                                         departing
                                       </button>
                                     ))}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          {/* Walked in chip — for occupants who exit a
+                            parked vehicle here and continue on foot into
+                            this location ("... exited the vehicle, walked
+                            [route], entered X and continued out of sight.").
+                            Only offered when a vehicle is known to be at
+                            THIS address (same arrivalsHere filter as the
+                            "Vehicle departing" chip above) — there's no
+                            vehicle to have exited otherwise. One chip only
+                            (not per-rego): the inserted text never names the
+                            specific vehicle, just "the vehicle", so which
+                            rego is here doesn't change what gets appended.
+                            The [route] placeholder is deliberately literal
+                            text for the officer to type over — unlike the
+                            occupant description or address, the route taken
+                            genuinely varies every time and can't be reused
+                            from anywhere, so there's nothing safe to guess
+                            here. Officer is expected to type who's walking
+                            before tapping this chip, same flow as typing
+                            before any other appended fragment. */}
+                          {mapQeAddress &&
+                            rsPendingArrivals &&
+                            (() => {
+                              const appendText = (text: string) => {
+                                pushInlineUndo(rsInlineText);
+                                setRsInlineText(prev =>
+                                  prev ? `${prev} ${text}` : text
+                                );
+                                resetInlineTimer();
+                                rsInlineInputRef.current?.focus();
+                              };
+                              const bracketMatch = mapQeAddress.match(
+                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
+                              );
+                              const toTitleCase = (s: string) =>
+                                s
+                                  .toLowerCase()
+                                  .replace(/\b\w/g, c => c.toUpperCase());
+                              const shortAddr = bracketMatch
+                                ? toTitleCase(bracketMatch[2])
+                                : (mapQeAddress.split(",")[0]?.trim() ??
+                                  mapQeAddress);
+                              const vehicleHere = rsPendingArrivals.some(
+                                a =>
+                                  a.address.trim().toLowerCase() ===
+                                  shortAddr.trim().toLowerCase()
+                              );
+                              if (!vehicleHere) return null;
+                              const text = `exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`;
+                              return (
+                                <div className="flex flex-col gap-1 md:gap-1.5">
+                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
+                                    Walked in
+                                  </span>
+                                  <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                    <button
+                                      onClick={() => appendText(text)}
+                                      title={text}
+                                      className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                    >
+                                      On foot
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          {/* Walked out chip — mirror of "Walked in": for
+                            occupants who exit this location on foot and
+                            walk back to a vehicle ("... exited X walked
+                            [route] to Vehicle REGO."). Reuses the route
+                            text captured from the matching "Walked in" row
+                            (getPendingWalkIns) rather than another literal
+                            placeholder, since retracing the same route back
+                            is the overwhelmingly common case and this text
+                            was itself officer-typed, not guessed — same
+                            trust level as reusing occupantDesc for vehicle
+                            chips. Only offered when BOTH a pending walk-in
+                            at this address AND a vehicle known to be here
+                            exist — a walk-out always leads to a vehicle
+                            (see the vehicle<->location-only design
+                            decision), so without one there's nothing valid
+                            to insert. This also means the chip naturally
+                            disappears once that vehicle has already
+                            departed, with no extra logic needed. */}
+                          {mapQeAddress &&
+                            rsPendingWalkIns &&
+                            rsPendingWalkIns.length > 0 &&
+                            rsPendingArrivals &&
+                            (() => {
+                              const appendText = (text: string) => {
+                                pushInlineUndo(rsInlineText);
+                                setRsInlineText(prev =>
+                                  prev ? `${prev} ${text}` : text
+                                );
+                                resetInlineTimer();
+                                rsInlineInputRef.current?.focus();
+                              };
+                              const bracketMatch = mapQeAddress.match(
+                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
+                              );
+                              const toTitleCase = (s: string) =>
+                                s
+                                  .toLowerCase()
+                                  .replace(/\b\w/g, c => c.toUpperCase());
+                              const shortAddr = bracketMatch
+                                ? toTitleCase(bracketMatch[2])
+                                : (mapQeAddress.split(",")[0]?.trim() ??
+                                  mapQeAddress);
+                              const walkInHere = rsPendingWalkIns.find(
+                                w =>
+                                  w.location.trim().toLowerCase() ===
+                                  shortAddr.trim().toLowerCase()
+                              );
+                              const regosHere = rsPendingArrivals.filter(
+                                a =>
+                                  a.address.trim().toLowerCase() ===
+                                  shortAddr.trim().toLowerCase()
+                              );
+                              if (!walkInHere || regosHere.length === 0)
+                                return null;
+                              return (
+                                <div className="flex flex-col gap-1 md:gap-1.5">
+                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
+                                    Walked out
+                                  </span>
+                                  <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                    {regosHere.map(a => {
+                                      const text = `exited ${shortAddr} walked ${walkInHere.route} to Vehicle ${a.rego}.`;
+                                      return (
+                                        <button
+                                          key={a.rego}
+                                          onClick={() => appendText(text)}
+                                          title={text}
+                                          className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                        >
+                                          To{" "}
+                                          <span className="font-mono normal-case">
+                                            {a.rego}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               );

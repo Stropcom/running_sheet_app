@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RS_CANONICAL_CHIP_ORDER } from "@/lib/rsChipOrder";
+import { DivIconOverlay } from "@/lib/divIconOverlay";
 import {
   getMarkerDataUrl,
   getMarkerSvg,
@@ -3152,9 +3153,7 @@ export default function IntelligenceMapping() {
   );
 
   // ── Custom marker rendering ────────────────────────────────────────────────
-  const customMarkerMapRefs = useRef<
-    Map<number, google.maps.marker.AdvancedMarkerElement>
-  >(new Map());
+  const customMarkerMapRefs = useRef<Map<number, DivIconOverlay>>(new Map());
   // Direct img element refs for live rotation without stale content queries
   const customMarkerImgRefs = useRef<Map<number, HTMLImageElement>>(new Map());
 
@@ -3229,7 +3228,7 @@ export default function IntelligenceMapping() {
         m.position = { lat: outerCm.lat, lng: outerCm.lng };
         m.content = content;
       } else {
-        const marker = new google.maps.marker.AdvancedMarkerElement({
+        const marker = new DivIconOverlay({
           map,
           position: { lat: outerCm.lat, lng: outerCm.lng },
           content,
@@ -3445,6 +3444,7 @@ export default function IntelligenceMapping() {
           };
 
           infoWindowRef.current.setContent(buildPopupHtml(currentRotation));
+          infoWindowRef.current.setPosition({ lat, lng });
           // Deferred one frame — same reasoning as the intel pin popup's
           // own open() above: the browser hasn't laid out the HTML
           // setContent() just injected until the next paint, so opening in
@@ -3452,7 +3452,7 @@ export default function IntelligenceMapping() {
           // stale/zero size from this reused singleton InfoWindow's
           // previous content.
           requestAnimationFrame(() => {
-            infoWindowRef.current?.open(map, marker);
+            infoWindowRef.current?.open(map);
           });
         });
         existing.set(outerCm.id, marker);

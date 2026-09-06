@@ -8929,13 +8929,40 @@ export default function IntelligenceMapping() {
                             every time and can't be reused from anywhere. */}
                           {mapQeAddress &&
                             (() => {
+                              // Insert at the caret rather than forcing the
+                              // text to the end of the observation — the
+                              // officer may have already clicked/tabbed back
+                              // into the middle of what they've typed (e.g.
+                              // to fix a word) before tapping this chip, and
+                              // the old "always append at the end" behaviour
+                              // would silently move the walk-in text away
+                              // from where they were looking. Still opens
+                              // its own paragraph (blank line before) so it
+                              // reads as a distinct sentence, same as before.
                               const appendText = (text: string) => {
                                 pushInlineUndo(rsInlineText);
-                                setRsInlineText(prev =>
-                                  prev ? `${prev}\n\n${text}` : text
-                                );
+                                const textarea = rsInlineInputRef.current;
+                                const pos =
+                                  textarea?.selectionStart ??
+                                  rsInlineText.length;
+                                const selEnd = textarea?.selectionEnd ?? pos;
+                                const before = rsInlineText.slice(0, pos);
+                                const after = rsInlineText.slice(selEnd);
+                                const lead = before
+                                  ? before.endsWith("\n\n")
+                                    ? ""
+                                    : before.endsWith("\n")
+                                      ? "\n"
+                                      : "\n\n"
+                                  : "";
+                                const inserted = `${before}${lead}${text}`;
+                                setRsInlineText(`${inserted}${after}`);
                                 resetInlineTimer();
-                                rsInlineInputRef.current?.focus();
+                                requestAnimationFrame(() => {
+                                  textarea?.focus();
+                                  const cursor = inserted.length;
+                                  textarea?.setSelectionRange(cursor, cursor);
+                                });
                               };
                               const bracketMatch = mapQeAddress.match(
                                 /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/

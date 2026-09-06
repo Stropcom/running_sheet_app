@@ -34,6 +34,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { INTEL_CHIP_CLASSES } from "@/components/IntelEntityChip";
 import { SmeacLabel } from "@/components/SmeacLabel";
+import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { formatIntelVehicle, formatIntelAddress } from "@/lib/addressFormat";
 import { Eye, Plus, X, User, Car, MapPin, Send, Save } from "lucide-react";
 
@@ -134,6 +135,15 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
     { enabled: operationId !== null }
   );
   const [targetId, setTargetId] = useState<number | null>(null);
+  const [voiOverride, setVoiOverride] = useState("");
+  const [hbOverride, setHbOverride] = useState("");
+  const [extraLocations, setExtraLocations] = useState<string[]>([]);
+  const [locationSearch, setLocationSearch] = useState("");
+  // AddressAutocompleteInput only signals "a suggestion was picked" (vs. the
+  // user still typing) via onShortAddress, but doesn't hand back the full
+  // RS-formatted address at that point — it went to onChange just before.
+  // Mirror the latest onChange value here so onShortAddress can read it.
+  const locationSearchRef = useRef("");
 
   const [accoutrements, setAccoutrements] = useState<string[]>([]);
   const [moeEquipment, setMoeEquipment] = useState<string[]>([]);
@@ -191,6 +201,9 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
       setOperationId(b.operationId);
       setSheetId(b.sheetId ?? null);
       setTargetId(b.targetId ?? null);
+      setVoiOverride(b.voiOverride ?? "");
+      setHbOverride(b.hbOverride ?? "");
+      setExtraLocations(b.extraLocations ?? []);
       setAccoutrements(b.accoutrements ?? []);
       setMoeEquipment(b.moeEquipment ?? []);
       setOpBackground(b.opBackground ?? "");
@@ -239,12 +252,51 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
     (sheetsData as any[] | undefined)?.filter(s => !s.deletedAt) ?? [];
   const opTargets = (opTargetsData as any[] | undefined) ?? [];
   const selectedTarget = opTargets.find(t => t.id === targetId);
-  const rawVehicle = selectedTarget
-    ? selectedTarget.v1f || selectedTarget.v1
-    : null;
-  const rawAddress = selectedTarget
-    ? selectedTarget.hbf || selectedTarget.hb
-    : null;
+
+  interface FlatOption {
+    value: string;
+    label: string;
+    sourceLabel: string;
+  }
+  function parseJsonArray(raw: string | null | undefined): any[] {
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  const vehicleOptions: FlatOption[] = [];
+  const locationOptions: FlatOption[] = [];
+  opTargets.forEach(t => {
+    const vehicles = [
+      ...(t.v1f || t.v1 ? [{ full: t.v1f, short: t.v1 }] : []),
+      ...parseJsonArray(t.extraVehicles),
+    ];
+    vehicles.forEach((v, i) => {
+      const label = v.full || v.short;
+      if (!label) return;
+      vehicleOptions.push({
+        value: `${t.id}__${i}__${label}`,
+        label,
+        sourceLabel: t.name,
+      });
+    });
+    const addresses = [
+      ...(t.hbf || t.hb ? [{ full: t.hbf, short: t.hb }] : []),
+      ...parseJsonArray(t.extraAddresses),
+    ];
+    addresses.forEach((a, i) => {
+      const label = a.full || a.short;
+      if (!label) return;
+      locationOptions.push({
+        value: `${t.id}__${i}__${label}`,
+        label,
+        sourceLabel: t.name,
+      });
+    });
+  });
 
   const allUsers = (usersQuery.data as any[] | undefined) ?? [];
   const sortedUsers = [...allUsers].sort((a, b) =>
@@ -282,6 +334,9 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
     operationId: operationId!,
     sheetId,
     targetId,
+    voiOverride: voiOverride.trim() || null,
+    hbOverride: hbOverride.trim() || null,
+    extraLocations,
     accoutrements,
     moeEquipment,
     opBackground: opBackground.trim() || null,
@@ -487,49 +542,168 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
         </div>
 
         <SmeacLabel letter="T" label="Target" icon={Eye} />
-        <Field label="Linked target" compact>
-          <Select
-            value={targetId?.toString() ?? ""}
-            onValueChange={v => setTargetId(Number(v))}
-            disabled={!operationId}
-          >
-            <SelectTrigger className="h-9 text-sm">
-              <SelectValue placeholder="Choose a target…" />
-            </SelectTrigger>
-            <SelectContent>
-              {opTargets.map(t => (
-                <SelectItem key={t.id} value={t.id.toString()}>
-                  {t.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        {selectedTarget && (
-          <div className="flex flex-wrap gap-1.5">
-            <span
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${INTEL_CHIP_CLASSES.person}`}
-            >
-              <User className="w-3 h-3 shrink-0" />
-              {selectedTarget.name}
-            </span>
-            {rawVehicle && (
-              <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${INTEL_CHIP_CLASSES.vehicle}`}
-              >
-                <Car className="w-3 h-3 shrink-0" />
-                {formatIntelVehicle(rawVehicle)}
-              </span>
+
+        {operationId == null ? (
+          <p className="text-xs text-muted-foreground">
+            Choose an operation to see its targets, vehicles, and locations.
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <Field label="Person of interest" compact>
+                <Select
+                  value={targetId != null ? String(targetId) : "__none__"}
+                  onValueChange={val => {
+                    setTargetId(val === "__none__" ? null : Number(val));
+                    setVoiOverride("");
+                    setHbOverride("");
+                  }}
+                >
+                  <SelectTrigger
+                    className={`h-8 text-xs font-medium rounded-full border w-full ${INTEL_CHIP_CLASSES.person}`}
+                  >
+                    <User className="h-3 w-3 mr-1 shrink-0" />
+                    <SelectValue
+                      placeholder="None linked"
+                      className="truncate"
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None linked</SelectItem>
+                    {opTargets.map(t => (
+                      <SelectItem key={t.id} value={String(t.id)}>
+                        {t.tgt || t.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field label="Vehicle of interest" compact>
+                <Select
+                  value={
+                    voiOverride
+                      ? (vehicleOptions.find(o => o.label === voiOverride)
+                          ?.value ?? "__default__")
+                      : "__default__"
+                  }
+                  onValueChange={val => {
+                    if (val === "__default__") {
+                      setVoiOverride("");
+                      return;
+                    }
+                    const opt = vehicleOptions.find(o => o.value === val);
+                    if (opt) setVoiOverride(opt.label);
+                  }}
+                  disabled={vehicleOptions.length === 0}
+                >
+                  <SelectTrigger
+                    className={`h-8 text-xs font-medium rounded-full border w-full ${INTEL_CHIP_CLASSES.vehicle}`}
+                  >
+                    <Car className="h-3 w-3 mr-1 shrink-0" />
+                    <SelectValue placeholder="None" className="truncate" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default__">
+                      {selectedTarget &&
+                      (selectedTarget.v1f || selectedTarget.v1)
+                        ? `Target's own — ${formatIntelVehicle(selectedTarget.v1f || selectedTarget.v1)}`
+                        : "None"}
+                    </SelectItem>
+                    {vehicleOptions.map(o => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {formatIntelVehicle(o.label)} ({o.sourceLabel})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field label="Location" compact>
+                <Select
+                  value={
+                    hbOverride
+                      ? (locationOptions.find(o => o.label === hbOverride)
+                          ?.value ?? "__default__")
+                      : "__default__"
+                  }
+                  onValueChange={val => {
+                    if (val === "__default__") {
+                      setHbOverride("");
+                      return;
+                    }
+                    const opt = locationOptions.find(o => o.value === val);
+                    if (opt) setHbOverride(opt.label);
+                  }}
+                  disabled={locationOptions.length === 0}
+                >
+                  <SelectTrigger
+                    className={`h-8 text-xs font-medium rounded-full border w-full ${INTEL_CHIP_CLASSES.address}`}
+                  >
+                    <MapPin className="h-3 w-3 mr-1 shrink-0" />
+                    <SelectValue placeholder="None" className="truncate" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default__">
+                      {selectedTarget &&
+                      (selectedTarget.hbf || selectedTarget.hb)
+                        ? `Target's own — ${formatIntelAddress(selectedTarget.hbf || selectedTarget.hb)}`
+                        : "None"}
+                    </SelectItem>
+                    {locationOptions.map(o => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {formatIntelAddress(o.label)} ({o.sourceLabel})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+
+            {extraLocations.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {extraLocations.map((loc, i) => (
+                  <span
+                    key={i}
+                    className={`inline-flex items-center gap-1.5 max-w-full pl-3 pr-1.5 py-1 rounded-full text-xs font-medium border ${INTEL_CHIP_CLASSES.address}`}
+                  >
+                    <MapPin className="w-3 h-3 shrink-0" />
+                    <span className="truncate">{formatIntelAddress(loc)}</span>
+                    <button
+                      onClick={() =>
+                        setExtraLocations(
+                          extraLocations.filter((_, j) => j !== i)
+                        )
+                      }
+                      className="shrink-0 rounded-full hover:bg-black/10 dark:hover:bg-white/10 p-0.5"
+                      aria-label="Remove location"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
             )}
-            {rawAddress && (
-              <span
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${INTEL_CHIP_CLASSES.address}`}
-              >
-                <MapPin className="w-3 h-3 shrink-0" />
-                {formatIntelAddress(rawAddress)}
-              </span>
-            )}
-          </div>
+
+            <Field label="Add location" compact>
+              <AddressAutocompleteInput
+                value={locationSearch}
+                onChange={val => {
+                  setLocationSearch(val);
+                  locationSearchRef.current = val;
+                }}
+                onShortAddress={() => {
+                  const full = locationSearchRef.current.trim();
+                  if (full) setExtraLocations(prev => [...prev, full]);
+                  setLocationSearch("");
+                  locationSearchRef.current = "";
+                }}
+                searchScope="any"
+                placeholder="Search an address, place, or business…"
+                inputClassName="h-8 text-sm"
+              />
+            </Field>
+          </>
         )}
       </div>
 

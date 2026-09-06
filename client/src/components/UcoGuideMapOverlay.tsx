@@ -129,8 +129,12 @@ export function UcoGuideMapOverlay({
   });
 
   const myAckAt = acknowledgedAt ?? guide?.myAcknowledgedAt ?? null;
-  const rawVehicle = guide?.target ? guide.target.v1f || guide.target.v1 : null;
-  const rawAddress = guide?.target ? guide.target.hbf || guide.target.hb : null;
+  const rawVehicle = guide
+    ? guide.voiOverride || guide.target?.v1f || guide.target?.v1
+    : null;
+  const rawAddress = guide
+    ? guide.hbOverride || guide.target?.hbf || guide.target?.hb
+    : null;
 
   return (
     <div className="absolute inset-y-0 right-0 z-30 w-full sm:w-[440px] flex flex-col bg-card/97 backdrop-blur-sm border-l border-border shadow-2xl">
@@ -181,16 +185,18 @@ export function UcoGuideMapOverlay({
             </span>
 
             {/* TARGET */}
-            {guide.target && (
+            {(guide.target || guide.extraLocations.length > 0) && (
               <div className="space-y-1.5">
                 <SmeacLabel letter="T" label="Target" icon={Eye} />
                 <div className="flex flex-wrap gap-1.5">
-                  <span
-                    className={`inline-flex items-center gap-1.5 max-w-full px-3 py-1.5 rounded-full text-xs font-medium border truncate ${INTEL_CHIP_CLASSES.person}`}
-                  >
-                    <User className="w-3 h-3 shrink-0" />
-                    <span className="truncate">{guide.target.name}</span>
-                  </span>
+                  {guide.target && (
+                    <span
+                      className={`inline-flex items-center gap-1.5 max-w-full px-3 py-1.5 rounded-full text-xs font-medium border truncate ${INTEL_CHIP_CLASSES.person}`}
+                    >
+                      <User className="w-3 h-3 shrink-0" />
+                      <span className="truncate">{guide.target.name}</span>
+                    </span>
+                  )}
                   {rawVehicle && (
                     <span
                       className={`inline-flex items-center gap-1.5 max-w-full px-3 py-1.5 rounded-full text-xs font-medium border truncate ${INTEL_CHIP_CLASSES.vehicle}`}
@@ -211,6 +217,17 @@ export function UcoGuideMapOverlay({
                       </span>
                     </span>
                   )}
+                  {guide.extraLocations.map((loc, i) => (
+                    <span
+                      key={i}
+                      className={`inline-flex items-center gap-1.5 max-w-full px-3 py-1.5 rounded-full text-xs font-medium border truncate ${INTEL_CHIP_CLASSES.address}`}
+                    >
+                      <MapPin className="w-3 h-3 shrink-0" />
+                      <span className="truncate">
+                        {formatIntelAddress(loc)}
+                      </span>
+                    </span>
+                  ))}
                 </div>
               </div>
             )}

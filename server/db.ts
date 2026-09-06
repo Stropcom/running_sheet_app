@@ -14876,6 +14876,7 @@ export interface UcoGuideBriefingView
     | "teamMemberCins"
     | "levelNotes"
     | "recipientCins"
+    | "extraLocations"
   > {
   accoutrements: string[];
   moeEquipment: string[];
@@ -14883,6 +14884,7 @@ export interface UcoGuideBriefingView
   teamMemberCins: string[];
   levelNotes: string[];
   recipientCins: string[];
+  extraLocations: string[];
 }
 
 function toUcoGuideBriefingView(row: UcoGuideBriefing): UcoGuideBriefingView {
@@ -14894,6 +14896,7 @@ function toUcoGuideBriefingView(row: UcoGuideBriefing): UcoGuideBriefingView {
     teamMemberCins: parseSmeacStringArray(row.teamMemberCins),
     levelNotes: parseSmeacStringArray(row.levelNotes),
     recipientCins: parseSmeacStringArray(row.recipientCins),
+    extraLocations: parseSmeacStringArray(row.extraLocations),
   };
 }
 
@@ -14901,6 +14904,9 @@ export interface UpsertUcoGuideBriefingInput {
   operationId: number;
   sheetId?: number | null;
   targetId?: number | null;
+  voiOverride?: string | null;
+  hbOverride?: string | null;
+  extraLocations?: string[];
   accoutrements?: string[];
   moeEquipment?: string[];
   opBackground?: string | null;
@@ -14938,6 +14944,9 @@ function ucoGuideUpsertValues(data: UpsertUcoGuideBriefingInput) {
     operationId: data.operationId,
     sheetId: data.sheetId ?? null,
     targetId: data.targetId ?? null,
+    voiOverride: data.voiOverride ?? null,
+    hbOverride: data.hbOverride ?? null,
+    extraLocations: JSON.stringify(data.extraLocations ?? []),
     accoutrements: JSON.stringify(data.accoutrements ?? []),
     moeEquipment: JSON.stringify(data.moeEquipment ?? []),
     opBackground: data.opBackground ?? null,

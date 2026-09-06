@@ -1808,7 +1808,14 @@ export const ucoGuideBriefings = mysqlTable("uco_guide_briefings", {
   sheetId: int("sheetId"),
   // Linked Target Registry record — person/vehicle/address chips are
   // rendered live from its name/v1(f)/hb(f) fields, not snapshotted here.
+  // VOI/HB can be overridden below to a different vehicle/address under the
+  // same operation — same convention as smeacBriefings, see there.
   targetId: int("targetId"),
+  voiOverride: varchar("voiOverride", { length: 500 }),
+  hbOverride: varchar("hbOverride", { length: 500 }),
+  // JSON array of strings — additional addresses added via the map search
+  // box, beyond the linked target's own location/hbOverride above.
+  extraLocations: text("extraLocations"),
 
   // JSON arrays of strings, e.g. ["Firearm", "BSRV"] / ["HUX", "RAM"].
   accoutrements: text("accoutrements"),

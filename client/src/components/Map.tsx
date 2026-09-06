@@ -81,17 +81,53 @@ import { usePersistFn } from "@/hooks/usePersistFn";
 import { cn } from "@/lib/utils";
 import { loadGoogleMaps } from "@/lib/googleMaps";
 
-// A real Map ID (Google Cloud Console → Maps Platform → Map Management, on
-// the same project the app's Maps API key belongs to) fixes a known
-// AdvancedMarkerElement positioning-drift bug under "DEMO_MAP_ID" — Google's
-// own testing-only placeholder, which is what this falls back to when no
-// real one is configured. Drift only affects AdvancedMarkerElement-based
-// content (custom markers, their labels, live team pins); Circle/Rectangle/
-// Polygon/Polyline overlays (map shapes) render through a different, older
-// system unaffected by this, which is why only markers/labels visibly
-// drift while zooming and shapes don't.
-const GOOGLE_MAPS_MAP_ID =
-  import.meta.env.VITE_GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID";
+// Two real Map IDs (Google Cloud Console → Maps Platform → Map Management,
+// on the same project the app's Maps API key belongs to), replacing
+// "DEMO_MAP_ID" — Google's own testing-only placeholder. Neither Map ID is
+// secret (both are visible in any network request the browser makes), so
+// they're hardcoded here rather than requiring an env var/redeploy just to
+// pick one.
+//
+// Both exist side by side while we determine whether the marker/label
+// zoom-drift bug (AdvancedMarkerElement positioning imprecision, worse
+// zoomed out, resolving back to accurate near the placement zoom level) is
+// specific to DEMO_MAP_ID or inherent to vector rendering in general — a
+// question a real vector Map ID can only answer by being tested live.
+// Circle/Rectangle/Polygon/Polyline overlays (map shapes) render through a
+// different, older system unaffected either way, which is why only
+// markers/labels ever visibly drifted while zooming and shapes never did.
+const MAP_ID_VECTOR = "1c8d997128c67d9fc1a04b7e"; // "Runlog map" — vector
+const MAP_ID_RASTER = "1c8d997128c67d9fa74cfa85"; // "Runlog Map" — raster, guaranteed no vector-drift but no vector-only features (real cloud dark-mode styling, smoother fractional zoom)
+
+// Runtime toggle (no rebuild/redeploy needed) so the two can be compared
+// live: append ?mapRender=vector or ?mapRender=raster to the URL once, and
+// the choice persists per-browser via localStorage from then on. Defaults
+// to vector — the one worth testing first, since raster is the known-safe
+// fallback. An explicit VITE_GOOGLE_MAPS_MAP_ID env var, if ever set,
+// overrides both (e.g. to pin a specific ID fleet-wide regardless of each
+// device's own toggle).
+const MAP_RENDER_STORAGE_KEY = "runlog_map_render_pref";
+
+function resolveMapId(): string {
+  const pinned = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID;
+  if (pinned) return pinned;
+  let pref: string | null = null;
+  try {
+    const fromQuery = new URLSearchParams(window.location.search).get(
+      "mapRender"
+    );
+    if (fromQuery === "vector" || fromQuery === "raster") {
+      localStorage.setItem(MAP_RENDER_STORAGE_KEY, fromQuery);
+      pref = fromQuery;
+    } else {
+      pref = localStorage.getItem(MAP_RENDER_STORAGE_KEY);
+    }
+  } catch {
+    /* localStorage/URL access can throw in some embedded contexts — fall
+       back to the default below rather than breaking map load over it. */
+  }
+  return pref === "raster" ? MAP_ID_RASTER : MAP_ID_VECTOR;
+}
 
 interface MapViewProps {
   className?: string;
@@ -128,7 +164,7 @@ export function MapView({
     map.current = new window.google.maps.Map(mapContainer.current, {
       zoom: initialZoom,
       center: initialCenter,
-      mapId: GOOGLE_MAPS_MAP_ID,
+      mapId: resolveMapId(),
       mapTypeId: initialMapTypeId ?? "roadmap",
       mapTypeControl: !hideMapTypeControl,
       mapTypeControlOptions: {

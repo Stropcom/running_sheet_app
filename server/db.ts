@@ -4901,14 +4901,17 @@ export async function getPendingVehicleArrivals(
 // ("... exited Sapore Espresso Bar walked through the car park to Vehicle
 // 1MGR73."). This mines the sheet's own rows for the most recent walk-in
 // per location that hasn't since been matched by a walk-out from that same
-// location, so the RS Quick Entry popup can offer the captured route text
-// back as a "Walked out" chip — the officer doesn't have to retype it,
-// mirroring how the vehicle chips reuse occupantDesc. There's no equivalent
-// reuse for who's walking (names) since, unlike a vehicle's occupants, who's
-// on foot can genuinely differ between the walk-in and the walk-out — that
-// part is always officer-typed, same as it already is in every observation.
+// location, so the RS Quick Entry popup can offer the captured route AND
+// names back as a "Walked out" chip — the officer doesn't have to retype
+// either, mirroring how the vehicle chips reuse occupantDesc. Reusing the
+// walk-in's own names for the walk-out (rather than the vehicle's
+// occupants) is deliberate: it's whoever is written as having walked IN
+// that's presumed to walk back OUT, which is usually but not always the
+// same as who the vehicle's occupants were.
 
 export interface PendingWalkIn {
+  /** Names as originally written in the walk-in row, e.g. "KENNEDY and JOHNS". */
+  names: string;
   /** Location as originally written in the walk-in row, e.g. "Sapore Espresso Bar". */
   location: string;
   /** Route clause as originally written, e.g. "through the car park". */
@@ -4929,6 +4932,7 @@ export async function getPendingWalkIns(
   const lastWalkInByLocationKey = new Map<
     string,
     {
+      names: string;
       location: string;
       route: string;
       sheetId: number;
@@ -4947,10 +4951,12 @@ export async function getPendingWalkIns(
     }
     const inMatch = row.observation.match(WALK_IN_PATTERN);
     if (inMatch) {
-      const route = inMatch[1].trim();
-      const location = inMatch[2].trim();
+      const names = inMatch[1].trim();
+      const route = inMatch[2].trim();
+      const location = inMatch[3].trim();
       const key = location.toLowerCase();
       lastWalkInByLocationKey.set(key, {
+        names,
         location,
         route,
         sheetId: row.sheetId,

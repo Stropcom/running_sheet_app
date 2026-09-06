@@ -14,7 +14,15 @@
 // vehicle patterns, there's no normalizeObservationPunctuation pass backing
 // these up, and real examples of this narrative have appeared with
 // inconsistent comma placement even from the same officer.
+//
+// WALK_IN_PATTERN's first group captures who's walking (e.g. "KENNEDY and
+// JOHNS"), anchored to not cross a "." or newline — this keeps it from
+// reaching back into an earlier sentence in the same row (e.g. the vehicle
+// arrival narrative that typically precedes it) while still tolerating
+// free-text names of any length. getPendingWalkIns reuses this captured
+// text verbatim for the "Walked out" chip, on the same names-reuse basis
+// VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN already reuses occupantDesc.
 export const WALK_IN_PATTERN =
-  /exited the vehicle,?\s*walked\s+(.+?),?\s*entered\s+(.+?)\s+and continued out of sight/i;
+  /([A-Za-z][^.\n]*?)\s*exited the vehicle,?\s*walked\s+(.+?),?\s*entered\s+(.+?)\s+and continued out of sight/i;
 export const WALK_OUT_PATTERN =
   /exited\s+(.+?),?\s*walked\s+(.+?),?\s*to Vehicle\s+([A-Za-z0-9]{5,8})/i;

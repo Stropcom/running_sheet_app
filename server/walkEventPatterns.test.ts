@@ -17,8 +17,9 @@ describe("WALK_IN_PATTERN", () => {
       "KENNEDY and JOHNS exited the vehicle, walked along Belmont Avenue, entered Sapore Espresso Bar and continued out of sight.";
     const match = text.match(WALK_IN_PATTERN);
     expect(match).not.toBeNull();
-    expect(match![1].trim()).toBe("along Belmont Avenue");
-    expect(match![2].trim()).toBe("Sapore Espresso Bar");
+    expect(match![1].trim()).toBe("KENNEDY and JOHNS");
+    expect(match![2].trim()).toBe("along Belmont Avenue");
+    expect(match![3].trim()).toBe("Sapore Espresso Bar");
   });
 
   it("matches the car-park-route example (no street name)", () => {
@@ -26,8 +27,9 @@ describe("WALK_IN_PATTERN", () => {
       "KENNEDY and JOHNS exited the vehicle, walked through the car park, entered Sapore Espresso Bar and continued out of sight.";
     const match = text.match(WALK_IN_PATTERN);
     expect(match).not.toBeNull();
-    expect(match![1].trim()).toBe("through the car park");
-    expect(match![2].trim()).toBe("Sapore Espresso Bar");
+    expect(match![1].trim()).toBe("KENNEDY and JOHNS");
+    expect(match![2].trim()).toBe("through the car park");
+    expect(match![3].trim()).toBe("Sapore Espresso Bar");
   });
 
   it("matches even with no commas at all", () => {
@@ -35,8 +37,19 @@ describe("WALK_IN_PATTERN", () => {
       "KENNEDY and JOHNS exited the vehicle walked through the car park entered Sapore Espresso Bar and continued out of sight.";
     const match = text.match(WALK_IN_PATTERN);
     expect(match).not.toBeNull();
-    expect(match![1].trim()).toBe("through the car park");
-    expect(match![2].trim()).toBe("Sapore Espresso Bar");
+    expect(match![1].trim()).toBe("KENNEDY and JOHNS");
+    expect(match![2].trim()).toBe("through the car park");
+    expect(match![3].trim()).toBe("Sapore Espresso Bar");
+  });
+
+  it("captures only the walk-in's own names, not the preceding vehicle-arrival sentence in the same row", () => {
+    const text =
+      "Vehicle 1MGR73, KENNEDY driver and sole occupant, arrived at Sapore Espresso Bar, 4/275 Belmont Avenue, CLOVERDALE WA (Sapore Espresso Bar) parked in the car park.\n\nKENNEDY and JOHNS exited the vehicle, walked through the car park, entered Sapore Espresso Bar and continued out of sight.";
+    const match = text.match(WALK_IN_PATTERN);
+    expect(match).not.toBeNull();
+    expect(match![1].trim()).toBe("KENNEDY and JOHNS");
+    expect(match![2].trim()).toBe("through the car park");
+    expect(match![3].trim()).toBe("Sapore Espresso Bar");
   });
 
   it("does not match a plain vehicle arrival with no walking", () => {

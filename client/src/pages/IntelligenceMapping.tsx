@@ -929,6 +929,32 @@ function haversineMetres(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Best-effort strip of role descriptors ("driver", "front passenger",
+// "sole occupant", etc.) from a vehicle occupantDesc string (e.g. "HOGAN
+// driver, Denise HOLLY (HOLLY) front passenger") down to just the names
+// ("HOGAN and Denise HOLLY (HOLLY)") — used to pre-fill the "Walked in"
+// chip's names from the vehicle's known occupants. Deliberately best-effort
+// rather than a strict parser: the officer reviews and edits the inserted
+// text before submitting either way, same trust level the occupantDesc
+// text itself already has (it's reused verbatim elsewhere with no
+// validation), so an imperfect strip here is a minor edit, not a silent
+// wrong fact in the record.
+function extractOccupantNames(occupantDesc: string): string {
+  const ROLE_WORD =
+    /\b(?:driver|front passenger|rear passenger|sole occupant|unseen occupants?|passenger)\b/gi;
+  return occupantDesc
+    .split(",")
+    .map(part =>
+      part
+        .replace(ROLE_WORD, "")
+        .replace(/\band\b/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    )
+    .filter(Boolean)
+    .join(" and ");
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function IntelligenceMapping() {
   const [, setLocation] = useLocation();
@@ -8876,18 +8902,19 @@ export default function IntelligenceMapping() {
                             Only offered when a vehicle is known to be at
                             THIS address (same arrivalsHere filter as the
                             "Vehicle departing" chip above) — there's no
-                            vehicle to have exited otherwise. One chip only
-                            (not per-rego): the inserted text never names the
-                            specific vehicle, just "the vehicle", so which
-                            rego is here doesn't change what gets appended.
-                            The [route] placeholder is deliberately literal
-                            text for the officer to type over — unlike the
-                            occupant description or address, the route taken
-                            genuinely varies every time and can't be reused
-                            from anywhere, so there's nothing safe to guess
-                            here. Officer is expected to type who's walking
-                            before tapping this chip, same flow as typing
-                            before any other appended fragment. */}
+                            vehicle to have exited otherwise. One button per
+                            vehicle here (mirrors "Vehicle departing"), since
+                            the names each button inserts now come from THAT
+                            vehicle's own occupantDesc via
+                            extractOccupantNames — if more than one vehicle
+                            is here, each offers different names. The officer
+                            can always edit the inserted names if the actual
+                            walkers differ from the vehicle's occupants,
+                            same as every other reused-text chip. The
+                            [route] placeholder is deliberately literal text
+                            to type over — unlike the occupant description
+                            or address, the route taken genuinely varies
+                            every time and can't be reused from anywhere. */}
                           {mapQeAddress &&
                             rsPendingArrivals &&
                             (() => {
@@ -8910,26 +8937,37 @@ export default function IntelligenceMapping() {
                                 ? toTitleCase(bracketMatch[2])
                                 : (mapQeAddress.split(",")[0]?.trim() ??
                                   mapQeAddress);
-                              const vehicleHere = rsPendingArrivals.some(
+                              const vehiclesHere = rsPendingArrivals.filter(
                                 a =>
                                   a.address.trim().toLowerCase() ===
                                   shortAddr.trim().toLowerCase()
                               );
-                              if (!vehicleHere) return null;
-                              const text = `exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`;
+                              if (vehiclesHere.length === 0) return null;
                               return (
                                 <div className="flex flex-col gap-1 md:gap-1.5">
                                   <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
                                     Walked in
                                   </span>
                                   <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                    <button
-                                      onClick={() => appendText(text)}
-                                      title={text}
-                                      className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                    >
-                                      On foot
-                                    </button>
+                                    {vehiclesHere.map(a => {
+                                      const names = extractOccupantNames(
+                                        a.occupantDesc
+                                      );
+                                      const text = `${names} exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`;
+                                      return (
+                                        <button
+                                          key={a.rego}
+                                          onClick={() => appendText(text)}
+                                          title={text}
+                                          className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                        >
+                                          On foot{" "}
+                                          <span className="font-mono normal-case">
+                                            ({a.rego})
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               );
@@ -8937,21 +8975,25 @@ export default function IntelligenceMapping() {
                           {/* Walked out chip — mirror of "Walked in": for
                             occupants who exit this location on foot and
                             walk back to a vehicle ("... exited X walked
-                            [route] to Vehicle REGO."). Reuses the route
-                            text captured from the matching "Walked in" row
-                            (getPendingWalkIns) rather than another literal
-                            placeholder, since retracing the same route back
-                            is the overwhelmingly common case and this text
-                            was itself officer-typed, not guessed — same
-                            trust level as reusing occupantDesc for vehicle
-                            chips. Only offered when BOTH a pending walk-in
-                            at this address AND a vehicle known to be here
-                            exist — a walk-out always leads to a vehicle
-                            (see the vehicle<->location-only design
-                            decision), so without one there's nothing valid
-                            to insert. This also means the chip naturally
-                            disappears once that vehicle has already
-                            departed, with no extra logic needed. */}
+                            [route] to Vehicle REGO."). Reuses BOTH the
+                            names and route text captured from the matching
+                            "Walked in" row (getPendingWalkIns) rather than
+                            re-deriving from the vehicle's occupants again —
+                            it's whoever is written as having walked IN that
+                            walks back OUT, which can genuinely differ from
+                            the vehicle's occupants. This text was itself
+                            officer-typed (and already possibly edited from
+                            the vehicle's occupantDesc by the "Walked in"
+                            chip), not guessed — same trust level as reusing
+                            occupantDesc for the vehicle chips. Only offered
+                            when BOTH a pending walk-in at this address AND
+                            a vehicle known to be here exist — a walk-out
+                            always leads to a vehicle (see the
+                            vehicle<->location-only design decision), so
+                            without one there's nothing valid to insert.
+                            This also means the chip naturally disappears
+                            once that vehicle has already departed, with no
+                            extra logic needed. */}
                           {mapQeAddress &&
                             rsPendingWalkIns &&
                             rsPendingWalkIns.length > 0 &&
@@ -8995,7 +9037,7 @@ export default function IntelligenceMapping() {
                                   </span>
                                   <div className="flex flex-wrap gap-1 md:gap-1.5">
                                     {regosHere.map(a => {
-                                      const text = `exited ${shortAddr} walked ${walkInHere.route} to Vehicle ${a.rego}.`;
+                                      const text = `${walkInHere.names} exited ${shortAddr} walked ${walkInHere.route} to Vehicle ${a.rego}.`;
                                       return (
                                         <button
                                           key={a.rego}

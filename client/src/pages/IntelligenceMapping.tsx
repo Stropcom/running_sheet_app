@@ -3778,27 +3778,24 @@ export default function IntelligenceMapping() {
   // Shapes (Circle/Rectangle/Polygon/Polyline) are a different, older
   // overlay system that doesn't share this bug, which is what makes the
   // drift visible at all: a shape and a marker placed at the same point
-  // visibly separate as you zoom away from them. Forcing a fresh
-  // `.position` assignment (even to the exact same LatLng) on every
-  // AdvancedMarkerElement once the map settles — the "idle" event, fired
-  // once per completed pan/zoom gesture, not on every intermediate frame —
-  // makes Google recompute its on-screen offset from scratch at the current
-  // zoom level, eliminating the accumulated error instead of just hiding it.
+  // visibly separate as you zoom away from them.
+  //
+  // A plain `.position = {lat, lng}` reassignment to the SAME coordinate
+  // turned out to be a no-op — Google's setter appears to skip recomputing
+  // anything when the value doesn't actually change, so it never corrected
+  // the drift at all. Detaching and reattaching the marker to the map
+  // (`.map = null` then `.map = map`) forces a genuine state change that
+  // can't be short-circuited the same way, rebuilding the marker's on-screen
+  // position from scratch at the current zoom level once the map settles —
+  // the "idle" event, fired once per completed pan/zoom gesture, not on
+  // every intermediate animation frame.
   useEffect(() => {
     if (!mapReady || !mapRef.current) return;
     const map = mapRef.current;
     const reanchor = (marker: google.maps.marker.AdvancedMarkerElement) => {
-      const pos = marker.position;
-      if (!pos) return;
-      const lat =
-        typeof (pos as google.maps.LatLng).lat === "function"
-          ? (pos as google.maps.LatLng).lat()
-          : (pos as google.maps.LatLngLiteral).lat;
-      const lng =
-        typeof (pos as google.maps.LatLng).lng === "function"
-          ? (pos as google.maps.LatLng).lng()
-          : (pos as google.maps.LatLngLiteral).lng;
-      marker.position = { lat, lng };
+      if (marker.map !== map) return;
+      marker.map = null;
+      marker.map = map;
     };
     const listener = map.addListener("idle", () => {
       customMarkerMapRefs.current.forEach(reanchor);

@@ -47,6 +47,7 @@ import {
   Save,
   Users,
   Radio,
+  ArrowLeft,
 } from "lucide-react";
 
 interface TeamSlot {
@@ -390,13 +391,28 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
         <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
           <span>Administration</span>
           <span>/</span>
-          <span>SMEAC Briefings</span>
+          <button
+            onClick={() => setLocation("/administration/smeac")}
+            className="hover:text-foreground hover:underline transition-colors"
+          >
+            SMEAC Briefings
+          </button>
           <span>/</span>
           <span className="text-foreground font-medium">
             {isPosted ? "Edit" : isEdit ? "Edit draft" : "New"}
           </span>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 -ml-2"
+            onClick={() => setLocation("/administration/smeac")}
+            aria-label="Back to SMEAC Briefings"
+            title="Back to SMEAC Briefings"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
           <h1 className="text-xl font-bold">
             {isPosted
               ? "Edit SMEAC Briefing"

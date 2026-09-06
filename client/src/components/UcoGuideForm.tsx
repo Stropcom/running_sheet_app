@@ -36,7 +36,17 @@ import { INTEL_CHIP_CLASSES } from "@/components/IntelEntityChip";
 import { SmeacLabel } from "@/components/SmeacLabel";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { formatIntelVehicle, formatIntelAddress } from "@/lib/addressFormat";
-import { Eye, Plus, X, User, Car, MapPin, Send, Save } from "lucide-react";
+import {
+  Eye,
+  Plus,
+  X,
+  User,
+  Car,
+  MapPin,
+  Send,
+  Save,
+  ArrowLeft,
+} from "lucide-react";
 
 const ACCOUTREMENT_OPTIONS = [
   "Firearm",
@@ -471,13 +481,28 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
         <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
           <span>Administration</span>
           <span>/</span>
-          <span>UCO Guide</span>
+          <button
+            onClick={() => setLocation("/administration/uco-guide")}
+            className="hover:text-foreground hover:underline transition-colors"
+          >
+            UCO Guide
+          </button>
           <span>/</span>
           <span className="text-foreground font-medium">
             {isPosted ? "Edit" : isEdit ? "Edit draft" : "New"}
           </span>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 -ml-2"
+            onClick={() => setLocation("/administration/uco-guide")}
+            aria-label="Back to UCO Guide"
+            title="Back to UCO Guide"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
           <h1 className="text-xl font-bold">
             {isPosted
               ? "Edit UCO Surveillance Deployment Guide"

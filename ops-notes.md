@@ -11,6 +11,35 @@ happen before."
 
 ---
 
+## 2026-09-06 — Correction: droplet is back on `claude/claude-md-docs-o4trnz`, not `main`
+
+The 2026-08-16 entry below records the droplet being switched to track
+`main`. That's no longer true (and may not have stayed true for long) —
+confirmed today by direct evidence: `origin/main` is 12 commits behind
+`origin/claude/claude-md-docs-o4trnz` (`git rev-list --left-right --count
+origin/main...origin/claude/claude-md-docs-o4trnz` → `0	12`), yet this
+session's deploys tonight fast-forwarded cleanly against
+`claude/claude-md-docs-o4trnz` on the droplet (`git pull --ff-only`
+succeeded, no divergence). If the droplet were still on `main` as
+documented, tonight's pulls would have found nothing new to fetch (`main`
+hasn't been touched since that merge) — instead they picked up every
+commit pushed to the feature branch.
+
+**Don't trust either this entry or the 2026-08-16 one blindly going
+forward** — this is now the second time the tracked branch has changed
+without a corresponding decision being logged here at the time it
+happened. Always confirm directly before deploying or assuming:
+
+```bash
+cd /opt/runlog && git branch --show-current
+```
+
+Also updated the "RunLog Troubleshooter" artifact's Quick Reference to
+stop hardcoding a branch name and instead flag this as something to
+verify every time.
+
+---
+
 ## 2026-09-06 — App-wide blank white screen after deploy: eager `extends google.maps.OverlayView` at module scope
 
 Deploying commit `b20f1ce` (the `AdvancedMarkerElement` → `OverlayView` map

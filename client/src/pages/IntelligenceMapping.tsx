@@ -3769,6 +3769,48 @@ export default function IntelligenceMapping() {
     wireShapeActionChooserGesture,
   ]);
 
+  // ── Re-anchor AdvancedMarkerElement overlays once the map settles ───────────
+  // Works around a real AdvancedMarkerElement positioning bug — confirmed
+  // present under both vector and raster Map IDs, so it's not a rendering-
+  // mode issue — where a marker's on-screen position visibly drifts away
+  // from its true LatLng the further the map is zoomed from wherever it was
+  // last drawn, correcting back to accurate near that original zoom level.
+  // Shapes (Circle/Rectangle/Polygon/Polyline) are a different, older
+  // overlay system that doesn't share this bug, which is what makes the
+  // drift visible at all: a shape and a marker placed at the same point
+  // visibly separate as you zoom away from them. Forcing a fresh
+  // `.position` assignment (even to the exact same LatLng) on every
+  // AdvancedMarkerElement once the map settles — the "idle" event, fired
+  // once per completed pan/zoom gesture, not on every intermediate frame —
+  // makes Google recompute its on-screen offset from scratch at the current
+  // zoom level, eliminating the accumulated error instead of just hiding it.
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const map = mapRef.current;
+    const reanchor = (marker: google.maps.marker.AdvancedMarkerElement) => {
+      const pos = marker.position;
+      if (!pos) return;
+      const lat =
+        typeof (pos as google.maps.LatLng).lat === "function"
+          ? (pos as google.maps.LatLng).lat()
+          : (pos as google.maps.LatLngLiteral).lat;
+      const lng =
+        typeof (pos as google.maps.LatLng).lng === "function"
+          ? (pos as google.maps.LatLng).lng()
+          : (pos as google.maps.LatLngLiteral).lng;
+      marker.position = { lat, lng };
+    };
+    const listener = map.addListener("idle", () => {
+      customMarkerMapRefs.current.forEach(reanchor);
+      shapeLabelsRef.current.forEach(reanchor);
+      liveMarkersRef.current.forEach(reanchor);
+      markersRef.current.forEach(reanchor);
+    });
+    return () => {
+      google.maps.event.removeListener(listener);
+    };
+  }, [mapReady]);
+
   // ── Draft shape overlay (create/edit in progress) ────────────────────────────
   // Creates (once, on shape identity/type change) a live editable overlay
   // for whatever's currently being placed or edited, wiring its own

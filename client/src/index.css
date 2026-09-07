@@ -666,6 +666,39 @@ button:active:not(:disabled) {
   border-bottom: none;
 }
 
+/* Live-marker bench (client/src/pages/MarkerBenchPage.tsx) — pace-tier
+   border glow. Uses filter: drop-shadow, not box-shadow: box-shadow paints
+   on the element's rectangular box before clip-path/SVG-shape clipping is
+   applied and gets clipped away with it, so a tapered "moving" marker would
+   show no visible glow at all. drop-shadow instead follows the actual
+   painted (possibly non-rectangular) alpha shape, so it works for both the
+   rounded "stopped" pill and the bullet-taper "moving" shape. */
+.live-pin-tier-a {
+  filter: drop-shadow(0 0 5px rgba(34, 197, 94, 0.6));
+}
+.live-pin-tier-b {
+  filter: drop-shadow(0 0 1px rgba(34, 197, 94, 0.95))
+    drop-shadow(0 0 7px rgba(34, 197, 94, 0.5));
+}
+.live-pin-tier-c {
+  animation: livePinPulse 1.1s ease-in-out infinite;
+}
+@keyframes livePinPulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 3px rgba(34, 197, 94, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.85));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-pin-tier-c {
+    animation: none;
+    filter: drop-shadow(0 0 6px rgba(34, 197, 94, 0.65));
+  }
+}
+
 /* Fade-in animation */
 @keyframes fadeInUp {
   from {

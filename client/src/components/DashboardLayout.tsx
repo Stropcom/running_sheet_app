@@ -82,7 +82,6 @@ import {
   Settings,
   SlidersHorizontal,
   UserCog,
-  BarChart3,
   GripVertical,
   Image,
   Link2,
@@ -93,6 +92,7 @@ import {
   ShieldAlert,
   Database,
   Car,
+  BookText,
 } from "lucide-react";
 import React, {
   CSSProperties,
@@ -650,43 +650,6 @@ function SortableNavItem({
                 </button>
               </div>
             )}
-          </div>
-        )}
-      </SidebarMenuItem>
-    );
-  }
-
-  if (id === "reports") {
-    const isActive = location.startsWith("/reports");
-    return (
-      <SidebarMenuItem {...itemProps}>
-        <SidebarMenuButton
-          isActive={isActive}
-          onClick={e => {
-            const willExpand = !reportsExpanded;
-            setReportsExpanded(v => !v);
-            if (willExpand)
-              scrollToggleNearTop(sidebarScrollRef.current, e.currentTarget);
-          }}
-          tooltip="Reports"
-          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-indigo-400/50 shadow-sm"
-        >
-          <BarChart3 className="h-4 w-4 text-indigo-400" />
-          <span
-            className={`flex-1 ${isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
-          >
-            Reports
-          </span>
-          {!isCollapsed &&
-            (reportsExpanded ? (
-              <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
-            ))}
-          {gripHandle}
-        </SidebarMenuButton>
-        {reportsExpanded && !isCollapsed && (
-          <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
             <button
               onClick={() => setLocation("/reports/outstanding-actions")}
               className={subItemClass(
@@ -702,6 +665,81 @@ function SortableNavItem({
             >
               <TrendingUp className="h-3.5 w-3.5 shrink-0" />
               Weekly Activity
+            </button>
+          </div>
+        )}
+      </SidebarMenuItem>
+    );
+  }
+
+  if (id === "reports") {
+    // Internal id stays "reports" (not renamed to "procedures") even though
+    // this folder now shows "Procedures" — a user's saved sidebar order
+    // (trpc.sidebar router) is a list of these id strings, and renaming the
+    // id would drop it out of DEFAULT_NAV_ORDER's merge check and silently
+    // bump it to the end of any already-customised order. See where this id
+    // is used in Outstanding Actions/Weekly Activity's move to Op Manager
+    // above, and Vehicle Crash/UCO Guide/SMEAC Briefings' move from
+    // Administration below, for the rest of this folder's rename.
+    const isActive =
+      location.startsWith("/administration/vehicle-crash") ||
+      location.startsWith("/administration/uco-guide") ||
+      location.startsWith("/administration/smeac");
+    return (
+      <SidebarMenuItem {...itemProps}>
+        <SidebarMenuButton
+          isActive={isActive}
+          onClick={e => {
+            const willExpand = !reportsExpanded;
+            setReportsExpanded(v => !v);
+            if (willExpand)
+              scrollToggleNearTop(sidebarScrollRef.current, e.currentTarget);
+          }}
+          tooltip="Procedures"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-indigo-400/50 shadow-sm"
+        >
+          <BookText className="h-4 w-4 text-indigo-400" />
+          <span
+            className={`flex-1 ${isActive ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
+          >
+            Procedures
+          </span>
+          {!isCollapsed &&
+            (reportsExpanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground/40 ml-1" />
+            ))}
+          {gripHandle}
+        </SidebarMenuButton>
+        {reportsExpanded && !isCollapsed && (
+          <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+            <button
+              onClick={() => setLocation("/administration/vehicle-crash")}
+              className={subItemClass(
+                location.startsWith("/administration/vehicle-crash")
+              )}
+            >
+              <Car className="h-3.5 w-3.5 shrink-0" />
+              Vehicle Crash
+            </button>
+            <button
+              onClick={() => setLocation("/administration/uco-guide")}
+              className={subItemClass(
+                location.startsWith("/administration/uco-guide")
+              )}
+            >
+              <Eye className="h-3.5 w-3.5 shrink-0" />
+              UCO Guide
+            </button>
+            <button
+              onClick={() => setLocation("/administration/smeac")}
+              className={subItemClass(
+                location.startsWith("/administration/smeac")
+              )}
+            >
+              <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+              SMEAC Briefings
             </button>
           </div>
         )}
@@ -1149,30 +1187,6 @@ function SortableNavTile({
               </DropdownMenuItem>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  }
-
-  if (id === "reports") {
-    const isActive = location.startsWith("/reports");
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <div className="w-full">
-            <NavTileShell
-              setNodeRef={setNodeRef}
-              style={style}
-              gripListeners={gripListeners}
-              icon={<BarChart3 className="h-5 w-5 text-indigo-400" />}
-              label="Reports"
-              isActive={isActive}
-              hasSub
-              activeBorderClass="data-[active=true]:border-indigo-400/60"
-            />
-          </div>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
           <DropdownMenuItem
             onClick={() => setLocation("/reports/outstanding-actions")}
           >
@@ -1184,6 +1198,53 @@ function SortableNavTile({
           >
             <TrendingUp className="h-4 w-4 mr-2" />
             Weekly Activity
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
+  if (id === "reports") {
+    // Internal id stays "reports" — see the matching comment on the list-view
+    // render of this same folder for why (saved sidebar order preservation).
+    const isActive =
+      location.startsWith("/administration/vehicle-crash") ||
+      location.startsWith("/administration/uco-guide") ||
+      location.startsWith("/administration/smeac");
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <div className="w-full">
+            <NavTileShell
+              setNodeRef={setNodeRef}
+              style={style}
+              gripListeners={gripListeners}
+              icon={<BookText className="h-5 w-5 text-indigo-400" />}
+              label="Procedures"
+              isActive={isActive}
+              hasSub
+              activeBorderClass="data-[active=true]:border-indigo-400/60"
+            />
+          </div>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuItem
+            onClick={() => setLocation("/administration/vehicle-crash")}
+          >
+            <Car className="h-4 w-4 mr-2" />
+            Vehicle Crash
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => setLocation("/administration/uco-guide")}
+          >
+            <Eye className="h-4 w-4 mr-2" />
+            UCO Guide
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => setLocation("/administration/smeac")}
+          >
+            <ShieldAlert className="h-4 w-4 mr-2" />
+            SMEAC Briefings
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -1244,10 +1305,7 @@ function AdminNavTile({
     location === "/draft" ||
     location === "/operation-management" ||
     location === "/recycle-bin" ||
-    location.startsWith("/administration/smeac") ||
     location.startsWith("/administration/intel-export") ||
-    location.startsWith("/administration/vehicle-crash") ||
-    location.startsWith("/administration/uco-guide") ||
     location === "/help";
   return (
     <DropdownMenu>
@@ -1279,27 +1337,11 @@ function AdminNavTile({
           <Trash2 className="h-4 w-4 mr-2" />
           Recycle Bin
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setLocation("/administration/smeac")}>
-          <ShieldAlert className="h-4 w-4 mr-2" />
-          SMEAC Briefings
-        </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => setLocation("/administration/intel-export")}
         >
           <Database className="h-4 w-4 mr-2" />
           Intel Export
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => setLocation("/administration/vehicle-crash")}
-        >
-          <Car className="h-4 w-4 mr-2" />
-          Vehicle Crash
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => setLocation("/administration/uco-guide")}
-        >
-          <Eye className="h-4 w-4 mr-2" />
-          UCO Guide
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setLocation("/help")}>
           <HelpCircle className="h-4 w-4 mr-2" />
@@ -2065,14 +2107,9 @@ function DashboardLayoutContent({
                             location === "/draft" ||
                             location === "/operation-management" ||
                             location === "/recycle-bin" ||
-                            location.startsWith("/administration/smeac") ||
                             location.startsWith(
                               "/administration/intel-export"
                             ) ||
-                            location.startsWith(
-                              "/administration/vehicle-crash"
-                            ) ||
-                            location.startsWith("/administration/uco-guide") ||
                             location === "/help"
                       }
                       onClick={() => setAdminFolderExpanded(v => !v)}
@@ -2086,12 +2123,7 @@ function DashboardLayoutContent({
                           location === "/draft" ||
                           location === "/operation-management" ||
                           location === "/recycle-bin" ||
-                          location.startsWith("/administration/smeac") ||
                           location.startsWith("/administration/intel-export") ||
-                          location.startsWith(
-                            "/administration/vehicle-crash"
-                          ) ||
-                          location.startsWith("/administration/uco-guide") ||
                           location === "/help"
                             ? "text-sidebar-foreground font-medium"
                             : "text-sidebar-foreground/80"
@@ -2154,17 +2186,6 @@ function DashboardLayoutContent({
                           Recycle Bin
                         </button>
 
-                        {/* SMEAC Briefings — exceptional use only */}
-                        <button
-                          onClick={() => setLocation("/administration/smeac")}
-                          className={subItemClass(
-                            location.startsWith("/administration/smeac")
-                          )}
-                        >
-                          <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-foreground" />
-                          SMEAC Briefings
-                        </button>
-
                         {/* Intel Export */}
                         <button
                           onClick={() =>
@@ -2176,32 +2197,6 @@ function DashboardLayoutContent({
                         >
                           <Database className="h-3.5 w-3.5 shrink-0 text-foreground" />
                           Intel Export
-                        </button>
-
-                        {/* Vehicle Crash */}
-                        <button
-                          onClick={() =>
-                            setLocation("/administration/vehicle-crash")
-                          }
-                          className={subItemClass(
-                            location.startsWith("/administration/vehicle-crash")
-                          )}
-                        >
-                          <Car className="h-3.5 w-3.5 shrink-0 text-foreground" />
-                          Vehicle Crash
-                        </button>
-
-                        {/* UCO Guide */}
-                        <button
-                          onClick={() =>
-                            setLocation("/administration/uco-guide")
-                          }
-                          className={subItemClass(
-                            location.startsWith("/administration/uco-guide")
-                          )}
-                        >
-                          <Eye className="h-3.5 w-3.5 shrink-0 text-foreground" />
-                          UCO Guide
                         </button>
 
                         {/* Help */}

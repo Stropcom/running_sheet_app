@@ -9,7 +9,12 @@
  * vehicle patterns.
  */
 import { describe, it, expect } from "vitest";
-import { WALK_IN_PATTERN, WALK_OUT_PATTERN } from "@shared/walkEventPatterns";
+import {
+  WALK_IN_PATTERN,
+  WALK_IN_TOWARDS_PATTERN,
+  WALK_OUT_PATTERN,
+  extractWalkInTowardsLocation,
+} from "@shared/walkEventPatterns";
 
 describe("WALK_IN_PATTERN", () => {
   it("matches the street-route example", () => {
@@ -56,6 +61,60 @@ describe("WALK_IN_PATTERN", () => {
     const text =
       "Vehicle 1MGR73, KENNEDY driver and sole occupant, arrived at Sapore Espresso Bar, 4/275 Belmont Avenue, CLOVERDALE WA (Sapore Espresso Bar) parked in the car park.";
     expect(text.match(WALK_IN_PATTERN)).toBeNull();
+  });
+});
+
+describe("WALK_IN_TOWARDS_PATTERN", () => {
+  it("matches the real example that WALK_IN_PATTERN misses (no 'entered' clause)", () => {
+    const text =
+      "HOGAN and CORNELL exited the vehicle, walked towards 45 Francis Street and continued out of sight.";
+    expect(text.match(WALK_IN_PATTERN)).toBeNull();
+    const match = text.match(WALK_IN_TOWARDS_PATTERN);
+    expect(match).not.toBeNull();
+    expect(match![1].trim()).toBe("HOGAN and CORNELL");
+    expect(match![2].trim()).toBe("towards 45 Francis Street");
+  });
+
+  it("matches a route with a directional prefix before 'towards'", () => {
+    const text =
+      "CROSS and FLETCHER exited the vehicle, walked across the road towards 18 Pepperbush Road and continued out of sight.";
+    const match = text.match(WALK_IN_TOWARDS_PATTERN);
+    expect(match).not.toBeNull();
+    expect(match![2].trim()).toBe("across the road towards 18 Pepperbush Road");
+  });
+
+  it("does not match a plain vehicle arrival with no walking", () => {
+    const text =
+      "Vehicle 1MGR73, KENNEDY driver and sole occupant, arrived at Sapore Espresso Bar, 4/275 Belmont Avenue, CLOVERDALE WA (Sapore Espresso Bar) parked in the car park.";
+    expect(text.match(WALK_IN_TOWARDS_PATTERN)).toBeNull();
+  });
+});
+
+describe("extractWalkInTowardsLocation", () => {
+  it("strips a plain 'towards' prefix", () => {
+    expect(extractWalkInTowardsLocation("towards 18 Pepperbush Road")).toBe(
+      "18 Pepperbush Road"
+    );
+  });
+
+  it("strips a directional prefix before 'towards'", () => {
+    expect(
+      extractWalkInTowardsLocation("across the road towards 18 Pepperbush Road")
+    ).toBe("18 Pepperbush Road");
+  });
+
+  it("also drops a leading 'the residence at'", () => {
+    expect(
+      extractWalkInTowardsLocation(
+        "towards the residence at 18 Pepperbush Road"
+      )
+    ).toBe("18 Pepperbush Road");
+  });
+
+  it("falls back to the whole clause when there's no 'towards'", () => {
+    expect(extractWalkInTowardsLocation("through the car park")).toBe(
+      "through the car park"
+    );
   });
 });
 

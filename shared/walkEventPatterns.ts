@@ -24,6 +24,38 @@
 // VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN already reuses occupantDesc.
 export const WALK_IN_PATTERN =
   /([A-Za-z][^.\n]*?)\s*exited the vehicle,?\s*walked\s+(.+?),?\s*entered\s+(.+?)\s+and continued out of sight/i;
+
+// Alternate walk-in phrasing with no separate "entered <location>" clause —
+// the destination is folded straight into the route text instead ("...
+// walked towards 45 Francis Street and continued out of sight."). This is a
+// real, standard narrative officers write at least as often as the
+// "entered <location>" form, but WALK_IN_PATTERN requires that clause
+// literally and simply never matches this shape — the row silently never
+// registers as a pending walk-in, so no "Walked out" chip is ever offered
+// for it. getPendingWalkIns tries WALK_IN_PATTERN first and only falls back
+// to this one when that doesn't match, so there's no double-matching.
+// Route/destination isn't cleanly separable here (there's no anchor clause
+// like "entered" to split on), so extractWalkInTowardsLocation below does
+// its own best-effort split off the single captured route clause.
+export const WALK_IN_TOWARDS_PATTERN =
+  /([A-Za-z][^.\n]*?)\s*exited the vehicle,?\s*walked\s+(.+?)\s+and continued out of sight/i;
+
+// Best-effort destination extraction from a WALK_IN_TOWARDS_PATTERN route
+// clause — e.g. "towards 45 Francis Street" -> "45 Francis Street",
+// "across the road towards the residence at 18 Pepperbush Road" ->
+// "18 Pepperbush Road". The destination always comes after the LAST
+// "towards" in the clause, so strip up to and including that, then drop a
+// leading "the residence at " if the officer added one. Falls back to the
+// whole clause when there's no "towards" at all — same trust level as
+// extractOccupantNames in IntelligenceMapping.tsx: worst case the address
+// match later doesn't line up and the chip just doesn't appear, it never
+// inserts anything wrong into the record.
+export function extractWalkInTowardsLocation(route: string): string {
+  const towardsMatch = route.match(/towards\s+(.+)$/i);
+  const location = towardsMatch ? towardsMatch[1] : route;
+  return location.replace(/^the residence at\s+/i, "").trim();
+}
+
 // Canonical form is "... exited <location> and walked <route> towards
 // Vehicle <rego>." — also still matches the older "... exited <location>,
 // walked <route>, to Vehicle <rego>." phrasing (comma-separated, "to"

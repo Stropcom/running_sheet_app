@@ -29,7 +29,12 @@ import {
   VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN,
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
-import { WALK_IN_PATTERN, WALK_OUT_PATTERN } from "@shared/walkEventPatterns";
+import {
+  WALK_IN_PATTERN,
+  WALK_IN_TOWARDS_PATTERN,
+  WALK_OUT_PATTERN,
+  extractWalkInTowardsLocation,
+} from "@shared/walkEventPatterns";
 import {
   classifyVisitDirection,
   timeBucketLabels,
@@ -4968,6 +4973,26 @@ export async function getPendingWalkIns(
       const names = inMatch[1].trim();
       const route = inMatch[2].trim();
       const location = inMatch[3].trim();
+      const key = location.toLowerCase();
+      lastWalkInByLocationKey.set(key, {
+        names,
+        location,
+        route,
+        sheetId: row.sheetId,
+        rowId: row.id,
+        orderIdx: idx,
+      });
+      walkedOutLocationKeys.delete(key);
+      return;
+    }
+    // Fallback for the "walked towards <location> and continued out of
+    // sight" phrasing — no separate "entered <location>" clause for
+    // WALK_IN_PATTERN to anchor on, see WALK_IN_TOWARDS_PATTERN.
+    const towardsMatch = row.observation.match(WALK_IN_TOWARDS_PATTERN);
+    if (towardsMatch) {
+      const names = towardsMatch[1].trim();
+      const route = towardsMatch[2].trim();
+      const location = extractWalkInTowardsLocation(route);
       const key = location.toLowerCase();
       lastWalkInByLocationKey.set(key, {
         names,

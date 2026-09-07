@@ -6,13 +6,6 @@ import {
 } from "@shared/vehicleEventPatterns";
 import { DivIconOverlay } from "@/lib/divIconOverlay";
 import {
-  bulletTaperPath,
-  computeHeadingRotation,
-  getPaceTierFromKmh,
-  pinTierClass,
-  roundedPillPath,
-} from "@/lib/liveMarkerShape";
-import {
   getMarkerDataUrl,
   getMarkerSvg,
   MARKER_COLOURS,
@@ -2613,76 +2606,51 @@ export default function IntelligenceMapping() {
   const createUserPinElement = useCallback((liveUser: LiveUser) => {
     const color = getTeamColour(liveUser.team);
     const label = liveUser.name.toUpperCase();
-    const speedKmh = (liveUser.speed ?? 0) * 3.6;
-    const tier = getPaceTierFromKmh(speedKmh);
-    const moving = tier !== "stopped";
-    const { rotationDeg, flip } =
-      moving && liveUser.heading != null
-        ? computeHeadingRotation(liveUser.heading)
-        : { rotationDeg: 0, flip: false };
+    // Motion: speed > 0.5 m/s = moving (green underline), otherwise stopped (grey underline)
+    const isMoving = liveUser.speed != null && liveUser.speed > 0.5;
+    const underlineColor = isMoving ? "#22c55e" : "#9ca3af";
 
     const el = document.createElement("div");
     el.style.cssText = `position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;`;
 
-    // Pill-shaped name tag — a touch smaller than before. Shape (rounded at
-    // rest, bullet-taper + rotated-to-heading while moving) and the
-    // pace-tier border glow come from an SVG background instead of plain
-    // CSS, driven by shared/liveMarkerShape.ts. The SVG viewBox is
-    // stretched to the pill's actual box via preserveAspectRatio="none"
-    // rather than measured after render, so this can stay a synchronous,
-    // drop-in content swap on the existing update path below — CINs are
-    // consistently short, so the stretch is negligible in practice.
-    //
-    // Deliberately NO box-shadow on this div: it's a plain rectangle now
-    // that the visible shape lives in the SVG below, and box-shadow would
-    // draw around that rectangle regardless of the rounded/tapered shape
-    // painted inside it (shows as a visible box behind the pill). The
-    // ambient shadow + glow both live on the SVG's `filter: drop-shadow`
-    // instead — see the live-pin-* classes in index.css.
+    // Pill-shaped name tag — slightly smaller than before
     const pill = document.createElement("div");
     pill.style.cssText = `
       position:relative;
       display:inline-flex;
       align-items:center;
-      justify-content:center;
+      background:${color};
       color:#fff;
-      font-size:9.5px;
+      font-size:10px;
       font-weight:800;
-      padding:3px 9px 4px 9px;
+      padding:3px 10px 5px 10px;
+      border-radius:20px;
       white-space:nowrap;
-      letter-spacing:0.04em;
-      transform:${moving ? `rotate(${rotationDeg}deg)` : "none"};
+      box-shadow:0 2px 8px rgba(0,0,0,0.40);
+      letter-spacing:0.06em;
+      border:1.5px solid rgba(255,255,255,0.60);
+      overflow:hidden;
     `;
-
-    const PILL_VB_W = 52;
-    const PILL_VB_H = 21;
-    const svgNS = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(svgNS, "svg");
-    svg.setAttribute("viewBox", `0 0 ${PILL_VB_W} ${PILL_VB_H}`);
-    svg.setAttribute("preserveAspectRatio", "none");
-    svg.setAttribute(
-      "style",
-      "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;"
-    );
-    svg.setAttribute("class", pinTierClass(tier));
-    const shapePath = document.createElementNS(svgNS, "path");
-    shapePath.setAttribute(
-      "d",
-      moving
-        ? bulletTaperPath(PILL_VB_W, PILL_VB_H, flip)
-        : roundedPillPath(PILL_VB_W, PILL_VB_H)
-    );
-    shapePath.setAttribute("fill", color);
-    shapePath.setAttribute("stroke", "rgba(255,255,255,0.6)");
-    shapePath.setAttribute("stroke-width", "1.5");
-    svg.appendChild(shapePath);
 
     const nameSpan = document.createElement("span");
     nameSpan.textContent = label;
     nameSpan.style.cssText = `position:relative;z-index:1;`;
 
-    pill.appendChild(svg);
+    // Thin underline at the bottom of the pill indicating motion state
+    const underline = document.createElement("div");
+    underline.style.cssText = `
+      position:absolute;
+      bottom:0;
+      left:0;
+      right:0;
+      height:3px;
+      background:${underlineColor};
+      border-radius:0 0 20px 20px;
+      opacity:0.9;
+    `;
+
     pill.appendChild(nameSpan);
+    pill.appendChild(underline);
     el.appendChild(pill);
     return el;
   }, []);

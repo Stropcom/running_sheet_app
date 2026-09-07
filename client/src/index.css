@@ -666,52 +666,6 @@ button:active:not(:disabled) {
   border-bottom: none;
 }
 
-/* Live-team marker (client/src/pages/IntelligenceMapping.tsx,
-   createUserPinElement) — ambient drop shadow + pace-tier border glow on
-   the pin's background SVG. Every rule here uses filter: drop-shadow, never
-   box-shadow: the SVG sits inside a plain rectangular <div>, and
-   box-shadow follows THAT rectangle regardless of the rounded/tapered
-   shape painted inside it — the bug that showed a visible box behind the
-   pill. drop-shadow instead follows the actual painted (non-rectangular)
-   alpha shape, so it hugs the pill itself. The ambient shadow
-   (0 2px 4px rgba(0,0,0,0.35), matching every other marker's drop shadow
-   elsewhere on this map) is baked into every rule below rather than left
-   as a separate class, since a second `filter` declaration would replace
-   the first rather than combine with it. */
-.live-pin-svg {
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
-}
-.live-pin-tier-a {
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35))
-    drop-shadow(0 0 5px rgba(34, 197, 94, 0.6));
-}
-.live-pin-tier-b {
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35))
-    drop-shadow(0 0 1px rgba(34, 197, 94, 0.95))
-    drop-shadow(0 0 7px rgba(34, 197, 94, 0.5));
-}
-.live-pin-tier-c {
-  animation: livePinPulse 1.1s ease-in-out infinite;
-}
-@keyframes livePinPulse {
-  0%,
-  100% {
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35))
-      drop-shadow(0 0 3px rgba(34, 197, 94, 0.4));
-  }
-  50% {
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35))
-      drop-shadow(0 0 10px rgba(34, 197, 94, 0.85));
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .live-pin-tier-c {
-    animation: none;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35))
-      drop-shadow(0 0 6px rgba(34, 197, 94, 0.65));
-  }
-}
-
 /* Fade-in animation */
 @keyframes fadeInUp {
   from {

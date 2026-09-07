@@ -1200,6 +1200,16 @@ export default function IntelligenceMapping() {
   const nearmapLayerRef = useRef<google.maps.ImageMapType | null>(null);
   // Operations dropdown open state
   const [opsDropdownOpen, setOpsDropdownOpen] = useState(false);
+  // Operations picker mode: single-select (default, picking replaces the
+  // current selection and closes the dropdown — switching operations swaps
+  // the map's data outright) vs multi-select (checkboxes accumulate, picked
+  // via the "Multi" toggle). Deliberately NOT persisted to localStorage —
+  // every fresh visit starts back in single mode, and toggleOp also drops
+  // back to single mode on its own once a multi-selection is narrowed down
+  // to one (or zero) operations, so "single" is always the resting state.
+  const [multiOpMode, setMultiOpMode] = useState(false);
+  // Operations picker search filter — cleared whenever the dropdown closes.
+  const [opSearchQuery, setOpSearchQuery] = useState("");
   // GPS error
   const [gpsError, setGpsError] = useState<string | null>(null);
   // Whether device supports geolocation
@@ -2382,13 +2392,20 @@ export default function IntelligenceMapping() {
   }
 
   // ── Filter handlers ──────────────────────────────────────────────────────────
+  // Multi-select toggle (only reachable while multiOpMode is on — see
+  // handleOpRowClick) — accumulates/removes from selectedOpIds and leaves
+  // the dropdown open so several operations can be picked in one visit.
+  // Narrowing the selection back down to one (or zero) operations by
+  // REMOVING one drops multiOpMode back to single-select automatically,
+  // since there's no longer anything to be "multi" about — but adding never
+  // triggers that, so picking your first couple of operations after turning
+  // Multi on doesn't immediately kick you back out of multi mode.
   const toggleOp = (opId: number) => {
     setOpsExplicitlySet(true);
     setSelectedOpIds(prev => {
-      const next = prev.includes(opId)
-        ? prev.filter(id => id !== opId)
-        : [...prev, opId];
-      if (!next.includes(opId)) {
+      const isRemoval = prev.includes(opId);
+      const next = isRemoval ? prev.filter(id => id !== opId) : [...prev, opId];
+      if (isRemoval) {
         const opTargets = opTargetMap.get(opId) ?? [];
         setSelectedTargetIds(tPrev =>
           tPrev.filter(tid => !opTargets.find(t => t.id === tid))
@@ -2398,11 +2415,34 @@ export default function IntelligenceMapping() {
           setRsSelectedSheetId(null);
           setRsLastEntry(null);
         }
+        if (next.length <= 1) setMultiOpMode(false);
       }
       return next;
     });
-    // Collapse the dropdown after each selection (multi-select but auto-close per tap)
+  };
+
+  // Single-select pick — the default mode. Replaces the whole selection
+  // with just this operation (so the map's markers/pins/sheets for the
+  // previously-selected operation are dropped and the new operation's data
+  // loads in their place, via the operationIds-scoped queries below reacting
+  // to selectedOpIds changing), clears target/RS-sheet selections since
+  // those belonged to the old operation, and closes the dropdown. Re-picking
+  // the operation that's already the sole selection deselects it instead,
+  // matching checkbox semantics.
+  const selectSingleOp = (opId: number) => {
+    setOpsExplicitlySet(true);
+    setSelectedOpIds(prev =>
+      prev.length === 1 && prev[0] === opId ? [] : [opId]
+    );
+    setSelectedTargetIds([]);
+    setRsSelectedSheetId(null);
+    setRsLastEntry(null);
     setOpsDropdownOpen(false);
+  };
+
+  const handleOpRowClick = (opId: number) => {
+    if (multiOpMode) toggleOp(opId);
+    else selectSingleOp(opId);
   };
 
   const toggleTarget = (targetId: number) => {
@@ -2413,18 +2453,13 @@ export default function IntelligenceMapping() {
     );
   };
 
-  const selectAllOps = () => {
-    if (!operations) return;
-    setOpsExplicitlySet(true);
-    setSelectedOpIds(operations.map((op: any) => op.id));
-  };
-
   const clearAll = () => {
     setOpsExplicitlySet(true);
     setSelectedOpIds([]);
     setSelectedTargetIds([]);
     setRsSelectedSheetId(null);
     setRsLastEntry(null);
+    setMultiOpMode(false);
   };
 
   // ── GPS / Sharing ────────────────────────────────────────────────────────────
@@ -5989,13 +6024,16 @@ export default function IntelligenceMapping() {
                 ) : (
                   <Popover
                     open={opsDropdownOpen}
-                    onOpenChange={setOpsDropdownOpen}
+                    onOpenChange={open => {
+                      setOpsDropdownOpen(open);
+                      if (!open) setOpSearchQuery("");
+                    }}
                   >
                     <PopoverTrigger asChild>
                       <button className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 border-border bg-background hover:bg-accent/50 active:scale-[0.98] transition-all text-left">
                         <span className="text-xs text-foreground truncate flex-1">
                           {selectedOpIds.length === 0
-                            ? "Select operations…"
+                            ? "Select operation…"
                             : selectedOpIds.length ===
                                 (operations as any[]).length
                               ? "All operations"
@@ -6013,96 +6051,128 @@ export default function IntelligenceMapping() {
                       className="w-72 p-2 rounded-xl border-2 border-border shadow-xl"
                       align="end"
                     >
-                      <div className="flex items-center justify-between px-1 pb-2 border-b border-border mb-1">
+                      <div className="flex items-center justify-between px-1 pb-2 border-b border-border mb-2">
                         <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                          Select Operations
+                          {multiOpMode
+                            ? "Select Operations"
+                            : "Select Operation"}
                         </span>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1.5">
                           <button
-                            onClick={selectAllOps}
-                            className="text-[10px] text-blue-400 hover:text-blue-300 font-semibold"
+                            onClick={() => setMultiOpMode(v => !v)}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border transition-colors ${
+                              multiOpMode
+                                ? "bg-blue-500/20 text-blue-400 border-blue-500/40"
+                                : "text-muted-foreground hover:text-foreground border-border hover:bg-accent/50"
+                            }`}
                           >
-                            All
+                            Multi
                           </button>
                           <button
                             onClick={clearAll}
-                            className="text-[10px] text-muted-foreground hover:text-foreground font-semibold"
+                            className="px-2.5 py-1 rounded-md text-[11px] font-semibold border border-border text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
                           >
                             Clear
                           </button>
                         </div>
                       </div>
+                      <div className="relative mb-1.5">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                        <input
+                          value={opSearchQuery}
+                          onChange={e => setOpSearchQuery(e.target.value)}
+                          placeholder="Search operations…"
+                          className="w-full pl-8 pr-2 py-1.5 rounded-lg border border-border bg-background text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                        />
+                      </div>
                       <div className="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
-                        {(operations as any[]).map(op => {
-                          const opTargets = opTargetMap.get(op.id) ?? [];
-                          const isOpSelected = selectedOpIds.includes(op.id);
-                          const isExpanded = opExpanded.has(op.id);
-                          return (
-                            <div key={op.id}>
-                              <div className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-accent/50 transition-colors">
-                                <Checkbox
-                                  id={`rp-op-${op.id}`}
-                                  checked={isOpSelected}
-                                  onCheckedChange={() => toggleOp(op.id)}
-                                  className="h-4 w-4"
-                                />
-                                <label
-                                  htmlFor={`rp-op-${op.id}`}
-                                  className="flex-1 text-sm cursor-pointer truncate font-medium"
-                                >
-                                  {op.name}
-                                </label>
-                                {opTargets.length > 0 && (
-                                  <button
-                                    onClick={() =>
-                                      setOpExpanded(prev => {
-                                        const next = new Set(prev);
-                                        next.has(op.id)
-                                          ? next.delete(op.id)
-                                          : next.add(op.id);
-                                        return next;
-                                      })
+                        {(operations as any[])
+                          .filter((op: any) =>
+                            op.name
+                              .toLowerCase()
+                              .includes(opSearchQuery.trim().toLowerCase())
+                          )
+                          .map(op => {
+                            const opTargets = opTargetMap.get(op.id) ?? [];
+                            const isOpSelected = selectedOpIds.includes(op.id);
+                            const isExpanded = opExpanded.has(op.id);
+                            return (
+                              <div key={op.id}>
+                                <div className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-accent/50 transition-colors">
+                                  <Checkbox
+                                    id={`rp-op-${op.id}`}
+                                    checked={isOpSelected}
+                                    onCheckedChange={() =>
+                                      handleOpRowClick(op.id)
                                     }
-                                    className="text-muted-foreground hover:text-foreground p-0.5"
+                                    className="h-4 w-4"
+                                  />
+                                  <label
+                                    htmlFor={`rp-op-${op.id}`}
+                                    className="flex-1 text-sm cursor-pointer truncate font-medium"
                                   >
-                                    {isExpanded ? (
-                                      <ChevronDown className="h-3.5 w-3.5" />
-                                    ) : (
-                                      <ChevronRight className="h-3.5 w-3.5" />
-                                    )}
-                                  </button>
+                                    {op.name}
+                                  </label>
+                                  {opTargets.length > 0 && (
+                                    <button
+                                      onClick={() =>
+                                        setOpExpanded(prev => {
+                                          const next = new Set(prev);
+                                          next.has(op.id)
+                                            ? next.delete(op.id)
+                                            : next.add(op.id);
+                                          return next;
+                                        })
+                                      }
+                                      className="text-muted-foreground hover:text-foreground p-0.5"
+                                    >
+                                      {isExpanded ? (
+                                        <ChevronDown className="h-3.5 w-3.5" />
+                                      ) : (
+                                        <ChevronRight className="h-3.5 w-3.5" />
+                                      )}
+                                    </button>
+                                  )}
+                                </div>
+                                {isExpanded && opTargets.length > 0 && (
+                                  <div className="ml-6 pl-2 border-l border-border/50 flex flex-col gap-0.5 mb-1">
+                                    {opTargets.map(t => (
+                                      <div
+                                        key={t.id}
+                                        className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-accent/40 transition-colors"
+                                      >
+                                        <Checkbox
+                                          id={`rp-tgt-${t.id}`}
+                                          checked={selectedTargetIds.includes(
+                                            t.id
+                                          )}
+                                          onCheckedChange={() =>
+                                            toggleTarget(t.id)
+                                          }
+                                          className="h-3.5 w-3.5"
+                                        />
+                                        <label
+                                          htmlFor={`rp-tgt-${t.id}`}
+                                          className="text-xs cursor-pointer truncate text-muted-foreground"
+                                        >
+                                          {t.name}
+                                        </label>
+                                      </div>
+                                    ))}
+                                  </div>
                                 )}
                               </div>
-                              {isExpanded && opTargets.length > 0 && (
-                                <div className="ml-6 pl-2 border-l border-border/50 flex flex-col gap-0.5 mb-1">
-                                  {opTargets.map(t => (
-                                    <div
-                                      key={t.id}
-                                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-accent/40 transition-colors"
-                                    >
-                                      <Checkbox
-                                        id={`rp-tgt-${t.id}`}
-                                        checked={selectedTargetIds.includes(
-                                          t.id
-                                        )}
-                                        onCheckedChange={() =>
-                                          toggleTarget(t.id)
-                                        }
-                                        className="h-3.5 w-3.5"
-                                      />
-                                      <label
-                                        htmlFor={`rp-tgt-${t.id}`}
-                                        className="text-xs cursor-pointer truncate text-muted-foreground"
-                                      >
-                                        {t.name}
-                                      </label>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        {(operations as any[]).filter((op: any) =>
+                          op.name
+                            .toLowerCase()
+                            .includes(opSearchQuery.trim().toLowerCase())
+                        ).length === 0 && (
+                          <p className="text-xs text-muted-foreground text-center py-3">
+                            No operations match "{opSearchQuery}".
+                          </p>
+                        )}
                       </div>
                     </PopoverContent>
                   </Popover>

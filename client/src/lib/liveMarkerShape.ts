@@ -99,7 +99,16 @@ export function bulletTaperPath(
   );
 }
 
-/** CSS class carrying the pace-tier border glow — see index.css for the rules. */
+/**
+ * CSS class carrying both the ambient drop shadow every pin gets and (when
+ * moving) the pace-tier border glow on top of it — see index.css. Always
+ * use filter: drop-shadow for this, never box-shadow: the pin's shape is
+ * an SVG path inside a plain rectangular <div>/<svg> box, and box-shadow
+ * follows that rectangular box regardless of what's painted inside it —
+ * drop-shadow instead follows the actual painted (non-rectangular) alpha
+ * shape, which is what makes it look attached to the pill rather than to
+ * an invisible box around it.
+ */
 export function pinTierClass(tier: PaceTier): string {
   switch (tier) {
     case "a":
@@ -109,6 +118,6 @@ export function pinTierClass(tier: PaceTier): string {
     case "c":
       return "live-pin-tier-c";
     default:
-      return "";
+      return "live-pin-svg";
   }
 }

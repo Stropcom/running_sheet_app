@@ -2592,12 +2592,18 @@ export default function IntelligenceMapping() {
     // Pill-shaped name tag — a touch smaller than before. Shape (rounded at
     // rest, bullet-taper + rotated-to-heading while moving) and the
     // pace-tier border glow come from an SVG background instead of plain
-    // CSS, driven by shared/liveMarkerShape.ts (same logic proven on the
-    // /bench/marker page). The SVG viewBox is stretched to the pill's
-    // actual box via preserveAspectRatio="none" rather than measured after
-    // render, so this can stay a synchronous, drop-in content swap on the
-    // existing update path below — CINs are consistently short, so the
-    // stretch is negligible in practice.
+    // CSS, driven by shared/liveMarkerShape.ts. The SVG viewBox is
+    // stretched to the pill's actual box via preserveAspectRatio="none"
+    // rather than measured after render, so this can stay a synchronous,
+    // drop-in content swap on the existing update path below — CINs are
+    // consistently short, so the stretch is negligible in practice.
+    //
+    // Deliberately NO box-shadow on this div: it's a plain rectangle now
+    // that the visible shape lives in the SVG below, and box-shadow would
+    // draw around that rectangle regardless of the rounded/tapered shape
+    // painted inside it (shows as a visible box behind the pill). The
+    // ambient shadow + glow both live on the SVG's `filter: drop-shadow`
+    // instead — see the live-pin-* classes in index.css.
     const pill = document.createElement("div");
     pill.style.cssText = `
       position:relative;
@@ -2610,7 +2616,6 @@ export default function IntelligenceMapping() {
       padding:3px 9px 4px 9px;
       white-space:nowrap;
       letter-spacing:0.04em;
-      box-shadow:0 2px 8px rgba(0,0,0,0.40);
       transform:${moving ? `rotate(${rotationDeg}deg)` : "none"};
     `;
 

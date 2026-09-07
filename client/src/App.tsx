@@ -29,7 +29,6 @@ import StatementsPage from "./pages/StatementsPage";
 import WitnessListPage from "./pages/WitnessListPage";
 import WIPCPage from "./pages/WIPCPage";
 import HelpPage from "./pages/HelpPage";
-import MarkerBenchPage from "./pages/MarkerBenchPage";
 import RecycleBin from "@/pages/RecycleBin";
 import DraftHubPage from "@/pages/DraftHubPage";
 import IntelligenceTargetProfile from "@/pages/IntelligenceTargetProfile";
@@ -255,7 +254,6 @@ function Router() {
       <Route path="/court/witness-list" component={WitnessListPage} />
       <Route path="/court/wipc" component={WIPCPage} />
       <Route path="/help" component={HelpPage} />
-      <Route path="/bench/marker" component={MarkerBenchPage} />
       <Route path="/recycle-bin" component={RecycleBin} />
       <Route path="/draft" component={DraftHubPage} />
       <Route path="/draft/sheet/:localId" component={DraftSheetPage} />

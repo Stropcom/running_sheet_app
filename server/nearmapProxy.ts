@@ -13,18 +13,31 @@ import { ENV } from "./_core/env";
  * Simple WMS service (Integrations > API Services):
  *   https://api.nearmap.com/wms/v1/latest/apikey/{apikey}?service=WMS&request=GetCapabilities
  * — i.e. the key is a path segment under /wms/v1/latest/apikey/, not a
- * "/wms/{key}/service" shape. NEARMAP_LAYER is still a guess ("Vert" is
- * Nearmap's conventional default vertical-imagery layer name) — if tiles
- * come back empty/error once NEARMAP_API_KEY is set, open the
- * GetCapabilities URL above in a browser and check the actual <Name> value
- * inside each <Layer> element in the returned XML, then update
- * NEARMAP_LAYER to match. Everything else here (auth gate, tile math,
- * response streaming, the client toggle) doesn't depend on that.
+ * "/wms/{key}/service" shape.
+ *
+ * WMS version confirmed live: an initial GetMap using VERSION=1.3.0 +
+ * CRS=EPSG:3857 came back as a 200 OK carrying a WMS
+ * ServiceExceptionReport (version="1.1.1") saying "SRS is mandatory" —
+ * Nearmap's server speaks WMS 1.1.1, where the coordinate-system param is
+ * named SRS, not CRS (the 1.3.0 name for the same thing), so the 1.3.0
+ * request's CRS param was simply never recognised. Switched to 1.1.1 +
+ * SRS below to match.
+ *
+ * NEARMAP_LAYER is still a guess ("Vert" is Nearmap's conventional default
+ * vertical-imagery layer name) — the SRS error above came back before any
+ * layer-name check, so it doesn't confirm "Vert" is right. If a tile
+ * request still comes back as an XML ServiceExceptionReport (this proxy
+ * now returns those as a 502 with the exception logged server-side, not
+ * silently forwarded as a broken image), open the GetCapabilities URL
+ * above in a browser and check the actual <Name> value inside each
+ * <Layer> element in the returned XML, then update NEARMAP_LAYER to
+ * match. Everything else here (auth gate, tile math, response streaming,
+ * the client toggle) doesn't depend on that.
  */
 
 const NEARMAP_WMS_BASE = "https://api.nearmap.com/wms/v1/latest/apikey";
 const NEARMAP_LAYER = "Vert";
-const NEARMAP_WMS_VERSION = "1.3.0";
+const NEARMAP_WMS_VERSION = "1.1.1";
 const TILE_SIZE = 256;
 const WEB_MERCATOR_CIRCUMFERENCE_M = 40_075_016.6855785; // EPSG:3857
 
@@ -81,7 +94,7 @@ export function registerNearmapProxy(app: Express) {
       wmsUrl.searchParams.set("REQUEST", "GetMap");
       wmsUrl.searchParams.set("LAYERS", NEARMAP_LAYER);
       wmsUrl.searchParams.set("STYLES", "");
-      wmsUrl.searchParams.set("CRS", "EPSG:3857");
+      wmsUrl.searchParams.set("SRS", "EPSG:3857");
       wmsUrl.searchParams.set("BBOX", `${minX},${minY},${maxX},${maxY}`);
       wmsUrl.searchParams.set("WIDTH", String(TILE_SIZE));
       wmsUrl.searchParams.set("HEIGHT", String(TILE_SIZE));
@@ -101,6 +114,21 @@ export function registerNearmapProxy(app: Express) {
 
         const contentType =
           nearmapResp.headers.get("content-type") ?? "image/jpeg";
+        // WMS servers commonly report a bad GetMap request as a
+        // ServiceExceptionReport XML body with a 200 OK HTTP status, not a
+        // non-2xx status — the `!nearmapResp.ok` check above alone can't
+        // catch that, so it would otherwise get forwarded straight through
+        // as if it were valid tile bytes (a broken/blank image client-side,
+        // with the real reason never logged anywhere).
+        if (contentType.includes("xml")) {
+          const body = await nearmapResp.text().catch(() => "");
+          console.error(
+            `[NearmapProxy] upstream returned XML instead of an image: ${body.slice(0, 500)}`
+          );
+          res.status(502).send("Nearmap returned an error, see server logs");
+          return;
+        }
+
         const buf = Buffer.from(await nearmapResp.arrayBuffer());
         res.set("Content-Type", contentType);
         // Aerial capture dates change infrequently — cache tiles for a day

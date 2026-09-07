@@ -9,20 +9,21 @@ import { ENV } from "./_core/env";
  * references/maps-integration.md), Nearmap is the org's own paid
  * subscription and its key is a real secret.
  *
- * IMPORTANT — NOT YET VERIFIED AGAINST A LIVE NEARMAP ACCOUNT: the
- * constants below (base URL, layer name, version, param names) are built
- * from Nearmap's documented Simple WMS conventions, not a tested response,
- * because no API key was available while writing this. Before relying on
- * this: create the "Simple WMS" service under Nearmap's Integrations > API
- * Services tab (see the account's dashboard), and compare the "Copy link"
- * URL it generates against NEARMAP_WMS_BASE/NEARMAP_LAYER/NEARMAP_VERSION
- * below — update them to match exactly if they differ. Everything else
- * here (auth gate, tile math, response streaming) doesn't depend on that
- * and needs no changes once the URL is confirmed.
+ * Base path confirmed against the org's real "Copy link" URL from Nearmap's
+ * Simple WMS service (Integrations > API Services):
+ *   https://api.nearmap.com/wms/v1/latest/apikey/{apikey}?service=WMS&request=GetCapabilities
+ * — i.e. the key is a path segment under /wms/v1/latest/apikey/, not a
+ * "/wms/{key}/service" shape. NEARMAP_LAYER is still a guess ("Vert" is
+ * Nearmap's conventional default vertical-imagery layer name) — if tiles
+ * come back empty/error once NEARMAP_API_KEY is set, open the
+ * GetCapabilities URL above in a browser and check the actual <Name> value
+ * inside each <Layer> element in the returned XML, then update
+ * NEARMAP_LAYER to match. Everything else here (auth gate, tile math,
+ * response streaming, the client toggle) doesn't depend on that.
  */
 
-const NEARMAP_WMS_BASE = "https://api.nearmap.com/wms";
-const NEARMAP_LAYER = "Nearmap_Latest";
+const NEARMAP_WMS_BASE = "https://api.nearmap.com/wms/v1/latest/apikey";
+const NEARMAP_LAYER = "Vert";
 const NEARMAP_WMS_VERSION = "1.3.0";
 const TILE_SIZE = 256;
 const WEB_MERCATOR_CIRCUMFERENCE_M = 40_075_016.6855785; // EPSG:3857
@@ -74,9 +75,7 @@ export function registerNearmapProxy(app: Express) {
 
       const { minX, minY, maxX, maxY } = tileToWebMercatorBBox(x, y, z);
 
-      const wmsUrl = new URL(
-        `${NEARMAP_WMS_BASE}/${ENV.nearmapApiKey}/service`
-      );
+      const wmsUrl = new URL(`${NEARMAP_WMS_BASE}/${ENV.nearmapApiKey}`);
       wmsUrl.searchParams.set("SERVICE", "WMS");
       wmsUrl.searchParams.set("VERSION", NEARMAP_WMS_VERSION);
       wmsUrl.searchParams.set("REQUEST", "GetMap");

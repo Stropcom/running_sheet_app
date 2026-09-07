@@ -959,6 +959,32 @@ function extractOccupantNames(occupantDesc: string): string {
     .join(" and ");
 }
 
+// App-wide rule (see the "Vehicle arriving" chip's own address-shortening
+// comment below): a person's full name + bracket short-form is only
+// correct on their FIRST mention anywhere in the sheet — every later
+// mention should be short-form only (e.g. "FLETCHER", not "Madeleine Rose
+// FLETCHER (FLETCHER)"). occupantDesc/walk-in names text is reused
+// verbatim from whichever earlier row it was captured from, and that
+// row's own wording is whatever the officer originally typed there — if
+// that was itself a first mention (the common case, since the vehicle's
+// occupants are usually introduced when it first arrives), the full name
+// would otherwise get pasted into every future row a chip inserts it
+// into, compounding indefinitely instead of shortening like the vehicle's
+// own rego already does. Best-effort same as extractOccupantNames: only
+// collapses a "Full Name (CODE)" span whose CODE is already known (via
+// rsUsedBracketCodes) to have appeared somewhere earlier in this sheet —
+// a name genuinely being introduced for the first time here is untouched.
+function shortenAlreadyMentionedNames(
+  text: string,
+  usedBracketCodes: Set<string>
+): string {
+  return text.replace(
+    /(?:[A-Z][a-zA-Z'-]*\s+)+\(([A-Z][A-Z'-]*)\)/g,
+    (match, code: string) =>
+      usedBracketCodes.has(code.toUpperCase()) ? code : match
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function IntelligenceMapping() {
   const [, setLocation] = useLocation();
@@ -8898,23 +8924,27 @@ export default function IntelligenceMapping() {
                                     Vehicle arriving
                                   </span>
                                   <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                    {rsPendingDepartures.map(d => (
-                                      <button
-                                        key={d.rego}
-                                        onClick={() =>
-                                          appendText(
-                                            `Vehicle ${d.rego}, ${d.occupantDesc}, arrived at ${arriveAddr}`
-                                          )
-                                        }
-                                        title={`Vehicle ${d.rego}, ${d.occupantDesc}, arrived at ${arriveAddr}`}
-                                        className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                      >
-                                        <span className="font-mono normal-case">
-                                          {d.rego}
-                                        </span>{" "}
-                                        arriving
-                                      </button>
-                                    ))}
+                                    {rsPendingDepartures.map(d => {
+                                      const occupantDesc =
+                                        shortenAlreadyMentionedNames(
+                                          d.occupantDesc,
+                                          rsUsedBracketCodes
+                                        );
+                                      const text = `Vehicle ${d.rego}, ${occupantDesc}, arrived at ${arriveAddr}`;
+                                      return (
+                                        <button
+                                          key={d.rego}
+                                          onClick={() => appendText(text)}
+                                          title={text}
+                                          className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                        >
+                                          <span className="font-mono normal-case">
+                                            {d.rego}
+                                          </span>{" "}
+                                          arriving
+                                        </button>
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               );
@@ -8967,23 +8997,27 @@ export default function IntelligenceMapping() {
                                     Vehicle departing
                                   </span>
                                   <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                    {arrivalsHere.map(a => (
-                                      <button
-                                        key={a.rego}
-                                        onClick={() =>
-                                          appendText(
-                                            `Vehicle ${a.rego}, ${a.occupantDesc}, departed ${shortAddr} and continued via:`
-                                          )
-                                        }
-                                        title={`Vehicle ${a.rego}, ${a.occupantDesc}, departed ${shortAddr} and continued via:`}
-                                        className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                      >
-                                        <span className="font-mono normal-case">
-                                          {a.rego}
-                                        </span>{" "}
-                                        departing
-                                      </button>
-                                    ))}
+                                    {arrivalsHere.map(a => {
+                                      const occupantDesc =
+                                        shortenAlreadyMentionedNames(
+                                          a.occupantDesc,
+                                          rsUsedBracketCodes
+                                        );
+                                      const text = `Vehicle ${a.rego}, ${occupantDesc}, departed ${shortAddr} and continued via:`;
+                                      return (
+                                        <button
+                                          key={a.rego}
+                                          onClick={() => appendText(text)}
+                                          title={text}
+                                          className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                        >
+                                          <span className="font-mono normal-case">
+                                            {a.rego}
+                                          </span>{" "}
+                                          departing
+                                        </button>
+                                      );
+                                    })}
                                   </div>
                                 </div>
                               );
@@ -9118,9 +9152,11 @@ export default function IntelligenceMapping() {
                                   </span>
                                   <div className="flex flex-wrap gap-1 md:gap-1.5">
                                     {vehiclesHere.map(a => {
-                                      const names = extractOccupantNames(
-                                        a.occupantDesc
-                                      );
+                                      const names =
+                                        shortenAlreadyMentionedNames(
+                                          extractOccupantNames(a.occupantDesc),
+                                          rsUsedBracketCodes
+                                        );
                                       const text = `${names} exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`;
                                       return (
                                         <button
@@ -9205,7 +9241,12 @@ export default function IntelligenceMapping() {
                                   </span>
                                   <div className="flex flex-wrap gap-1 md:gap-1.5">
                                     {regosHere.map(a => {
-                                      const text = `${walkInHere.names} exited ${shortAddr} and walked ${walkInHere.route} towards Vehicle ${a.rego}.`;
+                                      const walkOutNames =
+                                        shortenAlreadyMentionedNames(
+                                          walkInHere.names,
+                                          rsUsedBracketCodes
+                                        );
+                                      const text = `${walkOutNames} exited ${shortAddr} and walked ${walkInHere.route} towards Vehicle ${a.rego}.`;
                                       return (
                                         <button
                                           key={a.rego}

@@ -12,6 +12,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { registerLocalUploadsRoute } from "../storage";
 import { registerRawAttachmentUploadRoute } from "../attachmentUpload";
+import { registerNearmapProxy } from "../nearmapProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -109,6 +110,7 @@ async function startServer() {
   registerStorageProxy(app);
   registerLocalUploadsRoute(app);
   registerRawAttachmentUploadRoute(app);
+  registerNearmapProxy(app);
 
   // Apply rate limiting to OAuth routes and the credential-guessing-relevant
   // tRPC auth calls. NOTE: tRPC routes are dot-separated (e.g.

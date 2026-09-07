@@ -1171,6 +1171,14 @@ export default function IntelligenceMapping() {
   // which has no reason to auto-reset, so a "North Up" button re-aligns
   // it on demand. Kept in sync via a "heading_changed" listener.
   const [mapHeading, setMapHeading] = useState(0);
+  // Nearmap aerial-imagery overlay toggle — a google.maps.ImageMapType
+  // pushed onto map.overlayMapTypes, requesting tiles from our own
+  // /api/nearmap/tile proxy (server/nearmapProxy.ts) rather than Nearmap
+  // directly, so the org's Nearmap API key never reaches the browser. Off
+  // by default; not persisted, since it's a per-session visual aid rather
+  // than a map setting.
+  const [nearmapActive, setNearmapActive] = useState(false);
+  const nearmapLayerRef = useRef<google.maps.ImageMapType | null>(null);
   // Operations dropdown open state
   const [opsDropdownOpen, setOpsDropdownOpen] = useState(false);
   // GPS error
@@ -5241,6 +5249,60 @@ export default function IntelligenceMapping() {
                 className="w-4 h-4 text-sky-600 transition-transform"
                 style={{ transform: `rotate(${-mapHeading}deg)` }}
               />
+            </button>
+
+            {/* Nearmap aerial overlay — right below North Up. Adds/removes
+              a google.maps.ImageMapType layer requesting tiles from our own
+              /api/nearmap/tile proxy; the layer itself has no opinion on
+              whether Nearmap is actually configured server-side — a
+              misconfigured or missing NEARMAP_API_KEY just means every
+              tile request 500s and the overlay silently shows nothing on
+              top of the base map, so toggling it off again always works
+              regardless. */}
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                if (!mapRef.current) return;
+                if (nearmapActive) {
+                  if (nearmapLayerRef.current) {
+                    const overlays = mapRef.current.overlayMapTypes;
+                    const idx = overlays
+                      .getArray()
+                      .indexOf(nearmapLayerRef.current);
+                    if (idx !== -1) overlays.removeAt(idx);
+                    nearmapLayerRef.current = null;
+                  }
+                  setNearmapActive(false);
+                } else {
+                  const layer = new google.maps.ImageMapType({
+                    getTileUrl: (coord, zoom) => {
+                      if (coord.x < 0 || coord.y < 0) return null;
+                      return `/api/nearmap/tile?x=${coord.x}&y=${coord.y}&z=${zoom}`;
+                    },
+                    tileSize: new google.maps.Size(256, 256),
+                    name: "Nearmap",
+                    maxZoom: 21,
+                    minZoom: 0,
+                  });
+                  mapRef.current.overlayMapTypes.push(layer);
+                  nearmapLayerRef.current = layer;
+                  setNearmapActive(true);
+                }
+              }}
+              className={`absolute z-20 pointer-events-auto flex items-center justify-center rounded-lg shadow-md border h-9 w-9 text-[9px] font-bold leading-tight transition-colors ${
+                nearmapActive
+                  ? "bg-sky-600 border-sky-600 text-white"
+                  : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+              }`}
+              style={{ top: "166px", right: "10px" }}
+              aria-label="Toggle Nearmap aerial imagery"
+              title={
+                nearmapActive
+                  ? "Hide Nearmap aerial imagery"
+                  : "Show Nearmap aerial imagery"
+              }
+            >
+              NM
             </button>
 
             {/* Centre on me / Follow me floating buttons — top-left below search bar */}

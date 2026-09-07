@@ -1,4 +1,4 @@
-import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from '@shared/const';
+import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from "@shared/const";
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
@@ -19,8 +19,25 @@ const ALLOWED_DURING_FORCED_PASSWORD_CHANGE = new Set([
   "auth.setNewPassword",
 ]);
 
+// Observer is a view + export-only role: it must never be able to add,
+// edit, delete, or upload anything, only read data and generate the
+// read-only court/report documents below. Enforced generically here
+// (rather than per-endpoint) so a newly-added mutation is blocked for
+// Observer by default and has to be deliberately allowlisted, not the
+// other way around. Keep this list to genuine "export a document from
+// data the user can already see" actions — an Observer's own password
+// change is the one non-export exception, since they still need to be
+// able to log in.
+const OBSERVER_ALLOWED_MUTATIONS = new Set([
+  "auth.setNewPassword",
+  "statement.generate",
+  "witnessList.generate",
+  "wipc.generateStatDec",
+  "wipc.generateWipcRequest",
+]);
+
 const requireUser = t.middleware(async opts => {
-  const { ctx, next, path } = opts;
+  const { ctx, next, path, type } = opts;
 
   if (!ctx.user) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
@@ -33,6 +50,17 @@ const requireUser = t.middleware(async opts => {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "You must set a new password before continuing.",
+    });
+  }
+
+  if (
+    ctx.user.role === "observer" &&
+    type === "mutation" &&
+    !OBSERVER_ALLOWED_MUTATIONS.has(path)
+  ) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Observers have view and export access only.",
     });
   }
 
@@ -50,7 +78,7 @@ export const adminProcedure = protectedProcedure.use(
   t.middleware(async opts => {
     const { ctx, next } = opts;
 
-    if (!ctx.user || ctx.user.role !== 'admin') {
+    if (!ctx.user || ctx.user.role !== "admin") {
       throw new TRPCError({ code: "FORBIDDEN", message: NOT_ADMIN_ERR_MSG });
     }
 
@@ -60,5 +88,5 @@ export const adminProcedure = protectedProcedure.use(
         user: ctx.user,
       },
     });
-  }),
+  })
 );

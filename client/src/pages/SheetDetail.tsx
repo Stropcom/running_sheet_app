@@ -3429,10 +3429,7 @@ export default function SheetDetail({
     canCloseByRole && allRowsCertified && govComplete && !isClosed;
 
   const canEdit =
-    !isClosed &&
-    (user?.role === "member" ||
-      user?.role === "admin" ||
-      user?.role === "observer");
+    !isClosed && (user?.role === "member" || user?.role === "admin");
   const canCertify =
     !isClosed && (user?.role === "member" || user?.role === "admin");
 
@@ -4696,8 +4693,8 @@ export default function SheetDetail({
 
         {/* Search bar + sort toggle + add row */}
         <div className="mb-4 flex items-center gap-2">
-          {/* Add Row — moved here, left of sort toggle, hidden when sheet is closed */}
-          {!isClosed && (
+          {/* Add Row — moved here, left of sort toggle, hidden when sheet is closed or read-only */}
+          {canEdit && (
             <Button
               size="sm"
               variant="outline"
@@ -4879,7 +4876,7 @@ export default function SheetDetail({
                             <td>
                               <TimePickerCell
                                 value={row.time}
-                                locked={row.isLocked}
+                                locked={row.isLocked || !canEdit}
                                 dayOffset={(row as any).dayOffset ?? 0}
                                 rowDate={(row as any).rowDate ?? null}
                                 inferredRowDate={(() => {
@@ -4973,7 +4970,7 @@ export default function SheetDetail({
                               ) : (
                                 <EditableCell
                                   value={row.observation}
-                                  locked={row.isLocked}
+                                  locked={row.isLocked || !canEdit}
                                   multiline
                                   placeholder="Enter observation…"
                                   onSave={val => {

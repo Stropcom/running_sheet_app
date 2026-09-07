@@ -3,16 +3,29 @@ import express from "express";
 import heicConvert from "heic-convert";
 import { sdk } from "./_core/sdk";
 import { storagePut } from "./storage";
-import { createAuditLog, createRowAttachment, getRowById, getRunningSheetById } from "./db";
+import {
+  createAuditLog,
+  createRowAttachment,
+  getRowById,
+  getRunningSheetById,
+} from "./db";
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const EXT_TO_MIME: Record<string, string> = {
-  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
-  webp: "image/webp", gif: "image/gif", heic: "image/heic", heif: "image/heif",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+  heic: "image/heic",
+  heif: "image/heif",
 };
 
 export class AttachmentUploadError extends Error {
-  constructor(public status: 400 | 404, message: string) {
+  constructor(
+    public status: 400 | 404,
+    message: string
+  ) {
     super(message);
   }
 }
@@ -40,19 +53,27 @@ export async function normalizeAndValidateImage(params: {
   // No trailing $ — iOS reports variants like "image/heic-sequence" for
   // Portrait/Burst/Live photos, which are still HEIC containers heicConvert
   // can read.
-  const isHeic = /^image\/hei[cf]/i.test(mimeType) || /\.hei[cf]$/i.test(params.fileName ?? "");
+  const isHeic =
+    /^image\/hei[cf]/i.test(mimeType) ||
+    /\.hei[cf]$/i.test(params.fileName ?? "");
   if (isHeic) {
     try {
       buffer = await heicConvert({ buffer, format: "JPEG", quality: 0.9 });
     } catch (err) {
       console.error("HEIC conversion failed:", err);
-      throw new AttachmentUploadError(400, "Could not read that HEIC/HEIF photo.");
+      throw new AttachmentUploadError(
+        400,
+        "Could not read that HEIC/HEIF photo."
+      );
     }
     mimeType = "image/jpeg";
   }
 
   if (!/^image\/(jpeg|png|webp|gif)$/.test(mimeType)) {
-    throw new AttachmentUploadError(400, "Only JPEG, PNG, WebP, GIF, or HEIC/HEIF images are allowed.");
+    throw new AttachmentUploadError(
+      400,
+      "Only JPEG, PNG, WebP, GIF, or HEIC/HEIF images are allowed."
+    );
   }
 
   return { buffer, mimeType };
@@ -121,7 +142,8 @@ export async function processManualAttachmentUpload(params: {
 }): Promise<{ id: number; url: string }> {
   if (params.rowId != null) {
     const row = await getRowById(params.rowId);
-    if (!row) throw new AttachmentUploadError(404, "Running sheet row not found.");
+    if (!row)
+      throw new AttachmentUploadError(404, "Running sheet row not found.");
   }
 
   const { buffer, mimeType } = await normalizeAndValidateImage(params);
@@ -172,6 +194,14 @@ export function registerRawAttachmentUploadRoute(app: Express) {
       } catch {
         return res.status(401).json({ error: "Unauthorized" });
       }
+      // Observer is view + export only — this raw route bypasses the tRPC
+      // middleware stack (see the observer check in requireUser,
+      // _core/trpc.ts), so it needs its own copy of the same check.
+      if (user.role === "observer") {
+        return res
+          .status(403)
+          .json({ error: "Observers have view and export access only." });
+      }
 
       const rowId = Number(req.query.rowId);
       if (!Number.isFinite(rowId)) {
@@ -181,8 +211,10 @@ export function registerRawAttachmentUploadRoute(app: Express) {
         return res.status(400).json({ error: "Empty photo." });
       }
 
-      const fileName = typeof req.query.fileName === "string" ? req.query.fileName : undefined;
-      const mimeType = typeof req.query.mimeType === "string" ? req.query.mimeType : "";
+      const fileName =
+        typeof req.query.fileName === "string" ? req.query.fileName : undefined;
+      const mimeType =
+        typeof req.query.mimeType === "string" ? req.query.mimeType : "";
 
       try {
         const result = await processAttachmentUpload({

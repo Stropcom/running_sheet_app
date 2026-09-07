@@ -590,21 +590,21 @@ function SortableNavItem({
                   onClick={() => setLocation("/cto-roster")}
                   className={subItemClass(location === "/cto-roster")}
                 >
-                  <Users className="h-3.5 w-3.5 shrink-0" />
+                  <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
                   Roster
                 </button>
                 <button
                   onClick={() => setLocation("/cto-roster/my-shifts")}
                   className={subItemClass(location === "/cto-roster/my-shifts")}
                 >
-                  <Users className="h-3.5 w-3.5 shrink-0" />
+                  <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
                   My Shifts
                 </button>
                 <button
                   onClick={() => setLocation("/cto-roster/outlook")}
                   className={subItemClass(location === "/cto-roster/outlook")}
                 >
-                  <Binoculars className="h-3.5 w-3.5 shrink-0" />
+                  <Binoculars className="h-3.5 w-3.5 shrink-0 text-purple-500" />
                   Outlook
                 </button>
                 <button
@@ -613,7 +613,7 @@ function SortableNavItem({
                     location.startsWith("/cto-roster/draft")
                   )}
                 >
-                  <FileEdit className="h-3.5 w-3.5 shrink-0" />
+                  <FileEdit className="h-3.5 w-3.5 shrink-0 text-purple-500" />
                   Drafts
                 </button>
                 <button
@@ -622,7 +622,7 @@ function SortableNavItem({
                     location.startsWith("/cto-roster/saved-roster")
                   )}
                 >
-                  <BookOpen className="h-3.5 w-3.5 shrink-0" />
+                  <BookOpen className="h-3.5 w-3.5 shrink-0 text-purple-500" />
                   Saved Rosters
                 </button>
                 <button
@@ -631,21 +631,21 @@ function SortableNavItem({
                     location === "/cto-roster/ea-compliance"
                   )}
                 >
-                  <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                  <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-purple-500" />
                   EA Compliance
                 </button>
                 <button
                   onClick={() => setLocation("/cto-roster/audit")}
                   className={subItemClass(location === "/cto-roster/audit")}
                 >
-                  <ScrollText className="h-3.5 w-3.5 shrink-0" />
+                  <ScrollText className="h-3.5 w-3.5 shrink-0 text-purple-500" />
                   Audit Log
                 </button>
                 <button
                   onClick={() => setLocation("/cto-roster/members")}
                   className={subItemClass(location === "/cto-roster/members")}
                 >
-                  <Users className="h-3.5 w-3.5 shrink-0" />
+                  <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
                   Members
                 </button>
               </div>
@@ -656,14 +656,14 @@ function SortableNavItem({
                 location === "/reports/outstanding-actions"
               )}
             >
-              <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
+              <ClipboardCheck className="h-3.5 w-3.5 shrink-0 text-purple-500" />
               Outstanding Actions
             </button>
             <button
               onClick={() => setLocation("/reports/weekly-activity")}
               className={subItemClass(location === "/reports/weekly-activity")}
             >
-              <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+              <TrendingUp className="h-3.5 w-3.5 shrink-0 text-purple-500" />
               Weekly Activity
             </button>
           </div>
@@ -720,7 +720,7 @@ function SortableNavItem({
                 location.startsWith("/administration/vehicle-crash")
               )}
             >
-              <Car className="h-3.5 w-3.5 shrink-0" />
+              <Car className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
               Vehicle Crash
             </button>
             <button
@@ -729,7 +729,7 @@ function SortableNavItem({
                 location.startsWith("/administration/uco-guide")
               )}
             >
-              <Eye className="h-3.5 w-3.5 shrink-0" />
+              <Eye className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
               UCO Guide
             </button>
             <button
@@ -738,7 +738,7 @@ function SortableNavItem({
                 location.startsWith("/administration/smeac")
               )}
             >
-              <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+              <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
               SMEAC Briefings
             </button>
           </div>
@@ -782,14 +782,14 @@ function SortableNavItem({
               onClick={() => setLocation("/court/statements")}
               className={subItemClass(location === "/court/statements")}
             >
-              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-amber-400" />
               Statements
             </button>
             <button
               onClick={() => setLocation("/court/witness-list")}
               className={subItemClass(location === "/court/witness-list")}
             >
-              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-amber-400" />
               Witness List
             </button>
             <button
@@ -1146,43 +1146,43 @@ function SortableNavTile({
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               <DropdownMenuItem onClick={() => setLocation("/cto-roster")}>
-                <Users className="h-4 w-4 mr-2" />
+                <Users className="h-4 w-4 mr-2 text-purple-500" />
                 Roster
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => setLocation("/cto-roster/my-shifts")}
               >
-                <Users className="h-4 w-4 mr-2" />
+                <Users className="h-4 w-4 mr-2 text-purple-500" />
                 My Shifts
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => setLocation("/cto-roster/outlook")}
               >
-                <Binoculars className="h-4 w-4 mr-2" />
+                <Binoculars className="h-4 w-4 mr-2 text-purple-500" />
                 Outlook
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => setLocation("/cto-roster/drafts")}
               >
-                <FileEdit className="h-4 w-4 mr-2" />
+                <FileEdit className="h-4 w-4 mr-2 text-purple-500" />
                 Drafts
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => setLocation("/cto-roster/saved-rosters")}
               >
-                <BookOpen className="h-4 w-4 mr-2" />
+                <BookOpen className="h-4 w-4 mr-2 text-purple-500" />
                 Saved Rosters
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => setLocation("/cto-roster/ea-compliance")}
               >
-                <ShieldCheck className="h-4 w-4 mr-2" />
+                <ShieldCheck className="h-4 w-4 mr-2 text-purple-500" />
                 EA Compliance
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => setLocation("/cto-roster/audit")}
               >
-                <ScrollText className="h-4 w-4 mr-2" />
+                <ScrollText className="h-4 w-4 mr-2 text-purple-500" />
                 Audit Log
               </DropdownMenuItem>
             </DropdownMenuSubContent>
@@ -1190,13 +1190,13 @@ function SortableNavTile({
           <DropdownMenuItem
             onClick={() => setLocation("/reports/outstanding-actions")}
           >
-            <ClipboardCheck className="h-4 w-4 mr-2" />
+            <ClipboardCheck className="h-4 w-4 mr-2 text-purple-500" />
             Outstanding Actions
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => setLocation("/reports/weekly-activity")}
           >
-            <TrendingUp className="h-4 w-4 mr-2" />
+            <TrendingUp className="h-4 w-4 mr-2 text-purple-500" />
             Weekly Activity
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -1231,19 +1231,19 @@ function SortableNavTile({
           <DropdownMenuItem
             onClick={() => setLocation("/administration/vehicle-crash")}
           >
-            <Car className="h-4 w-4 mr-2" />
+            <Car className="h-4 w-4 mr-2 text-indigo-400" />
             Vehicle Crash
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => setLocation("/administration/uco-guide")}
           >
-            <Eye className="h-4 w-4 mr-2" />
+            <Eye className="h-4 w-4 mr-2 text-indigo-400" />
             UCO Guide
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => setLocation("/administration/smeac")}
           >
-            <ShieldAlert className="h-4 w-4 mr-2" />
+            <ShieldAlert className="h-4 w-4 mr-2 text-indigo-400" />
             SMEAC Briefings
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -1271,11 +1271,11 @@ function SortableNavTile({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
           <DropdownMenuItem onClick={() => setLocation("/court/statements")}>
-            <FolderOpen className="h-4 w-4 mr-2" />
+            <FolderOpen className="h-4 w-4 mr-2 text-amber-400" />
             Statements
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setLocation("/court/witness-list")}>
-            <FolderOpen className="h-4 w-4 mr-2" />
+            <FolderOpen className="h-4 w-4 mr-2 text-amber-400" />
             Witness List
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setLocation("/court/wipc")}>
@@ -1322,29 +1322,29 @@ function AdminNavTile({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
         <DropdownMenuItem onClick={() => setLocation("/audit")}>
-          <ScrollText className="h-4 w-4 mr-2" />
+          <ScrollText className="h-4 w-4 mr-2 text-slate-400" />
           Audit Log
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setLocation("/draft")}>
-          <WifiOff className="h-4 w-4 mr-2" />
+          <WifiOff className="h-4 w-4 mr-2 text-slate-400" />
           Draft Mode
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setLocation("/operation-management")}>
-          <ArrowRightLeft className="h-4 w-4 mr-2" />
+          <ArrowRightLeft className="h-4 w-4 mr-2 text-slate-400" />
           Archive
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setLocation("/recycle-bin")}>
-          <Trash2 className="h-4 w-4 mr-2" />
+          <Trash2 className="h-4 w-4 mr-2 text-slate-400" />
           Recycle Bin
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => setLocation("/administration/intel-export")}
         >
-          <Database className="h-4 w-4 mr-2" />
+          <Database className="h-4 w-4 mr-2 text-slate-400" />
           Intel Export
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setLocation("/help")}>
-          <HelpCircle className="h-4 w-4 mr-2" />
+          <HelpCircle className="h-4 w-4 mr-2 text-slate-400" />
           Help
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -1374,12 +1374,12 @@ function UserMgmtNavTile({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48">
         <DropdownMenuItem onClick={() => setLocation("/profile")}>
-          <User className="h-4 w-4 mr-2" />
+          <User className="h-4 w-4 mr-2 text-blue-400" />
           My Profile
         </DropdownMenuItem>
         {isAdmin && (
           <DropdownMenuItem onClick={() => setLocation("/admin")}>
-            <Users className="h-4 w-4 mr-2" />
+            <Users className="h-4 w-4 mr-2 text-blue-400" />
             Access Management
           </DropdownMenuItem>
         )}
@@ -2146,7 +2146,7 @@ function DashboardLayoutContent({
                           onClick={() => setLocation("/audit")}
                           className={subItemClass(location === "/audit")}
                         >
-                          <ScrollText className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          <ScrollText className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                           Audit Log
                         </button>
 
@@ -2156,7 +2156,7 @@ function DashboardLayoutContent({
                           className={subItemClass(location === "/draft")}
                         >
                           <WifiOff
-                            className={`h-3.5 w-3.5 shrink-0 ${draftCounts.total > 0 ? "text-blue-400" : "text-foreground"}`}
+                            className={`h-3.5 w-3.5 shrink-0 ${draftCounts.total > 0 ? "text-blue-400" : "text-slate-400"}`}
                           />
                           <span className="flex-1">Draft Mode</span>
                           {draftCounts.total > 0 && (
@@ -2173,7 +2173,7 @@ function DashboardLayoutContent({
                             location === "/operation-management"
                           )}
                         >
-                          <ArrowRightLeft className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          <ArrowRightLeft className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                           Archive
                         </button>
 
@@ -2182,7 +2182,7 @@ function DashboardLayoutContent({
                           onClick={() => setLocation("/recycle-bin")}
                           className={subItemClass(location === "/recycle-bin")}
                         >
-                          <Trash2 className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          <Trash2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                           Recycle Bin
                         </button>
 
@@ -2195,7 +2195,7 @@ function DashboardLayoutContent({
                             location.startsWith("/administration/intel-export")
                           )}
                         >
-                          <Database className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          <Database className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                           Intel Export
                         </button>
 
@@ -2204,7 +2204,7 @@ function DashboardLayoutContent({
                           onClick={() => setLocation("/help")}
                           className={subItemClass(location === "/help")}
                         >
-                          <HelpCircle className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          <HelpCircle className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                           Help
                         </button>
                       </div>
@@ -2240,7 +2240,7 @@ function DashboardLayoutContent({
                           onClick={() => setLocation("/profile")}
                           className={subItemClass(location === "/profile")}
                         >
-                          <User className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                          <User className="h-3.5 w-3.5 shrink-0 text-blue-400" />
                           My Profile
                         </button>
                         {/* Access Management — admin only */}
@@ -2249,7 +2249,7 @@ function DashboardLayoutContent({
                             onClick={() => setLocation("/admin")}
                             className={subItemClass(location === "/admin")}
                           >
-                            <Users className="h-3.5 w-3.5 shrink-0 text-foreground" />
+                            <Users className="h-3.5 w-3.5 shrink-0 text-blue-400" />
                             Access Management
                           </button>
                         )}

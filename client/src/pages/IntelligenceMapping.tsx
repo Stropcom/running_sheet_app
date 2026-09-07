@@ -2473,6 +2473,33 @@ export default function IntelligenceMapping() {
     }
   };
 
+  // Cross-tab sync: deviceId is deliberately per-TAB (see its declaration
+  // above), so a second tab left open on the same device/browser runs its
+  // own independent GPS watcher, seeded from the same per-user
+  // "runlog_sharing_u{id}" localStorage flag at ITS OWN mount time. Turning
+  // sharing off in the tab you're looking at only ever stopped THAT tab's
+  // watcher and cleared THAT tab's row — an older/background tab never
+  // learned sharing was turned off, so it kept pushing fresh GPS fixes
+  // under its own deviceId and its pin never disappeared from the map
+  // ("leftover pill" even with sharing showing off in the active tab). The
+  // browser's native `storage` event fires in every OTHER same-origin tab
+  // (never the tab that made the write) whenever localStorage changes, so
+  // listening for it here lets a background tab notice the flag flipped to
+  // false and stop itself too.
+  useEffect(() => {
+    function handleStorageChange(e: StorageEvent) {
+      if (!user?.id || e.key !== `runlog_sharing_u${user.id}`) return;
+      const turnedOffElsewhere = e.newValue === "false";
+      if (turnedOffElsewhere && sharingEnabled) {
+        setSharingEnabled(false);
+        setGpsError(null);
+        stopWatching();
+      }
+    }
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, [user?.id, sharingEnabled, stopWatching]);
+
   // Update operationIds in the DB when selectedOpIds change while sharing
   useEffect(() => {
     if (sharingEnabled && watchIdRef.current !== null) {

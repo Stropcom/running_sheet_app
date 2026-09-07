@@ -4912,8 +4912,8 @@ export async function getPendingVehicleArrivals(
 // leave a parked vehicle, walk to a location on foot ("... exited the
 // vehicle, walked through the car park, entered Sapore Espresso Bar and
 // continued out of sight."), then later walk back to that same vehicle
-// ("... exited Sapore Espresso Bar walked through the car park to Vehicle
-// 1MGR73."). This mines the sheet's own rows for the most recent walk-in
+// ("... exited Sapore Espresso Bar and walked through the car park towards
+// Vehicle 1MGR73."). This mines the sheet's own rows for the most recent walk-in
 // per location that hasn't since been matched by a walk-out from that same
 // location, so the RS Quick Entry popup can offer the captured route AND
 // names back as a "Walked out" chip — the officer doesn't have to retype

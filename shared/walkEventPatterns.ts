@@ -24,5 +24,11 @@
 // VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN already reuses occupantDesc.
 export const WALK_IN_PATTERN =
   /([A-Za-z][^.\n]*?)\s*exited the vehicle,?\s*walked\s+(.+?),?\s*entered\s+(.+?)\s+and continued out of sight/i;
+// Canonical form is "... exited <location> and walked <route> towards
+// Vehicle <rego>." — also still matches the older "... exited <location>,
+// walked <route>, to Vehicle <rego>." phrasing (comma-separated, "to"
+// instead of "towards", no "and") so rows written before this wording was
+// standardised keep matching. Don't retire that half without checking
+// existing sheets first — this is a legal record, not just app state.
 export const WALK_OUT_PATTERN =
-  /exited\s+(.+?),?\s*walked\s+(.+?),?\s*to Vehicle\s+([A-Za-z0-9]{5,8})/i;
+  /exited\s+(.+?)\s*,?\s*(?:and\s+)?walked\s+(.+?)\s*,?\s*(?:to|towards)\s+Vehicle\s+([A-Za-z0-9]{5,8})/i;

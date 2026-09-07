@@ -60,9 +60,9 @@ describe("WALK_IN_PATTERN", () => {
 });
 
 describe("WALK_OUT_PATTERN", () => {
-  it("matches the standard 'to Vehicle' example", () => {
+  it("matches the canonical 'and walked ... towards Vehicle' example", () => {
     const text =
-      "KENNEDY and JOHNS exited Sapore Espresso Bar, walked along Belmont Avenue, to Vehicle 1MGR73.";
+      "KENNEDY and JOHNS exited Sapore Espresso Bar and walked along Belmont Avenue towards Vehicle 1MGR73.";
     const match = text.match(WALK_OUT_PATTERN);
     expect(match).not.toBeNull();
     expect(match![1].trim()).toBe("Sapore Espresso Bar");
@@ -70,13 +70,23 @@ describe("WALK_OUT_PATTERN", () => {
     expect(match![3].toUpperCase()).toBe("1MGR73");
   });
 
-  it("matches with no commas at all", () => {
+  it("matches the canonical form with no 'and' or commas at all", () => {
     const text =
-      "KENNEDY and JOHNS exited Sapore Espresso Bar walked through the car park to Vehicle 1MGR73.";
+      "KENNEDY and JOHNS exited Sapore Espresso Bar walked through the car park towards Vehicle 1MGR73.";
     const match = text.match(WALK_OUT_PATTERN);
     expect(match).not.toBeNull();
     expect(match![1].trim()).toBe("Sapore Espresso Bar");
     expect(match![2].trim()).toBe("through the car park");
+    expect(match![3].toUpperCase()).toBe("1MGR73");
+  });
+
+  it("still matches the older comma-separated 'to Vehicle' phrasing, for sheets written before this wording was standardised", () => {
+    const text =
+      "KENNEDY and JOHNS exited Sapore Espresso Bar, walked along Belmont Avenue, to Vehicle 1MGR73.";
+    const match = text.match(WALK_OUT_PATTERN);
+    expect(match).not.toBeNull();
+    expect(match![1].trim()).toBe("Sapore Espresso Bar");
+    expect(match![2].trim()).toBe("along Belmont Avenue");
     expect(match![3].toUpperCase()).toBe("1MGR73");
   });
 

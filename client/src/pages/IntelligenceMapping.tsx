@@ -9142,8 +9142,8 @@ export default function IntelligenceMapping() {
                             })()}
                           {/* Walked out chip — mirror of "Walked in": for
                             occupants who exit this location on foot and
-                            walk back to a vehicle ("... exited X walked
-                            [route] to Vehicle REGO."). Reuses BOTH the
+                            walk back to a vehicle ("... exited X and
+                            walked [route] towards Vehicle REGO."). Reuses BOTH the
                             names and route text captured from the matching
                             "Walked in" row (getPendingWalkIns) rather than
                             re-deriving from the vehicle's occupants again —
@@ -9205,7 +9205,7 @@ export default function IntelligenceMapping() {
                                   </span>
                                   <div className="flex flex-wrap gap-1 md:gap-1.5">
                                     {regosHere.map(a => {
-                                      const text = `${walkInHere.names} exited ${shortAddr} walked ${walkInHere.route} to Vehicle ${a.rego}.`;
+                                      const text = `${walkInHere.names} exited ${shortAddr} and walked ${walkInHere.route} towards Vehicle ${a.rego}.`;
                                       return (
                                         <button
                                           key={a.rego}

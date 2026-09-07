@@ -40,11 +40,7 @@ import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
-import {
-  MapView,
-  getMapRenderPreference,
-  setMapRenderPreference,
-} from "@/components/Map";
+import { MapView, getMapRenderPreference } from "@/components/Map";
 import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
 import { UcoGuideMapOverlay } from "@/components/UcoGuideMapOverlay";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
@@ -1173,12 +1169,13 @@ export default function IntelligenceMapping() {
     return false;
   });
   // Which Google Maps Map ID (vector vs raster) this device renders the map
-  // with — see Map.tsx. Changing it needs the underlying google.maps.Map
-  // instance re-created (mapId can only be set at construction), so the
-  // toggle below just persists the new choice and reloads the page rather
-  // than trying to swap it on the live instance.
-  const [mapRenderPref, setMapRenderPrefState] = useState<"vector" | "raster">(
-    () => getMapRenderPreference()
+  // with — see Map.tsx. Raster is now the only mode reachable from the UI
+  // (see the removed Map Settings toggle), but this still reads whatever a
+  // device actually has (a stray "vector" left over in localStorage, or the
+  // ?mapRender= URL override) so the 3D tilt / rotation buttons below stay
+  // correctly disabled rather than assuming raster unconditionally.
+  const [mapRenderPref] = useState<"vector" | "raster">(() =>
+    getMapRenderPreference()
   );
   // 3D (tilt) view — only available under vector rendering. Kept in sync
   // with the map's actual tilt via a "tilt_changed" listener (see
@@ -5244,7 +5241,7 @@ export default function IntelligenceMapping() {
                   ? is3DActive
                     ? "Switch to flat (2D) view"
                     : "Switch to 3D (tilted) view"
-                  : "3D view requires Vector map rendering — enable it in Map Settings"
+                  : "3D view requires Vector map rendering, which isn't available on this device"
               }
             >
               3D
@@ -5268,7 +5265,7 @@ export default function IntelligenceMapping() {
               aria-label="Reset map rotation to North Up"
               title={
                 mapRenderPref !== "vector"
-                  ? "Rotation requires Vector map rendering — enable it in Map Settings"
+                  ? "Rotation requires Vector map rendering, which isn't available on this device"
                   : mapHeading === 0
                     ? "Already North Up"
                     : "Reset rotation to North Up"
@@ -5968,44 +5965,6 @@ export default function IntelligenceMapping() {
                     </span>
                   </div>
                 </div>
-              </div>
-
-              {/* ── MAP RENDERING toggle ── */}
-              <div className="px-3 py-3 border-b border-border">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                      Map Rendering
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`text-[11px] font-medium transition-colors ${mapRenderPref === "vector" ? "text-foreground" : "text-muted-foreground"}`}
-                    >
-                      Vector
-                    </span>
-                    <Switch
-                      checked={mapRenderPref === "raster"}
-                      onCheckedChange={useRaster => {
-                        const next = useRaster ? "raster" : "vector";
-                        setMapRenderPreference(next);
-                        setMapRenderPrefState(next);
-                        window.location.reload();
-                      }}
-                      className="scale-90"
-                    />
-                    <span
-                      className={`text-[11px] font-medium transition-colors ${mapRenderPref === "raster" ? "text-foreground" : "text-muted-foreground"}`}
-                    >
-                      Raster
-                    </span>
-                  </div>
-                </div>
-                <p className="text-[10px] text-muted-foreground mt-1.5 leading-snug">
-                  Reloads the map to apply. Vector supports the 3D tilt toggle
-                  and smoother zooming; Raster is the simpler,
-                  guaranteed-compatible fallback.
-                </p>
               </div>
 
               {/* ── OPERATIONS section ── */}

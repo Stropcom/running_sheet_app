@@ -99,18 +99,15 @@ import { loadGoogleMaps } from "@/lib/googleMaps";
 const MAP_ID_VECTOR = "1c8d997128c67d9fc1a04b7e"; // "Runlog map" — vector
 const MAP_ID_RASTER = "1c8d997128c67d9fa74cfa85"; // "Runlog Map" — raster, guaranteed no vector-drift but no vector-only features (real cloud dark-mode styling, smoother fractional zoom)
 
-// Runtime toggle (no rebuild/redeploy needed) so the two can be compared
-// live — see the "Map Rendering" switch in IntelligenceMapping.tsx's Map
-// Settings pane, which calls setMapRenderPreference() then reloads the page
-// (mapId can only be set when a google.maps.Map is constructed, not changed
-// on an existing instance, so switching means re-creating the map). A
-// ?mapRender=vector or ?mapRender=raster URL param is also honoured, for a
-// quick one-off check without opening the settings pane. Either way the
-// choice then persists per-browser via localStorage. Defaults to vector —
-// the one worth testing first, since raster is the known-safe fallback. An
-// explicit VITE_GOOGLE_MAPS_MAP_ID env var, if ever set, overrides both
-// (e.g. to pin a specific ID fleet-wide regardless of each device's own
-// toggle).
+// Vector vs raster was previously a live user-facing toggle (to compare the
+// two while chasing the AdvancedMarkerElement zoom-drift bug — see the
+// "Resolved" note on that in CLAUDE.md) but raster is the settled choice
+// now, so the Map Settings switch has been removed. This still isn't fully
+// hardcoded to raster, though: a ?mapRender=vector or ?mapRender=raster URL
+// param (persisted per-browser via localStorage once set) is honoured for a
+// quick one-off check without a code change, and an explicit
+// VITE_GOOGLE_MAPS_MAP_ID env var, if ever set, overrides both entirely
+// (e.g. to pin a specific ID fleet-wide).
 const MAP_RENDER_STORAGE_KEY = "runlog_map_render_pref";
 export type MapRenderPreference = "vector" | "raster";
 
@@ -129,15 +126,7 @@ export function getMapRenderPreference(): MapRenderPreference {
     /* localStorage/URL access can throw in some embedded contexts — fall
        back to the default below rather than breaking map load over it. */
   }
-  return "vector";
-}
-
-export function setMapRenderPreference(pref: MapRenderPreference): void {
-  try {
-    localStorage.setItem(MAP_RENDER_STORAGE_KEY, pref);
-  } catch {
-    /* ignore — worst case the toggle doesn't stick across a reload */
-  }
+  return "raster";
 }
 
 function resolveMapId(): string {

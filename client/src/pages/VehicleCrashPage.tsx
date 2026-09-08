@@ -730,26 +730,74 @@ function ProgressRow({ step }: { step: number }) {
 interface ResultItem {
   text: React.ReactNode;
   caution?: boolean;
+  group: string;
 }
 
-function ResultList({ items }: { items: ResultItem[] }) {
+// Shared contact card for the approved repairer — used everywhere the Crash
+// Helper's results tell an officer to actually contact them (not just
+// mentions them in passing), so the address/contact/after-hours are always
+// one glance away instead of buried in a sentence.
+function RepairerCard() {
+  return (
+    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 mt-2">
+      <p className="text-[13px] font-bold text-foreground">{REPAIRER_NAME}</p>
+      <p className="text-[12.5px] text-muted-foreground mt-1">
+        Address: {REPAIRER_ADDRESS}
+        <br />
+        Contact: {REPAIRER_CONTACT}
+        <br />
+        After-hours: {REPAIRER_AFTERHOURS}
+      </p>
+    </div>
+  );
+}
+
+// Groups results by topic (Identity, Declaration, Vehicle, Reporting…)
+// instead of one long flat numbered list — items stay numbered, but the
+// numbering runs continuously across group boundaries so it still reads as
+// a single procedure, just clustered by subject.
+function GroupedResultList({ items }: { items: ResultItem[] }) {
+  const groups: { name: string; items: ResultItem[] }[] = [];
+  const byName = new Map<string, ResultItem[]>();
+  for (const it of items) {
+    let bucket = byName.get(it.group);
+    if (!bucket) {
+      bucket = [];
+      byName.set(it.group, bucket);
+      groups.push({ name: it.group, items: bucket });
+    }
+    bucket.push(it);
+  }
+  let n = 0;
   return (
     <div className="flex flex-col">
-      {items.map((it, i) => (
-        <div
-          key={i}
-          className="flex gap-2.5 py-2.5 border-b border-dashed border-border/60 last:border-b-0 text-sm text-foreground"
-        >
-          <span
-            className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
-              it.caution
-                ? "bg-amber-500/15 text-amber-500"
-                : "bg-indigo-500/10 text-indigo-400"
-            }`}
-          >
-            {i + 1}
-          </span>
-          <span className="leading-snug">{it.text}</span>
+      {groups.map(g => (
+        <div key={g.name}>
+          <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70 pt-3 pb-1 first:pt-0">
+            {g.name}
+          </p>
+          {g.items.map((it, i) => {
+            n++;
+            return (
+              <div
+                key={i}
+                className={`flex gap-2.5 py-2.5 border-b border-dashed border-border/60 last:border-b-0 text-sm text-foreground ${
+                  it.caution ? "bg-amber-500/5 -mx-2 px-2 rounded-lg" : ""
+                }`}
+              >
+                <span
+                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
+                    it.caution
+                      ? "bg-amber-500/15 text-amber-500"
+                      : "bg-indigo-500/10 text-indigo-400"
+                  }`}
+                >
+                  {n}
+                </span>
+                <span className="leading-snug flex-1 min-w-0">{it.text}</span>
+              </div>
+            );
+          })}
         </div>
       ))}
     </div>
@@ -930,6 +978,7 @@ function CrashWizard() {
     answers.scenario === "C1"
   ) {
     scene.push({
+      group: "Safety",
       text: (
         <>
           <b>Render assistance and call emergency services</b> — an injury has
@@ -940,6 +989,7 @@ function CrashWizard() {
     });
   }
   scene.push({
+    group: "Identity",
     text: (
       <>
         Use your <b>Assumed Identity</b> details for anything you're required to
@@ -948,6 +998,7 @@ function CrashWizard() {
     ),
   });
   scene.push({
+    group: "Identity",
     text: (
       <>
         <b>AI registration plates remain fitted to the vehicle at all times</b>{" "}
@@ -958,24 +1009,38 @@ function CrashWizard() {
   });
   if (exceptionFlagged) {
     scene.push({
+      group: "Declaration",
       text: (
         <>
-          A <b>declaration exception may apply</b> — this is only permitted
-          where there's a serious injury requiring medical treatment to the
-          operative, a fatality to any person, or an urgent situation where
-          staying silent would delay emergency, medical, or law-enforcement
-          response. Get authorisation from your{" "}
-          <b>Team Leader / Inspector CTO WC</b> first. If disclosed: emergency
-          services only (Police / SJA / FESA), never media, the public, or other
-          parties in the incident — and keep it <b>strictly need-to-know</b>:
-          state only what's necessary, once, with no further disclosure or
-          elaboration afterward.
+          A <b>declaration exception may apply</b> — only permitted where one of
+          these applies:
+          <ul className="list-disc list-inside mt-1.5 space-y-0.5 text-muted-foreground">
+            <li>Serious injury requiring medical treatment to the operative</li>
+            <li>A fatality to any person involved</li>
+            <li>
+              An urgent situation where staying silent would delay emergency,
+              medical, or law-enforcement response
+            </li>
+          </ul>
+          <p className="mt-1.5">
+            Get authorisation from your <b>Team Leader / Inspector CTO WC</b>{" "}
+            first. If disclosed:
+          </p>
+          <ul className="list-disc list-inside mt-1.5 space-y-0.5 text-muted-foreground">
+            <li>Emergency services only — Police, SJA, FESA</li>
+            <li>Never media, the public, or other parties in the incident</li>
+            <li>
+              Strict need-to-know — state only what's necessary, once, with no
+              further disclosure or elaboration afterward
+            </li>
+          </ul>
         </>
       ),
       caution: true,
     });
   } else {
     scene.push({
+      group: "Declaration",
       text: (
         <>
           <b>Do Not Declare</b> AFP affiliation or true identity — and don't
@@ -986,6 +1051,7 @@ function CrashWizard() {
   }
   if (answers.drivability === "secure") {
     scene.push({
+      group: "Vehicle",
       text: (
         <>
           Vehicle is <b>drivable and secure</b> — may return to operational use
@@ -995,6 +1061,7 @@ function CrashWizard() {
     });
   } else if (answers.drivability === "notsecure") {
     scene.push({
+      group: "Vehicle",
       text: (
         <>
           Vehicle is <b>drivable but not secure</b> — do <b>not</b> return to
@@ -1006,20 +1073,24 @@ function CrashWizard() {
     });
   } else if (answers.drivability === "notdrivable") {
     scene.push({
+      group: "Vehicle",
       text: (
         <>
-          Vehicle is <b>not drivable</b> — recovery only through the approved
-          tow/tilt-tray provider, linked to <b>{REPAIRER_NAME}</b>,{" "}
-          {REPAIRER_ADDRESS} — contact <b>{REPAIRER_CONTACT}</b> (after-hours:{" "}
-          {REPAIRER_AFTERHOURS}). This is the <b>only</b> approved repairer and
-          towing contractor — do not use any other, under any circumstances,
-          unless expressly directed by your Team Leader or Inspector CTO WC.
+          <p>
+            Vehicle is <b>not drivable</b> — recovery only through the approved
+            tow/tilt-tray provider. This is the <b>only</b> approved repairer
+            and towing contractor — do not use any other, under any
+            circumstances, unless expressly directed by your Team Leader or
+            Inspector CTO WC.
+          </p>
+          <RepairerCard />
         </>
       ),
       caution: true,
     });
   }
   scene.push({
+    group: "Reporting",
     text: policeNeeded ? (
       <>
         <b>Police reporting is required</b> for this scenario — cooperate as
@@ -1033,26 +1104,32 @@ function CrashWizard() {
     ),
   });
   scene.push({
+    group: "Evidence",
     text: (
       <>
-        Take photos before leaving the scene: damage to the SU vehicle, the
-        scene/area, <b>wide-angle shots of all four sides</b>, and the{" "}
-        <b>instrument cluster/speedo</b> — the last two are required by
-        Comcover.
+        <b>Take photos before leaving the scene:</b>
+        <ul className="list-disc list-inside mt-1.5 space-y-0.5 text-muted-foreground">
+          <li>Damage to the SU vehicle</li>
+          <li>The scene / area</li>
+          <li>Wide-angle shots of all four sides — required by Comcover</li>
+          <li>Instrument cluster / speedo — required by Comcover</li>
+        </ul>
       </>
     ),
   });
   scene.push({
+    group: "Evidence",
     text: <>Do not contact Comcover or any insurer directly, at any point.</>,
   });
 
   const after: ResultItem[] = [];
   after.push({
+    group: "Notify",
     text: (
       <>
         <b>Notify SSU, CPT, and HUMINT Finance</b> as soon as practicable — the
         initial information is the same for all three:
-        <ul className="list-disc list-inside mt-1.5 text-muted-foreground">
+        <ul className="list-disc list-inside mt-1.5 space-y-0.5 text-muted-foreground">
           <li>Nature of the crash ({answers.scenario})</li>
           <li>Circumstances of the crash</li>
           <li>Police attendance or response, if any</li>
@@ -1063,6 +1140,7 @@ function CrashWizard() {
   });
   if (policeNeeded) {
     after.push({
+      group: "Documentation",
       text: (
         <>
           Request a hard-copy <b>MR72</b> from SSU, complete it using your
@@ -1072,6 +1150,7 @@ function CrashWizard() {
     });
   }
   after.push({
+    group: "Documentation",
     text: (
       <>
         Provide to CPT / HUMINT Finance:{" "}
@@ -1082,6 +1161,7 @@ function CrashWizard() {
   });
   if (exceptionFlagged) {
     after.push({
+      group: "Documentation",
       text: (
         <>
           Complete a <b>Security Incident Report (SIR)</b> — a declaration
@@ -1092,6 +1172,7 @@ function CrashWizard() {
     });
   } else {
     after.push({
+      group: "Documentation",
       text: (
         <>
           A Security Incident Report (SIR) is only needed if a declaration
@@ -1101,6 +1182,7 @@ function CrashWizard() {
     });
   }
   after.push({
+    group: "Review",
     text: (
       <>
         All documentation is reviewed and approved by your{" "}
@@ -1110,11 +1192,15 @@ function CrashWizard() {
     ),
   });
   after.push({
+    group: "Repairs",
     text: (
       <>
-        Repairs go only through <b>{REPAIRER_NAME}</b> ({REPAIRER_CONTACT}),
-        arranged via CPT/HUMINT Finance (or directly by SU Command if under
-        $5,000) — never arrange this yourself, and never use any other repairer.
+        <p>
+          Repairs go only through <b>{REPAIRER_NAME}</b>, arranged via
+          CPT/HUMINT Finance (or directly by SU Command if under $5,000) — never
+          arrange this yourself, and never use any other repairer.
+        </p>
+        <RepairerCard />
       </>
     ),
     caution: true,
@@ -1149,7 +1235,7 @@ function CrashWizard() {
           </span>
         </div>
         <div className="px-4 pb-1">
-          <ResultList items={scene} />
+          <GroupedResultList items={scene} />
         </div>
       </div>
 
@@ -1161,7 +1247,7 @@ function CrashWizard() {
           </span>
         </div>
         <div className="px-4 pb-1">
-          <ResultList items={after} />
+          <GroupedResultList items={after} />
         </div>
       </div>
 

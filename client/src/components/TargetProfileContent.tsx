@@ -909,11 +909,6 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                       {a.name}
                     </span>
                     {a.isIndicesOnly && <IndicesBadge />}
-                    {a.hbf && (
-                      <span className="text-xs text-muted-foreground shrink-0 truncate max-w-[160px]">
-                        {a.hbf}
-                      </span>
-                    )}
                   </button>
                 ))}
               </div>

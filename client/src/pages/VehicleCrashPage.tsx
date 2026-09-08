@@ -862,6 +862,10 @@ function GroupedResultList({ items }: { items: ResultItem[] }) {
 function CrashWizard() {
   const [step, setStep] = useState(1);
   const [answers, setAnswers] = useState<Answers>(EMPTY_ANSWERS);
+  const { user } = useAuth();
+  const myTeam =
+    user?.team === "TEAM1" || user?.team === "TEAM2" ? user.team : null;
+  const myAiPhones = myTeam ? AI_PHONES[myTeam] : null;
 
   const restart = () => {
     setStep(1);
@@ -1049,6 +1053,12 @@ function CrashWizard() {
       <>
         Use your <b>Assumed Identity</b> details for anything you're required to
         give — registration, name, address, licence, phone.
+        {myAiPhones && (
+          <p className="mt-1.5 text-muted-foreground">
+            Your AI phone ({myTeam === "TEAM1" ? "Team 1" : "Team 2"}):{" "}
+            <b className="text-foreground">{myAiPhones.join(" or ")}</b>
+          </p>
+        )}
       </>
     ),
   });

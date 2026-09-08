@@ -2649,16 +2649,17 @@ export default function IntelligenceMapping() {
     return el;
   }, []);
 
-  // Three motion states, shown via a small "puck" fused into the name
+  // Three motion states, shown via a small indicator fused into the name
   // pill's left edge: an arrow (Navigation2's own polygon — the same shape
   // as the Follow-me/North-Up buttons, not a plain triangle) rotated to
   // heading while moving; a green dot the moment someone stops; settling
-  // to a grey dot once they've been still 10s+. The puck's CENTRE, not the
-  // pill's bounding box, is the officer's actual GPS position — the pill
-  // is a label that extends out from that point, so the marker is placed
-  // with anchor:"none" (see the live-marker effect below) and the puck
-  // centres itself on the overlay's local (0,0) via its own translate,
-  // independent of the pill's width/height entirely.
+  // to a red dot once they've been still 10s+. No white backing ring
+  // behind it — colour alone carries the state. The indicator's CENTRE,
+  // not the pill's bounding box, is the officer's actual GPS position —
+  // the pill is a label that extends out from that point, so the marker
+  // is placed with anchor:"none" (see the live-marker effect below) and
+  // the indicator centres itself on the overlay's local (0,0) via its own
+  // translate, independent of the pill's width/height entirely.
   const createUserPinElement = useCallback((liveUser: LiveUser) => {
     const color = getTeamColour(liveUser.team);
     const label = liveUser.name.toUpperCase();
@@ -2685,10 +2686,10 @@ export default function IntelligenceMapping() {
     const el = document.createElement("div");
     el.style.cssText = `position:relative;cursor:pointer;`;
 
-    // Name pill — sized exactly as before this redesign (same font size,
-    // vertical padding, border, shadow); only padding-left grew, to clear
-    // the puck, so the marker's footprint on the map doesn't get any
-    // taller than it already was.
+    // Name pill — thinner, symmetric top/bottom padding (was heavier on the
+    // bottom to balance an underline bar this redesign already removed,
+    // which left the text looking off-centre) — only padding-left stays
+    // enlarged, to clear the indicator.
     const pill = document.createElement("div");
     pill.style.cssText = `
       position:absolute;
@@ -2701,7 +2702,7 @@ export default function IntelligenceMapping() {
       color:#fff;
       font-size:10px;
       font-weight:800;
-      padding:3px 10px 5px 17px;
+      padding:3px 10px 3px 17px;
       border-radius:20px;
       white-space:nowrap;
       box-shadow:0 2px 8px rgba(0,0,0,0.40);
@@ -2711,17 +2712,16 @@ export default function IntelligenceMapping() {
     `;
     pill.textContent = label;
 
-    const puck = document.createElement("div");
-    puck.style.cssText = `
+    // Bare indicator — no white backing ring. Positioned identically to the
+    // old puck (centred on the overlay's local (0,0), i.e. the true GPS
+    // fix) but with nothing behind the arrow/dot itself; colour alone now
+    // carries the state.
+    const indicator = document.createElement("div");
+    indicator.style.cssText = `
       position:absolute;
       left:0;
       top:0;
       transform:translate(-50%,-50%);
-      width:14px;
-      height:14px;
-      border-radius:50%;
-      background:#fff;
-      box-shadow:0 1px 4px rgba(0,0,0,0.45);
       display:flex;
       align-items:center;
       justify-content:center;
@@ -2729,16 +2729,16 @@ export default function IntelligenceMapping() {
     `;
     if (motionState === "moving") {
       const heading = liveUser.heading ?? 0;
-      puck.innerHTML = `<svg viewBox="0 0 24 24" width="25" height="25" style="overflow:visible;transform:rotate(${heading}deg)"><polygon points="12 2 19 21 12 17 5 21 12 2" fill="#16a34a"/></svg>`;
+      indicator.innerHTML = `<svg viewBox="0 0 24 24" width="25" height="25" style="overflow:visible;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45));transform:rotate(${heading}deg)"><polygon points="12 2 19 21 12 17 5 21 12 2" fill="#16a34a"/></svg>`;
     } else {
-      const dotColour = motionState === "short" ? "#22c55e" : "#9ca3af";
+      const dotColour = motionState === "short" ? "#22c55e" : "#dc2626";
       const dot = document.createElement("div");
-      dot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${dotColour};`;
-      puck.appendChild(dot);
+      dot.style.cssText = `width:14px;height:14px;border-radius:50%;background:${dotColour};box-shadow:0 1px 3px rgba(0,0,0,0.45);`;
+      indicator.appendChild(dot);
     }
 
     el.appendChild(pill);
-    el.appendChild(puck);
+    el.appendChild(indicator);
     return el;
   }, []);
 

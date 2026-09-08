@@ -1472,11 +1472,11 @@ export default function IntelligencePage() {
     | "surname"
     | "make"
     | "suburb";
-  const [sortOrder, setSortOrder] = useState<SortOrder>("frequency");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("recent");
 
   // Sort order (operations tab)
   type OpSortOrder = "az" | "recent";
-  const [opSortOrder, setOpSortOrder] = useState<OpSortOrder>("az");
+  const [opSortOrder, setOpSortOrder] = useState<OpSortOrder>("recent");
 
   // Operation filter (Targets/Associates/Vehicles/Locations tabs) — null = all operations.
   const [filterOperationId, setFilterOperationId] = useState<number | null>(
@@ -1633,34 +1633,34 @@ export default function IntelligencePage() {
   const sortOptions = useMemo((): { value: SortOrder; label: string }[] => {
     if (activeTab === "targets" || activeTab === "associates") {
       return [
-        { value: "frequency", label: "Most frequent" },
         { value: "recent", label: "Most recent" },
+        { value: "frequency", label: "Most frequent" },
         { value: "operation", label: "Operation A → Z" },
         { value: "surname", label: "Surname A → Z" },
       ];
     }
     if (activeTab === "vehicle") {
       return [
+        { value: "recent", label: "Most recent" },
         { value: "frequency", label: "Most frequent" },
         { value: "az", label: "A → Z" },
         { value: "za", label: "Z → A" },
-        { value: "recent", label: "Most recent" },
         { value: "make", label: "Make A → Z" },
       ];
     }
     if (activeTab === "locations") {
       return [
+        { value: "recent", label: "Most recent" },
         { value: "frequency", label: "Most frequent" },
         { value: "az", label: "A → Z" },
-        { value: "recent", label: "Most recent" },
         { value: "suburb", label: "Suburb A → Z" },
       ];
     }
     return [
+      { value: "recent", label: "Most recent" },
       { value: "frequency", label: "Most frequent" },
       { value: "az", label: "A → Z" },
       { value: "za", label: "Z → A" },
-      { value: "recent", label: "Most recent" },
       { value: "oldest", label: "Oldest first" },
     ];
   }, [activeTab]);
@@ -1930,8 +1930,8 @@ export default function IntelligencePage() {
                   Sort:
                 </span>
                 {[
-                  { value: "az" as const, label: "A → Z" },
                   { value: "recent" as const, label: "Most recent" },
+                  { value: "az" as const, label: "A → Z" },
                 ].map(opt => (
                   <button
                     key={opt.value}

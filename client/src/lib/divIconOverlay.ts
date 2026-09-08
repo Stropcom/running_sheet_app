@@ -209,6 +209,15 @@ function getImplCtor(): DivIconOverlayImplCtor {
     }
 
     private handleClick = (e: MouseEvent) => {
+      // Without this, a marker placed exactly on top of a Google-labelled
+      // business/POI icon baked into the map tiles lets this click bubble
+      // past our container to the map's own click listener underneath,
+      // which sees the same click land on that POI and opens the
+      // business/place action-chooser sheet on top of this marker's own
+      // popup — two popups for one tap. Plain address/residential markers
+      // never showed this because there's no POI icon under them to catch
+      // the bubbled click.
+      e.stopPropagation();
       if (this._suppressNextClick) {
         this._suppressNextClick = false;
         return;

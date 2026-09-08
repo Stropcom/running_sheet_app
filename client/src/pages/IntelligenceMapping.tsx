@@ -1293,24 +1293,6 @@ export default function IntelligenceMapping() {
     ? panelWidthProfile
     : panelWidthNormal;
 
-  // Draggable pill bar vertical position (percentage from top, 5-95)
-  const [pillBarTop, setPillBarTop] = useState<number>(() => {
-    try {
-      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
-      if (s) {
-        const v = JSON.parse(s).pillBarTop;
-        if (typeof v === "number") return v;
-      }
-    } catch {
-      /* ignore */
-    }
-    return 90;
-  });
-  const pillBarDraggingRef = useRef(false);
-  const pillBarLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
-  const pillBarIsDraggingRef = useRef(false);
   const [rsSelectedOpId, setRsSelectedOpId] = useState<number | null>(() => {
     try {
       const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
@@ -1904,7 +1886,6 @@ export default function IntelligenceMapping() {
           collapsedTeams: Array.from(collapsedTeams),
           rsQeExpanded,
           mapDarkMode,
-          pillBarTop,
           panelWidthNormal,
           panelWidthProfile,
         })
@@ -1923,7 +1904,6 @@ export default function IntelligenceMapping() {
     collapsedTeams,
     rsQeExpanded,
     mapDarkMode,
-    pillBarTop,
     panelWidthNormal,
     panelWidthProfile,
   ]);
@@ -5554,166 +5534,6 @@ export default function IntelligenceMapping() {
           {/* RS Actions pane is now opened via the header folder-expander icon
             (DashboardLayout's rightPaneToggle prop) instead of a draggable
             side tab — see the DashboardLayout invocation below. */}
-
-          {/* ── Draggable Floating Pill Bar (all devices) ──
-             Tap-hold the drag handle to reposition vertically. Position persisted to localStorage. */}
-          <div
-            className="absolute left-0 right-0 z-20 flex items-center justify-center pointer-events-none"
-            style={{ top: `${pillBarTop}%`, transform: "translateY(-50%)" }}
-          >
-            {/* Drag handle — long-press activates drag */}
-            <div
-              className={`pointer-events-auto flex items-center gap-1.5 px-2 py-1.5 rounded-3xl ${
-                pillBarDraggingRef.current ? "cursor-grabbing" : "cursor-grab"
-              } select-none touch-none`}
-              onMouseDown={e => {
-                // Long-press to drag on desktop
-                const startY = e.clientY;
-                const startTop = pillBarTop;
-                const parentH =
-                  e.currentTarget.parentElement?.parentElement?.clientHeight ??
-                  window.innerHeight;
-                pillBarIsDraggingRef.current = false;
-                pillBarLongPressRef.current = setTimeout(() => {
-                  pillBarDraggingRef.current = true;
-                  const onMove = (me: MouseEvent) => {
-                    const delta = me.clientY - startY;
-                    if (Math.abs(delta) > 3) {
-                      pillBarIsDraggingRef.current = true;
-                    }
-                    setPillBarTop(
-                      Math.max(
-                        5,
-                        Math.min(95, startTop + (delta / parentH) * 100)
-                      )
-                    );
-                  };
-                  const onUp = () => {
-                    pillBarDraggingRef.current = false;
-                    document.removeEventListener("mousemove", onMove);
-                    document.removeEventListener("mouseup", onUp);
-                  };
-                  document.addEventListener("mousemove", onMove);
-                  document.addEventListener("mouseup", onUp);
-                }, 300);
-                const onUp = () => {
-                  if (pillBarLongPressRef.current)
-                    clearTimeout(pillBarLongPressRef.current);
-                  document.removeEventListener("mouseup", onUp);
-                };
-                document.addEventListener("mouseup", onUp);
-              }}
-              onTouchStart={e => {
-                const touch = e.touches[0];
-                const startY = touch.clientY;
-                const startTop = pillBarTop;
-                const parentH =
-                  e.currentTarget.parentElement?.parentElement?.clientHeight ??
-                  window.innerHeight;
-                pillBarIsDraggingRef.current = false;
-                pillBarLongPressRef.current = setTimeout(() => {
-                  pillBarDraggingRef.current = true;
-                  const onMove = (te: TouchEvent) => {
-                    const delta = te.touches[0].clientY - startY;
-                    if (Math.abs(delta) > 3) {
-                      pillBarIsDraggingRef.current = true;
-                    }
-                    setPillBarTop(
-                      Math.max(
-                        5,
-                        Math.min(95, startTop + (delta / parentH) * 100)
-                      )
-                    );
-                  };
-                  const onEnd = () => {
-                    pillBarDraggingRef.current = false;
-                    document.removeEventListener("touchmove", onMove);
-                    document.removeEventListener("touchend", onEnd);
-                  };
-                  document.addEventListener("touchmove", onMove, {
-                    passive: true,
-                  });
-                  document.addEventListener("touchend", onEnd);
-                }, 300);
-                const onEnd = () => {
-                  if (pillBarLongPressRef.current)
-                    clearTimeout(pillBarLongPressRef.current);
-                  document.removeEventListener("touchend", onEnd);
-                };
-                document.addEventListener("touchend", onEnd);
-              }}
-            >
-              {/* Active RS pill */}
-              {(() => {
-                const activeSheet =
-                  rsSelectedSheetId && rsSheetsData
-                    ? (rsSheetsData as any[]).find(
-                        (s: any) => s.id === rsSelectedSheetId
-                      )
-                    : null;
-                return (
-                  <button
-                    disabled={!activeSheet}
-                    onClick={e => {
-                      if (pillBarIsDraggingRef.current) {
-                        e.preventDefault();
-                        return;
-                      }
-                      if (activeSheet)
-                        setLocation(`/sheet/${rsSelectedSheetId}`);
-                    }}
-                    className={`flex items-center justify-center gap-2 rounded-xl shadow-lg border transition-all w-[136px] px-5 py-2.5 ${
-                      activeSheet
-                        ? "text-white border-blue-600 bg-blue-400 hover:bg-blue-300 active:scale-95 cursor-pointer"
-                        : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
-                    }`}
-                    title={
-                      activeSheet
-                        ? "Open active running sheet"
-                        : "No running sheet selected"
-                    }
-                  >
-                    <ClipboardList className="h-5 w-5 flex-shrink-0" />
-                    <span className="text-sm font-semibold whitespace-nowrap">
-                      Active RS
-                    </span>
-                  </button>
-                );
-              })()}
-
-              {/* RS Entry pill */}
-              {(() => {
-                const hasSheet = !!rsSelectedSheetId;
-                return (
-                  <button
-                    disabled={!hasSheet}
-                    onClick={e => {
-                      if (pillBarIsDraggingRef.current) {
-                        e.preventDefault();
-                        return;
-                      }
-                      if (hasSheet) setMapQeOpen(true);
-                    }}
-                    className={`flex items-center justify-center gap-2 rounded-xl shadow-lg border transition-all w-[136px] px-5 py-2.5 ${
-                      hasSheet
-                        ? "text-white border-emerald-600 bg-emerald-400 hover:bg-emerald-300 active:scale-95 cursor-pointer"
-                        : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
-                    }`}
-                    title={
-                      hasSheet
-                        ? "RS Quick Entry"
-                        : "Select a running sheet first"
-                    }
-                  >
-                    <FileText className="h-5 w-5 flex-shrink-0" />
-                    <span className="text-sm font-semibold whitespace-nowrap">
-                      RS Entry
-                    </span>
-                  </button>
-                );
-              })()}
-            </div>
-          </div>
         </div>
 
         {/* ── RS Actions Right Pane ──
@@ -6223,7 +6043,9 @@ export default function IntelligenceMapping() {
                   </button>
                 )}
 
-                {/* RS Quick Entry moved to bottom tab bar — use the indigo RS Entry pill instead */}
+                {/* RS Quick Entry is reached via the map's own action
+                    chooser / POI tap sheets, or a marker's own popup —
+                    no dedicated entry point needed here. */}
               </div>
               {/* end RS Selection */}
 

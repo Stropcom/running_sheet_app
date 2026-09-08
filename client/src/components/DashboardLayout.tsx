@@ -1948,35 +1948,35 @@ function DashboardLayoutContent({
           </div>
 
           {/* Right: page-level quick links (Active RS / Map, or the map's own
-              Map Settings pane toggle) */}
+              Map Settings pane toggle). Active RS is always shown, including
+              on the mapping page itself — it used to live there as a
+              separate floating pill over the map instead; this is the same
+              link, just consolidated into the one place every other page
+              already has it. */}
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (activeRsId) setLocation(`/sheet/${activeRsId}`);
+              }}
+              className={`flex items-center justify-center gap-2 min-w-[130px] px-3 py-2 rounded-xl border text-sm font-semibold shadow-sm transition-all ${
+                activeRsId
+                  ? "text-blue-700 border-blue-700/50 bg-blue-700/10 hover:bg-blue-700/20 cursor-pointer"
+                  : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
+              }`}
+              title={activeRsId ? "Go to Active RS" : "No active RS selected"}
+            >
+              <ClipboardList className="h-6 w-6" />
+              <span>Active RS</span>
+            </button>
             {location !== "/intelligence/mapping" && (
-              <>
-                <button
-                  onClick={() => {
-                    if (activeRsId) setLocation(`/sheet/${activeRsId}`);
-                  }}
-                  className={`flex items-center justify-center gap-2 min-w-[130px] px-3 py-2 rounded-xl border text-sm font-semibold shadow-sm transition-all ${
-                    activeRsId
-                      ? "text-blue-700 border-blue-700/50 bg-blue-700/10 hover:bg-blue-700/20 cursor-pointer"
-                      : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
-                  }`}
-                  title={
-                    activeRsId ? "Go to Active RS" : "No active RS selected"
-                  }
-                >
-                  <ClipboardList className="h-6 w-6" />
-                  <span>Active RS</span>
-                </button>
-                <button
-                  onClick={() => setLocation("/intelligence/mapping")}
-                  className="flex items-center justify-center gap-2 min-w-[130px] px-3 py-2 rounded-xl border border-teal-400/50 bg-teal-400/10 text-teal-400 hover:bg-teal-400/20 text-sm font-semibold shadow-sm transition-all"
-                  title="Map"
-                >
-                  <Map className="h-6 w-6" />
-                  <span>Map</span>
-                </button>
-              </>
+              <button
+                onClick={() => setLocation("/intelligence/mapping")}
+                className="flex items-center justify-center gap-2 min-w-[130px] px-3 py-2 rounded-xl border border-teal-400/50 bg-teal-400/10 text-teal-400 hover:bg-teal-400/20 text-sm font-semibold shadow-sm transition-all"
+                title="Map"
+              >
+                <Map className="h-6 w-6" />
+                <span>Map</span>
+              </button>
             )}
             {rightPaneToggle && (
               <button

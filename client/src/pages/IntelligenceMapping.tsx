@@ -112,6 +112,7 @@ import {
   Search,
   LocateFixed,
   Navigation2,
+  Compass,
   ExternalLink,
   Settings,
   Clock,
@@ -1202,6 +1203,11 @@ export default function IntelligenceMapping() {
   // which has no reason to auto-reset, so a "North Up" button re-aligns
   // it on demand. Kept in sync via a "heading_changed" listener.
   const [mapHeading, setMapHeading] = useState(0);
+  // Ref mirror of mapHeading for createUserPinElement, which reads it on
+  // every marker redraw (not a React dependency — the heading-group's own
+  // rotation needs to account for the map's current on-screen orientation
+  // without forcing every pin to re-render on every heading_changed tick).
+  const mapHeadingRef = useRef(0);
   // Nearmap aerial-imagery overlay toggle — a google.maps.ImageMapType
   // pushed onto map.overlayMapTypes, requesting tiles from our own
   // /api/nearmap/tile proxy (server/nearmapProxy.ts) rather than Nearmap
@@ -1767,6 +1773,14 @@ export default function IntelligenceMapping() {
   const followModeRef = useRef(false);
   // Own position ref — updated whenever liveUsers refreshes
   const ownPositionRef = useRef<{ lat: number; lng: number } | null>(null);
+  // Heading-up mode: continuously rotates the map (vector-only) to match
+  // this device's own live travel heading, so "up" on screen means "the
+  // way I'm going" rather than true north. Only meaningful alongside
+  // Follow Me (rotating around a point that isn't centred on you reads as
+  // the map spinning for no reason), so toggling one on/off follows the
+  // other — see the Follow-me/Heading-up buttons below.
+  const [headingUpMode, setHeadingUpMode] = useState(false);
+  const headingUpModeRef = useRef(false);
 
   // ref for long-press on mobile
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2743,7 +2757,13 @@ export default function IntelligenceMapping() {
       z-index:2;
     `;
     if (motionState === "moving") {
-      const heading = liveUser.heading ?? 0;
+      // Screen rotation, not raw compass bearing: the arrow/rings need to
+      // point the right way relative to the map as currently displayed,
+      // which drifts from true north whenever heading-up mode (or a manual
+      // rotate gesture) has the map itself rotated. Subtracting the map's
+      // own current heading converts "true compass bearing" into "on-screen
+      // angle" — at mapHeadingRef 0 (North Up, the default) this is a no-op.
+      const heading = (liveUser.heading ?? 0) - mapHeadingRef.current;
       const speedKmh = (liveUser.speed ?? 0) * 3.6;
       const ringDurationMs = getSonarRingDurationMs(speedKmh);
       // Directional "sonar" rings above 80 km/h: half-circles (clipped to
@@ -3201,6 +3221,19 @@ export default function IntelligenceMapping() {
       if (followModeRef.current && mapRef.current) {
         mapRef.current.panTo({ lat: ownEntry.lat, lng: ownEntry.lng });
       }
+      // Heading-up: rotate the map to match this device's own live travel
+      // heading. Geolocation only reports a heading while actually moving
+      // (it's null at rest), so simply skip the call rather than snapping
+      // to 0 when stationary — the map keeps whatever heading it last had
+      // until the officer starts moving again.
+      if (
+        headingUpModeRef.current &&
+        mapRef.current &&
+        mapRenderPref === "vector" &&
+        ownEntry.heading != null
+      ) {
+        mapRef.current.setHeading(ownEntry.heading);
+      }
     }
 
     // Add/update markers for visible devices
@@ -3344,9 +3377,13 @@ export default function IntelligenceMapping() {
 
       // Keep the North Up button's rotation/enabled state in sync with the
       // map's actual heading — set both by our own button and by the
-      // native Shift+drag / twist rotate gesture.
+      // native Shift+drag / twist rotate gesture. mapHeadingRef mirrors the
+      // same value for createUserPinElement, which needs it on every pin
+      // redraw without depending on this state directly.
       map.addListener("heading_changed", () => {
-        setMapHeading(map.getHeading() ?? 0);
+        const h = map.getHeading() ?? 0;
+        setMapHeading(h);
+        mapHeadingRef.current = h;
       });
 
       // Persist map type (roadmap / satellite) whenever the user switches
@@ -5448,6 +5485,14 @@ export default function IntelligenceMapping() {
                   if (next && ownPositionRef.current) {
                     mapRef.current?.panTo(ownPositionRef.current);
                   }
+                  // Heading-up only makes sense centred on you — turning
+                  // Follow Me off while it's on would otherwise leave the
+                  // map spinning around a point that's no longer you.
+                  if (!next && headingUpModeRef.current) {
+                    setHeadingUpMode(false);
+                    headingUpModeRef.current = false;
+                    mapRef.current?.setHeading(0);
+                  }
                 }}
                 className={`flex items-center justify-center rounded-lg shadow-md border transition-colors ${
                   followMode
@@ -5458,6 +5503,54 @@ export default function IntelligenceMapping() {
               >
                 <Navigation2
                   className={`w-5 h-5 ${followMode ? "text-white" : "text-sky-600"}`}
+                />
+              </button>
+              {/* Heading-up toggle — rotates the map to match this
+                device's own live travel heading (vector-only, same as 3D/
+                North-Up). Requires Follow Me, since rotating around a
+                point that isn't centred on you just reads as the map
+                spinning for no reason — turning this on switches Follow
+                Me on too if it wasn't already. */}
+              <button
+                title={
+                  mapRenderPref !== "vector"
+                    ? "Heading-up requires Vector map rendering, which isn't available on this device"
+                    : headingUpMode
+                      ? "Turn off heading-up rotation"
+                      : "Rotate map to my direction of travel"
+                }
+                disabled={mapRenderPref !== "vector"}
+                onClick={e => {
+                  e.stopPropagation();
+                  if (!headingUpMode) {
+                    if (!ownPositionRef.current) {
+                      toast.error(
+                        "Location not available — enable location sharing first"
+                      );
+                      return;
+                    }
+                    if (!followMode) {
+                      setFollowMode(true);
+                      followModeRef.current = true;
+                      mapRef.current?.panTo(ownPositionRef.current);
+                    }
+                    setHeadingUpMode(true);
+                    headingUpModeRef.current = true;
+                  } else {
+                    setHeadingUpMode(false);
+                    headingUpModeRef.current = false;
+                    mapRef.current?.setHeading(0);
+                  }
+                }}
+                className={`flex items-center justify-center rounded-lg shadow-md border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                  headingUpMode
+                    ? "bg-sky-600 border-sky-700 hover:bg-sky-700"
+                    : "bg-white border-gray-200 hover:bg-gray-50"
+                }`}
+                style={{ width: "40px", height: "40px" }}
+              >
+                <Compass
+                  className={`w-5 h-5 ${headingUpMode ? "text-white" : "text-sky-600"}`}
                 />
               </button>
             </div>

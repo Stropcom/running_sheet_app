@@ -1,5 +1,6 @@
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useAuth } from "@/_core/hooks/useAuth";
 import {
   Collapsible,
   CollapsibleContent,
@@ -32,6 +33,13 @@ const REPAIRER_NAME = "BRB Smash Repair";
 const REPAIRER_ADDRESS = "5/7 Pitt Way, Booragoon";
 const REPAIRER_CONTACT = "Bill — do not speak to any other staff";
 const REPAIRER_AFTERHOURS = "0419 908 520";
+
+// Assumed Identity phones, by team — logged-in user's own team (users.team)
+// is highlighted in the Full SOP's Stage 3 section, see AiPhonesBlock below.
+const AI_PHONES: Record<"TEAM1" | "TEAM2", string[]> = {
+  TEAM1: ["0493 197 381", "0494 183 973"],
+  TEAM2: ["0494 155 400", "0494 177 049"],
+};
 
 type Screen = "menu" | "sop" | "wizard";
 type ScenarioKey = "A1" | "A2" | "B1" | "B2" | "C1";
@@ -147,6 +155,47 @@ function SopTable({ rows }: { rows: [string, string][] }) {
           <span className="text-muted-foreground">{v}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Both teams' AI phones are shown (any member may need to recognise or
+// reach the other team's AI number), with the logged-in user's own team
+// (users.team) picked out so it doesn't need to be found by scanning.
+function AiPhonesBlock() {
+  const { user } = useAuth();
+  const myTeam =
+    user?.team === "TEAM1" || user?.team === "TEAM2" ? user.team : null;
+  return (
+    <div className="rounded-lg border border-border overflow-hidden my-2">
+      <div className="bg-blue-500/10 text-[10px] font-bold uppercase tracking-wide text-blue-400 px-3 py-1.5">
+        Assumed Identity Phones
+      </div>
+      {(["TEAM1", "TEAM2"] as const).map((team, i) => {
+        const mine = team === myTeam;
+        return (
+          <div
+            key={team}
+            className={`px-3 py-2 text-[12.5px] ${i > 0 ? "border-t border-border" : ""} ${
+              mine ? "bg-indigo-500/5" : ""
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-foreground">
+                {team === "TEAM1" ? "Team 1" : "Team 2"}
+              </span>
+              {mine && (
+                <span className="text-[9.5px] font-bold uppercase tracking-wide text-indigo-400 bg-indigo-500/10 rounded px-1.5 py-0.5">
+                  Your team
+                </span>
+              )}
+            </div>
+            <p className="text-muted-foreground mt-0.5">
+              {AI_PHONES[team].join(" or ")}
+            </p>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -384,6 +433,12 @@ const SOP_SECTIONS: SopSection[] = [
             times at the scene, regardless of what's disclosed to whom.
           </li>
         </ul>
+        <SopSub>Assumed Identity Contact Numbers</SopSub>
+        <SopP>
+          If a phone number is required as part of the AI, use one of your own
+          team's numbers below — never the true operational phone.
+        </SopP>
+        <AiPhonesBlock />
         <SopP>
           Applies regardless of crash scenario classification, and to both
           statutory exchanges and informal requests at the scene.

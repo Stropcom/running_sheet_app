@@ -1830,6 +1830,14 @@ export default function IntelligenceMapping() {
   const intelPinImgRefs = useRef<Map<string, HTMLImageElement>>(new Map());
   // Key: "userId_deviceId" for per-device pins
   const liveMarkersRef = useRef<Map<string, DivIconOverlay>>(new Map());
+  // Key: "userId_deviceId" -> which of the pin's three motion states it's
+  // currently in ("moving" | "short" | "long", see createUserPinElement)
+  // and when that state began. Lets "just stopped" settle to "stopped
+  // 10s+" purely from the liveUsers poll (already ~1s) re-running this
+  // check, no separate timer needed.
+  const motionStateRef = useRef<
+    Map<string, { state: "moving" | "short" | "long"; since: number }>
+  >(new Map());
   // Key: userId — one trace polyline per traced officer
   const traceLinesRef = useRef<Map<number, google.maps.Polyline>>(new Map());
   // Remembers each user's last-known team so a trace line keeps its colour
@@ -2641,55 +2649,96 @@ export default function IntelligenceMapping() {
     return el;
   }, []);
 
+  // Three motion states, shown via a small "puck" fused into the name
+  // pill's left edge: an arrow (Navigation2's own polygon — the same shape
+  // as the Follow-me/North-Up buttons, not a plain triangle) rotated to
+  // heading while moving; a green dot the moment someone stops; settling
+  // to a grey dot once they've been still 10s+. The puck's CENTRE, not the
+  // pill's bounding box, is the officer's actual GPS position — the pill
+  // is a label that extends out from that point, so the marker is placed
+  // with anchor:"none" (see the live-marker effect below) and the puck
+  // centres itself on the overlay's local (0,0) via its own translate,
+  // independent of the pill's width/height entirely.
   const createUserPinElement = useCallback((liveUser: LiveUser) => {
     const color = getTeamColour(liveUser.team);
     const label = liveUser.name.toUpperCase();
-    // Motion: speed > 0.5 m/s = moving (green underline), otherwise stopped (grey underline)
+    const pinKey = `${liveUser.userId}_${liveUser.deviceId}`;
     const isMoving = liveUser.speed != null && liveUser.speed > 0.5;
-    const underlineColor = isMoving ? "#22c55e" : "#9ca3af";
+    const now = Date.now();
+    const prevMotion = motionStateRef.current.get(pinKey);
+    let motionState: "moving" | "short" | "long";
+    let since: number;
+    if (isMoving) {
+      motionState = "moving";
+      since = now;
+    } else if (!prevMotion || prevMotion.state === "moving") {
+      // Just transitioned to stopped (or first time seen already stopped —
+      // we don't know how long, so the 10s clock starts from now).
+      motionState = "short";
+      since = now;
+    } else {
+      since = prevMotion.since;
+      motionState = now - since >= 10_000 ? "long" : "short";
+    }
+    motionStateRef.current.set(pinKey, { state: motionState, since });
 
     const el = document.createElement("div");
-    el.style.cssText = `position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;`;
+    el.style.cssText = `position:relative;cursor:pointer;`;
 
-    // Pill-shaped name tag — slightly smaller than before
+    // Name pill — sized exactly as before this redesign (same font size,
+    // vertical padding, border, shadow); only padding-left grew, to clear
+    // the puck, so the marker's footprint on the map doesn't get any
+    // taller than it already was.
     const pill = document.createElement("div");
     pill.style.cssText = `
-      position:relative;
+      position:absolute;
+      left:-9px;
+      top:0;
+      transform:translateY(-50%);
       display:inline-flex;
       align-items:center;
       background:${color};
       color:#fff;
       font-size:10px;
       font-weight:800;
-      padding:3px 10px 5px 10px;
+      padding:3px 10px 5px 17px;
       border-radius:20px;
       white-space:nowrap;
       box-shadow:0 2px 8px rgba(0,0,0,0.40);
       letter-spacing:0.06em;
       border:1.5px solid rgba(255,255,255,0.60);
-      overflow:hidden;
+      z-index:1;
     `;
+    pill.textContent = label;
 
-    const nameSpan = document.createElement("span");
-    nameSpan.textContent = label;
-    nameSpan.style.cssText = `position:relative;z-index:1;`;
-
-    // Thin underline at the bottom of the pill indicating motion state
-    const underline = document.createElement("div");
-    underline.style.cssText = `
+    const puck = document.createElement("div");
+    puck.style.cssText = `
       position:absolute;
-      bottom:0;
       left:0;
-      right:0;
-      height:3px;
-      background:${underlineColor};
-      border-radius:0 0 20px 20px;
-      opacity:0.9;
+      top:0;
+      transform:translate(-50%,-50%);
+      width:14px;
+      height:14px;
+      border-radius:50%;
+      background:#fff;
+      box-shadow:0 1px 4px rgba(0,0,0,0.45);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      z-index:2;
     `;
+    if (motionState === "moving") {
+      const heading = liveUser.heading ?? 0;
+      puck.innerHTML = `<svg viewBox="0 0 24 24" width="25" height="25" style="overflow:visible;transform:rotate(${heading}deg)"><polygon points="12 2 19 21 12 17 5 21 12 2" fill="#16a34a"/></svg>`;
+    } else {
+      const dotColour = motionState === "short" ? "#22c55e" : "#9ca3af";
+      const dot = document.createElement("div");
+      dot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${dotColour};`;
+      puck.appendChild(dot);
+    }
 
-    pill.appendChild(nameSpan);
-    pill.appendChild(underline);
     el.appendChild(pill);
+    el.appendChild(puck);
     return el;
   }, []);
 
@@ -3102,6 +3151,7 @@ export default function IntelligenceMapping() {
       if (!visibleKeys.has(key)) {
         marker.map = null;
         liveMarkersRef.current.delete(key);
+        motionStateRef.current.delete(key);
       }
     });
 
@@ -3133,6 +3183,12 @@ export default function IntelligenceMapping() {
             content: pinEl,
             title: liveUser.name.toUpperCase(),
             zIndex: 999,
+            // "none": createUserPinElement's own puck already centres
+            // itself on this overlay's local (0,0) — the default "center"
+            // anchor would instead centre the whole pill's bounding box
+            // (puck + name label combined), putting the marked position
+            // out under the label rather than the officer's actual GPS fix.
+            anchor: "none",
           });
           liveMarkersRef.current.set(pinKey, marker);
         }

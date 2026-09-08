@@ -207,4 +207,28 @@ describe("extractEntitiesFromText — vehicle description reconstruction", () =>
     );
     expect(second?.shortForm).toBe("1HIB84 White Isuzu D-MAX Utility");
   });
+
+  it("doesn't bleed a bracket's fullDescription capture back across a sentence boundary into an earlier, unrelated bare mention (the Intel folder corruption bug)", () => {
+    // Reported: a row's first sentence bare-mentions a rego with no bracket
+    // ("...towards Vehicle 1IZQ515."), then a later sentence brackets the
+    // same rego ("...boot of Vehicle 1IZQ515 (Vehicle 1IZQ515)"). The
+    // bracket regex's capture group has no sentence-boundary anchor, so
+    // fullDescription ballooned backward across the full stop and picked up
+    // the first sentence's bare mention too. Downstream description
+    // reconstruction then found the FIRST (wrong) occurrence of the rego
+    // inside that bled text via indexOf, producing a garbled description
+    // built from unrelated narrative prose ("1IZQ515 car park towards
+    // Vehicle") that was long enough to win the merge against — and
+    // overwrite — the vehicle's real, already-on-file description in the
+    // Intelligence folder / Target Registry.
+    const text =
+      "SANDERS exited Lakelands Shopping Centre and walked through the car park towards Vehicle 1IZQ515. Placed the shopping in the boot of Vehicle 1IZQ515 (Vehicle 1IZQ515), and entered the drivers seat.";
+    const entities = extractEntitiesFromText(text);
+    expect(entities).toHaveLength(1);
+    expect(entities[0].fullDescription).toBe(
+      "Placed the shopping in the boot of Vehicle 1IZQ515"
+    );
+    expect(entities[0].shortForm).not.toContain("car park");
+    expect(entities[0].shortForm).not.toContain("towards");
+  });
 });

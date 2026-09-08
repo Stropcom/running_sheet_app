@@ -3714,7 +3714,28 @@ export function extractEntitiesFromText(text: string): Array<{
   let match: RegExpExecArray | null;
 
   while ((match = pattern.exec(text)) !== null) {
-    const fullDescription = match[1].trim();
+    // The capture group above (`[^()]{3,120}?`) has no sentence-boundary
+    // anchor, so for a bracket that follows an earlier BARE (bracket-less)
+    // mention of the same token in a prior sentence — e.g. "...walked
+    // towards Vehicle 1IZQ515. Placed the shopping in the boot of Vehicle
+    // 1IZQ515 (Vehicle 1IZQ515)..." — it can balloon backward up to 120
+    // chars, across the full stop, into that unrelated earlier sentence.
+    // Confirmed root cause of a real corruption: the vehicle-description
+    // reconstruction below (`type === "vehicle"`) finds the FIRST
+    // occurrence of the rego inside that bled text via indexOf — which was
+    // the earlier sentence's bare mention, not the real one right before
+    // this bracket — and built a garbled description ("1IZQ515 car park
+    // towards Vehicle") out of unrelated narrative prose, which then won
+    // the merge against the vehicle's real, already-on-file description
+    // ("1IZQ515 red Renault Koleos SUV") purely by being longer. Scoping to
+    // the last sentence here (same logic the address branch below already
+    // used, but only for its own classification test, not for the value
+    // stored/reconstructed from) fixes this at the source for every entity
+    // type, not just addresses.
+    const rawFullDescription = match[1].trim();
+    const fullDescription = (
+      rawFullDescription.split(/(?<=[.!?])\s+/).pop() ?? rawFullDescription
+    ).trim();
     const shortForm = match[2].trim();
 
     // Skip empty or very short short-forms

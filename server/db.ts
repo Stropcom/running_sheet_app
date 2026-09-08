@@ -3846,6 +3846,16 @@ export function extractEntitiesFromText(text: string): Array<{
     // officers use to disambiguate family members sharing a surname.
     const shortFormLooksLikeName =
       /^[A-Z][A-Z\s'.-]{1,40}$/.test(shortForm) && !/\d/.test(shortForm);
+    // A shortForm with mixed-case proper-noun capitalisation (e.g. "Coles",
+    // "Woolworths") is a business name, not a vehicle — real WA rego plates
+    // are always written in ALL CAPS in these narratives ("1IZQ515",
+    // "WTQ304"), never Title Case. Without this guard the personalised-
+    // plate catch-all below (`^[A-Z0-9]{2,7}$`) swallows any short
+    // mixed-case business name the same way it used to swallow all-caps
+    // person surnames (see shortFormLooksLikeName above) — e.g. "...did
+    // general grocery shopping Coles, Lakelands Shopping Centre (Coles)."
+    // got misfiled as a vehicle instead of a business.
+    const shortFormLooksLikeBusiness = /[A-Z][a-z]/.test(shortForm);
 
     // ── Confidence scoring ────────────────────────────────────────────────────
     let confidence: "high" | "medium" | "low" = "low";
@@ -3889,7 +3899,11 @@ export function extractEntitiesFromText(text: string): Array<{
       else confidence = "medium";
     }
     // WA rego plate in shortForm — strong vehicle signal
-    else if (WA_REGO && !shortFormLooksLikeName) {
+    else if (
+      WA_REGO &&
+      !shortFormLooksLikeName &&
+      !shortFormLooksLikeBusiness
+    ) {
       // Only treat as rego if it doesn't look like an all-caps name. This used
       // to require 4+ letters to count as "looks like a name", which let any
       // short (2-3 letter) all-caps bracket code — a perfectly ordinary short
@@ -3903,7 +3917,8 @@ export function extractEntitiesFromText(text: string): Array<{
       // fired even for an exact match. Reusing shortFormLooksLikeName (already
       // used one branch up for the same purpose) excludes any all-caps,
       // digit-free bracket code regardless of length, which is what "looks
-      // like a name" actually means here.
+      // like a name" actually means here. shortFormLooksLikeBusiness excludes
+      // the mixed-case equivalent — a business name — the same way.
       type = "vehicle";
       confidence = "medium";
     }

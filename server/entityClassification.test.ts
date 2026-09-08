@@ -123,6 +123,21 @@ describe("extractEntitiesFromText — vehicle vs address disambiguation", () => 
     expect(entities.find(e => e.rawShortForm === "UCO1")).toBeUndefined();
   });
 
+  it("classifies a mixed-case business name as a business, not a vehicle (the Coles bug)", () => {
+    // Reported bug: "...did general grocery shopping Coles, Lakelands
+    // Shopping Centre (Coles)." — "Coles" is Title Case (not ALL CAPS,
+    // not digits), but it still matches WA_REGO's personalised-plate
+    // catch-all (`^[A-Z0-9]{2,7}$`) once uppercased, and the guard meant
+    // to exclude ALL-CAPS person names from that branch didn't exclude
+    // Title Case business names the same way. Real rego brackets are
+    // always ALL CAPS in these narratives, never Title Case.
+    const text =
+      "Between this logged time and 8:07pm SANDERS did general grocery shopping Coles, Lakelands Shopping Centre (Coles).";
+    const entities = extractEntitiesFromText(text);
+    const coles = entities.find(e => e.rawShortForm === "Coles");
+    expect(coles?.type).toBe("business");
+  });
+
   it("still classifies a real address after a leading sentence correctly", () => {
     // Non-regression: the address check must still fire for an address
     // whose own street-type words are in the same sentence as the bracket,

@@ -468,6 +468,21 @@ function getTeamColour(team: string | null): string {
   return TEAM_COLOURS[team ?? "null"] ?? "#6b7280";
 }
 
+// Live team pin — directional "sonar" ring cadence once a member is
+// travelling over 80 km/h (see createUserPinElement). Faster tiers pulse
+// quicker; below 80 km/h no rings show at all. Ring shape/colour never
+// changes, only how fast teamPinSonarRing (index.css) repeats.
+const HIGH_SPEED_RING_TIERS: Array<{ minKmh: number; durationMs: number }> = [
+  { minKmh: 120, durationMs: 1500 },
+  { minKmh: 100, durationMs: 2000 },
+  { minKmh: 80, durationMs: 2600 },
+];
+
+function getSonarRingDurationMs(speedKmh: number): number | null {
+  const tier = HIGH_SPEED_RING_TIERS.find(t => speedKmh >= t.minKmh);
+  return tier?.durationMs ?? null;
+}
+
 const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
   { elementType: "geometry", stylers: [{ color: "#212121" }] },
   { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
@@ -2729,7 +2744,29 @@ export default function IntelligenceMapping() {
     `;
     if (motionState === "moving") {
       const heading = liveUser.heading ?? 0;
-      indicator.innerHTML = `<svg viewBox="0 0 24 24" width="25" height="25" style="overflow:visible;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45));transform:rotate(${heading}deg)"><polygon points="12 2 19 21 12 17 5 21 12 2" fill="#16a34a"/></svg>`;
+      const speedKmh = (liveUser.speed ?? 0) * 3.6;
+      const ringDurationMs = getSonarRingDurationMs(speedKmh);
+      // Directional "sonar" rings above 80 km/h: half-circles (clipped to
+      // their own top half in this un-rotated local space, matching the
+      // arrow's own "points up at 0deg" polygon) that rotate together with
+      // the arrow inside the same heading-group, so the pulse only fans out
+      // toward the direction of travel rather than in every direction.
+      let ringsHtml = "";
+      if (ringDurationMs != null) {
+        const staggerMs = ringDurationMs / 3;
+        ringsHtml = [0, 1, 2]
+          .map(
+            i =>
+              `<span style="position:absolute;left:50%;top:50%;width:25px;height:25px;transform:translate(-50%,-50%);border-radius:50%;border:2px solid #16a34a;clip-path:inset(0 0 50% 0);animation:teamPinSonarRing ${ringDurationMs}ms cubic-bezier(0.2,0.6,0.35,1) infinite;animation-delay:${i * staggerMs}ms;z-index:-1;"></span>`
+          )
+          .join("");
+      }
+      indicator.innerHTML = `
+        <div style="position:relative;width:25px;height:25px;transform:rotate(${heading}deg);transform-origin:center;">
+          ${ringsHtml}
+          <svg viewBox="0 0 24 24" width="25" height="25" style="overflow:visible;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45));"><polygon points="12 2 19 21 12 17 5 21 12 2" fill="#16a34a"/></svg>
+        </div>
+      `;
     } else {
       const dotColour = motionState === "short" ? "#22c55e" : "#dc2626";
       const dot = document.createElement("div");

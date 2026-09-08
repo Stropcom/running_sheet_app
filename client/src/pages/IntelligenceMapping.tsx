@@ -6439,7 +6439,7 @@ export default function IntelligenceMapping() {
                           </button>
                           <button
                             onClick={() => toggleTeamVisibility(key)}
-                            className="ml-2 text-[10px] text-muted-foreground hover:text-foreground flex-shrink-0 px-1.5 py-0.5 rounded-md border border-border/50 bg-background/50"
+                            className="ml-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground flex-shrink-0 px-2.5 py-1 rounded-md border border-border/50 bg-background/50 transition-colors"
                           >
                             {hiddenTeams.has(key) ? "Show" : "Hide"}
                           </button>
@@ -6471,7 +6471,7 @@ export default function IntelligenceMapping() {
                                         onClick={() =>
                                           toggleUserTrace(u.userId)
                                         }
-                                        className={`text-[10px] px-1.5 py-0.5 rounded-md border ${
+                                        className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors ${
                                           tracedUserIds.has(u.userId)
                                             ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
                                             : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
@@ -6485,7 +6485,7 @@ export default function IntelligenceMapping() {
                                         onClick={() =>
                                           toggleUserVisibility(u.userId)
                                         }
-                                        className="text-[10px] text-muted-foreground hover:text-foreground"
+                                        className="text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border/50 bg-background/50 text-muted-foreground hover:text-foreground transition-colors"
                                       >
                                         {hiddenUsers.has(u.userId)
                                           ? "Show"
@@ -6536,7 +6536,7 @@ export default function IntelligenceMapping() {
                             </button>
                             <button
                               onClick={() => toggleTeamVisibility("null")}
-                              className="ml-2 text-[10px] text-muted-foreground hover:text-foreground flex-shrink-0 px-1.5 py-0.5 rounded-md border border-border/50 bg-background/50"
+                              className="ml-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground flex-shrink-0 px-2.5 py-1 rounded-md border border-border/50 bg-background/50 transition-colors"
                             >
                               {hiddenTeams.has("null") ? "Show" : "Hide"}
                             </button>
@@ -6562,7 +6562,7 @@ export default function IntelligenceMapping() {
                                         onClick={() =>
                                           toggleUserTrace(u.userId)
                                         }
-                                        className={`text-[10px] px-1.5 py-0.5 rounded-md border ${
+                                        className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors ${
                                           tracedUserIds.has(u.userId)
                                             ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
                                             : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
@@ -6576,7 +6576,7 @@ export default function IntelligenceMapping() {
                                         onClick={() =>
                                           toggleUserVisibility(u.userId)
                                         }
-                                        className="text-[10px] text-muted-foreground hover:text-foreground"
+                                        className="text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border/50 bg-background/50 text-muted-foreground hover:text-foreground transition-colors"
                                       >
                                         {hiddenUsers.has(u.userId)
                                           ? "Show"

@@ -694,6 +694,13 @@
       "when": 1788656486285,
       "tag": "0098_steep_chameleon",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "5",
+      "when": 1788937266983,
+      "tag": "0099_minor_rage",
+      "breakpoints": true
     }
   ]
 }

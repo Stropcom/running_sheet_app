@@ -3750,7 +3750,26 @@ export function extractEntitiesFromText(text: string): Array<{
     // instead (a short all-caps/digit bracket with no other classification
     // matches WA_REGO's personalised-plate shape, same failure mode as the
     // Basil CAT bug above).
-    if (/^(?:U[MF]|YC|UCO)\d+$/i.test(shortForm)) continue;
+    //
+    // Tested against the bracket with a leading "Vehicle "/"Veh " stripped,
+    // not just shortForm as typed — a real running sheet was found with a
+    // literal "(Vehicle UM1)" bracket (the client's space-bar rego
+    // auto-bracket feature treats any short letter+digit token as a
+    // candidate rego and doesn't know UM1 is a person placeholder — fixed
+    // separately in mentionAutocomplete.ts's detectVehicleMentionTrigger),
+    // and the word "vehicle" baked directly into shortForm made the
+    // literal "^(?:U[MF]|YC|UCO)\d+$" test below miss entirely, so this
+    // bracket fell through to the vehicle classification purely because it
+    // contains the word "vehicle" — creating a phantom "UM1" vehicle in the
+    // Intelligence Folder. This check is defense-in-depth against that
+    // shape however it enters the text (typo, voice, a future client
+    // change), and — since the Intelligence Folder's entity list is
+    // computed live from extractEntitiesFromText on every read, not
+    // persisted — fixing it here also clears the phantom entity and any
+    // description corruption it caused for an already-recorded row,
+    // without altering the stored observation text itself.
+    const placeholderCandidate = shortForm.replace(/^vehicle\s+/i, "").trim();
+    if (/^(?:U[MF]|YC|UCO)\d+$/i.test(placeholderCandidate)) continue;
 
     const lowerFull = fullDescription.toLowerCase();
     const lowerShort = shortForm.toLowerCase();

@@ -945,6 +945,54 @@ function haversineMetres(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Eases a live team pin's DivIconOverlay smoothly from its current position
+// to a new one over `durationMs`, instead of jumping instantly — the
+// underlying GPS fix only arrives once a second (see the userLocations
+// query's refetchInterval), so without this every pin visibly hops on each
+// poll tick. Cancels any tween already in flight for the same pin (a fresh
+// update landing mid-animation) via the caller-supplied animRef, so the two
+// don't fight each other. A large jump (a device reconnecting far from its
+// last known position, a corrected/stale fix) snaps instantly instead of
+// tweening — animating that slowly over the same short duration would look
+// like the pin teleporting in slow motion, not smooth continuous travel.
+function animateLiveMarkerTo(
+  marker: DivIconOverlay,
+  pinKey: string,
+  to: google.maps.LatLngLiteral,
+  animRef: { current: Map<string, number> },
+  durationMs = 950
+): void {
+  const existingFrame = animRef.current.get(pinKey);
+  if (existingFrame != null) cancelAnimationFrame(existingFrame);
+
+  const from = marker.position;
+  const distanceM = haversineMetres(from.lat, from.lng, to.lat, to.lng);
+  if (distanceM > 150) {
+    marker.position = to;
+    animRef.current.delete(pinKey);
+    return;
+  }
+
+  const startTime = performance.now();
+  const step = (now: number) => {
+    const t = Math.min(1, (now - startTime) / durationMs);
+    // Ease-out cubic — starts at full speed, settles gently into place
+    // rather than stopping abruptly, which reads as more natural motion
+    // than a plain linear tween.
+    const eased = 1 - Math.pow(1 - t, 3);
+    marker.position = {
+      lat: from.lat + (to.lat - from.lat) * eased,
+      lng: from.lng + (to.lng - from.lng) * eased,
+    };
+    if (t < 1) {
+      animRef.current.set(pinKey, requestAnimationFrame(step));
+    } else {
+      animRef.current.delete(pinKey);
+    }
+  };
+  animRef.current.set(pinKey, requestAnimationFrame(step));
+}
+
 // Best-effort strip of role descriptors ("driver", "front passenger",
 // "sole occupant", etc.) from a vehicle occupantDesc string (e.g. "HOGAN
 // driver, Denise HOLLY (HOLLY) front passenger") down to just the names
@@ -1859,6 +1907,11 @@ export default function IntelligenceMapping() {
   const intelPinImgRefs = useRef<Map<string, HTMLImageElement>>(new Map());
   // Key: "userId_deviceId" for per-device pins
   const liveMarkersRef = useRef<Map<string, DivIconOverlay>>(new Map());
+  // Key: "userId_deviceId" -> the requestAnimationFrame id currently
+  // tweening that pin's position (see animateLiveMarkerTo below). Lets a
+  // fresh position update cancel an in-flight tween instead of the two
+  // fighting each other when a new liveUsers poll lands mid-animation.
+  const liveMarkerAnimRef = useRef<Map<string, number>>(new Map());
   // Key: "userId_deviceId" -> which of the pin's three motion states it's
   // currently in ("moving" | "short" | "long", see createUserPinElement)
   // and when that state began. Lets "just stopped" settle to "stopped
@@ -3209,6 +3262,9 @@ export default function IntelligenceMapping() {
         marker.map = null;
         liveMarkersRef.current.delete(key);
         motionStateRef.current.delete(key);
+        const frame = liveMarkerAnimRef.current.get(key);
+        if (frame != null) cancelAnimationFrame(frame);
+        liveMarkerAnimRef.current.delete(key);
       }
     });
 
@@ -3242,7 +3298,16 @@ export default function IntelligenceMapping() {
       const existing = liveMarkersRef.current.get(pinKey);
       try {
         if (existing) {
-          existing.position = { lat: liveUser.lat, lng: liveUser.lng };
+          // Tween to the new fix instead of jumping — see
+          // animateLiveMarkerTo's own comment for why this can't just be a
+          // CSS transition (it would also animate during ordinary map pan/
+          // zoom, not just data updates).
+          animateLiveMarkerTo(
+            existing,
+            pinKey,
+            { lat: liveUser.lat, lng: liveUser.lng },
+            liveMarkerAnimRef
+          );
           // Refresh content to update motion dot
           existing.content = createUserPinElement(liveUser);
         } else {

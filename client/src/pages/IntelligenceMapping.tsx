@@ -148,13 +148,26 @@ function useIsTouchDevice(): boolean {
 // viewport when the keyboard opens — only `window.visualViewport` does —
 // so a sheet sized/anchored off `100vh`/`inset-0` alone stays full height
 // and the keyboard simply overlaps its lower portion, hiding whatever
-// field is focused there. Returns the actually-visible height and how
-// much of the bottom is currently covered by the keyboard, so a sheet can
-// (a) cap its own max-height to what's really visible, so its *own*
-// overflow-y-auto — not the outer, keyboard-unaware overlay — is what
-// scrolls the focused field into view, and (b) pad its bottom-anchored
-// wrapper up by `keyboardInset` so it lands above the keyboard instead of
-// being pinned to the (now-hidden) true bottom of the screen.
+// field is focused there.
+//
+// `keyboardInset` is the standard visualViewport formula for "how far the
+// visible viewport's bottom edge sits above the true window bottom" —
+// `window.innerHeight - vv.height - vv.offsetTop` — which is correct
+// whichever way a given browser handles the keyboard (shrinking
+// `vv.height`, or leaving height alone and scrolling via `vv.offsetTop`
+// instead; the first version here only accounted for the former, which
+// undercounted — or on some browsers zeroed out — the inset on the
+// latter). A consuming sheet must be positioned with plain CSS `fixed`
+// (not `absolute` inside some ancestor, and not flex `items-end` padding
+// tricks) for these numbers to mean anything: `bottom: keyboardInset`,
+// `maxHeight: visibleHeight * 0.9`. Fixed is also what actually escapes
+// this app's own layout — `DashboardLayout`'s `<main>` sits in a flex
+// column below a header bar and is `overflow-hidden`, so an `absolute
+// inset-0` descendant is both the wrong height (bounded by `<main>`, not
+// the true window) *and* has anything past that bound silently clipped
+// rather than merely mispositioned — which is why the very first attempt
+// at this rendered as "the popup isn't there at all" under a keyboard
+// rather than just badly placed.
 function useVisualViewportInset(): {
   visibleHeight: number;
   keyboardInset: number;
@@ -169,7 +182,10 @@ function useVisualViewportInset(): {
     const update = () => {
       setState({
         visibleHeight: vv.height,
-        keyboardInset: Math.max(0, window.innerHeight - vv.height),
+        keyboardInset: Math.max(
+          0,
+          window.innerHeight - vv.height - vv.offsetTop
+        ),
       });
     };
     update();
@@ -9791,15 +9807,22 @@ export default function IntelligenceMapping() {
         {/* ── Custom Marker Placement Modal ── */}
         {pendingLatLng && (
           <div
-            className="absolute inset-0 z-40 flex items-end justify-center"
+            // fixed, not absolute: this page's <main> (DashboardLayout) sits
+            // below a header bar in a flex column and is overflow-hidden, so
+            // an `absolute inset-0` here is both the wrong height (bounded
+            // by <main>, not the true window) and has anything beyond that
+            // bound silently clipped rather than merely mispositioned —
+            // which is what made an earlier attempt at keyboard-avoidance
+            // here render as "the popup isn't there at all" rather than
+            // badly placed. `fixed` escapes both problems by positioning
+            // against the real viewport directly, matching what
+            // useVisualViewportInset's numbers are computed against. Just a
+            // dimmed backdrop + click-to-close now — the sheet inside
+            // positions itself (see below), not flex/padding tricks.
+            className="fixed inset-0 z-40"
             style={{
               background: "rgba(0,0,0,0.6)",
               backdropFilter: "blur(4px)",
-              // Pushes the bottom-anchored sheet up above the on-screen
-              // keyboard — see useVisualViewportInset. Without this the
-              // sheet stays pinned to the true (keyboard-hidden) bottom of
-              // the screen instead of the visible one.
-              paddingBottom: vvKeyboardInset,
             }}
             onClick={() => {
               setPendingLatLng(null);
@@ -9807,8 +9830,11 @@ export default function IntelligenceMapping() {
             }}
           >
             <div
-              className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 overflow-y-auto"
-              style={{ maxHeight: Math.round(vvVisibleHeight * 0.9) }}
+              className="fixed left-0 right-0 mx-auto w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 overflow-y-auto"
+              style={{
+                bottom: vvKeyboardInset,
+                maxHeight: Math.round(vvVisibleHeight * 0.9),
+              }}
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}

@@ -1555,6 +1555,18 @@ export default function IntelligenceMapping() {
   const [rsInlineText, setRsInlineText] = useState("");
   const [rsInlineCins, setRsInlineCins] = useState<Set<string>>(new Set()); // selected CINs for the inline entry (multi-select)
   const rsInlineCinsRef = useRef<Set<string>>(new Set()); // ref so mutation callback always sees latest
+  // Whether any voice input contributed to the CURRENT (still-open) inline
+  // entry — set in handleVoiceTranscript, reset whenever the field opens or
+  // closes. Read (not state, to avoid an extra render on every tap) at
+  // submit time and threaded through to row.create as `viaVoice`, which
+  // appends a note to that row's row_created audit log entry — an
+  // evidentiary trail that this observation involved on-device
+  // transcription, per CLAUDE.md's audit trail convention. Deliberately a
+  // whole-row flag, not per-sentence: text in this field can mix typed and
+  // voice-inserted content in one submission, and "this row involved voice
+  // input" is the traceability that matters for review, not a precise
+  // split of which words came from which source.
+  const rsInlineUsedVoiceRef = useRef(false);
   const [rsCountdown, setRsCountdown] = useState<number>(30); // countdown seconds
   const rsInlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rsCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
@@ -2587,6 +2599,7 @@ export default function IntelligenceMapping() {
     cinsToAttach: Set<string> | null;
     timeOverride: string | null;
     rowDateOverride: string | null;
+    viaVoice: boolean;
   } | null>(null);
   const mergeEntitiesMut = trpc.intelligence.mergeEntities.useMutation();
   const markEntitiesNotDuplicateMut =
@@ -5181,6 +5194,7 @@ export default function IntelligenceMapping() {
     setRsInlineText("");
     setRsInlineCins(new Set());
     rsInlineCinsRef.current = new Set();
+    rsInlineUsedVoiceRef.current = false;
     setRsCountdown(30);
     setRsInlineTypingMode(false);
     setRsInlineUndoStack([]);
@@ -5189,16 +5203,19 @@ export default function IntelligenceMapping() {
   const submitInlineField = () => {
     if (!rsInlineLabel) return;
     const finalText = rsInlineText.trim() ? rsInlineText.trim() : rsInlineLabel;
-    // Capture CINs BEFORE closeInlineField clears the ref
+    // Capture CINs and the voice-usage flag BEFORE closeInlineField clears
+    // both refs.
     const cinsToAttach = new Set(rsInlineCinsRef.current);
     const timeOverride = mapQeTimeOverride;
     const rowDateOverride = mapQeRowDate;
+    const viaVoice = rsInlineUsedVoiceRef.current;
     closeInlineField();
     void addQuickRsEntryWithChecks(
       finalText,
       cinsToAttach,
       timeOverride,
-      rowDateOverride
+      rowDateOverride,
+      viaVoice
     );
   };
 
@@ -5251,28 +5268,119 @@ export default function IntelligenceMapping() {
     resetInlineTimer();
   };
 
+  // Voice-trigger for the "Vehicle arriving"/"Vehicle departing" chips —
+  // lets an officer say e.g. "1IZQ515 arriving" or "vehicle departing"
+  // instead of tapping the chip by hand. On a match this returns the exact
+  // same canned sentence the chip button itself would insert (reusing the
+  // occupant description and correct full/short address form via the same
+  // rsQeShortAddr/rsAddressMentionedData/shortenAlreadyMentionedNames the
+  // chip JSX below uses), rather than whatever words Whisper actually
+  // heard — keeping the wording consistent with every other way this
+  // sentence gets written, and correct even if Whisper mangled the rest of
+  // what was said. The rego match works against the ALREADY shortcut-
+  // expanded transcript (VoiceInputButton runs applyShortcutsToTranscript
+  // before this fires), so saying a target's own vehicle shortcut (e.g.
+  // "v1") is enough — its expansion already embeds the literal rego text.
+  // Only fires on an unambiguous match: either the rego is mentioned and
+  // identifies exactly one pending vehicle, or no rego is mentioned but
+  // there's exactly one pending chip of that kind anyway. Anything more
+  // ambiguous (or no trigger word at all) falls through to inserting the
+  // transcript verbatim, same as before this feature existed.
+  const detectVehicleEventVoiceTrigger = (
+    transcript: string
+  ): string | null => {
+    const normalized = transcript.toLowerCase();
+    if (!mapQeAddress) return null;
+
+    if (/\barriv(?:ing|ed|es)\b/.test(normalized)) {
+      const candidates = (rsPendingDepartures ?? []).filter(d =>
+        normalized.includes(d.rego.toLowerCase())
+      );
+      const match =
+        candidates.length === 1
+          ? candidates[0]
+          : candidates.length === 0 && rsPendingDepartures?.length === 1
+            ? rsPendingDepartures[0]
+            : null;
+      if (match) {
+        const occupantDesc = shortenAlreadyMentionedNames(
+          match.occupantDesc,
+          rsUsedBracketCodes
+        );
+        const arriveAddr = rsAddressMentionedData?.mentioned
+          ? rsQeShortAddr
+          : mapQeAddress;
+        return `Vehicle ${match.rego}, ${occupantDesc}, arrived at ${arriveAddr}`;
+      }
+    }
+
+    if (/\bdepart(?:ing|ed|s)\b/.test(normalized)) {
+      const arrivalsHere = (rsPendingArrivals ?? []).filter(
+        a =>
+          a.address.trim().toLowerCase() === rsQeShortAddr.trim().toLowerCase()
+      );
+      const candidates = arrivalsHere.filter(a =>
+        normalized.includes(a.rego.toLowerCase())
+      );
+      const match =
+        candidates.length === 1
+          ? candidates[0]
+          : candidates.length === 0 && arrivalsHere.length === 1
+            ? arrivalsHere[0]
+            : null;
+      if (match) {
+        const occupantDesc = shortenAlreadyMentionedNames(
+          match.occupantDesc,
+          rsUsedBracketCodes
+        );
+        return `Vehicle ${match.rego}, ${occupantDesc}, departed ${rsQeShortAddr} and continued via:`;
+      }
+    }
+
+    return null;
+  };
+
   // Inserts a voice transcript at the cursor (or appends if the field
   // isn't focused) — same before/after split + undo-stack pattern as the
   // shortcut-expansion handler below, just triggered by VoiceInputButton
   // instead of a keystroke. Shortcut expansion (mapQeShortcutMap) already
   // ran on the transcript before this fires — see VoiceInputButton's
   // shortcutMap prop.
-  const handleVoiceTranscript = (text: string) => {
+  const handleVoiceTranscript = (text: string, recordingStartedAt: Date) => {
+    rsInlineUsedVoiceRef.current = true;
+    const insertText = detectVehicleEventVoiceTrigger(text) ?? text;
     const textarea = rsInlineInputRef.current;
     const pos = textarea?.selectionStart ?? rsInlineText.length;
     const before = rsInlineText.slice(0, pos);
     const after = rsInlineText.slice(pos);
     const needsSpaceBefore = before.length > 0 && !/\s$/.test(before);
     const needsSpaceAfter = after.length > 0 && !/^\s/.test(after);
-    const newText = `${before}${needsSpaceBefore ? " " : ""}${text}${needsSpaceAfter ? " " : ""}${after}`;
+    const newText = `${before}${needsSpaceBefore ? " " : ""}${insertText}${needsSpaceAfter ? " " : ""}${after}`;
     pushInlineUndo(rsInlineText);
     setRsInlineText(newText);
     resetInlineTimer();
     requestAnimationFrame(() => {
-      const newPos = before.length + (needsSpaceBefore ? 1 : 0) + text.length;
+      const newPos =
+        before.length + (needsSpaceBefore ? 1 : 0) + insertText.length;
       textarea?.setSelectionRange(newPos, newPos);
       textarea?.focus();
     });
+
+    // Pre-fill the time picker from when recording actually started, not
+    // when transcription finished — same "Now" button logic (see the
+    // inline Time picker further down) but anchored to the moment the
+    // officer began speaking about the event rather than whenever WASM
+    // inference happens to wrap up, which can trail by several seconds.
+    const h24 = recordingStartedAt.getHours();
+    const min = recordingStartedAt.getMinutes();
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    const ampm = h24 < 12 ? "AM" : "PM";
+    setMapQeHour(String(h12));
+    setMapQeMinute(String(min).padStart(2, "0"));
+    setMapQePeriod(ampm);
+    setMapQeTimeOverride(
+      `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${ampm}`
+    );
   };
 
   const openInlineField = (label: string) => {
@@ -5281,6 +5389,7 @@ export default function IntelligenceMapping() {
     setRsInlineText("");
     setRsInlineCins(new Set());
     rsInlineCinsRef.current = new Set();
+    rsInlineUsedVoiceRef.current = false;
     setRsInlineTypingMode(false);
     setRsInlineUndoStack([]);
     // Focus the textarea after render
@@ -5327,6 +5436,7 @@ export default function IntelligenceMapping() {
         setRsInlineText("");
         setRsInlineCins(new Set());
         rsInlineCinsRef.current = new Set();
+        rsInlineUsedVoiceRef.current = false;
         setRsInlineTypingMode(false);
         setTimeout(() => rsInlineInputRef.current?.focus(), 80);
       }, 50);
@@ -5342,7 +5452,8 @@ export default function IntelligenceMapping() {
     observation: string,
     cinsToAttach?: Set<string> | null,
     timeOverride?: string | null,
-    rowDateOverride?: string | null
+    rowDateOverride?: string | null,
+    viaVoice?: boolean
   ) => {
     if (!rsSelectedSheetId) return;
     let timeStr: string;
@@ -5384,6 +5495,7 @@ export default function IntelligenceMapping() {
         timeMinutes: totalMins,
         observation,
         rowDate: rowDateOverride ?? undefined,
+        viaVoice: viaVoice || undefined,
       },
       {
         onSuccess: (data, vars) => {
@@ -5466,10 +5578,17 @@ export default function IntelligenceMapping() {
     observation: string,
     cinsToAttach?: Set<string> | null,
     timeOverride?: string | null,
-    rowDateOverride?: string | null
+    rowDateOverride?: string | null,
+    viaVoice?: boolean
   ) => {
     if (!rsSelectedSheetId || !observation.trim()) {
-      addQuickRsEntry(observation, cinsToAttach, timeOverride, rowDateOverride);
+      addQuickRsEntry(
+        observation,
+        cinsToAttach,
+        timeOverride,
+        rowDateOverride,
+        viaVoice
+      );
       return;
     }
 
@@ -5507,7 +5626,13 @@ export default function IntelligenceMapping() {
     }
 
     if (queue.length === 0) {
-      addQuickRsEntry(observation, cinsToAttach, timeOverride, rowDateOverride);
+      addQuickRsEntry(
+        observation,
+        cinsToAttach,
+        timeOverride,
+        rowDateOverride,
+        viaVoice
+      );
       return;
     }
     qePendingEntryRef.current = {
@@ -5515,6 +5640,7 @@ export default function IntelligenceMapping() {
       cinsToAttach: cinsToAttach ?? null,
       timeOverride: timeOverride ?? null,
       rowDateOverride: rowDateOverride ?? null,
+      viaVoice: viaVoice ?? false,
     };
     setQeDupeQueue(queue);
     setQeDupeIndex(0);
@@ -5537,7 +5663,8 @@ export default function IntelligenceMapping() {
           pending.observation,
           pending.cinsToAttach,
           pending.timeOverride,
-          pending.rowDateOverride
+          pending.rowDateOverride,
+          pending.viaVoice
         );
       }
     }

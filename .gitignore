@@ -132,3 +132,8 @@ server/externalIntel/models/eng.traineddata
 /client/public/onnx-wasm/
 /client/public/models/*/
 !/client/public/models/README.md
+
+# Playwright (see e2e/README.md) — run artifacts, not source
+/test-results/
+/playwright-report/
+/playwright/.cache/

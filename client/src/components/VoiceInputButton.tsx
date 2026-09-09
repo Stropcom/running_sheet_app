@@ -27,7 +27,12 @@ export function VoiceInputButton({
   shortcutMap,
   className = "",
 }: {
-  onTranscript: (text: string) => void;
+  /** recordingStartedAt is when the mic actually started capturing — the
+   * moment the officer began speaking about the event — not when
+   * transcription finished (which can trail the real event by several
+   * seconds once WASM inference is factored in). Callers that pre-fill a
+   * time field from voice input should use this, not `new Date()`. */
+  onTranscript: (text: string, recordingStartedAt: Date) => void;
   /** Same trigger->expansion map already used for typed shortcuts in this
    * form (e.g. mapQeShortcutMap) — applied as a single batch pass over the
    * transcript before onTranscript fires. Omit to skip expansion. */
@@ -38,6 +43,7 @@ export function VoiceInputButton({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const recordingStartedAtRef = useRef<Date | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,7 +92,7 @@ export function VoiceInputButton({
           ? applyShortcutsToTranscript(raw, shortcutMap)
           : raw;
         if (text.trim()) {
-          onTranscript(text);
+          onTranscript(text, recordingStartedAtRef.current ?? new Date());
         } else {
           toast.error("Didn't catch that — try again");
         }
@@ -104,6 +110,7 @@ export function VoiceInputButton({
       }
     };
     mediaRecorderRef.current = recorder;
+    recordingStartedAtRef.current = new Date();
     recorder.start();
     setState("recording");
   };

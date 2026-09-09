@@ -1885,6 +1885,21 @@ export default function IntelligenceMapping() {
   // other — see the Follow-me/Heading-up buttons below.
   const [headingUpMode, setHeadingUpMode] = useState(false);
   const headingUpModeRef = useRef(false);
+  // True while the user has an active pan/zoom gesture on the map (wheel,
+  // pinch, drag) — see the wheel/touch/dragstart listeners in
+  // handleMapReady. Follow-me's camera tween checks this before starting a
+  // new segment and cancels any segment already in flight the instant a
+  // gesture begins, because continuously calling map.setCenter() every
+  // animation frame otherwise fights the browser's own gesture handling —
+  // reported as "can't zoom in/out while Follow Me is on", and a pinch
+  // genuinely doesn't register as a zoom change at all if our own script
+  // is fighting it for control of the camera on every frame. Clears itself
+  // a short quiet period after the last gesture event, so releasing a
+  // pinch/drag doesn't immediately yank the camera back mid-release.
+  const userMapInteractingRef = useRef(false);
+  const userMapInteractingTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
   // ref for long-press on mobile
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -3350,7 +3365,11 @@ export default function IntelligenceMapping() {
     );
     if (ownEntry) {
       ownPositionRef.current = { lat: ownEntry.lat, lng: ownEntry.lng };
-      if (followModeRef.current && mapRef.current) {
+      if (
+        followModeRef.current &&
+        mapRef.current &&
+        !userMapInteractingRef.current
+      ) {
         // Tween the camera too, not just panTo() straight to the new fix —
         // panTo()'s own built-in animation is a short, fixed-duration ease
         // fired fresh every poll tick, so it finishes and sits still, then
@@ -3359,7 +3378,11 @@ export default function IntelligenceMapping() {
         // same engine here keeps the camera moving continuously in step
         // with the pin it's following, using setCenter() (not panTo())
         // each frame so we're not fighting Google's own separate
-        // animation on top of ours.
+        // animation on top of ours. Skipped entirely while the user has an
+        // active pan/zoom gesture (userMapInteractingRef) — see that ref's
+        // own comment for why: continuously calling setCenter() otherwise
+        // fights native gesture handling and a pinch-zoom simply doesn't
+        // register at all.
         const map = mapRef.current;
         animateLatLngTo(
           "own",
@@ -3543,6 +3566,37 @@ export default function IntelligenceMapping() {
         const h = map.getHeading() ?? 0;
         setMapHeading(h);
         mapHeadingRef.current = h;
+      });
+
+      // Let a user gesture (wheel/pinch zoom, drag) immediately take over
+      // from Follow-me's own camera tween instead of fighting it — see
+      // userMapInteractingRef's own comment. dragstart only fires for a
+      // real user-initiated drag (not our own programmatic setCenter
+      // calls), so it's a clean signal on top of the raw wheel/touch
+      // listeners, which are needed because Maps doesn't expose an
+      // equivalent start/end event pair for zoom gestures.
+      const markUserMapInteracting = () => {
+        userMapInteractingRef.current = true;
+        const frame = mapCenterAnimRef.current.get("own");
+        if (frame != null) cancelAnimationFrame(frame);
+        mapCenterAnimRef.current.delete("own");
+        if (userMapInteractingTimeoutRef.current) {
+          clearTimeout(userMapInteractingTimeoutRef.current);
+        }
+        userMapInteractingTimeoutRef.current = setTimeout(() => {
+          userMapInteractingRef.current = false;
+        }, 500);
+      };
+      map.addListener("dragstart", markUserMapInteracting);
+      const mapDiv = map.getDiv();
+      mapDiv.addEventListener("wheel", markUserMapInteracting, {
+        passive: true,
+      });
+      mapDiv.addEventListener("touchstart", markUserMapInteracting, {
+        passive: true,
+      });
+      mapDiv.addEventListener("touchmove", markUserMapInteracting, {
+        passive: true,
       });
 
       // Persist map type (roadmap / satellite) whenever the user switches

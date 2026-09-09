@@ -107,13 +107,18 @@ const MAP_ID_RASTER = "1c8d997128c67d9fa74cfa85"; // "Runlog Map" — raster, gu
 // "Resolved" note on that in CLAUDE.md, fixed via DivIconOverlay regardless
 // of rendering mode). Default is vector: 3D tilt, North-Up, and manual
 // rotate-gesture are vector-only features and the deliberate choice is to
-// have every officer get them by default, not just whoever happens to have
-// an old localStorage value set. Not fully hardcoded, though: a
-// ?mapRender=vector or ?mapRender=raster URL param (persisted per-browser
-// via localStorage once set) is honoured for a quick one-off check without
-// a code change, and an explicit VITE_GOOGLE_MAPS_MAP_ID env var, if ever
-// set, overrides both entirely (e.g. to pin a specific ID fleet-wide).
-const MAP_RENDER_STORAGE_KEY = "runlog_map_render_pref";
+// have every officer get them by default. That intent was undermined the
+// first time this shipped, though: the storage key below was left
+// unchanged from the old toggle, so anyone who'd used it before it was
+// removed (and landed on "raster") kept silently getting raster forever
+// after — heading-up mode would simply never rotate the map for them, with
+// no visible error, since it's gated the same way 3D/North-Up already are.
+// Renamed (v2) so any such stale value is never read again; a fresh
+// ?mapRender=raster URL override still works exactly the same going
+// forward for a genuine one-off check, and an explicit
+// VITE_GOOGLE_MAPS_MAP_ID env var, if ever set, overrides both entirely
+// (e.g. to pin a specific ID fleet-wide).
+const MAP_RENDER_STORAGE_KEY = "runlog_map_render_pref_v2";
 export type MapRenderPreference = "vector" | "raster";
 
 export function getMapRenderPreference(): MapRenderPreference {

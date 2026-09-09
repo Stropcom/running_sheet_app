@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `onFoot` boolean DEFAULT false NOT NULL;

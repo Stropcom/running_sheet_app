@@ -123,6 +123,21 @@ describe("extractEntitiesFromText — vehicle vs address disambiguation", () => 
     expect(entities.find(e => e.rawShortForm === "UCO1")).toBeUndefined();
   });
 
+  it("classifies a mixed-case business name as a business, not a vehicle (the Coles bug)", () => {
+    // Reported bug: "...did general grocery shopping Coles, Lakelands
+    // Shopping Centre (Coles)." — "Coles" is Title Case (not ALL CAPS,
+    // not digits), but it still matches WA_REGO's personalised-plate
+    // catch-all (`^[A-Z0-9]{2,7}$`) once uppercased, and the guard meant
+    // to exclude ALL-CAPS person names from that branch didn't exclude
+    // Title Case business names the same way. Real rego brackets are
+    // always ALL CAPS in these narratives, never Title Case.
+    const text =
+      "Between this logged time and 8:07pm SANDERS did general grocery shopping Coles, Lakelands Shopping Centre (Coles).";
+    const entities = extractEntitiesFromText(text);
+    const coles = entities.find(e => e.rawShortForm === "Coles");
+    expect(coles?.type).toBe("business");
+  });
+
   it("still classifies a real address after a leading sentence correctly", () => {
     // Non-regression: the address check must still fire for an address
     // whose own street-type words are in the same sentence as the bracket,
@@ -191,5 +206,29 @@ describe("extractEntitiesFromText — vehicle description reconstruction", () =>
       "1FRU77 Silver Mercedes Benz Sprinter station sedan"
     );
     expect(second?.shortForm).toBe("1HIB84 White Isuzu D-MAX Utility");
+  });
+
+  it("doesn't bleed a bracket's fullDescription capture back across a sentence boundary into an earlier, unrelated bare mention (the Intel folder corruption bug)", () => {
+    // Reported: a row's first sentence bare-mentions a rego with no bracket
+    // ("...towards Vehicle 1IZQ515."), then a later sentence brackets the
+    // same rego ("...boot of Vehicle 1IZQ515 (Vehicle 1IZQ515)"). The
+    // bracket regex's capture group has no sentence-boundary anchor, so
+    // fullDescription ballooned backward across the full stop and picked up
+    // the first sentence's bare mention too. Downstream description
+    // reconstruction then found the FIRST (wrong) occurrence of the rego
+    // inside that bled text via indexOf, producing a garbled description
+    // built from unrelated narrative prose ("1IZQ515 car park towards
+    // Vehicle") that was long enough to win the merge against — and
+    // overwrite — the vehicle's real, already-on-file description in the
+    // Intelligence folder / Target Registry.
+    const text =
+      "SANDERS exited Lakelands Shopping Centre and walked through the car park towards Vehicle 1IZQ515. Placed the shopping in the boot of Vehicle 1IZQ515 (Vehicle 1IZQ515), and entered the drivers seat.";
+    const entities = extractEntitiesFromText(text);
+    expect(entities).toHaveLength(1);
+    expect(entities[0].fullDescription).toBe(
+      "Placed the shopping in the boot of Vehicle 1IZQ515"
+    );
+    expect(entities[0].shortForm).not.toContain("car park");
+    expect(entities[0].shortForm).not.toContain("towards");
   });
 });

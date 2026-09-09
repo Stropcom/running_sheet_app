@@ -88,11 +88,14 @@ import { loadGoogleMaps } from "@/lib/googleMaps";
 // they're hardcoded here rather than requiring an env var/redeploy just to
 // pick one.
 //
-// Both exist side by side while we determine whether the marker/label
+// Both exist side by side so getMapRenderPreference() can pick between them
+// (default vector — see below). Originally added to chase a marker/label
 // zoom-drift bug (AdvancedMarkerElement positioning imprecision, worse
-// zoomed out, resolving back to accurate near the placement zoom level) is
-// specific to DEMO_MAP_ID or inherent to vector rendering in general — a
-// question a real vector Map ID can only answer by being tested live.
+// zoomed out) that turned out to be present under both IDs — i.e. inherent
+// to AdvancedMarkerElement itself, not a rendering-mode/Map-ID issue — and
+// is now resolved via DivIconOverlay (see CLAUDE.md), so both IDs are kept
+// for the actual vector-vs-raster choice (3D tilt, rotation, etc. are
+// vector-only), not for bug-chasing.
 // Circle/Rectangle/Polygon/Polyline overlays (map shapes) render through a
 // different, older system unaffected either way, which is why only
 // markers/labels ever visibly drifted while zooming and shapes never did.
@@ -101,14 +104,21 @@ const MAP_ID_RASTER = "1c8d997128c67d9fa74cfa85"; // "Runlog Map" — raster, gu
 
 // Vector vs raster was previously a live user-facing toggle (to compare the
 // two while chasing the AdvancedMarkerElement zoom-drift bug — see the
-// "Resolved" note on that in CLAUDE.md) but raster is the settled choice
-// now, so the Map Settings switch has been removed. This still isn't fully
-// hardcoded to raster, though: a ?mapRender=vector or ?mapRender=raster URL
-// param (persisted per-browser via localStorage once set) is honoured for a
-// quick one-off check without a code change, and an explicit
+// "Resolved" note on that in CLAUDE.md, fixed via DivIconOverlay regardless
+// of rendering mode). Default is vector: 3D tilt, North-Up, and manual
+// rotate-gesture are vector-only features and the deliberate choice is to
+// have every officer get them by default. That intent was undermined the
+// first time this shipped, though: the storage key below was left
+// unchanged from the old toggle, so anyone who'd used it before it was
+// removed (and landed on "raster") kept silently getting raster forever
+// after — heading-up mode would simply never rotate the map for them, with
+// no visible error, since it's gated the same way 3D/North-Up already are.
+// Renamed (v2) so any such stale value is never read again; a fresh
+// ?mapRender=raster URL override still works exactly the same going
+// forward for a genuine one-off check, and an explicit
 // VITE_GOOGLE_MAPS_MAP_ID env var, if ever set, overrides both entirely
 // (e.g. to pin a specific ID fleet-wide).
-const MAP_RENDER_STORAGE_KEY = "runlog_map_render_pref";
+const MAP_RENDER_STORAGE_KEY = "runlog_map_render_pref_v2";
 export type MapRenderPreference = "vector" | "raster";
 
 export function getMapRenderPreference(): MapRenderPreference {
@@ -126,7 +136,7 @@ export function getMapRenderPreference(): MapRenderPreference {
     /* localStorage/URL access can throw in some embedded contexts — fall
        back to the default below rather than breaking map load over it. */
   }
-  return "raster";
+  return "vector";
 }
 
 function resolveMapId(): string {

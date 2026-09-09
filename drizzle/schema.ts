@@ -45,6 +45,40 @@ export const users = mysqlTable("users", {
   rosterShiftNotificationsEnabled: boolean("rosterShiftNotificationsEnabled")
     .default(true)
     .notNull(),
+  // Live team map: this officer has manually flagged themselves as out of
+  // the vehicle and on foot (see Intelligence Mapping's pin-customise
+  // popup). Swaps the pin's heading arrow for a walking glyph. Broadcast to
+  // every viewer's map, not just the officer's own — teammates need to see
+  // it too, not just the officer themselves — so it lives here rather than
+  // client-only. Always resets to false automatically once speed exceeds
+  // 15 km/h (see the auto-revert logic in IntelligenceMapping.tsx), not
+  // just on manual toggle-off.
+  onFoot: boolean("onFoot").default(false).notNull(),
+  // Pin-customise popup, on-foot glyph only (see IntelligenceMapping.tsx's
+  // createUserPinElement) — gender/skin-tone modifiers applied via Unicode
+  // ZWJ sequences on top of the base 🧍/🚶/🏃 glyph. "neutral"/"default"
+  // reproduce today's plain glyph exactly, so existing users are unaffected.
+  pinGender: mysqlEnum("pinGender", ["neutral", "male", "female"])
+    .default("neutral")
+    .notNull(),
+  pinSkinTone: mysqlEnum("pinSkinTone", ["default", "brown"])
+    .default("default")
+    .notNull(),
+  // Pin-customise popup, Wheels mode only — swaps the plain arrow/rings for
+  // a side-view vehicle emoji, mirrored east/west like the on-foot glyph
+  // rather than rotated (a side-on emoji "tips over" at any heading that
+  // isn't due east/west — see the on-foot glyph's own comment). "arrow"
+  // keeps today's SVG arrow + directional sonar rings unchanged.
+  pinVehicleIcon: mysqlEnum("pinVehicleIcon", [
+    "arrow",
+    "car",
+    "racing_car",
+    "motorcycle",
+    "truck",
+    "police_car",
+  ])
+    .default("arrow")
+    .notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),

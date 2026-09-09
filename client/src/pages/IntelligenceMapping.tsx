@@ -40,7 +40,7 @@ import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
-import { MapView, getMapRenderPreference } from "@/components/Map";
+import { MapView } from "@/components/Map";
 import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
 import { UcoGuideMapOverlay } from "@/components/UcoGuideMapOverlay";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
@@ -112,6 +112,7 @@ import {
   Search,
   LocateFixed,
   Navigation2,
+  Compass,
   ExternalLink,
   Settings,
   Clock,
@@ -140,6 +141,62 @@ function useIsTouchDevice(): boolean {
       : false
   );
   return isTouch;
+}
+
+// On-screen keyboard support for full-screen bottom-sheet modals (map
+// marker popup etc.). Mobile Safari/Chrome don't shrink the layout
+// viewport when the keyboard opens — only `window.visualViewport` does —
+// so a sheet sized/anchored off `100vh`/`inset-0` alone stays full height
+// and the keyboard simply overlaps its lower portion, hiding whatever
+// field is focused there.
+//
+// `keyboardInset` is the standard visualViewport formula for "how far the
+// visible viewport's bottom edge sits above the true window bottom" —
+// `window.innerHeight - vv.height - vv.offsetTop` — which is correct
+// whichever way a given browser handles the keyboard (shrinking
+// `vv.height`, or leaving height alone and scrolling via `vv.offsetTop`
+// instead; the first version here only accounted for the former, which
+// undercounted — or on some browsers zeroed out — the inset on the
+// latter). A consuming sheet must be positioned with plain CSS `fixed`
+// (not `absolute` inside some ancestor, and not flex `items-end` padding
+// tricks) for these numbers to mean anything: `bottom: keyboardInset`,
+// `maxHeight: visibleHeight * 0.9`. Fixed is also what actually escapes
+// this app's own layout — `DashboardLayout`'s `<main>` sits in a flex
+// column below a header bar and is `overflow-hidden`, so an `absolute
+// inset-0` descendant is both the wrong height (bounded by `<main>`, not
+// the true window) *and* has anything past that bound silently clipped
+// rather than merely mispositioned — which is why the very first attempt
+// at this rendered as "the popup isn't there at all" under a keyboard
+// rather than just badly placed.
+function useVisualViewportInset(): {
+  visibleHeight: number;
+  keyboardInset: number;
+} {
+  const [state, setState] = useState(() => ({
+    visibleHeight: typeof window !== "undefined" ? window.innerHeight : 800,
+    keyboardInset: 0,
+  }));
+  useEffect(() => {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    if (!vv) return;
+    const update = () => {
+      setState({
+        visibleHeight: vv.height,
+        keyboardInset: Math.max(
+          0,
+          window.innerHeight - vv.height - vv.offsetTop
+        ),
+      });
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+  return state;
 }
 
 // ── Perth date helpers (shared with SheetDetail logic) ───────────────────────
@@ -217,6 +274,32 @@ interface LiveUser {
   heading: number | null;
   operationIds: number[];
   updatedAt: number;
+  onFoot: boolean;
+  pinGender: "neutral" | "male" | "female";
+  pinSkinTone: "default" | "brown";
+  pinVehicleIcon:
+    | "arrow"
+    | "car"
+    | "racing_car"
+    | "motorcycle"
+    | "truck"
+    | "police_car";
+}
+
+// Builds the on-foot glyph (🧍/🚶/🏃) with optional skin-tone + gender
+// Unicode modifiers layered on — correct ZWJ sequence order is
+// <base><skin-tone><ZWJ><gender><VS16>. "default"/"neutral" produce the
+// bare base glyph, identical to the pre-customisation behaviour.
+function buildOnFootGlyph(
+  base: string,
+  gender: LiveUser["pinGender"],
+  skinTone: LiveUser["pinSkinTone"]
+): string {
+  let glyph = base;
+  if (skinTone === "brown") glyph += "\u{1F3FD}"; // medium skin tone
+  if (gender === "male") glyph += "‍♂️";
+  else if (gender === "female") glyph += "‍♀️";
+  return glyph;
 }
 
 // ── Quick-link config ──────────────────────────────────────────────────────────
@@ -466,6 +549,21 @@ const TEAM_COLOURS: Record<string, string> = {
 
 function getTeamColour(team: string | null): string {
   return TEAM_COLOURS[team ?? "null"] ?? "#6b7280";
+}
+
+// Live team pin — directional "sonar" ring cadence once a member is
+// travelling over 80 km/h (see createUserPinElement). Faster tiers pulse
+// quicker; below 80 km/h no rings show at all. Ring shape/colour never
+// changes, only how fast teamPinSonarRing (index.css) repeats.
+const HIGH_SPEED_RING_TIERS: Array<{ minKmh: number; durationMs: number }> = [
+  { minKmh: 120, durationMs: 1500 },
+  { minKmh: 100, durationMs: 2000 },
+  { minKmh: 80, durationMs: 2600 },
+];
+
+function getSonarRingDurationMs(speedKmh: number): number | null {
+  const tier = HIGH_SPEED_RING_TIERS.find(t => speedKmh >= t.minKmh);
+  return tier?.durationMs ?? null;
 }
 
 const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
@@ -929,6 +1027,110 @@ function haversineMetres(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Shared tween engine behind both animateLiveMarkerTo (a pin's position)
+// and the follow-mode camera smoothing in the live-marker effect (the
+// map's centre) — linearly interpolates a {lat,lng} from wherever
+// `getCurrent()` says it actually is right now to `to`, via
+// requestAnimationFrame, calling `setPosition` every frame. Cancels any
+// tween already in flight for the same `key` (a fresh update landing
+// mid-animation) via the caller-supplied animRef, so the two don't fight
+// each other.
+//
+// Two things matter for this to read as one continuous motion rather than
+// a repeating stop-start stutter, both learned the hard way from an
+// initial version of the pin tween that used a fixed-duration ease-out:
+//
+//  1. Linear, not eased. An ease-out tween decelerates to a dead stop at
+//     t=1, right as the NEXT tween needs to start again at full speed
+//     (ease-out's velocity at t=0 is steep) — chaining ease-out segments
+//     back to back creates a real velocity discontinuity at every
+//     boundary, which reads as a little jerk even when the timing lines
+//     up perfectly. Constant velocity per segment keeps speed roughly
+//     continuous across boundaries instead.
+//  2. Duration matched to the ACTUAL elapsed time since the last update
+//     for this key (via lastUpdateRef), not a fixed guess. The poll fires
+//     nominally every 1s, but tab throttling and network jitter routinely
+//     widen that gap — a fixed shorter duration finishes early and leaves
+//     the thing being animated sitting completely motionless until the
+//     next real update lands, which is a genuine full stop, not just a
+//     perceived one.
+//
+// A large jump (a device reconnecting far from its last known position, a
+// corrected/stale fix) still snaps instantly instead of tweening —
+// animating that slowly would look like teleporting in slow motion, not
+// smooth continuous travel.
+function animateLatLngTo(
+  key: string,
+  getCurrent: () => google.maps.LatLngLiteral,
+  setPosition: (p: google.maps.LatLngLiteral) => void,
+  to: google.maps.LatLngLiteral,
+  animRef: { current: Map<string, number> },
+  lastUpdateRef: { current: Map<string, number> },
+  snapDistanceM = 150
+): void {
+  const existingFrame = animRef.current.get(key);
+  if (existingFrame != null) cancelAnimationFrame(existingFrame);
+
+  const from = getCurrent();
+  const distanceM = haversineMetres(from.lat, from.lng, to.lat, to.lng);
+  const now = performance.now();
+  const lastUpdateAt = lastUpdateRef.current.get(key);
+  lastUpdateRef.current.set(key, now);
+
+  if (distanceM > snapDistanceM) {
+    setPosition(to);
+    animRef.current.delete(key);
+    return;
+  }
+
+  // Clamped so a very first update (no prior timestamp) falls back to the
+  // nominal 1s poll cadence, and any freak multi-second gap (e.g. the tab
+  // was backgrounded) doesn't produce an absurdly slow crawl.
+  const durationMs =
+    lastUpdateAt != null
+      ? Math.min(Math.max(now - lastUpdateAt, 400), 3000)
+      : 1000;
+
+  const startTime = now;
+  const step = (frameNow: number) => {
+    const t = Math.min(1, (frameNow - startTime) / durationMs);
+    setPosition({
+      lat: from.lat + (to.lat - from.lat) * t,
+      lng: from.lng + (to.lng - from.lng) * t,
+    });
+    if (t < 1) {
+      animRef.current.set(key, requestAnimationFrame(step));
+    } else {
+      animRef.current.delete(key);
+    }
+  };
+  animRef.current.set(key, requestAnimationFrame(step));
+}
+
+// Eases a live team pin's DivIconOverlay smoothly from its current position
+// to a new one, instead of jumping instantly — the underlying GPS fix only
+// arrives once a second (see the userLocations query's refetchInterval), so
+// without this every pin visibly hops on each poll tick. See
+// animateLatLngTo above for how and why.
+function animateLiveMarkerTo(
+  marker: DivIconOverlay,
+  pinKey: string,
+  to: google.maps.LatLngLiteral,
+  animRef: { current: Map<string, number> },
+  lastUpdateRef: { current: Map<string, number> }
+): void {
+  animateLatLngTo(
+    pinKey,
+    () => marker.position,
+    p => {
+      marker.position = p;
+    },
+    to,
+    animRef,
+    lastUpdateRef
+  );
+}
+
 // Best-effort strip of role descriptors ("driver", "front passenger",
 // "sole occupant", etc.) from a vehicle occupantDesc string (e.g. "HOGAN
 // driver, Denise HOLLY (HOLLY) front passenger") down to just the names
@@ -1168,15 +1370,6 @@ export default function IntelligenceMapping() {
     }
     return false;
   });
-  // Which Google Maps Map ID (vector vs raster) this device renders the map
-  // with — see Map.tsx. Raster is now the only mode reachable from the UI
-  // (see the removed Map Settings toggle), but this still reads whatever a
-  // device actually has (a stray "vector" left over in localStorage, or the
-  // ?mapRender= URL override) so the 3D tilt / rotation buttons below stay
-  // correctly disabled rather than assuming raster unconditionally.
-  const [mapRenderPref] = useState<"vector" | "raster">(() =>
-    getMapRenderPreference()
-  );
   // 3D (tilt) view — only available under vector rendering. Kept in sync
   // with the map's actual tilt via a "tilt_changed" listener (see
   // handleMapReady) so the button reflects reality even if a gesture
@@ -1187,6 +1380,33 @@ export default function IntelligenceMapping() {
   // which has no reason to auto-reset, so a "North Up" button re-aligns
   // it on demand. Kept in sync via a "heading_changed" listener.
   const [mapHeading, setMapHeading] = useState(0);
+  // Ref mirror of mapHeading for createUserPinElement, which reads it on
+  // every marker redraw (not a React dependency — the heading-group's own
+  // rotation needs to account for the map's current on-screen orientation
+  // without forcing every pin to re-render on every heading_changed tick).
+  const mapHeadingRef = useRef(0);
+  // Ground truth for whether the map can actually rotate. Map.tsx's
+  // getMapRenderPreference() (localStorage/URL) only decides which Map ID
+  // gets *requested* — Google can still silently instantiate a raster map
+  // regardless of that request (e.g. WebGL unavailable on the device, or
+  // the vector Map ID failing to load), in which case .setHeading()
+  // becomes a harmless no-op with no error. That's exactly the earlier
+  // bug's failure mode (see MAP_RENDER_STORAGE_KEY's own history in
+  // Map.tsx) recurring for a different underlying reason:
+  // the arrow/pill still rotate correctly (pure CSS, computed from
+  // mapHeadingRef vs. live GPS heading) since that math doesn't care
+  // whether the map itself actually turned, so only the map background
+  // visibly fails to follow — which reads as "heading-up doesn't work"
+  // with no other symptom. Synced from the real map.getRenderingType()
+  // via a "renderingtype_changed" listener in handleMapReady, not
+  // inferred. actualRenderingTypeRef is the one the live-marker effect's
+  // setHeading() gate uses (a ref, not the state, since that effect reads
+  // refs rather than depending on renders); isMapActuallyVector is the
+  // state the UI buttons below read for their disabled/title text.
+  const actualRenderingTypeRef = useRef<"VECTOR" | "RASTER" | "UNINITIALIZED">(
+    "UNINITIALIZED"
+  );
+  const [isMapActuallyVector, setIsMapActuallyVector] = useState(false);
   // Nearmap aerial-imagery overlay toggle — a google.maps.ImageMapType
   // pushed onto map.overlayMapTypes, requesting tiles from our own
   // /api/nearmap/tile proxy (server/nearmapProxy.ts) rather than Nearmap
@@ -1293,24 +1513,6 @@ export default function IntelligenceMapping() {
     ? panelWidthProfile
     : panelWidthNormal;
 
-  // Draggable pill bar vertical position (percentage from top, 5-95)
-  const [pillBarTop, setPillBarTop] = useState<number>(() => {
-    try {
-      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
-      if (s) {
-        const v = JSON.parse(s).pillBarTop;
-        if (typeof v === "number") return v;
-      }
-    } catch {
-      /* ignore */
-    }
-    return 90;
-  });
-  const pillBarDraggingRef = useRef(false);
-  const pillBarLongPressRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  );
-  const pillBarIsDraggingRef = useRef(false);
   const [rsSelectedOpId, setRsSelectedOpId] = useState<number | null>(() => {
     try {
       const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
@@ -1344,6 +1546,8 @@ export default function IntelligenceMapping() {
     time: string;
   } | null>(null);
   const isTouchDevice = useIsTouchDevice();
+  const { visibleHeight: vvVisibleHeight, keyboardInset: vvKeyboardInset } =
+    useVisualViewportInset();
 
   // Inline observation field state
   const [rsInlineLabel, setRsInlineLabel] = useState<string | null>(null); // null = closed
@@ -1770,6 +1974,29 @@ export default function IntelligenceMapping() {
   const followModeRef = useRef(false);
   // Own position ref — updated whenever liveUsers refreshes
   const ownPositionRef = useRef<{ lat: number; lng: number } | null>(null);
+  // Heading-up mode: continuously rotates the map (vector-only) to match
+  // this device's own live travel heading, so "up" on screen means "the
+  // way I'm going" rather than true north. Only meaningful alongside
+  // Follow Me (rotating around a point that isn't centred on you reads as
+  // the map spinning for no reason), so toggling one on/off follows the
+  // other — see the Follow-me/Heading-up buttons below.
+  const [headingUpMode, setHeadingUpMode] = useState(false);
+  const headingUpModeRef = useRef(false);
+  // True while the user has an active pan/zoom gesture on the map (wheel,
+  // pinch, drag) — see the wheel/touch/dragstart listeners in
+  // handleMapReady. Follow-me's camera tween checks this before starting a
+  // new segment and cancels any segment already in flight the instant a
+  // gesture begins, because continuously calling map.setCenter() every
+  // animation frame otherwise fights the browser's own gesture handling —
+  // reported as "can't zoom in/out while Follow Me is on", and a pinch
+  // genuinely doesn't register as a zoom change at all if our own script
+  // is fighting it for control of the camera on every frame. Clears itself
+  // a short quiet period after the last gesture event, so releasing a
+  // pinch/drag doesn't immediately yank the camera back mid-release.
+  const userMapInteractingRef = useRef(false);
+  const userMapInteractingTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
 
   // ref for long-press on mobile
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1848,6 +2075,29 @@ export default function IntelligenceMapping() {
   const intelPinImgRefs = useRef<Map<string, HTMLImageElement>>(new Map());
   // Key: "userId_deviceId" for per-device pins
   const liveMarkersRef = useRef<Map<string, DivIconOverlay>>(new Map());
+  // Key: "userId_deviceId" -> the requestAnimationFrame id currently
+  // tweening that pin's position (see animateLiveMarkerTo below). Lets a
+  // fresh position update cancel an in-flight tween instead of the two
+  // fighting each other when a new liveUsers poll lands mid-animation.
+  const liveMarkerAnimRef = useRef<Map<string, number>>(new Map());
+  // Key: "userId_deviceId" -> performance.now() timestamp of the last
+  // position update for that pin, so animateLiveMarkerTo can match each
+  // tween's duration to the actual elapsed time rather than a fixed guess.
+  const liveMarkerLastUpdateRef = useRef<Map<string, number>>(new Map());
+  // Same animateLatLngTo bookkeeping as the two refs above, but for the
+  // Follow-me camera itself rather than any one pin — see the follow-mode
+  // block in the live-marker effect below. Only one map exists, so a
+  // single fixed "own" key is enough (no per-pin keying needed).
+  const mapCenterAnimRef = useRef<Map<string, number>>(new Map());
+  const mapCenterLastUpdateRef = useRef<Map<string, number>>(new Map());
+  // Key: "userId_deviceId" -> which of the pin's three motion states it's
+  // currently in ("moving" | "short" | "long", see createUserPinElement)
+  // and when that state began. Lets "just stopped" settle to "stopped
+  // 10s+" purely from the liveUsers poll (already ~1s) re-running this
+  // check, no separate timer needed.
+  const motionStateRef = useRef<
+    Map<string, { state: "moving" | "short" | "long"; since: number }>
+  >(new Map());
   // Key: userId — one trace polyline per traced officer
   const traceLinesRef = useRef<Map<number, google.maps.Polyline>>(new Map());
   // Remembers each user's last-known team so a trace line keeps its colour
@@ -1904,7 +2154,6 @@ export default function IntelligenceMapping() {
           collapsedTeams: Array.from(collapsedTeams),
           rsQeExpanded,
           mapDarkMode,
-          pillBarTop,
           panelWidthNormal,
           panelWidthProfile,
         })
@@ -1923,7 +2172,6 @@ export default function IntelligenceMapping() {
     collapsedTeams,
     rsQeExpanded,
     mapDarkMode,
-    pillBarTop,
     panelWidthNormal,
     panelWidthProfile,
   ]);
@@ -1933,6 +2181,15 @@ export default function IntelligenceMapping() {
     if (!mapReady || !mapRef.current) return;
     const map = mapRef.current;
     const listener = map.addListener("idle", () => {
+      // Follow-me continuously re-centres the map on live GPS updates (see
+      // the camera-smoothing effect below), which fires this same "idle"
+      // event on every animation frame of that tween — up to ~60x/sec, not
+      // once. Persisting each of those transient, tracking-driven centres
+      // would spam localStorage for no benefit (nobody wants the map to
+      // reopen wherever their last GPS ping happened to be), so skip the
+      // write entirely while follow mode is active; it resumes normally
+      // the moment the user pans manually or turns follow mode off.
+      if (followModeRef.current) return;
       const center = map.getCenter();
       const zoom = map.getZoom();
       if (!center || zoom === undefined) return;
@@ -2026,6 +2283,26 @@ export default function IntelligenceMapping() {
   useEffect(() => {
     clearLocationMutRef.current = clearLocationMut;
   });
+
+  // "On Foot" pin state — own pill click opens a popup to toggle it (see
+  // the click listener on the own marker below and the Dialog rendered
+  // near the end of this component). setOnFootMutRef mirrors the same
+  // pattern as updateLocationMutRef, since the auto-revert effect below
+  // needs a stable reference to call it from outside the render closure.
+  const [onFootPopupOpen, setOnFootPopupOpen] = useState(false);
+  const setOnFootMut = trpc.intelligence.setOnFoot.useMutation();
+  const setOnFootMutRef = useRef(setOnFootMut);
+  // Gender/skin-tone (on-foot glyph) + vehicle icon (Wheels mode) prefs —
+  // see the pin-customise popup near the end of this component.
+  const setPinAppearanceMut = trpc.intelligence.setPinAppearance.useMutation();
+  useEffect(() => {
+    setOnFootMutRef.current = setOnFootMut;
+  });
+  // Guards the >15km/h auto-revert (see the live-marker effect) from
+  // firing the mutation on every single poll tick while speed stays above
+  // the threshold — only fires once per crossing, resetting the moment
+  // onFoot next reads back false from the server.
+  const onFootAutoRevertingRef = useRef(false);
 
   // Custom map markers — poll every 5 seconds
   // Filter by selected operations so markers are scoped to the active operation.
@@ -2465,12 +2742,20 @@ export default function IntelligenceMapping() {
   // re-register the watcher.
   const deviceIdRef = useRef(deviceId);
   const selectedOpIdsRef = useRef(selectedOpIds);
+  // Mirrors user?.id for createUserPinElement, a useCallback with empty
+  // deps that can't otherwise see a fresh value across renders — used to
+  // decide whether a given pin is the viewer's own (only the own pin gets
+  // a click listener for the On Foot popup).
+  const ownUserIdRef = useRef<number | undefined>(user?.id);
   useEffect(() => {
     deviceIdRef.current = deviceId;
   }, [deviceId]);
   useEffect(() => {
     selectedOpIdsRef.current = selectedOpIds;
   }, [selectedOpIds]);
+  useEffect(() => {
+    ownUserIdRef.current = user?.id;
+  }, [user?.id]);
 
   const startWatching = useCallback(() => {
     if (!navigator.geolocation) {
@@ -2661,55 +2946,176 @@ export default function IntelligenceMapping() {
     return el;
   }, []);
 
+  // Three motion states, shown via a small indicator fused into the name
+  // pill's left edge: an arrow (Navigation2's own polygon — the same shape
+  // as the Follow-me/North-Up buttons, not a plain triangle) rotated to
+  // heading while moving; a green dot the moment someone stops; settling
+  // to a red dot once they've been still 10s+. No white backing ring
+  // behind it — colour alone carries the state. The indicator's CENTRE,
+  // not the pill's bounding box, is the officer's actual GPS position —
+  // the pill is a label that extends out from that point, so the marker
+  // is placed with anchor:"none" (see the live-marker effect below) and
+  // the indicator centres itself on the overlay's local (0,0) via its own
+  // translate, independent of the pill's width/height entirely.
   const createUserPinElement = useCallback((liveUser: LiveUser) => {
     const color = getTeamColour(liveUser.team);
     const label = liveUser.name.toUpperCase();
-    // Motion: speed > 0.5 m/s = moving (green underline), otherwise stopped (grey underline)
+    const pinKey = `${liveUser.userId}_${liveUser.deviceId}`;
     const isMoving = liveUser.speed != null && liveUser.speed > 0.5;
-    const underlineColor = isMoving ? "#22c55e" : "#9ca3af";
+    const now = Date.now();
+    const prevMotion = motionStateRef.current.get(pinKey);
+    let motionState: "moving" | "short" | "long";
+    let since: number;
+    if (isMoving) {
+      motionState = "moving";
+      since = now;
+    } else if (!prevMotion || prevMotion.state === "moving") {
+      // Just transitioned to stopped (or first time seen already stopped —
+      // we don't know how long, so the 10s clock starts from now).
+      motionState = "short";
+      since = now;
+    } else {
+      since = prevMotion.since;
+      motionState = now - since >= 10_000 ? "long" : "short";
+    }
+    motionStateRef.current.set(pinKey, { state: motionState, since });
 
     const el = document.createElement("div");
-    el.style.cssText = `position:relative;display:flex;flex-direction:column;align-items:center;cursor:pointer;`;
+    el.style.cssText = `position:relative;cursor:pointer;`;
 
-    // Pill-shaped name tag — slightly smaller than before
+    // Name pill — thinner, symmetric top/bottom padding (was heavier on the
+    // bottom to balance an underline bar this redesign already removed,
+    // which left the text looking off-centre) — only padding-left stays
+    // enlarged, to clear the indicator.
     const pill = document.createElement("div");
     pill.style.cssText = `
-      position:relative;
+      position:absolute;
+      left:-9px;
+      top:0;
+      transform:translateY(-50%);
       display:inline-flex;
       align-items:center;
       background:${color};
       color:#fff;
       font-size:10px;
       font-weight:800;
-      padding:3px 10px 5px 10px;
+      padding:3px 10px 3px 17px;
       border-radius:20px;
       white-space:nowrap;
       box-shadow:0 2px 8px rgba(0,0,0,0.40);
       letter-spacing:0.06em;
       border:1.5px solid rgba(255,255,255,0.60);
-      overflow:hidden;
+      z-index:1;
     `;
+    pill.textContent = label;
 
-    const nameSpan = document.createElement("span");
-    nameSpan.textContent = label;
-    nameSpan.style.cssText = `position:relative;z-index:1;`;
-
-    // Thin underline at the bottom of the pill indicating motion state
-    const underline = document.createElement("div");
-    underline.style.cssText = `
+    // Bare indicator — no white backing ring. Positioned identically to the
+    // old puck (centred on the overlay's local (0,0), i.e. the true GPS
+    // fix) but with nothing behind the arrow/dot itself; colour alone now
+    // carries the state.
+    const indicator = document.createElement("div");
+    indicator.style.cssText = `
       position:absolute;
-      bottom:0;
       left:0;
-      right:0;
-      height:3px;
-      background:${underlineColor};
-      border-radius:0 0 20px 20px;
-      opacity:0.9;
+      top:0;
+      transform:translate(-50%,-50%);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      z-index:2;
     `;
+    if (liveUser.onFoot) {
+      // On-foot mode: a walking-person glyph entirely replaces the vehicle
+      // arrow — no heading rotation (a pedestrian has no "nose direction"
+      // the way a vehicle does) and no sonar rings (vehicle-speed themed,
+      // 80km/h+, meaningless on foot). Direction of travel is instead a
+      // simple east/west mirror — see the sin(heading) comment below —
+      // rather than a full compass rotation, which would tip a side-view
+      // glyph over the same way the vehicle emoji options did.
+      const speedKmh = (liveUser.speed ?? 0) * 3.6;
+      let base: string;
+      if (motionState === "long") {
+        base = "🧍"; // stopped 10s+ — same trigger as the vehicle red dot
+      } else if (speedKmh > 5) {
+        base = "🏃"; // moving faster than a walking pace
+      } else {
+        base = "🚶"; // walking (also covers "just stopped", under 10s)
+      }
+      const glyph = buildOnFootGlyph(
+        base,
+        liveUser.pinGender,
+        liveUser.pinSkinTone
+      );
+      // sin(heading) > 0 means the heading has an eastward component (the
+      // 0-180° half of the compass, measured clockwise from north); < 0
+      // means westward (180-360°). Defaults to facing right/east when
+      // heading is unavailable or exactly due north/south (sin = 0) rather
+      // than remembering a "last known side" — a deliberate
+      // simplification, since that ambiguous case only ever lasts one
+      // frame in practice and isn't worth extra state to smooth over.
+      const heading = liveUser.heading ?? 0;
+      const faceWest = Math.sin((heading * Math.PI) / 180) < 0;
+      indicator.innerHTML = `<span style="font-size:26px;line-height:32px;width:32px;height:32px;display:block;text-align:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));transform:scaleX(${faceWest ? -1 : 1});">${glyph}</span>`;
+    } else if (motionState === "moving") {
+      // Screen rotation, not raw compass bearing: the arrow/rings need to
+      // point the right way relative to the map as currently displayed,
+      // which drifts from true north whenever heading-up mode (or a manual
+      // rotate gesture) has the map itself rotated. Subtracting the map's
+      // own current heading converts "true compass bearing" into "on-screen
+      // angle" — at mapHeadingRef 0 (North Up, the default) this is a no-op.
+      const heading = (liveUser.heading ?? 0) - mapHeadingRef.current;
+      const speedKmh = (liveUser.speed ?? 0) * 3.6;
+      const ringDurationMs = getSonarRingDurationMs(speedKmh);
+      // Directional "sonar" rings above 80 km/h: half-circles (clipped to
+      // their own top half in this un-rotated local space, matching the
+      // arrow's own "points up at 0deg" polygon) that rotate together with
+      // the arrow inside the same heading-group, so the pulse only fans out
+      // toward the direction of travel rather than in every direction.
+      let ringsHtml = "";
+      if (ringDurationMs != null) {
+        const staggerMs = ringDurationMs / 3;
+        ringsHtml = [0, 1, 2]
+          .map(
+            i =>
+              `<span style="position:absolute;left:50%;top:50%;width:25px;height:25px;transform:translate(-50%,-50%);border-radius:50%;border:2px solid #16a34a;clip-path:inset(0 0 50% 0);animation:teamPinSonarRing ${ringDurationMs}ms cubic-bezier(0.2,0.6,0.35,1) infinite;animation-delay:${i * staggerMs}ms;z-index:-1;"></span>`
+          )
+          .join("");
+      }
+      indicator.innerHTML = `
+        <div style="position:relative;width:25px;height:25px;transform:rotate(${heading}deg);transform-origin:center;">
+          ${ringsHtml}
+          <svg viewBox="0 0 24 24" width="25" height="25" style="overflow:visible;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45));"><polygon points="12 2 19 21 12 17 5 21 12 2" fill="#16a34a"/></svg>
+        </div>
+      `;
+    } else {
+      const dotColour = motionState === "short" ? "#22c55e" : "#dc2626";
+      const dot = document.createElement("div");
+      dot.style.cssText = `width:14px;height:14px;border-radius:50%;background:${dotColour};box-shadow:0 1px 3px rgba(0,0,0,0.45);`;
+      indicator.appendChild(dot);
+    }
 
-    pill.appendChild(nameSpan);
-    pill.appendChild(underline);
     el.appendChild(pill);
+    el.appendChild(indicator);
+
+    // Own pin only: tap/click opens the pin-customise popup (currently
+    // just the On Foot toggle). Attached directly to this content element
+    // rather than via DivIconOverlay's own "click" listener (used
+    // elsewhere for the map's native POI click-suppression) — this
+    // function reruns on every poll tick for existing markers too (see
+    // `existing.content = createUserPinElement(...)`), which swaps in a
+    // whole new content element each time, so the listener is naturally
+    // "re-added" as a side effect of that regeneration, not something
+    // this needs to manage separately.
+    const isOwnPin =
+      liveUser.userId === ownUserIdRef.current &&
+      liveUser.deviceId === deviceIdRef.current;
+    if (isOwnPin) {
+      el.addEventListener("click", e => {
+        e.stopPropagation();
+        setOnFootPopupOpen(true);
+      });
+    }
+
     return el;
   }, []);
 
@@ -3122,6 +3528,11 @@ export default function IntelligenceMapping() {
       if (!visibleKeys.has(key)) {
         marker.map = null;
         liveMarkersRef.current.delete(key);
+        motionStateRef.current.delete(key);
+        const frame = liveMarkerAnimRef.current.get(key);
+        if (frame != null) cancelAnimationFrame(frame);
+        liveMarkerAnimRef.current.delete(key);
+        liveMarkerLastUpdateRef.current.delete(key);
       }
     });
 
@@ -3131,8 +3542,68 @@ export default function IntelligenceMapping() {
     );
     if (ownEntry) {
       ownPositionRef.current = { lat: ownEntry.lat, lng: ownEntry.lng };
-      if (followModeRef.current && mapRef.current) {
-        mapRef.current.panTo({ lat: ownEntry.lat, lng: ownEntry.lng });
+      if (
+        followModeRef.current &&
+        mapRef.current &&
+        !userMapInteractingRef.current
+      ) {
+        // Tween the camera too, not just panTo() straight to the new fix —
+        // panTo()'s own built-in animation is a short, fixed-duration ease
+        // fired fresh every poll tick, so it finishes and sits still, then
+        // hops again next tick: the exact same stop-start stutter the pin
+        // itself had before switching to animateLatLngTo. Reusing that
+        // same engine here keeps the camera moving continuously in step
+        // with the pin it's following, using setCenter() (not panTo())
+        // each frame so we're not fighting Google's own separate
+        // animation on top of ours. Skipped entirely while the user has an
+        // active pan/zoom gesture (userMapInteractingRef) — see that ref's
+        // own comment for why: continuously calling setCenter() otherwise
+        // fights native gesture handling and a pinch-zoom simply doesn't
+        // register at all.
+        const map = mapRef.current;
+        animateLatLngTo(
+          "own",
+          () => map.getCenter()?.toJSON() ?? ownPositionRef.current!,
+          p => map.setCenter(p),
+          { lat: ownEntry.lat, lng: ownEntry.lng },
+          mapCenterAnimRef,
+          mapCenterLastUpdateRef
+        );
+      }
+      // Heading-up: rotate the map to match this device's own live travel
+      // heading. Geolocation only reports a heading while actually moving
+      // (it's null at rest), so simply skip the call rather than snapping
+      // to 0 when stationary — the map keeps whatever heading it last had
+      // until the officer starts moving again.
+      if (
+        headingUpModeRef.current &&
+        mapRef.current &&
+        actualRenderingTypeRef.current === "VECTOR" &&
+        ownEntry.heading != null
+      ) {
+        mapRef.current.setHeading(ownEntry.heading);
+      }
+      // On Foot auto-revert: speed over 15 km/h switches the pin back to
+      // the vehicle arrow automatically — officers forget to switch it
+      // back manually after getting back in a car. Fires the mutation
+      // once per crossing (onFootAutoRevertingRef), not on every poll tick
+      // while speed stays above the threshold; resets the moment the
+      // server confirms onFoot is back to false. Deliberately one-way —
+      // dropping back under 15 km/h does NOT re-enable On Foot, matching
+      // "stays arrow until manually changed again".
+      if (ownEntry.onFoot) {
+        const ownSpeedKmh = (ownEntry.speed ?? 0) * 3.6;
+        if (ownSpeedKmh > 15) {
+          if (!onFootAutoRevertingRef.current) {
+            onFootAutoRevertingRef.current = true;
+            setOnFootMutRef.current.mutate({ onFoot: false });
+            toast.info(
+              "Speed over 15 km/h — pin switched back to vehicle automatically"
+            );
+          }
+        } else {
+          onFootAutoRevertingRef.current = false;
+        }
       }
     }
 
@@ -3142,7 +3613,17 @@ export default function IntelligenceMapping() {
       const existing = liveMarkersRef.current.get(pinKey);
       try {
         if (existing) {
-          existing.position = { lat: liveUser.lat, lng: liveUser.lng };
+          // Tween to the new fix instead of jumping — see
+          // animateLiveMarkerTo's own comment for why this can't just be a
+          // CSS transition (it would also animate during ordinary map pan/
+          // zoom, not just data updates).
+          animateLiveMarkerTo(
+            existing,
+            pinKey,
+            { lat: liveUser.lat, lng: liveUser.lng },
+            liveMarkerAnimRef,
+            liveMarkerLastUpdateRef
+          );
           // Refresh content to update motion dot
           existing.content = createUserPinElement(liveUser);
         } else {
@@ -3153,6 +3634,12 @@ export default function IntelligenceMapping() {
             content: pinEl,
             title: liveUser.name.toUpperCase(),
             zIndex: 999,
+            // "none": createUserPinElement's own puck already centres
+            // itself on this overlay's local (0,0) — the default "center"
+            // anchor would instead centre the whole pill's bounding box
+            // (puck + name label combined), putting the marked position
+            // out under the label rather than the officer's actual GPS fix.
+            anchor: "none",
           });
           liveMarkersRef.current.set(pinKey, marker);
         }
@@ -3260,6 +3747,19 @@ export default function IntelligenceMapping() {
         });
       });
 
+      // Ground truth for whether this map instance can actually rotate —
+      // see actualRenderingTypeRef's own comment above. Google can take a
+      // moment after map construction to resolve VECTOR vs. RASTER (it
+      // starts UNINITIALIZED), and can in principle change later, so this
+      // is read live off the map rather than assumed once at mount.
+      const syncRenderingType = () => {
+        const rt = map.getRenderingType();
+        actualRenderingTypeRef.current = rt;
+        setIsMapActuallyVector(rt === google.maps.RenderingType.VECTOR);
+      };
+      syncRenderingType();
+      map.addListener("renderingtype_changed", syncRenderingType);
+
       // Keep the 3D button's on/off state in sync with the map's actual
       // tilt — vector maps also let a user tilt via a two-finger drag
       // (mobile) or Ctrl+drag (desktop) gesture directly, not just our
@@ -3271,9 +3771,44 @@ export default function IntelligenceMapping() {
 
       // Keep the North Up button's rotation/enabled state in sync with the
       // map's actual heading — set both by our own button and by the
-      // native Shift+drag / twist rotate gesture.
+      // native Shift+drag / twist rotate gesture. mapHeadingRef mirrors the
+      // same value for createUserPinElement, which needs it on every pin
+      // redraw without depending on this state directly.
       map.addListener("heading_changed", () => {
-        setMapHeading(map.getHeading() ?? 0);
+        const h = map.getHeading() ?? 0;
+        setMapHeading(h);
+        mapHeadingRef.current = h;
+      });
+
+      // Let a user gesture (wheel/pinch zoom, drag) immediately take over
+      // from Follow-me's own camera tween instead of fighting it — see
+      // userMapInteractingRef's own comment. dragstart only fires for a
+      // real user-initiated drag (not our own programmatic setCenter
+      // calls), so it's a clean signal on top of the raw wheel/touch
+      // listeners, which are needed because Maps doesn't expose an
+      // equivalent start/end event pair for zoom gestures.
+      const markUserMapInteracting = () => {
+        userMapInteractingRef.current = true;
+        const frame = mapCenterAnimRef.current.get("own");
+        if (frame != null) cancelAnimationFrame(frame);
+        mapCenterAnimRef.current.delete("own");
+        if (userMapInteractingTimeoutRef.current) {
+          clearTimeout(userMapInteractingTimeoutRef.current);
+        }
+        userMapInteractingTimeoutRef.current = setTimeout(() => {
+          userMapInteractingRef.current = false;
+        }, 500);
+      };
+      map.addListener("dragstart", markUserMapInteracting);
+      const mapDiv = map.getDiv();
+      mapDiv.addEventListener("wheel", markUserMapInteracting, {
+        passive: true,
+      });
+      mapDiv.addEventListener("touchstart", markUserMapInteracting, {
+        passive: true,
+      });
+      mapDiv.addEventListener("touchmove", markUserMapInteracting, {
+        passive: true,
       });
 
       // Persist map type (roadmap / satellite) whenever the user switches
@@ -5223,12 +5758,12 @@ export default function IntelligenceMapping() {
             <button
               onClick={e => {
                 e.stopPropagation();
-                if (!mapRef.current || mapRenderPref !== "vector") return;
+                if (!mapRef.current || !isMapActuallyVector) return;
                 const next = is3DActive ? 0 : 45;
                 mapRef.current.setTilt(next);
                 setIs3DActive(next > 0);
               }}
-              disabled={mapRenderPref !== "vector"}
+              disabled={!isMapActuallyVector}
               className={`absolute z-20 pointer-events-auto flex items-center justify-center rounded-lg shadow-md border h-9 w-9 text-xs font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                 is3DActive
                   ? "bg-sky-600 border-sky-600 text-white"
@@ -5237,7 +5772,7 @@ export default function IntelligenceMapping() {
               style={{ top: "94px", right: "10px" }}
               aria-label="Toggle 3D view"
               title={
-                mapRenderPref === "vector"
+                isMapActuallyVector
                   ? is3DActive
                     ? "Switch to flat (2D) view"
                     : "Switch to 3D (tilted) view"
@@ -5256,15 +5791,15 @@ export default function IntelligenceMapping() {
             <button
               onClick={e => {
                 e.stopPropagation();
-                if (!mapRef.current || mapRenderPref !== "vector") return;
+                if (!mapRef.current || !isMapActuallyVector) return;
                 mapRef.current.setHeading(0);
               }}
-              disabled={mapRenderPref !== "vector" || mapHeading === 0}
+              disabled={!isMapActuallyVector || mapHeading === 0}
               className="absolute z-20 pointer-events-auto flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               style={{ top: "130px", right: "10px" }}
               aria-label="Reset map rotation to North Up"
               title={
-                mapRenderPref !== "vector"
+                !isMapActuallyVector
                   ? "Rotation requires Vector map rendering, which isn't available on this device"
                   : mapHeading === 0
                     ? "Already North Up"
@@ -5375,6 +5910,14 @@ export default function IntelligenceMapping() {
                   if (next && ownPositionRef.current) {
                     mapRef.current?.panTo(ownPositionRef.current);
                   }
+                  // Heading-up only makes sense centred on you — turning
+                  // Follow Me off while it's on would otherwise leave the
+                  // map spinning around a point that's no longer you.
+                  if (!next && headingUpModeRef.current) {
+                    setHeadingUpMode(false);
+                    headingUpModeRef.current = false;
+                    mapRef.current?.setHeading(0);
+                  }
                 }}
                 className={`flex items-center justify-center rounded-lg shadow-md border transition-colors ${
                   followMode
@@ -5385,6 +5928,54 @@ export default function IntelligenceMapping() {
               >
                 <Navigation2
                   className={`w-5 h-5 ${followMode ? "text-white" : "text-sky-600"}`}
+                />
+              </button>
+              {/* Heading-up toggle — rotates the map to match this
+                device's own live travel heading (vector-only, same as 3D/
+                North-Up). Requires Follow Me, since rotating around a
+                point that isn't centred on you just reads as the map
+                spinning for no reason — turning this on switches Follow
+                Me on too if it wasn't already. */}
+              <button
+                title={
+                  !isMapActuallyVector
+                    ? "Heading-up requires Vector map rendering, which isn't available on this device"
+                    : headingUpMode
+                      ? "Turn off heading-up rotation"
+                      : "Rotate map to my direction of travel"
+                }
+                disabled={!isMapActuallyVector}
+                onClick={e => {
+                  e.stopPropagation();
+                  if (!headingUpMode) {
+                    if (!ownPositionRef.current) {
+                      toast.error(
+                        "Location not available — enable location sharing first"
+                      );
+                      return;
+                    }
+                    if (!followMode) {
+                      setFollowMode(true);
+                      followModeRef.current = true;
+                      mapRef.current?.panTo(ownPositionRef.current);
+                    }
+                    setHeadingUpMode(true);
+                    headingUpModeRef.current = true;
+                  } else {
+                    setHeadingUpMode(false);
+                    headingUpModeRef.current = false;
+                    mapRef.current?.setHeading(0);
+                  }
+                }}
+                className={`flex items-center justify-center rounded-lg shadow-md border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                  headingUpMode
+                    ? "bg-sky-600 border-sky-700 hover:bg-sky-700"
+                    : "bg-white border-gray-200 hover:bg-gray-50"
+                }`}
+                style={{ width: "40px", height: "40px" }}
+              >
+                <Compass
+                  className={`w-5 h-5 ${headingUpMode ? "text-white" : "text-sky-600"}`}
                 />
               </button>
             </div>
@@ -5554,166 +6145,6 @@ export default function IntelligenceMapping() {
           {/* RS Actions pane is now opened via the header folder-expander icon
             (DashboardLayout's rightPaneToggle prop) instead of a draggable
             side tab — see the DashboardLayout invocation below. */}
-
-          {/* ── Draggable Floating Pill Bar (all devices) ──
-             Tap-hold the drag handle to reposition vertically. Position persisted to localStorage. */}
-          <div
-            className="absolute left-0 right-0 z-20 flex items-center justify-center pointer-events-none"
-            style={{ top: `${pillBarTop}%`, transform: "translateY(-50%)" }}
-          >
-            {/* Drag handle — long-press activates drag */}
-            <div
-              className={`pointer-events-auto flex items-center gap-1.5 px-2 py-1.5 rounded-3xl ${
-                pillBarDraggingRef.current ? "cursor-grabbing" : "cursor-grab"
-              } select-none touch-none`}
-              onMouseDown={e => {
-                // Long-press to drag on desktop
-                const startY = e.clientY;
-                const startTop = pillBarTop;
-                const parentH =
-                  e.currentTarget.parentElement?.parentElement?.clientHeight ??
-                  window.innerHeight;
-                pillBarIsDraggingRef.current = false;
-                pillBarLongPressRef.current = setTimeout(() => {
-                  pillBarDraggingRef.current = true;
-                  const onMove = (me: MouseEvent) => {
-                    const delta = me.clientY - startY;
-                    if (Math.abs(delta) > 3) {
-                      pillBarIsDraggingRef.current = true;
-                    }
-                    setPillBarTop(
-                      Math.max(
-                        5,
-                        Math.min(95, startTop + (delta / parentH) * 100)
-                      )
-                    );
-                  };
-                  const onUp = () => {
-                    pillBarDraggingRef.current = false;
-                    document.removeEventListener("mousemove", onMove);
-                    document.removeEventListener("mouseup", onUp);
-                  };
-                  document.addEventListener("mousemove", onMove);
-                  document.addEventListener("mouseup", onUp);
-                }, 300);
-                const onUp = () => {
-                  if (pillBarLongPressRef.current)
-                    clearTimeout(pillBarLongPressRef.current);
-                  document.removeEventListener("mouseup", onUp);
-                };
-                document.addEventListener("mouseup", onUp);
-              }}
-              onTouchStart={e => {
-                const touch = e.touches[0];
-                const startY = touch.clientY;
-                const startTop = pillBarTop;
-                const parentH =
-                  e.currentTarget.parentElement?.parentElement?.clientHeight ??
-                  window.innerHeight;
-                pillBarIsDraggingRef.current = false;
-                pillBarLongPressRef.current = setTimeout(() => {
-                  pillBarDraggingRef.current = true;
-                  const onMove = (te: TouchEvent) => {
-                    const delta = te.touches[0].clientY - startY;
-                    if (Math.abs(delta) > 3) {
-                      pillBarIsDraggingRef.current = true;
-                    }
-                    setPillBarTop(
-                      Math.max(
-                        5,
-                        Math.min(95, startTop + (delta / parentH) * 100)
-                      )
-                    );
-                  };
-                  const onEnd = () => {
-                    pillBarDraggingRef.current = false;
-                    document.removeEventListener("touchmove", onMove);
-                    document.removeEventListener("touchend", onEnd);
-                  };
-                  document.addEventListener("touchmove", onMove, {
-                    passive: true,
-                  });
-                  document.addEventListener("touchend", onEnd);
-                }, 300);
-                const onEnd = () => {
-                  if (pillBarLongPressRef.current)
-                    clearTimeout(pillBarLongPressRef.current);
-                  document.removeEventListener("touchend", onEnd);
-                };
-                document.addEventListener("touchend", onEnd);
-              }}
-            >
-              {/* Active RS pill */}
-              {(() => {
-                const activeSheet =
-                  rsSelectedSheetId && rsSheetsData
-                    ? (rsSheetsData as any[]).find(
-                        (s: any) => s.id === rsSelectedSheetId
-                      )
-                    : null;
-                return (
-                  <button
-                    disabled={!activeSheet}
-                    onClick={e => {
-                      if (pillBarIsDraggingRef.current) {
-                        e.preventDefault();
-                        return;
-                      }
-                      if (activeSheet)
-                        setLocation(`/sheet/${rsSelectedSheetId}`);
-                    }}
-                    className={`flex items-center justify-center gap-2 rounded-xl shadow-lg border transition-all w-[136px] px-5 py-2.5 ${
-                      activeSheet
-                        ? "text-white border-blue-600 bg-blue-400 hover:bg-blue-300 active:scale-95 cursor-pointer"
-                        : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
-                    }`}
-                    title={
-                      activeSheet
-                        ? "Open active running sheet"
-                        : "No running sheet selected"
-                    }
-                  >
-                    <ClipboardList className="h-5 w-5 flex-shrink-0" />
-                    <span className="text-sm font-semibold whitespace-nowrap">
-                      Active RS
-                    </span>
-                  </button>
-                );
-              })()}
-
-              {/* RS Entry pill */}
-              {(() => {
-                const hasSheet = !!rsSelectedSheetId;
-                return (
-                  <button
-                    disabled={!hasSheet}
-                    onClick={e => {
-                      if (pillBarIsDraggingRef.current) {
-                        e.preventDefault();
-                        return;
-                      }
-                      if (hasSheet) setMapQeOpen(true);
-                    }}
-                    className={`flex items-center justify-center gap-2 rounded-xl shadow-lg border transition-all w-[136px] px-5 py-2.5 ${
-                      hasSheet
-                        ? "text-white border-emerald-600 bg-emerald-400 hover:bg-emerald-300 active:scale-95 cursor-pointer"
-                        : "text-muted-foreground/25 border-sidebar-border/40 bg-transparent cursor-default"
-                    }`}
-                    title={
-                      hasSheet
-                        ? "RS Quick Entry"
-                        : "Select a running sheet first"
-                    }
-                  >
-                    <FileText className="h-5 w-5 flex-shrink-0" />
-                    <span className="text-sm font-semibold whitespace-nowrap">
-                      RS Entry
-                    </span>
-                  </button>
-                );
-              })()}
-            </div>
-          </div>
         </div>
 
         {/* ── RS Actions Right Pane ──
@@ -6223,7 +6654,9 @@ export default function IntelligenceMapping() {
                   </button>
                 )}
 
-                {/* RS Quick Entry moved to bottom tab bar — use the indigo RS Entry pill instead */}
+                {/* RS Quick Entry is reached via the map's own action
+                    chooser / POI tap sheets, or a marker's own popup —
+                    no dedicated entry point needed here. */}
               </div>
               {/* end RS Selection */}
 
@@ -9374,7 +9807,19 @@ export default function IntelligenceMapping() {
         {/* ── Custom Marker Placement Modal ── */}
         {pendingLatLng && (
           <div
-            className="absolute inset-0 z-40 flex items-end justify-center"
+            // fixed, not absolute: this page's <main> (DashboardLayout) sits
+            // below a header bar in a flex column and is overflow-hidden, so
+            // an `absolute inset-0` here is both the wrong height (bounded
+            // by <main>, not the true window) and has anything beyond that
+            // bound silently clipped rather than merely mispositioned —
+            // which is what made an earlier attempt at keyboard-avoidance
+            // here render as "the popup isn't there at all" rather than
+            // badly placed. `fixed` escapes both problems by positioning
+            // against the real viewport directly, matching what
+            // useVisualViewportInset's numbers are computed against. Just a
+            // dimmed backdrop + click-to-close now — the sheet inside
+            // positions itself (see below), not flex/padding tricks.
+            className="fixed inset-0 z-40"
             style={{
               background: "rgba(0,0,0,0.6)",
               backdropFilter: "blur(4px)",
@@ -9385,7 +9830,11 @@ export default function IntelligenceMapping() {
             }}
           >
             <div
-              className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
+              className="fixed left-0 right-0 mx-auto w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 overflow-y-auto"
+              style={{
+                bottom: vvKeyboardInset,
+                maxHeight: Math.round(vvVisibleHeight * 0.9),
+              }}
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}
@@ -9779,6 +10228,129 @@ export default function IntelligenceMapping() {
           />
         );
       })()}
+
+      {/* Pin-customise popup — opened by tapping your own name pill on the
+        map (see the click listener attached in createUserPinElement).
+        Wheels/Foot mode, plus Foot-only gender/skin-tone options — see
+        setOnFoot/setPinAppearance. A Wheels-only vehicle icon picker is
+        planned but not built yet (pinVehicleIcon already exists server-side
+        for when that lands). */}
+      <Dialog open={onFootPopupOpen} onOpenChange={setOnFootPopupOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Customise my pointer</DialogTitle>
+          </DialogHeader>
+          {(() => {
+            const ownLiveUser = (liveUsers as LiveUser[] | undefined)?.find(
+              u => u.userId === user?.id && u.deviceId === deviceId
+            );
+            const onFoot = ownLiveUser?.onFoot ?? false;
+            const gender = ownLiveUser?.pinGender ?? "neutral";
+            const skinTone = ownLiveUser?.pinSkinTone ?? "default";
+            const footPreview = buildOnFootGlyph("🚶", gender, skinTone);
+
+            return (
+              <div className="flex flex-col gap-4 py-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOnFootMut.mutate({ onFoot: false })}
+                    className={`flex flex-col items-center gap-1 rounded-lg border-2 py-3 transition-all ${
+                      !onFoot
+                        ? "border-primary bg-primary/10 scale-105"
+                        : "border-border bg-accent/30 hover:border-primary/50"
+                    }`}
+                  >
+                    <span className="text-xl">⬆️</span>
+                    <span className="text-xs font-semibold">Wheels</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOnFootMut.mutate({ onFoot: true })}
+                    className={`flex flex-col items-center gap-1 rounded-lg border-2 py-3 transition-all ${
+                      onFoot
+                        ? "border-primary bg-primary/10 scale-105"
+                        : "border-border bg-accent/30 hover:border-primary/50"
+                    }`}
+                  >
+                    <span className="text-xl">{footPreview}</span>
+                    <span className="text-xs font-semibold">Foot</span>
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground -mt-2">
+                  Foot switches back to Wheels automatically once speed goes
+                  over 15 km/h.
+                </p>
+
+                {onFoot ? (
+                  <>
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                        Appearance
+                      </p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(["neutral", "male", "female"] as const).map(g => (
+                          <button
+                            key={g}
+                            type="button"
+                            onClick={() =>
+                              setPinAppearanceMut.mutate({ pinGender: g })
+                            }
+                            className={`flex flex-col items-center gap-1 rounded-lg border-2 py-2 transition-all ${
+                              gender === g
+                                ? "border-primary bg-primary/10 scale-105"
+                                : "border-border bg-accent/30 hover:border-primary/50"
+                            }`}
+                          >
+                            <span className="text-lg">
+                              {buildOnFootGlyph("🚶", g, skinTone)}
+                            </span>
+                            <span className="text-[10px] font-medium">
+                              {g === "neutral"
+                                ? "Neutral"
+                                : g === "male"
+                                  ? "Male"
+                                  : "Female"}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                        Skin tone
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(["default", "brown"] as const).map(t => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() =>
+                              setPinAppearanceMut.mutate({ pinSkinTone: t })
+                            }
+                            className={`flex flex-col items-center gap-1 rounded-lg border-2 py-2 transition-all ${
+                              skinTone === t
+                                ? "border-primary bg-primary/10 scale-105"
+                                : "border-border bg-accent/30 hover:border-primary/50"
+                            }`}
+                          >
+                            <span className="text-lg">
+                              {buildOnFootGlyph("🚶", gender, t)}
+                            </span>
+                            <span className="text-[10px] font-medium">
+                              {t === "default" ? "Default" : "Brown"}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

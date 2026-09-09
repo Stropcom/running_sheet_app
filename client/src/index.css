@@ -682,6 +682,26 @@ button:active:not(:disabled) {
   animation: fadeInUp 0.3s cubic-bezier(0.23, 1, 0.32, 1) both;
 }
 
+/* Live team pin — directional "sonar" pulse shown once a member's speed
+   crosses 80 km/h (see createUserPinElement in IntelligenceMapping.tsx).
+   Ring shape/size never changes across speed tiers, only the
+   animation-duration/delay applied inline per ring — see
+   HIGH_SPEED_RING_CADENCE_MS. */
+@keyframes teamPinSonarRing {
+  0% {
+    width: 25px;
+    height: 25px;
+    opacity: 0.65;
+    border-width: 2.5px;
+  }
+  100% {
+    width: 58px;
+    height: 58px;
+    opacity: 0;
+    border-width: 0.5px;
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .stagger-item {
     animation: fadeInUp 0.3s cubic-bezier(0.23, 1, 0.32, 1) both;

@@ -98,6 +98,29 @@ const RISK_CLASSES: Record<LevelDef["risk"], string> = {
   med: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
   high: "bg-red-500/15 text-red-700 dark:text-red-400",
 };
+// Follows the level's own risk colour rather than a fixed amber, so the
+// current level stays unmistakable at every risk tier — a level 4/5 (red)
+// current level doesn't get lost against its own already-red risk pill.
+const RISK_TEXT_CLASSES: Record<LevelDef["risk"], string> = {
+  low: "text-emerald-700 dark:text-emerald-400",
+  med: "text-amber-700 dark:text-amber-400",
+  high: "text-red-700 dark:text-red-400",
+};
+const LEVEL_HERO_CLASSES: Record<LevelDef["risk"], string> = {
+  low: "border-emerald-500/60 bg-emerald-500/5",
+  med: "border-amber-500/60 bg-amber-500/5",
+  high: "border-red-500/60 bg-red-500/5",
+};
+const LEVEL_LADDER_ROW_CLASSES: Record<LevelDef["risk"], string> = {
+  low: "bg-emerald-500/10",
+  med: "bg-amber-500/10",
+  high: "bg-red-500/10",
+};
+const LEVEL_LADDER_DOT_CLASSES: Record<LevelDef["risk"], string> = {
+  low: "bg-emerald-500 text-white",
+  med: "bg-amber-500 text-white",
+  high: "bg-red-500 text-white",
+};
 
 export function UcoGuideMapOverlay({
   briefingId,
@@ -315,13 +338,26 @@ export function UcoGuideMapOverlay({
                 icon={Users}
               />
               <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-                <RolePill label="Team Leader" value={guide.teamLeaderCin} />
+                <RolePill
+                  label="Team Leader"
+                  value={guide.teamLeaderCin}
+                  acknowledgedCins={guide.acknowledgedCins}
+                />
                 <RolePill
                   label="Senior Operative"
                   value={guide.seniorOperativeCin}
+                  acknowledgedCins={guide.acknowledgedCins}
                 />
-                <RolePill label="HUX" value={guide.huxCin} />
-                <RolePill label="RAM" value={guide.ramCin} />
+                <RolePill
+                  label="HUX"
+                  value={guide.huxCin}
+                  acknowledgedCins={guide.acknowledgedCins}
+                />
+                <RolePill
+                  label="RAM"
+                  value={guide.ramCin}
+                  acknowledgedCins={guide.acknowledgedCins}
+                />
               </div>
               {guide.teamMemberCins.length > 0 && (
                 <div>
@@ -329,14 +365,27 @@ export function UcoGuideMapOverlay({
                     Team on deployment
                   </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {guide.teamMemberCins.map((cin, i) => (
-                      <span
-                        key={i}
-                        className="px-2.5 py-1 rounded-full text-xs font-medium border border-border bg-muted"
-                      >
-                        {cin}
-                      </span>
-                    ))}
+                    {guide.teamMemberCins.map((cin, i) => {
+                      const acked = guide.acknowledgedCins.includes(cin);
+                      return (
+                        <span
+                          key={i}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                            acked
+                              ? "bg-emerald-500/15 text-emerald-700 border-emerald-500/40 dark:text-emerald-400"
+                              : "bg-red-500/15 text-red-700 border-red-500/40 dark:text-red-400"
+                          }`}
+                          title={
+                            acked ? "Acknowledged" : "Not yet acknowledged"
+                          }
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full shrink-0 ${acked ? "bg-emerald-500" : "bg-red-500"}`}
+                          />
+                          {cin}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -382,73 +431,28 @@ export function UcoGuideMapOverlay({
             {/* SURVEILLANCE LEVEL — the one live control */}
             <div className="space-y-2.5">
               <SmeacLabel letter="5" label="Surveillance level" />
-              <div className="flex items-center gap-2 p-2.5 rounded-lg border border-border bg-background">
-                <span className="text-sm font-semibold flex-1">
-                  Current: {guide.currentLevel} —{" "}
-                  {LEVELS.find(l => l.n === guide.currentLevel)?.label}
-                </span>
-                <div className="flex flex-col gap-0.5">
-                  <button
-                    onClick={() =>
-                      setLevelMutation.mutate({
-                        id: guide.id,
-                        level: Math.min(5, guide.currentLevel + 1),
-                      })
-                    }
-                    disabled={guide.currentLevel >= 5}
-                    className="h-5 w-6 flex items-center justify-center rounded border border-border hover:bg-accent disabled:opacity-30"
-                    title="Upgrade"
-                  >
-                    <ChevronUp className="h-3 w-3" />
-                  </button>
-                  <button
-                    onClick={() =>
-                      setLevelMutation.mutate({
-                        id: guide.id,
-                        level: Math.max(1, guide.currentLevel - 1),
-                      })
-                    }
-                    disabled={guide.currentLevel <= 1}
-                    className="h-5 w-6 flex items-center justify-center rounded border border-border hover:bg-accent disabled:opacity-30"
-                    title="Downgrade"
-                  >
-                    <ChevronDown className="h-3 w-3" />
-                  </button>
-                </div>
-              </div>
-              {LEVELS.map(lv => (
-                <div
-                  key={lv.n}
-                  className={`p-2.5 rounded-lg border ${
-                    guide.currentLevel === lv.n
-                      ? "border-amber-500/50 bg-amber-500/5"
-                      : "border-border bg-background"
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-bold">
-                      {lv.n}. {lv.label}
-                    </span>
-                    <span
-                      className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${RISK_CLASSES[lv.risk]}`}
-                    >
-                      {lv.riskLabel}
-                    </span>
-                  </div>
-                  <p className="text-xs mb-1">{lv.desc}</p>
-                  <p className="text-[11px] italic text-muted-foreground mb-1">
-                    e.g. {lv.example}
-                  </p>
-                  {lv.warn && (
-                    <p className="text-[11px] font-semibold text-red-600 dark:text-red-400 mb-1">
-                      {lv.warn}
-                    </p>
-                  )}
-                  {guide.levelNotes[lv.n - 1] && (
-                    <p className="text-xs mt-1">{guide.levelNotes[lv.n - 1]}</p>
-                  )}
-                </div>
-              ))}
+              <CurrentLevelHero
+                level={LEVELS.find(l => l.n === guide.currentLevel)!}
+                note={guide.levelNotes[guide.currentLevel - 1]}
+                canUpgrade={guide.currentLevel < 5}
+                canDowngrade={guide.currentLevel > 1}
+                onUpgrade={() =>
+                  setLevelMutation.mutate({
+                    id: guide.id,
+                    level: Math.min(5, guide.currentLevel + 1),
+                  })
+                }
+                onDowngrade={() =>
+                  setLevelMutation.mutate({
+                    id: guide.id,
+                    level: Math.max(1, guide.currentLevel - 1),
+                  })
+                }
+              />
+              <LevelLadder
+                currentLevel={guide.currentLevel}
+                levelNotes={guide.levelNotes}
+              />
             </div>
 
             {/* COMMUNICATION */}
@@ -496,36 +500,6 @@ export function UcoGuideMapOverlay({
               </p>
             )}
 
-            {/* NOTIFIED ROSTER */}
-            {guide.recipientCins.length > 0 && (
-              <div className="space-y-1.5">
-                <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-                  <Users className="h-3 w-3" />
-                  Notified
-                </h3>
-                <div className="flex flex-col gap-1.5">
-                  {guide.recipientCins.map(cin => {
-                    const acked = guide.acknowledgedCins.includes(cin);
-                    return (
-                      <span
-                        key={cin}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium border w-fit ${
-                          acked
-                            ? "bg-emerald-500/15 text-emerald-700 border-emerald-500/40 dark:text-emerald-400"
-                            : "bg-red-500/15 text-red-700 border-red-500/40 dark:text-red-400"
-                        }`}
-                      >
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full shrink-0 ${acked ? "bg-emerald-500" : "bg-red-500"}`}
-                        />
-                        {cin}
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
             <div className="pt-2">
               {myAckAt ? (
                 <div className="flex items-center justify-center gap-2 py-2.5 rounded-lg bg-muted text-sm font-semibold">
@@ -557,6 +531,140 @@ export function UcoGuideMapOverlay({
   );
 }
 
+// The current surveillance level, pinned above the compact ladder in full
+// detail — the level's own risk colour marks it as current, rather than a
+// fixed highlight colour that gets lost against an already-red level 4/5.
+function CurrentLevelHero({
+  level,
+  note,
+  canUpgrade,
+  canDowngrade,
+  onUpgrade,
+  onDowngrade,
+}: {
+  level: LevelDef;
+  note: string;
+  canUpgrade: boolean;
+  canDowngrade: boolean;
+  onUpgrade: () => void;
+  onDowngrade: () => void;
+}) {
+  return (
+    <div
+      className={`rounded-lg border-2 p-3 ${LEVEL_HERO_CLASSES[level.risk]}`}
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <span
+          className={`text-[9px] font-bold uppercase tracking-wide ${RISK_TEXT_CLASSES[level.risk]}`}
+        >
+          Current surveillance level
+        </span>
+        <div className="ml-auto flex flex-col gap-0.5">
+          <button
+            onClick={onUpgrade}
+            disabled={!canUpgrade}
+            className="h-5 w-6 flex items-center justify-center rounded border border-border bg-background hover:bg-accent disabled:opacity-30"
+            title="Upgrade"
+          >
+            <ChevronUp className="h-3 w-3" />
+          </button>
+          <button
+            onClick={onDowngrade}
+            disabled={!canDowngrade}
+            className="h-5 w-6 flex items-center justify-center rounded border border-border bg-background hover:bg-accent disabled:opacity-30"
+            title="Downgrade"
+          >
+            <ChevronDown className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-sm font-bold">
+          {level.n}. {level.label}
+        </span>
+        <span
+          className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${RISK_CLASSES[level.risk]}`}
+        >
+          {level.riskLabel}
+        </span>
+      </div>
+      <p className="text-xs mb-1">{level.desc}</p>
+      <p className="text-[11px] italic text-muted-foreground mb-1">
+        e.g. {level.example}
+      </p>
+      {level.warn && (
+        <p className="text-[11px] font-semibold text-red-600 dark:text-red-400 mb-1">
+          {level.warn}
+        </p>
+      )}
+      {note && <p className="text-xs mt-1">{note}</p>}
+    </div>
+  );
+}
+
+// The other four levels, collapsed to a single line each — "current" is
+// which level has the full-detail hero above, not something to spot in a
+// list of otherwise-identical cards. A level with its own note still shows
+// it (deployment-specific guidance shouldn't be hidden), just indented
+// under its row instead of duplicating the hero's full layout.
+function LevelLadder({
+  currentLevel,
+  levelNotes,
+}: {
+  currentLevel: number;
+  levelNotes: string[];
+}) {
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      {LEVELS.map((lv, i) => {
+        const isCurrent = lv.n === currentLevel;
+        const note = isCurrent ? "" : levelNotes[lv.n - 1];
+        return (
+          <div
+            key={lv.n}
+            className={`px-2.5 py-1.5 ${i > 0 ? "border-t border-border" : ""} ${
+              isCurrent ? LEVEL_LADDER_ROW_CLASSES[lv.risk] : "bg-background"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span
+                className={`h-4 w-4 shrink-0 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                  isCurrent
+                    ? LEVEL_LADDER_DOT_CLASSES[lv.risk]
+                    : "border border-border text-muted-foreground"
+                }`}
+              >
+                {lv.n}
+              </span>
+              <span
+                className={`text-xs flex-1 min-w-0 truncate ${
+                  isCurrent ? "font-semibold" : "text-muted-foreground"
+                }`}
+              >
+                {lv.label}
+              </span>
+              <span
+                className={`text-[9px] font-bold uppercase tracking-wide shrink-0 ${
+                  isCurrent
+                    ? RISK_TEXT_CLASSES[lv.risk]
+                    : "text-muted-foreground/70"
+                }`}
+              >
+                {lv.riskLabel}
+              </span>
+            </div>
+            {note && (
+              <p className="text-[11px] text-muted-foreground mt-1 pl-6">
+                {note}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function TextItem({ label, value }: { label: string; value: string | null }) {
   if (!value) return null;
   return (
@@ -579,14 +687,33 @@ function AdminField({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-function RolePill({ label, value }: { label: string; value: string | null }) {
+function RolePill({
+  label,
+  value,
+  acknowledgedCins,
+}: {
+  label: string;
+  value: string | null;
+  acknowledgedCins: string[];
+}) {
   if (!value) return null;
+  const acked = acknowledgedCins.includes(value);
   return (
     <div>
       <p className="text-[11px] font-semibold text-muted-foreground mb-1">
         {label}
       </p>
-      <span className="inline-block px-2.5 py-1 rounded-full text-xs font-medium border border-border bg-muted">
+      <span
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+          acked
+            ? "bg-emerald-500/15 text-emerald-700 border-emerald-500/40 dark:text-emerald-400"
+            : "bg-red-500/15 text-red-700 border-red-500/40 dark:text-red-400"
+        }`}
+        title={acked ? "Acknowledged" : "Not yet acknowledged"}
+      >
+        <span
+          className={`h-1.5 w-1.5 rounded-full shrink-0 ${acked ? "bg-emerald-500" : "bg-red-500"}`}
+        />
         {value}
       </span>
     </div>

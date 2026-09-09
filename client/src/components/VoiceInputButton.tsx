@@ -10,11 +10,17 @@ import { Mic, Loader2, MicOff } from "lucide-react";
 import { toast } from "sonner";
 import {
   transcribeVoiceClip,
-  isVoiceModelAvailable,
+  getVoiceModelStatus,
   applyShortcutsToTranscript,
 } from "@/lib/voiceTranscription";
 
-type VoiceState = "checking" | "unavailable" | "idle" | "recording" | "busy";
+type VoiceState =
+  | "checking"
+  | "missing"
+  | "incomplete"
+  | "idle"
+  | "recording"
+  | "busy";
 
 export function VoiceInputButton({
   onTranscript,
@@ -35,8 +41,8 @@ export function VoiceInputButton({
 
   useEffect(() => {
     let cancelled = false;
-    isVoiceModelAvailable().then(available => {
-      if (!cancelled) setState(available ? "idle" : "unavailable");
+    getVoiceModelStatus().then(status => {
+      if (!cancelled) setState(status === "ready" ? "idle" : status);
     });
     return () => {
       cancelled = true;
@@ -109,12 +115,16 @@ export function VoiceInputButton({
 
   if (state === "checking") return null;
 
-  if (state === "unavailable") {
+  if (state === "missing" || state === "incomplete") {
+    const title =
+      state === "incomplete"
+        ? "Voice model files are present but incomplete on this deployment (looks like Git LFS pointer stubs, not the real weights — see scripts/dev/voice-model-setup.md)"
+        : "Voice model not installed on this deployment";
     return (
       <button
         type="button"
         disabled
-        title="Voice model not installed on this deployment"
+        title={title}
         className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border border-border text-muted-foreground opacity-40 cursor-not-allowed ${className}`}
       >
         <MicOff className="h-3 w-3" />

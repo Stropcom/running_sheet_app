@@ -87,20 +87,47 @@ function getTranscriber(): Promise<AutomaticSpeechRecognitionPipeline> {
   return transcriberPromise;
 }
 
+export type VoiceModelStatus = "ready" | "missing" | "incomplete";
+
+// A Git LFS pointer stub (the file Hugging Face's raw git host serves in
+// place of a large binary when git-lfs isn't installed on the machine that
+// cloned it — see scripts/dev/voice-model-setup.md) is ~130 bytes. Real
+// quantized Whisper-tiny.en weights are multi-megabyte. 100KB is comfortably
+// between the two, so a file under this size means the deploy step fetched
+// pointer stubs, not the actual model binaries — this bit a real deployment.
+const MIN_PLAUSIBLE_WEIGHT_BYTES = 100_000;
+
 /**
- * Whether the self-hosted model files are actually present — lets the mic
- * button show "voice model not installed" instead of hanging/erroring the
- * first time someone taps it on a deployment where the manual model-file
- * step (see client/public/models/README.md) hasn't been done yet.
+ * Whether the self-hosted model files are actually present *and* look like
+ * real binaries rather than Git LFS pointer stubs — lets the mic button
+ * show a specific "not installed" vs. "incomplete" state instead of
+ * hanging/erroring with a cryptic ONNX Runtime message the first time
+ * someone taps it on a deployment where the manual model-file step (see
+ * scripts/dev/voice-model-setup.md) hasn't been done, or was done with a
+ * plain `git clone` that silently grabbed pointer stubs instead of weights.
  */
-export async function isVoiceModelAvailable(): Promise<boolean> {
+export async function getVoiceModelStatus(): Promise<VoiceModelStatus> {
   try {
-    const res = await fetch(`/models/${VOICE_MODEL_ID}/config.json`, {
+    const configRes = await fetch(`/models/${VOICE_MODEL_ID}/config.json`, {
       method: "HEAD",
     });
-    return res.ok;
+    if (!configRes.ok) return "missing";
+
+    const weightFiles = [
+      `/models/${VOICE_MODEL_ID}/onnx/encoder_model_quantized.onnx`,
+      `/models/${VOICE_MODEL_ID}/onnx/decoder_model_merged_quantized.onnx`,
+    ];
+    for (const url of weightFiles) {
+      const res = await fetch(url, { method: "HEAD" });
+      if (!res.ok) return "missing";
+      const contentLength = Number(res.headers.get("content-length") ?? "0");
+      if (contentLength > 0 && contentLength < MIN_PLAUSIBLE_WEIGHT_BYTES) {
+        return "incomplete";
+      }
+    }
+    return "ready";
   } catch {
-    return false;
+    return "missing";
   }
 }
 

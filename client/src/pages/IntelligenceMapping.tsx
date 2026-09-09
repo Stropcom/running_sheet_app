@@ -946,43 +946,70 @@ function haversineMetres(
 }
 
 // Eases a live team pin's DivIconOverlay smoothly from its current position
-// to a new one over `durationMs`, instead of jumping instantly — the
-// underlying GPS fix only arrives once a second (see the userLocations
-// query's refetchInterval), so without this every pin visibly hops on each
-// poll tick. Cancels any tween already in flight for the same pin (a fresh
-// update landing mid-animation) via the caller-supplied animRef, so the two
-// don't fight each other. A large jump (a device reconnecting far from its
-// last known position, a corrected/stale fix) snaps instantly instead of
-// tweening — animating that slowly over the same short duration would look
-// like the pin teleporting in slow motion, not smooth continuous travel.
+// to a new one, instead of jumping instantly — the underlying GPS fix only
+// arrives once a second (see the userLocations query's refetchInterval), so
+// without this every pin visibly hops on each poll tick. Cancels any tween
+// already in flight for the same pin (a fresh update landing mid-animation)
+// via the caller-supplied animRef, so the two don't fight each other.
+//
+// Two things matter for this to read as one continuous motion rather than
+// a repeating stop-start stutter, both fixed here after an initial version
+// used a fixed-duration ease-out per segment:
+//
+//  1. Linear, not eased. An ease-out tween decelerates to a dead stop at
+//     t=1, right as the NEXT tween needs to start again at full speed
+//     (ease-out's velocity at t=0 is steep) — chaining ease-out segments
+//     back to back creates a real velocity discontinuity at every
+//     boundary, which reads as a little jerk even when the timing lines
+//     up perfectly. Constant velocity per segment keeps speed roughly
+//     continuous across boundaries instead.
+//  2. Duration matched to the ACTUAL elapsed time since the last update
+//     for this pin (via lastUpdateRef), not a fixed guess. The poll fires
+//     nominally every 1s, but tab throttling and network jitter routinely
+//     widen that gap — a fixed shorter duration finishes early and leaves
+//     the pin sitting completely motionless until the next real update
+//     lands, which is a genuine full stop, not just a perceived one.
+//
+// A large jump (a device reconnecting far from its last known position, a
+// corrected/stale fix) still snaps instantly instead of tweening —
+// animating that slowly would look like the pin teleporting in slow
+// motion, not smooth continuous travel.
 function animateLiveMarkerTo(
   marker: DivIconOverlay,
   pinKey: string,
   to: google.maps.LatLngLiteral,
   animRef: { current: Map<string, number> },
-  durationMs = 950
+  lastUpdateRef: { current: Map<string, number> }
 ): void {
   const existingFrame = animRef.current.get(pinKey);
   if (existingFrame != null) cancelAnimationFrame(existingFrame);
 
   const from = marker.position;
   const distanceM = haversineMetres(from.lat, from.lng, to.lat, to.lng);
+  const now = performance.now();
+  const lastUpdateAt = lastUpdateRef.current.get(pinKey);
+  lastUpdateRef.current.set(pinKey, now);
+
   if (distanceM > 150) {
     marker.position = to;
     animRef.current.delete(pinKey);
     return;
   }
 
-  const startTime = performance.now();
-  const step = (now: number) => {
-    const t = Math.min(1, (now - startTime) / durationMs);
-    // Ease-out cubic — starts at full speed, settles gently into place
-    // rather than stopping abruptly, which reads as more natural motion
-    // than a plain linear tween.
-    const eased = 1 - Math.pow(1 - t, 3);
+  // Clamped so a very first update (no prior timestamp) falls back to the
+  // nominal 1s poll cadence, and any freak multi-second gap (e.g. the tab
+  // was backgrounded) doesn't produce an absurdly slow crawl.
+  const durationMs =
+    lastUpdateAt != null
+      ? Math.min(Math.max(now - lastUpdateAt, 400), 3000)
+      : 1000;
+
+  const startTime = now;
+  const step = (frameNow: number) => {
+    const t = Math.min(1, (frameNow - startTime) / durationMs);
     marker.position = {
-      lat: from.lat + (to.lat - from.lat) * eased,
-      lng: from.lng + (to.lng - from.lng) * eased,
+      lat: from.lat + (to.lat - from.lat) * t,
+      lng: from.lng + (to.lng - from.lng) * t,
     };
     if (t < 1) {
       animRef.current.set(pinKey, requestAnimationFrame(step));
@@ -1912,6 +1939,10 @@ export default function IntelligenceMapping() {
   // fresh position update cancel an in-flight tween instead of the two
   // fighting each other when a new liveUsers poll lands mid-animation.
   const liveMarkerAnimRef = useRef<Map<string, number>>(new Map());
+  // Key: "userId_deviceId" -> performance.now() timestamp of the last
+  // position update for that pin, so animateLiveMarkerTo can match each
+  // tween's duration to the actual elapsed time rather than a fixed guess.
+  const liveMarkerLastUpdateRef = useRef<Map<string, number>>(new Map());
   // Key: "userId_deviceId" -> which of the pin's three motion states it's
   // currently in ("moving" | "short" | "long", see createUserPinElement)
   // and when that state began. Lets "just stopped" settle to "stopped
@@ -3265,6 +3296,7 @@ export default function IntelligenceMapping() {
         const frame = liveMarkerAnimRef.current.get(key);
         if (frame != null) cancelAnimationFrame(frame);
         liveMarkerAnimRef.current.delete(key);
+        liveMarkerLastUpdateRef.current.delete(key);
       }
     });
 
@@ -3306,7 +3338,8 @@ export default function IntelligenceMapping() {
             existing,
             pinKey,
             { lat: liveUser.lat, lng: liveUser.lng },
-            liveMarkerAnimRef
+            liveMarkerAnimRef,
+            liveMarkerLastUpdateRef
           );
           // Refresh content to update motion dot
           existing.content = createUserPinElement(liveUser);

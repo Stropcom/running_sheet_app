@@ -28,8 +28,13 @@
 //      copy-onnx-wasm.ts copies them into client/public/onnx-wasm/
 //      automatically before `pnpm dev`/`pnpm build` — nothing to fetch or
 //      configure by hand for this half.
-import { pipeline, env } from "@xenova/transformers";
-import type { AutomaticSpeechRecognitionPipeline } from "@xenova/transformers";
+import {
+  env,
+  AutoModelForSpeechSeq2Seq,
+  AutoTokenizer,
+  AutoProcessor,
+  AutomaticSpeechRecognitionPipeline,
+} from "@xenova/transformers";
 
 env.allowRemoteModels = false;
 env.allowLocalModels = true;
@@ -50,13 +55,34 @@ export const VOICE_MODEL_ID = "Xenova/whisper-tiny.en";
 let transcriberPromise: Promise<AutomaticSpeechRecognitionPipeline> | null =
   null;
 
+// Deliberately NOT using the library's own pipeline() convenience factory.
+// For "automatic-speech-recognition" it tries two model classes in order —
+// AutoModelForSpeechSeq2Seq (which supports whisper), then AutoModelForCTC
+// (which doesn't) — and on any failure of the first, silently retries with
+// the second and surfaces *that* class's generic "Unsupported model type"
+// error instead of the real, first failure. That masked a genuine
+// first-deployment error behind a misleading message. Loading the model/
+// tokenizer/processor directly via the one correct Auto-class and
+// constructing the pipeline by hand gets the real underlying error instead.
 function getTranscriber(): Promise<AutomaticSpeechRecognitionPipeline> {
   if (!transcriberPromise) {
-    transcriberPromise = pipeline(
-      "automatic-speech-recognition",
-      VOICE_MODEL_ID,
-      { quantized: true }
-    ) as Promise<AutomaticSpeechRecognitionPipeline>;
+    transcriberPromise = (async () => {
+      const pretrainedOptions = { quantized: true };
+      const [tokenizer, model, processor] = await Promise.all([
+        AutoTokenizer.from_pretrained(VOICE_MODEL_ID, pretrainedOptions),
+        AutoModelForSpeechSeq2Seq.from_pretrained(
+          VOICE_MODEL_ID,
+          pretrainedOptions
+        ),
+        AutoProcessor.from_pretrained(VOICE_MODEL_ID, pretrainedOptions),
+      ]);
+      return new AutomaticSpeechRecognitionPipeline({
+        task: "automatic-speech-recognition",
+        tokenizer,
+        model,
+        processor,
+      });
+    })();
   }
   return transcriberPromise;
 }

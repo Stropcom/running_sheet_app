@@ -52,8 +52,52 @@ if (env.backends.onnx.wasm) {
 
 export const VOICE_MODEL_ID = "Xenova/whisper-tiny.en";
 
+// A Git LFS pointer stub (the file Hugging Face's raw git host serves in
+// place of a large binary when git-lfs isn't installed on the machine that
+// cloned it — see scripts/dev/voice-model-setup.md) is ~130 bytes. Real
+// quantized Whisper-tiny.en weights are multi-megabyte. 100KB is comfortably
+// between the two, so a file under this size means the deploy step fetched
+// pointer stubs, not the actual model binaries — this bit a real deployment.
+const MIN_PLAUSIBLE_WEIGHT_BYTES = 100_000;
+
+const WEIGHT_FILE_PATHS = [
+  `/models/${VOICE_MODEL_ID}/onnx/encoder_model_quantized.onnx`,
+  `/models/${VOICE_MODEL_ID}/onnx/decoder_model_merged_quantized.onnx`,
+];
+
 let transcriberPromise: Promise<AutomaticSpeechRecognitionPipeline> | null =
   null;
+
+// transformers.js caches every fetched model file in the browser's Cache
+// Storage API under a fixed cache name ('transformers-cache', see
+// node_modules/@xenova/transformers/src/utils/hub.js#getModelFile) keyed on
+// the request path — and it checks that cache *before ever issuing a
+// fetch*, with no revalidation or expiry. If a broken file (e.g. a Git LFS
+// pointer stub) was ever fetched once, it stays cached forever and keeps
+// getting served even after the server starts returning the real file, with
+// no way for the app to detect it short of evicting the stale entry itself.
+// This bit a real deployment: the server-side fix landed, but the phone
+// that had already failed once kept reusing its own stale cached stub.
+// Runs before every model load (cheap no-op once the cache is clean) so
+// this self-heals with zero user action required, rather than needing
+// someone to manually clear site data on a phone in the field.
+async function evictStaleModelWeightCacheEntries(): Promise<void> {
+  if (typeof caches === "undefined") return;
+  try {
+    const cache = await caches.open("transformers-cache");
+    for (const key of WEIGHT_FILE_PATHS) {
+      const cached = await cache.match(key);
+      if (!cached) continue;
+      const size = (await cached.clone().arrayBuffer()).byteLength;
+      if (size < MIN_PLAUSIBLE_WEIGHT_BYTES) {
+        await cache.delete(key);
+      }
+    }
+  } catch {
+    // Cache API unavailable/blocked (e.g. private browsing) — nothing to
+    // evict; getModelFile() will just fetch fresh every time in that case.
+  }
+}
 
 // Deliberately NOT using the library's own pipeline() convenience factory.
 // For "automatic-speech-recognition" it tries two model classes in order —
@@ -67,6 +111,7 @@ let transcriberPromise: Promise<AutomaticSpeechRecognitionPipeline> | null =
 function getTranscriber(): Promise<AutomaticSpeechRecognitionPipeline> {
   if (!transcriberPromise) {
     transcriberPromise = (async () => {
+      await evictStaleModelWeightCacheEntries();
       const pretrainedOptions = { quantized: true };
       const [tokenizer, model, processor] = await Promise.all([
         AutoTokenizer.from_pretrained(VOICE_MODEL_ID, pretrainedOptions),
@@ -89,14 +134,6 @@ function getTranscriber(): Promise<AutomaticSpeechRecognitionPipeline> {
 
 export type VoiceModelStatus = "ready" | "missing" | "incomplete";
 
-// A Git LFS pointer stub (the file Hugging Face's raw git host serves in
-// place of a large binary when git-lfs isn't installed on the machine that
-// cloned it — see scripts/dev/voice-model-setup.md) is ~130 bytes. Real
-// quantized Whisper-tiny.en weights are multi-megabyte. 100KB is comfortably
-// between the two, so a file under this size means the deploy step fetched
-// pointer stubs, not the actual model binaries — this bit a real deployment.
-const MIN_PLAUSIBLE_WEIGHT_BYTES = 100_000;
-
 /**
  * Whether the self-hosted model files are actually present *and* look like
  * real binaries rather than Git LFS pointer stubs — lets the mic button
@@ -113,11 +150,7 @@ export async function getVoiceModelStatus(): Promise<VoiceModelStatus> {
     });
     if (!configRes.ok) return "missing";
 
-    const weightFiles = [
-      `/models/${VOICE_MODEL_ID}/onnx/encoder_model_quantized.onnx`,
-      `/models/${VOICE_MODEL_ID}/onnx/decoder_model_merged_quantized.onnx`,
-    ];
-    for (const url of weightFiles) {
+    for (const url of WEIGHT_FILE_PATHS) {
       const res = await fetch(url, { method: "HEAD" });
       if (!res.ok) return "missing";
       const contentLength = Number(res.headers.get("content-length") ?? "0");

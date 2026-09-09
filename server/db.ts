@@ -12904,6 +12904,7 @@ export interface UserLocationRow {
   heading: number | null;
   operationIds: number[];
   updatedAt: number;
+  onFoot: boolean;
 }
 
 /**
@@ -12930,6 +12931,7 @@ export async function getUserLocations(
       heading: userLocations.heading,
       operationIds: userLocations.operationIds,
       updatedAt: userLocations.updatedAt,
+      onFoot: users.onFoot,
     })
     .from(userLocations)
     .innerJoin(users, eq(users.id, userLocations.userId))
@@ -12949,6 +12951,22 @@ export async function getUserLocations(
     }
     return { ...r, operationIds: opIds };
   });
+}
+
+/**
+ * Sets a user's own "on foot" flag (see users.onFoot) — swaps their live
+ * team pin's heading arrow for a walking glyph on every viewer's map, not
+ * just their own. Caller must scope userId to the requesting user's own id
+ * (see the users.setOnFoot router procedure) — there is no admin/team-lead
+ * override to set this for someone else.
+ */
+export async function setUserOnFoot(
+  userId: number,
+  onFoot: boolean
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set({ onFoot }).where(eq(users.id, userId));
 }
 
 /**

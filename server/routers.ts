@@ -244,6 +244,7 @@ import {
   getIntelMappingLocations,
   getUserLocations,
   upsertUserLocation,
+  setUserOnFoot,
   clearUserLocation,
   getUserLocationState,
   getUserLocationHistories,
@@ -3759,6 +3760,14 @@ export const appRouter = router({
           input.heading ?? null,
           input.accuracy ?? null
         );
+        return { ok: true };
+      }),
+
+    /** Set the caller's own "on foot" pin flag (see users.onFoot) — always scoped to ctx.user.id */
+    setOnFoot: protectedProcedure
+      .input(z.object({ onFoot: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        await setUserOnFoot(ctx.user.id, input.onFoot);
         return { ok: true };
       }),
 

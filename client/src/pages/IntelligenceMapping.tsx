@@ -218,6 +218,7 @@ interface LiveUser {
   heading: number | null;
   operationIds: number[];
   updatedAt: number;
+  onFoot: boolean;
 }
 
 // ── Quick-link config ──────────────────────────────────────────────────────────
@@ -2187,6 +2188,23 @@ export default function IntelligenceMapping() {
     clearLocationMutRef.current = clearLocationMut;
   });
 
+  // "On Foot" pin state — own pill click opens a popup to toggle it (see
+  // the click listener on the own marker below and the Dialog rendered
+  // near the end of this component). setOnFootMutRef mirrors the same
+  // pattern as updateLocationMutRef, since the auto-revert effect below
+  // needs a stable reference to call it from outside the render closure.
+  const [onFootPopupOpen, setOnFootPopupOpen] = useState(false);
+  const setOnFootMut = trpc.intelligence.setOnFoot.useMutation();
+  const setOnFootMutRef = useRef(setOnFootMut);
+  useEffect(() => {
+    setOnFootMutRef.current = setOnFootMut;
+  });
+  // Guards the >15km/h auto-revert (see the live-marker effect) from
+  // firing the mutation on every single poll tick while speed stays above
+  // the threshold — only fires once per crossing, resetting the moment
+  // onFoot next reads back false from the server.
+  const onFootAutoRevertingRef = useRef(false);
+
   // Custom map markers — poll every 5 seconds
   // Filter by selected operations so markers are scoped to the active operation.
   // When no operation is selected in Map Settings but an RS pane operation is active,
@@ -2625,12 +2643,20 @@ export default function IntelligenceMapping() {
   // re-register the watcher.
   const deviceIdRef = useRef(deviceId);
   const selectedOpIdsRef = useRef(selectedOpIds);
+  // Mirrors user?.id for createUserPinElement, a useCallback with empty
+  // deps that can't otherwise see a fresh value across renders — used to
+  // decide whether a given pin is the viewer's own (only the own pin gets
+  // a click listener for the On Foot popup).
+  const ownUserIdRef = useRef<number | undefined>(user?.id);
   useEffect(() => {
     deviceIdRef.current = deviceId;
   }, [deviceId]);
   useEffect(() => {
     selectedOpIdsRef.current = selectedOpIds;
   }, [selectedOpIds]);
+  useEffect(() => {
+    ownUserIdRef.current = user?.id;
+  }, [user?.id]);
 
   const startWatching = useCallback(() => {
     if (!navigator.geolocation) {
@@ -2899,7 +2925,34 @@ export default function IntelligenceMapping() {
       justify-content:center;
       z-index:2;
     `;
-    if (motionState === "moving") {
+    if (liveUser.onFoot) {
+      // On-foot mode: a walking-person glyph entirely replaces the vehicle
+      // arrow — no heading rotation (a pedestrian has no "nose direction"
+      // the way a vehicle does) and no sonar rings (vehicle-speed themed,
+      // 80km/h+, meaningless on foot). Direction of travel is instead a
+      // simple east/west mirror — see the sin(heading) comment below —
+      // rather than a full compass rotation, which would tip a side-view
+      // glyph over the same way the vehicle emoji options did.
+      const speedKmh = (liveUser.speed ?? 0) * 3.6;
+      let glyph: string;
+      if (motionState === "long") {
+        glyph = "🧍"; // stopped 10s+ — same trigger as the vehicle red dot
+      } else if (speedKmh > 5) {
+        glyph = "🏃"; // moving faster than a walking pace
+      } else {
+        glyph = "🚶"; // walking (also covers "just stopped", under 10s)
+      }
+      // sin(heading) > 0 means the heading has an eastward component (the
+      // 0-180° half of the compass, measured clockwise from north); < 0
+      // means westward (180-360°). Defaults to facing right/east when
+      // heading is unavailable or exactly due north/south (sin = 0) rather
+      // than remembering a "last known side" — a deliberate
+      // simplification, since that ambiguous case only ever lasts one
+      // frame in practice and isn't worth extra state to smooth over.
+      const heading = liveUser.heading ?? 0;
+      const faceWest = Math.sin((heading * Math.PI) / 180) < 0;
+      indicator.innerHTML = `<span style="font-size:20px;line-height:25px;width:25px;height:25px;display:block;text-align:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));transform:scaleX(${faceWest ? -1 : 1});">${glyph}</span>`;
+    } else if (motionState === "moving") {
       // Screen rotation, not raw compass bearing: the arrow/rings need to
       // point the right way relative to the map as currently displayed,
       // which drifts from true north whenever heading-up mode (or a manual
@@ -2939,6 +2992,26 @@ export default function IntelligenceMapping() {
 
     el.appendChild(pill);
     el.appendChild(indicator);
+
+    // Own pin only: tap/click opens the pin-customise popup (currently
+    // just the On Foot toggle). Attached directly to this content element
+    // rather than via DivIconOverlay's own "click" listener (used
+    // elsewhere for the map's native POI click-suppression) — this
+    // function reruns on every poll tick for existing markers too (see
+    // `existing.content = createUserPinElement(...)`), which swaps in a
+    // whole new content element each time, so the listener is naturally
+    // "re-added" as a side effect of that regeneration, not something
+    // this needs to manage separately.
+    const isOwnPin =
+      liveUser.userId === ownUserIdRef.current &&
+      liveUser.deviceId === deviceIdRef.current;
+    if (isOwnPin) {
+      el.addEventListener("click", e => {
+        e.stopPropagation();
+        setOnFootPopupOpen(true);
+      });
+    }
+
     return el;
   }, []);
 
@@ -3405,6 +3478,28 @@ export default function IntelligenceMapping() {
         ownEntry.heading != null
       ) {
         mapRef.current.setHeading(ownEntry.heading);
+      }
+      // On Foot auto-revert: speed over 15 km/h switches the pin back to
+      // the vehicle arrow automatically — officers forget to switch it
+      // back manually after getting back in a car. Fires the mutation
+      // once per crossing (onFootAutoRevertingRef), not on every poll tick
+      // while speed stays above the threshold; resets the moment the
+      // server confirms onFoot is back to false. Deliberately one-way —
+      // dropping back under 15 km/h does NOT re-enable On Foot, matching
+      // "stays arrow until manually changed again".
+      if (ownEntry.onFoot) {
+        const ownSpeedKmh = (ownEntry.speed ?? 0) * 3.6;
+        if (ownSpeedKmh > 15) {
+          if (!onFootAutoRevertingRef.current) {
+            onFootAutoRevertingRef.current = true;
+            setOnFootMutRef.current.mutate({ onFoot: false });
+            toast.info(
+              "Speed over 15 km/h — pin switched back to vehicle automatically"
+            );
+          }
+        } else {
+          onFootAutoRevertingRef.current = false;
+        }
       }
     }
 
@@ -10000,6 +10095,38 @@ export default function IntelligenceMapping() {
           />
         );
       })()}
+
+      {/* Pin-customise popup — opened by tapping your own name pill on the
+        map (see the click listener attached in createUserPinElement).
+        Currently just the On Foot toggle; more pointer-customisation
+        options can land here later without changing the trigger. */}
+      <Dialog open={onFootPopupOpen} onOpenChange={setOnFootPopupOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Customise my pointer</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-between gap-4 py-2">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">On Foot</span>
+              <span className="text-xs text-muted-foreground">
+                Shows a walking icon instead of the vehicle arrow. Switches back
+                to the vehicle automatically once speed goes over 15 km/h.
+              </span>
+            </div>
+            <Switch
+              checked={
+                (liveUsers as LiveUser[] | undefined)?.find(
+                  u => u.userId === user?.id && u.deviceId === deviceId
+                )?.onFoot ?? false
+              }
+              onCheckedChange={next => {
+                setOnFootMut.mutate({ onFoot: next });
+              }}
+              aria-label="Toggle On Foot"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

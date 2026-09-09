@@ -143,6 +143,46 @@ function useIsTouchDevice(): boolean {
   return isTouch;
 }
 
+// On-screen keyboard support for full-screen bottom-sheet modals (map
+// marker popup etc.). Mobile Safari/Chrome don't shrink the layout
+// viewport when the keyboard opens — only `window.visualViewport` does —
+// so a sheet sized/anchored off `100vh`/`inset-0` alone stays full height
+// and the keyboard simply overlaps its lower portion, hiding whatever
+// field is focused there. Returns the actually-visible height and how
+// much of the bottom is currently covered by the keyboard, so a sheet can
+// (a) cap its own max-height to what's really visible, so its *own*
+// overflow-y-auto — not the outer, keyboard-unaware overlay — is what
+// scrolls the focused field into view, and (b) pad its bottom-anchored
+// wrapper up by `keyboardInset` so it lands above the keyboard instead of
+// being pinned to the (now-hidden) true bottom of the screen.
+function useVisualViewportInset(): {
+  visibleHeight: number;
+  keyboardInset: number;
+} {
+  const [state, setState] = useState(() => ({
+    visibleHeight: typeof window !== "undefined" ? window.innerHeight : 800,
+    keyboardInset: 0,
+  }));
+  useEffect(() => {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    if (!vv) return;
+    const update = () => {
+      setState({
+        visibleHeight: vv.height,
+        keyboardInset: Math.max(0, window.innerHeight - vv.height),
+      });
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+  return state;
+}
+
 // ── Perth date helpers (shared with SheetDetail logic) ───────────────────────
 const _PERTH_OFFSET_SUFFIX = "T00:00:00+08:00";
 const _PERTH_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -1477,6 +1517,8 @@ export default function IntelligenceMapping() {
     time: string;
   } | null>(null);
   const isTouchDevice = useIsTouchDevice();
+  const { visibleHeight: vvVisibleHeight, keyboardInset: vvKeyboardInset } =
+    useVisualViewportInset();
 
   // Inline observation field state
   const [rsInlineLabel, setRsInlineLabel] = useState<string | null>(null); // null = closed
@@ -9727,6 +9769,11 @@ export default function IntelligenceMapping() {
             style={{
               background: "rgba(0,0,0,0.6)",
               backdropFilter: "blur(4px)",
+              // Pushes the bottom-anchored sheet up above the on-screen
+              // keyboard — see useVisualViewportInset. Without this the
+              // sheet stays pinned to the true (keyboard-hidden) bottom of
+              // the screen instead of the visible one.
+              paddingBottom: vvKeyboardInset,
             }}
             onClick={() => {
               setPendingLatLng(null);
@@ -9734,7 +9781,8 @@ export default function IntelligenceMapping() {
             }}
           >
             <div
-              className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
+              className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 overflow-y-auto"
+              style={{ maxHeight: Math.round(vvVisibleHeight * 0.9) }}
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}

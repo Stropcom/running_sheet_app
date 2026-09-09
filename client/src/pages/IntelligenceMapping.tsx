@@ -945,16 +945,18 @@ function haversineMetres(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Eases a live team pin's DivIconOverlay smoothly from its current position
-// to a new one, instead of jumping instantly — the underlying GPS fix only
-// arrives once a second (see the userLocations query's refetchInterval), so
-// without this every pin visibly hops on each poll tick. Cancels any tween
-// already in flight for the same pin (a fresh update landing mid-animation)
-// via the caller-supplied animRef, so the two don't fight each other.
+// Shared tween engine behind both animateLiveMarkerTo (a pin's position)
+// and the follow-mode camera smoothing in the live-marker effect (the
+// map's centre) — linearly interpolates a {lat,lng} from wherever
+// `getCurrent()` says it actually is right now to `to`, via
+// requestAnimationFrame, calling `setPosition` every frame. Cancels any
+// tween already in flight for the same `key` (a fresh update landing
+// mid-animation) via the caller-supplied animRef, so the two don't fight
+// each other.
 //
 // Two things matter for this to read as one continuous motion rather than
-// a repeating stop-start stutter, both fixed here after an initial version
-// used a fixed-duration ease-out per segment:
+// a repeating stop-start stutter, both learned the hard way from an
+// initial version of the pin tween that used a fixed-duration ease-out:
 //
 //  1. Linear, not eased. An ease-out tween decelerates to a dead stop at
 //     t=1, right as the NEXT tween needs to start again at full speed
@@ -964,35 +966,38 @@ function haversineMetres(
 //     up perfectly. Constant velocity per segment keeps speed roughly
 //     continuous across boundaries instead.
 //  2. Duration matched to the ACTUAL elapsed time since the last update
-//     for this pin (via lastUpdateRef), not a fixed guess. The poll fires
+//     for this key (via lastUpdateRef), not a fixed guess. The poll fires
 //     nominally every 1s, but tab throttling and network jitter routinely
 //     widen that gap — a fixed shorter duration finishes early and leaves
-//     the pin sitting completely motionless until the next real update
-//     lands, which is a genuine full stop, not just a perceived one.
+//     the thing being animated sitting completely motionless until the
+//     next real update lands, which is a genuine full stop, not just a
+//     perceived one.
 //
 // A large jump (a device reconnecting far from its last known position, a
 // corrected/stale fix) still snaps instantly instead of tweening —
-// animating that slowly would look like the pin teleporting in slow
-// motion, not smooth continuous travel.
-function animateLiveMarkerTo(
-  marker: DivIconOverlay,
-  pinKey: string,
+// animating that slowly would look like teleporting in slow motion, not
+// smooth continuous travel.
+function animateLatLngTo(
+  key: string,
+  getCurrent: () => google.maps.LatLngLiteral,
+  setPosition: (p: google.maps.LatLngLiteral) => void,
   to: google.maps.LatLngLiteral,
   animRef: { current: Map<string, number> },
-  lastUpdateRef: { current: Map<string, number> }
+  lastUpdateRef: { current: Map<string, number> },
+  snapDistanceM = 150
 ): void {
-  const existingFrame = animRef.current.get(pinKey);
+  const existingFrame = animRef.current.get(key);
   if (existingFrame != null) cancelAnimationFrame(existingFrame);
 
-  const from = marker.position;
+  const from = getCurrent();
   const distanceM = haversineMetres(from.lat, from.lng, to.lat, to.lng);
   const now = performance.now();
-  const lastUpdateAt = lastUpdateRef.current.get(pinKey);
-  lastUpdateRef.current.set(pinKey, now);
+  const lastUpdateAt = lastUpdateRef.current.get(key);
+  lastUpdateRef.current.set(key, now);
 
-  if (distanceM > 150) {
-    marker.position = to;
-    animRef.current.delete(pinKey);
+  if (distanceM > snapDistanceM) {
+    setPosition(to);
+    animRef.current.delete(key);
     return;
   }
 
@@ -1007,17 +1012,41 @@ function animateLiveMarkerTo(
   const startTime = now;
   const step = (frameNow: number) => {
     const t = Math.min(1, (frameNow - startTime) / durationMs);
-    marker.position = {
+    setPosition({
       lat: from.lat + (to.lat - from.lat) * t,
       lng: from.lng + (to.lng - from.lng) * t,
-    };
+    });
     if (t < 1) {
-      animRef.current.set(pinKey, requestAnimationFrame(step));
+      animRef.current.set(key, requestAnimationFrame(step));
     } else {
-      animRef.current.delete(pinKey);
+      animRef.current.delete(key);
     }
   };
-  animRef.current.set(pinKey, requestAnimationFrame(step));
+  animRef.current.set(key, requestAnimationFrame(step));
+}
+
+// Eases a live team pin's DivIconOverlay smoothly from its current position
+// to a new one, instead of jumping instantly — the underlying GPS fix only
+// arrives once a second (see the userLocations query's refetchInterval), so
+// without this every pin visibly hops on each poll tick. See
+// animateLatLngTo above for how and why.
+function animateLiveMarkerTo(
+  marker: DivIconOverlay,
+  pinKey: string,
+  to: google.maps.LatLngLiteral,
+  animRef: { current: Map<string, number> },
+  lastUpdateRef: { current: Map<string, number> }
+): void {
+  animateLatLngTo(
+    pinKey,
+    () => marker.position,
+    p => {
+      marker.position = p;
+    },
+    to,
+    animRef,
+    lastUpdateRef
+  );
 }
 
 // Best-effort strip of role descriptors ("driver", "front passenger",
@@ -1943,6 +1972,12 @@ export default function IntelligenceMapping() {
   // position update for that pin, so animateLiveMarkerTo can match each
   // tween's duration to the actual elapsed time rather than a fixed guess.
   const liveMarkerLastUpdateRef = useRef<Map<string, number>>(new Map());
+  // Same animateLatLngTo bookkeeping as the two refs above, but for the
+  // Follow-me camera itself rather than any one pin — see the follow-mode
+  // block in the live-marker effect below. Only one map exists, so a
+  // single fixed "own" key is enough (no per-pin keying needed).
+  const mapCenterAnimRef = useRef<Map<string, number>>(new Map());
+  const mapCenterLastUpdateRef = useRef<Map<string, number>>(new Map());
   // Key: "userId_deviceId" -> which of the pin's three motion states it's
   // currently in ("moving" | "short" | "long", see createUserPinElement)
   // and when that state began. Lets "just stopped" settle to "stopped
@@ -2034,6 +2069,15 @@ export default function IntelligenceMapping() {
     if (!mapReady || !mapRef.current) return;
     const map = mapRef.current;
     const listener = map.addListener("idle", () => {
+      // Follow-me continuously re-centres the map on live GPS updates (see
+      // the camera-smoothing effect below), which fires this same "idle"
+      // event on every animation frame of that tween — up to ~60x/sec, not
+      // once. Persisting each of those transient, tracking-driven centres
+      // would spam localStorage for no benefit (nobody wants the map to
+      // reopen wherever their last GPS ping happened to be), so skip the
+      // write entirely while follow mode is active; it resumes normally
+      // the moment the user pans manually or turns follow mode off.
+      if (followModeRef.current) return;
       const center = map.getCenter();
       const zoom = map.getZoom();
       if (!center || zoom === undefined) return;
@@ -3307,7 +3351,24 @@ export default function IntelligenceMapping() {
     if (ownEntry) {
       ownPositionRef.current = { lat: ownEntry.lat, lng: ownEntry.lng };
       if (followModeRef.current && mapRef.current) {
-        mapRef.current.panTo({ lat: ownEntry.lat, lng: ownEntry.lng });
+        // Tween the camera too, not just panTo() straight to the new fix —
+        // panTo()'s own built-in animation is a short, fixed-duration ease
+        // fired fresh every poll tick, so it finishes and sits still, then
+        // hops again next tick: the exact same stop-start stutter the pin
+        // itself had before switching to animateLatLngTo. Reusing that
+        // same engine here keeps the camera moving continuously in step
+        // with the pin it's following, using setCenter() (not panTo())
+        // each frame so we're not fighting Google's own separate
+        // animation on top of ours.
+        const map = mapRef.current;
+        animateLatLngTo(
+          "own",
+          () => map.getCenter()?.toJSON() ?? ownPositionRef.current!,
+          p => map.setCenter(p),
+          { lat: ownEntry.lat, lng: ownEntry.lng },
+          mapCenterAnimRef,
+          mapCenterLastUpdateRef
+        );
       }
       // Heading-up: rotate the map to match this device's own live travel
       // heading. Geolocation only reports a heading while actually moving

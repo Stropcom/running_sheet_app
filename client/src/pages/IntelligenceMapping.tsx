@@ -40,7 +40,7 @@ import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
-import { MapView, getMapRenderPreference } from "@/components/Map";
+import { MapView } from "@/components/Map";
 import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
 import { UcoGuideMapOverlay } from "@/components/UcoGuideMapOverlay";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
@@ -1354,15 +1354,6 @@ export default function IntelligenceMapping() {
     }
     return false;
   });
-  // Which Google Maps Map ID (vector vs raster) this device renders the map
-  // with — see Map.tsx. Raster is now the only mode reachable from the UI
-  // (see the removed Map Settings toggle), but this still reads whatever a
-  // device actually has (a stray "vector" left over in localStorage, or the
-  // ?mapRender= URL override) so the 3D tilt / rotation buttons below stay
-  // correctly disabled rather than assuming raster unconditionally.
-  const [mapRenderPref] = useState<"vector" | "raster">(() =>
-    getMapRenderPreference()
-  );
   // 3D (tilt) view — only available under vector rendering. Kept in sync
   // with the map's actual tilt via a "tilt_changed" listener (see
   // handleMapReady) so the button reflects reality even if a gesture
@@ -1378,6 +1369,28 @@ export default function IntelligenceMapping() {
   // rotation needs to account for the map's current on-screen orientation
   // without forcing every pin to re-render on every heading_changed tick).
   const mapHeadingRef = useRef(0);
+  // Ground truth for whether the map can actually rotate. Map.tsx's
+  // getMapRenderPreference() (localStorage/URL) only decides which Map ID
+  // gets *requested* — Google can still silently instantiate a raster map
+  // regardless of that request (e.g. WebGL unavailable on the device, or
+  // the vector Map ID failing to load), in which case .setHeading()
+  // becomes a harmless no-op with no error. That's exactly the earlier
+  // bug's failure mode (see MAP_RENDER_STORAGE_KEY's own history in
+  // Map.tsx) recurring for a different underlying reason:
+  // the arrow/pill still rotate correctly (pure CSS, computed from
+  // mapHeadingRef vs. live GPS heading) since that math doesn't care
+  // whether the map itself actually turned, so only the map background
+  // visibly fails to follow — which reads as "heading-up doesn't work"
+  // with no other symptom. Synced from the real map.getRenderingType()
+  // via a "renderingtype_changed" listener in handleMapReady, not
+  // inferred. actualRenderingTypeRef is the one the live-marker effect's
+  // setHeading() gate uses (a ref, not the state, since that effect reads
+  // refs rather than depending on renders); isMapActuallyVector is the
+  // state the UI buttons below read for their disabled/title text.
+  const actualRenderingTypeRef = useRef<"VECTOR" | "RASTER" | "UNINITIALIZED">(
+    "UNINITIALIZED"
+  );
+  const [isMapActuallyVector, setIsMapActuallyVector] = useState(false);
   // Nearmap aerial-imagery overlay toggle — a google.maps.ImageMapType
   // pushed onto map.overlayMapTypes, requesting tiles from our own
   // /api/nearmap/tile proxy (server/nearmapProxy.ts) rather than Nearmap
@@ -3549,7 +3562,7 @@ export default function IntelligenceMapping() {
       if (
         headingUpModeRef.current &&
         mapRef.current &&
-        mapRenderPref === "vector" &&
+        actualRenderingTypeRef.current === "VECTOR" &&
         ownEntry.heading != null
       ) {
         mapRef.current.setHeading(ownEntry.heading);
@@ -3717,6 +3730,19 @@ export default function IntelligenceMapping() {
           setActionChooser({ lat, lng, address: convertGoogleAddresses(addr) });
         });
       });
+
+      // Ground truth for whether this map instance can actually rotate —
+      // see actualRenderingTypeRef's own comment above. Google can take a
+      // moment after map construction to resolve VECTOR vs. RASTER (it
+      // starts UNINITIALIZED), and can in principle change later, so this
+      // is read live off the map rather than assumed once at mount.
+      const syncRenderingType = () => {
+        const rt = map.getRenderingType();
+        actualRenderingTypeRef.current = rt;
+        setIsMapActuallyVector(rt === google.maps.RenderingType.VECTOR);
+      };
+      syncRenderingType();
+      map.addListener("renderingtype_changed", syncRenderingType);
 
       // Keep the 3D button's on/off state in sync with the map's actual
       // tilt — vector maps also let a user tilt via a two-finger drag
@@ -5716,12 +5742,12 @@ export default function IntelligenceMapping() {
             <button
               onClick={e => {
                 e.stopPropagation();
-                if (!mapRef.current || mapRenderPref !== "vector") return;
+                if (!mapRef.current || !isMapActuallyVector) return;
                 const next = is3DActive ? 0 : 45;
                 mapRef.current.setTilt(next);
                 setIs3DActive(next > 0);
               }}
-              disabled={mapRenderPref !== "vector"}
+              disabled={!isMapActuallyVector}
               className={`absolute z-20 pointer-events-auto flex items-center justify-center rounded-lg shadow-md border h-9 w-9 text-xs font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                 is3DActive
                   ? "bg-sky-600 border-sky-600 text-white"
@@ -5730,7 +5756,7 @@ export default function IntelligenceMapping() {
               style={{ top: "94px", right: "10px" }}
               aria-label="Toggle 3D view"
               title={
-                mapRenderPref === "vector"
+                isMapActuallyVector
                   ? is3DActive
                     ? "Switch to flat (2D) view"
                     : "Switch to 3D (tilted) view"
@@ -5749,15 +5775,15 @@ export default function IntelligenceMapping() {
             <button
               onClick={e => {
                 e.stopPropagation();
-                if (!mapRef.current || mapRenderPref !== "vector") return;
+                if (!mapRef.current || !isMapActuallyVector) return;
                 mapRef.current.setHeading(0);
               }}
-              disabled={mapRenderPref !== "vector" || mapHeading === 0}
+              disabled={!isMapActuallyVector || mapHeading === 0}
               className="absolute z-20 pointer-events-auto flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               style={{ top: "130px", right: "10px" }}
               aria-label="Reset map rotation to North Up"
               title={
-                mapRenderPref !== "vector"
+                !isMapActuallyVector
                   ? "Rotation requires Vector map rendering, which isn't available on this device"
                   : mapHeading === 0
                     ? "Already North Up"
@@ -5896,13 +5922,13 @@ export default function IntelligenceMapping() {
                 Me on too if it wasn't already. */}
               <button
                 title={
-                  mapRenderPref !== "vector"
+                  !isMapActuallyVector
                     ? "Heading-up requires Vector map rendering, which isn't available on this device"
                     : headingUpMode
                       ? "Turn off heading-up rotation"
                       : "Rotate map to my direction of travel"
                 }
-                disabled={mapRenderPref !== "vector"}
+                disabled={!isMapActuallyVector}
                 onClick={e => {
                   e.stopPropagation();
                   if (!headingUpMode) {

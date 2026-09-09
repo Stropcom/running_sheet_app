@@ -230,32 +230,6 @@ interface LiveUser {
     | "police_car";
 }
 
-// Side-view vehicle emoji for Wheels mode (see the pin-customise popup) —
-// mirrored east/west like the on-foot glyph rather than rotated to heading.
-// Every wheeled-vehicle emoji ships as a flat side-on illustration (across
-// Apple/Google/Samsung/Microsoft), so a full compass rotation tips it onto
-// its bumper at any heading that isn't due east/west — same problem the
-// on-foot glyph avoids the same way. "arrow" isn't listed here — it keeps
-// the existing SVG polygon + directional sonar rings path untouched.
-const VEHICLE_ICON_GLYPHS: Record<
-  Exclude<LiveUser["pinVehicleIcon"], "arrow">,
-  string
-> = {
-  car: "🚗",
-  racing_car: "🏎️",
-  motorcycle: "🏍️",
-  truck: "🚚",
-  police_car: "🚓",
-};
-const VEHICLE_ICON_LABELS: Record<LiveUser["pinVehicleIcon"], string> = {
-  arrow: "Arrow (default)",
-  car: "Car",
-  racing_car: "Racing car",
-  motorcycle: "Motorcycle",
-  truck: "Truck",
-  police_car: "Police car",
-};
-
 // Builds the on-foot glyph (🧍/🚶/🏃) with optional skin-tone + gender
 // Unicode modifiers layered on — correct ZWJ sequence order is
 // <base><skin-tone><ZWJ><gender><VS16>. "default"/"neutral" produce the
@@ -2979,26 +2953,14 @@ export default function IntelligenceMapping() {
       justify-content:center;
       z-index:2;
     `;
-    // sin(heading) > 0 means the heading has an eastward component (the
-    // 0-180° half of the compass, measured clockwise from north); < 0
-    // means westward (180-360°). Defaults to facing right/east when
-    // heading is unavailable or exactly due north/south (sin = 0) rather
-    // than remembering a "last known side" — a deliberate simplification,
-    // since that ambiguous case only ever lasts one frame in practice and
-    // isn't worth extra state to smooth over. Shared by both the on-foot
-    // glyph and any non-arrow vehicle icon below — neither can rotate to a
-    // full compass heading without tipping onto its side (see each
-    // branch's own comment), so both fall back to this east/west flip.
-    const faceWest = Math.sin(((liveUser.heading ?? 0) * Math.PI) / 180) < 0;
-
     if (liveUser.onFoot) {
       // On-foot mode: a walking-person glyph entirely replaces the vehicle
       // arrow — no heading rotation (a pedestrian has no "nose direction"
       // the way a vehicle does) and no sonar rings (vehicle-speed themed,
       // 80km/h+, meaningless on foot). Direction of travel is instead a
-      // simple east/west mirror rather than a full compass rotation, which
-      // would tip a side-view glyph over the same way the vehicle emoji
-      // options did.
+      // simple east/west mirror — see the sin(heading) comment below —
+      // rather than a full compass rotation, which would tip a side-view
+      // glyph over the same way the vehicle emoji options did.
       const speedKmh = (liveUser.speed ?? 0) * 3.6;
       let base: string;
       if (motionState === "long") {
@@ -3013,19 +2975,15 @@ export default function IntelligenceMapping() {
         liveUser.pinGender,
         liveUser.pinSkinTone
       );
-      indicator.innerHTML = `<span style="font-size:26px;line-height:32px;width:32px;height:32px;display:block;text-align:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));transform:scaleX(${faceWest ? -1 : 1});">${glyph}</span>`;
-    } else if (
-      motionState === "moving" &&
-      liveUser.pinVehicleIcon &&
-      liveUser.pinVehicleIcon !== "arrow"
-    ) {
-      // Wheels mode, non-default vehicle icon: same east/west-flip approach
-      // as the on-foot glyph, for the same reason — every side-view vehicle
-      // emoji tips onto its bumper at any heading that isn't due east/west,
-      // so it's mirrored rather than rotated. No directional sonar rings
-      // either, since those rotate to the full compass heading alongside
-      // the arrow they're built for.
-      const glyph = VEHICLE_ICON_GLYPHS[liveUser.pinVehicleIcon];
+      // sin(heading) > 0 means the heading has an eastward component (the
+      // 0-180° half of the compass, measured clockwise from north); < 0
+      // means westward (180-360°). Defaults to facing right/east when
+      // heading is unavailable or exactly due north/south (sin = 0) rather
+      // than remembering a "last known side" — a deliberate
+      // simplification, since that ambiguous case only ever lasts one
+      // frame in practice and isn't worth extra state to smooth over.
+      const heading = liveUser.heading ?? 0;
+      const faceWest = Math.sin((heading * Math.PI) / 180) < 0;
       indicator.innerHTML = `<span style="font-size:26px;line-height:32px;width:32px;height:32px;display:block;text-align:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));transform:scaleX(${faceWest ? -1 : 1});">${glyph}</span>`;
     } else if (motionState === "moving") {
       // Screen rotation, not raw compass bearing: the arrow/rings need to
@@ -10173,8 +10131,10 @@ export default function IntelligenceMapping() {
 
       {/* Pin-customise popup — opened by tapping your own name pill on the
         map (see the click listener attached in createUserPinElement).
-        Wheels/Foot mode, plus Wheels-only vehicle icon and Foot-only
-        gender/skin-tone options — see setOnFoot/setPinAppearance. */}
+        Wheels/Foot mode, plus Foot-only gender/skin-tone options — see
+        setOnFoot/setPinAppearance. A Wheels-only vehicle icon picker is
+        planned but not built yet (pinVehicleIcon already exists server-side
+        for when that lands). */}
       <Dialog open={onFootPopupOpen} onOpenChange={setOnFootPopupOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -10187,7 +10147,6 @@ export default function IntelligenceMapping() {
             const onFoot = ownLiveUser?.onFoot ?? false;
             const gender = ownLiveUser?.pinGender ?? "neutral";
             const skinTone = ownLiveUser?.pinSkinTone ?? "default";
-            const vehicleIcon = ownLiveUser?.pinVehicleIcon ?? "arrow";
             const footPreview = buildOnFootGlyph("🚶", gender, skinTone);
 
             return (
@@ -10286,45 +10245,7 @@ export default function IntelligenceMapping() {
                       </div>
                     </div>
                   </>
-                ) : (
-                  <div className="space-y-1.5">
-                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                      Vehicle icon
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {(
-                        [
-                          "arrow",
-                          "car",
-                          "racing_car",
-                          "motorcycle",
-                          "truck",
-                          "police_car",
-                        ] as const
-                      ).map(v => (
-                        <button
-                          key={v}
-                          type="button"
-                          onClick={() =>
-                            setPinAppearanceMut.mutate({ pinVehicleIcon: v })
-                          }
-                          title={VEHICLE_ICON_LABELS[v]}
-                          className={`w-11 h-11 rounded-lg border-2 flex items-center justify-center text-lg transition-all ${
-                            vehicleIcon === v
-                              ? "border-primary bg-primary/10 scale-110"
-                              : "border-border bg-accent/30 hover:border-primary/50"
-                          }`}
-                        >
-                          {v === "arrow" ? "⬆️" : VEHICLE_ICON_GLYPHS[v]}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground">
-                      Vehicle icons mirror left/right with direction of travel
-                      rather than rotating to exact heading.
-                    </p>
-                  </div>
-                )}
+                ) : null}
               </div>
             );
           })()}

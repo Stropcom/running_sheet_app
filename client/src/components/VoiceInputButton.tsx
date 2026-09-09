@@ -86,7 +86,13 @@ export function VoiceInputButton({
         }
       } catch (err) {
         console.error("[VoiceInputButton] transcription failed", err);
-        toast.error("Voice transcription failed");
+        // Surfaced directly in the toast, not just the console — on a
+        // phone in the field there's no devtools to check, so a generic
+        // "failed" message is a dead end for diagnosing what actually
+        // went wrong (missing model asset, WASM engine 404, unsupported
+        // audio codec, etc.).
+        const detail = err instanceof Error ? err.message : String(err);
+        toast.error(`Voice transcription failed: ${detail}`);
       } finally {
         setState("idle");
       }

@@ -121,3 +121,14 @@ client/public/__manus__/version.json
 # first use (cachePath === langPath in server/externalIntel/ocrWorker.ts) —
 # runtime cache, not a source file.
 server/externalIntel/models/eng.traineddata
+
+# Local voice observation (see client/src/lib/voiceTranscription.ts) —
+# onnxruntime-web's WASM engine binaries, regenerated from node_modules by
+# scripts/dev/copy-onnx-wasm.ts before every dev/build (see package.json's
+# predev/prebuild); the Whisper model weights themselves, an
+# agency-controlled deployment step documented in
+# client/public/models/README.md, never committed here either — both are
+# tens of MB of binary that don't belong in git history.
+/client/public/onnx-wasm/
+/client/public/models/*/
+!/client/public/models/README.md

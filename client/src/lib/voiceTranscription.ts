@@ -1,0 +1,131 @@
+// Local, on-device speech-to-text for the Observation field's voice-input
+// button (RS Quick Entry). Runs entirely in the browser via a WASM build
+// of Whisper (@xenova/transformers, on top of onnxruntime-web) — no audio
+// or transcript ever leaves the device, no network call at runtime. This
+// is the Golden Rule's own "deterministic/on-device" pattern applied to a
+// genuinely NLP-shaped problem (see CLAUDE.md's "Planned — local voice
+// observation" note), not an exception to it.
+//
+// Named transcribeVoiceClip, not transcribeAudio — deliberately, to avoid
+// any string collision with server/_core/voiceTranscription.ts's dead
+// Manus scaffolding function of that name, which the no-runtime-ai guard
+// blocks by literal string match wherever it appears outside _core. This
+// function has nothing to do with that one; different name avoids the
+// false-positive entirely rather than fighting the guard.
+//
+// Two things must be self-hosted static assets for the "no network call"
+// guarantee to actually hold, since both default to fetching from a
+// remote host otherwise:
+//   1. The model weights (Whisper tiny.en, ONNX format) — must live at
+//      /models/Xenova/whisper-tiny.en/ in the built client. See
+//      client/public/models/README.md for exactly what's needed there —
+//      this repo does NOT vendor the (tens-of-MB) weight files themselves,
+//      the same way it doesn't vendor node_modules; they're an
+//      agency-controlled deployment step, not something to commit.
+//   2. onnxruntime-web's own WASM engine binaries — these ARE available
+//      locally (onnxruntime-web is a real npm dependency, pulled in
+//      transitively by @xenova/transformers), so scripts/dev/
+//      copy-onnx-wasm.ts copies them into client/public/onnx-wasm/
+//      automatically before `pnpm dev`/`pnpm build` — nothing to fetch or
+//      configure by hand for this half.
+import { pipeline, env } from "@xenova/transformers";
+import type { AutomaticSpeechRecognitionPipeline } from "@xenova/transformers";
+
+env.allowRemoteModels = false;
+env.allowLocalModels = true;
+env.localModelPath = "/models/";
+if (env.backends.onnx.wasm) {
+  env.backends.onnx.wasm.wasmPaths = "/onnx-wasm/";
+  // Multi-threaded WASM needs Cross-Origin-Opener/Embedder-Policy headers
+  // for SharedArrayBuffer, which this app doesn't set — that's a real risk
+  // to the Google Maps JS API embed elsewhere in the app if applied
+  // site-wide (see CLAUDE.md). Single-threaded is slower but always works
+  // with zero header changes; revisit only if scoped narrowly and tested
+  // against Maps first.
+  env.backends.onnx.wasm.numThreads = 1;
+}
+
+export const VOICE_MODEL_ID = "Xenova/whisper-tiny.en";
+
+let transcriberPromise: Promise<AutomaticSpeechRecognitionPipeline> | null =
+  null;
+
+function getTranscriber(): Promise<AutomaticSpeechRecognitionPipeline> {
+  if (!transcriberPromise) {
+    transcriberPromise = pipeline(
+      "automatic-speech-recognition",
+      VOICE_MODEL_ID,
+      { quantized: true }
+    ) as Promise<AutomaticSpeechRecognitionPipeline>;
+  }
+  return transcriberPromise;
+}
+
+/**
+ * Whether the self-hosted model files are actually present — lets the mic
+ * button show "voice model not installed" instead of hanging/erroring the
+ * first time someone taps it on a deployment where the manual model-file
+ * step (see client/public/models/README.md) hasn't been done yet.
+ */
+export async function isVoiceModelAvailable(): Promise<boolean> {
+  try {
+    const res = await fetch(`/models/${VOICE_MODEL_ID}/config.json`, {
+      method: "HEAD",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Transcribes a recorded audio clip entirely on-device. The pipeline
+ * accepts a URL and decodes/resamples it itself (via AudioContext, same
+ * as any other Web Audio use — not a network fetch, this is a local
+ * blob: URL), so no manual PCM handling is needed here. The object URL
+ * is revoked immediately after — nothing about the clip is retained
+ * beyond this call, satisfying the "discard temporary audio" requirement.
+ */
+export async function transcribeVoiceClip(blob: Blob): Promise<string> {
+  const transcriber = await getTranscriber();
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const result = await transcriber(objectUrl);
+    const single = Array.isArray(result) ? result[0] : result;
+    return (single?.text ?? "").trim();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+/**
+ * Batch version of the same trigger->expansion lookup the RS textarea
+ * already applies per-keystroke on Space/Tab (see handleShortcutKeyDown
+ * in SheetDetail.tsx and the inline equivalent in IntelligenceMapping.tsx)
+ * — a voice transcript arrives as one whole block of text, not keystrokes,
+ * so this runs the identical lookup as a single pass over every word
+ * instead. Reuses whatever shortcut map the caller already has (global +
+ * per-target shortcuts merged), so anything configured on the Shortcuts
+ * page "just works" for voice with nothing to duplicate or keep in sync.
+ */
+export function applyShortcutsToTranscript(
+  text: string,
+  shortcutMap: Record<string, string>
+): string {
+  if (!text.trim()) return text;
+  // Capturing group keeps the whitespace runs as their own array entries,
+  // so original spacing survives untouched for every non-matching word.
+  return text
+    .split(/(\s+)/)
+    .map(token => {
+      const trimmed = token.trim();
+      if (!trimmed) return token;
+      // Whisper punctuates sentences on its own — strip a trailing
+      // .,!?;: before the lookup (a spoken "hb." shouldn't miss the "hb"
+      // shortcut just because it landed at a sentence boundary), but the
+      // match still replaces the whole token, punctuation included.
+      const key = trimmed.toLowerCase().replace(/[.,!?;:]+$/, "");
+      return shortcutMap[key] ?? token;
+    })
+    .join("");
+}

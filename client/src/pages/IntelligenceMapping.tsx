@@ -79,6 +79,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { VoiceInputButton } from "@/components/VoiceInputButton";
 import {
   ChevronDown,
   ChevronRight,
@@ -5250,6 +5251,30 @@ export default function IntelligenceMapping() {
     resetInlineTimer();
   };
 
+  // Inserts a voice transcript at the cursor (or appends if the field
+  // isn't focused) — same before/after split + undo-stack pattern as the
+  // shortcut-expansion handler below, just triggered by VoiceInputButton
+  // instead of a keystroke. Shortcut expansion (mapQeShortcutMap) already
+  // ran on the transcript before this fires — see VoiceInputButton's
+  // shortcutMap prop.
+  const handleVoiceTranscript = (text: string) => {
+    const textarea = rsInlineInputRef.current;
+    const pos = textarea?.selectionStart ?? rsInlineText.length;
+    const before = rsInlineText.slice(0, pos);
+    const after = rsInlineText.slice(pos);
+    const needsSpaceBefore = before.length > 0 && !/\s$/.test(before);
+    const needsSpaceAfter = after.length > 0 && !/^\s/.test(after);
+    const newText = `${before}${needsSpaceBefore ? " " : ""}${text}${needsSpaceAfter ? " " : ""}${after}`;
+    pushInlineUndo(rsInlineText);
+    setRsInlineText(newText);
+    resetInlineTimer();
+    requestAnimationFrame(() => {
+      const newPos = before.length + (needsSpaceBefore ? 1 : 0) + text.length;
+      textarea?.setSelectionRange(newPos, newPos);
+      textarea?.focus();
+    });
+  };
+
   const openInlineField = (label: string) => {
     if (!rsSelectedSheetId) return;
     setRsInlineLabel(label);
@@ -8600,6 +8625,10 @@ export default function IntelligenceMapping() {
                                   Keyboard
                                 </button>
                               )}
+                              <VoiceInputButton
+                                onTranscript={handleVoiceTranscript}
+                                shortcutMap={mapQeShortcutMap}
+                              />
                               <button
                                 type="button"
                                 onClick={undoInlineText}

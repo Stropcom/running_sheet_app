@@ -12905,6 +12905,15 @@ export interface UserLocationRow {
   operationIds: number[];
   updatedAt: number;
   onFoot: boolean;
+  pinGender: "neutral" | "male" | "female";
+  pinSkinTone: "default" | "brown";
+  pinVehicleIcon:
+    | "arrow"
+    | "car"
+    | "racing_car"
+    | "motorcycle"
+    | "truck"
+    | "police_car";
 }
 
 /**
@@ -12932,6 +12941,9 @@ export async function getUserLocations(
       operationIds: userLocations.operationIds,
       updatedAt: userLocations.updatedAt,
       onFoot: users.onFoot,
+      pinGender: users.pinGender,
+      pinSkinTone: users.pinSkinTone,
+      pinVehicleIcon: users.pinVehicleIcon,
     })
     .from(userLocations)
     .innerJoin(users, eq(users.id, userLocations.userId))
@@ -12967,6 +12979,30 @@ export async function setUserOnFoot(
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(users).set({ onFoot }).where(eq(users.id, userId));
+}
+
+/**
+ * Sets a user's own pin-appearance prefs (see users.pinGender/pinSkinTone/
+ * pinVehicleIcon) — same broadcast-to-every-viewer / self-only-scoping
+ * rules as setUserOnFoot above. Partial: only the provided fields change.
+ */
+export async function setUserPinAppearance(
+  userId: number,
+  prefs: {
+    pinGender?: "neutral" | "male" | "female";
+    pinSkinTone?: "default" | "brown";
+    pinVehicleIcon?:
+      | "arrow"
+      | "car"
+      | "racing_car"
+      | "motorcycle"
+      | "truck"
+      | "police_car";
+  }
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set(prefs).where(eq(users.id, userId));
 }
 
 /**

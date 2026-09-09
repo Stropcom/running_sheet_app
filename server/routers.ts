@@ -245,6 +245,7 @@ import {
   getUserLocations,
   upsertUserLocation,
   setUserOnFoot,
+  setUserPinAppearance,
   clearUserLocation,
   getUserLocationState,
   getUserLocationHistories,
@@ -3768,6 +3769,31 @@ export const appRouter = router({
       .input(z.object({ onFoot: z.boolean() }))
       .mutation(async ({ ctx, input }) => {
         await setUserOnFoot(ctx.user.id, input.onFoot);
+        return { ok: true };
+      }),
+
+    /** Set the caller's own pin-appearance prefs (gender/skin-tone on the
+     * on-foot glyph, vehicle icon for Wheels mode) — always scoped to
+     * ctx.user.id, partial update. */
+    setPinAppearance: protectedProcedure
+      .input(
+        z.object({
+          pinGender: z.enum(["neutral", "male", "female"]).optional(),
+          pinSkinTone: z.enum(["default", "brown"]).optional(),
+          pinVehicleIcon: z
+            .enum([
+              "arrow",
+              "car",
+              "racing_car",
+              "motorcycle",
+              "truck",
+              "police_car",
+            ])
+            .optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await setUserPinAppearance(ctx.user.id, input);
         return { ok: true };
       }),
 

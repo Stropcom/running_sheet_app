@@ -219,6 +219,57 @@ interface LiveUser {
   operationIds: number[];
   updatedAt: number;
   onFoot: boolean;
+  pinGender: "neutral" | "male" | "female";
+  pinSkinTone: "default" | "brown";
+  pinVehicleIcon:
+    | "arrow"
+    | "car"
+    | "racing_car"
+    | "motorcycle"
+    | "truck"
+    | "police_car";
+}
+
+// Side-view vehicle emoji for Wheels mode (see the pin-customise popup) —
+// mirrored east/west like the on-foot glyph rather than rotated to heading.
+// Every wheeled-vehicle emoji ships as a flat side-on illustration (across
+// Apple/Google/Samsung/Microsoft), so a full compass rotation tips it onto
+// its bumper at any heading that isn't due east/west — same problem the
+// on-foot glyph avoids the same way. "arrow" isn't listed here — it keeps
+// the existing SVG polygon + directional sonar rings path untouched.
+const VEHICLE_ICON_GLYPHS: Record<
+  Exclude<LiveUser["pinVehicleIcon"], "arrow">,
+  string
+> = {
+  car: "🚗",
+  racing_car: "🏎️",
+  motorcycle: "🏍️",
+  truck: "🚚",
+  police_car: "🚓",
+};
+const VEHICLE_ICON_LABELS: Record<LiveUser["pinVehicleIcon"], string> = {
+  arrow: "Arrow (default)",
+  car: "Car",
+  racing_car: "Racing car",
+  motorcycle: "Motorcycle",
+  truck: "Truck",
+  police_car: "Police car",
+};
+
+// Builds the on-foot glyph (🧍/🚶/🏃) with optional skin-tone + gender
+// Unicode modifiers layered on — correct ZWJ sequence order is
+// <base><skin-tone><ZWJ><gender><VS16>. "default"/"neutral" produce the
+// bare base glyph, identical to the pre-customisation behaviour.
+function buildOnFootGlyph(
+  base: string,
+  gender: LiveUser["pinGender"],
+  skinTone: LiveUser["pinSkinTone"]
+): string {
+  let glyph = base;
+  if (skinTone === "brown") glyph += "\u{1F3FD}"; // medium skin tone
+  if (gender === "male") glyph += "‍♂️";
+  else if (gender === "female") glyph += "‍♀️";
+  return glyph;
 }
 
 // ── Quick-link config ──────────────────────────────────────────────────────────
@@ -2196,6 +2247,9 @@ export default function IntelligenceMapping() {
   const [onFootPopupOpen, setOnFootPopupOpen] = useState(false);
   const setOnFootMut = trpc.intelligence.setOnFoot.useMutation();
   const setOnFootMutRef = useRef(setOnFootMut);
+  // Gender/skin-tone (on-foot glyph) + vehicle icon (Wheels mode) prefs —
+  // see the pin-customise popup near the end of this component.
+  const setPinAppearanceMut = trpc.intelligence.setPinAppearance.useMutation();
   useEffect(() => {
     setOnFootMutRef.current = setOnFootMut;
   });
@@ -2925,33 +2979,54 @@ export default function IntelligenceMapping() {
       justify-content:center;
       z-index:2;
     `;
+    // sin(heading) > 0 means the heading has an eastward component (the
+    // 0-180° half of the compass, measured clockwise from north); < 0
+    // means westward (180-360°). Defaults to facing right/east when
+    // heading is unavailable or exactly due north/south (sin = 0) rather
+    // than remembering a "last known side" — a deliberate simplification,
+    // since that ambiguous case only ever lasts one frame in practice and
+    // isn't worth extra state to smooth over. Shared by both the on-foot
+    // glyph and any non-arrow vehicle icon below — neither can rotate to a
+    // full compass heading without tipping onto its side (see each
+    // branch's own comment), so both fall back to this east/west flip.
+    const faceWest = Math.sin(((liveUser.heading ?? 0) * Math.PI) / 180) < 0;
+
     if (liveUser.onFoot) {
       // On-foot mode: a walking-person glyph entirely replaces the vehicle
       // arrow — no heading rotation (a pedestrian has no "nose direction"
       // the way a vehicle does) and no sonar rings (vehicle-speed themed,
       // 80km/h+, meaningless on foot). Direction of travel is instead a
-      // simple east/west mirror — see the sin(heading) comment below —
-      // rather than a full compass rotation, which would tip a side-view
-      // glyph over the same way the vehicle emoji options did.
+      // simple east/west mirror rather than a full compass rotation, which
+      // would tip a side-view glyph over the same way the vehicle emoji
+      // options did.
       const speedKmh = (liveUser.speed ?? 0) * 3.6;
-      let glyph: string;
+      let base: string;
       if (motionState === "long") {
-        glyph = "🧍"; // stopped 10s+ — same trigger as the vehicle red dot
+        base = "🧍"; // stopped 10s+ — same trigger as the vehicle red dot
       } else if (speedKmh > 5) {
-        glyph = "🏃"; // moving faster than a walking pace
+        base = "🏃"; // moving faster than a walking pace
       } else {
-        glyph = "🚶"; // walking (also covers "just stopped", under 10s)
+        base = "🚶"; // walking (also covers "just stopped", under 10s)
       }
-      // sin(heading) > 0 means the heading has an eastward component (the
-      // 0-180° half of the compass, measured clockwise from north); < 0
-      // means westward (180-360°). Defaults to facing right/east when
-      // heading is unavailable or exactly due north/south (sin = 0) rather
-      // than remembering a "last known side" — a deliberate
-      // simplification, since that ambiguous case only ever lasts one
-      // frame in practice and isn't worth extra state to smooth over.
-      const heading = liveUser.heading ?? 0;
-      const faceWest = Math.sin((heading * Math.PI) / 180) < 0;
-      indicator.innerHTML = `<span style="font-size:20px;line-height:25px;width:25px;height:25px;display:block;text-align:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));transform:scaleX(${faceWest ? -1 : 1});">${glyph}</span>`;
+      const glyph = buildOnFootGlyph(
+        base,
+        liveUser.pinGender,
+        liveUser.pinSkinTone
+      );
+      indicator.innerHTML = `<span style="font-size:26px;line-height:32px;width:32px;height:32px;display:block;text-align:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));transform:scaleX(${faceWest ? -1 : 1});">${glyph}</span>`;
+    } else if (
+      motionState === "moving" &&
+      liveUser.pinVehicleIcon &&
+      liveUser.pinVehicleIcon !== "arrow"
+    ) {
+      // Wheels mode, non-default vehicle icon: same east/west-flip approach
+      // as the on-foot glyph, for the same reason — every side-view vehicle
+      // emoji tips onto its bumper at any heading that isn't due east/west,
+      // so it's mirrored rather than rotated. No directional sonar rings
+      // either, since those rotate to the full compass heading alongside
+      // the arrow they're built for.
+      const glyph = VEHICLE_ICON_GLYPHS[liveUser.pinVehicleIcon];
+      indicator.innerHTML = `<span style="font-size:26px;line-height:32px;width:32px;height:32px;display:block;text-align:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));transform:scaleX(${faceWest ? -1 : 1});">${glyph}</span>`;
     } else if (motionState === "moving") {
       // Screen rotation, not raw compass bearing: the arrow/rings need to
       // point the right way relative to the map as currently displayed,
@@ -10098,33 +10173,161 @@ export default function IntelligenceMapping() {
 
       {/* Pin-customise popup — opened by tapping your own name pill on the
         map (see the click listener attached in createUserPinElement).
-        Currently just the On Foot toggle; more pointer-customisation
-        options can land here later without changing the trigger. */}
+        Wheels/Foot mode, plus Wheels-only vehicle icon and Foot-only
+        gender/skin-tone options — see setOnFoot/setPinAppearance. */}
       <Dialog open={onFootPopupOpen} onOpenChange={setOnFootPopupOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Customise my pointer</DialogTitle>
           </DialogHeader>
-          <div className="flex items-center justify-between gap-4 py-2">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-sm font-medium">On Foot</span>
-              <span className="text-xs text-muted-foreground">
-                Shows a walking icon instead of the vehicle arrow. Switches back
-                to the vehicle automatically once speed goes over 15 km/h.
-              </span>
-            </div>
-            <Switch
-              checked={
-                (liveUsers as LiveUser[] | undefined)?.find(
-                  u => u.userId === user?.id && u.deviceId === deviceId
-                )?.onFoot ?? false
-              }
-              onCheckedChange={next => {
-                setOnFootMut.mutate({ onFoot: next });
-              }}
-              aria-label="Toggle On Foot"
-            />
-          </div>
+          {(() => {
+            const ownLiveUser = (liveUsers as LiveUser[] | undefined)?.find(
+              u => u.userId === user?.id && u.deviceId === deviceId
+            );
+            const onFoot = ownLiveUser?.onFoot ?? false;
+            const gender = ownLiveUser?.pinGender ?? "neutral";
+            const skinTone = ownLiveUser?.pinSkinTone ?? "default";
+            const vehicleIcon = ownLiveUser?.pinVehicleIcon ?? "arrow";
+            const footPreview = buildOnFootGlyph("🚶", gender, skinTone);
+
+            return (
+              <div className="flex flex-col gap-4 py-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOnFootMut.mutate({ onFoot: false })}
+                    className={`flex flex-col items-center gap-1 rounded-lg border-2 py-3 transition-all ${
+                      !onFoot
+                        ? "border-primary bg-primary/10 scale-105"
+                        : "border-border bg-accent/30 hover:border-primary/50"
+                    }`}
+                  >
+                    <span className="text-xl">⬆️</span>
+                    <span className="text-xs font-semibold">Wheels</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOnFootMut.mutate({ onFoot: true })}
+                    className={`flex flex-col items-center gap-1 rounded-lg border-2 py-3 transition-all ${
+                      onFoot
+                        ? "border-primary bg-primary/10 scale-105"
+                        : "border-border bg-accent/30 hover:border-primary/50"
+                    }`}
+                  >
+                    <span className="text-xl">{footPreview}</span>
+                    <span className="text-xs font-semibold">Foot</span>
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground -mt-2">
+                  Foot switches back to Wheels automatically once speed goes
+                  over 15 km/h.
+                </p>
+
+                {onFoot ? (
+                  <>
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                        Appearance
+                      </p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(["neutral", "male", "female"] as const).map(g => (
+                          <button
+                            key={g}
+                            type="button"
+                            onClick={() =>
+                              setPinAppearanceMut.mutate({ pinGender: g })
+                            }
+                            className={`flex flex-col items-center gap-1 rounded-lg border-2 py-2 transition-all ${
+                              gender === g
+                                ? "border-primary bg-primary/10 scale-105"
+                                : "border-border bg-accent/30 hover:border-primary/50"
+                            }`}
+                          >
+                            <span className="text-lg">
+                              {buildOnFootGlyph("🚶", g, skinTone)}
+                            </span>
+                            <span className="text-[10px] font-medium">
+                              {g === "neutral"
+                                ? "Neutral"
+                                : g === "male"
+                                  ? "Male"
+                                  : "Female"}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                        Skin tone
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(["default", "brown"] as const).map(t => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() =>
+                              setPinAppearanceMut.mutate({ pinSkinTone: t })
+                            }
+                            className={`flex flex-col items-center gap-1 rounded-lg border-2 py-2 transition-all ${
+                              skinTone === t
+                                ? "border-primary bg-primary/10 scale-105"
+                                : "border-border bg-accent/30 hover:border-primary/50"
+                            }`}
+                          >
+                            <span className="text-lg">
+                              {buildOnFootGlyph("🚶", gender, t)}
+                            </span>
+                            <span className="text-[10px] font-medium">
+                              {t === "default" ? "Default" : "Brown"}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      Vehicle icon
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {(
+                        [
+                          "arrow",
+                          "car",
+                          "racing_car",
+                          "motorcycle",
+                          "truck",
+                          "police_car",
+                        ] as const
+                      ).map(v => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() =>
+                            setPinAppearanceMut.mutate({ pinVehicleIcon: v })
+                          }
+                          title={VEHICLE_ICON_LABELS[v]}
+                          className={`w-11 h-11 rounded-lg border-2 flex items-center justify-center text-lg transition-all ${
+                            vehicleIcon === v
+                              ? "border-primary bg-primary/10 scale-110"
+                              : "border-border bg-accent/30 hover:border-primary/50"
+                          }`}
+                        >
+                          {v === "arrow" ? "⬆️" : VEHICLE_ICON_GLYPHS[v]}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Vehicle icons mirror left/right with direction of travel
+                      rather than rotating to exact heading.
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </DashboardLayout>

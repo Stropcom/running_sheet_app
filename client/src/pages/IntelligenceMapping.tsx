@@ -1145,11 +1145,30 @@ function animateHeadingTo(
       ? Math.min(Math.max(now - lastUpdateAt, 400), 3000)
       : 1000;
 
+  // Calling map.setHeading() on every animation frame (~60/s) made this
+  // WORSE than the original once-a-second snap, not better — still slow
+  // and jerky even with this tween in place. The pin's own arrow glyph
+  // never goes through setHeading() at all (it's a plain CSS rotate off
+  // the same live heading) and stays perfectly smooth throughout, which
+  // narrows this to setHeading() itself: the vector map appears to run its
+  // own short internal easing on each call, and calling it again before
+  // that finishes interrupts it rather than extending it — 60 interrupted,
+  // barely-started eases per second reads as "barely moves." Spacing real
+  // calls out to roughly 10/s gives each one room to actually finish
+  // before the next lands, while still scheduling via requestAnimationFrame
+  // so the timing stays smooth and frame-aligned.
+  const MIN_CALL_INTERVAL_MS = 90;
+  let lastCallAt = 0;
+
   const startTime = now;
   const step = (frameNow: number) => {
     const t = Math.min(1, (frameNow - startTime) / durationMs);
-    setHeading((((from + delta * t) % 360) + 360) % 360);
-    if (t < 1) {
+    const isLastFrame = t >= 1;
+    if (isLastFrame || frameNow - lastCallAt >= MIN_CALL_INTERVAL_MS) {
+      lastCallAt = frameNow;
+      setHeading((((from + delta * t) % 360) + 360) % 360);
+    }
+    if (!isLastFrame) {
       animRef.current.set(key, requestAnimationFrame(step));
     } else {
       animRef.current.delete(key);

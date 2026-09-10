@@ -200,6 +200,64 @@ function useVisualViewportInset(): {
   return state;
 }
 
+// Isolated from the main IntelligenceMapping component on purpose: the
+// map's heading changes independently of React — Heading-Up mode's own
+// tween calls map.setHeading() up to ~10 times a second while rotating
+// (see animateHeadingTo) — and this button's rotating compass arrow is the
+// only thing on the whole page that needs to know about it on every tick.
+// When that lived as component-level state on IntelligenceMapping itself,
+// every single heading tick re-rendered that entire multi-thousand-line
+// page — competing with the browser's own map rendering for the same JS
+// main thread, and making Heading-Up's rotation visibly lag and stutter
+// even on powerful hardware (confirmed identical on two iPhone 16s, which
+// rules out a device-performance explanation). Keeping the subscription
+// local here means only this one small button re-renders on each tick,
+// not the whole page.
+function NorthUpButton({
+  map,
+  isMapActuallyVector,
+}: {
+  map: google.maps.Map | null;
+  isMapActuallyVector: boolean;
+}) {
+  const [heading, setHeading] = useState(0);
+
+  useEffect(() => {
+    if (!map) return;
+    setHeading(map.getHeading() ?? 0);
+    const listener = map.addListener("heading_changed", () => {
+      setHeading(map.getHeading() ?? 0);
+    });
+    return () => listener.remove();
+  }, [map]);
+
+  return (
+    <button
+      onClick={e => {
+        e.stopPropagation();
+        if (!map || !isMapActuallyVector) return;
+        map.setHeading(0);
+      }}
+      disabled={!isMapActuallyVector || heading === 0}
+      className="absolute z-20 pointer-events-auto flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      style={{ top: "130px", right: "10px" }}
+      aria-label="Reset map rotation to North Up"
+      title={
+        !isMapActuallyVector
+          ? "Rotation requires Vector map rendering, which isn't available on this device"
+          : heading === 0
+            ? "Already North Up"
+            : "Reset rotation to North Up"
+      }
+    >
+      <Navigation2
+        className="w-4 h-4 text-sky-600 transition-transform"
+        style={{ transform: `rotate(${-heading}deg)` }}
+      />
+    </button>
+  );
+}
+
 // ── Perth date helpers (shared with SheetDetail logic) ───────────────────────
 const _PERTH_OFFSET_SUFFIX = "T00:00:00+08:00";
 const _PERTH_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -1447,13 +1505,12 @@ export default function IntelligenceMapping() {
   const [is3DActive, setIs3DActive] = useState(false);
   // Current map rotation in degrees — vector rendering also allows
   // rotating the view (Shift+drag on desktop, twist gesture on mobile),
-  // which has no reason to auto-reset, so a "North Up" button re-aligns
-  // it on demand. Kept in sync via a "heading_changed" listener.
-  const [mapHeading, setMapHeading] = useState(0);
-  // Ref mirror of mapHeading for createUserPinElement, which reads it on
-  // every marker redraw (not a React dependency — the heading-group's own
+  // which has no reason to auto-reset. Read by createUserPinElement on
+  // every marker redraw (a ref, not React state — the heading-group's own
   // rotation needs to account for the map's current on-screen orientation
-  // without forcing every pin to re-render on every heading_changed tick).
+  // without forcing this whole page to re-render on every heading_changed
+  // tick, which is what NorthUpButton exists to avoid — see its own
+  // comment). Kept in sync via the "heading_changed" listener below.
   const mapHeadingRef = useRef(0);
   // Set for a short window around every programmatic map.setHeading() call
   // Heading-Up's own tween makes — see the "dragstart" listener in
@@ -3893,13 +3950,12 @@ export default function IntelligenceMapping() {
 
       // Keep the North Up button's rotation/enabled state in sync with the
       // map's actual heading — set both by our own button and by the
-      // native Shift+drag / twist rotate gesture. mapHeadingRef mirrors the
-      // same value for createUserPinElement, which needs it on every pin
-      // redraw without depending on this state directly.
+      // native Shift+drag / twist rotate gesture. A ref, not React state —
+      // see mapHeadingRef's own comment for why (NorthUpButton owns its
+      // own separate subscription for the one piece of UI that needs this
+      // reactively).
       map.addListener("heading_changed", () => {
-        const h = map.getHeading() ?? 0;
-        setMapHeading(h);
-        mapHeadingRef.current = h;
+        mapHeadingRef.current = map.getHeading() ?? 0;
       });
 
       // Let a user gesture (wheel/pinch zoom, drag) immediately take over
@@ -6060,30 +6116,13 @@ export default function IntelligenceMapping() {
               on mobile) with no auto-reset, so this re-aligns it on
               demand. The Navigation2 arrow visually rotates to point at
               true north given the map's current heading, so it doubles as
-              a compass, not just a button. */}
-            <button
-              onClick={e => {
-                e.stopPropagation();
-                if (!mapRef.current || !isMapActuallyVector) return;
-                mapRef.current.setHeading(0);
-              }}
-              disabled={!isMapActuallyVector || mapHeading === 0}
-              className="absolute z-20 pointer-events-auto flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              style={{ top: "130px", right: "10px" }}
-              aria-label="Reset map rotation to North Up"
-              title={
-                !isMapActuallyVector
-                  ? "Rotation requires Vector map rendering, which isn't available on this device"
-                  : mapHeading === 0
-                    ? "Already North Up"
-                    : "Reset rotation to North Up"
-              }
-            >
-              <Navigation2
-                className="w-4 h-4 text-sky-600 transition-transform"
-                style={{ transform: `rotate(${-mapHeading}deg)` }}
-              />
-            </button>
+              a compass, not just a button. Its own component — see
+              NorthUpButton's comment for why this isn't inline state on
+              this page anymore. */}
+            <NorthUpButton
+              map={mapRef.current}
+              isMapActuallyVector={isMapActuallyVector}
+            />
 
             {/* Nearmap aerial overlay — right below North Up. Adds/removes
               a google.maps.ImageMapType layer requesting tiles from our own

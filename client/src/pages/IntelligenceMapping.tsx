@@ -8482,8 +8482,22 @@ export default function IntelligenceMapping() {
 
         {/* ── Map RS Quick Entry Modal ── */}
         {mapQeOpen && (
+          // fixed, not absolute: DashboardLayout's <main> is overflow-hidden,
+          // so an `absolute inset-0` descendant is bounded by it rather than
+          // the true window — and the inner card's height was pinned to a
+          // static `90vh`/`92vh`, computed against the full layout viewport,
+          // which mobile Safari/Chrome don't shrink when the on-screen
+          // keyboard opens (only `window.visualViewport` does). Combined,
+          // that left the card sized for a screen that no longer matched
+          // what was actually visible above the keyboard: the observation
+          // textarea itself stayed compact, but the rest of the oversized
+          // card rendered as a large blank gap next to the keyboard rather
+          // than shrinking to fit. Same fix already applied to the Custom
+          // Marker Placement Modal further below — `fixed` escapes the
+          // clipping, and `useVisualViewportInset`'s `vvVisibleHeight` caps
+          // the card against the keyboard-adjusted visible height instead.
           <div
-            className="absolute inset-0 z-40 flex items-start justify-center overflow-y-auto p-3 pt-6 md:p-4 md:pt-10"
+            className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto p-3 pt-6 md:p-4 md:pt-10"
             style={{
               background: "rgba(0,0,0,0.55)",
               backdropFilter: "blur(3px)",
@@ -8495,7 +8509,8 @@ export default function IntelligenceMapping() {
             }}
           >
             <div
-              className="no-scrollbar w-full max-w-lg md:max-w-3xl lg:max-w-5xl bg-card border border-border rounded-2xl shadow-2xl p-5 pb-6 md:p-6 lg:p-8 max-h-[90vh] md:max-h-[92vh] overflow-y-auto"
+              className="no-scrollbar w-full max-w-lg md:max-w-3xl lg:max-w-5xl bg-card border border-border rounded-2xl shadow-2xl p-5 pb-6 md:p-6 lg:p-8 overflow-y-auto"
+              style={{ maxHeight: Math.round(vvVisibleHeight * 0.9) }}
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}

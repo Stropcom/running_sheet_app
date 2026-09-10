@@ -58,19 +58,38 @@ export const users = mysqlTable("users", {
   // createUserPinElement) — gender/skin-tone modifiers applied via Unicode
   // ZWJ sequences on top of the base 🧍/🚶/🏃 glyph. "neutral"/"default"
   // reproduce today's plain glyph exactly, so existing users are unaffected.
+  // pinGender/pinSkinTone: retired — the on-foot glyph is always the plain
+  // neutral 🧍/🚶/🏃 now, see IntelligenceMapping.tsx. Columns kept
+  // (nullable-safe defaults, no migration needed) rather than dropped, since
+  // dropping them is a separate, higher-risk schema change nothing else
+  // requires; simply no longer read or offered client-side.
   pinGender: mysqlEnum("pinGender", ["neutral", "male", "female"])
     .default("neutral")
     .notNull(),
   pinSkinTone: mysqlEnum("pinSkinTone", ["default", "brown"])
     .default("default")
     .notNull(),
-  // Pin-customise popup, Wheels mode only — swaps the plain arrow/rings for
-  // a side-view vehicle emoji, mirrored east/west like the on-foot glyph
-  // rather than rotated (a side-on emoji "tips over" at any heading that
-  // isn't due east/west — see the on-foot glyph's own comment). "arrow"
-  // keeps today's SVG arrow + directional sonar rings unchanged.
+  // Pin-customise popup, Wheels mode only. "arrow" is today's SVG
+  // Navigation2-style triangle (the default, unchanged). dart/cursor/
+  // finger/up_arrow_emoji/rocket/airplane/pizza are alternate heading
+  // shapes that rotate exactly the same way — some need a fixed rotation
+  // offset added before the heading angle since they aren't drawn
+  // pointing "up" by default (see HEADING_SHAPE_ROTATION_OFFSET_DEG in
+  // IntelligenceMapping.tsx). car/racing_car/motorcycle/truck/police_car
+  // are reserved for a future side-view-vehicle-emoji mode (mirrored
+  // east/west rather than rotated, since a side-on drawing "tips over" at
+  // any heading that isn't due east/west) — not built yet, kept in the
+  // enum so existing rows referencing them (if any) don't need a migration
+  // when that lands.
   pinVehicleIcon: mysqlEnum("pinVehicleIcon", [
     "arrow",
+    "dart",
+    "cursor",
+    "finger",
+    "up_arrow_emoji",
+    "rocket",
+    "airplane",
+    "pizza",
     "car",
     "racing_car",
     "motorcycle",
@@ -79,6 +98,14 @@ export const users = mysqlTable("users", {
   ])
     .default("arrow")
     .notNull(),
+  // Pin-customise popup — overrides the pill's default per-team colour
+  // (see TEAM_COLOURS in IntelligenceMapping.tsx) with an officer's own
+  // pick from a fixed 10-swatch palette (PIN_COLOUR_SWATCHES, same file).
+  // Null = no override, falls back to the team colour as before this
+  // existed. Stores the swatch's hex string directly rather than a name/
+  // key, so rendering never needs to look anything up — just use the value
+  // or fall back.
+  pinColor: varchar("pinColor", { length: 16 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),

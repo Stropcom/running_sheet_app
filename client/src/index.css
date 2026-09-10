@@ -684,9 +684,13 @@ button:active:not(:disabled) {
 
 /* Live team pin — directional "sonar" pulse shown once a member's speed
    crosses 80 km/h (see createUserPinElement in IntelligenceMapping.tsx).
-   Ring shape/size never changes across speed tiers, only the
-   animation-duration/delay applied inline per ring — see
-   HIGH_SPEED_RING_CADENCE_MS. */
+   Both the pulse cadence (animation-duration/delay, set inline per ring)
+   and how far it reaches (--sonar-max-size, also set inline per ring) come
+   from HIGH_SPEED_RING_TIERS — faster tiers pulse quicker AND reach
+   further, so the beam's reach gives other officers a rough sense of how
+   far ahead of the pin's actual (second-or-two-stale) GPS fix the vehicle
+   really is. --sonar-max-size falls back to the original fixed 58px if
+   ever unset. */
 @keyframes teamPinSonarRing {
   0% {
     width: 25px;
@@ -695,8 +699,8 @@ button:active:not(:disabled) {
     border-width: 2.5px;
   }
   100% {
-    width: 58px;
-    height: 58px;
+    width: var(--sonar-max-size, 58px);
+    height: var(--sonar-max-size, 58px);
     opacity: 0;
     border-width: 0.5px;
   }

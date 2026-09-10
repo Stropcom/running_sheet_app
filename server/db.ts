@@ -13002,11 +13002,19 @@ export interface UserLocationRow {
   pinSkinTone: "default" | "brown";
   pinVehicleIcon:
     | "arrow"
+    | "dart"
+    | "cursor"
+    | "finger"
+    | "up_arrow_emoji"
+    | "rocket"
+    | "airplane"
+    | "pizza"
     | "car"
     | "racing_car"
     | "motorcycle"
     | "truck"
     | "police_car";
+  pinColor: string | null;
 }
 
 /**
@@ -13037,6 +13045,7 @@ export async function getUserLocations(
       pinGender: users.pinGender,
       pinSkinTone: users.pinSkinTone,
       pinVehicleIcon: users.pinVehicleIcon,
+      pinColor: users.pinColor,
     })
     .from(userLocations)
     .innerJoin(users, eq(users.id, userLocations.userId))
@@ -13086,11 +13095,19 @@ export async function setUserPinAppearance(
     pinSkinTone?: "default" | "brown";
     pinVehicleIcon?:
       | "arrow"
+      | "dart"
+      | "cursor"
+      | "finger"
+      | "up_arrow_emoji"
+      | "rocket"
+      | "airplane"
+      | "pizza"
       | "car"
       | "racing_car"
       | "motorcycle"
       | "truck"
       | "police_car";
+    pinColor?: string | null;
   }
 ): Promise<void> {
   const db = await getDb();

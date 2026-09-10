@@ -3795,12 +3795,26 @@ export const appRouter = router({
           pinVehicleIcon: z
             .enum([
               "arrow",
+              "dart",
+              "cursor",
+              "finger",
+              "up_arrow_emoji",
+              "rocket",
+              "airplane",
+              "pizza",
               "car",
               "racing_car",
               "motorcycle",
               "truck",
               "police_car",
             ])
+            .optional(),
+          // Hex string from PIN_COLOUR_SWATCHES, or null to clear back to
+          // the team-default colour.
+          pinColor: z
+            .string()
+            .regex(/^#[0-9a-fA-F]{6}$/)
+            .nullable()
             .optional(),
         })
       )

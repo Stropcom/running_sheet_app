@@ -1,0 +1,2 @@
+ALTER TABLE `users` MODIFY COLUMN `pinVehicleIcon` enum('arrow','dart','cursor','finger','up_arrow_emoji','rocket','airplane','pizza','car','racing_car','motorcycle','truck','police_car') NOT NULL DEFAULT 'arrow';--> statement-breakpoint
+ALTER TABLE `users` ADD `pinColor` varchar(16);

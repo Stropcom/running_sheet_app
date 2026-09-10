@@ -341,27 +341,19 @@ interface LiveUser {
   pinSkinTone: "default" | "brown";
   pinVehicleIcon:
     | "arrow"
+    | "dart"
+    | "cursor"
+    | "finger"
+    | "up_arrow_emoji"
+    | "rocket"
+    | "airplane"
+    | "pizza"
     | "car"
     | "racing_car"
     | "motorcycle"
     | "truck"
     | "police_car";
-}
-
-// Builds the on-foot glyph (🧍/🚶/🏃) with optional skin-tone + gender
-// Unicode modifiers layered on — correct ZWJ sequence order is
-// <base><skin-tone><ZWJ><gender><VS16>. "default"/"neutral" produce the
-// bare base glyph, identical to the pre-customisation behaviour.
-function buildOnFootGlyph(
-  base: string,
-  gender: LiveUser["pinGender"],
-  skinTone: LiveUser["pinSkinTone"]
-): string {
-  let glyph = base;
-  if (skinTone === "brown") glyph += "\u{1F3FD}"; // medium skin tone
-  if (gender === "male") glyph += "‍♂️";
-  else if (gender === "female") glyph += "‍♀️";
-  return glyph;
+  pinColor: string | null;
 }
 
 // ── Quick-link config ──────────────────────────────────────────────────────────
@@ -613,20 +605,120 @@ function getTeamColour(team: string | null): string {
   return TEAM_COLOURS[team ?? "null"] ?? "#6b7280";
 }
 
-// Live team pin — directional "sonar" ring cadence once a member is
-// travelling over 80 km/h (see createUserPinElement). Faster tiers pulse
-// quicker; below 80 km/h no rings show at all. Ring shape/colour never
-// changes, only how fast teamPinSonarRing (index.css) repeats.
-const HIGH_SPEED_RING_TIERS: Array<{ minKmh: number; durationMs: number }> = [
-  { minKmh: 120, durationMs: 1500 },
-  { minKmh: 100, durationMs: 2000 },
-  { minKmh: 80, durationMs: 2600 },
+// Live team pin — directional "sonar" ring cadence + reach once a member
+// is travelling over 80 km/h (see createUserPinElement). Faster tiers
+// pulse quicker (durationMs, via teamPinSonarRing's animation-duration)
+// AND reach further (maxSizePx, via its --sonar-max-size custom property,
+// see index.css) — the pill's own position is always a second or two
+// behind the vehicle's real one, so a longer reach at higher speed gives
+// other officers a rough sense of how far ahead of the pin the vehicle
+// actually is. Below 80 km/h no rings show at all. Ring shape/colour never
+// changes, only these two numbers.
+const HIGH_SPEED_RING_TIERS: Array<{
+  minKmh: number;
+  durationMs: number;
+  maxSizePx: number;
+}> = [
+  { minKmh: 120, durationMs: 1500, maxSizePx: 90 },
+  { minKmh: 100, durationMs: 2000, maxSizePx: 74 },
+  { minKmh: 80, durationMs: 2600, maxSizePx: 58 },
 ];
 
-function getSonarRingDurationMs(speedKmh: number): number | null {
+function getSonarRingTier(
+  speedKmh: number
+): { durationMs: number; maxSizePx: number } | null {
   const tier = HIGH_SPEED_RING_TIERS.find(t => speedKmh >= t.minKmh);
-  return tier?.durationMs ?? null;
+  return tier
+    ? { durationMs: tier.durationMs, maxSizePx: tier.maxSizePx }
+    : null;
 }
+
+// Alternate heading shapes for the Wheels-mode indicator (pinVehicleIcon),
+// on top of the default "arrow" — see the "Heading Shape Ideas" artifact
+// these were picked from. The SVG shapes are drawn pointing straight up
+// already, matching "arrow"'s own polygon convention, so they need no
+// offset. The emoji glyphs aren't all drawn pointing up by default in every
+// font (a rocket/plane point diagonally, a pizza slice's tip is off to one
+// side), so this corrects each one before the live heading rotation is
+// applied on top of it — same fixed-offset-then-rotate approach the
+// artifact demo used, confirmed against it directly rather than guessed.
+const HEADING_SHAPE_ROTATION_OFFSET_DEG: Partial<
+  Record<LiveUser["pinVehicleIcon"], number>
+> = {
+  rocket: 45,
+  airplane: 45,
+  pizza: -135,
+};
+
+// Returns the shape's own markup (not yet rotated — the caller wraps this
+// in a rotated container, see createUserPinElement) for whichever
+// pinVehicleIcon the officer has picked. car/racing_car/motorcycle/truck/
+// police_car aren't built yet (reserved for a future side-view-vehicle
+// mode, see their own comment in schema.ts) — falls through to the default
+// arrow rather than rendering nothing if one is ever set.
+function renderHeadingShapeInner(shape: LiveUser["pinVehicleIcon"]): string {
+  const shadow = "filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45));";
+  const svg = (points: string) =>
+    `<svg viewBox="0 0 24 24" width="25" height="25" style="overflow:visible;${shadow}"><polygon points="${points}" fill="#16a34a"/></svg>`;
+  const glyph = (emoji: string) =>
+    `<span style="font-size:20px;line-height:25px;width:25px;height:25px;display:block;text-align:center;${shadow}">${emoji}</span>`;
+  switch (shape) {
+    case "dart":
+      return svg("12 1 20 22 12 16 4 22");
+    case "cursor":
+      return svg("5 2 5 20 9.5 15.5 12.5 22 15.5 20.5 12.5 14 19 14");
+    case "finger":
+      return glyph("☝️");
+    case "up_arrow_emoji":
+      return glyph("⬆️");
+    case "rocket":
+      return glyph("🚀");
+    case "airplane":
+      return glyph("✈️");
+    case "pizza":
+      return glyph("🍕");
+    default:
+      return svg("12 2 19 21 12 17 5 21 12 2");
+  }
+}
+
+// Pin-customise popup's colour picker — a fixed 10-swatch palette rather
+// than a free colour input, so every officer's pill stays legible (white
+// text on top) and visually distinct from the others at a glance. Values
+// are what gets stored in users.pinColor and read straight back for the
+// pill's background — see PIN_COLOUR_SWATCHES' own comment in schema.ts.
+const PIN_COLOUR_SWATCHES: { hex: string; name: string }[] = [
+  { hex: "#ec4899", name: "Pink" },
+  { hex: "#1976d2", name: "Blue" },
+  { hex: "#f9a825", name: "Yellow" },
+  { hex: "#16a34a", name: "Green" },
+  { hex: "#dc2626", name: "Red" },
+  { hex: "#7c3aed", name: "Purple" },
+  { hex: "#0891b2", name: "Teal" },
+  { hex: "#ea580c", name: "Orange" },
+  { hex: "#4f46e5", name: "Indigo" },
+  { hex: "#57534e", name: "Slate" },
+];
+
+// Pin-customise popup's Wheels-mode heading-shape picker — every
+// non-reserved pinVehicleIcon value (arrow is the default, the other seven
+// picked from the "Heading Shape Ideas" artifact) with a human label for
+// the button's title/aria-label. Preview markup for each comes straight
+// from renderHeadingShapeInner, so the popup can never drift out of sync
+// with what actually renders on the live pin.
+const HEADING_SHAPE_OPTIONS: {
+  key: LiveUser["pinVehicleIcon"];
+  label: string;
+}[] = [
+  { key: "arrow", label: "Arrow (default)" },
+  { key: "dart", label: "Dart" },
+  { key: "cursor", label: "Cursor" },
+  { key: "finger", label: "Index finger" },
+  { key: "up_arrow_emoji", label: "Up arrow" },
+  { key: "rocket", label: "Rocket" },
+  { key: "airplane", label: "Airplane" },
+  { key: "pizza", label: "Pizza slice" },
+];
 
 const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
   { elementType: "geometry", stylers: [{ color: "#212121" }] },
@@ -3119,7 +3211,7 @@ export default function IntelligenceMapping() {
   // the indicator centres itself on the overlay's local (0,0) via its own
   // translate, independent of the pill's width/height entirely.
   const createUserPinElement = useCallback((liveUser: LiveUser) => {
-    const color = getTeamColour(liveUser.team);
+    const color = liveUser.pinColor ?? getTeamColour(liveUser.team);
     const label = liveUser.name.toUpperCase();
     const pinKey = `${liveUser.userId}_${liveUser.deviceId}`;
     const isMoving = liveUser.speed != null && liveUser.speed > 0.5;
@@ -3192,21 +3284,19 @@ export default function IntelligenceMapping() {
       // 80km/h+, meaningless on foot). Direction of travel is instead a
       // simple east/west mirror — see the sin(heading) comment below —
       // rather than a full compass rotation, which would tip a side-view
-      // glyph over the same way the vehicle emoji options did.
+      // glyph over the same way the vehicle emoji options did. Always the
+      // plain neutral glyph — the gender/skin-tone modifier picker was
+      // removed (see the pin-customise popup below), so this no longer
+      // varies per officer.
       const speedKmh = (liveUser.speed ?? 0) * 3.6;
-      let base: string;
+      let glyph: string;
       if (motionState === "long") {
-        base = "🧍"; // stopped 10s+ — same trigger as the vehicle red dot
+        glyph = "🧍"; // stopped 10s+ — same trigger as the vehicle red dot
       } else if (speedKmh > 5) {
-        base = "🏃"; // moving faster than a walking pace
+        glyph = "🏃"; // moving faster than a walking pace
       } else {
-        base = "🚶"; // walking (also covers "just stopped", under 10s)
+        glyph = "🚶"; // walking (also covers "just stopped", under 10s)
       }
-      const glyph = buildOnFootGlyph(
-        base,
-        liveUser.pinGender,
-        liveUser.pinSkinTone
-      );
       // sin(heading) > 0 means the heading has an eastward component (the
       // 0-180° half of the compass, measured clockwise from north); < 0
       // means westward (180-360°). Defaults to facing right/east when
@@ -3224,28 +3314,36 @@ export default function IntelligenceMapping() {
       // rotate gesture) has the map itself rotated. Subtracting the map's
       // own current heading converts "true compass bearing" into "on-screen
       // angle" — at mapHeadingRef 0 (North Up, the default) this is a no-op.
-      const heading = (liveUser.heading ?? 0) - mapHeadingRef.current;
+      // The shape's own rotation offset (non-zero for a handful of emoji
+      // shapes that aren't drawn pointing up by default) is added on top,
+      // inside the same rotated wrapper as the rings — see
+      // HEADING_SHAPE_ROTATION_OFFSET_DEG's own comment for why that's
+      // correct for the rings too, not just the shape.
+      const trueHeading = (liveUser.heading ?? 0) - mapHeadingRef.current;
+      const shapeOffset =
+        HEADING_SHAPE_ROTATION_OFFSET_DEG[liveUser.pinVehicleIcon] ?? 0;
+      const rotationDeg = trueHeading + shapeOffset;
       const speedKmh = (liveUser.speed ?? 0) * 3.6;
-      const ringDurationMs = getSonarRingDurationMs(speedKmh);
+      const ringTier = getSonarRingTier(speedKmh);
       // Directional "sonar" rings above 80 km/h: half-circles (clipped to
       // their own top half in this un-rotated local space, matching the
       // arrow's own "points up at 0deg" polygon) that rotate together with
-      // the arrow inside the same heading-group, so the pulse only fans out
+      // the shape inside the same heading-group, so the pulse only fans out
       // toward the direction of travel rather than in every direction.
       let ringsHtml = "";
-      if (ringDurationMs != null) {
-        const staggerMs = ringDurationMs / 3;
+      if (ringTier != null) {
+        const staggerMs = ringTier.durationMs / 3;
         ringsHtml = [0, 1, 2]
           .map(
             i =>
-              `<span style="position:absolute;left:50%;top:50%;width:25px;height:25px;transform:translate(-50%,-50%);border-radius:50%;border:2px solid #16a34a;clip-path:inset(0 0 50% 0);animation:teamPinSonarRing ${ringDurationMs}ms cubic-bezier(0.2,0.6,0.35,1) infinite;animation-delay:${i * staggerMs}ms;z-index:-1;"></span>`
+              `<span style="position:absolute;left:50%;top:50%;width:25px;height:25px;transform:translate(-50%,-50%);border-radius:50%;border:2px solid #16a34a;clip-path:inset(0 0 50% 0);--sonar-max-size:${ringTier.maxSizePx}px;animation:teamPinSonarRing ${ringTier.durationMs}ms cubic-bezier(0.2,0.6,0.35,1) infinite;animation-delay:${i * staggerMs}ms;z-index:-1;"></span>`
           )
           .join("");
       }
       indicator.innerHTML = `
-        <div style="position:relative;width:25px;height:25px;transform:rotate(${heading}deg);transform-origin:center;">
+        <div style="position:relative;width:25px;height:25px;transform:rotate(${rotationDeg}deg);transform-origin:center;">
           ${ringsHtml}
-          <svg viewBox="0 0 24 24" width="25" height="25" style="overflow:visible;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45));"><polygon points="12 2 19 21 12 17 5 21 12 2" fill="#16a34a"/></svg>
+          ${renderHeadingShapeInner(liveUser.pinVehicleIcon)}
         </div>
       `;
     } else {
@@ -10573,10 +10671,10 @@ export default function IntelligenceMapping() {
 
       {/* Pin-customise popup — opened by tapping your own name pill on the
         map (see the click listener attached in createUserPinElement).
-        Wheels/Foot mode, plus Foot-only gender/skin-tone options — see
-        setOnFoot/setPinAppearance. A Wheels-only vehicle icon picker is
-        planned but not built yet (pinVehicleIcon already exists server-side
-        for when that lands). */}
+        Wheels/Foot mode, a Wheels-only heading-shape picker, and a pill
+        colour picker — see setOnFoot/setPinAppearance. The on-foot glyph
+        is always the plain neutral 🧍/🚶/🏃 now — the gender/skin-tone
+        picker previously here was removed entirely. */}
       <Dialog open={onFootPopupOpen} onOpenChange={setOnFootPopupOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -10587,9 +10685,8 @@ export default function IntelligenceMapping() {
               u => u.userId === user?.id && u.deviceId === deviceId
             );
             const onFoot = ownLiveUser?.onFoot ?? false;
-            const gender = ownLiveUser?.pinGender ?? "neutral";
-            const skinTone = ownLiveUser?.pinSkinTone ?? "default";
-            const footPreview = buildOnFootGlyph("🚶", gender, skinTone);
+            const headingShape = ownLiveUser?.pinVehicleIcon ?? "arrow";
+            const pinColor = ownLiveUser?.pinColor ?? null;
 
             return (
               <div className="flex flex-col gap-4 py-2">
@@ -10603,7 +10700,14 @@ export default function IntelligenceMapping() {
                         : "border-border bg-accent/30 hover:border-primary/50"
                     }`}
                   >
-                    <span className="text-xl">⬆️</span>
+                    {/* Same shape as the live pin's own arrow — see
+                        renderHeadingShapeInner — not a generic ⬆️ emoji. */}
+                    <span
+                      className="w-5 h-5 flex items-center justify-center"
+                      dangerouslySetInnerHTML={{
+                        __html: renderHeadingShapeInner("arrow"),
+                      }}
+                    />
                     <span className="text-xs font-semibold">Wheels</span>
                   </button>
                   <button
@@ -10615,7 +10719,7 @@ export default function IntelligenceMapping() {
                         : "border-border bg-accent/30 hover:border-primary/50"
                     }`}
                   >
-                    <span className="text-xl">{footPreview}</span>
+                    <span className="text-xl">🚶</span>
                     <span className="text-xs font-semibold">Foot</span>
                   </button>
                 </div>
@@ -10624,70 +10728,78 @@ export default function IntelligenceMapping() {
                   over 15 km/h.
                 </p>
 
-                {onFoot ? (
-                  <>
-                    <div className="space-y-1.5">
-                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                        Appearance
-                      </p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {(["neutral", "male", "female"] as const).map(g => (
-                          <button
-                            key={g}
-                            type="button"
-                            onClick={() =>
-                              setPinAppearanceMut.mutate({ pinGender: g })
-                            }
-                            className={`flex flex-col items-center gap-1 rounded-lg border-2 py-2 transition-all ${
-                              gender === g
-                                ? "border-primary bg-primary/10 scale-105"
-                                : "border-border bg-accent/30 hover:border-primary/50"
-                            }`}
-                          >
-                            <span className="text-lg">
-                              {buildOnFootGlyph("🚶", g, skinTone)}
-                            </span>
-                            <span className="text-[10px] font-medium">
-                              {g === "neutral"
-                                ? "Neutral"
-                                : g === "male"
-                                  ? "Male"
-                                  : "Female"}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
+                {!onFoot && (
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      Heading shape
+                    </p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {HEADING_SHAPE_OPTIONS.map(opt => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() =>
+                            setPinAppearanceMut.mutate({
+                              pinVehicleIcon: opt.key,
+                            })
+                          }
+                          title={opt.label}
+                          aria-label={opt.label}
+                          className={`flex items-center justify-center rounded-lg border-2 py-2 transition-all ${
+                            headingShape === opt.key
+                              ? "border-primary bg-primary/10 scale-105"
+                              : "border-border bg-accent/30 hover:border-primary/50"
+                          }`}
+                        >
+                          <span
+                            className="w-5 h-5 flex items-center justify-center"
+                            dangerouslySetInnerHTML={{
+                              __html: renderHeadingShapeInner(opt.key),
+                            }}
+                          />
+                        </button>
+                      ))}
                     </div>
-                    <div className="space-y-1.5">
-                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                        Skin tone
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(["default", "brown"] as const).map(t => (
-                          <button
-                            key={t}
-                            type="button"
-                            onClick={() =>
-                              setPinAppearanceMut.mutate({ pinSkinTone: t })
-                            }
-                            className={`flex flex-col items-center gap-1 rounded-lg border-2 py-2 transition-all ${
-                              skinTone === t
-                                ? "border-primary bg-primary/10 scale-105"
-                                : "border-border bg-accent/30 hover:border-primary/50"
-                            }`}
-                          >
-                            <span className="text-lg">
-                              {buildOnFootGlyph("🚶", gender, t)}
-                            </span>
-                            <span className="text-[10px] font-medium">
-                              {t === "default" ? "Default" : "Brown"}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                ) : null}
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      Pill colour
+                    </p>
+                    {pinColor && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPinAppearanceMut.mutate({ pinColor: null })
+                        }
+                        className="text-[10px] font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
+                      >
+                        Reset to team colour
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-5 gap-2 justify-items-center">
+                    {PIN_COLOUR_SWATCHES.map(swatch => (
+                      <button
+                        key={swatch.hex}
+                        type="button"
+                        onClick={() =>
+                          setPinAppearanceMut.mutate({ pinColor: swatch.hex })
+                        }
+                        title={swatch.name}
+                        aria-label={swatch.name}
+                        className={`h-8 w-8 rounded-full border-2 transition-all ${
+                          pinColor === swatch.hex
+                            ? "border-foreground scale-110"
+                            : "border-transparent hover:scale-105"
+                        }`}
+                        style={{ background: swatch.hex }}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
             );
           })()}

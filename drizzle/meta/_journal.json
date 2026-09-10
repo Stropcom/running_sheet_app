@@ -708,6 +708,13 @@
       "when": 1788941473325,
       "tag": "0100_red_riptide",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "5",
+      "when": 1789045120646,
+      "tag": "0101_stale_lady_deathstrike",
+      "breakpoints": true
     }
   ]
 }

@@ -22,6 +22,15 @@ type VoiceState =
   | "recording"
   | "busy";
 
+// Shared with the Keyboard/Undo buttons next to this one in RS Quick
+// Entry's Observation header (IntelligenceMapping.tsx) — all three use
+// this exact size so they read as one consistent row rather than
+// mismatched buttons, and so each has a genuinely easy-to-hit tap target
+// on a phone (the previous px-1.5 py-0.5 / text-[9px] sizing was too
+// small to tap reliably in a hurry).
+export const QE_HEADER_BUTTON_SIZE =
+  "flex items-center gap-1.5 px-2.5 h-8 rounded-md text-[11px] md:text-xs font-semibold border transition-all active:scale-95";
+
 export function VoiceInputButton({
   onTranscript,
   shortcutMap,
@@ -132,9 +141,9 @@ export function VoiceInputButton({
         type="button"
         disabled
         title={title}
-        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border border-border text-muted-foreground opacity-40 cursor-not-allowed ${className}`}
+        className={`${QE_HEADER_BUTTON_SIZE} border-border text-muted-foreground opacity-40 cursor-not-allowed ${className}`}
       >
-        <MicOff className="h-3 w-3" />
+        <MicOff className="h-4 w-4" />
         Voice
       </button>
     );
@@ -152,16 +161,16 @@ export function VoiceInputButton({
             ? "Transcribing…"
             : "Record a voice observation"
       }
-      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-all active:scale-95 disabled:opacity-60 disabled:pointer-events-none ${
+      className={`${QE_HEADER_BUTTON_SIZE} disabled:opacity-60 disabled:pointer-events-none ${
         state === "recording"
           ? "border-red-500/60 text-red-500 bg-red-500/10 animate-pulse"
           : "border-border text-muted-foreground hover:bg-accent/50"
       } ${className}`}
     >
       {state === "busy" ? (
-        <Loader2 className="h-3 w-3 animate-spin" />
+        <Loader2 className="h-4 w-4 animate-spin" />
       ) : (
-        <Mic className="h-3 w-3" />
+        <Mic className="h-4 w-4" />
       )}
       {state === "recording"
         ? "Stop"

@@ -79,7 +79,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { VoiceInputButton } from "@/components/VoiceInputButton";
+import {
+  VoiceInputButton,
+  QE_HEADER_BUTTON_SIZE,
+} from "@/components/VoiceInputButton";
 import {
   ChevronDown,
   ChevronRight,
@@ -8899,10 +8902,22 @@ export default function IntelligenceMapping() {
                           className="rounded-lg border border-border bg-muted/40 p-2.5 md:p-3.5 flex flex-col gap-2 md:gap-2.5"
                           onClick={e => e.stopPropagation()}
                         >
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                              Observation
-                            </span>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            {/* Voice sits right next to the label, not
+                                grouped with Keyboard/Undo — it's the
+                                primary way of filling this field in a
+                                hurry, so it belongs next to what it's
+                                filling in, not tucked away on the far
+                                side with the secondary controls. */}
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                                Observation
+                              </span>
+                              <VoiceInputButton
+                                onTranscript={handleVoiceTranscript}
+                                shortcutMap={mapQeShortcutMap}
+                              />
+                            </div>
                             <div className="flex items-center gap-1.5">
                               {/* Only meaningful on touch devices — desktop's
                                   observation field is always editable (see
@@ -8917,28 +8932,24 @@ export default function IntelligenceMapping() {
                                       ? "Switch back to chip-click only"
                                       : "Switch to keyboard typing"
                                   }
-                                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-all active:scale-95 hover:bg-accent/50 ${
+                                  className={`${QE_HEADER_BUTTON_SIZE} hover:bg-accent/50 ${
                                     rsInlineTypingMode
                                       ? "border-primary/50 text-primary bg-primary/10"
                                       : "border-border text-muted-foreground"
                                   }`}
                                 >
-                                  <Keyboard className="h-3 w-3" />
+                                  <Keyboard className="h-4 w-4" />
                                   Keyboard
                                 </button>
                               )}
-                              <VoiceInputButton
-                                onTranscript={handleVoiceTranscript}
-                                shortcutMap={mapQeShortcutMap}
-                              />
                               <button
                                 type="button"
                                 onClick={undoInlineText}
                                 disabled={rsInlineUndoStack.length === 0}
                                 title="Undo"
-                                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border border-border text-muted-foreground transition-all active:scale-95 hover:bg-accent/50 disabled:opacity-40 disabled:pointer-events-none"
+                                className={`${QE_HEADER_BUTTON_SIZE} border-border text-muted-foreground hover:bg-accent/50 disabled:opacity-40 disabled:pointer-events-none`}
                               >
-                                <Undo2 className="h-3 w-3" />
+                                <Undo2 className="h-4 w-4" />
                                 Undo
                               </button>
                             </div>

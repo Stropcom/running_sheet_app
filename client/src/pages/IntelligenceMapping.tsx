@@ -1455,6 +1455,24 @@ export default function IntelligenceMapping() {
   // rotation needs to account for the map's current on-screen orientation
   // without forcing every pin to re-render on every heading_changed tick).
   const mapHeadingRef = useRef(0);
+  // Set for a short window around every programmatic map.setHeading() call
+  // Heading-Up's own tween makes — see the "dragstart" listener in
+  // handleMapReady. Google's vector map appears to fire "dragstart" as an
+  // internal side effect of a heading change (it likely shares code with
+  // the manual twist-to-rotate gesture, which legitimately IS a drag), not
+  // just from a real user-initiated drag the way the comment there
+  // originally assumed. Left unguarded, every one of Heading-Up's own
+  // setHeading() calls (now firing ~10/s, see animateHeadingTo) was
+  // mistaken for the user grabbing the map, continuously re-arming
+  // markUserMapInteracting's 500ms lockout faster than it could ever
+  // expire — permanently blocking the separate follow-mode camera tween
+  // for as long as the map kept rotating, which is exactly "heading-up
+  // doesn't keep me centred." A real user-initiated drag still correctly
+  // interrupts everything outside this narrow window.
+  const programmaticHeadingChangeRef = useRef(false);
+  const programmaticHeadingResetTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   // Ground truth for whether the map can actually rotate. Map.tsx's
   // getMapRenderPreference() (localStorage/URL) only decides which Map ID
   // gets *requested* — Google can still silently instantiate a raster map
@@ -3668,7 +3686,20 @@ export default function IntelligenceMapping() {
         animateHeadingTo(
           "own-heading",
           () => map.getHeading() ?? 0,
-          h => map.setHeading(h),
+          h => {
+            // See programmaticHeadingChangeRef's own comment (declared
+            // above) — re-armed on every call for as long as the tween
+            // keeps calling setHeading(), so it only reads false again a
+            // moment after the map actually settles.
+            programmaticHeadingChangeRef.current = true;
+            if (programmaticHeadingResetTimeoutRef.current) {
+              clearTimeout(programmaticHeadingResetTimeoutRef.current);
+            }
+            programmaticHeadingResetTimeoutRef.current = setTimeout(() => {
+              programmaticHeadingChangeRef.current = false;
+            }, 150);
+            map.setHeading(h);
+          },
           ownEntry.heading,
           mapCenterAnimRef,
           mapCenterLastUpdateRef
@@ -3897,7 +3928,13 @@ export default function IntelligenceMapping() {
           userMapInteractingRef.current = false;
         }, 500);
       };
-      map.addListener("dragstart", markUserMapInteracting);
+      map.addListener("dragstart", () => {
+        // See programmaticHeadingChangeRef's own comment — Heading-Up's
+        // own setHeading() calls appear to fire this event too, and must
+        // not be mistaken for a real user grabbing the map.
+        if (programmaticHeadingChangeRef.current) return;
+        markUserMapInteracting();
+      });
       const mapDiv = map.getDiv();
       mapDiv.addEventListener("wheel", markUserMapInteracting, {
         passive: true,

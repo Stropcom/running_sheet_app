@@ -569,7 +569,7 @@ const SOP_SECTIONS: SopSection[] = [
           details provided at the scene.
         </SopP>
         <SopSub>Approved repairer — the only one to use</SopSub>
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 mb-2">
+        <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 px-3 py-2.5 mb-2">
           <p className="text-[13px] font-bold text-foreground">
             {REPAIRER_NAME}
           </p>
@@ -691,8 +691,8 @@ function CrashMenu({ onSelect }: { onSelect: (s: Screen) => void }) {
         onClick={() => onSelect("wizard")}
         className="flex items-center gap-3.5 p-4 rounded-xl border border-border/60 bg-card/60 hover:bg-muted/40 transition-colors text-left"
       >
-        <div className="w-11 h-11 rounded-xl bg-amber-500/10 flex items-center justify-center shrink-0">
-          <Siren className="h-5 w-5 text-amber-500" />
+        <div className="w-11 h-11 rounded-xl bg-violet-500/10 flex items-center justify-center shrink-0">
+          <Siren className="h-5 w-5 text-violet-400" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-foreground">Crash Helper</p>
@@ -794,7 +794,7 @@ interface ResultItem {
 // one glance away instead of buried in a sentence.
 function RepairerCard() {
   return (
-    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 mt-2">
+    <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 px-3 py-2.5 mt-2">
       <p className="text-[13px] font-bold text-foreground">{REPAIRER_NAME}</p>
       <p className="text-[12.5px] text-muted-foreground mt-1">
         Address: {REPAIRER_ADDRESS}
@@ -807,10 +807,16 @@ function RepairerCard() {
   );
 }
 
-// Groups results by topic (Identity, Declaration, Vehicle, Reporting…)
-// instead of one long flat numbered list — items stay numbered, but the
-// numbering runs continuously across group boundaries so it still reads as
-// a single procedure, just clustered by subject.
+// Groups results by topic (Identity, Declaration, Vehicle, Reporting…) —
+// each topic gets its own bordered panel rather than just a plain label
+// inline in one continuous list, so SAFETY/IDENTITY/DECLARATION/etc. read
+// as clearly separate blocks at a glance, especially on a phone/tablet
+// screen in bright light. Items stay numbered, but the numbering runs
+// continuously across panel boundaries so it still reads as a single
+// procedure, just clustered by subject. Caution items use red, not amber —
+// amber/yellow-on-light-card reads as low-contrast and hard to read in
+// direct sunlight, exactly the environment this gets used in; red matches
+// the exception-flagged warning banner above this list.
 function GroupedResultList({ items }: { items: ResultItem[] }) {
   const groups: { name: string; items: ResultItem[] }[] = [];
   const byName = new Map<string, ResultItem[]>();
@@ -825,34 +831,39 @@ function GroupedResultList({ items }: { items: ResultItem[] }) {
   }
   let n = 0;
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col gap-2.5">
       {groups.map(g => (
-        <div key={g.name}>
-          <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70 pt-3 pb-1 first:pt-0">
+        <div
+          key={g.name}
+          className="rounded-lg border border-border/60 bg-background/50 px-3 py-2.5"
+        >
+          <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70 pb-1.5">
             {g.name}
           </p>
-          {g.items.map((it, i) => {
-            n++;
-            return (
-              <div
-                key={i}
-                className={`flex gap-2.5 py-2.5 border-b border-dashed border-border/60 last:border-b-0 text-sm text-foreground ${
-                  it.caution ? "bg-amber-500/5 -mx-2 px-2 rounded-lg" : ""
-                }`}
-              >
-                <span
-                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
-                    it.caution
-                      ? "bg-amber-500/15 text-amber-500"
-                      : "bg-indigo-500/10 text-indigo-400"
+          <div className="flex flex-col">
+            {g.items.map((it, i) => {
+              n++;
+              return (
+                <div
+                  key={i}
+                  className={`flex gap-2.5 py-2 border-t border-dashed border-border/50 first:border-t-0 text-sm text-foreground ${
+                    it.caution ? "bg-red-500/5 -mx-2 px-2 rounded-lg" : ""
                   }`}
                 >
-                  {n}
-                </span>
-                <span className="leading-snug flex-1 min-w-0">{it.text}</span>
-              </div>
-            );
-          })}
+                  <span
+                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
+                      it.caution
+                        ? "bg-red-500/15 text-red-500"
+                        : "bg-indigo-500/10 text-indigo-400"
+                    }`}
+                  >
+                    {n}
+                  </span>
+                  <span className="leading-snug flex-1 min-w-0">{it.text}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       ))}
     </div>
@@ -1293,13 +1304,13 @@ function CrashWizard() {
       </div>
 
       <div className="rounded-xl border border-border/60 bg-card/60 overflow-hidden mb-3">
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/10 text-amber-500">
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-violet-500/10 text-violet-400">
           <Camera className="h-3.5 w-3.5" />
           <span className="text-[11px] font-bold uppercase tracking-wide">
             At the Scene
           </span>
         </div>
-        <div className="px-4 pb-1">
+        <div className="p-3">
           <GroupedResultList items={scene} />
         </div>
       </div>
@@ -1311,7 +1322,7 @@ function CrashWizard() {
             After / Reporting
           </span>
         </div>
-        <div className="px-4 pb-1">
+        <div className="p-3">
           <GroupedResultList items={after} />
         </div>
       </div>

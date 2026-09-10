@@ -1108,6 +1108,56 @@ function animateLatLngTo(
   animRef.current.set(key, requestAnimationFrame(step));
 }
 
+// Same tween engine as animateLatLngTo above, for the map's own rotation in
+// Heading-Up mode. map.setHeading() previously got called directly, once
+// per GPS poll tick, with the raw new value and no interpolation — exactly
+// the "stop-start stutter" animateLatLngTo was built to fix for the pin's
+// position and the follow-mode camera centre, just never applied to the
+// map's heading too. North Up never rotates, so it never showed this;
+// Heading-Up snapping the WHOLE map background once a second is the
+// "jerky in heads up, fine in north up" symptom. Headings wrap at 360°, so
+// this interpolates the shortest angular path rather than a naive linear
+// blend between the two raw values (which would spin the long way round
+// whenever the path crosses the 0°/360° boundary).
+function animateHeadingTo(
+  key: string,
+  getCurrent: () => number,
+  setHeading: (h: number) => void,
+  to: number,
+  animRef: { current: Map<string, number> },
+  lastUpdateRef: { current: Map<string, number> }
+): void {
+  const existingFrame = animRef.current.get(key);
+  if (existingFrame != null) cancelAnimationFrame(existingFrame);
+
+  const from = getCurrent();
+  // Shortest signed delta in (-180, 180], e.g. from=350,to=10 → +20, not -340.
+  const delta = ((((to - from) % 360) + 540) % 360) - 180;
+  const now = performance.now();
+  const lastUpdateAt = lastUpdateRef.current.get(key);
+  lastUpdateRef.current.set(key, now);
+
+  // Same clamped-to-actual-elapsed-time duration as animateLatLngTo, for
+  // the same reason — matches the real gap between poll ticks rather than
+  // a fixed guess.
+  const durationMs =
+    lastUpdateAt != null
+      ? Math.min(Math.max(now - lastUpdateAt, 400), 3000)
+      : 1000;
+
+  const startTime = now;
+  const step = (frameNow: number) => {
+    const t = Math.min(1, (frameNow - startTime) / durationMs);
+    setHeading((((from + delta * t) % 360) + 360) % 360);
+    if (t < 1) {
+      animRef.current.set(key, requestAnimationFrame(step));
+    } else {
+      animRef.current.delete(key);
+    }
+  };
+  animRef.current.set(key, requestAnimationFrame(step));
+}
+
 // Eases a live team pin's DivIconOverlay smoothly from its current position
 // to a new one, instead of jumping instantly — the underlying GPS fix only
 // arrives once a second (see the userLocations query's refetchInterval), so
@@ -3595,7 +3645,15 @@ export default function IntelligenceMapping() {
         actualRenderingTypeRef.current === "VECTOR" &&
         ownEntry.heading != null
       ) {
-        mapRef.current.setHeading(ownEntry.heading);
+        const map = mapRef.current;
+        animateHeadingTo(
+          "own-heading",
+          () => map.getHeading() ?? 0,
+          h => map.setHeading(h),
+          ownEntry.heading,
+          mapCenterAnimRef,
+          mapCenterLastUpdateRef
+        );
       }
       // On Foot auto-revert: speed over 15 km/h switches the pin back to
       // the vehicle arrow automatically — officers forget to switch it
@@ -3806,6 +3864,13 @@ export default function IntelligenceMapping() {
         const frame = mapCenterAnimRef.current.get("own");
         if (frame != null) cancelAnimationFrame(frame);
         mapCenterAnimRef.current.delete("own");
+        // Same for the heading tween — a manual twist-to-rotate gesture
+        // should immediately take over from Heading-Up's automatic
+        // rotation, exactly like a manual pan/zoom already takes over from
+        // the camera-follow tween above.
+        const headingFrame = mapCenterAnimRef.current.get("own-heading");
+        if (headingFrame != null) cancelAnimationFrame(headingFrame);
+        mapCenterAnimRef.current.delete("own-heading");
         if (userMapInteractingTimeoutRef.current) {
           clearTimeout(userMapInteractingTimeoutRef.current);
         }

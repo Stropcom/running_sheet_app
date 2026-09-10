@@ -408,6 +408,80 @@ export async function setOperationStatus(
   return { success: true };
 }
 
+// An active operation moves itself to Archive once every one of its running
+// sheets is closed AND the most recent sheet's date is more than 30 days in
+// the past. "Triggered on read" — see operation.list in routers.ts, which
+// calls this before returning the active-operations list — same pattern
+// purgeExpiredRecycleBinItems below already uses. Deliberately not a
+// background cron: references/periodic-updates.md's heartbeat
+// infrastructure is Manus-platform-hosted (server/_core/heartbeat.ts calls
+// out to Manus's own forge backend), and this app is deployed independently
+// (git pull + pnpm build + pm2, not through Manus hosting) with nothing else
+// in the codebase actually calling that SDK — it wouldn't be reachable in
+// production regardless of whether it's wired up here.
+const AUTO_ARCHIVE_AFTER_DAYS = 30;
+
+export async function autoArchiveEligibleOperations(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const activeOps = await db
+    .select({ id: operations.id, name: operations.name })
+    .from(operations)
+    .where(and(eq(operations.status, "active"), isNull(operations.deletedAt)));
+  if (activeOps.length === 0) return;
+
+  const today = perthTodayISO();
+
+  for (const op of activeOps) {
+    const sheets = await db
+      .select({
+        closedAt: runningSheets.closedAt,
+        sheetDate: runningSheets.sheetDate,
+        createdAt: runningSheets.createdAt,
+      })
+      .from(runningSheets)
+      .where(
+        and(
+          eq(runningSheets.operationId, op.id),
+          isNull(runningSheets.deletedAt)
+        )
+      );
+
+    // Nothing to measure "last sheet date" from, and a freshly created
+    // operation with no sheets yet should never silently archive.
+    if (sheets.length === 0) continue;
+    // Every sheet must be closed, not just the most recent one.
+    if (sheets.some(s => !s.closedAt)) continue;
+
+    // Effective date per sheet: sheetDate if set, else the Perth calendar
+    // date of createdAt — legacy sheets only, see runningSheets.sheetDate's
+    // own comment in schema.ts. Plain string comparison is safe: both are
+    // YYYY-MM-DD.
+    const latestDate = sheets
+      .map(s => s.sheetDate ?? toPerthDateISO(s.createdAt))
+      .sort()
+      .at(-1)!;
+    if (addDaysISO(latestDate, AUTO_ARCHIVE_AFTER_DAYS) > today) continue;
+
+    await db
+      .update(operations)
+      .set({ status: "archive" })
+      .where(eq(operations.id, op.id));
+    // sheetId: 0 / userId: 0 — same "not applicable to one sheet, no human
+    // actor" sentinel routers.ts's manual operation.setStatus already uses
+    // for this same action when a user does it directly.
+    await createAuditLog({
+      sheetId: 0,
+      userId: 0,
+      userName: "System",
+      action: "operation_status_changed",
+      details: `Operation "${op.name}" auto-archived — all running sheets closed and the most recent sheet date (${latestDate}) is more than ${AUTO_ARCHIVE_AFTER_DAYS} days ago`,
+      createdAt: Date.now(),
+    });
+  }
+}
+
 export async function getOperationById(id: number) {
   const db = await getDb();
   if (!db) return undefined;

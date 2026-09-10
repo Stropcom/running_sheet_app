@@ -88,6 +88,7 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
 import {
   addRowMember,
+  autoArchiveEligibleOperations,
   createAuditLog,
   createCertification,
   createOperation,
@@ -710,6 +711,7 @@ export const appRouter = router({
 
   operation: router({
     list: protectedProcedure.query(async () => {
+      await autoArchiveEligibleOperations();
       return getOperations();
     }),
 

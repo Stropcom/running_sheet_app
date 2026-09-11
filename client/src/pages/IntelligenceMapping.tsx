@@ -9037,7 +9037,9 @@ export default function IntelligenceMapping() {
                                   }`}
                                 >
                                   <Keyboard className="h-4 w-4" />
-                                  Keyboard
+                                  <span className="hidden sm:inline">
+                                    Keyboard
+                                  </span>
                                 </button>
                               )}
                               <button
@@ -9048,7 +9050,7 @@ export default function IntelligenceMapping() {
                                 className={`${QE_HEADER_BUTTON_SIZE} border-border text-muted-foreground hover:bg-accent/50 disabled:opacity-40 disabled:pointer-events-none`}
                               >
                                 <Undo2 className="h-4 w-4" />
-                                Undo
+                                <span className="hidden sm:inline">Undo</span>
                               </button>
                             </div>
                           </div>

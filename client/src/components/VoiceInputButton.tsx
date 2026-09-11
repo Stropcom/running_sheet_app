@@ -144,7 +144,7 @@ export function VoiceInputButton({
         className={`${QE_HEADER_BUTTON_SIZE} border-border text-muted-foreground opacity-40 cursor-not-allowed ${className}`}
       >
         <MicOff className="h-4 w-4" />
-        Voice
+        <span className="hidden sm:inline">Voice</span>
       </button>
     );
   }
@@ -172,11 +172,13 @@ export function VoiceInputButton({
       ) : (
         <Mic className="h-4 w-4" />
       )}
-      {state === "recording"
-        ? "Stop"
-        : state === "busy"
-          ? "Transcribing"
-          : "Voice"}
+      <span className="hidden sm:inline">
+        {state === "recording"
+          ? "Stop"
+          : state === "busy"
+            ? "Transcribing"
+            : "Voice"}
+      </span>
     </button>
   );
 }

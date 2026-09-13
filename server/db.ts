@@ -10741,6 +10741,52 @@ export async function purgeOrphanedAttachments(): Promise<number> {
   return orphans.length;
 }
 
+export interface ObservationTextForScan {
+  rowId: number;
+  sheetId: number;
+  sheetTitle: string;
+  operationName: string;
+  observation: string;
+}
+
+/** Raw observation text for Step 2 of the Local AI Roadmap's
+ * missed-entity scan (see missedEntityScan.ts) — deliberately separate
+ * from getAllIntelligenceEntities, which returns already-*mined* entities,
+ * not the source text a second pass needs to re-scan for what the
+ * rule-based extractor may have missed entirely. Live operations only
+ * (isNull(deletedAt) on both tables) — same convention as every other
+ * live query in this file. */
+export async function getObservationTextForEntityScan(): Promise<
+  ObservationTextForScan[]
+> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const rows = await db
+    .select({
+      rowId: sheetRows.id,
+      sheetId: sheetRows.sheetId,
+      sheetTitle: runningSheets.title,
+      operationName: operations.name,
+      observation: sheetRows.observation,
+    })
+    .from(sheetRows)
+    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .innerJoin(operations, eq(runningSheets.operationId, operations.id))
+    .where(
+      and(
+        isNull(runningSheets.deletedAt),
+        isNull(operations.deletedAt),
+        isNotNull(sheetRows.observation)
+      )
+    );
+
+  return rows.filter(
+    (r): r is ObservationTextForScan =>
+      !!r.observation && r.observation.trim().length > 0
+  );
+}
+
 // ─── Intelligence Profile Queries ─────────────────────────────────────────────
 // Correct association logic: an entity is an "operational associate" of a target
 // ONLY if it appears in an observation row on a running sheet where that target

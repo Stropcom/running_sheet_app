@@ -171,6 +171,63 @@ function PasswordField({
   );
 }
 
+function ScanResultsList({
+  results,
+  emptyMessage,
+}: {
+  results: any[];
+  emptyMessage: string;
+}) {
+  if (results.length === 0) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-lg px-3 py-2.5">
+        <CheckCheck className="w-4 h-4 shrink-0" />
+        {emptyMessage}
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+        {results.length} possible issue{results.length > 1 ? "s" : ""}
+      </p>
+      {results.map((f, i) => (
+        <div
+          key={i}
+          className="rounded-lg border border-border/60 bg-muted/20 p-3"
+        >
+          <p className="text-sm text-foreground mb-2">{f.reason}</p>
+          <div className="flex flex-col gap-1.5">
+            {f.occurrences.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">
+                No linked running sheet row to check.
+              </p>
+            ) : (
+              f.occurrences.map((o: any, j: number) => (
+                <Link
+                  key={j}
+                  href={`/sheet/${o.sheetId}`}
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                >
+                  <ExternalLink className="w-3 h-3 shrink-0" />
+                  {o.operationName} — {o.sheetTitle}
+                </Link>
+              ))
+            )}
+            <Link
+              href={`/intelligence/${ENTITY_PROFILE_PATH[f.type]}/${encodeURIComponent(f.shortForm)}`}
+              className="text-xs text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1"
+            >
+              <ExternalLink className="w-3 h-3 shrink-0" />
+              View entity profile
+            </Link>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function MyProfilePage() {
   const { isAuthenticated } = useAuth({ redirectOnUnauthenticated: true });
   const utils = trpc.useUtils();
@@ -275,6 +332,33 @@ export default function MyProfilePage() {
     },
     onError: err => toast.error(err.message),
   });
+
+  // ── Missed-entity scan (Local AI Step 2, admin-only) ────────────────────
+  const [missedScanResults, setMissedScanResults] = useState<any[] | null>(
+    null
+  );
+  const [missedScanModelStatus, setMissedScanModelStatus] = useState<
+    "ready" | "missing" | "incomplete" | null
+  >(null);
+  const runMissedScanMutation =
+    trpc.intelligence.runMissedEntityScan.useMutation({
+      onSuccess: result => {
+        setMissedScanModelStatus(result.modelStatus);
+        if (result.modelStatus !== "ready") {
+          setMissedScanResults(null);
+          return;
+        }
+        setMissedScanResults(result.findings);
+        if (result.findings.length === 0) {
+          toast.success("Scan complete — nothing flagged.");
+        } else {
+          toast.success(
+            `Scan complete — ${result.findings.length} possible name${result.findings.length > 1 ? "s" : ""} flagged.`
+          );
+        }
+      },
+      onError: err => toast.error(err.message),
+    });
 
   return (
     <DashboardLayout>
@@ -388,55 +472,70 @@ export default function MyProfilePage() {
 
             {scanResults !== null && (
               <div className="mt-5">
-                {scanResults.length === 0 ? (
-                  <div className="flex items-center gap-2 text-sm text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-lg px-3 py-2.5">
-                    <CheckCheck className="w-4 h-4 shrink-0" />
-                    Nothing flagged — every mined entity looks structurally
-                    sound.
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                      {scanResults.length} possible issue
-                      {scanResults.length > 1 ? "s" : ""}
-                    </p>
-                    {scanResults.map((f, i) => (
-                      <div
-                        key={i}
-                        className="rounded-lg border border-border/60 bg-muted/20 p-3"
-                      >
-                        <p className="text-sm text-foreground mb-2">
-                          {f.reason}
-                        </p>
-                        <div className="flex flex-col gap-1.5">
-                          {f.occurrences.length === 0 ? (
-                            <p className="text-xs text-muted-foreground italic">
-                              No linked running sheet row to check.
-                            </p>
-                          ) : (
-                            f.occurrences.map((o: any, j: number) => (
-                              <Link
-                                key={j}
-                                href={`/sheet/${o.sheetId}`}
-                                className="text-xs text-primary hover:underline flex items-center gap-1"
-                              >
-                                <ExternalLink className="w-3 h-3 shrink-0" />
-                                {o.operationName} — {o.sheetTitle}
-                              </Link>
-                            ))
-                          )}
-                          <Link
-                            href={`/intelligence/${ENTITY_PROFILE_PATH[f.type]}/${encodeURIComponent(f.shortForm)}`}
-                            className="text-xs text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1"
-                          >
-                            <ExternalLink className="w-3 h-3 shrink-0" />
-                            View entity profile
-                          </Link>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <ScanResultsList
+                  results={scanResults}
+                  emptyMessage="Nothing flagged — every mined entity looks structurally sound."
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Missed-Entity Scan Card (Local AI Step 2, beta) — admin-only */}
+        {profile?.role === "admin" && (
+          <div className="rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
+            <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
+              <ScanSearch className="w-4 h-4 text-primary" />
+              Missed-Entity Scan
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded px-1.5 py-0.5">
+                Beta
+              </span>
+            </h2>
+            <p className="text-xs text-muted-foreground mb-4">
+              Runs a small on-device model over every observation, looking for a
+              person's name written in a way the usual rules didn't recognise —
+              never sent anywhere, runs entirely on this server. Only flags
+              names that don't match anyone already in the Intelligence folder,
+              even loosely. Only you see the results — nothing changes
+              automatically.
+            </p>
+            <Button
+              onClick={() => runMissedScanMutation.mutate()}
+              disabled={runMissedScanMutation.isPending}
+              className="gap-2"
+            >
+              <ScanSearch className="w-4 h-4" />
+              {runMissedScanMutation.isPending
+                ? "Scanning…"
+                : "Run Missed-Entity Scan"}
+            </Button>
+
+            {missedScanModelStatus === "missing" && (
+              <p className="text-xs text-muted-foreground mt-3">
+                The local model isn't installed on this deployment yet — see{" "}
+                <span className="font-mono">
+                  scripts/dev/ner-model-setup.md
+                </span>
+                .
+              </p>
+            )}
+            {missedScanModelStatus === "incomplete" && (
+              <p className="text-xs text-destructive mt-3">
+                The local model files look incomplete on this deployment
+                (possibly Git LFS pointer stubs, not the real weights) — see{" "}
+                <span className="font-mono">
+                  scripts/dev/ner-model-setup.md
+                </span>
+                .
+              </p>
+            )}
+
+            {missedScanResults !== null && (
+              <div className="mt-5">
+                <ScanResultsList
+                  results={missedScanResults}
+                  emptyMessage="Nothing flagged — no missed names found."
+                />
               </div>
             )}
           </div>

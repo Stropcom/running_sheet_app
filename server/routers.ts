@@ -263,6 +263,7 @@ import {
   backfillGoogleAddressesInObservations,
   getOrphanedAttachments,
   purgeOrphanedAttachments,
+  getObservationTextForEntityScan,
   getRsMappingWaypoints,
   upsertRsMappingWaypoint,
   geocodeAddressList,
@@ -324,7 +325,9 @@ import {
   getUcoGuideAcknowledgements,
   getUcoGuideRosterPrefill,
 } from "./db";
-import { scanIntelligenceEntities } from "./intelligenceScan";
+import { scanIntelligenceEntities, type ScanFinding } from "./intelligenceScan";
+import { scanForMissedPersonMentions } from "./missedEntityScan";
+import { getNerModelStatus } from "./localNER";
 
 import {
   makeRequest,
@@ -3603,6 +3606,46 @@ export const appRouter = router({
         });
       }
       return { findings };
+    }),
+
+    /** Step 2 of the Local AI Roadmap — on-device NER pass looking for a
+     * person mention the rule-based extractor missed entirely (not just a
+     * typo of one it already found — see intelligenceScan.ts for that
+     * case). Same on-demand, admin-only, notify-only-the-runner contract
+     * as runEntityScan above. Returns a clear status instead of a cryptic
+     * failure when the local model files haven't been deployed yet (see
+     * scripts/dev/ner-model-setup.md) — this is expected on any
+     * deployment that hasn't done that manual step, not an error. */
+    runMissedEntityScan: adminProcedure.mutation(async ({ ctx }) => {
+      const modelStatus = await getNerModelStatus();
+      if (modelStatus !== "ready") {
+        return { modelStatus, findings: [] as ScanFinding[] };
+      }
+
+      const [observations, entities] = await Promise.all([
+        getObservationTextForEntityScan(),
+        getAllIntelligenceEntities(),
+      ]);
+      const knownNames = entities
+        .filter(e => e.type === "person")
+        .map(e => ({ id: e.shortForm, label: e.shortForm }));
+
+      const findings = await scanForMissedPersonMentions(
+        observations,
+        knownNames
+      );
+      if (findings.length > 0) {
+        await createNotificationsForUsers([ctx.user.id], {
+          title: `Missed-entity scan: ${findings.length} possible name${findings.length > 1 ? "s" : ""}`,
+          body: findings
+            .slice(0, 5)
+            .map(f => f.shortForm)
+            .join(" • "),
+          url: "/profile",
+          sourceModule: "missedEntityScan",
+        });
+      }
+      return { modelStatus, findings };
     }),
 
     /** Heat Map: location visit counts + coordinates for one Operation,

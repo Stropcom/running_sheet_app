@@ -21,7 +21,6 @@ import {
   ScanSearch,
   ExternalLink,
   CheckCheck,
-  AlertTriangle,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -273,22 +272,6 @@ export default function MyProfilePage() {
           `Scan complete — ${result.findings.length} possible issue${result.findings.length > 1 ? "s" : ""} flagged.`
         );
       }
-    },
-    onError: err => toast.error(err.message),
-  });
-
-  // ── Wipe all test data (temporary "start again" tool) ──────────────────
-  // Only rendered when profile.canWipeTestData is true — but that's just
-  // UI convenience, not the real gate: the server independently checks the
-  // same flag on ctx.user and rejects anyone else regardless of what the
-  // client sends. See routers.ts adminUtils.wipeAllTestData.
-  const WIPE_CONFIRM_PHRASE = "DELETE ALL DATA";
-  const [wipeConfirmText, setWipeConfirmText] = useState("");
-  const wipeAllTestDataMutation = trpc.adminUtils.wipeAllTestData.useMutation({
-    onSuccess: result => {
-      toast.success(`Wiped ${result.tablesCleared} tables. Reloading the app…`);
-      setWipeConfirmText("");
-      setTimeout(() => window.location.reload(), 1500);
     },
     onError: err => toast.error(err.message),
   });
@@ -588,57 +571,6 @@ export default function MyProfilePage() {
             </Button>
           </form>
         </div>
-
-        {/* Danger Zone — wipe all test data, temporary tool, only visible
-            to the one account it's manually enabled for */}
-        {profile?.canWipeTestData && (
-          <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-6 mt-6 shadow-sm">
-            <h2 className="text-sm font-semibold text-destructive mb-1 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" />
-              Danger Zone — Wipe All Test Data
-            </h2>
-            <p className="text-xs text-muted-foreground mb-4">
-              Permanently deletes every operation, running sheet, target,
-              associate, intelligence record, governance item, roster, briefing
-              and audit log in the app — for clearing out test data before real
-              operational use starts. This cannot be undone. Your own login,
-              other user accounts, and app-wide settings (shortcuts, style
-              guides) are not affected.
-            </p>
-            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
-              <Input
-                value={wipeConfirmText}
-                onChange={e => setWipeConfirmText(e.target.value)}
-                placeholder={`Type "${WIPE_CONFIRM_PHRASE}" to enable`}
-                className="border-destructive/40 focus-visible:ring-destructive sm:flex-1"
-              />
-              <Button
-                variant="destructive"
-                disabled={
-                  wipeConfirmText !== WIPE_CONFIRM_PHRASE ||
-                  wipeAllTestDataMutation.isPending
-                }
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "This permanently deletes all operational data in the app. Are you absolutely sure?"
-                    )
-                  ) {
-                    wipeAllTestDataMutation.mutate({
-                      confirmPhrase: wipeConfirmText,
-                    });
-                  }
-                }}
-                className="gap-2 shrink-0"
-              >
-                <AlertTriangle className="w-4 h-4" />
-                {wipeAllTestDataMutation.isPending
-                  ? "Wiping…"
-                  : "Wipe All Data"}
-              </Button>
-            </div>
-          </div>
-        )}
       </div>
     </DashboardLayout>
   );

@@ -715,6 +715,13 @@
       "when": 1789045120646,
       "tag": "0101_stale_lady_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "5",
+      "when": 1789310720385,
+      "tag": "0102_flashy_skin",
+      "breakpoints": true
     }
   ]
 }

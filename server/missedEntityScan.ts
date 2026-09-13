@@ -13,7 +13,7 @@
 import type { ScanFinding } from "./intelligenceScan";
 import type { ObservationTextForScan } from "./db";
 import { findPersonMentions } from "./localNER";
-import { findFuzzyMatches } from "./fuzzyMatch";
+import { findFuzzyMatches, sharesSignificantWord } from "./fuzzyMatch";
 
 export interface KnownEntityName {
   id: string;
@@ -29,7 +29,13 @@ export interface KnownEntityName {
  * Fuzzy, not exact — a loose match against a known name (e.g. the rules
  * already found "J. Smith" and NER found "John Smith") is still a match,
  * not a miss, so it isn't flagged here; that overlap case is what
- * intelligenceScan.ts's typo rule is for, not this one.
+ * intelligenceScan.ts's typo rule is for, not this one. Also checks a
+ * shared significant word (see sharesSignificantWord) on top of the
+ * whole-string comparison — real running-sheet data surfaced a case a
+ * whole-string check alone missed: NER extracting "Stevie RAYSON" as a
+ * new name when only the surname "RAYSON" was on the registry card,
+ * which whole-string similarity scores too low to catch (see
+ * fuzzyMatch.ts's own comment on that function for the full reasoning).
  */
 export async function scanForMissedPersonMentions(
   observations: ObservationTextForScan[],
@@ -49,8 +55,10 @@ export async function scanForMissedPersonMentions(
     }
 
     for (const mention of mentions) {
-      const alreadyKnown = findFuzzyMatches(mention.text, knownNames, 0.75);
-      if (alreadyKnown.length > 0) continue;
+      const alreadyKnown =
+        findFuzzyMatches(mention.text, knownNames, 0.75).length > 0 ||
+        sharesSignificantWord(mention.text, knownNames);
+      if (alreadyKnown) continue;
 
       const key = mention.text.trim().toUpperCase();
       const existing = findingsByName.get(key);

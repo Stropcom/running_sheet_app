@@ -174,9 +174,13 @@ function PasswordField({
 function ScanResultsList({
   results,
   emptyMessage,
+  onDismiss,
+  dismissingKey,
 }: {
   results: any[];
   emptyMessage: string;
+  onDismiss: (finding: any) => void;
+  dismissingKey: string | null;
 }) {
   if (results.length === 0) {
     return (
@@ -191,39 +195,60 @@ function ScanResultsList({
       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
         {results.length} possible issue{results.length > 1 ? "s" : ""}
       </p>
-      {results.map((f, i) => (
-        <div
-          key={i}
-          className="rounded-lg border border-border/60 bg-muted/20 p-3"
-        >
-          <p className="text-sm text-foreground mb-2">{f.reason}</p>
-          <div className="flex flex-col gap-1.5">
-            {f.occurrences.length === 0 ? (
-              <p className="text-xs text-muted-foreground italic">
-                No linked running sheet row to check.
-              </p>
-            ) : (
-              f.occurrences.map((o: any, j: number) => (
-                <Link
-                  key={j}
-                  href={`/sheet/${o.sheetId}`}
-                  className="text-xs text-primary hover:underline flex items-center gap-1"
-                >
-                  <ExternalLink className="w-3 h-3 shrink-0" />
-                  {o.operationName} — {o.sheetTitle}
-                </Link>
-              ))
-            )}
-            <Link
-              href={`/intelligence/${ENTITY_PROFILE_PATH[f.type]}/${encodeURIComponent(f.shortForm)}`}
-              className="text-xs text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1"
-            >
-              <ExternalLink className="w-3 h-3 shrink-0" />
-              View entity profile
-            </Link>
+      {results.map((f, i) => {
+        const key = `${f.ruleId}::${f.shortForm}`;
+        return (
+          <div
+            key={i}
+            className="rounded-lg border border-border/60 bg-muted/20 p-3"
+          >
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <p className="text-sm text-foreground">{f.reason}</p>
+              <button
+                type="button"
+                onClick={() => onDismiss(f)}
+                disabled={dismissingKey === key}
+                title="Not this one — stop flagging it"
+                className="text-[11px] font-medium text-muted-foreground hover:text-destructive border border-border rounded px-2 py-1 shrink-0 transition-colors disabled:opacity-50"
+              >
+                {dismissingKey === key ? "Dismissing…" : "Dismiss"}
+              </button>
+            </div>
+            <div className="flex flex-col gap-2">
+              {f.occurrences.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">
+                  No linked running sheet row to check.
+                </p>
+              ) : (
+                f.occurrences.map((o: any, j: number) => (
+                  <div key={j} className="flex flex-col gap-0.5">
+                    <Link
+                      href={`/sheet/${o.sheetId}`}
+                      className="text-xs text-primary hover:underline flex items-center gap-1"
+                    >
+                      <ExternalLink className="w-3 h-3 shrink-0" />
+                      {o.operationName} — {o.sheetTitle}
+                    </Link>
+                    {o.observationSnippet && (
+                      <p className="text-xs text-muted-foreground italic pl-4 border-l-2 border-border/60 ml-1">
+                        "{o.observationSnippet}
+                        {o.observationSnippet.length >= 160 ? "…" : ""}"
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
+              <Link
+                href={`/intelligence/${ENTITY_PROFILE_PATH[f.type]}/${encodeURIComponent(f.shortForm)}`}
+                className="text-xs text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1"
+              >
+                <ExternalLink className="w-3 h-3 shrink-0" />
+                View entity profile
+              </Link>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -360,6 +385,32 @@ export default function MyProfilePage() {
       onError: err => toast.error(err.message),
     });
 
+  // ── Dismiss a finding (either scan — same ruleId+shortForm identity) ────
+  const [dismissingKey, setDismissingKey] = useState<string | null>(null);
+  const dismissFindingMutation =
+    trpc.intelligence.dismissScanFinding.useMutation({
+      onError: err => toast.error(err.message),
+    });
+  const handleDismissFinding = (finding: any) => {
+    const key = `${finding.ruleId}::${finding.shortForm}`;
+    setDismissingKey(key);
+    dismissFindingMutation.mutate(
+      { ruleId: finding.ruleId, shortForm: finding.shortForm },
+      {
+        onSuccess: () => {
+          const stillMatches = (f: any) =>
+            `${f.ruleId}::${f.shortForm}` !== key;
+          setScanResults(prev => (prev ? prev.filter(stillMatches) : prev));
+          setMissedScanResults(prev =>
+            prev ? prev.filter(stillMatches) : prev
+          );
+          toast.success("Dismissed — won't be flagged again.");
+        },
+        onSettled: () => setDismissingKey(null),
+      }
+    );
+  };
+
   return (
     <DashboardLayout>
       <div className="max-w-2xl mx-auto px-4 py-8">
@@ -475,6 +526,8 @@ export default function MyProfilePage() {
                 <ScanResultsList
                   results={scanResults}
                   emptyMessage="Nothing flagged — every mined entity looks structurally sound."
+                  onDismiss={handleDismissFinding}
+                  dismissingKey={dismissingKey}
                 />
               </div>
             )}
@@ -535,6 +588,8 @@ export default function MyProfilePage() {
                 <ScanResultsList
                   results={missedScanResults}
                   emptyMessage="Nothing flagged — no missed names found."
+                  onDismiss={handleDismissFinding}
+                  dismissingKey={dismissingKey}
                 />
               </div>
             )}

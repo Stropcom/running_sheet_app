@@ -92,6 +92,16 @@ export interface NerPersonMention {
 // this can actually be run and checked against real running sheets.
 const MIN_PERSON_CONFIDENCE = 0.85;
 
+// A single-letter "name" at 90%+ confidence turned out to be a real,
+// common failure shape once this actually ran against real running sheets
+// (see missedEntityScan.ts's header comment): an initial like "H. Hogan"
+// has its "." tagged "O" (not a PER token), which flushes the span after
+// just "H" instead of continuing on to "Hogan" — the model isn't wrong
+// about "H" being part of a name, this reconstruction just splits it from
+// the surname that follows. A minimum length filters out the fragment;
+// the surname half still gets caught on its own as a separate mention.
+const MIN_MENTION_LENGTH = 2;
+
 export interface RawTokenTag {
   entity?: string;
   word?: string;
@@ -132,7 +142,10 @@ export function mergePersonTokenTags(
       text += w.startsWith("##") ? w.slice(2) : (text ? " " : "") + w;
     }
     const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
-    if (text && avgScore >= MIN_PERSON_CONFIDENCE) {
+    if (
+      text.length >= MIN_MENTION_LENGTH &&
+      avgScore >= MIN_PERSON_CONFIDENCE
+    ) {
       mentions.push({ text, score: avgScore });
     }
   };

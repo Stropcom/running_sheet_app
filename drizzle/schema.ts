@@ -1971,3 +1971,36 @@ export type UcoGuideAcknowledgement =
   typeof ucoGuideAcknowledgements.$inferSelect;
 export type InsertUcoGuideAcknowledgement =
   typeof ucoGuideAcknowledgements.$inferInsert;
+
+// ─── Scan Finding Dismissals ────────────────────────────────────────────────
+// Records "not this one, don't keep flagging it" for a single Intelligence
+// Entity Scan / Missed-Entity Scan finding — same "record the dismissal so
+// it isn't re-suggested" shape as faceMatchDismissals above, applied to the
+// Local AI Roadmap's scan findings instead of face matches. Keyed on
+// (ruleId, findingKey) rather than a numeric entity id: a finding here
+// isn't a persisted row anywhere, it's recomputed fresh every scan run, so
+// the dismissal has to match on the same identity the scan itself uses to
+// dedupe (see missedEntityScan.ts's findingsByName key / intelligenceScan's
+// per-entity shortForm) rather than a foreign key into another table.
+export const scanFindingDismissals = mysqlTable(
+  "scan_finding_dismissals",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    ruleId: varchar("ruleId", { length: 64 }).notNull(),
+    // Normalised (trim + uppercase) shortForm — must match how the caller
+    // computes the same finding's identity on the next scan run.
+    findingKey: varchar("findingKey", { length: 255 }).notNull(),
+    dismissedByCIN: varchar("dismissedByCIN", { length: 64 }).notNull(),
+    dismissedAt: timestamp("dismissedAt").defaultNow().notNull(),
+  },
+  t => [
+    uniqueIndex("scan_finding_dismissals_rule_key_idx").on(
+      t.ruleId,
+      t.findingKey
+    ),
+  ]
+);
+
+export type ScanFindingDismissal = typeof scanFindingDismissals.$inferSelect;
+export type InsertScanFindingDismissal =
+  typeof scanFindingDismissals.$inferInsert;

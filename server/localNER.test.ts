@@ -62,6 +62,15 @@ describe("mergePersonTokenTags", () => {
     expect(mentions).toHaveLength(0);
   });
 
+  it("drops a single-letter fragment split off from a surname by punctuation (real failure shape: 'H. Hogan')", () => {
+    const mentions = mergePersonTokenTags([
+      { entity: "B-PER", word: "H", score: 0.95 },
+      { entity: "O", word: ".", score: 0.99 },
+      { entity: "B-PER", word: "Hogan", score: 0.97 },
+    ]);
+    expect(mentions).toEqual([{ text: "Hogan", score: 0.97 }]);
+  });
+
   it("treats a stray I-PER with nothing open as a span start, not a drop", () => {
     const mentions = mergePersonTokenTags([
       { entity: "I-PER", word: "Smith", score: 0.9 },

@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { stringSimilarity, findFuzzyMatches } from "./fuzzyMatch";
+import {
+  stringSimilarity,
+  findFuzzyMatches,
+  sharesSignificantWord,
+} from "./fuzzyMatch";
 
 describe("stringSimilarity", () => {
   it("scores identical strings (after trim/case-fold) as 1", () => {
@@ -58,5 +62,31 @@ describe("findFuzzyMatches", () => {
       { id: "farther", label: "ABCDEFGHXX" },
     ]);
     expect(results.map(r => r.id)).toEqual(["closer", "farther"]);
+  });
+});
+
+describe("sharesSignificantWord", () => {
+  it("catches a full name against a bare-surname registry entry (the real RAYSON case)", () => {
+    expect(
+      sharesSignificantWord("Stevie RAYSON", [{ id: "1", label: "RAYSON" }])
+    ).toBe(true);
+  });
+
+  it("catches two different first names sharing the same surname", () => {
+    const known = [{ id: "1", label: "RAYSON" }];
+    expect(sharesSignificantWord("Stevie RAYSON", known)).toBe(true);
+    expect(sharesSignificantWord("Daniel RAYSON", known)).toBe(true);
+  });
+
+  it("does not fire on a short word alone (e.g. a stray initial)", () => {
+    expect(sharesSignificantWord("H", [{ id: "1", label: "Hogan" }])).toBe(
+      false
+    );
+  });
+
+  it("returns false when nothing overlaps", () => {
+    expect(
+      sharesSignificantWord("Sarah Connor", [{ id: "1", label: "John Smith" }])
+    ).toBe(false);
   });
 });

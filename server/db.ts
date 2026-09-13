@@ -138,6 +138,7 @@ import {
   UcoGuideBriefing,
   ucoGuideAcknowledgements,
   UcoGuideAcknowledgement,
+  scanFindingDismissals,
 } from "../drizzle/schema";
 import {
   findPossibleDuplicates,
@@ -10785,6 +10786,47 @@ export async function getObservationTextForEntityScan(): Promise<
     (r): r is ObservationTextForScan =>
       !!r.observation && r.observation.trim().length > 0
   );
+}
+
+/** Normalises a finding's display name into the same identity key used to
+ * both dedupe it within one scan run and record/check its dismissal —
+ * trim + uppercase, same as fuzzyMatch.ts's own normalisation, so "Jhon
+ * Smith" dismissed once doesn't reappear re-cased on the next run. */
+export function scanFindingKey(shortForm: string): string {
+  return shortForm.trim().toUpperCase();
+}
+
+/** Every (ruleId, findingKey) an admin has dismissed — checked by
+ * runEntityScan/runMissedEntityScan before returning findings, so a
+ * dismissed one doesn't keep reappearing on every future scan. */
+export async function getDismissedFindingKeys(): Promise<Set<string>> {
+  const db = await getDb();
+  if (!db) return new Set();
+  const rows = await db
+    .select({
+      ruleId: scanFindingDismissals.ruleId,
+      findingKey: scanFindingDismissals.findingKey,
+    })
+    .from(scanFindingDismissals);
+  return new Set(rows.map(r => `${r.ruleId}::${r.findingKey}`));
+}
+
+/** Idempotent — dismissing an already-dismissed finding just refreshes who/
+ * when rather than erroring on the unique (ruleId, findingKey) index. */
+export async function dismissScanFinding(
+  ruleId: string,
+  shortForm: string,
+  dismissedByCIN: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const findingKey = scanFindingKey(shortForm);
+  await db
+    .insert(scanFindingDismissals)
+    .values({ ruleId, findingKey, dismissedByCIN })
+    .onDuplicateKeyUpdate({
+      set: { dismissedByCIN, dismissedAt: new Date() },
+    });
 }
 
 // ─── Intelligence Profile Queries ─────────────────────────────────────────────

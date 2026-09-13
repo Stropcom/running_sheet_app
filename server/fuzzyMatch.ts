@@ -56,6 +56,42 @@ export interface FuzzyMatchResult {
 // between genuinely different people rather than typos of the same one.
 export const DEFAULT_FUZZY_THRESHOLD = 0.8;
 
+/**
+ * A looser check than findFuzzyMatches' whole-string comparison: true if
+ * any individual word in `name` closely matches any individual word in
+ * any candidate's label. Whole-string similarity misses a real case: NER
+ * extracting a full "Stevie RAYSON" while the registry only has the bare
+ * surname "RAYSON" (or a different first name attached to the same
+ * surname) — the two full strings are too different in length to clear a
+ * whole-string threshold, even though they're unmistakably about the same
+ * person. Short words (single-letter fragments, "Q"/"O") are excluded via
+ * minWordLength so this can't fire on those alone.
+ */
+export function sharesSignificantWord(
+  name: string,
+  candidates: FuzzyMatchCandidate[],
+  wordThreshold: number = DEFAULT_FUZZY_THRESHOLD,
+  minWordLength = 3
+): boolean {
+  const nameWords = name
+    .trim()
+    .split(/\s+/)
+    .filter(w => w.length >= minWordLength);
+  if (nameWords.length === 0) return false;
+  for (const candidate of candidates) {
+    const candidateWords = candidate.label
+      .trim()
+      .split(/\s+/)
+      .filter(w => w.length >= minWordLength);
+    for (const nw of nameWords) {
+      for (const cw of candidateWords) {
+        if (stringSimilarity(nw, cw) >= wordThreshold) return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Finds candidates close to (but not identical to) `query`, sorted best
  * match first. Excludes exact matches deliberately — an exact match means
  * the two are already the same entity, not a possible typo of one

@@ -264,6 +264,9 @@ import {
   getOrphanedAttachments,
   purgeOrphanedAttachments,
   getObservationTextForEntityScan,
+  getDismissedFindingKeys,
+  scanFindingKey,
+  dismissScanFinding,
   getRsMappingWaypoints,
   upsertRsMappingWaypoint,
   geocodeAddressList,
@@ -3593,7 +3596,11 @@ export const appRouter = router({
      * its own. */
     runEntityScan: adminProcedure.mutation(async ({ ctx }) => {
       const entities = await getAllIntelligenceEntities();
-      const findings = scanIntelligenceEntities(entities);
+      const allFindings = scanIntelligenceEntities(entities);
+      const dismissed = await getDismissedFindingKeys();
+      const findings = allFindings.filter(
+        f => !dismissed.has(`${f.ruleId}::${scanFindingKey(f.shortForm)}`)
+      );
       if (findings.length > 0) {
         await createNotificationsForUsers([ctx.user.id], {
           title: `Intelligence scan: ${findings.length} possible issue${findings.length > 1 ? "s" : ""}`,
@@ -3630,9 +3637,13 @@ export const appRouter = router({
         .filter(e => e.type === "person")
         .map(e => ({ id: e.shortForm, label: e.shortForm }));
 
-      const findings = await scanForMissedPersonMentions(
+      const allFindings = await scanForMissedPersonMentions(
         observations,
         knownNames
+      );
+      const dismissed = await getDismissedFindingKeys();
+      const findings = allFindings.filter(
+        f => !dismissed.has(`${f.ruleId}::${scanFindingKey(f.shortForm)}`)
       );
       if (findings.length > 0) {
         await createNotificationsForUsers([ctx.user.id], {
@@ -3647,6 +3658,21 @@ export const appRouter = router({
       }
       return { modelStatus, findings };
     }),
+
+    /** Records "not this one" for a single scan finding (either rule) so
+     * it doesn't keep reappearing on every future scan run — same shape as
+     * the existing Face Match "not a match" dismissal, applied to Local AI
+     * Roadmap findings. Identity is (ruleId, normalised shortForm), not a
+     * database id, since a finding is recomputed fresh every scan, not a
+     * persisted row — see scanFindingKey in db.ts. */
+    dismissScanFinding: adminProcedure
+      .input(
+        z.object({ ruleId: z.string().min(1), shortForm: z.string().min(1) })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await dismissScanFinding(input.ruleId, input.shortForm, ctx.user.cin);
+        return { success: true };
+      }),
 
     /** Heat Map: location visit counts + coordinates for one Operation,
      * optionally narrowed to one Target, over a When window. */

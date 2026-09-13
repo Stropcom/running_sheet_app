@@ -55,6 +55,7 @@ vi.mock("./db", () => ({
   upsertUser: vi.fn().mockResolvedValue(undefined),
   getUserByOpenId: vi.fn().mockResolvedValue(undefined),
   getOperations: vi.fn().mockResolvedValue([]),
+  autoArchiveEligibleOperations: vi.fn().mockResolvedValue(undefined),
   getOperationById: vi.fn().mockResolvedValue({
     id: 1,
     name: "Test Op",

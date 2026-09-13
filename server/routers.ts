@@ -88,6 +88,7 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { sdk } from "./_core/sdk";
 import {
   addRowMember,
+  autoArchiveEligibleOperations,
   createAuditLog,
   createCertification,
   createOperation,
@@ -710,6 +711,7 @@ export const appRouter = router({
 
   operation: router({
     list: protectedProcedure.query(async () => {
+      await autoArchiveEligibleOperations();
       return getOperations();
     }),
 
@@ -1385,6 +1387,14 @@ export const appRouter = router({
           dayOffset: z.number().optional(),
           rowDate: z.string().optional(),
           observation: z.string().optional(),
+          // Set when any of this row's observation text came from the
+          // on-device voice transcription feature (RS Quick Entry's mic
+          // button) rather than typing/chips alone — recorded in the
+          // row_created audit log entry below as an evidentiary trail per
+          // CLAUDE.md's audit trail convention, since this is a legal
+          // running-sheet record. A whole-row flag, not per-sentence: text
+          // can mix typed and voice-inserted content in one submission.
+          viaVoice: z.boolean().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -1422,7 +1432,9 @@ export const appRouter = router({
           userName: ctx.user.cin ?? "Unknown",
           userCIN: ctx.user.cin ?? undefined,
           action: "row_created",
-          details: `Row ${rowNumber} created`,
+          details: input.viaVoice
+            ? `Row ${rowNumber} created (includes voice-transcribed text, on-device)`
+            : `Row ${rowNumber} created`,
           createdAt: Date.now(),
         });
         // See insertTravelledViaRow — a row created with "continued via:"
@@ -3783,12 +3795,26 @@ export const appRouter = router({
           pinVehicleIcon: z
             .enum([
               "arrow",
+              "dart",
+              "cursor",
+              "finger",
+              "up_arrow_emoji",
+              "rocket",
+              "airplane",
+              "pizza",
               "car",
               "racing_car",
               "motorcycle",
               "truck",
               "police_car",
             ])
+            .optional(),
+          // Hex string from PIN_COLOUR_SWATCHES, or null to clear back to
+          // the team-default colour.
+          pinColor: z
+            .string()
+            .regex(/^#[0-9a-fA-F]{6}$/)
+            .nullable()
             .optional(),
         })
       )

@@ -408,6 +408,80 @@ export async function setOperationStatus(
   return { success: true };
 }
 
+// An active operation moves itself to Archive once every one of its running
+// sheets is closed AND the most recent sheet's date is more than 30 days in
+// the past. "Triggered on read" — see operation.list in routers.ts, which
+// calls this before returning the active-operations list — same pattern
+// purgeExpiredRecycleBinItems below already uses. Deliberately not a
+// background cron: references/periodic-updates.md's heartbeat
+// infrastructure is Manus-platform-hosted (server/_core/heartbeat.ts calls
+// out to Manus's own forge backend), and this app is deployed independently
+// (git pull + pnpm build + pm2, not through Manus hosting) with nothing else
+// in the codebase actually calling that SDK — it wouldn't be reachable in
+// production regardless of whether it's wired up here.
+const AUTO_ARCHIVE_AFTER_DAYS = 30;
+
+export async function autoArchiveEligibleOperations(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const activeOps = await db
+    .select({ id: operations.id, name: operations.name })
+    .from(operations)
+    .where(and(eq(operations.status, "active"), isNull(operations.deletedAt)));
+  if (activeOps.length === 0) return;
+
+  const today = perthTodayISO();
+
+  for (const op of activeOps) {
+    const sheets = await db
+      .select({
+        closedAt: runningSheets.closedAt,
+        sheetDate: runningSheets.sheetDate,
+        createdAt: runningSheets.createdAt,
+      })
+      .from(runningSheets)
+      .where(
+        and(
+          eq(runningSheets.operationId, op.id),
+          isNull(runningSheets.deletedAt)
+        )
+      );
+
+    // Nothing to measure "last sheet date" from, and a freshly created
+    // operation with no sheets yet should never silently archive.
+    if (sheets.length === 0) continue;
+    // Every sheet must be closed, not just the most recent one.
+    if (sheets.some(s => !s.closedAt)) continue;
+
+    // Effective date per sheet: sheetDate if set, else the Perth calendar
+    // date of createdAt — legacy sheets only, see runningSheets.sheetDate's
+    // own comment in schema.ts. Plain string comparison is safe: both are
+    // YYYY-MM-DD.
+    const latestDate = sheets
+      .map(s => s.sheetDate ?? toPerthDateISO(s.createdAt))
+      .sort()
+      .at(-1)!;
+    if (addDaysISO(latestDate, AUTO_ARCHIVE_AFTER_DAYS) > today) continue;
+
+    await db
+      .update(operations)
+      .set({ status: "archive" })
+      .where(eq(operations.id, op.id));
+    // sheetId: 0 / userId: 0 — same "not applicable to one sheet, no human
+    // actor" sentinel routers.ts's manual operation.setStatus already uses
+    // for this same action when a user does it directly.
+    await createAuditLog({
+      sheetId: 0,
+      userId: 0,
+      userName: "System",
+      action: "operation_status_changed",
+      details: `Operation "${op.name}" auto-archived — all running sheets closed and the most recent sheet date (${latestDate}) is more than ${AUTO_ARCHIVE_AFTER_DAYS} days ago`,
+      createdAt: Date.now(),
+    });
+  }
+}
+
 export async function getOperationById(id: number) {
   const db = await getDb();
   if (!db) return undefined;
@@ -3750,7 +3824,26 @@ export function extractEntitiesFromText(text: string): Array<{
     // instead (a short all-caps/digit bracket with no other classification
     // matches WA_REGO's personalised-plate shape, same failure mode as the
     // Basil CAT bug above).
-    if (/^(?:U[MF]|YC|UCO)\d+$/i.test(shortForm)) continue;
+    //
+    // Tested against the bracket with a leading "Vehicle "/"Veh " stripped,
+    // not just shortForm as typed — a real running sheet was found with a
+    // literal "(Vehicle UM1)" bracket (the client's space-bar rego
+    // auto-bracket feature treats any short letter+digit token as a
+    // candidate rego and doesn't know UM1 is a person placeholder — fixed
+    // separately in mentionAutocomplete.ts's detectVehicleMentionTrigger),
+    // and the word "vehicle" baked directly into shortForm made the
+    // literal "^(?:U[MF]|YC|UCO)\d+$" test below miss entirely, so this
+    // bracket fell through to the vehicle classification purely because it
+    // contains the word "vehicle" — creating a phantom "UM1" vehicle in the
+    // Intelligence Folder. This check is defense-in-depth against that
+    // shape however it enters the text (typo, voice, a future client
+    // change), and — since the Intelligence Folder's entity list is
+    // computed live from extractEntitiesFromText on every read, not
+    // persisted — fixing it here also clears the phantom entity and any
+    // description corruption it caused for an already-recorded row,
+    // without altering the stored observation text itself.
+    const placeholderCandidate = shortForm.replace(/^vehicle\s+/i, "").trim();
+    if (/^(?:U[MF]|YC|UCO)\d+$/i.test(placeholderCandidate)) continue;
 
     const lowerFull = fullDescription.toLowerCase();
     const lowerShort = shortForm.toLowerCase();
@@ -12909,11 +13002,19 @@ export interface UserLocationRow {
   pinSkinTone: "default" | "brown";
   pinVehicleIcon:
     | "arrow"
+    | "dart"
+    | "cursor"
+    | "finger"
+    | "up_arrow_emoji"
+    | "rocket"
+    | "airplane"
+    | "pizza"
     | "car"
     | "racing_car"
     | "motorcycle"
     | "truck"
     | "police_car";
+  pinColor: string | null;
 }
 
 /**
@@ -12944,6 +13045,7 @@ export async function getUserLocations(
       pinGender: users.pinGender,
       pinSkinTone: users.pinSkinTone,
       pinVehicleIcon: users.pinVehicleIcon,
+      pinColor: users.pinColor,
     })
     .from(userLocations)
     .innerJoin(users, eq(users.id, userLocations.userId))
@@ -12993,11 +13095,19 @@ export async function setUserPinAppearance(
     pinSkinTone?: "default" | "brown";
     pinVehicleIcon?:
       | "arrow"
+      | "dart"
+      | "cursor"
+      | "finger"
+      | "up_arrow_emoji"
+      | "rocket"
+      | "airplane"
+      | "pizza"
       | "car"
       | "racing_car"
       | "motorcycle"
       | "truck"
       | "police_car";
+    pinColor?: string | null;
   }
 ): Promise<void> {
   const db = await getDb();

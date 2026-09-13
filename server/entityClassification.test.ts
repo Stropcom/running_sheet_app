@@ -110,6 +110,33 @@ describe("extractEntitiesFromText — vehicle vs address disambiguation", () => 
     expect(entities.find(e => e.rawShortForm === "UM1")).toBeUndefined();
   });
 
+  it('skips a UM/UF/YC/UCO placeholder even when literally bracketed as "(Vehicle UM1)"', () => {
+    // Reported bug: the client's space-bar rego auto-bracket feature
+    // (detectVehicleMentionTrigger) doesn't know UM1 is a person
+    // placeholder, not a rego, so a re-mention like "Um1 " got
+    // auto-bracketed as "(Vehicle UM1)" on a real running sheet — and
+    // because the word "vehicle" was now baked directly into the bracket
+    // itself, the plain "^(?:U[MF]|YC|UCO)\d+$" skip test above missed it
+    // entirely, creating a phantom "UM1" vehicle in the Intelligence
+    // Folder. Fixed client-side too (mentionAutocomplete.ts), but this is
+    // the server-side backstop that also retroactively cleans up the
+    // display for a row already recorded with the bad bracket, since
+    // entity extraction runs live off the stored text on every read.
+    const text =
+      "Um1 (Vehicle UM1), exited Vehicle 1GJE575, walked to a red Renault " +
+      "Koleos SUV, bearing WA registration 1IZQ515 (Vehicle 1IZQ515), and " +
+      "entered as driver and sole occupant.";
+    const entities = extractEntitiesFromText(text);
+    expect(
+      entities.find(e => e.rawShortForm === "Vehicle UM1")
+    ).toBeUndefined();
+    // The real vehicle in the same sentence must still classify correctly.
+    const realVehicle = entities.find(
+      e => e.rawShortForm === "Vehicle 1IZQ515"
+    );
+    expect(realVehicle?.type).toBe("vehicle");
+  });
+
   it("skips YC young-child placeholders the same way", () => {
     const text = "IKIN collected a young child (YC1) from the school gate.";
     const entities = extractEntitiesFromText(text);

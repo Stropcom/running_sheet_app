@@ -80,6 +80,10 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
+  VoiceInputButton,
+  QE_HEADER_BUTTON_SIZE,
+} from "@/components/VoiceInputButton";
+import {
   ChevronDown,
   ChevronRight,
   ChevronLeft,
@@ -199,6 +203,64 @@ function useVisualViewportInset(): {
   return state;
 }
 
+// Isolated from the main IntelligenceMapping component on purpose: the
+// map's heading changes independently of React — Heading-Up mode's own
+// tween calls map.setHeading() up to ~10 times a second while rotating
+// (see animateHeadingTo) — and this button's rotating compass arrow is the
+// only thing on the whole page that needs to know about it on every tick.
+// When that lived as component-level state on IntelligenceMapping itself,
+// every single heading tick re-rendered that entire multi-thousand-line
+// page — competing with the browser's own map rendering for the same JS
+// main thread, and making Heading-Up's rotation visibly lag and stutter
+// even on powerful hardware (confirmed identical on two iPhone 16s, which
+// rules out a device-performance explanation). Keeping the subscription
+// local here means only this one small button re-renders on each tick,
+// not the whole page.
+function NorthUpButton({
+  map,
+  isMapActuallyVector,
+}: {
+  map: google.maps.Map | null;
+  isMapActuallyVector: boolean;
+}) {
+  const [heading, setHeading] = useState(0);
+
+  useEffect(() => {
+    if (!map) return;
+    setHeading(map.getHeading() ?? 0);
+    const listener = map.addListener("heading_changed", () => {
+      setHeading(map.getHeading() ?? 0);
+    });
+    return () => listener.remove();
+  }, [map]);
+
+  return (
+    <button
+      onClick={e => {
+        e.stopPropagation();
+        if (!map || !isMapActuallyVector) return;
+        map.setHeading(0);
+      }}
+      disabled={!isMapActuallyVector || heading === 0}
+      className="absolute z-20 pointer-events-auto flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      style={{ top: "130px", right: "10px" }}
+      aria-label="Reset map rotation to North Up"
+      title={
+        !isMapActuallyVector
+          ? "Rotation requires Vector map rendering, which isn't available on this device"
+          : heading === 0
+            ? "Already North Up"
+            : "Reset rotation to North Up"
+      }
+    >
+      <Navigation2
+        className="w-4 h-4 text-sky-600 transition-transform"
+        style={{ transform: `rotate(${-heading}deg)` }}
+      />
+    </button>
+  );
+}
+
 // ── Perth date helpers (shared with SheetDetail logic) ───────────────────────
 const _PERTH_OFFSET_SUFFIX = "T00:00:00+08:00";
 const _PERTH_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -279,27 +341,19 @@ interface LiveUser {
   pinSkinTone: "default" | "brown";
   pinVehicleIcon:
     | "arrow"
+    | "dart"
+    | "cursor"
+    | "finger"
+    | "up_arrow_emoji"
+    | "rocket"
+    | "airplane"
+    | "pizza"
     | "car"
     | "racing_car"
     | "motorcycle"
     | "truck"
     | "police_car";
-}
-
-// Builds the on-foot glyph (🧍/🚶/🏃) with optional skin-tone + gender
-// Unicode modifiers layered on — correct ZWJ sequence order is
-// <base><skin-tone><ZWJ><gender><VS16>. "default"/"neutral" produce the
-// bare base glyph, identical to the pre-customisation behaviour.
-function buildOnFootGlyph(
-  base: string,
-  gender: LiveUser["pinGender"],
-  skinTone: LiveUser["pinSkinTone"]
-): string {
-  let glyph = base;
-  if (skinTone === "brown") glyph += "\u{1F3FD}"; // medium skin tone
-  if (gender === "male") glyph += "‍♂️";
-  else if (gender === "female") glyph += "‍♀️";
-  return glyph;
+  pinColor: string | null;
 }
 
 // ── Quick-link config ──────────────────────────────────────────────────────────
@@ -551,20 +605,120 @@ function getTeamColour(team: string | null): string {
   return TEAM_COLOURS[team ?? "null"] ?? "#6b7280";
 }
 
-// Live team pin — directional "sonar" ring cadence once a member is
-// travelling over 80 km/h (see createUserPinElement). Faster tiers pulse
-// quicker; below 80 km/h no rings show at all. Ring shape/colour never
-// changes, only how fast teamPinSonarRing (index.css) repeats.
-const HIGH_SPEED_RING_TIERS: Array<{ minKmh: number; durationMs: number }> = [
-  { minKmh: 120, durationMs: 1500 },
-  { minKmh: 100, durationMs: 2000 },
-  { minKmh: 80, durationMs: 2600 },
+// Live team pin — directional "sonar" ring cadence + reach once a member
+// is travelling over 80 km/h (see createUserPinElement). Faster tiers
+// pulse quicker (durationMs, via teamPinSonarRing's animation-duration)
+// AND reach further (maxSizePx, via its --sonar-max-size custom property,
+// see index.css) — the pill's own position is always a second or two
+// behind the vehicle's real one, so a longer reach at higher speed gives
+// other officers a rough sense of how far ahead of the pin the vehicle
+// actually is. Below 80 km/h no rings show at all. Ring shape/colour never
+// changes, only these two numbers.
+const HIGH_SPEED_RING_TIERS: Array<{
+  minKmh: number;
+  durationMs: number;
+  maxSizePx: number;
+}> = [
+  { minKmh: 120, durationMs: 1500, maxSizePx: 90 },
+  { minKmh: 100, durationMs: 2000, maxSizePx: 74 },
+  { minKmh: 80, durationMs: 2600, maxSizePx: 58 },
 ];
 
-function getSonarRingDurationMs(speedKmh: number): number | null {
+function getSonarRingTier(
+  speedKmh: number
+): { durationMs: number; maxSizePx: number } | null {
   const tier = HIGH_SPEED_RING_TIERS.find(t => speedKmh >= t.minKmh);
-  return tier?.durationMs ?? null;
+  return tier
+    ? { durationMs: tier.durationMs, maxSizePx: tier.maxSizePx }
+    : null;
 }
+
+// Alternate heading shapes for the Wheels-mode indicator (pinVehicleIcon),
+// on top of the default "arrow" — see the "Heading Shape Ideas" artifact
+// these were picked from. The SVG shapes are drawn pointing straight up
+// already, matching "arrow"'s own polygon convention, so they need no
+// offset. The emoji glyphs aren't all drawn pointing up by default in every
+// font (a rocket/plane point diagonally, a pizza slice's tip is off to one
+// side), so this corrects each one before the live heading rotation is
+// applied on top of it — same fixed-offset-then-rotate approach the
+// artifact demo used, confirmed against it directly rather than guessed.
+const HEADING_SHAPE_ROTATION_OFFSET_DEG: Partial<
+  Record<LiveUser["pinVehicleIcon"], number>
+> = {
+  rocket: 45,
+  airplane: 45,
+  pizza: -135,
+};
+
+// Returns the shape's own markup (not yet rotated — the caller wraps this
+// in a rotated container, see createUserPinElement) for whichever
+// pinVehicleIcon the officer has picked. car/racing_car/motorcycle/truck/
+// police_car aren't built yet (reserved for a future side-view-vehicle
+// mode, see their own comment in schema.ts) — falls through to the default
+// arrow rather than rendering nothing if one is ever set.
+function renderHeadingShapeInner(shape: LiveUser["pinVehicleIcon"]): string {
+  const shadow = "filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45));";
+  const svg = (points: string) =>
+    `<svg viewBox="0 0 24 24" width="25" height="25" style="overflow:visible;${shadow}"><polygon points="${points}" fill="#16a34a"/></svg>`;
+  const glyph = (emoji: string) =>
+    `<span style="font-size:20px;line-height:25px;width:25px;height:25px;display:block;text-align:center;${shadow}">${emoji}</span>`;
+  switch (shape) {
+    case "dart":
+      return svg("12 1 20 22 12 16 4 22");
+    case "cursor":
+      return svg("5 2 5 20 9.5 15.5 12.5 22 15.5 20.5 12.5 14 19 14");
+    case "finger":
+      return glyph("☝️");
+    case "up_arrow_emoji":
+      return glyph("⬆️");
+    case "rocket":
+      return glyph("🚀");
+    case "airplane":
+      return glyph("✈️");
+    case "pizza":
+      return glyph("🍕");
+    default:
+      return svg("12 2 19 21 12 17 5 21 12 2");
+  }
+}
+
+// Pin-customise popup's colour picker — a fixed 10-swatch palette rather
+// than a free colour input, so every officer's pill stays legible (white
+// text on top) and visually distinct from the others at a glance. Values
+// are what gets stored in users.pinColor and read straight back for the
+// pill's background — see PIN_COLOUR_SWATCHES' own comment in schema.ts.
+const PIN_COLOUR_SWATCHES: { hex: string; name: string }[] = [
+  { hex: "#ec4899", name: "Pink" },
+  { hex: "#1976d2", name: "Blue" },
+  { hex: "#f9a825", name: "Yellow" },
+  { hex: "#16a34a", name: "Green" },
+  { hex: "#dc2626", name: "Red" },
+  { hex: "#7c3aed", name: "Purple" },
+  { hex: "#0891b2", name: "Teal" },
+  { hex: "#ea580c", name: "Orange" },
+  { hex: "#4f46e5", name: "Indigo" },
+  { hex: "#57534e", name: "Slate" },
+];
+
+// Pin-customise popup's Wheels-mode heading-shape picker — every
+// non-reserved pinVehicleIcon value (arrow is the default, the other seven
+// picked from the "Heading Shape Ideas" artifact) with a human label for
+// the button's title/aria-label. Preview markup for each comes straight
+// from renderHeadingShapeInner, so the popup can never drift out of sync
+// with what actually renders on the live pin.
+const HEADING_SHAPE_OPTIONS: {
+  key: LiveUser["pinVehicleIcon"];
+  label: string;
+}[] = [
+  { key: "arrow", label: "Arrow (default)" },
+  { key: "dart", label: "Dart" },
+  { key: "cursor", label: "Cursor" },
+  { key: "finger", label: "Index finger" },
+  { key: "up_arrow_emoji", label: "Up arrow" },
+  { key: "rocket", label: "Rocket" },
+  { key: "airplane", label: "Airplane" },
+  { key: "pizza", label: "Pizza slice" },
+];
 
 const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
   { elementType: "geometry", stylers: [{ color: "#212121" }] },
@@ -1107,6 +1261,75 @@ function animateLatLngTo(
   animRef.current.set(key, requestAnimationFrame(step));
 }
 
+// Same tween engine as animateLatLngTo above, for the map's own rotation in
+// Heading-Up mode. map.setHeading() previously got called directly, once
+// per GPS poll tick, with the raw new value and no interpolation — exactly
+// the "stop-start stutter" animateLatLngTo was built to fix for the pin's
+// position and the follow-mode camera centre, just never applied to the
+// map's heading too. North Up never rotates, so it never showed this;
+// Heading-Up snapping the WHOLE map background once a second is the
+// "jerky in heads up, fine in north up" symptom. Headings wrap at 360°, so
+// this interpolates the shortest angular path rather than a naive linear
+// blend between the two raw values (which would spin the long way round
+// whenever the path crosses the 0°/360° boundary).
+function animateHeadingTo(
+  key: string,
+  getCurrent: () => number,
+  setHeading: (h: number) => void,
+  to: number,
+  animRef: { current: Map<string, number> },
+  lastUpdateRef: { current: Map<string, number> }
+): void {
+  const existingFrame = animRef.current.get(key);
+  if (existingFrame != null) cancelAnimationFrame(existingFrame);
+
+  const from = getCurrent();
+  // Shortest signed delta in (-180, 180], e.g. from=350,to=10 → +20, not -340.
+  const delta = ((((to - from) % 360) + 540) % 360) - 180;
+  const now = performance.now();
+  const lastUpdateAt = lastUpdateRef.current.get(key);
+  lastUpdateRef.current.set(key, now);
+
+  // Same clamped-to-actual-elapsed-time duration as animateLatLngTo, for
+  // the same reason — matches the real gap between poll ticks rather than
+  // a fixed guess.
+  const durationMs =
+    lastUpdateAt != null
+      ? Math.min(Math.max(now - lastUpdateAt, 400), 3000)
+      : 1000;
+
+  // Calling map.setHeading() on every animation frame (~60/s) made this
+  // WORSE than the original once-a-second snap, not better — still slow
+  // and jerky even with this tween in place. The pin's own arrow glyph
+  // never goes through setHeading() at all (it's a plain CSS rotate off
+  // the same live heading) and stays perfectly smooth throughout, which
+  // narrows this to setHeading() itself: the vector map appears to run its
+  // own short internal easing on each call, and calling it again before
+  // that finishes interrupts it rather than extending it — 60 interrupted,
+  // barely-started eases per second reads as "barely moves." Spacing real
+  // calls out to roughly 10/s gives each one room to actually finish
+  // before the next lands, while still scheduling via requestAnimationFrame
+  // so the timing stays smooth and frame-aligned.
+  const MIN_CALL_INTERVAL_MS = 90;
+  let lastCallAt = 0;
+
+  const startTime = now;
+  const step = (frameNow: number) => {
+    const t = Math.min(1, (frameNow - startTime) / durationMs);
+    const isLastFrame = t >= 1;
+    if (isLastFrame || frameNow - lastCallAt >= MIN_CALL_INTERVAL_MS) {
+      lastCallAt = frameNow;
+      setHeading((((from + delta * t) % 360) + 360) % 360);
+    }
+    if (!isLastFrame) {
+      animRef.current.set(key, requestAnimationFrame(step));
+    } else {
+      animRef.current.delete(key);
+    }
+  };
+  animRef.current.set(key, requestAnimationFrame(step));
+}
+
 // Eases a live team pin's DivIconOverlay smoothly from its current position
 // to a new one, instead of jumping instantly — the underlying GPS fix only
 // arrives once a second (see the userLocations query's refetchInterval), so
@@ -1377,14 +1600,31 @@ export default function IntelligenceMapping() {
   const [is3DActive, setIs3DActive] = useState(false);
   // Current map rotation in degrees — vector rendering also allows
   // rotating the view (Shift+drag on desktop, twist gesture on mobile),
-  // which has no reason to auto-reset, so a "North Up" button re-aligns
-  // it on demand. Kept in sync via a "heading_changed" listener.
-  const [mapHeading, setMapHeading] = useState(0);
-  // Ref mirror of mapHeading for createUserPinElement, which reads it on
-  // every marker redraw (not a React dependency — the heading-group's own
+  // which has no reason to auto-reset. Read by createUserPinElement on
+  // every marker redraw (a ref, not React state — the heading-group's own
   // rotation needs to account for the map's current on-screen orientation
-  // without forcing every pin to re-render on every heading_changed tick).
+  // without forcing this whole page to re-render on every heading_changed
+  // tick, which is what NorthUpButton exists to avoid — see its own
+  // comment). Kept in sync via the "heading_changed" listener below.
   const mapHeadingRef = useRef(0);
+  // Set for a short window around every programmatic map.setHeading() call
+  // Heading-Up's own tween makes — see the "dragstart" listener in
+  // handleMapReady. Google's vector map appears to fire "dragstart" as an
+  // internal side effect of a heading change (it likely shares code with
+  // the manual twist-to-rotate gesture, which legitimately IS a drag), not
+  // just from a real user-initiated drag the way the comment there
+  // originally assumed. Left unguarded, every one of Heading-Up's own
+  // setHeading() calls (now firing ~10/s, see animateHeadingTo) was
+  // mistaken for the user grabbing the map, continuously re-arming
+  // markUserMapInteracting's 500ms lockout faster than it could ever
+  // expire — permanently blocking the separate follow-mode camera tween
+  // for as long as the map kept rotating, which is exactly "heading-up
+  // doesn't keep me centred." A real user-initiated drag still correctly
+  // interrupts everything outside this narrow window.
+  const programmaticHeadingChangeRef = useRef(false);
+  const programmaticHeadingResetTimeoutRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   // Ground truth for whether the map can actually rotate. Map.tsx's
   // getMapRenderPreference() (localStorage/URL) only decides which Map ID
   // gets *requested* — Google can still silently instantiate a raster map
@@ -1554,6 +1794,18 @@ export default function IntelligenceMapping() {
   const [rsInlineText, setRsInlineText] = useState("");
   const [rsInlineCins, setRsInlineCins] = useState<Set<string>>(new Set()); // selected CINs for the inline entry (multi-select)
   const rsInlineCinsRef = useRef<Set<string>>(new Set()); // ref so mutation callback always sees latest
+  // Whether any voice input contributed to the CURRENT (still-open) inline
+  // entry — set in handleVoiceTranscript, reset whenever the field opens or
+  // closes. Read (not state, to avoid an extra render on every tap) at
+  // submit time and threaded through to row.create as `viaVoice`, which
+  // appends a note to that row's row_created audit log entry — an
+  // evidentiary trail that this observation involved on-device
+  // transcription, per CLAUDE.md's audit trail convention. Deliberately a
+  // whole-row flag, not per-sentence: text in this field can mix typed and
+  // voice-inserted content in one submission, and "this row involved voice
+  // input" is the traceability that matters for review, not a precise
+  // split of which words came from which source.
+  const rsInlineUsedVoiceRef = useRef(false);
   const [rsCountdown, setRsCountdown] = useState<number>(30); // countdown seconds
   const rsInlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rsCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
@@ -2586,6 +2838,7 @@ export default function IntelligenceMapping() {
     cinsToAttach: Set<string> | null;
     timeOverride: string | null;
     rowDateOverride: string | null;
+    viaVoice: boolean;
   } | null>(null);
   const mergeEntitiesMut = trpc.intelligence.mergeEntities.useMutation();
   const markEntitiesNotDuplicateMut =
@@ -2958,7 +3211,7 @@ export default function IntelligenceMapping() {
   // the indicator centres itself on the overlay's local (0,0) via its own
   // translate, independent of the pill's width/height entirely.
   const createUserPinElement = useCallback((liveUser: LiveUser) => {
-    const color = getTeamColour(liveUser.team);
+    const color = liveUser.pinColor ?? getTeamColour(liveUser.team);
     const label = liveUser.name.toUpperCase();
     const pinKey = `${liveUser.userId}_${liveUser.deviceId}`;
     const isMoving = liveUser.speed != null && liveUser.speed > 0.5;
@@ -3031,21 +3284,19 @@ export default function IntelligenceMapping() {
       // 80km/h+, meaningless on foot). Direction of travel is instead a
       // simple east/west mirror — see the sin(heading) comment below —
       // rather than a full compass rotation, which would tip a side-view
-      // glyph over the same way the vehicle emoji options did.
+      // glyph over the same way the vehicle emoji options did. Always the
+      // plain neutral glyph — the gender/skin-tone modifier picker was
+      // removed (see the pin-customise popup below), so this no longer
+      // varies per officer.
       const speedKmh = (liveUser.speed ?? 0) * 3.6;
-      let base: string;
+      let glyph: string;
       if (motionState === "long") {
-        base = "🧍"; // stopped 10s+ — same trigger as the vehicle red dot
+        glyph = "🧍"; // stopped 10s+ — same trigger as the vehicle red dot
       } else if (speedKmh > 5) {
-        base = "🏃"; // moving faster than a walking pace
+        glyph = "🏃"; // moving faster than a walking pace
       } else {
-        base = "🚶"; // walking (also covers "just stopped", under 10s)
+        glyph = "🚶"; // walking (also covers "just stopped", under 10s)
       }
-      const glyph = buildOnFootGlyph(
-        base,
-        liveUser.pinGender,
-        liveUser.pinSkinTone
-      );
       // sin(heading) > 0 means the heading has an eastward component (the
       // 0-180° half of the compass, measured clockwise from north); < 0
       // means westward (180-360°). Defaults to facing right/east when
@@ -3063,28 +3314,36 @@ export default function IntelligenceMapping() {
       // rotate gesture) has the map itself rotated. Subtracting the map's
       // own current heading converts "true compass bearing" into "on-screen
       // angle" — at mapHeadingRef 0 (North Up, the default) this is a no-op.
-      const heading = (liveUser.heading ?? 0) - mapHeadingRef.current;
+      // The shape's own rotation offset (non-zero for a handful of emoji
+      // shapes that aren't drawn pointing up by default) is added on top,
+      // inside the same rotated wrapper as the rings — see
+      // HEADING_SHAPE_ROTATION_OFFSET_DEG's own comment for why that's
+      // correct for the rings too, not just the shape.
+      const trueHeading = (liveUser.heading ?? 0) - mapHeadingRef.current;
+      const shapeOffset =
+        HEADING_SHAPE_ROTATION_OFFSET_DEG[liveUser.pinVehicleIcon] ?? 0;
+      const rotationDeg = trueHeading + shapeOffset;
       const speedKmh = (liveUser.speed ?? 0) * 3.6;
-      const ringDurationMs = getSonarRingDurationMs(speedKmh);
+      const ringTier = getSonarRingTier(speedKmh);
       // Directional "sonar" rings above 80 km/h: half-circles (clipped to
       // their own top half in this un-rotated local space, matching the
       // arrow's own "points up at 0deg" polygon) that rotate together with
-      // the arrow inside the same heading-group, so the pulse only fans out
+      // the shape inside the same heading-group, so the pulse only fans out
       // toward the direction of travel rather than in every direction.
       let ringsHtml = "";
-      if (ringDurationMs != null) {
-        const staggerMs = ringDurationMs / 3;
+      if (ringTier != null) {
+        const staggerMs = ringTier.durationMs / 3;
         ringsHtml = [0, 1, 2]
           .map(
             i =>
-              `<span style="position:absolute;left:50%;top:50%;width:25px;height:25px;transform:translate(-50%,-50%);border-radius:50%;border:2px solid #16a34a;clip-path:inset(0 0 50% 0);animation:teamPinSonarRing ${ringDurationMs}ms cubic-bezier(0.2,0.6,0.35,1) infinite;animation-delay:${i * staggerMs}ms;z-index:-1;"></span>`
+              `<span style="position:absolute;left:50%;top:50%;width:25px;height:25px;transform:translate(-50%,-50%);border-radius:50%;border:2px solid #16a34a;clip-path:inset(0 0 50% 0);--sonar-max-size:${ringTier.maxSizePx}px;animation:teamPinSonarRing ${ringTier.durationMs}ms cubic-bezier(0.2,0.6,0.35,1) infinite;animation-delay:${i * staggerMs}ms;z-index:-1;"></span>`
           )
           .join("");
       }
       indicator.innerHTML = `
-        <div style="position:relative;width:25px;height:25px;transform:rotate(${heading}deg);transform-origin:center;">
+        <div style="position:relative;width:25px;height:25px;transform:rotate(${rotationDeg}deg);transform-origin:center;">
           ${ringsHtml}
-          <svg viewBox="0 0 24 24" width="25" height="25" style="overflow:visible;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45));"><polygon points="12 2 19 21 12 17 5 21 12 2" fill="#16a34a"/></svg>
+          ${renderHeadingShapeInner(liveUser.pinVehicleIcon)}
         </div>
       `;
     } else {
@@ -3581,7 +3840,28 @@ export default function IntelligenceMapping() {
         actualRenderingTypeRef.current === "VECTOR" &&
         ownEntry.heading != null
       ) {
-        mapRef.current.setHeading(ownEntry.heading);
+        const map = mapRef.current;
+        animateHeadingTo(
+          "own-heading",
+          () => map.getHeading() ?? 0,
+          h => {
+            // See programmaticHeadingChangeRef's own comment (declared
+            // above) — re-armed on every call for as long as the tween
+            // keeps calling setHeading(), so it only reads false again a
+            // moment after the map actually settles.
+            programmaticHeadingChangeRef.current = true;
+            if (programmaticHeadingResetTimeoutRef.current) {
+              clearTimeout(programmaticHeadingResetTimeoutRef.current);
+            }
+            programmaticHeadingResetTimeoutRef.current = setTimeout(() => {
+              programmaticHeadingChangeRef.current = false;
+            }, 150);
+            map.setHeading(h);
+          },
+          ownEntry.heading,
+          mapCenterAnimRef,
+          mapCenterLastUpdateRef
+        );
       }
       // On Foot auto-revert: speed over 15 km/h switches the pin back to
       // the vehicle arrow automatically — officers forget to switch it
@@ -3771,13 +4051,12 @@ export default function IntelligenceMapping() {
 
       // Keep the North Up button's rotation/enabled state in sync with the
       // map's actual heading — set both by our own button and by the
-      // native Shift+drag / twist rotate gesture. mapHeadingRef mirrors the
-      // same value for createUserPinElement, which needs it on every pin
-      // redraw without depending on this state directly.
+      // native Shift+drag / twist rotate gesture. A ref, not React state —
+      // see mapHeadingRef's own comment for why (NorthUpButton owns its
+      // own separate subscription for the one piece of UI that needs this
+      // reactively).
       map.addListener("heading_changed", () => {
-        const h = map.getHeading() ?? 0;
-        setMapHeading(h);
-        mapHeadingRef.current = h;
+        mapHeadingRef.current = map.getHeading() ?? 0;
       });
 
       // Let a user gesture (wheel/pinch zoom, drag) immediately take over
@@ -3792,6 +4071,13 @@ export default function IntelligenceMapping() {
         const frame = mapCenterAnimRef.current.get("own");
         if (frame != null) cancelAnimationFrame(frame);
         mapCenterAnimRef.current.delete("own");
+        // Same for the heading tween — a manual twist-to-rotate gesture
+        // should immediately take over from Heading-Up's automatic
+        // rotation, exactly like a manual pan/zoom already takes over from
+        // the camera-follow tween above.
+        const headingFrame = mapCenterAnimRef.current.get("own-heading");
+        if (headingFrame != null) cancelAnimationFrame(headingFrame);
+        mapCenterAnimRef.current.delete("own-heading");
         if (userMapInteractingTimeoutRef.current) {
           clearTimeout(userMapInteractingTimeoutRef.current);
         }
@@ -3799,7 +4085,13 @@ export default function IntelligenceMapping() {
           userMapInteractingRef.current = false;
         }, 500);
       };
-      map.addListener("dragstart", markUserMapInteracting);
+      map.addListener("dragstart", () => {
+        // See programmaticHeadingChangeRef's own comment — Heading-Up's
+        // own setHeading() calls appear to fire this event too, and must
+        // not be mistaken for a real user grabbing the map.
+        if (programmaticHeadingChangeRef.current) return;
+        markUserMapInteracting();
+      });
       const mapDiv = map.getDiv();
       mapDiv.addEventListener("wheel", markUserMapInteracting, {
         passive: true,
@@ -5180,6 +5472,7 @@ export default function IntelligenceMapping() {
     setRsInlineText("");
     setRsInlineCins(new Set());
     rsInlineCinsRef.current = new Set();
+    rsInlineUsedVoiceRef.current = false;
     setRsCountdown(30);
     setRsInlineTypingMode(false);
     setRsInlineUndoStack([]);
@@ -5188,16 +5481,19 @@ export default function IntelligenceMapping() {
   const submitInlineField = () => {
     if (!rsInlineLabel) return;
     const finalText = rsInlineText.trim() ? rsInlineText.trim() : rsInlineLabel;
-    // Capture CINs BEFORE closeInlineField clears the ref
+    // Capture CINs and the voice-usage flag BEFORE closeInlineField clears
+    // both refs.
     const cinsToAttach = new Set(rsInlineCinsRef.current);
     const timeOverride = mapQeTimeOverride;
     const rowDateOverride = mapQeRowDate;
+    const viaVoice = rsInlineUsedVoiceRef.current;
     closeInlineField();
     void addQuickRsEntryWithChecks(
       finalText,
       cinsToAttach,
       timeOverride,
-      rowDateOverride
+      rowDateOverride,
+      viaVoice
     );
   };
 
@@ -5250,12 +5546,128 @@ export default function IntelligenceMapping() {
     resetInlineTimer();
   };
 
+  // Voice-trigger for the "Vehicle arriving"/"Vehicle departing" chips —
+  // lets an officer say e.g. "1IZQ515 arriving" or "vehicle departing"
+  // instead of tapping the chip by hand. On a match this returns the exact
+  // same canned sentence the chip button itself would insert (reusing the
+  // occupant description and correct full/short address form via the same
+  // rsQeShortAddr/rsAddressMentionedData/shortenAlreadyMentionedNames the
+  // chip JSX below uses), rather than whatever words Whisper actually
+  // heard — keeping the wording consistent with every other way this
+  // sentence gets written, and correct even if Whisper mangled the rest of
+  // what was said. The rego match works against the ALREADY shortcut-
+  // expanded transcript (VoiceInputButton runs applyShortcutsToTranscript
+  // before this fires), so saying a target's own vehicle shortcut (e.g.
+  // "v1") is enough — its expansion already embeds the literal rego text.
+  // Only fires on an unambiguous match: either the rego is mentioned and
+  // identifies exactly one pending vehicle, or no rego is mentioned but
+  // there's exactly one pending chip of that kind anyway. Anything more
+  // ambiguous (or no trigger word at all) falls through to inserting the
+  // transcript verbatim, same as before this feature existed.
+  const detectVehicleEventVoiceTrigger = (
+    transcript: string
+  ): string | null => {
+    const normalized = transcript.toLowerCase();
+    if (!mapQeAddress) return null;
+
+    if (/\barriv(?:ing|ed|es)\b/.test(normalized)) {
+      const candidates = (rsPendingDepartures ?? []).filter(d =>
+        normalized.includes(d.rego.toLowerCase())
+      );
+      const match =
+        candidates.length === 1
+          ? candidates[0]
+          : candidates.length === 0 && rsPendingDepartures?.length === 1
+            ? rsPendingDepartures[0]
+            : null;
+      if (match) {
+        const occupantDesc = shortenAlreadyMentionedNames(
+          match.occupantDesc,
+          rsUsedBracketCodes
+        );
+        const arriveAddr = rsAddressMentionedData?.mentioned
+          ? rsQeShortAddr
+          : mapQeAddress;
+        return `Vehicle ${match.rego}, ${occupantDesc}, arrived at ${arriveAddr}`;
+      }
+    }
+
+    if (/\bdepart(?:ing|ed|s)\b/.test(normalized)) {
+      const arrivalsHere = (rsPendingArrivals ?? []).filter(
+        a =>
+          a.address.trim().toLowerCase() === rsQeShortAddr.trim().toLowerCase()
+      );
+      const candidates = arrivalsHere.filter(a =>
+        normalized.includes(a.rego.toLowerCase())
+      );
+      const match =
+        candidates.length === 1
+          ? candidates[0]
+          : candidates.length === 0 && arrivalsHere.length === 1
+            ? arrivalsHere[0]
+            : null;
+      if (match) {
+        const occupantDesc = shortenAlreadyMentionedNames(
+          match.occupantDesc,
+          rsUsedBracketCodes
+        );
+        return `Vehicle ${match.rego}, ${occupantDesc}, departed ${rsQeShortAddr} and continued via:`;
+      }
+    }
+
+    return null;
+  };
+
+  // Inserts a voice transcript at the cursor (or appends if the field
+  // isn't focused) — same before/after split + undo-stack pattern as the
+  // shortcut-expansion handler below, just triggered by VoiceInputButton
+  // instead of a keystroke. Shortcut expansion (mapQeShortcutMap) already
+  // ran on the transcript before this fires — see VoiceInputButton's
+  // shortcutMap prop.
+  const handleVoiceTranscript = (text: string, recordingStartedAt: Date) => {
+    rsInlineUsedVoiceRef.current = true;
+    const insertText = detectVehicleEventVoiceTrigger(text) ?? text;
+    const textarea = rsInlineInputRef.current;
+    const pos = textarea?.selectionStart ?? rsInlineText.length;
+    const before = rsInlineText.slice(0, pos);
+    const after = rsInlineText.slice(pos);
+    const needsSpaceBefore = before.length > 0 && !/\s$/.test(before);
+    const needsSpaceAfter = after.length > 0 && !/^\s/.test(after);
+    const newText = `${before}${needsSpaceBefore ? " " : ""}${insertText}${needsSpaceAfter ? " " : ""}${after}`;
+    pushInlineUndo(rsInlineText);
+    setRsInlineText(newText);
+    resetInlineTimer();
+    requestAnimationFrame(() => {
+      const newPos =
+        before.length + (needsSpaceBefore ? 1 : 0) + insertText.length;
+      textarea?.setSelectionRange(newPos, newPos);
+      textarea?.focus();
+    });
+
+    // Pre-fill the time picker from when recording actually started, not
+    // when transcription finished — same "Now" button logic (see the
+    // inline Time picker further down) but anchored to the moment the
+    // officer began speaking about the event rather than whenever WASM
+    // inference happens to wrap up, which can trail by several seconds.
+    const h24 = recordingStartedAt.getHours();
+    const min = recordingStartedAt.getMinutes();
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    const ampm = h24 < 12 ? "AM" : "PM";
+    setMapQeHour(String(h12));
+    setMapQeMinute(String(min).padStart(2, "0"));
+    setMapQePeriod(ampm);
+    setMapQeTimeOverride(
+      `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${ampm}`
+    );
+  };
+
   const openInlineField = (label: string) => {
     if (!rsSelectedSheetId) return;
     setRsInlineLabel(label);
     setRsInlineText("");
     setRsInlineCins(new Set());
     rsInlineCinsRef.current = new Set();
+    rsInlineUsedVoiceRef.current = false;
     setRsInlineTypingMode(false);
     setRsInlineUndoStack([]);
     // Focus the textarea after render
@@ -5302,6 +5714,7 @@ export default function IntelligenceMapping() {
         setRsInlineText("");
         setRsInlineCins(new Set());
         rsInlineCinsRef.current = new Set();
+        rsInlineUsedVoiceRef.current = false;
         setRsInlineTypingMode(false);
         setTimeout(() => rsInlineInputRef.current?.focus(), 80);
       }, 50);
@@ -5317,7 +5730,8 @@ export default function IntelligenceMapping() {
     observation: string,
     cinsToAttach?: Set<string> | null,
     timeOverride?: string | null,
-    rowDateOverride?: string | null
+    rowDateOverride?: string | null,
+    viaVoice?: boolean
   ) => {
     if (!rsSelectedSheetId) return;
     let timeStr: string;
@@ -5359,6 +5773,7 @@ export default function IntelligenceMapping() {
         timeMinutes: totalMins,
         observation,
         rowDate: rowDateOverride ?? undefined,
+        viaVoice: viaVoice || undefined,
       },
       {
         onSuccess: (data, vars) => {
@@ -5441,10 +5856,17 @@ export default function IntelligenceMapping() {
     observation: string,
     cinsToAttach?: Set<string> | null,
     timeOverride?: string | null,
-    rowDateOverride?: string | null
+    rowDateOverride?: string | null,
+    viaVoice?: boolean
   ) => {
     if (!rsSelectedSheetId || !observation.trim()) {
-      addQuickRsEntry(observation, cinsToAttach, timeOverride, rowDateOverride);
+      addQuickRsEntry(
+        observation,
+        cinsToAttach,
+        timeOverride,
+        rowDateOverride,
+        viaVoice
+      );
       return;
     }
 
@@ -5482,7 +5904,13 @@ export default function IntelligenceMapping() {
     }
 
     if (queue.length === 0) {
-      addQuickRsEntry(observation, cinsToAttach, timeOverride, rowDateOverride);
+      addQuickRsEntry(
+        observation,
+        cinsToAttach,
+        timeOverride,
+        rowDateOverride,
+        viaVoice
+      );
       return;
     }
     qePendingEntryRef.current = {
@@ -5490,6 +5918,7 @@ export default function IntelligenceMapping() {
       cinsToAttach: cinsToAttach ?? null,
       timeOverride: timeOverride ?? null,
       rowDateOverride: rowDateOverride ?? null,
+      viaVoice: viaVoice ?? false,
     };
     setQeDupeQueue(queue);
     setQeDupeIndex(0);
@@ -5512,7 +5941,8 @@ export default function IntelligenceMapping() {
           pending.observation,
           pending.cinsToAttach,
           pending.timeOverride,
-          pending.rowDateOverride
+          pending.rowDateOverride,
+          pending.viaVoice
         );
       }
     }
@@ -5787,30 +6217,13 @@ export default function IntelligenceMapping() {
               on mobile) with no auto-reset, so this re-aligns it on
               demand. The Navigation2 arrow visually rotates to point at
               true north given the map's current heading, so it doubles as
-              a compass, not just a button. */}
-            <button
-              onClick={e => {
-                e.stopPropagation();
-                if (!mapRef.current || !isMapActuallyVector) return;
-                mapRef.current.setHeading(0);
-              }}
-              disabled={!isMapActuallyVector || mapHeading === 0}
-              className="absolute z-20 pointer-events-auto flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              style={{ top: "130px", right: "10px" }}
-              aria-label="Reset map rotation to North Up"
-              title={
-                !isMapActuallyVector
-                  ? "Rotation requires Vector map rendering, which isn't available on this device"
-                  : mapHeading === 0
-                    ? "Already North Up"
-                    : "Reset rotation to North Up"
-              }
-            >
-              <Navigation2
-                className="w-4 h-4 text-sky-600 transition-transform"
-                style={{ transform: `rotate(${-mapHeading}deg)` }}
-              />
-            </button>
+              a compass, not just a button. Its own component — see
+              NorthUpButton's comment for why this isn't inline state on
+              this page anymore. */}
+            <NorthUpButton
+              map={mapRef.current}
+              isMapActuallyVector={isMapActuallyVector}
+            />
 
             {/* Nearmap aerial overlay — right below North Up. Adds/removes
               a google.maps.ImageMapType layer requesting tiles from our own
@@ -8330,8 +8743,22 @@ export default function IntelligenceMapping() {
 
         {/* ── Map RS Quick Entry Modal ── */}
         {mapQeOpen && (
+          // fixed, not absolute: DashboardLayout's <main> is overflow-hidden,
+          // so an `absolute inset-0` descendant is bounded by it rather than
+          // the true window — and the inner card's height was pinned to a
+          // static `90vh`/`92vh`, computed against the full layout viewport,
+          // which mobile Safari/Chrome don't shrink when the on-screen
+          // keyboard opens (only `window.visualViewport` does). Combined,
+          // that left the card sized for a screen that no longer matched
+          // what was actually visible above the keyboard: the observation
+          // textarea itself stayed compact, but the rest of the oversized
+          // card rendered as a large blank gap next to the keyboard rather
+          // than shrinking to fit. Same fix already applied to the Custom
+          // Marker Placement Modal further below — `fixed` escapes the
+          // clipping, and `useVisualViewportInset`'s `vvVisibleHeight` caps
+          // the card against the keyboard-adjusted visible height instead.
           <div
-            className="absolute inset-0 z-40 flex items-start justify-center overflow-y-auto p-3 pt-6 md:p-4 md:pt-10"
+            className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto p-3 pt-6 md:p-4 md:pt-10"
             style={{
               background: "rgba(0,0,0,0.55)",
               backdropFilter: "blur(3px)",
@@ -8343,7 +8770,8 @@ export default function IntelligenceMapping() {
             }}
           >
             <div
-              className="no-scrollbar w-full max-w-lg md:max-w-3xl lg:max-w-5xl bg-card border border-border rounded-2xl shadow-2xl p-5 pb-6 md:p-6 lg:p-8 max-h-[90vh] md:max-h-[92vh] overflow-y-auto"
+              className="no-scrollbar w-full max-w-lg md:max-w-3xl lg:max-w-5xl bg-card border border-border rounded-2xl shadow-2xl p-5 pb-6 md:p-6 lg:p-8 overflow-y-auto"
+              style={{ maxHeight: Math.round(vvVisibleHeight * 0.9) }}
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}
@@ -8572,10 +9000,22 @@ export default function IntelligenceMapping() {
                           className="rounded-lg border border-border bg-muted/40 p-2.5 md:p-3.5 flex flex-col gap-2 md:gap-2.5"
                           onClick={e => e.stopPropagation()}
                         >
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">
-                              Observation
-                            </span>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            {/* Voice sits right next to the label, not
+                                grouped with Keyboard/Undo — it's the
+                                primary way of filling this field in a
+                                hurry, so it belongs next to what it's
+                                filling in, not tucked away on the far
+                                side with the secondary controls. */}
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] md:text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                                Observation
+                              </span>
+                              <VoiceInputButton
+                                onTranscript={handleVoiceTranscript}
+                                shortcutMap={mapQeShortcutMap}
+                              />
+                            </div>
                             <div className="flex items-center gap-1.5">
                               {/* Only meaningful on touch devices — desktop's
                                   observation field is always editable (see
@@ -8590,14 +9030,16 @@ export default function IntelligenceMapping() {
                                       ? "Switch back to chip-click only"
                                       : "Switch to keyboard typing"
                                   }
-                                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border transition-all active:scale-95 hover:bg-accent/50 ${
+                                  className={`${QE_HEADER_BUTTON_SIZE} hover:bg-accent/50 ${
                                     rsInlineTypingMode
                                       ? "border-primary/50 text-primary bg-primary/10"
                                       : "border-border text-muted-foreground"
                                   }`}
                                 >
-                                  <Keyboard className="h-3 w-3" />
-                                  Keyboard
+                                  <Keyboard className="h-4 w-4" />
+                                  <span className="hidden sm:inline">
+                                    Keyboard
+                                  </span>
                                 </button>
                               )}
                               <button
@@ -8605,10 +9047,10 @@ export default function IntelligenceMapping() {
                                 onClick={undoInlineText}
                                 disabled={rsInlineUndoStack.length === 0}
                                 title="Undo"
-                                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold border border-border text-muted-foreground transition-all active:scale-95 hover:bg-accent/50 disabled:opacity-40 disabled:pointer-events-none"
+                                className={`${QE_HEADER_BUTTON_SIZE} border-border text-muted-foreground hover:bg-accent/50 disabled:opacity-40 disabled:pointer-events-none`}
                               >
-                                <Undo2 className="h-3 w-3" />
-                                Undo
+                                <Undo2 className="h-4 w-4" />
+                                <span className="hidden sm:inline">Undo</span>
                               </button>
                             </div>
                           </div>
@@ -10231,10 +10673,10 @@ export default function IntelligenceMapping() {
 
       {/* Pin-customise popup — opened by tapping your own name pill on the
         map (see the click listener attached in createUserPinElement).
-        Wheels/Foot mode, plus Foot-only gender/skin-tone options — see
-        setOnFoot/setPinAppearance. A Wheels-only vehicle icon picker is
-        planned but not built yet (pinVehicleIcon already exists server-side
-        for when that lands). */}
+        Wheels/Foot mode, a Wheels-only heading-shape picker, and a pill
+        colour picker — see setOnFoot/setPinAppearance. The on-foot glyph
+        is always the plain neutral 🧍/🚶/🏃 now — the gender/skin-tone
+        picker previously here was removed entirely. */}
       <Dialog open={onFootPopupOpen} onOpenChange={setOnFootPopupOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -10245,9 +10687,8 @@ export default function IntelligenceMapping() {
               u => u.userId === user?.id && u.deviceId === deviceId
             );
             const onFoot = ownLiveUser?.onFoot ?? false;
-            const gender = ownLiveUser?.pinGender ?? "neutral";
-            const skinTone = ownLiveUser?.pinSkinTone ?? "default";
-            const footPreview = buildOnFootGlyph("🚶", gender, skinTone);
+            const headingShape = ownLiveUser?.pinVehicleIcon ?? "arrow";
+            const pinColor = ownLiveUser?.pinColor ?? null;
 
             return (
               <div className="flex flex-col gap-4 py-2">
@@ -10261,7 +10702,14 @@ export default function IntelligenceMapping() {
                         : "border-border bg-accent/30 hover:border-primary/50"
                     }`}
                   >
-                    <span className="text-xl">⬆️</span>
+                    {/* Same shape as the live pin's own arrow — see
+                        renderHeadingShapeInner — not a generic ⬆️ emoji. */}
+                    <span
+                      className="w-5 h-5 flex items-center justify-center"
+                      dangerouslySetInnerHTML={{
+                        __html: renderHeadingShapeInner("arrow"),
+                      }}
+                    />
                     <span className="text-xs font-semibold">Wheels</span>
                   </button>
                   <button
@@ -10273,7 +10721,7 @@ export default function IntelligenceMapping() {
                         : "border-border bg-accent/30 hover:border-primary/50"
                     }`}
                   >
-                    <span className="text-xl">{footPreview}</span>
+                    <span className="text-xl">🚶</span>
                     <span className="text-xs font-semibold">Foot</span>
                   </button>
                 </div>
@@ -10282,70 +10730,78 @@ export default function IntelligenceMapping() {
                   over 15 km/h.
                 </p>
 
-                {onFoot ? (
-                  <>
-                    <div className="space-y-1.5">
-                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                        Appearance
-                      </p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {(["neutral", "male", "female"] as const).map(g => (
-                          <button
-                            key={g}
-                            type="button"
-                            onClick={() =>
-                              setPinAppearanceMut.mutate({ pinGender: g })
-                            }
-                            className={`flex flex-col items-center gap-1 rounded-lg border-2 py-2 transition-all ${
-                              gender === g
-                                ? "border-primary bg-primary/10 scale-105"
-                                : "border-border bg-accent/30 hover:border-primary/50"
-                            }`}
-                          >
-                            <span className="text-lg">
-                              {buildOnFootGlyph("🚶", g, skinTone)}
-                            </span>
-                            <span className="text-[10px] font-medium">
-                              {g === "neutral"
-                                ? "Neutral"
-                                : g === "male"
-                                  ? "Male"
-                                  : "Female"}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
+                {!onFoot && (
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      Heading shape
+                    </p>
+                    <div className="grid grid-cols-4 gap-2">
+                      {HEADING_SHAPE_OPTIONS.map(opt => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() =>
+                            setPinAppearanceMut.mutate({
+                              pinVehicleIcon: opt.key,
+                            })
+                          }
+                          title={opt.label}
+                          aria-label={opt.label}
+                          className={`flex items-center justify-center rounded-lg border-2 py-2 transition-all ${
+                            headingShape === opt.key
+                              ? "border-primary bg-primary/10 scale-105"
+                              : "border-border bg-accent/30 hover:border-primary/50"
+                          }`}
+                        >
+                          <span
+                            className="w-5 h-5 flex items-center justify-center"
+                            dangerouslySetInnerHTML={{
+                              __html: renderHeadingShapeInner(opt.key),
+                            }}
+                          />
+                        </button>
+                      ))}
                     </div>
-                    <div className="space-y-1.5">
-                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                        Skin tone
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(["default", "brown"] as const).map(t => (
-                          <button
-                            key={t}
-                            type="button"
-                            onClick={() =>
-                              setPinAppearanceMut.mutate({ pinSkinTone: t })
-                            }
-                            className={`flex flex-col items-center gap-1 rounded-lg border-2 py-2 transition-all ${
-                              skinTone === t
-                                ? "border-primary bg-primary/10 scale-105"
-                                : "border-border bg-accent/30 hover:border-primary/50"
-                            }`}
-                          >
-                            <span className="text-lg">
-                              {buildOnFootGlyph("🚶", gender, t)}
-                            </span>
-                            <span className="text-[10px] font-medium">
-                              {t === "default" ? "Default" : "Brown"}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                ) : null}
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      Pill colour
+                    </p>
+                    {pinColor && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPinAppearanceMut.mutate({ pinColor: null })
+                        }
+                        className="text-[10px] font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
+                      >
+                        Reset to team colour
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-5 gap-2 justify-items-center">
+                    {PIN_COLOUR_SWATCHES.map(swatch => (
+                      <button
+                        key={swatch.hex}
+                        type="button"
+                        onClick={() =>
+                          setPinAppearanceMut.mutate({ pinColor: swatch.hex })
+                        }
+                        title={swatch.name}
+                        aria-label={swatch.name}
+                        className={`h-8 w-8 rounded-full border-2 transition-all ${
+                          pinColor === swatch.hex
+                            ? "border-foreground scale-110"
+                            : "border-transparent hover:scale-105"
+                        }`}
+                        style={{ background: swatch.hex }}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
             );
           })()}

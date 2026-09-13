@@ -127,6 +127,20 @@ export function detectMentionTrigger(
 // naturally covers both "Vehicle 1FCC987 ..." and "...bearing WA
 // registration 1FCC987 ..." phrasing, since the trigger doesn't care what
 // precedes it.
+// Same exclusion extractEntitiesFromText (server/db.ts) applies when
+// classifying a bracketed shortForm — kept in sync manually, same
+// convention as STREET_TYPE_WORDS below. UM1/UF1/YC1/UCO1-style
+// unidentified-male/female, young-child, and undercover-operative
+// placeholders are short letter+digit tokens ("UM1" is 3 chars, mixes
+// letters and a digit) that otherwise satisfy this trigger's own "looks
+// like a rego" shape below, wrongly auto-bracketing a re-mention like
+// "Um1 " as "(Vehicle UM1)" — confirmed on a real running sheet, where
+// that literal "(Vehicle ...)" bracket then also defeats the server's own
+// UM/UF/YC/UCO safeguard (which only catches a BARE "(UM1)" code, not one
+// that already says "Vehicle" inside the parens), corrupting the
+// Intelligence Folder with a phantom "UM1" vehicle entity.
+const NON_VEHICLE_PLACEHOLDER_CODE_RE = /^(?:U[MF]|YC|UCO)\d+$/i;
+
 export function detectVehicleMentionTrigger(
   text: string,
   cursorPos: number,
@@ -138,6 +152,7 @@ export function detectVehicleMentionTrigger(
   const word = wordMatch[1];
   if (word.length < 3 || word.length > 8) return null;
   if (!/[A-Za-z]/.test(word) || !/\d/.test(word)) return null;
+  if (NON_VEHICLE_PLACEHOLDER_CODE_RE.test(word)) return null;
   const wordStart = cursorPos - word.length;
   if (usedVehicleRegos.has(word.toUpperCase())) return null;
   return { word, wordStart };

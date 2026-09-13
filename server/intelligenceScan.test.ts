@@ -82,6 +82,48 @@ describe("scanIntelligenceEntities", () => {
     expect(findings).toHaveLength(0);
   });
 
+  it("flags a mined name that's a likely typo of a registered target", () => {
+    const findings = scanIntelligenceEntities([
+      makeEntity({ type: "person", shortForm: "John Smith", isTarget: true }),
+      makeEntity({ type: "person", shortForm: "Jhon Smith" }),
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].ruleId).toBe("possible-typo-of-registry-name");
+    expect(findings[0].shortForm).toBe("Jhon Smith");
+  });
+
+  it("flags a mined name that's a likely typo of a registered associate", () => {
+    const findings = scanIntelligenceEntities([
+      makeEntity({ type: "person", shortForm: "Jane Doe", isAssociate: true }),
+      makeEntity({ type: "person", shortForm: "Jane Doeh" }),
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].ruleId).toBe("possible-typo-of-registry-name");
+  });
+
+  it("does not flag an exact name match to the registry — that's the same person", () => {
+    const findings = scanIntelligenceEntities([
+      makeEntity({ type: "person", shortForm: "John Smith", isTarget: true }),
+      makeEntity({ type: "person", shortForm: "John Smith" }),
+    ]);
+    expect(findings).toHaveLength(0);
+  });
+
+  it("does not flag a genuinely different name near the registry", () => {
+    const findings = scanIntelligenceEntities([
+      makeEntity({ type: "person", shortForm: "John Smith", isTarget: true }),
+      makeEntity({ type: "person", shortForm: "Sarah Nguyen" }),
+    ]);
+    expect(findings).toHaveLength(0);
+  });
+
+  it("does not flag typo-matching when there is no registry to compare against", () => {
+    const findings = scanIntelligenceEntities([
+      makeEntity({ type: "person", shortForm: "Jhon Smith" }),
+    ]);
+    expect(findings).toHaveLength(0);
+  });
+
   it("does not flag an indices-only entity (never actually mentioned in a row)", () => {
     const findings = scanIntelligenceEntities([
       makeEntity({

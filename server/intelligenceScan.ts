@@ -10,6 +10,7 @@
 // profile page and only ever notifies that one admin, so a flagged entity
 // gets a human look, not an automatic change.
 import type { IntelligenceEntity } from "./db";
+import { findFuzzyMatches, DEFAULT_FUZZY_THRESHOLD } from "./fuzzyMatch";
 
 export interface ScanFinding {
   ruleId: string;
@@ -38,10 +39,29 @@ function vehicleShortFormLacksDigits(shortForm: string): boolean {
   return !/\d/.test(shortForm);
 }
 
+// Step 1 of the Local AI Roadmap: catch a mined person name that's probably
+// a typo of someone already on a formal Target/Associate card, rather than
+// requiring an exact-string match to ever connect the two. Deliberately
+// person-only for this first pass — vehicle/address registry entries don't
+// carry a reliable isTarget/isAssociate flag the way a target/associate's
+// own person entity does (see getAllIntelligenceEntities in db.ts), so
+// telling a genuine registry vehicle apart from a text-mined one needs more
+// plumbing than this rule does yet. A future pass can extend this once
+// that's worth doing. Uses findFuzzyMatches' own default threshold — tried
+// a stricter one first, but it excluded the single-letter-swap case
+// ("Jhon"/"John", a very common typo shape) since a swap costs 2 edits
+// under plain Levenshtein, not 1, so it scores lower than a same-size
+// single-character slip. The default catches that case correctly.
+const FUZZY_NAME_MATCH_THRESHOLD = DEFAULT_FUZZY_THRESHOLD;
+
 export function scanIntelligenceEntities(
   entities: IntelligenceEntity[]
 ): ScanFinding[] {
   const findings: ScanFinding[] = [];
+
+  const registryNames = entities
+    .filter(e => e.type === "person" && (e.isTarget || e.isAssociate))
+    .map(e => ({ id: e.shortForm, label: e.shortForm }));
 
   const addFinding = (
     entity: IntelligenceEntity,
@@ -74,6 +94,23 @@ export function scanIntelligenceEntities(
     if (entity.occurrences.every(o => o.rowId <= 0)) continue;
 
     const shortForm = entity.shortForm.trim();
+
+    if (entity.type === "person" && registryNames.length > 0) {
+      const matches = findFuzzyMatches(
+        shortForm,
+        registryNames,
+        FUZZY_NAME_MATCH_THRESHOLD
+      );
+      if (matches.length > 0) {
+        const best = matches[0];
+        addFinding(
+          entity,
+          "possible-typo-of-registry-name",
+          `"${shortForm}" is close to "${best.label}", who is already on a Target/Associate card (${Math.round(best.similarity * 100)}% match) — check whether this is a misspelling of them rather than a different person.`
+        );
+        continue;
+      }
+    }
 
     if (
       (entity.type === "person" ||

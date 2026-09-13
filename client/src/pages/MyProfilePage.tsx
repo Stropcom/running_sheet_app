@@ -370,9 +370,10 @@ export default function MyProfilePage() {
               folder — flags shapes that suggest a parsing slip (a placeholder
               code like UM1/UF1 that landed as a real entity, a vehicle rego
               with a stray comma in it, and similar) rather than a genuine
-              person/vehicle/address/business, so they can be checked against
-              the running sheet that produced them. Only you see the results —
-              nothing changes automatically.
+              person/vehicle/address/business, plus names that look like a typo
+              of someone already on a Target/Associate card, so they can be
+              checked against the running sheet that produced them. Only you see
+              the results — nothing changes automatically.
             </p>
             <Button
               onClick={() => runScanMutation.mutate()}

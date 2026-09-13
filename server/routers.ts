@@ -262,6 +262,7 @@ import {
   backfillGoogleAddressesInObservations,
   getOrphanedAttachments,
   purgeOrphanedAttachments,
+  wipeAllTestData,
   getRsMappingWaypoints,
   upsertRsMappingWaypoint,
   geocodeAddressList,
@@ -7431,6 +7432,32 @@ export const appRouter = router({
       const count = await purgeOrphanedAttachments();
       return { purged: count };
     }),
+
+    /** One-off "start again" tool for clearing test data while the app is
+     * still being set up — NOT a standing admin capability. Gated on
+     * users.canWipeTestData (off by default for every account, including
+     * other admins — see drizzle/schema.ts), not on role === "admin",
+     * since that would make this too easy to trigger by accident once the
+     * app is in real operational use. Also requires retyping a fixed
+     * confirmation phrase, checked here rather than trusted from the
+     * client, so a stray click can't fire it. */
+    wipeAllTestData: protectedProcedure
+      .input(z.object({ confirmPhrase: z.string() }))
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.user.canWipeTestData) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You do not have permission to do this.",
+          });
+        }
+        if (input.confirmPhrase !== "DELETE ALL DATA") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Confirmation phrase did not match.",
+          });
+        }
+        return wipeAllTestData();
+      }),
   }),
 });
 export type AppRouter = typeof appRouter;

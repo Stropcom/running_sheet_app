@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `canWipeTestData` boolean DEFAULT false NOT NULL;

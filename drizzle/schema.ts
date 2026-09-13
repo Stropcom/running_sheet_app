@@ -36,6 +36,15 @@ export const users = mysqlTable("users", {
   // Forces a password change on next login (e.g. admin-issued temporary
   // password). Enforced server-side in _core/trpc.ts, not just client UI.
   mustChangePassword: boolean("mustChangePassword").default(false).notNull(),
+  // Temporary "start again" admin tool, not a standing capability — lets
+  // whichever single account this is manually flipped true for wipe all
+  // operational data (see server/db.ts's TEST_DATA_WIPE_TABLES /
+  // wipeAllTestData and routers.ts's adminUtils.wipeAllTestData) while the
+  // app is still being set up and full of test data. Deliberately not tied
+  // to role === "admin" — every admin having this by default would be far
+  // too easy to trigger by accident on a real operation later. Meant to be
+  // removed (this column included) once real operational use begins.
+  canWipeTestData: boolean("canWipeTestData").default(false).notNull(),
   // Selectable accent colour palette — see shared/const.ts COLOR_PALETTES.
   // Null falls back to the default palette client-side.
   colorPalette: varchar("colorPalette", { length: 32 }),

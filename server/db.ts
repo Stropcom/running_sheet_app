@@ -10667,6 +10667,94 @@ export async function purgeOrphanedAttachments(): Promise<number> {
   return orphans.length;
 }
 
+// ─── Test Data Wipe (temporary admin tool) ────────────────────────────────────
+// See drizzle/schema.ts's users.canWipeTestData for the gating story and
+// routers.ts's adminUtils.wipeAllTestData for the confirmation-phrase check
+// — this function itself trusts its caller completely and just does the
+// wipe. Deliberately excludes: users (so nobody gets logged out or loses
+// their account), shortcuts/styleGuides/styleRules/ctoRosterEbaRules/
+// ctoRosterOutlookSettings (reusable config, not test content),
+// userSidebarOrder (personal UI preference), wipcVaultKeyCheck (the vault
+// encryption key's own verification row — needed for WIPC encryption to
+// keep working), and intelligenceGeocodeCache (a harmless address->latlng
+// lookup cache, not user-entered data). Everything else is operational
+// content an officer created while testing.
+const TEST_DATA_WIPE_TABLES = [
+  "sub_observation_certifications",
+  "sub_observation_members",
+  "sub_observations",
+  "certifications",
+  "row_members",
+  "attachment_entity_links",
+  "row_attachments",
+  "person_detections",
+  "face_match_dismissals",
+  "sheet_summary_entries",
+  "sheet_summaries",
+  "sheet_rows",
+  "running_sheets",
+  "entity_aliases",
+  "entity_dedup_decisions",
+  "person_name_match_decisions",
+  "target_field_history",
+  "target_shortcuts",
+  "target_document_imports",
+  "operation_target_links",
+  "associates",
+  "targets",
+  "wipc_members",
+  "wipc_officer_profiles",
+  "wipc_audit_log",
+  "custom_map_markers",
+  "map_shapes",
+  "intel_pin_overrides",
+  "user_locations",
+  "user_location_history",
+  "rs_mapping_waypoints",
+  "op_manager_priority_rows",
+  "op_manager_tasking_cells",
+  "op_manager_supervisor_contacts",
+  "op_manager_posted_weeks",
+  "notifications",
+  "cto_roster_draft_shifts",
+  "cto_roster_draft_members",
+  "cto_roster_draft_teams",
+  "cto_roster_drafts",
+  "cto_roster_saved_roster_shifts",
+  "cto_roster_saved_roster_members",
+  "cto_roster_saved_roster_teams",
+  "cto_roster_saved_rosters",
+  "cto_roster_shifts",
+  "cto_roster_secondments",
+  "cto_roster_members",
+  "cto_roster_teams",
+  "cto_roster_audit_log",
+  "smeac_acknowledgements",
+  "smeac_briefings",
+  "uco_guide_acknowledgements",
+  "uco_guide_briefings",
+  "governance_records",
+  "audit_logs",
+  "operations",
+];
+
+export async function wipeAllTestData(): Promise<{ tablesCleared: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database unavailable");
+  // FK checks disabled so table order doesn't matter and TRUNCATE (which
+  // MySQL otherwise refuses on a table any live foreign key still points
+  // at) works on every table in one pass.
+  await db.execute(sql.raw("SET FOREIGN_KEY_CHECKS = 0"));
+  try {
+    for (const table of TEST_DATA_WIPE_TABLES) {
+      await db.execute(sql.raw(`TRUNCATE TABLE \`${table}\``));
+    }
+  } finally {
+    await db.execute(sql.raw("SET FOREIGN_KEY_CHECKS = 1"));
+  }
+  return { tablesCleared: TEST_DATA_WIPE_TABLES.length };
+}
+
 // ─── Intelligence Profile Queries ─────────────────────────────────────────────
 // Correct association logic: an entity is an "operational associate" of a target
 // ONLY if it appears in an observation row on a running sheet where that target

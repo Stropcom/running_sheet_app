@@ -26,16 +26,26 @@ export interface KnownEntityName {
  * entities — pass every person-type IntelligenceEntity's shortForm here,
  * not just registry ones, since the point is "did the rules already catch
  * this name in some form", not just "is this a registered target").
- * Fuzzy, not exact — a loose match against a known name (e.g. the rules
- * already found "J. Smith" and NER found "John Smith") is still a match,
- * not a miss, so it isn't flagged here; that overlap case is what
- * intelligenceScan.ts's typo rule is for, not this one. Also checks a
- * shared significant word (see sharesSignificantWord) on top of the
- * whole-string comparison — real running-sheet data surfaced a case a
- * whole-string check alone missed: NER extracting "Stevie RAYSON" as a
- * new name when only the surname "RAYSON" was on the registry card,
- * which whole-string similarity scores too low to catch (see
- * fuzzyMatch.ts's own comment on that function for the full reasoning).
+ * Checks three ways, cheapest/most certain first: an exact match (case/
+ * whitespace-insensitive) is obviously already known and short-circuits
+ * everything else; findFuzzyMatches then catches a *close but not
+ * identical* match (e.g. the rules already found "J. Smith" and NER found
+ * "John Smith" — a typo-shaped overlap, not a miss, so not flagged here;
+ * that case is what intelligenceScan.ts's typo rule is for); finally
+ * sharesSignificantWord catches a shared name-part a whole-string
+ * comparison can miss (different first name, same surname).
+ *
+ * The exact-match check exists because real running-sheet data found a
+ * bug: NER extracted "Stevie RAYSON" *verbatim* — matching an existing
+ * associate card of that exact name, word for word — and it still got
+ * flagged as new. findFuzzyMatches deliberately excludes exact matches
+ * (its own job is finding *typos* of a known name, where an exact match
+ * would mean "this isn't a typo, it's the same entity" and so isn't its
+ * concern) — but nothing else was checking the exact-match case at all,
+ * so on its own findFuzzyMatches silently let a perfect match through as
+ * if it were new. This is the real, direct fix; sharesSignificantWord
+ * (added at the same time, before this exact case was understood) still
+ * earns its place for the genuinely-different-first-name case.
  */
 export async function scanForMissedPersonMentions(
   observations: ObservationTextForScan[],
@@ -55,7 +65,12 @@ export async function scanForMissedPersonMentions(
     }
 
     for (const mention of mentions) {
+      const normalizedMention = mention.text.trim().toUpperCase();
+      const isExactMatch = knownNames.some(
+        n => n.label.trim().toUpperCase() === normalizedMention
+      );
       const alreadyKnown =
+        isExactMatch ||
         findFuzzyMatches(mention.text, knownNames, 0.75).length > 0 ||
         sharesSignificantWord(mention.text, knownNames);
       if (alreadyKnown) continue;

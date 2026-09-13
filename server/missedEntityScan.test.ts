@@ -49,6 +49,19 @@ describe("scanForMissedPersonMentions", () => {
     expect(findings).toHaveLength(0);
   });
 
+  it("does not flag a name that exactly matches a known name (the real RAYSON bug: exact match was never checked)", async () => {
+    vi.mocked(findPersonMentions).mockResolvedValueOnce([
+      { text: "Stevie RAYSON", score: 0.94 },
+    ]);
+
+    const findings = await scanForMissedPersonMentions(
+      [makeObservation({})],
+      [{ id: "Stevie RAYSON", label: "Stevie RAYSON" }]
+    );
+
+    expect(findings).toHaveLength(0);
+  });
+
   it("merges repeat mentions of the same missed name into one finding", async () => {
     vi.mocked(findPersonMentions)
       .mockResolvedValueOnce([{ text: "Sarah Connor", score: 0.95 }])

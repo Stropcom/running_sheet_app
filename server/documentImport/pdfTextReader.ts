@@ -70,6 +70,12 @@ const LABEL_ALTERNATION = LINE_LABELS.slice()
   .map(l => l.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
   .join("|");
 const COLON_LABEL_RE = new RegExp(`^(${LABEL_ALTERNATION})\\s*:\\s*(.+)$`, "i");
+// A forced mid-word wrap never resumes with a whole recognised field label
+// immediately followed by a word boundary — a genuine leftover word
+// fragment is never itself a real word, let alone one of this document
+// family's own known field labels (NAME, DOB, VEHICLES, ...). See
+// clusterIntoCells' use of this below for the real bug it catches.
+const LEADING_LABEL_RE = new RegExp(`^(${LABEL_ALTERNATION})\\b`, "i");
 
 function canonicalLabel(raw: string): string {
   const upper = raw.trim().toUpperCase();
@@ -130,6 +136,14 @@ const PACKED_WIDTH_RATIO = 0.9;
 const NARROW_JOIN_MAX_WIDTH = 120;
 function bucketKey(x: number): number {
   return Math.round(x / COLUMN_X_TOLERANCE) * COLUMN_X_TOLERANCE;
+}
+
+function startsWithKnownLabel(items: PositionedItem[]): boolean {
+  const text = items
+    .map(it => it.str)
+    .join("")
+    .trimStart();
+  return LEADING_LABEL_RE.test(text);
 }
 
 /** One table cell, possibly rejoined from several wrapped physical lines —
@@ -235,8 +249,14 @@ function lineSegments(line: Line, lineIdx: number): Segment[] {
  * token doesn't fit the column at all, which packs that line right up to
  * the column's own widest-ever line (needing no space on rejoin, since
  * the two fragments are one word). Not perfect — a word-boundary wrap
- * that happens to pack tightly can still misfire — but it resolves every
- * case found in real training documents so far.
+ * that happens to pack tightly can still misfire (see a real training
+ * document, BLUEGUM, where a name line and the following "DOB ..." line
+ * both happened to pack tightly purely by coincidence, joining into
+ * "HASSANDOB" with no space) — the packed check alone isn't trusted when
+ * the next line starts with one of this document family's own known field
+ * labels (see startsWithKnownLabel), since a real leftover word fragment
+ * from a mid-word break is never itself a whole recognised label — but it
+ * resolves every case found in real training documents so far.
  */
 function clusterIntoCells(lines: Line[]): {
   cells: Cell[];
@@ -305,6 +325,7 @@ function clusterIntoCells(lines: Line[]): {
       if (gap <= 0 || gap > lastHeight * WRAP_CONTINUATION_MAX_GAP_RATIO) break;
       const max = colMaxWidth.get(bucket) ?? lastWidth;
       const packed =
+        !startsWithKnownLabel(sj.items) &&
         lastWidth <= NARROW_JOIN_MAX_WIDTH &&
         lastWidth >= max * PACKED_WIDTH_RATIO;
       if (!packed) {

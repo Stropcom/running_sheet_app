@@ -694,18 +694,38 @@ export function ImportTargetDocumentDialog({
                     original text dropped in — split it into the right fields
                     there rather than retyping it from the document.
                   </p>
-                  {result.needsReview.map((u, i) => (
-                    <p key={i} className="text-sm">
-                      <span className="text-muted-foreground">
-                        {u.kind === "address"
-                          ? u.label
-                            ? `${u.label}: `
-                            : "Address: "
-                          : "Vehicle: "}
-                      </span>
-                      <span className="italic">{u.raw}</span>
+                  {result.needsReview.map((u, i) => {
+                    const aiSuggestion = result.aiSuggestions?.[i];
+                    return (
+                      <div key={i} className="flex flex-col gap-0.5">
+                        <p className="text-sm">
+                          <span className="text-muted-foreground">
+                            {u.kind === "address"
+                              ? u.label
+                                ? `${u.label}: `
+                                : "Address: "
+                              : "Vehicle: "}
+                          </span>
+                          <span className="italic">{u.raw}</span>
+                        </p>
+                        {aiSuggestion?.suggested && (
+                          <p className="text-xs text-primary pl-2 border-l-2 border-primary/40">
+                            AI read this as:{" "}
+                            <span className="font-medium">
+                              {aiSuggestion.suggested}
+                            </span>{" "}
+                            — check it against the original before using it.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {result.aiModelStatus === "missing" && (
+                    <p className="text-[11px] text-muted-foreground italic">
+                      (On-device AI assist isn't installed on this deployment
+                      yet — these are shown as read by the existing rules only.)
                     </p>
-                  ))}
+                  )}
                 </div>
               )}
 

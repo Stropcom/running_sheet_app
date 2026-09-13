@@ -345,6 +345,10 @@ import { readDocxTables } from "./documentImport/docxTableReader";
 import { readPdfText } from "./documentImport/pdfTextReader";
 import { mapDocumentToTargetProfile } from "./documentImport/targetProfileFieldMap";
 import {
+  getDocumentAIModelStatus,
+  suggestFromNeedsReviewItem,
+} from "./documentImport/localDocumentAI";
+import {
   createWipcAuditEntry,
   getWipcAuditLog,
   upsertWipcOfficerProfile,
@@ -3396,7 +3400,39 @@ export const appRouter = router({
                 : "Couldn't read this file as a Word document (.docx).",
             });
           }
-          return mapDocumentToTargetProfile(read);
+          const mapped = mapDocumentToTargetProfile(read);
+
+          // Local AI Roadmap Step 3 — additive only, never replaces what
+          // the rule-based mapper above already produced. Only runs over
+          // needsReview items (text the rules recognised as clearly meant
+          // to be an address/vehicle but couldn't parse), one at a time
+          // rather than in parallel, to avoid piling up concurrent model
+          // inference calls on a resource-constrained droplet. Capped at
+          // 10 so a document with an unusually large needsReview list
+          // can't turn one upload into dozens of inference calls.
+          const aiModelStatus = await getDocumentAIModelStatus();
+          const aiSuggestions: Array<{
+            kind: "address" | "vehicle";
+            label: string;
+            raw: string;
+            suggested: string | null;
+          }> = [];
+          if (aiModelStatus === "ready") {
+            for (const item of mapped.needsReview.slice(0, 10)) {
+              const suggested = await suggestFromNeedsReviewItem(
+                item.kind,
+                item.raw
+              );
+              aiSuggestions.push({
+                kind: item.kind,
+                label: item.label,
+                raw: item.raw,
+                suggested,
+              });
+            }
+          }
+
+          return { ...mapped, aiModelStatus, aiSuggestions };
         }),
     }),
   }),

@@ -1,21 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { buildNeedsReviewPrompt, parseModelReply } from "./localDocumentAI";
+import { buildCleanupPrompt, parseModelReply } from "./localDocumentAI";
 
-// buildNeedsReviewPrompt/parseModelReply are the two pure pieces of
+// buildCleanupPrompt/parseModelReply are the two pure pieces of
 // localDocumentAI.ts — no model, no I/O — so they're the part that can
 // actually be verified in this sandbox (which can't fetch the real model
 // weights to test the rest end to end — see that file's header).
 
-describe("buildNeedsReviewPrompt", () => {
+describe("buildCleanupPrompt", () => {
   it("asks for a clean address, with an explicit unknown escape hatch", () => {
-    const prompt = buildNeedsReviewPrompt("address", "12 Smith St Perth");
+    const prompt = buildCleanupPrompt("address", "12 Smith St Perth");
     expect(prompt).toContain("street address");
     expect(prompt).toContain("unknown");
     expect(prompt).toContain("12 Smith St Perth");
   });
 
   it("asks for a clean vehicle description in the expected shape", () => {
-    const prompt = buildNeedsReviewPrompt("vehicle", "white corolla 1abc123");
+    const prompt = buildCleanupPrompt("vehicle", "white corolla 1abc123");
     expect(prompt).toContain("REGISTRATION colour make model");
     expect(prompt).toContain("white corolla 1abc123");
   });

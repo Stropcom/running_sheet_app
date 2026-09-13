@@ -346,7 +346,7 @@ import { readPdfText } from "./documentImport/pdfTextReader";
 import { mapDocumentToTargetProfile } from "./documentImport/targetProfileFieldMap";
 import {
   getDocumentAIModelStatus,
-  suggestFromNeedsReviewItem,
+  suggestCleanValue,
 } from "./documentImport/localDocumentAI";
 import {
   createWipcAuditEntry,
@@ -3403,26 +3403,42 @@ export const appRouter = router({
           const mapped = mapDocumentToTargetProfile(read);
 
           // Local AI Roadmap Step 3 — additive only, never replaces what
-          // the rule-based mapper above already produced. Only runs over
-          // needsReview items (text the rules recognised as clearly meant
-          // to be an address/vehicle but couldn't parse), one at a time
-          // rather than in parallel, to avoid piling up concurrent model
-          // inference calls on a resource-constrained droplet. Capped at
-          // 10 so a document with an unusually large needsReview list
-          // can't turn one upload into dozens of inference calls.
+          // the rule-based mapper above already produced. Two passes, one
+          // shared call budget (MAX_AI_CALLS) across both so a pathological
+          // document can't turn one upload into dozens of sequential model
+          // inference calls on a resource-constrained droplet — run one at
+          // a time, not in parallel, for the same reason:
+          //   1. needsReview items — text the rules recognised as clearly
+          //      meant to be an address/vehicle but couldn't parse at all.
+          //   2. Low-confidence pass — an address/vehicle the rules DID
+          //      parse but flagged !confident (see ParsedAddressLine /
+          //      ParsedVehicleLine's own doc comments) gets independently
+          //      re-checked too, since "the rules produced something" and
+          //      "the rules got it right" aren't the same guarantee — a
+          //      confident field is trusted as-is and never re-checked
+          //      here, keeping this to the genuinely shaky subset rather
+          //      than re-running the model over the whole document.
+          const MAX_AI_CALLS = 10;
           const aiModelStatus = await getDocumentAIModelStatus();
+          let aiCallsUsed = 0;
+
           const aiSuggestions: Array<{
             kind: "address" | "vehicle";
             label: string;
             raw: string;
             suggested: string | null;
           }> = [];
+          // Parallel to mapped.addresses/mapped.vehicles — null at an
+          // index means "not checked" (confident, or the call budget ran
+          // out), not "checked and found nothing".
+          const addressAiSuggestions: Array<string | null> = [];
+          const vehicleAiSuggestions: Array<string | null> = [];
+
           if (aiModelStatus === "ready") {
-            for (const item of mapped.needsReview.slice(0, 10)) {
-              const suggested = await suggestFromNeedsReviewItem(
-                item.kind,
-                item.raw
-              );
+            for (const item of mapped.needsReview) {
+              if (aiCallsUsed >= MAX_AI_CALLS) break;
+              aiCallsUsed++;
+              const suggested = await suggestCleanValue(item.kind, item.raw);
               aiSuggestions.push({
                 kind: item.kind,
                 label: item.label,
@@ -3430,9 +3446,38 @@ export const appRouter = router({
                 suggested,
               });
             }
+            for (const a of mapped.addresses) {
+              if (a.confident || aiCallsUsed >= MAX_AI_CALLS) {
+                addressAiSuggestions.push(null);
+                continue;
+              }
+              aiCallsUsed++;
+              addressAiSuggestions.push(
+                await suggestCleanValue("address", a.raw)
+              );
+            }
+            for (const v of mapped.vehicles) {
+              if (v.confident || aiCallsUsed >= MAX_AI_CALLS) {
+                vehicleAiSuggestions.push(null);
+                continue;
+              }
+              aiCallsUsed++;
+              vehicleAiSuggestions.push(
+                await suggestCleanValue("vehicle", v.raw)
+              );
+            }
+          } else {
+            mapped.addresses.forEach(() => addressAiSuggestions.push(null));
+            mapped.vehicles.forEach(() => vehicleAiSuggestions.push(null));
           }
 
-          return { ...mapped, aiModelStatus, aiSuggestions };
+          return {
+            ...mapped,
+            aiModelStatus,
+            aiSuggestions,
+            addressAiSuggestions,
+            vehicleAiSuggestions,
+          };
         }),
     }),
   }),

@@ -8,13 +8,20 @@
 // Deliberately narrow scope for this first version: rather than trying to
 // re-read an entire document and re-derive every field from scratch
 // (replacing the mature, well-tested rule-based pipeline in
-// targetProfileFieldMap.ts), this only ever looks at what that pipeline
-// already flagged as needsReview — text it recognised as clearly meant to
-// be an address or a vehicle, but couldn't actually parse. The model gets
-// one focused, narrow question per item ("clean this up, or say you can't")
-// rather than a whole-document extraction task a 783M-parameter model
-// realistically can't do reliably. See routers.ts's parseDocument for how
-// this plugs in alongside (never replacing) the existing mapper.
+// targetProfileFieldMap.ts), this only ever looks at two things that
+// pipeline already flagged, never the fields it's fully confident about:
+//   1. needsReview items — text it recognised as clearly meant to be an
+//      address or vehicle, but couldn't parse at all.
+//   2. "Successful but shaky" fields — an address/vehicle it DID produce
+//      a value for, but marked !confident (see ParsedAddressLine /
+//      ParsedVehicleLine) — a second, independent opinion on something
+//      the rules weren't fully sure of themselves, shown alongside their
+//      answer rather than replacing it.
+// Either way, one focused, narrow question per item ("clean this up, or
+// say you can't") rather than a whole-document extraction task a 783M-
+// parameter model realistically can't do reliably. See routers.ts's
+// parseDocument for how both plug in alongside (never replacing) the
+// existing mapper.
 //
 // ⚠️ UNTESTED IN THIS FORM — same caveat as localNER.ts and
 // scripts/dev/voice-model-setup.md: this sandbox can't fetch model
@@ -114,17 +121,14 @@ const UNKNOWN_MARKERS = ["unknown", "n/a", "none", "not applicable", "unclear"];
 /** Pure — no model, no I/O — deliberately, so it's directly testable in
  * server/documentImport/localDocumentAI.test.ts without the real weights
  * this sandbox can't fetch. */
-export function buildNeedsReviewPrompt(
-  kind: NeedsReviewKind,
-  raw: string
-): string {
+export function buildCleanupPrompt(kind: NeedsReviewKind, raw: string): string {
   if (kind === "address") {
     return `Rewrite the following as a single clean street address (street number, street name, suburb, state). If it is not an address, reply with exactly: unknown\n\nText: ${raw}`;
   }
   return `Rewrite the following as a vehicle description in the form "REGISTRATION colour make model" (e.g. "1ABC123 white Toyota Corolla sedan"). If it is not about a vehicle, reply with exactly: unknown\n\nText: ${raw}`;
 }
 
-/** Pure — see buildNeedsReviewPrompt's comment for why. Returns null for
+/** Pure — see buildCleanupPrompt's comment for why. Returns null for
  * an empty reply or one of UNKNOWN_MARKERS — both mean "no suggestion",
  * not "here is an empty suggestion". */
 export function parseModelReply(reply: string): string | null {
@@ -142,19 +146,26 @@ export function parseModelReply(reply: string): string | null {
 }
 
 /**
- * Asks the model to clean up one needsReview item (see
- * targetProfileFieldMap.ts's UnparsedItem) into the shape the rule-based
- * parser expects but couldn't produce. Returns null when the model
- * couldn't make sense of it either — the caller still has the original
- * raw text to fall back on, this is purely additive.
+ * Asks the model to independently rewrite one piece of raw document text
+ * into a clean address/vehicle description. Two callers, same question:
+ * routers.ts's parseDocument uses this both for needsReview items (see
+ * targetProfileFieldMap.ts's UnparsedItem — text the rules recognised but
+ * couldn't parse at all) and for the low-confidence "successful but
+ * shaky" pass (an address/vehicle the rules DID produce a value for, but
+ * flagged !confident — see ParsedAddressLine/ParsedVehicleLine) — same
+ * question either way: "independently, what do you make of this text?",
+ * compared against what the rules already produced in the second case.
+ * Returns null when the model couldn't make sense of it either — the
+ * caller still has the original raw text (and, in the low-confidence
+ * case, the rules' own attempt) to fall back on; this is purely additive.
  */
-export async function suggestFromNeedsReviewItem(
+export async function suggestCleanValue(
   kind: NeedsReviewKind,
   raw: string
 ): Promise<string | null> {
   if (!raw.trim()) return null;
   const generator = await getDocumentAIPipeline();
-  const prompt = buildNeedsReviewPrompt(kind, raw);
+  const prompt = buildCleanupPrompt(kind, raw);
   const output = await generator(prompt, { max_new_tokens: 64 });
   const single = Array.isArray(output) ? output[0] : output;
   const text = (single as { generated_text?: string })?.generated_text ?? "";

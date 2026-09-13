@@ -635,29 +635,44 @@ export function ImportTargetDocumentDialog({
                   <p className="text-xs font-bold text-primary uppercase tracking-wide">
                     Addresses ({result.addresses.length})
                   </p>
-                  {result.addresses.map((a, i) => (
-                    <p key={i} className="text-sm">
-                      {a.label && (
-                        <span className="text-muted-foreground">
-                          {a.label}:{" "}
-                        </span>
-                      )}
-                      {[
-                        a.unitNo && `${a.unitNo}/`,
-                        a.houseNo,
-                        a.streetName,
-                        a.streetType,
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      , {a.suburb} {a.state}
-                      {!a.confident && (
-                        <Badge variant="outline" className="ml-1.5 text-[10px]">
-                          check street type
-                        </Badge>
-                      )}
-                    </p>
-                  ))}
+                  {result.addresses.map((a, i) => {
+                    const aiCheck = result.addressAiSuggestions?.[i];
+                    return (
+                      <div key={i} className="flex flex-col gap-0.5">
+                        <p className="text-sm">
+                          {a.label && (
+                            <span className="text-muted-foreground">
+                              {a.label}:{" "}
+                            </span>
+                          )}
+                          {[
+                            a.unitNo && `${a.unitNo}/`,
+                            a.houseNo,
+                            a.streetName,
+                            a.streetType,
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                          , {a.suburb} {a.state}
+                          {!a.confident && (
+                            <Badge
+                              variant="outline"
+                              className="ml-1.5 text-[10px]"
+                            >
+                              check street type
+                            </Badge>
+                          )}
+                        </p>
+                        {aiCheck && (
+                          <p className="text-xs text-primary pl-2 border-l-2 border-primary/40">
+                            AI's independent read:{" "}
+                            <span className="font-medium">{aiCheck}</span> —
+                            compare against the original before trusting either.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -666,18 +681,33 @@ export function ImportTargetDocumentDialog({
                   <p className="text-xs font-bold text-primary uppercase tracking-wide">
                     Vehicles ({result.vehicles.length})
                   </p>
-                  {result.vehicles.map((v, i) => (
-                    <p key={i} className="text-sm">
-                      {v.registration} ({v.state}) — {v.colour} {v.make}{" "}
-                      {v.model}
-                      {v.vehicleType && ` ${v.vehicleType}`}
-                      {!v.confident && (
-                        <Badge variant="outline" className="ml-1.5 text-[10px]">
-                          check details
-                        </Badge>
-                      )}
-                    </p>
-                  ))}
+                  {result.vehicles.map((v, i) => {
+                    const aiCheck = result.vehicleAiSuggestions?.[i];
+                    return (
+                      <div key={i} className="flex flex-col gap-0.5">
+                        <p className="text-sm">
+                          {v.registration} ({v.state}) — {v.colour} {v.make}{" "}
+                          {v.model}
+                          {v.vehicleType && ` ${v.vehicleType}`}
+                          {!v.confident && (
+                            <Badge
+                              variant="outline"
+                              className="ml-1.5 text-[10px]"
+                            >
+                              check details
+                            </Badge>
+                          )}
+                        </p>
+                        {aiCheck && (
+                          <p className="text-xs text-primary pl-2 border-l-2 border-primary/40">
+                            AI's independent read:{" "}
+                            <span className="font-medium">{aiCheck}</span> —
+                            compare against the original before trusting either.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 

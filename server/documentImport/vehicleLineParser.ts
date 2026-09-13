@@ -70,6 +70,22 @@ const COLOURS = new Set([
   "charcoal",
 ]);
 
+// A shade/intensity word directly before a base colour ("dark blue",
+// "light grey", "metallic silver") is still one colour, not two separate
+// words — found against a real document ("1SEA310 ... dark blue Volvo
+// XC60 station sedan"): "dark" wasn't in COLOURS at all, so it fell
+// through untouched and got read as the *make* instead, pushing "blue
+// Volvo XC60" into the model field as one lump. Checked as a two-word
+// pair before the single-word case below.
+const COLOUR_MODIFIERS = new Set([
+  "dark",
+  "light",
+  "metallic",
+  "bright",
+  "pale",
+  "deep",
+]);
+
 // Mirrors client/src/lib/addressFormat.ts's VEHICLE_TYPE_OPTIONS values —
 // kept as a separate, server-owned copy for the same reason
 // addressLineParser.ts keeps its own street-type list (that file is
@@ -162,10 +178,20 @@ function parseDescription(
     year = words.shift()!;
   }
 
+  const titleCase = (w: string) =>
+    w[0].toUpperCase() + w.slice(1).toLowerCase();
+
   let colour = "";
-  if (words.length > 0 && COLOURS.has(words[0].toLowerCase())) {
-    colour = words.shift()!;
-    colour = colour[0].toUpperCase() + colour.slice(1).toLowerCase();
+  if (
+    words.length > 1 &&
+    COLOUR_MODIFIERS.has(words[0].toLowerCase()) &&
+    COLOURS.has(words[1].toLowerCase())
+  ) {
+    const modifier = words.shift()!;
+    const base = words.shift()!;
+    colour = `${titleCase(modifier)} ${titleCase(base)}`;
+  } else if (words.length > 0 && COLOURS.has(words[0].toLowerCase())) {
+    colour = titleCase(words.shift()!);
   }
 
   const { rest, vehicleType } = stripVehicleType(words);

@@ -142,6 +142,44 @@ describe("findVehicleLines", () => {
   });
 });
 
+describe("compound colours", () => {
+  // Regression: "1SEA310 ... dark blue Volvo XC60 station sedan" — "dark"
+  // wasn't in the single-word COLOURS list, so it fell through untouched
+  // and got read as the make instead ("blue Volvo XC60" collapsed into
+  // model), leaving colour blank and the whole thing flagged !confident.
+  it("reads 'dark blue' as one colour, not make='dark'", () => {
+    const result = parseVehicleLine(
+      "1SEA310 (WA) dark blue Volvo XC60 station sedan"
+    );
+    expect(result).toMatchObject({
+      colour: "Dark Blue",
+      make: "Volvo",
+      model: "XC60",
+      vehicleType: "station sedan",
+      confident: true,
+    });
+  });
+
+  it("reads 'light grey' the same way", () => {
+    const result = parseVehicleLine("1ABC123 (WA) light grey Mazda 3 hatch");
+    expect(result).toMatchObject({
+      colour: "Light Grey",
+      make: "Mazda",
+      model: "3",
+      vehicleType: "hatch",
+    });
+  });
+
+  it("still reads a plain single-word colour correctly", () => {
+    const result = parseVehicleLine("1ABC123 (WA) blue Volvo XC60 wagon");
+    expect(result).toMatchObject({
+      colour: "Blue",
+      make: "Volvo",
+      model: "XC60",
+    });
+  });
+});
+
 describe("parseVehicleLine", () => {
   it("parses just the first entry", () => {
     const result = parseVehicleLine(VEHICLES_CELL);

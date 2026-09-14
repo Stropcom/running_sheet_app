@@ -6,14 +6,21 @@
 //     (intelligenceScan.ts) down to just this sheet's own entities, rather
 //     than the whole Intelligence folder — plus a bracket-balance check
 //     (isBracketBalanced), new, catching a malformed "(" / ")" pair
-//     directly rather than only via a symptom downstream.
+//     directly rather than only via a symptom downstream — plus a
+//     punctuation-spacing check (checkPunctuationSpacing), new, catching a
+//     dangling space left in front of a "." or "," after editing.
 //   - registry: also scanIntelligenceEntities, specifically the possible-
 //     typo-of-registry-name rule.
 //   - consistency: new — the same real address/vehicle written two
 //     different ways across this sheet's own rows (e.g. "1 Smith Street"
 //     in one row, "1 SMITH ST" in another; "1CDR890" vs a typo'd
 //     "1CDR89") — an exact-normalised-match pass for both types, plus a
-//     fuzzy pass for vehicles specifically (checkFuzzyVehicleConsistency).
+//     fuzzy pass for vehicles specifically (checkFuzzyVehicleConsistency)
+//     — plus checkBareAddressConsistency, new, the same idea applied to
+//     plain prose mentions that were never bracketed at all (see that
+//     function's own comment — the bracket-based checks above have
+//     nothing to compare when neither mention of an address ever got a
+//     "(SHORTFORM)" of its own).
 //   - spelling: new — a plain, curated list of common English
 //     misspellings, checked against the prose OUTSIDE any bracket (bracket
 //     content is a name/rego/address code, not prose, and is already
@@ -335,6 +342,143 @@ export function checkConsistency(
   ];
 }
 
+// ── Bare-prose address consistency — no bracket required ──────────────────
+
+// Everything above this point only ever looks at BRACKETED entities — the
+// `(SHORTFORM)` convention (see CLAUDE.md) extractEntitiesFromText relies
+// on. A real sheet found in testing wrote an address in plain prose with
+// no bracket at all in either mention — "...in the vicinity of 58 Kintail
+// ." in one row, "...arrived at 58 Kintail Road" in another — so it never
+// became an IntelligenceEntity and the checks above had nothing to
+// compare. This is a separate, narrower pass: it looks directly at the raw
+// observation text for a NUMBER + Capitalised-Word(s) phrase immediately
+// following a small set of prepositions officers actually use to introduce
+// a location ("at", "outside", "vicinity of", ...), regardless of whether
+// it's ever bracketed. To keep false positives at zero, it only ever
+// produces a finding when it finds a PAIR sharing the same normalised key
+// (reusing normalizeStreetLabel above) where one mention has a street-type
+// word and the other doesn't — an address that's merely mentioned once,
+// bracketed or not, is never flagged on its own.
+const ADDRESS_PREPOSITION_RE =
+  /\b(?:at|outside|near|towards|opposite|vicinity of|corner of|address(?:\s+of)?)\s+(\d{1,5}[A-Za-z]?(?:\s+[A-Z][A-Za-z'-]*){1,4})/gi;
+
+export interface BareAddressMention {
+  raw: string;
+  normKey: string;
+  hasStreetType: boolean;
+}
+
+/** Pure — no DB — directly testable. */
+export function findBareAddressMentions(text: string): BareAddressMention[] {
+  const withoutBrackets = text.replace(/\([^()]*\)/g, m =>
+    " ".repeat(m.length)
+  );
+  const out: BareAddressMention[] = [];
+  const re = new RegExp(ADDRESS_PREPOSITION_RE.source, "gi");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(withoutBrackets)) !== null) {
+    const raw = m[1].trim();
+    const normKey = normalizeStreetLabel(raw);
+    if (!normKey) continue;
+    const words = raw.split(/\s+/);
+    const lastWord = words[words.length - 1].toLowerCase().replace(/\.$/, "");
+    out.push({ raw, normKey, hasStreetType: STREET_TYPE_WORDS.has(lastWord) });
+  }
+  return out;
+}
+
+async function checkBareAddressConsistency(
+  sheetId: number
+): Promise<SheetCheckFinding[]> {
+  const rows = await getObservationTextForSheet(sheetId);
+  interface Entry {
+    rowId: number;
+    timeMinutes: number | null;
+    raw: string;
+    observation: string;
+  }
+  const withTypeByKey = new Map<string, Entry>();
+  const withoutTypeByKey = new Map<string, Entry>();
+  for (const row of rows) {
+    for (const mention of findBareAddressMentions(row.observation)) {
+      const entry: Entry = {
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        raw: mention.raw,
+        observation: row.observation,
+      };
+      const target = mention.hasStreetType ? withTypeByKey : withoutTypeByKey;
+      if (!target.has(mention.normKey)) target.set(mention.normKey, entry);
+    }
+  }
+
+  const findings: SheetCheckFinding[] = [];
+  for (const [normKey, withoutType] of Array.from(withoutTypeByKey.entries())) {
+    const withType = withTypeByKey.get(normKey);
+    if (!withType || withType.rowId === withoutType.rowId) continue;
+    findings.push({
+      ruleId: "incomplete-address-missing-street-type",
+      category: "consistency",
+      reason: `"${withoutType.raw}" doesn't include a street type — "${withType.raw}" is used elsewhere on this sheet and looks like the same address. Confirm it's the same place and make the wording consistent.`,
+      rowId: withoutType.rowId,
+      otherRowId: withType.rowId,
+      timeMinutes: withoutType.timeMinutes,
+      snippet:
+        withoutType.observation.length > 140
+          ? `${withoutType.observation.slice(0, 140)}…`
+          : withoutType.observation,
+      findingKey: `ROW_${withoutType.rowId}_${withType.rowId}::${withoutType.raw.trim().toUpperCase()}`,
+    });
+  }
+  return findings;
+}
+
+// ── Punctuation spacing — a raw structural check, not entity-mining ───────
+
+/** A space directly before a sentence punctuation mark — almost always
+ * leftover from editing (a word or phrase deleted without removing the
+ * space in front of the full stop/comma that followed it), the exact shape
+ * found in testing ("...58 Kintail ." after "Road" was deleted). Pure — no
+ * DB — directly testable. */
+export function findSpaceBeforePunctuation(
+  text: string
+): Array<{ index: number }> {
+  const withoutBrackets = text.replace(/\([^()]*\)/g, m =>
+    " ".repeat(m.length)
+  );
+  const out: Array<{ index: number }> = [];
+  const re = /[ \t]+[.,;:!?]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(withoutBrackets)) !== null) {
+    out.push({ index: m.index });
+  }
+  return out;
+}
+
+async function checkPunctuationSpacing(
+  sheetId: number
+): Promise<SheetCheckFinding[]> {
+  const rows = await getObservationTextForSheet(sheetId);
+  const findings: SheetCheckFinding[] = [];
+  for (const row of rows) {
+    for (const hit of findSpaceBeforePunctuation(row.observation)) {
+      const start = Math.max(0, hit.index - 30);
+      const end = Math.min(row.observation.length, hit.index + 31);
+      const snippet = `${start > 0 ? "…" : ""}${row.observation.slice(start, end)}${end < row.observation.length ? "…" : ""}`;
+      findings.push({
+        ruleId: "space-before-punctuation",
+        category: "formatting",
+        reason: `There's a space before punctuation here — usually leftover from deleting a word without removing the space in front of it.`,
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        snippet,
+        findingKey: `ROW_${row.rowId}::SPACE_BEFORE_PUNCT::${hit.index}`,
+      });
+    }
+  }
+  return findings;
+}
+
 // ── Spelling — a curated list of common, unambiguous English misspellings ─
 
 // Deliberately not exhaustive and deliberately not a general dictionary —
@@ -605,17 +749,22 @@ export async function checkRunningSheet(
     .map(e => scopeEntityToSheet(e, sheetId))
     .filter((e): e is IntelligenceEntity => e !== null);
 
-  const [spelling, bracketBalance] = await Promise.all([
-    checkSpelling(sheetId),
-    checkBracketBalance(sheetId),
-  ]);
+  const [spelling, bracketBalance, bareAddressConsistency, punctuationSpacing] =
+    await Promise.all([
+      checkSpelling(sheetId),
+      checkBracketBalance(sheetId),
+      checkBareAddressConsistency(sheetId),
+      checkPunctuationSpacing(sheetId),
+    ]);
   const formattingAndRegistry = checkFormattingAndRegistry(scopedEntities);
   const consistency = checkConsistency(scopedEntities);
 
   return [
     ...formattingAndRegistry,
     ...bracketBalance,
+    ...punctuationSpacing,
     ...consistency,
+    ...bareAddressConsistency,
     ...spelling,
   ].sort((a, b) => (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0));
 }

@@ -5,6 +5,8 @@ import {
   isBracketBalanced,
   findDuplicateBracketFragment,
   stableDismissKey,
+  findBareAddressMentions,
+  findSpaceBeforePunctuation,
   COMMON_MISSPELLINGS,
 } from "./sheetCheck";
 import type { IntelligenceEntity } from "./db";
@@ -272,6 +274,69 @@ describe("findDuplicateBracketFragment", () => {
         "Departed (1CDR890) and arrived at (24 Bedford Street)."
       )
     ).toBeNull();
+  });
+});
+
+describe("findBareAddressMentions", () => {
+  // Regression: the exact real case found in testing — neither mention was
+  // ever bracketed, so extractEntitiesFromText never saw either one and the
+  // bracket-based consistency check had nothing to compare.
+  it("finds a bare address after 'vicinity of' with no street type", () => {
+    const hits = findBareAddressMentions(
+      "Surveillance ceased in the vicinity of 58 Kintail ."
+    );
+    expect(hits).toEqual([
+      { raw: "58 Kintail", normKey: "58 KINTAIL", hasStreetType: false },
+    ]);
+  });
+
+  it("finds a bare address after 'at' with a street type, same normKey", () => {
+    const hits = findBareAddressMentions(
+      "Vehicle 1CDR890, CHANDRA driver and sole occupant, arrived at 58 Kintail Road"
+    );
+    expect(hits).toEqual([
+      {
+        raw: "58 Kintail Road",
+        normKey: "58 KINTAIL",
+        hasStreetType: true,
+      },
+    ]);
+  });
+
+  it("finds nothing when there's no address-introducing preposition", () => {
+    expect(
+      findBareAddressMentions("58 Kintail Road is a quiet street.")
+    ).toEqual([]);
+  });
+
+  it("ignores bracketed content", () => {
+    expect(
+      findBareAddressMentions("Departed towards (at 58 Kintail Road) nearby.")
+    ).toEqual([]);
+  });
+});
+
+describe("findSpaceBeforePunctuation", () => {
+  // Regression: the exact real case found in testing — "Road" was deleted
+  // from "58 Kintail Road." leaving a dangling space before the full stop.
+  it("finds a space before a full stop", () => {
+    expect(
+      findSpaceBeforePunctuation(
+        "Surveillance ceased in the vicinity of 58 Kintail ."
+      )
+    ).toEqual([{ index: 49 }]);
+  });
+
+  it("finds nothing in ordinary, correctly-punctuated text", () => {
+    expect(
+      findSpaceBeforePunctuation("Vehicle departed the address at 0900hrs.")
+    ).toEqual([]);
+  });
+
+  it("ignores bracketed content", () => {
+    expect(findSpaceBeforePunctuation("Seen with (1CDR890 ,) nearby.")).toEqual(
+      []
+    );
   });
 });
 

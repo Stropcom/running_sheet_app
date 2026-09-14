@@ -4107,53 +4107,55 @@ export default function SheetDetail({
             open until explicitly closed" behaviour. */}
         {!embedded && (
           <>
-            <div className="flex items-center gap-4 mb-6">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="shrink-0"
-                onClick={() => window.history.back()}
-              >
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
-              <div className="min-w-0 flex items-center gap-2">
-                {sheetLoading ? (
-                  <Skeleton className="h-7 w-64" />
-                ) : (
-                  <>
-                    <div className="min-w-0">
-                      <h1 className="text-xl font-semibold text-foreground truncate">
-                        {sheet?.title}
-                      </h1>
-                    </div>
-                    {sheet && (
-                      <>
-                        {!isClosed && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="w-7 h-7 shrink-0 text-muted-foreground hover:text-foreground"
-                            onClick={openEditSheet}
-                            title="Edit sheet title"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </Button>
-                        )}
-                        {isClosed && (
-                          <Badge
-                            variant="secondary"
-                            className="gap-1.5 bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 shrink-0"
-                          >
-                            <LockKeyhole className="w-3 h-3" />
-                            CLOSED
-                          </Badge>
-                        )}
-                      </>
-                    )}
-                  </>
-                )}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
+              <div className="flex items-center gap-4 min-w-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => window.history.back()}
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </Button>
+                <div className="min-w-0 flex items-center gap-2">
+                  {sheetLoading ? (
+                    <Skeleton className="h-7 w-64" />
+                  ) : (
+                    <>
+                      <div className="min-w-0">
+                        <h1 className="text-xl font-semibold text-foreground truncate">
+                          {sheet?.title}
+                        </h1>
+                      </div>
+                      {sheet && (
+                        <>
+                          {!isClosed && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="w-7 h-7 shrink-0 text-muted-foreground hover:text-foreground"
+                              onClick={openEditSheet}
+                              title="Edit sheet title"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                          {isClosed && (
+                            <Badge
+                              variant="secondary"
+                              className="gap-1.5 bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 shrink-0"
+                            >
+                              <LockKeyhole className="w-3 h-3" />
+                              CLOSED
+                            </Badge>
+                          )}
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
-              <div className="ml-auto flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:shrink-0">
                 {/* Offline indicator */}
                 {!isOnline && (
                   <Tooltip>
@@ -4183,7 +4185,7 @@ export default function SheetDetail({
                         <Button
                           size="sm"
                           variant="outline"
-                          className="gap-2 border-amber-400 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
+                          className="flex-1 sm:flex-none min-w-[9.5rem] justify-center gap-2 border-amber-400 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
                           onClick={() => reopenSheet.mutate({ id: sheetId })}
                           disabled={reopenSheet.isPending}
                         >
@@ -4201,7 +4203,7 @@ export default function SheetDetail({
                         <Button
                           size="sm"
                           variant="outline"
-                          className={`gap-2 ${
+                          className={`flex-1 sm:flex-none min-w-[9.5rem] justify-center gap-2 ${
                             canCloseSheet
                               ? "border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950"
                               : "opacity-40 cursor-not-allowed"
@@ -4231,7 +4233,7 @@ export default function SheetDetail({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-2"
+                  className="flex-1 sm:flex-none min-w-[9.5rem] justify-center gap-2"
                   onClick={() => setShowCheckSheetDialog(true)}
                 >
                   <ClipboardCheck className="w-4 h-4" />
@@ -4240,7 +4242,7 @@ export default function SheetDetail({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-2"
+                  className="flex-1 sm:flex-none min-w-[9.5rem] justify-center gap-2"
                   disabled={exportFetching}
                   onClick={handleExport}
                 >

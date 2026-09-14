@@ -181,6 +181,22 @@ describe("compound colours", () => {
       model: "XC60",
     });
   });
+
+  // Regression: "burgundy" is a real colour, not in the original list —
+  // fell through untouched and got read as the make instead, leaving
+  // colour blank and the whole thing flagged !confident (found testing
+  // Step 3 of the Local AI Roadmap against a real document).
+  it("recognises 'burgundy' as a colour", () => {
+    const result = parseVehicleLine(
+      "1CDR891 (WA) burgundy Skoda Octavia hatch"
+    );
+    expect(result).toMatchObject({
+      colour: "Burgundy",
+      make: "Skoda",
+      model: "Octavia",
+      confident: true,
+    });
+  });
 });
 
 describe("parseVehicleLine", () => {

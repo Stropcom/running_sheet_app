@@ -58,6 +58,7 @@ const COLOURS = new Set([
   "gold",
   "brown",
   "maroon",
+  "burgundy",
   "orange",
   "purple",
   "tan",
@@ -68,6 +69,12 @@ const COLOURS = new Set([
   "pink",
   "bronze",
   "charcoal",
+  "teal",
+  "turquoise",
+  "ivory",
+  "lilac",
+  "olive",
+  "indigo",
 ]);
 
 // A shade/intensity word directly before a base colour ("dark blue",

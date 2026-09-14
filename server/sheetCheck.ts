@@ -11,16 +11,20 @@
 //     dangling space left in front of a "." or "," after editing.
 //   - registry: also scanIntelligenceEntities, specifically the possible-
 //     typo-of-registry-name rule.
-//   - consistency: new — the same real address/vehicle written two
-//     different ways across this sheet's own rows (e.g. "1 Smith Street"
-//     in one row, "1 SMITH ST" in another; "1CDR890" vs a typo'd
-//     "1CDR89") — an exact-normalised-match pass for both types, plus a
-//     fuzzy pass for vehicles specifically (checkFuzzyVehicleConsistency)
-//     — plus checkBareAddressConsistency, new, the same idea applied to
-//     plain prose mentions that were never bracketed at all (see that
-//     function's own comment — the bracket-based checks above have
-//     nothing to compare when neither mention of an address ever got a
-//     "(SHORTFORM)" of its own).
+//   - consistency: new — the same real address/vehicle/person/business
+//     written two different ways across this sheet's own rows (e.g. "1
+//     Smith Street" in one row, "1 SMITH ST" in another; "1CDR890" vs a
+//     typo'd "1CDR89") — an exact-normalised-match pass for all four
+//     types, plus a fuzzy typo-of-the-same-one pass for vehicles/persons/
+//     businesses specifically (checkFuzzyConsistencyForType) — addresses
+//     are deliberately excluded from the fuzzy pass, since two genuinely
+//     different streets coincidentally sound alike far more often than two
+//     different vehicles/people/businesses do (see that function's own
+//     comment) — plus checkBareAddressConsistency, new, the same idea
+//     applied to plain prose mentions that were never bracketed at all
+//     (see that function's own comment — the bracket-based checks above
+//     have nothing to compare when neither mention of an address ever got
+//     a "(SHORTFORM)" of its own).
 //   - spelling: new — a plain, curated list of common English
 //     misspellings, checked against the prose OUTSIDE any bracket (bracket
 //     content is a name/rego/address code, not prose, and is already
@@ -225,9 +229,41 @@ function normalizeRego(label: string): string {
   return label.replace(/[\s-]/g, "").toUpperCase();
 }
 
+/** Normalises a person bracket label down to letters-only uppercase, so
+ * "P.HILL" and "P HILL" compare equal (the punctuation/spacing around the
+ * app's own "initial-plus-surname" convention for disambiguating family
+ * members — see extractEntitiesFromText). Deliberately does NOT strip the
+ * initial itself: "P.HILL" and "HILL" stay distinct, since collapsing them
+ * would treat a disambiguated family member as interchangeable with a
+ * bare-surname mention of (possibly) someone else. Returns null for
+ * anything too short to be meaningful. */
+function normalizePersonLabel(label: string): string | null {
+  const cleaned = label.replace(/[^A-Za-z]/g, "").toUpperCase();
+  return cleaned.length >= 2 ? cleaned : null;
+}
+
+/** Normalises a business bracket label down to letters+digits-only
+ * uppercase, so "7-Eleven" and "7 Eleven" compare equal but "Coles" and
+ * "Coles Rockingham" — a genuinely more specific mention, not just
+ * different formatting — stay distinct. */
+function normalizeBusinessLabel(label: string): string | null {
+  const cleaned = label.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  return cleaned.length >= 2 ? cleaned : null;
+}
+
+const CONSISTENCY_TYPE_NOUN: Record<
+  "address" | "vehicle" | "person" | "business",
+  string
+> = {
+  address: "location",
+  vehicle: "vehicle",
+  person: "person",
+  business: "business",
+};
+
 function checkConsistencyForType(
   entities: IntelligenceEntity[],
-  type: "address" | "vehicle",
+  type: "address" | "vehicle" | "person" | "business",
   ruleId: string,
   normalize: (label: string) => string | null
 ): SheetCheckFinding[] {
@@ -255,7 +291,7 @@ function checkConsistencyForType(
     findings.push({
       ruleId,
       category: "consistency",
-      reason: `"${entityA.shortForm}" and "${entityB.shortForm}" look like the same ${type} written two different ways on this sheet — pick one so both rows read as the same ${type === "address" ? "location" : "vehicle"}.`,
+      reason: `"${entityA.shortForm}" and "${entityB.shortForm}" look like the same ${type} written two different ways on this sheet — pick one so both rows read as the same ${CONSISTENCY_TYPE_NOUN[type]}.`,
       rowId: occA.rowId,
       otherRowId: occB.rowId,
       timeMinutes: occA.timeMinutes,
@@ -266,50 +302,74 @@ function checkConsistencyForType(
   return findings;
 }
 
-/** A close-but-not-exact rego match on the same sheet — e.g. a real case
- * found in testing: "1CDR890" mentioned correctly earlier, then typed as
- * "1CDR89" (one digit short) later in the same sheet. Deliberately
- * VEHICLES ONLY, not addresses too: two different vehicles legitimately
+/** A close-but-not-exact match on the same sheet for a given entity type —
+ * e.g. a real case found in testing: "1CDR890" mentioned correctly
+ * earlier, then typed as "1CDR89" (one digit short) later in the same
+ * sheet. Originally vehicles-only: two different vehicles legitimately
  * often have very similar-looking regos by pure coincidence (adjacent
- * fleet plates, near-identical personalised plates), same risk profile
- * fuzzy street-name matching would have for two genuinely different but
- * similarly-named streets — scoped down to the one case (regos) actually
- * found to need it, same conservative approach as everywhere else in this
- * file. Reuses findFuzzyMatches — the exact same Step 1 (Local AI Roadmap)
- * matching this app already uses for a possible typo of a registered
- * person's name, applied to a different entity type. Compares NORMALISED
- * regos (see normalizeRego) rather than raw shortForm text, so this never
- * re-reports a pair the exact-match check above already caught (same
- * normalised rego means findFuzzyMatches' own exact-match exclusion skips
- * it) — the two checks are complementary, not overlapping. */
-function checkFuzzyVehicleConsistency(
-  entities: IntelligenceEntity[]
+ * fleet plates, near-identical personalised plates) — the same risk fuzzy
+ * street-name matching would have for two genuinely different but
+ * similarly-named streets, which is why addresses are still deliberately
+ * excluded from this pass. Person names carry a much lower version of that
+ * same coincidence risk (this is the exact same threshold/algorithm this
+ * app already uses in production for possible-typo matching against the
+ * Target/Associate Registry — see fuzzyMatch.ts's own comment on how 0.8
+ * was picked), and business names are typically distinctive enough that a
+ * near-miss is far more likely to be a typo than two genuinely different
+ * businesses — so both were added alongside vehicles rather than excluded
+ * the way addresses are. Compares NORMALISED labels rather than raw
+ * shortForm text, so this never re-reports a pair the exact-match check
+ * above already caught (same normalised label means findFuzzyMatches' own
+ * exact-match exclusion skips it) — the two checks are complementary, not
+ * overlapping.
+ *
+ * `skipPair`, when given, drops a would-be match before it's reported —
+ * used for person names to avoid flagging the app's own deliberate
+ * "P.HILL" initial-plus-surname convention (see extractEntitiesFromText
+ * and normalizePersonLabel above) as a typo: an initialled surname is
+ * usually just one or two characters longer than the bare surname it
+ * disambiguates from, which routinely clears the 0.8 similarity threshold
+ * on a short name ("HILL" vs "PHILL" scores exactly 0.8) even though
+ * they're deliberately meant to read as different people. */
+function checkFuzzyConsistencyForType(
+  entities: IntelligenceEntity[],
+  type: "vehicle" | "person" | "business",
+  ruleId: string,
+  normalize: (label: string) => string | null,
+  skipPair?: (a: string, b: string) => boolean
 ): SheetCheckFinding[] {
-  const vehicles = entities.filter(e => e.type === "vehicle");
-  const candidates = vehicles.map((e, i) => ({
+  const candidates = entities
+    .filter(e => e.type === type)
+    .map(e => ({ entity: e, norm: normalize(e.shortForm) }))
+    .filter(
+      (c): c is { entity: IntelligenceEntity; norm: string } => c.norm !== null
+    );
+  const noun = CONSISTENCY_TYPE_NOUN[type];
+  const fuzzyCandidates = candidates.map((c, i) => ({
     id: String(i),
-    label: normalizeRego(e.shortForm),
+    label: c.norm,
   }));
 
   const findings: SheetCheckFinding[] = [];
   const reportedPairs = new Set<string>();
-  for (let i = 0; i < vehicles.length; i++) {
-    const occA = vehicles[i].occurrences[0];
+  for (let i = 0; i < candidates.length; i++) {
+    const occA = candidates[i].entity.occurrences[0];
     if (!occA) continue;
-    const query = normalizeRego(vehicles[i].shortForm);
-    const others = candidates.filter((_, j) => j !== i);
+    const query = candidates[i].norm;
+    const others = fuzzyCandidates.filter((_, j) => j !== i);
     const matches = findFuzzyMatches(query, others, DEFAULT_FUZZY_THRESHOLD);
     for (const match of matches) {
       const j = Number(match.id);
+      if (skipPair?.(query, match.label)) continue;
       const pairKey = [i, j].sort().join("-");
       if (reportedPairs.has(pairKey)) continue;
       reportedPairs.add(pairKey);
-      const occB = vehicles[j].occurrences[0];
+      const occB = candidates[j].entity.occurrences[0];
       if (!occB) continue;
       findings.push({
-        ruleId: "possible-typo-of-vehicle-rego",
+        ruleId,
         category: "consistency",
-        reason: `"${vehicles[i].shortForm}" is close to "${vehicles[j].shortForm}" (${Math.round(match.similarity * 100)}% match) — check whether this is a typo of the same vehicle rather than a different one.`,
+        reason: `"${candidates[i].entity.shortForm}" is close to "${candidates[j].entity.shortForm}" (${Math.round(match.similarity * 100)}% match) — check whether this is a typo of the same ${noun} rather than a different one.`,
         rowId: occA.rowId,
         otherRowId: occB.rowId,
         timeMinutes: occA.timeMinutes,
@@ -319,6 +379,21 @@ function checkFuzzyVehicleConsistency(
     }
   }
   return findings;
+}
+
+/** True when one normalised person label is exactly the other with a short
+ * prefix added — the shape of the app's own "P.HILL" initial-plus-surname
+ * convention ("HILL" -> "PHILL"), not a typo. Capped at a 2-character
+ * prefix so a genuinely different, coincidentally-longer surname ("HILL"
+ * vs "HILLS" — a suffix, not a prefix, so unaffected anyway; or two
+ * unrelated names that happen to share a tail) isn't swept up. */
+function isInitialVariant(a: string, b: string): boolean {
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  return (
+    longer.length - shorter.length <= 2 &&
+    longer.length > shorter.length &&
+    longer.endsWith(shorter)
+  );
 }
 
 /** Pure — no DB — directly testable, see sheetCheck.test.ts. */
@@ -338,7 +413,37 @@ export function checkConsistency(
       "inconsistent-vehicle-format",
       normalizeRego
     ),
-    ...checkFuzzyVehicleConsistency(entities),
+    ...checkConsistencyForType(
+      entities,
+      "person",
+      "inconsistent-person-format",
+      normalizePersonLabel
+    ),
+    ...checkConsistencyForType(
+      entities,
+      "business",
+      "inconsistent-business-format",
+      normalizeBusinessLabel
+    ),
+    ...checkFuzzyConsistencyForType(
+      entities,
+      "vehicle",
+      "possible-typo-of-vehicle-rego",
+      normalizeRego
+    ),
+    ...checkFuzzyConsistencyForType(
+      entities,
+      "person",
+      "possible-typo-of-person-name",
+      normalizePersonLabel,
+      isInitialVariant
+    ),
+    ...checkFuzzyConsistencyForType(
+      entities,
+      "business",
+      "possible-typo-of-business-name",
+      normalizeBusinessLabel
+    ),
   ];
 }
 

@@ -157,10 +157,88 @@ describe("checkConsistency", () => {
     expect(checkConsistency(entities)).toHaveLength(0);
   });
 
-  it("ignores person and business entities entirely", () => {
+  it("does not flag a single person or business mention on its own", () => {
     const entities: IntelligenceEntity[] = [
       makeEntity({ type: "person", shortForm: "SMITH" }),
       makeEntity({ type: "business", shortForm: "Blend Cafe" }),
+    ];
+    expect(checkConsistency(entities)).toHaveLength(0);
+  });
+
+  it("flags the same person written two different ways (punctuation/spacing) on one sheet", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({ type: "person", shortForm: "P.HILL" }),
+      makeEntity({ type: "person", shortForm: "P HILL" }),
+    ];
+    const findings = checkConsistency(entities);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].ruleId).toBe("inconsistent-person-format");
+  });
+
+  it("does not conflate a bare surname with an initialled one — could be a different family member", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({ type: "person", shortForm: "HILL" }),
+      makeEntity({ type: "person", shortForm: "P.HILL" }),
+    ];
+    expect(checkConsistency(entities)).toHaveLength(0);
+  });
+
+  it("flags the same business written two different ways on one sheet", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({ type: "business", shortForm: "7-Eleven" }),
+      makeEntity({ type: "business", shortForm: "7 Eleven" }),
+    ];
+    const findings = checkConsistency(entities);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].ruleId).toBe("inconsistent-business-format");
+  });
+
+  it("does not flag a more specific business mention as inconsistent with a bare one", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({ type: "business", shortForm: "Coles" }),
+      makeEntity({ type: "business", shortForm: "Coles Rockingham" }),
+    ];
+    expect(checkConsistency(entities)).toHaveLength(0);
+  });
+
+  it("flags a person name that's a probable typo of another on the sheet", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({ type: "person", shortForm: "CHANDRA" }),
+      makeEntity({ type: "person", shortForm: "CHANDA" }),
+    ];
+    const findings = checkConsistency(entities);
+    const fuzzy = findings.filter(
+      f => f.ruleId === "possible-typo-of-person-name"
+    );
+    expect(fuzzy).toHaveLength(1);
+    expect(fuzzy[0].reason).toContain("CHANDRA");
+    expect(fuzzy[0].reason).toContain("CHANDA");
+  });
+
+  it("does not flag two genuinely different people", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({ type: "person", shortForm: "SMITH" }),
+      makeEntity({ type: "person", shortForm: "JONES" }),
+    ];
+    expect(checkConsistency(entities)).toHaveLength(0);
+  });
+
+  it("flags a business name that's a probable typo of another on the sheet", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({ type: "business", shortForm: "Woolworths" }),
+      makeEntity({ type: "business", shortForm: "Woolworth" }),
+    ];
+    const findings = checkConsistency(entities);
+    const fuzzy = findings.filter(
+      f => f.ruleId === "possible-typo-of-business-name"
+    );
+    expect(fuzzy).toHaveLength(1);
+  });
+
+  it("does not flag two genuinely different businesses", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({ type: "business", shortForm: "Bunnings" }),
+      makeEntity({ type: "business", shortForm: "Kmart" }),
     ];
     expect(checkConsistency(entities)).toHaveLength(0);
   });

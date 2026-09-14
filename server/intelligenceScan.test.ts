@@ -32,6 +32,22 @@ describe("scanIntelligenceEntities", () => {
     expect(findings[0].ruleId).toBe("comma-in-short-form");
   });
 
+  // Regression: an orphaned closing paren in a malformed observation
+  // ("...(24 Bedford Street) 24 Bedford Street)") produced an address
+  // entity with its suburb bled into the shortForm — the exact same
+  // "bracket balloon" bug already caught for vehicle/person/business, just
+  // never checked for address until this was found for real.
+  it("flags an address short form with a comma in it too", () => {
+    const findings = scanIntelligenceEntities([
+      makeEntity({
+        type: "address",
+        shortForm: "24 Bedford Street, EAST FREMANTLE",
+      }),
+    ]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].ruleId).toBe("comma-in-short-form");
+  });
+
   it("does not flag a clean vehicle rego", () => {
     const findings = scanIntelligenceEntities([
       makeEntity({ type: "vehicle", shortForm: "1DHY084" }),

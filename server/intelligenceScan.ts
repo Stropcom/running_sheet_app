@@ -127,15 +127,23 @@ export function scanIntelligenceEntities(
     }
 
     // A comma inside the bracket short form itself (not the surrounding
-    // sentence) — a real rego/name/business bracket never legitimately
-    // contains one; it's the signature of the "bracket balloon" bug class
-    // (an earlier clause's text bleeding into this entity's short form).
-    // Reported as happening "particularly with vehicles".
+    // sentence) — a real rego/name/business/address bracket never
+    // legitimately contains one; it's the signature of the "bracket
+    // balloon" bug class (an earlier clause's text bleeding into this
+    // entity's short form). Reported as happening "particularly with
+    // vehicles". "address" was originally left out of this list, but a
+    // real case found later showed the exact same bug there too — a
+    // malformed observation bracket ("...(24 Bedford Street) 24 Bedford
+    // Street)", an orphaned extra closing paren — produced an address
+    // entity with its suburb bled into the shortForm ("24 Bedford Street,
+    // EAST FREMANTLE"), which this rule would have caught immediately had
+    // it covered addresses from the start.
     if (
       shortForm.includes(",") &&
       (entity.type === "vehicle" ||
         entity.type === "person" ||
-        entity.type === "business")
+        entity.type === "business" ||
+        entity.type === "address")
     ) {
       addFinding(
         entity,

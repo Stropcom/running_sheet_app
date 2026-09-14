@@ -2,12 +2,18 @@
 // their own sheet, at any point, not just an admin-only whole-folder scan.
 // Deliberately rule-based/deterministic throughout (see CLAUDE.md's Golden
 // Rule) — nothing here is a model. Four categories, combined into one list:
-//   - formatting / registry: scopes the existing scanIntelligenceEntities
-//     rules (intelligenceScan.ts) down to just this sheet's own entities,
-//     rather than the whole Intelligence folder.
+//   - formatting: scopes the existing scanIntelligenceEntities rules
+//     (intelligenceScan.ts) down to just this sheet's own entities, rather
+//     than the whole Intelligence folder — plus a bracket-balance check
+//     (isBracketBalanced), new, catching a malformed "(" / ")" pair
+//     directly rather than only via a symptom downstream.
+//   - registry: also scanIntelligenceEntities, specifically the possible-
+//     typo-of-registry-name rule.
 //   - consistency: new — the same real address/vehicle written two
 //     different ways across this sheet's own rows (e.g. "1 Smith Street"
-//     in one row, "1 SMITH ST" in another).
+//     in one row, "1 SMITH ST" in another; "1CDR890" vs a typo'd
+//     "1CDR89") — an exact-normalised-match pass for both types, plus a
+//     fuzzy pass for vehicles specifically (checkFuzzyVehicleConsistency).
 //   - spelling: new — a plain, curated list of common English
 //     misspellings, checked against the prose OUTSIDE any bracket (bracket
 //     content is a name/rego/address code, not prose, and is already
@@ -29,6 +35,7 @@ import {
   type IntelligenceEntity,
 } from "./db";
 import { scanIntelligenceEntities } from "./intelligenceScan";
+import { findFuzzyMatches, DEFAULT_FUZZY_THRESHOLD } from "./fuzzyMatch";
 
 export type SheetCheckCategory =
   | "formatting"
@@ -228,6 +235,61 @@ function checkConsistencyForType(
   return findings;
 }
 
+/** A close-but-not-exact rego match on the same sheet — e.g. a real case
+ * found in testing: "1CDR890" mentioned correctly earlier, then typed as
+ * "1CDR89" (one digit short) later in the same sheet. Deliberately
+ * VEHICLES ONLY, not addresses too: two different vehicles legitimately
+ * often have very similar-looking regos by pure coincidence (adjacent
+ * fleet plates, near-identical personalised plates), same risk profile
+ * fuzzy street-name matching would have for two genuinely different but
+ * similarly-named streets — scoped down to the one case (regos) actually
+ * found to need it, same conservative approach as everywhere else in this
+ * file. Reuses findFuzzyMatches — the exact same Step 1 (Local AI Roadmap)
+ * matching this app already uses for a possible typo of a registered
+ * person's name, applied to a different entity type. Compares NORMALISED
+ * regos (see normalizeRego) rather than raw shortForm text, so this never
+ * re-reports a pair the exact-match check above already caught (same
+ * normalised rego means findFuzzyMatches' own exact-match exclusion skips
+ * it) — the two checks are complementary, not overlapping. */
+function checkFuzzyVehicleConsistency(
+  entities: IntelligenceEntity[]
+): SheetCheckFinding[] {
+  const vehicles = entities.filter(e => e.type === "vehicle");
+  const candidates = vehicles.map((e, i) => ({
+    id: String(i),
+    label: normalizeRego(e.shortForm),
+  }));
+
+  const findings: SheetCheckFinding[] = [];
+  const reportedPairs = new Set<string>();
+  for (let i = 0; i < vehicles.length; i++) {
+    const occA = vehicles[i].occurrences[0];
+    if (!occA) continue;
+    const query = normalizeRego(vehicles[i].shortForm);
+    const others = candidates.filter((_, j) => j !== i);
+    const matches = findFuzzyMatches(query, others, DEFAULT_FUZZY_THRESHOLD);
+    for (const match of matches) {
+      const j = Number(match.id);
+      const pairKey = [i, j].sort().join("-");
+      if (reportedPairs.has(pairKey)) continue;
+      reportedPairs.add(pairKey);
+      const occB = vehicles[j].occurrences[0];
+      if (!occB) continue;
+      findings.push({
+        ruleId: "possible-typo-of-vehicle-rego",
+        category: "consistency",
+        reason: `"${vehicles[i].shortForm}" is close to "${vehicles[j].shortForm}" (${Math.round(match.similarity * 100)}% match) — check whether this is a typo of the same vehicle rather than a different one.`,
+        rowId: occA.rowId,
+        otherRowId: occB.rowId,
+        timeMinutes: occA.timeMinutes,
+        snippet: occA.observationSnippet,
+        findingKey: `ROW_${occA.rowId}_${occB.rowId}::${query}`,
+      });
+    }
+  }
+  return findings;
+}
+
 /** Pure — no DB — directly testable, see sheetCheck.test.ts. */
 export function checkConsistency(
   entities: IntelligenceEntity[]
@@ -245,6 +307,7 @@ export function checkConsistency(
       "inconsistent-vehicle-format",
       normalizeRego
     ),
+    ...checkFuzzyVehicleConsistency(entities),
   ];
 }
 
@@ -350,6 +413,9 @@ export const COMMON_MISSPELLINGS: Record<string, string> = {
   suround: "surround",
   travled: "travelled",
   wistness: "witness",
+  contnued: "continued",
+  contnue: "continue",
+  contnues: "continues",
 };
 
 function applyCasing(correct: string, original: string): string {
@@ -417,6 +483,55 @@ async function checkSpelling(sheetId: number): Promise<SheetCheckFinding[]> {
   return findings;
 }
 
+// ── Bracket balance — a raw structural check, not an entity-mining one ────
+
+/** True when every "(" in the text has a matching ")" and none closes
+ * before it opens — checked as running depth, not just equal counts, so
+ * ")(" (equal counts, still broken) is caught too. Pure — no DB — directly
+ * testable. */
+export function isBracketBalanced(text: string): boolean {
+  let depth = 0;
+  for (const ch of text) {
+    if (ch === "(") depth++;
+    else if (ch === ")") {
+      depth--;
+      if (depth < 0) return false;
+    }
+  }
+  return depth === 0;
+}
+
+/** Real case found in testing: a malformed observation with a duplicated
+ * address fragment and an orphaned extra ")" — "...(24 Bedford Street) 24
+ * Bedford Street)." — which extractEntitiesFromText silently read as an
+ * address entity with the wrong shortForm rather than failing loudly (see
+ * the comma-in-short-form rule above, which now also happens to catch
+ * that specific symptom for addresses). This check catches the underlying
+ * cause directly, on any row, not just ones whose corruption happens to
+ * also produce a comma. */
+async function checkBracketBalance(
+  sheetId: number
+): Promise<SheetCheckFinding[]> {
+  const rows = await getObservationTextForSheet(sheetId);
+  const findings: SheetCheckFinding[] = [];
+  for (const row of rows) {
+    if (isBracketBalanced(row.observation)) continue;
+    findings.push({
+      ruleId: "unbalanced-brackets",
+      category: "formatting",
+      reason: `This row's brackets don't match up — a "(" is missing its ")" (or the reverse) — usually a duplicated or cut-off entity code from editing.`,
+      rowId: row.rowId,
+      timeMinutes: row.timeMinutes,
+      snippet:
+        row.observation.length > 140
+          ? `${row.observation.slice(0, 140)}…`
+          : row.observation,
+      findingKey: `ROW_${row.rowId}::UNBALANCED`,
+    });
+  }
+  return findings;
+}
+
 // ── Orchestrator ────────────────────────────────────────────────────────
 
 export async function checkRunningSheet(
@@ -427,11 +542,17 @@ export async function checkRunningSheet(
     .map(e => scopeEntityToSheet(e, sheetId))
     .filter((e): e is IntelligenceEntity => e !== null);
 
-  const spelling = await checkSpelling(sheetId);
+  const [spelling, bracketBalance] = await Promise.all([
+    checkSpelling(sheetId),
+    checkBracketBalance(sheetId),
+  ]);
   const formattingAndRegistry = checkFormattingAndRegistry(scopedEntities);
   const consistency = checkConsistency(scopedEntities);
 
-  return [...formattingAndRegistry, ...consistency, ...spelling].sort(
-    (a, b) => (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0)
-  );
+  return [
+    ...formattingAndRegistry,
+    ...bracketBalance,
+    ...consistency,
+    ...spelling,
+  ].sort((a, b) => (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0));
 }

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   checkSpellingInText,
   checkConsistency,
+  isBracketBalanced,
   COMMON_MISSPELLINGS,
 } from "./sheetCheck";
 import type { IntelligenceEntity } from "./db";
@@ -158,5 +159,74 @@ describe("checkConsistency", () => {
       makeEntity({ type: "business", shortForm: "Blend Cafe" }),
     ];
     expect(checkConsistency(entities)).toHaveLength(0);
+  });
+
+  // Regression: a real case found in testing — "1CDR890" mentioned
+  // correctly, then typed as "1CDR89" (one digit short) later on the same
+  // sheet. Not caught by the exact-normalised-match check above (a
+  // genuinely different string, not just different formatting of the same
+  // one) — needs the fuzzy pass instead.
+  it("flags a rego that's a probable typo of another rego on the sheet", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({ type: "vehicle", shortForm: "1CDR890" }),
+      makeEntity({ type: "vehicle", shortForm: "1CDR89" }),
+    ];
+    const findings = checkConsistency(entities);
+    const fuzzy = findings.filter(
+      f => f.ruleId === "possible-typo-of-vehicle-rego"
+    );
+    expect(fuzzy).toHaveLength(1);
+    expect(fuzzy[0].reason).toContain("1CDR890");
+    expect(fuzzy[0].reason).toContain("1CDR89");
+  });
+
+  it("does not double-report a pair the exact-match check already caught", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({ type: "vehicle", shortForm: "1CDR891" }),
+      makeEntity({ type: "vehicle", shortForm: "1 CDR-891" }),
+    ];
+    const findings = checkConsistency(entities);
+    expect(findings).toHaveLength(1);
+    expect(findings[0].ruleId).toBe("inconsistent-vehicle-format");
+  });
+
+  it("does not flag two genuinely different regos", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({ type: "vehicle", shortForm: "1ABC123" }),
+      makeEntity({ type: "vehicle", shortForm: "1XYZ789" }),
+    ];
+    expect(checkConsistency(entities)).toHaveLength(0);
+  });
+});
+
+describe("isBracketBalanced", () => {
+  it("accepts an ordinary balanced bracket", () => {
+    expect(isBracketBalanced("Departed (1CDR890) towards the address.")).toBe(
+      true
+    );
+  });
+
+  it("accepts text with no brackets at all", () => {
+    expect(isBracketBalanced("Nothing bracketed in this sentence.")).toBe(true);
+  });
+
+  // Regression: a real malformed observation found in testing — an
+  // orphaned extra ")" left over from a duplicated address fragment.
+  it("rejects an orphaned closing bracket", () => {
+    expect(
+      isBracketBalanced(
+        "24 Bedford Street, EAST FREMANTLE WA (24 Bedford Street) 24 Bedford Street) and parked."
+      )
+    ).toBe(false);
+  });
+
+  it("rejects an unclosed opening bracket", () => {
+    expect(isBracketBalanced("Departed (1CDR890 towards the address.")).toBe(
+      false
+    );
+  });
+
+  it("rejects a close-before-open", () => {
+    expect(isBracketBalanced("Weird text )1CDR890( here.")).toBe(false);
   });
 });

@@ -27,6 +27,7 @@ import {
   TargetMatchDialog,
   type TargetMatchCandidate,
 } from "@/components/TargetMatchDialog";
+import { CheckRunningSheetDialog } from "@/components/CheckRunningSheetDialog";
 import { CrossOperationEntityAlert } from "@/components/CrossOperationEntityAlert";
 import { MissingLocationAlert } from "@/components/MissingLocationAlert";
 import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
@@ -2719,6 +2720,40 @@ export default function SheetDetail({
     [isOnline, _updateRowOnline, sheetId, rows]
   );
 
+  // ── "Check Running Sheet" — jump to / fix a finding ─────────────────────
+  // Scrolls to the row (see the "sheet-row-{id}" id added to each <tr>) and
+  // briefly highlights it so it's obvious which row the finding was about,
+  // rather than just landing there silently.
+  const handleJumpToCheckRow = (rowId: number) => {
+    setShowCheckSheetDialog(false);
+    window.setTimeout(() => {
+      const el = document.getElementById(`sheet-row-${rowId}`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("row-check-highlight");
+      window.setTimeout(() => el.classList.remove("row-check-highlight"), 2000);
+    }, 150);
+  };
+
+  // Applies a spelling fix directly — same as editing the row by hand, just
+  // a single first-occurrence text replace rather than the whole dupe-check
+  // flow (a dictionary spelling correction isn't a new entity to check for
+  // duplicates against).
+  const handleFixSpelling = (rowId: number, wrong: string, correct: string) => {
+    const row = rows?.find(r => r.id === rowId);
+    if (!row || row.observation == null) return;
+    if (!row.observation.includes(wrong)) {
+      toast.error(
+        "That row's text has changed since the check ran — re-check the sheet."
+      );
+      return;
+    }
+    updateRow.mutate({
+      id: rowId,
+      observation: row.observation.replace(wrong, correct),
+    });
+  };
+
   // ── Live possible-duplicate check on observation save ──────────────────────
   // Before an edited observation actually saves, extract its entities the same
   // way the Intelligence folder does and fuzzy-check each one against every
@@ -2781,6 +2816,7 @@ export default function SheetDetail({
   const [dupeQueue, setDupeQueue] = useState<PendingDupe[]>([]);
   const [dupeIndex, setDupeIndex] = useState(0);
   const [dupeDialogOpen, setDupeDialogOpen] = useState(false);
+  const [showCheckSheetDialog, setShowCheckSheetDialog] = useState(false);
   // A ref, not state: only ever read/written synchronously within the
   // dedupe-resolution handlers below, never rendered — a ref avoids the
   // stale-closure trap of reading state that was just set in the same tick
@@ -4188,6 +4224,15 @@ export default function SheetDetail({
                   size="sm"
                   variant="outline"
                   className="gap-2"
+                  onClick={() => setShowCheckSheetDialog(true)}
+                >
+                  <ClipboardCheck className="w-4 h-4" />
+                  Check Sheet
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2"
                   disabled={exportFetching}
                   onClick={handleExport}
                 >
@@ -4868,6 +4913,7 @@ export default function SheetDetail({
                         acc.push(
                           <tr
                             key={row.id}
+                            id={`sheet-row-${row.id}`}
                             className={
                               row.isLocked ? "row-locked" : "hover:bg-accent/20"
                             }
@@ -5875,6 +5921,15 @@ export default function SheetDetail({
         );
       })()}
       {sheetId && <FaceMatchAckDialog sheetId={sheetId} />}
+      {sheetId && (
+        <CheckRunningSheetDialog
+          open={showCheckSheetDialog}
+          onClose={() => setShowCheckSheetDialog(false)}
+          sheetId={sheetId}
+          onJumpToRow={handleJumpToCheckRow}
+          onFixSpelling={handleFixSpelling}
+        />
+      )}
     </Chrome>
   );
 }

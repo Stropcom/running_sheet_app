@@ -603,6 +603,27 @@
   color: oklch(0.65 0.01 250) !important;
 }
 
+/* Brief highlight flash for "Jump to row" from the Check Running Sheet
+   dialog — fades back out on its own rather than needing to be cleared by
+   anything but the timeout that removes the class. */
+.row-check-highlight {
+  animation: row-check-flash 2s ease-out;
+}
+@keyframes row-check-flash {
+  0%,
+  20% {
+    background-color: color-mix(in oklab, var(--primary) 18%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-check-highlight {
+    animation: none;
+  }
+}
+
 /* Certified badge */
 .cert-badge {
   color: var(--certified-color);

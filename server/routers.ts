@@ -329,6 +329,7 @@ import {
   getUcoGuideRosterPrefill,
 } from "./db";
 import { scanIntelligenceEntities, type ScanFinding } from "./intelligenceScan";
+import { checkRunningSheet } from "./sheetCheck";
 import { scanForMissedPersonMentions } from "./missedEntityScan";
 import { getNerModelStatus } from "./localNER";
 
@@ -1267,6 +1268,35 @@ export const appRouter = router({
           createdAt: Date.now(),
         });
         return { success: true, newSheetId };
+      }),
+
+    /** "Check Running Sheet" — an on-demand report any logged-in author can
+     * run against their own sheet, at any point (not just an admin-only
+     * whole-folder scan) — see sheetCheck.ts for the four rule-based
+     * categories this covers. Nothing here changes automatically; every
+     * finding is the author's to act on or dismiss. */
+    check: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        const allFindings = await checkRunningSheet(input.sheetId);
+        const dismissed = await getDismissedFindingKeys();
+        const findings = allFindings.filter(
+          f => !dismissed.has(`${f.ruleId}::${f.findingKey}`)
+        );
+        return { findings };
+      }),
+
+    /** Dismisses one "Check Running Sheet" finding — reuses the same
+     * (ruleId, findingKey) dismissal table the admin-only Intelligence
+     * Scan already uses (see intelligence.dismissScanFinding); a
+     * formatting/registry finding dismissed here is also dismissed there,
+     * since it's the same underlying rule, just viewed scoped to one
+     * sheet. */
+    dismissCheckFinding: protectedProcedure
+      .input(z.object({ ruleId: z.string(), findingKey: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        await dismissScanFinding(input.ruleId, input.findingKey, ctx.user.cin);
+        return { success: true };
       }),
   }),
 

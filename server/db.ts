@@ -10797,6 +10797,39 @@ export async function getObservationTextForEntityScan(): Promise<
   );
 }
 
+export interface ObservationTextForSheet {
+  rowId: number;
+  timeMinutes: number | null;
+  observation: string;
+}
+
+/** Same idea as getObservationTextForEntityScan above, scoped to one sheet
+ * — backs sheetCheck.ts's "Check Running Sheet" spelling pass, which an
+ * author runs on demand against their own sheet rather than the whole
+ * folder. No deletedAt filtering needed here (unlike the whole-folder
+ * version): a sheet the caller can already fetch rows for is live by
+ * construction. */
+export async function getObservationTextForSheet(
+  sheetId: number
+): Promise<ObservationTextForSheet[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const rows = await db
+    .select({
+      rowId: sheetRows.id,
+      timeMinutes: sheetRows.timeMinutes,
+      observation: sheetRows.observation,
+    })
+    .from(sheetRows)
+    .where(eq(sheetRows.sheetId, sheetId));
+
+  return rows.filter(
+    (r): r is ObservationTextForSheet =>
+      !!r.observation && r.observation.trim().length > 0
+  );
+}
+
 /** Normalises a finding's display name into the same identity key used to
  * both dedupe it within one scan run and record/check its dismissal —
  * trim + uppercase, same as fuzzyMatch.ts's own normalisation, so "Jhon

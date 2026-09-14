@@ -182,10 +182,64 @@ const ADDRESS_SPACE_COMPLETION_RE = new RegExp(
   "i"
 );
 
+// Same street-portion shape as above, but for a suburb typed with no state
+// code at all ("44 Elvira Street, PALMYRA " rather than "...PALMYRA WA ").
+// Without the state code there's no longer an unambiguous "the address is
+// definitely finished" marker to anchor on — a state abbreviation never
+// occurs in ordinary prose, but an ordinary capitalised word does, so this
+// can't safely fire on every space after any old capitalised word the way
+// the state-anchored version can. The suburb being typed fully in capitals
+// (this app's own convention for every suburb, visible throughout the
+// existing training/test fixtures) stands in as that same kind of
+// deliberate, non-ordinary-prose signal detectPersonNameSpaceCompletion
+// already leans on for an ALL-CAPS surname below — checked as an exact
+// case comparison after matching, not via the regex's own "i" flag, so a
+// Title Case suburb (still mid-sentence, not a deliberate ALL-CAPS suburb
+// entry) doesn't false-trigger.
+// Matches only a single trailing word (see the regex itself), but that
+// alone doesn't stop it firing on just the FIRST word of a genuine
+// multi-word suburb typed with no state ("MOUNT PLEASANT", "EAST
+// FREMANTLE") — there's no marker distinguishing "MOUNT" the whole suburb
+// from "MOUNT" the first half of one, until the second word arrives, which
+// this live-as-you-type check can't see ahead to. Left unguarded, that
+// completes early and inserts the bracket mid-suburb ("...MOUNT (1 Smith
+// Street) PLEASANT WA"), corrupting the officer's own observation text — a
+// worse outcome than just not auto-completing at all. SUBURB_LEAD_WORDS
+// below is the guard: a small, deliberately conservative list of words that
+// are themselves never a whole WA suburb name, only ever the first half of
+// a compound one, checked against the captured word so this only ever
+// completes on a word that plausibly IS the whole suburb. A multi-word
+// suburb typed with no state still needs the bracket typed by hand (it
+// completes correctly the moment a state code is added, via the
+// state-anchored regex above).
+const SUBURB_LEAD_WORDS = new Set([
+  "MOUNT",
+  "NORTH",
+  "SOUTH",
+  "EAST",
+  "WEST",
+  "PORT",
+  "NEW",
+  "LAKE",
+  "POINT",
+  "CAPE",
+  "UPPER",
+  "LOWER",
+  "LITTLE",
+  "GREAT",
+  "SAINT",
+]);
+const ADDRESS_SPACE_COMPLETION_NO_STATE_RE = new RegExp(
+  `((?:[^,\\d\\n][^,\\n]*,\\s*)?)` +
+    `([0-9]{1,5}[A-Za-z]?\\s+[A-Za-z][A-Za-z'\\s]{0,40}?\\b(?:${STREET_TYPE_WORDS}))\\b,\\s*([A-Za-z]{1,}(?:['-][A-Za-z]+)?)$`,
+  "i"
+);
+
 /**
- * Deterministically completes a street address the instant its suburb +
- * state is finished by a space — "44 Elvira Street, PALMYRA WA " triggers
- * on the trailing space, same idea as detectVehicleMentionTrigger but for
+ * Deterministically completes a street address the instant its suburb (with
+ * or without a trailing state code) is finished by a space — "44 Elvira
+ * Street, PALMYRA WA " or just "44 Elvira Street, PALMYRA " both trigger on
+ * the trailing space, same idea as detectVehicleMentionTrigger but for
  * addresses instead of regos: no registry lookup needed, works for a
  * location that's never been seen before. Returns the street portion
  * (number + name + type) as the bracket code — "(44 Elvira Street)" — UNLESS
@@ -208,7 +262,20 @@ export function detectAddressSpaceCompletion(
   // inserting when editing text that already has one.
   if (text.slice(cursorPos).startsWith("(")) return null;
   const textBefore = text.slice(0, cursorPos);
-  const m = textBefore.match(ADDRESS_SPACE_COMPLETION_RE);
+  let m = textBefore.match(ADDRESS_SPACE_COMPLETION_RE);
+  if (!m) {
+    const noStateM = textBefore.match(ADDRESS_SPACE_COMPLETION_NO_STATE_RE);
+    // Only counts when the suburb capture is genuinely ALL CAPS as typed,
+    // and isn't just the first half of a compound suburb name — see
+    // ADDRESS_SPACE_COMPLETION_NO_STATE_RE's own comment for why both.
+    if (
+      noStateM &&
+      noStateM[3] === noStateM[3].toUpperCase() &&
+      !SUBURB_LEAD_WORDS.has(noStateM[3].toUpperCase())
+    ) {
+      m = noStateM;
+    }
+  }
   if (!m) return null;
   const businessName = m[1] ? m[1].replace(/,\s*$/, "").trim() : "";
   const addressLabel = businessName || m[2].trim();

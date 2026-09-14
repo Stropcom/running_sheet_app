@@ -87,6 +87,27 @@ function scopeEntityToSheet(
   return { ...entity, occurrences };
 }
 
+// A real bug found in testing: a comma-in-short-form finding on an address
+// ("15 Marbella Avenue, SEVILLE GROVE" — a genuine, intentional suburb
+// disambiguation, not a bug) kept reappearing after being dismissed.
+// getAllIntelligenceEntities() picks the "richest" shortForm it's seen
+// across every mention of that address whenever more than one candidate
+// exists — which one wins can differ between one check and the next (a
+// new row added, occurrences re-scanned in a different order), so the
+// SAME real address can legitimately show up with or without its suburb
+// clause from one run to the next. Since scanFindingKey hashes the exact
+// shortForm text, that made the dismissal key drift too, silently
+// un-dismissing something the officer had already dealt with. Stripping
+// anything from the first comma onward before keying fixes this: the part
+// before a comma (the rego, the name, the street) is the entity's actual
+// stable identity — text after it is exactly the part that sometimes
+// is and sometimes isn't included — so the key no longer moves even
+// though the KEY doesn't affect what's shown in the finding text itself.
+// A shortForm with no comma at all is unaffected (the common case).
+export function stableDismissKey(shortForm: string): string {
+  return scanFindingKey(shortForm.split(",")[0]);
+}
+
 function checkFormattingAndRegistry(
   scopedEntities: IntelligenceEntity[]
 ): SheetCheckFinding[] {
@@ -110,9 +131,12 @@ function checkFormattingAndRegistry(
       // here too would double it up once dismissCheckFinding calls
       // dismissScanFinding(ruleId, findingKey, ...), which re-derives its
       // own findingKey from whatever's passed as the second argument.
-      // Unchanged from the whole-folder scan's own key otherwise, so
-      // dismissing here also dismisses it there, and vice versa.
-      findingKey: scanFindingKey(f.shortForm),
+      // Same key the whole-folder scan itself uses UNLESS shortForm has a
+      // comma — see stableDismissKey above for why that case needs its own
+      // more stable key. For every comma-free shortForm (the vast
+      // majority) this is identical to before, so dismissing here still
+      // also dismisses it there, and vice versa.
+      findingKey: stableDismissKey(f.shortForm),
     };
   });
 }

@@ -4,6 +4,7 @@ import {
   checkConsistency,
   isBracketBalanced,
   findDuplicateBracketFragment,
+  stableDismissKey,
   COMMON_MISSPELLINGS,
 } from "./sheetCheck";
 import type { IntelligenceEntity } from "./db";
@@ -271,5 +272,29 @@ describe("findDuplicateBracketFragment", () => {
         "Departed (1CDR890) and arrived at (24 Bedford Street)."
       )
     ).toBeNull();
+  });
+});
+
+describe("stableDismissKey", () => {
+  // Regression: a real bug — a dismissed "comma-in-short-form" finding for
+  // a genuine, intentional suburb-disambiguated address ("15 Marbella
+  // Avenue, SEVILLE GROVE") kept reappearing, because the entity's own
+  // shortForm can legitimately vary (with or without the suburb clause)
+  // between one check and the next, and the old key hashed that whole
+  // string verbatim.
+  it("produces the same key whether or not a suburb clause is present", () => {
+    expect(stableDismissKey("15 Marbella Avenue, SEVILLE GROVE")).toBe(
+      stableDismissKey("15 Marbella Avenue")
+    );
+  });
+
+  it("is unaffected by a shortForm with no comma at all", () => {
+    expect(stableDismissKey("1CDR890")).toBe("1CDR890");
+  });
+
+  it("is case- and whitespace-insensitive, same as scanFindingKey", () => {
+    expect(stableDismissKey("  15 marbella avenue , SEVILLE GROVE")).toBe(
+      "15 MARBELLA AVENUE"
+    );
   });
 });

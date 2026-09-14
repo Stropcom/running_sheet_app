@@ -3,6 +3,7 @@ import {
   checkSpellingInText,
   checkConsistency,
   isBracketBalanced,
+  findDuplicateBracketFragment,
   COMMON_MISSPELLINGS,
 } from "./sheetCheck";
 import type { IntelligenceEntity } from "./db";
@@ -228,5 +229,47 @@ describe("isBracketBalanced", () => {
 
   it("rejects a close-before-open", () => {
     expect(isBracketBalanced("Weird text )1CDR890( here.")).toBe(false);
+  });
+});
+
+describe("findDuplicateBracketFragment", () => {
+  // Regression: the exact real case found in testing.
+  it("finds the duplicated fragment and produces a correct fix", () => {
+    const text =
+      "arrived at 24 Bedford Street, EAST FREMANTLE WA (24 Bedford Street) 24 Bedford Street) and parked on the street.";
+    const result = findDuplicateBracketFragment(text);
+    expect(result).toMatchObject({
+      wrong: "(24 Bedford Street) 24 Bedford Street)",
+      correct: "(24 Bedford Street)",
+    });
+    expect(text.replace(result!.wrong, result!.correct)).toBe(
+      "arrived at 24 Bedford Street, EAST FREMANTLE WA (24 Bedford Street) and parked on the street."
+    );
+  });
+
+  it("finds a duplicated vehicle rego bracket the same way", () => {
+    const result = findDuplicateBracketFragment(
+      "departed towards Vehicle 1CDR890 (1CDR890) 1CDR890) heading north."
+    );
+    expect(result).toMatchObject({
+      wrong: "(1CDR890) 1CDR890)",
+      correct: "(1CDR890)",
+    });
+  });
+
+  it("finds nothing in an ordinary, well-formed observation", () => {
+    expect(
+      findDuplicateBracketFragment(
+        "Departed (1CDR890) towards 24 Bedford Street."
+      )
+    ).toBeNull();
+  });
+
+  it("does not misfire on two unrelated brackets on the same row", () => {
+    expect(
+      findDuplicateBracketFragment(
+        "Departed (1CDR890) and arrived at (24 Bedford Street)."
+      )
+    ).toBeNull();
   });
 });

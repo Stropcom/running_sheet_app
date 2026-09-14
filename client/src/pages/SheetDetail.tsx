@@ -2735,11 +2735,19 @@ export default function SheetDetail({
     }, 150);
   };
 
-  // Applies a spelling fix directly — same as editing the row by hand, just
-  // a single first-occurrence text replace rather than the whole dupe-check
-  // flow (a dictionary spelling correction isn't a new entity to check for
-  // duplicates against).
-  const handleFixSpelling = (rowId: number, wrong: string, correct: string) => {
+  // Applies a "Check Running Sheet" text fix directly — same as editing the
+  // row by hand, just a single first-occurrence text replace rather than
+  // the whole dupe-check flow (neither a dictionary spelling correction
+  // nor removing a duplicated bracket fragment is a new entity to check
+  // for duplicates against). Generic despite the name of the thing it's
+  // fixing varying by finding category — every category that offers a Fix
+  // button (spelling, duplicate-bracket-fragment) reduces to the same
+  // "replace this exact substring" operation.
+  const handleFixCheckFinding = (
+    rowId: number,
+    wrong: string,
+    correct: string
+  ) => {
     const row = rows?.find(r => r.id === rowId);
     if (!row || row.observation == null) return;
     if (!row.observation.includes(wrong)) {
@@ -5927,7 +5935,7 @@ export default function SheetDetail({
           onClose={() => setShowCheckSheetDialog(false)}
           sheetId={sheetId}
           onJumpToRow={handleJumpToCheckRow}
-          onFixSpelling={handleFixSpelling}
+          onFixFinding={handleFixCheckFinding}
         />
       )}
     </Chrome>

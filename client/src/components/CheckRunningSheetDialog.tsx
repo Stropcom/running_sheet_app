@@ -62,7 +62,7 @@ export function CheckRunningSheetDialog({
   onClose,
   sheetId,
   onJumpToRow,
-  onFixSpelling,
+  onFixFinding,
 }: {
   open: boolean;
   onClose: () => void;
@@ -70,10 +70,11 @@ export function CheckRunningSheetDialog({
   /** Scrolls to (and briefly highlights) the given row, then closes this
    * dialog so the officer can see it in context. */
   onJumpToRow: (rowId: number) => void;
-  /** Applies a spelling correction to the given row's observation text —
-   * replaces the first occurrence of `wrong` with `correct`, same as
-   * editing the row by hand. */
-  onFixSpelling: (rowId: number, wrong: string, correct: string) => void;
+  /** Applies a finding's suggested fix to the given row's observation text
+   * — replaces the first occurrence of `wrong` with `correct`, same as
+   * editing the row by hand. Used by every category that offers a Fix
+   * button (spelling, duplicate-bracket-fragment), not spelling alone. */
+  onFixFinding: (rowId: number, wrong: string, correct: string) => void;
 }) {
   const utils = trpc.useUtils();
   const { data, isLoading, isFetching, refetch } = trpc.sheet.check.useQuery(
@@ -111,7 +112,7 @@ export function CheckRunningSheetDialog({
 
   const handleFix = (f: SheetCheckFinding) => {
     if (!f.suggestedFix) return;
-    onFixSpelling(f.rowId, f.suggestedFix.wrong, f.suggestedFix.correct);
+    onFixFinding(f.rowId, f.suggestedFix.wrong, f.suggestedFix.correct);
     handleDismiss(f);
   };
 

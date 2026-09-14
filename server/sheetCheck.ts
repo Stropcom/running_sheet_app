@@ -485,6 +485,29 @@ async function checkSpelling(sheetId: number): Promise<SheetCheckFinding[]> {
 
 // ── Bracket balance — a raw structural check, not an entity-mining one ────
 
+// A bracketed entity code immediately followed by the SAME text again with
+// a dangling extra ")" — "(24 Bedford Street) 24 Bedford Street)" — the
+// exact real case found in testing. Almost always a duplicate left over
+// from editing (retyping over a selection that didn't fully clear, an
+// autocomplete firing twice), never a legitimate shape on its own, so —
+// unlike every other structural finding here — this one is safe to offer
+// a one-click fix for: drop the duplicate + its orphaned ")", keeping just
+// the first, correctly-bracketed copy. Content capped at 80 chars mainly
+// to keep the match bounded, not because a real bracket code gets that
+// long.
+const DUPLICATE_BRACKET_RE = /\(([^()]{2,80})\)\s+\1\)/;
+
+/** Pure — no DB — directly testable. Returns the exact span to replace
+ * (`wrong`) and what it should become (`correct`), or null if this row
+ * doesn't have this specific shape. */
+export function findDuplicateBracketFragment(
+  text: string
+): { wrong: string; correct: string; index: number } | null {
+  const m = text.match(DUPLICATE_BRACKET_RE);
+  if (!m || m.index === undefined) return null;
+  return { wrong: m[0], correct: `(${m[1]})`, index: m.index };
+}
+
 /** True when every "(" in the text has a matching ")" and none closes
  * before it opens — checked as running depth, not just equal counts, so
  * ")(" (equal counts, still broken) is caught too. Pure — no DB — directly
@@ -506,15 +529,31 @@ export function isBracketBalanced(text: string): boolean {
  * Bedford Street)." — which extractEntitiesFromText silently read as an
  * address entity with the wrong shortForm rather than failing loudly (see
  * the comma-in-short-form rule above, which now also happens to catch
- * that specific symptom for addresses). This check catches the underlying
- * cause directly, on any row, not just ones whose corruption happens to
- * also produce a comma. */
+ * that specific symptom for addresses). Tries the specific, fixable
+ * duplicate-fragment shape first (findDuplicateBracketFragment) — precise
+ * wording, one-click Fix — and only falls back to the generic "brackets
+ * don't match up" finding for anything else unbalanced, so a row already
+ * caught precisely isn't also flagged vaguely. */
 async function checkBracketBalance(
   sheetId: number
 ): Promise<SheetCheckFinding[]> {
   const rows = await getObservationTextForSheet(sheetId);
   const findings: SheetCheckFinding[] = [];
   for (const row of rows) {
+    const duplicate = findDuplicateBracketFragment(row.observation);
+    if (duplicate) {
+      findings.push({
+        ruleId: "duplicate-bracket-fragment",
+        category: "formatting",
+        reason: `"${duplicate.correct}" appears to be duplicated — "${duplicate.wrong}" — likely retyped without fully clearing the first copy.`,
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        snippet: row.observation,
+        suggestedFix: { wrong: duplicate.wrong, correct: duplicate.correct },
+        findingKey: `ROW_${row.rowId}::DUPLICATE::${duplicate.index}`,
+      });
+      continue;
+    }
     if (isBracketBalanced(row.observation)) continue;
     findings.push({
       ruleId: "unbalanced-brackets",

@@ -4345,7 +4345,7 @@ export default function SheetDetail({
               {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
               {sheet && (
                 <button
-                  className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30"
+                  className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30 rounded-tr-lg"
                   onClick={openEditRoster}
                   title="Edit TEAM"
                 >
@@ -4517,7 +4517,7 @@ export default function SheetDetail({
                   {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
                   {hasTarget && (
                     <button
-                      className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30"
+                      className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30 rounded-tr-lg"
                       onClick={() =>
                         navigate(
                           `/operation/${sheet!.operationId}?tab=target&targetId=${t!.id}&fromSheet=${sheetId}`
@@ -5382,7 +5382,6 @@ export default function SheetDetail({
               </label>
               <Input
                 type="date"
-                autoFocus
                 value={editSheetDate}
                 onChange={e => setEditSheetDate(e.target.value)}
               />

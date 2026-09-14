@@ -8307,6 +8307,14 @@ export interface PersonTargetMatch {
   associateId?: number;
   name: string;
   tgtAlias: string | null;
+  /** The registry's own structured surname field (targets.surname /
+   * associates.surname) — the actual bracket code to suggest when there's
+   * no tgtAlias, since `name` is the full registered name with no bracket
+   * of its own to extract one from (see the real bug this fixed: the
+   * client used to fall back to bracketing the WHOLE name, e.g. "(Declan
+   * WESTBROOK)", instead of just the surname, "(WESTBROOK)"). Null for a
+   * business-name associate, which has no surname to fall back to. */
+  surname: string | null;
   score: number;
   reason: string;
 }
@@ -8406,6 +8414,7 @@ export async function checkPossibleTargetMatches(
       associateId: e.isAssociate ? (e.associateId ?? undefined) : undefined,
       name: e.shortForm,
       tgtAlias: e.tgtAlias ?? null,
+      surname: e.surname ?? null,
       score: best.score,
       reason: best.reason,
     });

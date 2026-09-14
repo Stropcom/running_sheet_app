@@ -27,6 +27,7 @@ export interface TargetMatchCandidate {
   associateId?: number;
   name: string;
   tgtAlias: string | null;
+  surname: string | null;
   reason: string;
 }
 
@@ -54,8 +55,19 @@ export function TargetMatchDialog({
     trpc.intelligence.confirmPersonNameMatch.useMutation();
   const rejectMutation = trpc.intelligence.rejectPersonNameMatch.useMutation();
 
+  // Real bug this fixed: `match.name` is the full registered name with no
+  // trailing "(BRACKET)" of its own (e.g. "Declan WESTBROOK", not "Declan
+  // WESTBROOK (WESTBROOK)"), so bracketCodeFromRegisteredName's own
+  // extraction never found anything to extract and silently fell back to
+  // the WHOLE name — a row got corrected to "(Declan WESTBROOK)" instead of
+  // just "(WESTBROOK)". match.surname (the registry's own structured
+  // surname field) is the real bracket code; bracketCodeFromRegisteredName
+  // stays only as a last-resort fallback for the rare case a match has no
+  // surname on file at all (a business-name associate).
   const correctSpelling =
-    match.tgtAlias || bracketCodeFromRegisteredName(match.name);
+    match.tgtAlias ||
+    match.surname ||
+    bracketCodeFromRegisteredName(match.name);
 
   async function handleYes() {
     setBusy(true);
@@ -111,35 +123,37 @@ export function TargetMatchDialog({
             Possible match to existing Target
           </DialogTitle>
           <DialogDescription>
-            {match.reason}. Is "{spelling}" the same person as existing{" "}
+            "{spelling}" looks like it could be existing{" "}
             {match.targetId ? "Target" : "Associate"}{" "}
-            <strong>{match.name}</strong>?
+            <strong>{match.name}</strong> ({match.reason.toLowerCase()}).
           </DialogDescription>
         </DialogHeader>
 
         {correctSpelling.toUpperCase() !== spelling.trim().toUpperCase() && (
           <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-              If yes, this row will be recorded as
+              Suggested change to this row
             </p>
             <p className="text-foreground">
-              "…({correctSpelling})…" instead of "…({spelling})…"
+              "…({correctSpelling})…" — instead of what you typed, "…(
+              {spelling})…"
             </p>
           </div>
         )}
 
         <p className="text-xs text-muted-foreground italic">
-          This only corrects the spelling in the row you're saving right now,
-          before it's certified. Confirming also means "{spelling}" auto-links
-          to {match.name} on every future row, without asking again.
+          Accepting only fixes this row's spelling, before it's certified — but
+          it also means "{spelling}" auto-links to {match.name} on every future
+          row, without asking again. Choose "Continue as entered" if this is
+          actually a different person.
         </p>
 
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={handleNo} disabled={busy}>
-            No, different person
+            Continue as entered
           </Button>
           <Button onClick={handleYes} disabled={busy}>
-            Yes, correct it
+            Accept suggested change
           </Button>
         </DialogFooter>
       </DialogContent>

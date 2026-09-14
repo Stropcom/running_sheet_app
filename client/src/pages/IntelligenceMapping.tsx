@@ -1003,7 +1003,20 @@ function buildInfoWindowContent(
 
     lines.push(sections.join(""));
   } else {
-    // Target address: full button set matching observation popup
+    // Target address: one shared button set for the whole pin, built here
+    // but pushed to `lines` AFTER every secondary (associate/observation)
+    // address absorbed into it below — not once per address. A target
+    // pin's secondaryLocs are only ever merged in because they're within
+    // INTEL_DEDUP_RADIUS_M (20m) of this same pin (see the merge site
+    // elsewhere in this file), so one Rotation/RS Quick Entry/Waze/Street
+    // View block is a perfectly good proxy for all of them — repeating
+    // the whole block per address just pushed the popup's real content
+    // (who's actually linked to this address) off the bottom of the map
+    // for no benefit, since every copy did the same thing. Edit/Move stay
+    // scoped to this primary address specifically, not any secondary's
+    // own record — there's no single sane target for "Edit"/"Move" once
+    // more than one real address/pin is involved, so this popup only ever
+    // offers those two for the pin the user actually clicked on.
     const btnBase =
       "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
     const safeLabel = loc.label.replace(/'/g, "\\'");
@@ -1053,111 +1066,48 @@ function buildInfoWindowContent(
       `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${editBtn}${moveBtn}</div>`
     );
 
-    lines.push(sections.join(""));
-  }
-
-  // ── Secondary (observation) locs absorbed into this target_address pin ──
-  if (isTarget && loc.secondaryLocs && loc.secondaryLocs.length > 0) {
-    for (const sec of loc.secondaryLocs) {
-      const secLabel = formatIntelAddress(sec.label);
-      const secEncodedLabel = encodeURIComponent(sec.label);
-      const secSafeLabel = sec.label.replace(/'/g, "\\'");
-
-      // Load persisted appearance for secondary pin
-      let secIcon: string = "house_filled";
-      let secColour: string = "purple";
-      let secRotation: number = 0;
-      try {
-        const stored = localStorage.getItem(
-          `runlog_intel_appearance_${sec.label}`
+    // ── Secondary (associate/observation) locs absorbed into this pin ──
+    // Info only (badge, address, linked targets) — no per-address button
+    // block, see the comment above `sections`. The Persons/Vehicles
+    // breakdown lives once, above this, already merged across every
+    // secondary loc at merge time (see INTEL_DEDUP_RADIUS_M's merge site),
+    // so repeating it per address here would just be the same names again.
+    if (loc.secondaryLocs && loc.secondaryLocs.length > 0) {
+      for (const sec of loc.secondaryLocs) {
+        const secLabel = formatIntelAddress(sec.label);
+        const secTypeLabel =
+          sec.type === "associate_address"
+            ? "ASSOCIATE ADDRESS"
+            : "OBSERVED LOCATION";
+        lines.push(
+          `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">`
         );
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed.icon) secIcon = parsed.icon;
-          if (parsed.colour) secColour = parsed.colour;
-          if (typeof parsed.rotation === "number")
-            secRotation = parsed.rotation;
-        }
-      } catch {
-        /* ignore */
-      }
-
-      const secTypeLabel =
-        sec.type === "associate_address"
-          ? "ASSOCIATE ADDRESS"
-          : "OBSERVED LOCATION";
-      lines.push(
-        `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">`
-      );
-      lines.push(`
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-          <span style="background:#7c3aed;color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">${secTypeLabel}</span>
-        </div>
-        <strong style="font-size:12px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${secLabel}</strong>
-      `);
-      const secEntityLines: string[] = [];
-      if (sec.linkedTargets.length > 0) {
-        secEntityLines.push(
-          `<span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`
-        );
-        for (const t of sec.linkedTargets) {
-          secEntityLines.push(
-            `<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}</div>`
+        lines.push(`
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <span style="background:#7c3aed;color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">${secTypeLabel}</span>
+          </div>
+          <strong style="font-size:12px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${secLabel}</strong>
+        `);
+        if (sec.linkedTargets.length > 0) {
+          const secLinkedLines = [
+            `<span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`,
+            ...sec.linkedTargets.map(
+              t =>
+                `<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}</div>`
+            ),
+          ];
+          lines.push(
+            `<div style="margin-top:4px;">${secLinkedLines.join("")}</div>`
           );
         }
+        lines.push(`</div>`);
       }
-      if (sec.assocPersons.length > 0) {
-        secEntityLines.push(
-          `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><div style="margin-top:2px">${popupPersonLines(sec.assocPersons, "12px")}</div></div>`
-        );
-      }
-      if (sec.assocVehicles.length > 0) {
-        secEntityLines.push(
-          `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><div style="margin-top:2px">${popupVehicleLines(sec.assocVehicles, "12px")}</div></div>`
-        );
-      }
-      if (secEntityLines.length) {
-        lines.push(
-          `<div style="margin-top:4px;${POPUP_SCROLL}">${secEntityLines.join("")}</div>`
-        );
-      }
-
-      // Action buttons for secondary observation (same as standalone observation)
-      const secBtnBase =
-        "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
-      // Rotation slider
-      lines.push(`
-        <div style="margin-top:8px;padding-top:6px;border-top:1px dashed #e5e7eb;">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <img id="intel-popup-preview-${secEncodedLabel}" src="data:image/svg+xml;base64,${btoa(getMarkerSvg(secIcon as any, secColour as any))}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${secRotation}deg);transition:transform 0.1s;" />
-            <div style="flex:1;">
-              <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
-                <span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Rotation</span>
-                <span id="intel-popup-deg-${secEncodedLabel}" style="font-size:10px;color:#374151;font-weight:600;">${secRotation}°</span>
-              </div>
-              <input id="intel-popup-slider-${secEncodedLabel}" type="range" min="0" max="359" step="1" value="${secRotation}"
-                style="width:100%;accent-color:#6366f1;cursor:pointer;"
-                oninput="window.__intelPopupRotate('${secSafeLabel}', this.value)"
-              />
-            </div>
-          </div>
-        </div>
-      `);
-      lines.push(
-        `<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${secSafeLabel}')" style="${secBtnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`
-      );
-      if (sec.lat != null && sec.lng != null) {
-        const sLat = sec.lat;
-        const sLng = sec.lng;
-        lines.push(
-          `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;"><a href="https://waze.com/ul?ll=${sLat},${sLng}&navigate=yes" target="_blank" style="${secBtnBase}background:#00bcd4;color:#fff;">Waze</a><a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${sLat},${sLng}" target="_blank" style="${secBtnBase}background:#4285f4;color:#fff;">Street View</a></div>`
-        );
-      }
-      lines.push(
-        `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;"><button onclick="window.__intelOpenEditDialog('${secSafeLabel}')" style="${secBtnBase}background:#16a34a;color:#fff;border:none;">Edit</button><button onclick="window.__intelStartMove('${secSafeLabel}')" style="${secBtnBase}background:#0369a1;color:#fff;border:none;">Move…</button></div>`
-      );
-      lines.push(`</div>`);
     }
+
+    // The shared Rotation/RS Quick Entry/Waze/Street View/Edit/Move block
+    // renders last, after every secondary address above — see the comment
+    // on `sections` above for why this is one block for the whole pin.
+    lines.push(sections.join(""));
   }
 
   return `<div style="font-family:sans-serif;max-width:280px;color:#111">${lines.join("")}</div>`;

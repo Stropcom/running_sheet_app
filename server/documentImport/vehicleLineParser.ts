@@ -71,12 +71,16 @@ const COLOURS = new Set([
 ]);
 
 // A shade/intensity word directly before a base colour ("dark blue",
-// "light grey", "metallic silver") is still one colour, not two separate
-// words — found against a real document ("1SEA310 ... dark blue Volvo
-// XC60 station sedan"): "dark" wasn't in COLOURS at all, so it fell
-// through untouched and got read as the *make* instead, pushing "blue
-// Volvo XC60" into the model field as one lump. Checked as a two-word
-// pair before the single-word case below.
+// "light grey", "metallic silver") isn't itself a colour — the officer's
+// own correction on a real training case: "dark"/"light" etc. get dropped
+// entirely rather than folded into the colour field, so "dark green"
+// composes as colour "Green", not "Dark Green". Originally found against
+// a real document ("1SEA310 ... dark blue Volvo XC60 station sedan"):
+// "dark" wasn't in COLOURS at all, so it fell through untouched and got
+// read as the *make* instead, pushing "blue Volvo XC60" into the model
+// field as one lump — recognising the pair at all was the fix; dropping
+// the modifier rather than keeping it is the refinement on top. Checked
+// as a two-word pair before the single-word case below.
 const COLOUR_MODIFIERS = new Set([
   "dark",
   "light",
@@ -187,9 +191,8 @@ function parseDescription(
     COLOUR_MODIFIERS.has(words[0].toLowerCase()) &&
     COLOURS.has(words[1].toLowerCase())
   ) {
-    const modifier = words.shift()!;
-    const base = words.shift()!;
-    colour = `${titleCase(modifier)} ${titleCase(base)}`;
+    words.shift(); // drop the modifier ("dark"/"light"/...) — not a colour
+    colour = titleCase(words.shift()!);
   } else if (words.length > 0 && COLOURS.has(words[0].toLowerCase())) {
     colour = titleCase(words.shift()!);
   }

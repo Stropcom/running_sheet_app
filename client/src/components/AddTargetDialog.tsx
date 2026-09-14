@@ -129,6 +129,43 @@ export interface StagedAssociate {
   vehicle: StructuredVehicleParts & { vehicleType: string };
 }
 
+// composeAddress/composeVehicle are all-or-nothing — a document import (or
+// an officer editing by hand) can easily leave one field short of what's
+// needed, and the composed result then silently comes back as "" with no
+// indication anywhere that the record won't actually save. Found via a real
+// document-import case: a vehicle with every field filled in except colour
+// (the exact field Step 3's AI-assist flags as needing review) looked
+// perfectly normal on this screen, saved without error, and then simply
+// never appeared anywhere — not on the target's profile, not in a search,
+// not in the Intelligence folder — because its "full"/"short" form, the
+// only shape anything else in the app reads, was silently empty. These two
+// checks catch that case specifically — SOME field entered, but not enough
+// to compose — so it can be flagged before Save rather than discovered
+// after the fact.
+function isPartialAddress(a: StructuredAddressParts): boolean {
+  const hasAny = !!(
+    a.businessName ||
+    a.unitNo ||
+    a.houseNo ||
+    a.streetName ||
+    a.streetType ||
+    a.suburb
+  );
+  return hasAny && !composeAddress(a).full;
+}
+function isPartialVehicle(
+  v: StructuredVehicleParts & { vehicleType?: string }
+): boolean {
+  const hasAny = !!(
+    v.registration ||
+    v.colour ||
+    v.make ||
+    v.model ||
+    v.vehicleType
+  );
+  return hasAny && !composeVehicle(v).full;
+}
+
 export function AddTargetDialog({
   open,
   onClose,
@@ -493,6 +530,27 @@ export function AddTargetDialog({
       toast.error("Enter both First Name/s and Surname.");
       return;
     }
+    // Block the save outright rather than silently dropping a partially-
+    // filled address/vehicle — see isPartialAddress/isPartialVehicle's own
+    // comment for the real case this catches (a document-import vehicle
+    // missing just its colour, which used to save with no error and then
+    // vanish everywhere).
+    const incomplete: string[] = [];
+    if (isPartialAddress(address)) incomplete.push("Home Address");
+    extraAddresses.forEach((ea, i) => {
+      if (isPartialAddress(ea))
+        incomplete.push(ea.label || `Additional Address ${i + 2}`);
+    });
+    if (isPartialVehicle(vehicle)) incomplete.push("Vehicle 1");
+    extraVehicles.forEach((ev, i) => {
+      if (isPartialVehicle(ev)) incomplete.push(`Vehicle ${i + 2}`);
+    });
+    if (incomplete.length > 0) {
+      toast.error(
+        `${incomplete.join(", ")} ${incomplete.length > 1 ? "are" : "is"} missing a required field and won't save as ${incomplete.length > 1 ? "they" : "it"} ${incomplete.length > 1 ? "are" : "is"} — fill in the missing detail(s) or remove the card before saving.`
+      );
+      return;
+    }
     // Already resolved for this exact name at the surname field's onBlur
     // (no match, or the officer already said "different person") — don't
     // ask again.
@@ -729,6 +787,12 @@ export function AddTargetDialog({
                 <Home className="w-3 h-3" /> Home Address
               </p>
               <TargetAddressFields value={address} onChange={setAddress} />
+              {isPartialAddress(address) && (
+                <p className="text-xs text-destructive mt-2">
+                  Missing a house number, street type or suburb — this address
+                  won't save until every field is filled in.
+                </p>
+              )}
             </div>
 
             {/* Dynamic extra addresses */}
@@ -770,6 +834,12 @@ export function AddTargetDialog({
                     )
                   }
                 />
+                {isPartialAddress(ea) && (
+                  <p className="text-xs text-destructive">
+                    Missing a house number, street type or suburb — this address
+                    won't save until every field is filled in.
+                  </p>
+                )}
               </div>
             ))}
             <Button
@@ -797,6 +867,12 @@ export function AddTargetDialog({
                 <Car className="w-3 h-3" /> Vehicle 1
               </p>
               <TargetVehicleFields value={vehicle} onChange={setVehicle} />
+              {isPartialVehicle(vehicle) && (
+                <p className="text-xs text-destructive mt-2">
+                  Missing a colour, make or model — this vehicle won't save
+                  until every field is filled in.
+                </p>
+              )}
             </div>
 
             {/* Dynamic extra vehicles */}
@@ -830,6 +906,12 @@ export function AddTargetDialog({
                     )
                   }
                 />
+                {isPartialVehicle(ev) && (
+                  <p className="text-xs text-destructive">
+                    Missing a colour, make or model — this vehicle won't save
+                    until every field is filled in.
+                  </p>
+                )}
               </div>
             ))}
             <Button

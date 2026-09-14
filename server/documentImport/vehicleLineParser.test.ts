@@ -147,12 +147,15 @@ describe("compound colours", () => {
   // wasn't in the single-word COLOURS list, so it fell through untouched
   // and got read as the make instead ("blue Volvo XC60" collapsed into
   // model), leaving colour blank and the whole thing flagged !confident.
-  it("reads 'dark blue' as one colour, not make='dark'", () => {
+  // "dark" is dropped rather than kept as part of the colour — it's a
+  // shade/intensity word, not a colour itself (officer correction on a
+  // real training case).
+  it("reads 'dark blue' as colour 'Blue', not make='dark'", () => {
     const result = parseVehicleLine(
       "1SEA310 (WA) dark blue Volvo XC60 station sedan"
     );
     expect(result).toMatchObject({
-      colour: "Dark Blue",
+      colour: "Blue",
       make: "Volvo",
       model: "XC60",
       vehicleType: "station sedan",
@@ -160,10 +163,10 @@ describe("compound colours", () => {
     });
   });
 
-  it("reads 'light grey' the same way", () => {
+  it("reads 'light grey' the same way, dropping 'light'", () => {
     const result = parseVehicleLine("1ABC123 (WA) light grey Mazda 3 hatch");
     expect(result).toMatchObject({
-      colour: "Light Grey",
+      colour: "Grey",
       make: "Mazda",
       model: "3",
       vehicleType: "hatch",

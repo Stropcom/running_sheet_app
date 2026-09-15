@@ -207,33 +207,60 @@ export function CheckRunningSheetDialog({
                     "{f.snippet}"
                   </p>
                   <p className="text-xs text-muted-foreground">{f.reason}</p>
-                  <div className="flex items-center gap-4 mt-0.5">
-                    {f.suggestedFix ? (
-                      <button
-                        type="button"
-                        onClick={() => handleFix(f)}
-                        disabled={dismissingKey === key}
-                        className="text-[11px] font-bold text-teal-600 dark:text-teal-400 bg-teal-500/10 hover:bg-teal-500/20 rounded px-2 py-1 transition-colors disabled:opacity-50"
-                      >
-                        Fix
-                      </button>
-                    ) : (
+                  <div className="flex items-center gap-4 flex-wrap mt-0.5">
+                    {f.suggestedFix && f.otherRowId && (
+                      // A multi-row "possible typo"/"incomplete address"
+                      // finding — the officer may want to see both rows in
+                      // context before deciding, unlike a same-row spelling
+                      // fix where the snippet already shows everything.
                       <button
                         type="button"
                         onClick={() => onJumpToRow(f.rowId)}
                         className="text-[11px] font-semibold text-primary hover:underline"
                       >
-                        {f.otherRowId ? "Jump to rows" : "Jump to row"}
+                        Jump to rows
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => handleDismiss(f)}
-                      disabled={dismissingKey === key}
-                      className="text-[11px] font-medium text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
-                    >
-                      {dismissingKey === key ? "Dismissing…" : "Dismiss"}
-                    </button>
+                    {f.suggestedFix ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleDismiss(f)}
+                          disabled={dismissingKey === key}
+                          className="text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                        >
+                          {dismissingKey === key
+                            ? "…"
+                            : `Keep as "${f.suggestedFix.wrong}"`}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleFix(f)}
+                          disabled={dismissingKey === key}
+                          className="text-[11px] font-bold text-teal-600 dark:text-teal-400 bg-teal-500/10 hover:bg-teal-500/20 rounded px-2 py-1 transition-colors disabled:opacity-50"
+                        >
+                          Change to "{f.suggestedFix.correct}"
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onJumpToRow(f.rowId)}
+                          className="text-[11px] font-semibold text-primary hover:underline"
+                        >
+                          {f.otherRowId ? "Jump to rows" : "Jump to row"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDismiss(f)}
+                          disabled={dismissingKey === key}
+                          className="text-[11px] font-medium text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                        >
+                          {dismissingKey === key ? "Dismissing…" : "Dismiss"}
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               );

@@ -306,6 +306,32 @@ describe("checkConsistency", () => {
     expect(fuzzy).toHaveLength(1);
   });
 
+  // The suggested fix must offer bare, literal regos ("1CDR890" /
+  // "1CDR80") — not the full reconstructed description ("1CDR890 green
+  // Subaru Outback station sedan") — since only the bare rego actually
+  // appears verbatim in a row's own text for a one-click find/replace to
+  // work. Which of the two lands in `wrong` vs `correct` just follows
+  // input order (whichever entity is scanned first becomes the "this
+  // row" side) — this check isn't asserting which one is the REAL typo,
+  // only that both values offered are the literal bare regos, not
+  // descriptions, and that both appear (one each way).
+  it("offers a Keep/Change fix using the bare regos, not the full description", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({
+        type: "vehicle",
+        shortForm: "1CDR890 green Subaru Outback station sedan",
+      }),
+      makeEntity({ type: "vehicle", shortForm: "1CDR80" }),
+    ];
+    const findings = checkConsistency(entities);
+    const fuzzy = findings.find(
+      f => f.ruleId === "possible-typo-of-vehicle-rego"
+    );
+    expect(
+      [fuzzy?.suggestedFix?.wrong, fuzzy?.suggestedFix?.correct].sort()
+    ).toEqual(["1CDR80", "1CDR890"]);
+  });
+
   // Regression: a real false positive found in testing — two genuinely
   // different, adjacently-plated vehicles, each independently and fully
   // described in the same row ("1CDR890 green Subaru Outback station

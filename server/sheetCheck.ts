@@ -364,7 +364,13 @@ function checkFuzzyConsistencyForType(
   type: "vehicle" | "person" | "business",
   ruleId: string,
   normalize: (label: string) => string | null,
-  skipPair?: (a: FuzzyCandidate, b: FuzzyCandidate) => boolean
+  skipPair?: (a: FuzzyCandidate, b: FuzzyCandidate) => boolean,
+  // The literal, as-typed text to offer as a one-click fix — defaults to
+  // the entity's shortForm, but vehicles need their extracted rego
+  // instead (see normalizeRego's own comment): a vehicle shortForm is
+  // often a reconstructed "REGO description", which never appears
+  // verbatim in the row's actual text the way the bare rego does.
+  getReplacementText: (c: FuzzyCandidate) => string = c => c.entity.shortForm
 ): SheetCheckFinding[] {
   const candidates = entities
     .filter(e => e.type === type)
@@ -392,6 +398,8 @@ function checkFuzzyConsistencyForType(
       reportedPairs.add(pairKey);
       const occB = candidates[j].entity.occurrences[0];
       if (!occB) continue;
+      const wrong = getReplacementText(candidates[i]);
+      const correct = getReplacementText(candidates[j]);
       findings.push({
         ruleId,
         category: "consistency",
@@ -400,6 +408,11 @@ function checkFuzzyConsistencyForType(
         otherRowId: occB.rowId,
         timeMinutes: occA.timeMinutes,
         snippet: occA.observationSnippet,
+        // Offered as "Keep as wrong" / "Change to correct" rather than an
+        // auto-applied fix — unlike a spelling typo, either side could
+        // genuinely be the correct one, so this only ever pre-fills the
+        // edit, it never assumes a direction.
+        suggestedFix: wrong !== correct ? { wrong, correct } : undefined,
         findingKey: `ROW_${occA.rowId}_${occB.rowId}::${query}`,
       });
     }
@@ -492,7 +505,8 @@ export function checkConsistency(
       "vehicle",
       "possible-typo-of-vehicle-rego",
       normalizeRego,
-      bothVehiclesIndependentlyDescribed
+      bothVehiclesIndependentlyDescribed,
+      c => c.norm
     ),
     ...checkFuzzyConsistencyForType(
       entities,
@@ -595,6 +609,11 @@ async function checkBareAddressConsistency(
         withoutType.observation.length > 140
           ? `${withoutType.observation.slice(0, 140)}…`
           : withoutType.observation,
+      // Offered as "Keep as wrong" / "Change to correct" — unlike the
+      // exact-match address-format check, here one side is unambiguously
+      // more complete (has a street type, the other doesn't), so this is
+      // worth pre-filling as a real edit rather than only Jump/Dismiss.
+      suggestedFix: { wrong: withoutType.raw, correct: withType.raw },
       findingKey: `ROW_${withoutType.rowId}_${withType.rowId}::${withoutType.raw.trim().toUpperCase()}`,
     });
   }
@@ -633,14 +652,31 @@ export function findBareVehicleMentions(text: string): string[] {
   return out;
 }
 
+/** `knownRegoKeys` — the normalised regos of vehicles already properly
+ * bracketed somewhere on the sheet. A real bug found in testing: without
+ * deduping, one synthetic entity was created per ROW a bare rego appeared
+ * in — so a rego mentioned bare across several rows produced several
+ * near-identical entities, and comparing each of those against every
+ * occurrence of the real (also often multi-row) rego produced a
+ * combinatorial explosion of near-duplicate findings for what was really
+ * one typo. Fixed by keeping at most ONE synthetic entity per distinct
+ * bare rego value on the sheet, and skipping a bare mention entirely when
+ * its rego already exactly matches a known bracketed entity — that's not
+ * new information, just a repeat mention of an already-correct vehicle,
+ * and including it anyway would still have produced a redundant duplicate
+ * finding alongside the one the real bracketed entity already generates. */
 async function findSheetBareVehicleEntities(
-  sheetId: number
+  sheetId: number,
+  knownRegoKeys: Set<string>
 ): Promise<IntelligenceEntity[]> {
   const rows = await getObservationTextForSheet(sheetId);
-  const synthetic: IntelligenceEntity[] = [];
+  const byRego = new Map<string, IntelligenceEntity>();
   for (const row of rows) {
     for (const raw of findBareVehicleMentions(row.observation)) {
-      synthetic.push({
+      const key = normalizeRego(raw);
+      if (knownRegoKeys.has(key)) continue;
+      if (byRego.has(key)) continue;
+      byRego.set(key, {
         type: "vehicle",
         shortForm: raw,
         occurrences: [
@@ -658,7 +694,7 @@ async function findSheetBareVehicleEntities(
       });
     }
   }
-  return synthetic;
+  return Array.from(byRego.values());
 }
 
 // ── Punctuation spacing — a raw structural check, not entity-mining ───────
@@ -988,6 +1024,11 @@ export async function checkRunningSheet(
   const scopedEntities = allEntities
     .map(e => scopeEntityToSheet(e, sheetId))
     .filter((e): e is IntelligenceEntity => e !== null);
+  const knownVehicleRegoKeys = new Set(
+    scopedEntities
+      .filter(e => e.type === "vehicle")
+      .map(e => normalizeRego(e.shortForm))
+  );
 
   const [
     spelling,
@@ -1000,7 +1041,7 @@ export async function checkRunningSheet(
     checkBracketBalance(sheetId),
     checkBareAddressConsistency(sheetId),
     checkPunctuationSpacing(sheetId),
-    findSheetBareVehicleEntities(sheetId),
+    findSheetBareVehicleEntities(sheetId, knownVehicleRegoKeys),
   ]);
   const formattingAndRegistry = checkFormattingAndRegistry(scopedEntities);
   const consistency = checkConsistency([

@@ -43,6 +43,7 @@ import {
   getAllIntelligenceEntities,
   getObservationTextForSheet,
   scanFindingKey,
+  vehicleRegoKey,
   type IntelligenceEntity,
 } from "./db";
 import { scanIntelligenceEntities } from "./intelligenceScan";
@@ -223,10 +224,32 @@ function normalizeStreetLabel(label: string): string | null {
   return `${houseNo} ${streetWords.join(" ").toUpperCase()}`;
 }
 
-/** Normalises a vehicle rego bracket label down to a bare uppercase
- * alphanumeric string, so "1CDR891" and "1 CDR-891" compare equal. */
+/** Normalises a vehicle entity's shortForm down to a bare uppercase rego,
+ * so "1CDR891" and "1 CDR-891" compare equal.
+ *
+ * A real bug found in testing: a text-mined vehicle entity's shortForm is
+ * NOT the bare rego — extractEntitiesFromText builds it as "REGO
+ * description" whenever it can, e.g. "1CDR890 green Subaru Outback station
+ * sedan" (see that function's vehicle branch in db.ts). A naive
+ * spaces/hyphens-only strip (this function's original implementation)
+ * turned that into "1CDR890GREENSUBARUOUTBACKSTATIONSEDAN" — a string
+ * that could never usefully compare against anything, so the vehicle
+ * consistency/fuzzy-typo checks below were silently comparing full
+ * descriptions instead of regos for every vehicle with a description
+ * attached (i.e. most real ones), not just the rare bare-rego mention.
+ *
+ * Fixed by preferring the WHOLE cleaned label when it's short enough to
+ * plausibly BE a bare rego on its own (handles "1CDR891" / "1 CDR-891" /
+ * "1CDR-891" — spacing/punctuation variants with nothing else attached),
+ * and otherwise reusing vehicleRegoKey — the same rego-extraction this app
+ * already uses everywhere else (entity de-duplication, chip search) — to
+ * pull just the plate-shaped token out of a longer description. */
 function normalizeRego(label: string): string {
-  return label.replace(/[\s-]/g, "").toUpperCase();
+  const compact = label.replace(/[\s-]/g, "").toUpperCase();
+  if (compact.length <= 10 && /\d/.test(compact) && /[A-Za-z]/i.test(compact)) {
+    return compact;
+  }
+  return vehicleRegoKey(label).toUpperCase();
 }
 
 /** Normalises a person bracket label down to letters-only uppercase, so
@@ -331,19 +354,22 @@ function checkConsistencyForType(
  * disambiguates from, which routinely clears the 0.8 similarity threshold
  * on a short name ("HILL" vs "PHILL" scores exactly 0.8) even though
  * they're deliberately meant to read as different people. */
+interface FuzzyCandidate {
+  entity: IntelligenceEntity;
+  norm: string;
+}
+
 function checkFuzzyConsistencyForType(
   entities: IntelligenceEntity[],
   type: "vehicle" | "person" | "business",
   ruleId: string,
   normalize: (label: string) => string | null,
-  skipPair?: (a: string, b: string) => boolean
+  skipPair?: (a: FuzzyCandidate, b: FuzzyCandidate) => boolean
 ): SheetCheckFinding[] {
   const candidates = entities
     .filter(e => e.type === type)
     .map(e => ({ entity: e, norm: normalize(e.shortForm) }))
-    .filter(
-      (c): c is { entity: IntelligenceEntity; norm: string } => c.norm !== null
-    );
+    .filter((c): c is FuzzyCandidate => c.norm !== null);
   const noun = CONSISTENCY_TYPE_NOUN[type];
   const fuzzyCandidates = candidates.map((c, i) => ({
     id: String(i),
@@ -360,7 +386,7 @@ function checkFuzzyConsistencyForType(
     const matches = findFuzzyMatches(query, others, DEFAULT_FUZZY_THRESHOLD);
     for (const match of matches) {
       const j = Number(match.id);
-      if (skipPair?.(query, match.label)) continue;
+      if (skipPair?.(candidates[i], candidates[j])) continue;
       const pairKey = [i, j].sort().join("-");
       if (reportedPairs.has(pairKey)) continue;
       reportedPairs.add(pairKey);
@@ -387,12 +413,48 @@ function checkFuzzyConsistencyForType(
  * prefix so a genuinely different, coincidentally-longer surname ("HILL"
  * vs "HILLS" — a suffix, not a prefix, so unaffected anyway; or two
  * unrelated names that happen to share a tail) isn't swept up. */
-function isInitialVariant(a: string, b: string): boolean {
-  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+function isInitialVariant(a: FuzzyCandidate, b: FuzzyCandidate): boolean {
+  const [shorter, longer] =
+    a.norm.length <= b.norm.length ? [a.norm, b.norm] : [b.norm, a.norm];
   return (
     longer.length - shorter.length <= 2 &&
     longer.length > shorter.length &&
     longer.endsWith(shorter)
+  );
+}
+
+/** Counts the real descriptive words in a vehicle shortForm once its own
+ * rego is removed — 0 for a bare mention ("1CDR890" or "Vehicle 1CDR890"),
+ * several for a described one ("1CDR890 green Subaru Outback station
+ * sedan" -> "green"/"Subaru"/"Outback"/"station"/"sedan"). */
+function vehicleDescriptionWordCount(shortForm: string, rego: string): number {
+  const withoutRego = shortForm.replace(new RegExp(rego, "i"), "");
+  return withoutRego
+    .trim()
+    .split(/\s+/)
+    .filter(w => w.replace(/[^A-Za-z]/g, "").length >= 3).length;
+}
+
+/** True when BOTH sides of a vehicle fuzzy match carry their own real
+ * description, not just a bare rego. A real false-positive found in
+ * testing: two genuinely different, adjacently-plated vehicles on the same
+ * sheet ("1CDR890 green Subaru Outback station sedan" and "1CDR891
+ * burgundy Skoda Octavia hatch" — a real row, both correctly described)
+ * scored 86% similar on rego alone and got flagged as a possible typo of
+ * each other, exactly the coincidental-adjacent-plate risk this app's own
+ * design notes already called out for vehicles. When each vehicle is
+ * independently, fully described, a close rego is far more likely to be a
+ * coincidence than a typo — so only fire when at least one side is a bare/
+ * shorthand re-mention (the actual shape of a genuine typo: the vehicle
+ * was already properly described once, and a LATER bare mention of a
+ * near-miss rego is what should raise a flag). */
+function bothVehiclesIndependentlyDescribed(
+  a: FuzzyCandidate,
+  b: FuzzyCandidate
+): boolean {
+  return (
+    vehicleDescriptionWordCount(a.entity.shortForm, a.norm) >= 1 &&
+    vehicleDescriptionWordCount(b.entity.shortForm, b.norm) >= 1
   );
 }
 
@@ -429,7 +491,8 @@ export function checkConsistency(
       entities,
       "vehicle",
       "possible-typo-of-vehicle-rego",
-      normalizeRego
+      normalizeRego,
+      bothVehiclesIndependentlyDescribed
     ),
     ...checkFuzzyConsistencyForType(
       entities,
@@ -538,18 +601,90 @@ async function checkBareAddressConsistency(
   return findings;
 }
 
+// ── Bare-prose vehicle mentions — no bracket required ──────────────────────
+
+// Same gap as the bare-address case above, found in testing the same way: a
+// deliberately-planted incorrect rego ("Vehicle 1CDR80" vs the correct
+// "1CDR890" mentioned — bracketed — elsewhere on the sheet) went uncaught
+// because that ONE mention was never bracketed, so it never became an
+// IntelligenceEntity for the fuzzy vehicle-rego check to compare against.
+// Rather than duplicating the exact-match/fuzzy consistency logic a third
+// time, this builds SYNTHETIC vehicle entities straight from raw prose
+// ("Vehicle " immediately followed by a rego-shaped token) and merges them
+// into the same entity list checkConsistency already runs against — so a
+// bare mention gets the exact same exact-match AND fuzzy-typo treatment a
+// bracketed one does, for free. Anchored on the literal word "Vehicle"
+// (the convention every real mention in this app's text actually uses)
+// rather than scanning for rego-shaped tokens anywhere, to keep this at
+// effectively zero false-positive risk.
+const BARE_VEHICLE_RE = /\bVehicle\s+(\d[A-Za-z]{2,3}[-\s]?\d{2,4})\b/gi;
+
+/** Pure — no DB — directly testable. */
+export function findBareVehicleMentions(text: string): string[] {
+  const withoutBrackets = text.replace(/\([^()]*\)/g, m =>
+    "#".repeat(m.length)
+  );
+  const out: string[] = [];
+  const re = new RegExp(BARE_VEHICLE_RE.source, "gi");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(withoutBrackets)) !== null) {
+    out.push(m[1].toUpperCase());
+  }
+  return out;
+}
+
+async function findSheetBareVehicleEntities(
+  sheetId: number
+): Promise<IntelligenceEntity[]> {
+  const rows = await getObservationTextForSheet(sheetId);
+  const synthetic: IntelligenceEntity[] = [];
+  for (const row of rows) {
+    for (const raw of findBareVehicleMentions(row.observation)) {
+      synthetic.push({
+        type: "vehicle",
+        shortForm: raw,
+        occurrences: [
+          {
+            sheetId,
+            sheetTitle: "",
+            operationId: 0,
+            operationName: "",
+            rowId: row.rowId,
+            observationSnippet: row.observation,
+            timeMinutes: row.timeMinutes,
+            fullDescription: raw,
+          },
+        ],
+      });
+    }
+  }
+  return synthetic;
+}
+
 // ── Punctuation spacing — a raw structural check, not entity-mining ───────
 
 /** A space directly before a sentence punctuation mark — almost always
  * leftover from editing (a word or phrase deleted without removing the
  * space in front of the full stop/comma that followed it), the exact shape
  * found in testing ("...58 Kintail ." after "Road" was deleted). Pure — no
- * DB — directly testable. */
+ * DB — directly testable.
+ *
+ * Bracket content is blanked out before scanning (bracket text is an
+ * entity code, not prose, same reasoning as checkSpellingInText) — but
+ * with a non-space filler, NOT spaces. A real bug found in testing: this
+ * app's own bracket convention is written as "Description (SHORTFORM)."/
+ * "(SHORTFORM),", the closing paren directly abutting the following
+ * punctuation with no real space between them — blanking the bracket with
+ * spaces left a run of padding spaces immediately in front of that
+ * punctuation, which this check then misread as a real space-before-
+ * punctuation defect on essentially every bracketed entity mention
+ * followed by punctuation, not just the genuine "58 Kintail ." shape it
+ * was meant to catch. */
 export function findSpaceBeforePunctuation(
   text: string
 ): Array<{ index: number }> {
   const withoutBrackets = text.replace(/\([^()]*\)/g, m =>
-    " ".repeat(m.length)
+    "#".repeat(m.length)
   );
   const out: Array<{ index: number }> = [];
   const re = /[ \t]+[.,;:!?]/g;
@@ -854,15 +989,24 @@ export async function checkRunningSheet(
     .map(e => scopeEntityToSheet(e, sheetId))
     .filter((e): e is IntelligenceEntity => e !== null);
 
-  const [spelling, bracketBalance, bareAddressConsistency, punctuationSpacing] =
-    await Promise.all([
-      checkSpelling(sheetId),
-      checkBracketBalance(sheetId),
-      checkBareAddressConsistency(sheetId),
-      checkPunctuationSpacing(sheetId),
-    ]);
+  const [
+    spelling,
+    bracketBalance,
+    bareAddressConsistency,
+    punctuationSpacing,
+    bareVehicleEntities,
+  ] = await Promise.all([
+    checkSpelling(sheetId),
+    checkBracketBalance(sheetId),
+    checkBareAddressConsistency(sheetId),
+    checkPunctuationSpacing(sheetId),
+    findSheetBareVehicleEntities(sheetId),
+  ]);
   const formattingAndRegistry = checkFormattingAndRegistry(scopedEntities);
-  const consistency = checkConsistency(scopedEntities);
+  const consistency = checkConsistency([
+    ...scopedEntities,
+    ...bareVehicleEntities,
+  ]);
 
   return [
     ...formattingAndRegistry,

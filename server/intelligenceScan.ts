@@ -2,13 +2,22 @@
 // folder, looking for shapes that suggest a parsing/classification slip
 // rather than a genuine person/vehicle/address/business — e.g. the UF1/
 // YC1/UCO1 placeholder-code bug (server/db.ts's extractEntitiesFromText
-// skip list), or a vehicle rego that picked up a stray comma from an
-// address bleeding into its bracket. Deliberately rule-based and narrow
-// (see CLAUDE.md's Golden Rule) — each rule below is something that was
-// either an actual reported bug, or the same failure shape as one. This
-// never runs automatically; it's triggered on demand from the admin's own
-// profile page and only ever notifies that one admin, so a flagged entity
-// gets a human look, not an automatic change.
+// skip list). Deliberately rule-based and narrow (see CLAUDE.md's Golden
+// Rule) — each rule below is something that was either an actual reported
+// bug, or the same failure shape as one. This never runs automatically;
+// it's triggered on demand from the admin's own profile page and only ever
+// notifies that one admin, so a flagged entity gets a human look, not an
+// automatic change.
+//
+// REMOVED: a "comma-in-short-form" rule used to flag any bracket short
+// form containing a comma, on the theory that a real bracket never
+// legitimately contains one. Real-world use disproved that: this team
+// routinely and deliberately writes "Street Name, SUBURB" and "Business
+// Name, Street, SUBURB" as their normal address/business format (e.g. "24
+// Bedford Street, EAST FREMANTLE", "Blend Cafe and Pizza Bar, 356 Marmion
+// Street, MELVILLE"), so the rule was flagging the team's own writing
+// convention as a bug on nearly every address/business entity, not the
+// rare genuine "bracket balloon" parsing slip it was meant for.
 import type { IntelligenceEntity } from "./db";
 import { findFuzzyMatches, DEFAULT_FUZZY_THRESHOLD } from "./fuzzyMatch";
 
@@ -122,33 +131,6 @@ export function scanIntelligenceEntities(
         entity,
         "placeholder-code-shape",
         `"${shortForm}" is shaped like a placeholder code (e.g. UM1/UF1/YC1/UCO1) but was recorded as a ${entity.type} entity — check whether it's a new placeholder code that needs adding to the skip list, or a genuine ${entity.type}.`
-      );
-      continue;
-    }
-
-    // A comma inside the bracket short form itself (not the surrounding
-    // sentence) — a real rego/name/business/address bracket never
-    // legitimately contains one; it's the signature of the "bracket
-    // balloon" bug class (an earlier clause's text bleeding into this
-    // entity's short form). Reported as happening "particularly with
-    // vehicles". "address" was originally left out of this list, but a
-    // real case found later showed the exact same bug there too — a
-    // malformed observation bracket ("...(24 Bedford Street) 24 Bedford
-    // Street)", an orphaned extra closing paren — produced an address
-    // entity with its suburb bled into the shortForm ("24 Bedford Street,
-    // EAST FREMANTLE"), which this rule would have caught immediately had
-    // it covered addresses from the start.
-    if (
-      shortForm.includes(",") &&
-      (entity.type === "vehicle" ||
-        entity.type === "person" ||
-        entity.type === "business" ||
-        entity.type === "address")
-    ) {
-      addFinding(
-        entity,
-        "comma-in-short-form",
-        `"${shortForm}" has a comma inside the ${entity.type} short form — likely text from an adjacent clause bled into this entity's bracket rather than a genuine part of it.`
       );
       continue;
     }

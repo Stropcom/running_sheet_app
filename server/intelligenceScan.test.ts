@@ -24,28 +24,27 @@ function makeEntity(
 }
 
 describe("scanIntelligenceEntities", () => {
-  it("flags a vehicle short form with a comma in it (the reported bug)", () => {
+  // The "comma-in-short-form" rule this pair used to cover was removed —
+  // real-world use showed this team routinely and deliberately writes
+  // "Street Name, SUBURB" / "Business Name, Street, SUBURB" as their normal
+  // address/business format, so the rule flagged their own writing
+  // convention as a bug on nearly every one of these entities. Kept as
+  // "does not flag" regressions so the rule can't silently come back.
+  it("does not flag a vehicle short form with a comma in it", () => {
     const findings = scanIntelligenceEntities([
       makeEntity({ type: "vehicle", shortForm: "1DHY084, MOSMAN PARK" }),
     ]);
-    expect(findings).toHaveLength(1);
-    expect(findings[0].ruleId).toBe("comma-in-short-form");
+    expect(findings).toHaveLength(0);
   });
 
-  // Regression: an orphaned closing paren in a malformed observation
-  // ("...(24 Bedford Street) 24 Bedford Street)") produced an address
-  // entity with its suburb bled into the shortForm — the exact same
-  // "bracket balloon" bug already caught for vehicle/person/business, just
-  // never checked for address until this was found for real.
-  it("flags an address short form with a comma in it too", () => {
+  it("does not flag an address short form with a comma in it", () => {
     const findings = scanIntelligenceEntities([
       makeEntity({
         type: "address",
         shortForm: "24 Bedford Street, EAST FREMANTLE",
       }),
     ]);
-    expect(findings).toHaveLength(1);
-    expect(findings[0].ruleId).toBe("comma-in-short-form");
+    expect(findings).toHaveLength(0);
   });
 
   it("does not flag a clean vehicle rego", () => {

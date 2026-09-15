@@ -6,6 +6,7 @@ import {
   findDuplicateBracketFragment,
   stableDismissKey,
   findBareAddressMentions,
+  findBareVehicleMentions,
   findSpaceBeforePunctuation,
   COMMON_MISSPELLINGS,
 } from "./sheetCheck";
@@ -279,6 +280,56 @@ describe("checkConsistency", () => {
     ];
     expect(checkConsistency(entities)).toHaveLength(0);
   });
+
+  // Regression: a real bug found in testing — a text-mined vehicle
+  // entity's shortForm is NOT the bare rego, it's "REGO description"
+  // (e.g. "1CDR890 green Subaru Outback station sedan" — see
+  // extractEntitiesFromText's vehicle branch in db.ts). Normalising by
+  // stripping spaces/hyphens alone turned that into a huge glued string
+  // that could never usefully compare against anything, so a real
+  // deliberately-planted wrong rego on the sheet went completely
+  // uncaught. normalizeRego now falls back to vehicleRegoKey (the same
+  // rego-extraction the rest of the app already uses) for anything too
+  // long to plausibly be a bare rego on its own.
+  it("flags a bare wrong rego as a probable typo of a fully-described vehicle", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({
+        type: "vehicle",
+        shortForm: "1CDR890 green Subaru Outback station sedan",
+      }),
+      makeEntity({ type: "vehicle", shortForm: "1CDR80" }),
+    ];
+    const findings = checkConsistency(entities);
+    const fuzzy = findings.filter(
+      f => f.ruleId === "possible-typo-of-vehicle-rego"
+    );
+    expect(fuzzy).toHaveLength(1);
+  });
+
+  // Regression: a real false positive found in testing — two genuinely
+  // different, adjacently-plated vehicles, each independently and fully
+  // described in the same row ("1CDR890 green Subaru Outback station
+  // sedan" and "1CDR891 burgundy Skoda Octavia hatch"), scored an 86%
+  // rego-only match and got flagged as a possible typo of each other —
+  // exactly the coincidental-adjacent-plate risk vehicles were already
+  // known to carry. Fixed by only firing the fuzzy pass when at least one
+  // side is a bare/shorthand mention, not fully described on both sides.
+  it("does not flag two independently-described, genuinely different vehicles with adjacent plates", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({
+        type: "vehicle",
+        shortForm: "1CDR890 green Subaru Outback station sedan",
+      }),
+      makeEntity({
+        type: "vehicle",
+        shortForm: "1CDR891 burgundy Skoda Octavia hatch",
+      }),
+    ];
+    const findings = checkConsistency(entities);
+    expect(
+      findings.filter(f => f.ruleId === "possible-typo-of-vehicle-rego")
+    ).toHaveLength(0);
+  });
 });
 
 describe("isBracketBalanced", () => {
@@ -415,6 +466,58 @@ describe("findSpaceBeforePunctuation", () => {
     expect(findSpaceBeforePunctuation("Seen with (1CDR890 ,) nearby.")).toEqual(
       []
     );
+  });
+
+  // Regression: a real bug found in testing — blanking bracket content
+  // with SPACES (rather than a non-space filler) left a run of padding
+  // spaces immediately in front of any punctuation that directly followed
+  // a bracket in the original text, e.g. "(58 Kintail Road)." — which is
+  // this app's own normal convention, so this false-fired on nearly every
+  // bracketed entity mention followed by punctuation.
+  it("does not false-fire when punctuation directly follows a bracket", () => {
+    expect(
+      findSpaceBeforePunctuation(
+        "...58 Kintail Road, APPLECROSS WA (58 Kintail Road)."
+      )
+    ).toEqual([]);
+    expect(
+      findSpaceBeforePunctuation(
+        "...registration 1CDR890 (Vehicle 1CDR890), and a burgundy Toyota."
+      )
+    ).toEqual([]);
+  });
+
+  it("still finds a real space between a bracket and following punctuation", () => {
+    expect(findSpaceBeforePunctuation("Departed (1CDR890) .")).toEqual([
+      { index: 18 },
+    ]);
+  });
+});
+
+describe("findBareVehicleMentions", () => {
+  // Regression: the exact real case found in testing — a deliberately
+  // planted wrong rego mentioned as bare prose ("Vehicle 1CDR80.") with no
+  // bracket anywhere on the sheet, so extractEntitiesFromText never saw it
+  // and the bracket-based vehicle consistency check had nothing to compare
+  // it against.
+  it("finds a rego-shaped token following the word 'Vehicle'", () => {
+    expect(
+      findBareVehicleMentions(
+        "CHANDRA exited 24 Bedford Street and walked down the driveway towards Vehicle 1CDR80."
+      )
+    ).toEqual(["1CDR80"]);
+  });
+
+  it("finds nothing without the word 'Vehicle' immediately before it", () => {
+    expect(findBareVehicleMentions("Seen near 1CDR80 parked outside.")).toEqual(
+      []
+    );
+  });
+
+  it("ignores bracketed content", () => {
+    expect(
+      findBareVehicleMentions("Departed towards (Vehicle 1CDR890) nearby.")
+    ).toEqual([]);
   });
 });
 

@@ -609,6 +609,14 @@ export function AddTargetDialog({
   };
 
   const handleWarnLinkAndCopy = async (warning: DuplicateWarning) => {
+    // Same unguarded-operation crash as handleMergeInstead — this is
+    // reachable from the same early on-blur duplicate check, before the
+    // officer has necessarily picked an Operation yet, and both
+    // buildPayload/buildLinkedPayload below assert operation!.id.
+    if (!operation) {
+      toast.error("Select an operation for this target.");
+      return;
+    }
     setLinking(true);
     try {
       // This dialog only ever creates a Target, so the only registry record
@@ -652,6 +660,18 @@ export function AddTargetDialog({
 
   const handleMergeInstead = async () => {
     if (!dupMatch) return;
+    // A real bug found in production: the duplicate-match check fires as
+    // soon as Surname loses focus, which routinely happens before the
+    // officer has picked an Operation further down the form — but the
+    // merge itself needs to link the existing target to that operation
+    // (see TargetMergeDialog's linkToOperationId), so proceeding with no
+    // operation selected crashed on operation!.id rather than asking for
+    // it. Guard here, the same way the "couldn't load" case just below
+    // already does, instead of asserting it can't be null.
+    if (!operation) {
+      toast.error("Select an operation for this target.");
+      return;
+    }
     const full = await utils.target.getById.fetch({ id: dupMatch.id });
     if (!full) {
       toast.error("Couldn't load the existing target.");

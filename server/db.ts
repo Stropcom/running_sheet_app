@@ -10830,6 +10830,36 @@ export async function getObservationTextForSheet(
   );
 }
 
+/** The assigned target's registry surname for a sheet, if any — backs
+ * sheetCheck.ts's bare-person-typo check. The TGT themselves is never
+ * expected to appear in a "(BRACKET)" the way an associate/vehicle/
+ * address mined from prose would — their identity already comes from the
+ * target card, not the bracket convention — so a typo of their name can
+ * only ever be caught by comparing directly against this registry field,
+ * never against other bracket-mined entities. Returns null when the sheet
+ * has no assigned target, or the target has no surname recorded (legacy/
+ * free-text-only target cards). */
+export async function getSheetTargetSurname(
+  sheetId: number
+): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [sheet] = await db
+    .select({ targetId: runningSheets.targetId })
+    .from(runningSheets)
+    .where(eq(runningSheets.id, sheetId))
+    .limit(1);
+  if (!sheet?.targetId) return null;
+
+  const [target] = await db
+    .select({ surname: targets.surname })
+    .from(targets)
+    .where(eq(targets.id, sheet.targetId))
+    .limit(1);
+  return target?.surname?.trim() || null;
+}
+
 /** Normalises a finding's display name into the same identity key used to
  * both dedupe it within one scan run and record/check its dismissal —
  * trim + uppercase, same as fuzzyMatch.ts's own normalisation, so "Jhon

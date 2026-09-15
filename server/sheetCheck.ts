@@ -50,6 +50,7 @@ import {
   extractEntitiesFromText,
   getAllIntelligenceEntities,
   getObservationTextForSheet,
+  getSheetTargetSurname,
   scanFindingKey,
   vehicleRegoKey,
   type IntelligenceEntity,
@@ -914,6 +915,85 @@ function findSheetBareBusinessEntities(
   return Array.from(byPhrase.values());
 }
 
+// ── Target name typos — bare text vs. this sheet's OWN assigned target ────
+
+// The TGT themselves is a different case from every bare-mention check
+// above: an associate/vehicle/address/business mined from prose gets its
+// identity FROM a bracket, so a bare mention has to be compared against
+// whatever else on the sheet WAS bracketed. The target is the opposite —
+// they're never expected to be bracketed at all, since their identity
+// already comes from the target card this sheet is assigned to (see
+// getSheetTargetSurname in db.ts), not from being introduced in
+// observation text. So this doesn't build a "known bracketed names" list
+// the way findBarePersonMentions would — it compares bare ALL-CAPS words
+// directly against the ONE name that actually matters here: the sheet's
+// own assigned target. A real case found in testing: "CHANDR" typed once
+// instead of "CHANDRA" (the assigned target, written correctly on every
+// other row, and never bracketed anywhere) went uncaught — there was no
+// entity of any kind for it to be compared against, because the target
+// themselves was never expected to produce one.
+const BARE_SURNAME_WORD_RE = /\b[A-Z][A-Z'-]{2,}\b/g;
+
+/** True when `word` is exactly `target` with a short (initial-sized)
+ * prefix added or removed — the same "P.HILL"-style disambiguation shape
+ * guarded against in isInitialVariant above, not a typo. */
+function isInitialOfSameSurname(word: string, target: string): boolean {
+  const [shorter, longer] =
+    word.length <= target.length ? [word, target] : [target, word];
+  return longer.length - shorter.length <= 2 && longer.endsWith(shorter);
+}
+
+/** Pure — no DB — directly testable. `targetSurname` is the sheet's own
+ * assigned target's registry surname (or null — no target assigned, or
+ * no surname recorded), already resolved by the caller. */
+export function findTargetNameTypos(
+  rows: ObservationTextForSheet[],
+  targetSurname: string | null
+): SheetCheckFinding[] {
+  if (!targetSurname) return [];
+  const target = targetSurname.trim().toUpperCase();
+  if (target.length < 3) return [];
+  const candidates = [{ id: "target", label: target }];
+
+  const findings: SheetCheckFinding[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const withoutBrackets = row.observation.replace(/\([^()]*\)/g, m =>
+      "#".repeat(m.length)
+    );
+    const re = new RegExp(BARE_SURNAME_WORD_RE.source, "g");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(withoutBrackets)) !== null) {
+      const word = m[0];
+      if (word === target) continue;
+      if (isInitialOfSameSurname(word, target)) continue;
+      const dedupeKey = `${row.rowId}::${word}`;
+      if (seen.has(dedupeKey)) continue;
+      const matches = findFuzzyMatches(
+        word,
+        candidates,
+        DEFAULT_FUZZY_THRESHOLD
+      );
+      if (matches.length === 0) continue;
+      seen.add(dedupeKey);
+      const start = Math.max(0, m.index - 30);
+      const end = Math.min(row.observation.length, m.index + word.length + 30);
+      const snippet = `${start > 0 ? "…" : ""}${row.observation.slice(start, end)}${end < row.observation.length ? "…" : ""}`;
+      findings.push({
+        ruleId: "possible-typo-of-target-name",
+        category: "registry",
+        reason: `"${word}" is close to "${target}" (${Math.round(matches[0].similarity * 100)}% match) — the target this sheet is assigned to — check whether this is a typo of their name.`,
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        snippet,
+        suggestedFix: { wrong: word, correct: target },
+        findingKey: `ROW_${row.rowId}::TARGET_TYPO::${word}`,
+      });
+    }
+  }
+  return findings;
+}
+
 // ── Punctuation spacing — a raw structural check, not entity-mining ───────
 
 /** A space directly before a sentence punctuation mark — almost always
@@ -1240,9 +1320,10 @@ export async function checkRunningSheet(
   // avoidable inefficiency found while rebuilding this: up to 7 identical
   // DB round-trips for one Check Sheet click). Only getAllIntelligenceEntities
   // is a genuine separate async DB call now.
-  const [allEntities, rows] = await Promise.all([
+  const [allEntities, rows, targetSurname] = await Promise.all([
     getAllIntelligenceEntities(),
     getObservationTextForSheet(sheetId),
+    getSheetTargetSurname(sheetId),
   ]);
   const scopedEntities = allEntities
     .map(e => scopeEntityToSheet(e, sheetId))
@@ -1271,6 +1352,7 @@ export async function checkRunningSheet(
     rows,
     knownBusinessNames
   );
+  const targetNameTypos = findTargetNameTypos(rows, targetSurname);
   const formattingAndRegistry = checkFormattingAndRegistry(scopedEntities);
   const consistency = checkConsistency([
     ...rawEntities,
@@ -1280,6 +1362,7 @@ export async function checkRunningSheet(
 
   return [
     ...formattingAndRegistry,
+    ...targetNameTypos,
     ...bracketBalance,
     ...punctuationSpacing,
     ...consistency,

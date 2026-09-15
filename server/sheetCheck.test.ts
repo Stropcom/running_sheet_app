@@ -8,10 +8,11 @@ import {
   findBareAddressMentions,
   findBareVehicleMentions,
   findBareBusinessMentions,
+  findTargetNameTypos,
   findSpaceBeforePunctuation,
   COMMON_MISSPELLINGS,
 } from "./sheetCheck";
-import type { IntelligenceEntity } from "./db";
+import type { IntelligenceEntity, ObservationTextForSheet } from "./db";
 
 function makeEntity(
   overrides: Partial<IntelligenceEntity> &
@@ -599,6 +600,92 @@ describe("findBareBusinessMentions", () => {
         ["Blend Cafe and Pizza Bar"]
       )
     ).toEqual([]);
+  });
+});
+
+describe("findTargetNameTypos", () => {
+  // Regression: the exact real case found in testing — the TGT ("CHANDRA")
+  // is never expected to be bracketed at all (their identity comes from
+  // the target card, not the bracket-mining convention), so a typo of
+  // their own name has to be compared directly against the sheet's
+  // assigned target — never against other bracket-mined entities, since
+  // there won't be any for the target themselves.
+  it("flags a bare typo of the sheet's assigned target's surname", () => {
+    const rows: ObservationTextForSheet[] = [
+      {
+        rowId: 1,
+        timeMinutes: 600,
+        observation:
+          "Vehicle 1CDR890, CHANDRA driver and sole occupant, departed 15 Marbella Avenue.",
+      },
+      {
+        rowId: 2,
+        timeMinutes: 700,
+        observation:
+          "Vehicle 1CDR890, CHANDR driver and sole occupant, arrived at 8 Kintail Road.",
+      },
+    ];
+    const findings = findTargetNameTypos(rows, "CHANDRA");
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      ruleId: "possible-typo-of-target-name",
+      category: "registry",
+      rowId: 2,
+      suggestedFix: { wrong: "CHANDR", correct: "CHANDRA" },
+    });
+  });
+
+  it("does not flag the target's name written correctly", () => {
+    const rows: ObservationTextForSheet[] = [
+      {
+        rowId: 1,
+        timeMinutes: 600,
+        observation: "CHANDRA departed the address.",
+      },
+    ];
+    expect(findTargetNameTypos(rows, "CHANDRA")).toHaveLength(0);
+  });
+
+  it("does not flag anything when the sheet has no assigned target", () => {
+    const rows: ObservationTextForSheet[] = [
+      {
+        rowId: 1,
+        timeMinutes: 600,
+        observation: "CHANDR departed the address.",
+      },
+    ];
+    expect(findTargetNameTypos(rows, null)).toHaveLength(0);
+  });
+
+  // The app's own "P.HILL" initial-plus-surname convention must not be
+  // flagged as a typo of the bare target surname.
+  it("does not flag an initial-prefixed variant of the target's name", () => {
+    const rows: ObservationTextForSheet[] = [
+      {
+        rowId: 1,
+        timeMinutes: 600,
+        observation: "Seen with J.CHANDRA nearby.",
+      },
+    ];
+    expect(findTargetNameTypos(rows, "CHANDRA")).toHaveLength(0);
+  });
+
+  it("ignores bracketed content", () => {
+    const rows: ObservationTextForSheet[] = [
+      { rowId: 1, timeMinutes: 600, observation: "Seen with (CHANDR) nearby." },
+    ];
+    expect(findTargetNameTypos(rows, "CHANDRA")).toHaveLength(0);
+  });
+
+  it("does not flag a genuinely different surname", () => {
+    const rows: ObservationTextForSheet[] = [
+      {
+        rowId: 1,
+        timeMinutes: 600,
+        observation: "SMITH departed the address.",
+      },
+    ];
+    expect(findTargetNameTypos(rows, "CHANDRA")).toHaveLength(0);
   });
 });
 

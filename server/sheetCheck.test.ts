@@ -7,6 +7,7 @@ import {
   stableDismissKey,
   findBareAddressMentions,
   findBareVehicleMentions,
+  findBareBusinessMentions,
   findSpaceBeforePunctuation,
   COMMON_MISSPELLINGS,
 } from "./sheetCheck";
@@ -77,6 +78,17 @@ describe("checkSpellingInText", () => {
       expect(wrong.endsWith("_")).toBe(false);
     }
   });
+
+  // Regression: a real case found in testing — "arriv" instead of
+  // "arrived", a truncation rather than a classic misspelling.
+  it("flags 'arriv' as a truncated 'arrived'", () => {
+    const hits = checkSpellingInText(
+      "Vehicle 1CDR890, CHANDRA driver and sole occupant, arriv at the address."
+    );
+    expect(hits).toContainEqual(
+      expect.objectContaining({ wrong: "arriv", correct: "arrived" })
+    );
+  });
 });
 
 describe("checkConsistency", () => {
@@ -123,6 +135,41 @@ describe("checkConsistency", () => {
       rowId: 10,
       otherRowId: 20,
     });
+  });
+
+  // Regression: a real case found in testing — extractEntitiesFromText
+  // routinely enriches a short address bracket into "Street, SUBURB"
+  // using the surrounding sentence, this team's normal writing
+  // convention. Including or omitting that suburb clause is legitimate,
+  // deliberate variance (the same conclusion already reached for the
+  // "15 Marbella Avenue, SEVILLE GROVE" dismiss-key bug), never a real
+  // formatting inconsistency — this must NOT be flagged.
+  it("does not flag the same street with and without a suburb clause", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({
+        type: "address",
+        shortForm: "24 Bedford Street, EAST FREMANTLE",
+      }),
+      makeEntity({ type: "address", shortForm: "24 Bedford Street" }),
+    ];
+    expect(checkConsistency(entities)).toHaveLength(0);
+  });
+
+  // But a genuine formatting difference must still be caught even when
+  // one side also happens to carry a suburb clause — the suburb isn't
+  // what's being compared, the street portion still is.
+  it("still flags a real street-format difference even with a suburb clause present", () => {
+    const entities: IntelligenceEntity[] = [
+      makeEntity({
+        type: "address",
+        shortForm: "24 Bedford Street, EAST FREMANTLE",
+      }),
+      makeEntity({ type: "address", shortForm: "24 Bedford Rd" }),
+    ];
+    const findings = checkConsistency(entities);
+    expect(
+      findings.filter(f => f.ruleId === "inconsistent-address-format")
+    ).toHaveLength(1);
   });
 
   it("flags the same rego written two different ways on one sheet", () => {
@@ -467,6 +514,90 @@ describe("findBareAddressMentions", () => {
   it("ignores bracketed content", () => {
     expect(
       findBareAddressMentions("Departed towards (at 58 Kintail Road) nearby.")
+    ).toEqual([]);
+  });
+
+  // Regression: the exact real case found in testing — this team's other
+  // real address convention, introduced straight after a comma (usually
+  // after a business name) with no preposition at all.
+  it("finds a bare address straight after a comma, with no street type", () => {
+    const hits = findBareAddressMentions(
+      "Vehicle 1CDR890, CHANDRA driver and sole occupant, arriv at Blend Cafe and Pizza Bar, 356 Marmion, MELVILLE WA (Blend Cafe and Pizza Bar) parked in the car park."
+    );
+    expect(hits).toContainEqual({
+      raw: "356 Marmion",
+      normKey: "356 MARMION",
+      hasStreetType: false,
+    });
+  });
+
+  it("finds the same address after a comma WITH a street type, same normKey", () => {
+    const hits = findBareAddressMentions(
+      "Blend Cafe and Pizza Bar, 356 Marmion Street, MELVILLE WA (Blend Cafe and Pizza Bar) parked in the car park."
+    );
+    expect(hits).toContainEqual({
+      raw: "356 Marmion Street",
+      normKey: "356 MARMION",
+      hasStreetType: true,
+    });
+  });
+});
+
+describe("findBareBusinessMentions", () => {
+  // Regression: the exact real case found in testing — a business name
+  // typo'd on a later, unbracketed re-mention ("Blend Caf" missing the
+  // "e"), with no reliable anchor word the way "Vehicle "/"at " give
+  // addresses and vehicles — so this only fires when a candidate phrase
+  // is actually close to something already properly bracketed elsewhere.
+  it("finds a bare business phrase close to a known bracketed business", () => {
+    const hits = findBareBusinessMentions(
+      "CHANDRA exited the vehicle, walked through the car park, entered Blend Caf and Pizza Bar and continued out of sight.",
+      ["Blend Cafe and Pizza Bar"]
+    );
+    expect(hits).toEqual(["Blend Caf and Pizza Bar"]);
+  });
+
+  it("finds nothing when there's no known business to compare against", () => {
+    expect(
+      findBareBusinessMentions(
+        "CHANDRA entered Blend Caf and Pizza Bar and continued out of sight.",
+        []
+      )
+    ).toEqual([]);
+  });
+
+  it("does not flag a phrase that isn't close to any known business", () => {
+    expect(
+      findBareBusinessMentions(
+        "CHANDRA walked past Kmart and continued down Stirling Highway.",
+        ["Blend Cafe and Pizza Bar"]
+      )
+    ).toEqual([]);
+  });
+
+  it("does not flag an exact match to a known business", () => {
+    expect(
+      findBareBusinessMentions(
+        "CHANDRA entered Blend Cafe and Pizza Bar and continued out of sight.",
+        ["Blend Cafe and Pizza Bar"]
+      )
+    ).toEqual([]);
+  });
+
+  it("never flags an ALL-CAPS phrase — a surname/code by this app's convention", () => {
+    expect(
+      findBareBusinessMentions("CHANDRA SMITH walked through the car park.", [
+        "Chandra Smith Removals",
+      ])
+    ).toEqual([]);
+  });
+
+  it("ignores bracketed content", () => {
+    expect(
+      findBareBusinessMentions(
+        "Departed towards (Blend Caf and Pizza Bar) nearby.",
+        ["Blend Cafe and Pizza Bar"]
+      )
     ).toEqual([]);
   });
 });

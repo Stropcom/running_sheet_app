@@ -20,11 +20,18 @@
 //     are deliberately excluded from the fuzzy pass, since two genuinely
 //     different streets coincidentally sound alike far more often than two
 //     different vehicles/people/businesses do (see that function's own
-//     comment) — plus checkBareAddressConsistency, new, the same idea
-//     applied to plain prose mentions that were never bracketed at all
-//     (see that function's own comment — the bracket-based checks above
-//     have nothing to compare when neither mention of an address ever got
-//     a "(SHORTFORM)" of its own).
+//     comment) — plus a bare-mention pass for each type that can be
+//     mentioned without ever being bracketed (checkBareAddressConsistency/
+//     findSheetBareVehicleEntities/findSheetBareBusinessEntities — see
+//     each one's own comment for why a bracket can't be assumed).
+//
+//     IMPORTANT: consistency reads from getRawSheetEntities, NOT the
+//     scopedEntities the two categories above use. getAllIntelligenceEntities
+//     (behind scopedEntities) merges an address/vehicle into another
+//     whenever one shortForm is a strict prefix of the other — correct for
+//     the Intelligence Folder (no duplicate cards), but it silently erased
+//     the exact evidence a real bug ("24 Bedford" vs "24 Bedford Street")
+//     needed to be caught at all — see getRawSheetEntities' own comment.
 //   - spelling: new — a plain, curated list of common English
 //     misspellings, checked against the prose OUTSIDE any bracket (bracket
 //     content is a name/rego/address code, not prose, and is already
@@ -40,11 +47,13 @@
 // under the same "checked" badge as the fully deterministic categories
 // here, which is worse than not offering it.
 import {
+  extractEntitiesFromText,
   getAllIntelligenceEntities,
   getObservationTextForSheet,
   scanFindingKey,
   vehicleRegoKey,
   type IntelligenceEntity,
+  type ObservationTextForSheet,
 } from "./db";
 import { scanIntelligenceEntities } from "./intelligenceScan";
 import { findFuzzyMatches, DEFAULT_FUZZY_THRESHOLD } from "./fuzzyMatch";
@@ -97,6 +106,63 @@ function scopeEntityToSheet(
   );
   if (occurrences.length === 0) return null;
   return { ...entity, occurrences };
+}
+
+// ── Raw, non-merging entity source — for consistency checking ONLY ────────
+
+// A real bug found in testing: getAllIntelligenceEntities() (used above for
+// formatting/registry, and — until this was found — for consistency too)
+// has a post-process merge step that absorbs one address/vehicle entity
+// into another whenever one shortForm is a strict prefix of the other
+// ("24 Bedford" folded into "24 Bedford Street" as the same real-world
+// place). That's the RIGHT behaviour for the Intelligence Folder, which
+// doesn't want duplicate address cards — but it's exactly the WRONG
+// behaviour for Check Sheet: a real malformed bracket ("...24 Bedford
+// Street, EAST FREMANTLE WA (24 Bedford)...", the shortform silently
+// missing "Street") got fused into the correctly-written "24 Bedford
+// Street" entity from other rows BEFORE checkConsistency ever ran, so
+// there were no longer two different things to compare — the very
+// evidence the check needed had already been erased upstream. This
+// builds a completely separate, sheet-scoped entity list straight from
+// each row's own text (extractEntitiesFromText), with NO cross-row
+// merging beyond grouping identical, EXACT shortForm text together —
+// every distinct spelling/shape stays its own entity, so nothing can be
+// silently absorbed before a consistency check gets to see it.
+//
+// Deliberately NOT used for checkFormattingAndRegistry above: that
+// still needs getAllIntelligenceEntities' registry-aware entities (the
+// possible-typo-of-registry-name rule specifically needs the isTarget/
+// isAssociate-flagged entities that only that merged pipeline produces).
+function getRawSheetEntities(
+  sheetId: number,
+  rows: ObservationTextForSheet[]
+): IntelligenceEntity[] {
+  const byKey = new Map<string, IntelligenceEntity>();
+  for (const row of rows) {
+    for (const e of extractEntitiesFromText(row.observation)) {
+      if (e.type === "unknown") continue;
+      const key = `${e.type}::${e.shortForm.trim().toUpperCase()}`;
+      const occurrence = {
+        sheetId,
+        sheetTitle: "",
+        operationId: 0,
+        operationName: "",
+        rowId: row.rowId,
+        observationSnippet: row.observation,
+        timeMinutes: row.timeMinutes,
+        fullDescription: e.fullDescription,
+      };
+      const existing = byKey.get(key);
+      if (existing) existing.occurrences.push(occurrence);
+      else
+        byKey.set(key, {
+          type: e.type,
+          shortForm: e.shortForm,
+          occurrences: [occurrence],
+        });
+    }
+  }
+  return Array.from(byKey.values());
 }
 
 // A real bug found in testing: a comma-in-short-form finding on an address
@@ -211,7 +277,20 @@ const STREET_TYPE_WORDS = new Set([
  * (a business-name bracket, an unrecognisable shape), which is never
  * treated as inconsistent with anything. */
 function normalizeStreetLabel(label: string): string | null {
-  const m = label.trim().match(/^(\d+[A-Za-z]?)\s+(.+)$/);
+  // A real bug found in testing: extractEntitiesFromText routinely
+  // enriches a short bracket into "street, SUBURB" ("24 Bedford Street,
+  // EAST FREMANTLE") using the surrounding sentence — this team's normal
+  // convention (see every real example found this session). Without
+  // stripping that suffix first, the street-type word ("Street") is no
+  // longer the LAST word once a suburb follows it, so it was never being
+  // found/stripped at all — "24 Bedford Street, EAST FREMANTLE" and a
+  // plain "24 Bedford Street" normalised to two completely different
+  // keys and were never compared as the same address. Stripping from the
+  // first comma onward first (the same "core identity vs. sometimes-
+  // present suffix" pattern stableDismissKey above already uses, for the
+  // same underlying reason) fixes this for every shape at once.
+  const core = label.split(",")[0];
+  const m = core.trim().match(/^(\d+[A-Za-z]?)\s+(.+)$/);
   if (!m) return null;
   const houseNo = m[1].toUpperCase();
   const words = m[2].trim().split(/\s+/);
@@ -284,11 +363,32 @@ const CONSISTENCY_TYPE_NOUN: Record<
   business: "business",
 };
 
+/** True when two address labels differ ONLY by a trailing ", SUBURB"
+ * clause on one side — e.g. "24 Bedford Street, EAST FREMANTLE" vs "24
+ * Bedford Street". A real false positive found in testing: once
+ * normalizeStreetLabel above was fixed to strip that clause before
+ * comparing (so the two get recognised as the same address at all — see
+ * its own comment), checkConsistencyForType started flagging that pair
+ * as "written two different ways", but including or omitting a suburb
+ * disambiguator is normal, deliberate variance for this team (the exact
+ * same conclusion already reached for the dismiss-key drift bug on
+ * "15 Marbella Avenue, SEVILLE GROVE" — see stableDismissKey above), not
+ * a formatting inconsistency to fix. Only the STREET portion (before any
+ * comma) needs to match for this to count as trivial; if that itself
+ * differs ("1 Smith Street" vs "1 SMITH ST") it's still flagged. */
+function isSuburbOnlyVariant(a: string, b: string): boolean {
+  return (
+    a.split(",")[0].trim().toLowerCase() ===
+    b.split(",")[0].trim().toLowerCase()
+  );
+}
+
 function checkConsistencyForType(
   entities: IntelligenceEntity[],
   type: "address" | "vehicle" | "person" | "business",
   ruleId: string,
-  normalize: (label: string) => string | null
+  normalize: (label: string) => string | null,
+  isTrivialVariant?: (a: string, b: string) => boolean
 ): SheetCheckFinding[] {
   const groups = new Map<string, IntelligenceEntity[]>();
   for (const e of entities) {
@@ -308,6 +408,7 @@ function checkConsistencyForType(
     }
     if (distinctLabels.size < 2) continue;
     const [entityA, entityB] = Array.from(distinctLabels.values());
+    if (isTrivialVariant?.(entityA.shortForm, entityB.shortForm)) continue;
     const occA = entityA.occurrences[0];
     const occB = entityB.occurrences[0];
     if (!occA || !occB) continue;
@@ -480,7 +581,8 @@ export function checkConsistency(
       entities,
       "address",
       "inconsistent-address-format",
-      normalizeStreetLabel
+      normalizeStreetLabel,
+      isSuburbOnlyVariant
     ),
     ...checkConsistencyForType(
       entities,
@@ -544,6 +646,17 @@ export function checkConsistency(
 const ADDRESS_PREPOSITION_RE =
   /\b(?:at|outside|near|towards|opposite|vicinity of|corner of|address(?:\s+of)?)\s+(\d{1,5}[A-Za-z]?(?:\s+[A-Z][A-Za-z'-]*){1,4})/gi;
 
+// The other real shape this team's own writing convention actually uses —
+// found in testing: "Blend Cafe and Pizza Bar, 356 Marmion, MELVILLE WA"
+// introduces the address straight after a comma (no preposition at all,
+// usually right after a business name). Anchored on the comma + a leading
+// number rather than any specific preceding word, since the text before
+// the comma varies (a business name, a suburb, another street) — the
+// leading digit is what reliably marks this as a street address rather
+// than some other comma-separated clause.
+const ADDRESS_COMMA_RE =
+  /,\s*(\d{1,5}[A-Za-z]?(?:\s+[A-Z][A-Za-z'-]*){1,4})\b/g;
+
 export interface BareAddressMention {
   raw: string;
   normKey: string;
@@ -556,23 +669,31 @@ export function findBareAddressMentions(text: string): BareAddressMention[] {
     " ".repeat(m.length)
   );
   const out: BareAddressMention[] = [];
-  const re = new RegExp(ADDRESS_PREPOSITION_RE.source, "gi");
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(withoutBrackets)) !== null) {
-    const raw = m[1].trim();
-    const normKey = normalizeStreetLabel(raw);
-    if (!normKey) continue;
-    const words = raw.split(/\s+/);
-    const lastWord = words[words.length - 1].toLowerCase().replace(/\.$/, "");
-    out.push({ raw, normKey, hasStreetType: STREET_TYPE_WORDS.has(lastWord) });
+  const seen = new Set<number>();
+  for (const source of [ADDRESS_PREPOSITION_RE, ADDRESS_COMMA_RE]) {
+    const re = new RegExp(source.source, source.flags);
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(withoutBrackets)) !== null) {
+      if (seen.has(m.index)) continue;
+      seen.add(m.index);
+      const raw = m[1].trim();
+      const normKey = normalizeStreetLabel(raw);
+      if (!normKey) continue;
+      const words = raw.split(/\s+/);
+      const lastWord = words[words.length - 1].toLowerCase().replace(/\.$/, "");
+      out.push({
+        raw,
+        normKey,
+        hasStreetType: STREET_TYPE_WORDS.has(lastWord),
+      });
+    }
   }
   return out;
 }
 
-async function checkBareAddressConsistency(
-  sheetId: number
-): Promise<SheetCheckFinding[]> {
-  const rows = await getObservationTextForSheet(sheetId);
+function checkBareAddressConsistency(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
   interface Entry {
     rowId: number;
     timeMinutes: number | null;
@@ -665,11 +786,11 @@ export function findBareVehicleMentions(text: string): string[] {
  * new information, just a repeat mention of an already-correct vehicle,
  * and including it anyway would still have produced a redundant duplicate
  * finding alongside the one the real bracketed entity already generates. */
-async function findSheetBareVehicleEntities(
+function findSheetBareVehicleEntities(
   sheetId: number,
+  rows: ObservationTextForSheet[],
   knownRegoKeys: Set<string>
-): Promise<IntelligenceEntity[]> {
-  const rows = await getObservationTextForSheet(sheetId);
+): IntelligenceEntity[] {
   const byRego = new Map<string, IntelligenceEntity>();
   for (const row of rows) {
     for (const raw of findBareVehicleMentions(row.observation)) {
@@ -695,6 +816,102 @@ async function findSheetBareVehicleEntities(
     }
   }
   return Array.from(byRego.values());
+}
+
+// ── Bare-prose business mentions — no bracket required ─────────────────────
+
+// Same gap as addresses/vehicles, found in testing the same way: a
+// business's name was typo'd on a LATER, bare (unbracketed) re-mention —
+// "entered Blend Caf and Pizza Bar" instead of "Blend Cafe and Pizza Bar",
+// correctly bracketed elsewhere on the sheet. Unlike vehicles/addresses,
+// business mentions have no reliable single anchor word ("Vehicle ", "at ")
+// to scan for — so instead this extracts any capitalised-word PHRASE (2+
+// real words, tolerating "and"/"of"/"the"/"&" as connectors, matching how
+// business names are actually written — "Blend Caf and Pizza Bar" is one
+// phrase despite the lowercase "and" in the middle) from a row's bare
+// text, then only keeps it if it's actually CLOSE to a business already
+// known from a real bracket on this sheet — never flagged just for
+// existing, only for looking like a near-miss of something already
+// established. That keeps this safe against the obvious false-positive
+// risk (street names, narrative phrases) the same way every other bare-
+// mention check in this file stays safe: a finding only ever fires when
+// there's a genuine pair to compare, not from a candidate existing alone.
+const BARE_BUSINESS_PHRASE_RE =
+  /\b[A-Z][A-Za-z'-]*(?:\s+(?:and|of|the|&)\s+[A-Z][A-Za-z'-]*|\s+[A-Z][A-Za-z'-]*)+\b/g;
+
+/** Pure — no DB — directly testable. `knownBusinessNames` are the
+ * shortForms of businesses already bracketed somewhere on the sheet —
+ * only a candidate phrase that's a CLOSE (fuzzy) but not exact match to
+ * one of these is returned. */
+export function findBareBusinessMentions(
+  text: string,
+  knownBusinessNames: string[]
+): string[] {
+  if (knownBusinessNames.length === 0) return [];
+  const withoutBrackets = text.replace(/\([^()]*\)/g, m =>
+    "#".repeat(m.length)
+  );
+  const candidates = knownBusinessNames.map((label, i) => ({
+    id: String(i),
+    label,
+  }));
+  const out: string[] = [];
+  const re = new RegExp(BARE_BUSINESS_PHRASE_RE.source, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(withoutBrackets)) !== null) {
+    const phrase = m[0].trim();
+    // ALL-CAPS is a surname/code by this app's own convention (same
+    // reasoning as checkSpellingInText) — never a business name.
+    if (phrase === phrase.toUpperCase()) continue;
+    const wordCount = phrase
+      .split(/\s+/)
+      .filter(w => w.replace(/[^A-Za-z]/g, "").length >= 2).length;
+    if (wordCount < 2) continue;
+    if (knownBusinessNames.some(k => k.toLowerCase() === phrase.toLowerCase()))
+      continue;
+    const matches = findFuzzyMatches(
+      phrase,
+      candidates,
+      DEFAULT_FUZZY_THRESHOLD
+    );
+    if (matches.length > 0) out.push(phrase);
+  }
+  return out;
+}
+
+function findSheetBareBusinessEntities(
+  sheetId: number,
+  rows: ObservationTextForSheet[],
+  knownBusinessNames: string[]
+): IntelligenceEntity[] {
+  if (knownBusinessNames.length === 0) return [];
+  const byPhrase = new Map<string, IntelligenceEntity>();
+  for (const row of rows) {
+    for (const phrase of findBareBusinessMentions(
+      row.observation,
+      knownBusinessNames
+    )) {
+      const key = phrase.toUpperCase();
+      if (byPhrase.has(key)) continue;
+      byPhrase.set(key, {
+        type: "business",
+        shortForm: phrase,
+        occurrences: [
+          {
+            sheetId,
+            sheetTitle: "",
+            operationId: 0,
+            operationName: "",
+            rowId: row.rowId,
+            observationSnippet: row.observation,
+            timeMinutes: row.timeMinutes,
+            fullDescription: phrase,
+          },
+        ],
+      });
+    }
+  }
+  return Array.from(byPhrase.values());
 }
 
 // ── Punctuation spacing — a raw structural check, not entity-mining ───────
@@ -731,10 +948,9 @@ export function findSpaceBeforePunctuation(
   return out;
 }
 
-async function checkPunctuationSpacing(
-  sheetId: number
-): Promise<SheetCheckFinding[]> {
-  const rows = await getObservationTextForSheet(sheetId);
+function checkPunctuationSpacing(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
   const findings: SheetCheckFinding[] = [];
   for (const row of rows) {
     for (const hit of findSpaceBeforePunctuation(row.observation)) {
@@ -860,6 +1076,7 @@ export const COMMON_MISSPELLINGS: Record<string, string> = {
   contnued: "continued",
   contnue: "continue",
   contnues: "continues",
+  arriv: "arrived",
 };
 
 function applyCasing(correct: string, original: string): string {
@@ -900,8 +1117,7 @@ export function checkSpellingInText(
   return out;
 }
 
-async function checkSpelling(sheetId: number): Promise<SheetCheckFinding[]> {
-  const rows = await getObservationTextForSheet(sheetId);
+function checkSpelling(rows: ObservationTextForSheet[]): SheetCheckFinding[] {
   const findings: SheetCheckFinding[] = [];
   for (const row of rows) {
     const hits = checkSpellingInText(row.observation);
@@ -978,10 +1194,9 @@ export function isBracketBalanced(text: string): boolean {
  * wording, one-click Fix — and only falls back to the generic "brackets
  * don't match up" finding for anything else unbalanced, so a row already
  * caught precisely isn't also flagged vaguely. */
-async function checkBracketBalance(
-  sheetId: number
-): Promise<SheetCheckFinding[]> {
-  const rows = await getObservationTextForSheet(sheetId);
+function checkBracketBalance(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
   const findings: SheetCheckFinding[] = [];
   for (const row of rows) {
     const duplicate = findDuplicateBracketFragment(row.observation);
@@ -1020,33 +1235,47 @@ async function checkBracketBalance(
 export async function checkRunningSheet(
   sheetId: number
 ): Promise<SheetCheckFinding[]> {
-  const allEntities = await getAllIntelligenceEntities();
+  // Rows are fetched ONCE and passed to every check below — they all used
+  // to independently re-fetch the same sheet's observation text (a real,
+  // avoidable inefficiency found while rebuilding this: up to 7 identical
+  // DB round-trips for one Check Sheet click). Only getAllIntelligenceEntities
+  // is a genuine separate async DB call now.
+  const [allEntities, rows] = await Promise.all([
+    getAllIntelligenceEntities(),
+    getObservationTextForSheet(sheetId),
+  ]);
   const scopedEntities = allEntities
     .map(e => scopeEntityToSheet(e, sheetId))
     .filter((e): e is IntelligenceEntity => e !== null);
+  const rawEntities = getRawSheetEntities(sheetId, rows);
   const knownVehicleRegoKeys = new Set(
-    scopedEntities
+    rawEntities
       .filter(e => e.type === "vehicle")
       .map(e => normalizeRego(e.shortForm))
   );
+  const knownBusinessNames = rawEntities
+    .filter(e => e.type === "business")
+    .map(e => e.shortForm);
 
-  const [
-    spelling,
-    bracketBalance,
-    bareAddressConsistency,
-    punctuationSpacing,
-    bareVehicleEntities,
-  ] = await Promise.all([
-    checkSpelling(sheetId),
-    checkBracketBalance(sheetId),
-    checkBareAddressConsistency(sheetId),
-    checkPunctuationSpacing(sheetId),
-    findSheetBareVehicleEntities(sheetId, knownVehicleRegoKeys),
-  ]);
+  const spelling = checkSpelling(rows);
+  const bracketBalance = checkBracketBalance(rows);
+  const bareAddressConsistency = checkBareAddressConsistency(rows);
+  const punctuationSpacing = checkPunctuationSpacing(rows);
+  const bareVehicleEntities = findSheetBareVehicleEntities(
+    sheetId,
+    rows,
+    knownVehicleRegoKeys
+  );
+  const bareBusinessEntities = findSheetBareBusinessEntities(
+    sheetId,
+    rows,
+    knownBusinessNames
+  );
   const formattingAndRegistry = checkFormattingAndRegistry(scopedEntities);
   const consistency = checkConsistency([
-    ...scopedEntities,
+    ...rawEntities,
     ...bareVehicleEntities,
+    ...bareBusinessEntities,
   ]);
 
   return [

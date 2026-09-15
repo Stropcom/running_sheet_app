@@ -8,7 +8,7 @@
  * and field-level merge (against an existing target) are handled internally.
  */
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -271,6 +272,23 @@ export function AddTargetDialog({
   // skip re-asking about a name that was already cleared at the surname
   // field's onBlur, instead of prompting the same question twice.
   const [dupCheckedForName, setDupCheckedForName] = useState("");
+  // Both "Yes — merge details" and "Yes, same person — link and copy" need
+  // an Operation picked before they can proceed (the merge/link links the
+  // existing record to it) — but the duplicate check that offers them
+  // fires on the Surname field's blur, routinely before the officer has
+  // reached the OperationPicker further down the form. A real bug found
+  // in production: this used to just error and abort, dead-ending the
+  // flow — re-blurring the same (now-unchanged) surname never re-raises
+  // the same prompt (see lastBlurCheckedNameRef), so there was no way
+  // back into it short of clearing and retyping the name. Fixed as a
+  // flow-through instead: remember which action was trying to proceed,
+  // pop the normal OperationPicker right there, and continue straight
+  // into that action the moment one is chosen.
+  const [pendingAfterOperation, setPendingAfterOperation] = useState<
+    | { kind: "merge" }
+    | { kind: "linkAndCopy"; warning: DuplicateWarning }
+    | null
+  >(null);
 
   // ── Secondary duplicate check (name-as-person/address/vehicle), only run
   // once the target-vs-target check above has cleared — catches e.g. this
@@ -310,6 +328,7 @@ export function AddTargetDialog({
     setWarnIndex(0);
     setWarnFromSave(false);
     setLinking(false);
+    setPendingAfterOperation(null);
     onClose();
   };
 
@@ -667,12 +686,14 @@ export function AddTargetDialog({
   };
 
   const handleWarnLinkAndCopy = async (warning: DuplicateWarning) => {
-    // Same unguarded-operation crash as handleMergeInstead — this is
+    // Same unguarded-operation shape as handleMergeInstead below — this is
     // reachable from the same early on-blur duplicate check, before the
     // officer has necessarily picked an Operation yet, and both
-    // buildPayload/buildLinkedPayload below assert operation!.id.
+    // buildPayload/buildLinkedPayload further down assert operation!.id.
+    // Flow through to the OperationPicker prompt instead of erroring —
+    // see pendingAfterOperation's own comment.
     if (!operation) {
-      toast.error("Select an operation for this target.");
+      setPendingAfterOperation({ kind: "linkAndCopy", warning });
       return;
     }
     setLinking(true);
@@ -723,11 +744,11 @@ export function AddTargetDialog({
     // officer has picked an Operation further down the form — but the
     // merge itself needs to link the existing target to that operation
     // (see TargetMergeDialog's linkToOperationId), so proceeding with no
-    // operation selected crashed on operation!.id rather than asking for
-    // it. Guard here, the same way the "couldn't load" case just below
-    // already does, instead of asserting it can't be null.
+    // operation selected crashed on operation!.id. Flow through to the
+    // OperationPicker prompt instead of erroring and dead-ending the flow
+    // — see pendingAfterOperation's own comment.
     if (!operation) {
-      toast.error("Select an operation for this target.");
+      setPendingAfterOperation({ kind: "merge" });
       return;
     }
     const full = await utils.target.getById.fetch({ id: dupMatch.id });
@@ -739,6 +760,39 @@ export function AddTargetDialog({
     setDupMatch(null);
     setMergeOpen(true);
   };
+
+  // Fires once the officer picks (or creates) an Operation in the
+  // pendingAfterOperation prompt — just sets it as the form's Operation,
+  // the same as picking it up in the main form would. The effect below
+  // does the actual continuing, deliberately NOT done synchronously here:
+  // handleWarnLinkAndCopy's buildPayload/buildLinkedPayload read
+  // `operation` directly, and re-invoking it in the same tick as
+  // setOperation would still see the OLD (null) value — a plain JS
+  // closure captured at this render, not a live reference — since
+  // setState only takes effect on the NEXT render, not immediately. The
+  // effect only runs after that next render has actually happened, so
+  // everything it calls sees the real, updated operation.
+  const handleOperationChosenForPending = (op: {
+    id: number;
+    name: string;
+  }) => {
+    setOperation(op);
+  };
+
+  useEffect(() => {
+    if (!operation || !pendingAfterOperation) return;
+    const pending = pendingAfterOperation;
+    setPendingAfterOperation(null);
+    if (pending.kind === "merge") {
+      handleMergeInstead();
+    } else {
+      handleWarnLinkAndCopy(pending.warning);
+    }
+    // Only re-run when `operation` itself changes — pendingAfterOperation
+    // flips to null as this same effect's first act, which must not
+    // re-trigger it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operation]);
 
   // Composed strings for the merge dialog — same convention as a saved
   // target, so it can compare field-by-field against the existing record.
@@ -1074,7 +1128,7 @@ export function AddTargetDialog({
 
       {/* Possible duplicate — asks before either creating a lookalike or merging */}
       <AlertDialog
-        open={dupMatch !== null}
+        open={dupMatch !== null && !pendingAfterOperation}
         onOpenChange={v => {
           if (!v) setDupMatch(null);
         }}
@@ -1121,7 +1175,7 @@ export function AddTargetDialog({
 
       {/* Secondary duplicate checks — address/vehicle/name-as-person */}
       <PossibleDuplicateAlert
-        warning={warnQueue[warnIndex] ?? null}
+        warning={pendingAfterOperation ? null : (warnQueue[warnIndex] ?? null)}
         creates="target"
         onContinue={handleWarnContinue}
         onReview={handleWarnReview}
@@ -1155,6 +1209,32 @@ export function AddTargetDialog({
           }}
         />
       )}
+
+      {/* Operation prompt — flow-through for merge/link-and-copy when the
+          duplicate check resolved before an Operation was picked yet. */}
+      <Dialog
+        open={pendingAfterOperation !== null}
+        onOpenChange={v => {
+          if (!v) setPendingAfterOperation(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Select an Operation</DialogTitle>
+            <DialogDescription>
+              Choose which operation to link{" "}
+              {pendingAfterOperation?.kind === "merge"
+                ? dupMatch?.name
+                : "this target"}{" "}
+              to before continuing.
+            </DialogDescription>
+          </DialogHeader>
+          <OperationPicker
+            value={operation}
+            onChange={handleOperationChosenForPending}
+          />
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

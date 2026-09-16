@@ -3008,6 +3008,19 @@ export async function deleteTarget(id: number) {
         eq(attachmentEntityLinks.targetId, id)
       )
     );
+  // A real bug found in production: a target's document-import snapshots
+  // (the parsed document review history — see targetDocumentImports in
+  // schema.ts, AddTargetDialog's documentSnapshotJson) have no life of
+  // their own once the target is gone either, same reasoning as
+  // associates above — left behind, they permanently orphaned the row
+  // (targetId carries no DB-level foreign key to enforce this), which is
+  // exactly what let a deleted target's imports keep showing forever in
+  // the Operation profile's "Imported Documents" dropdown (fixed
+  // separately in listTargetDocumentImportsForOperation's own query, but
+  // that only hides an orphan, it doesn't stop one accumulating here).
+  await db
+    .delete(targetDocumentImports)
+    .where(eq(targetDocumentImports.targetId, id));
   await db.delete(targets).where(eq(targets.id, id));
 }
 
@@ -3353,21 +3366,40 @@ export async function listTargetDocumentImportsForOperation(
 ) {
   const db = await getDb();
   if (!db) return [];
-  return db
-    .select({
-      id: targetDocumentImports.id,
-      targetId: targetDocumentImports.targetId,
-      targetName: targets.name,
-      operationId: targetDocumentImports.operationId,
-      uploadedByCIN: targetDocumentImports.uploadedByCIN,
-      uploadedAt: targetDocumentImports.uploadedAt,
-      sourceFileName: targetDocumentImports.sourceFileName,
-      snapshotJson: targetDocumentImports.snapshotJson,
-    })
-    .from(targetDocumentImports)
-    .leftJoin(targets, eq(targetDocumentImports.targetId, targets.id))
-    .where(eq(targetDocumentImports.operationId, operationId))
-    .orderBy(asc(targetDocumentImports.uploadedAt));
+  return (
+    db
+      .select({
+        id: targetDocumentImports.id,
+        targetId: targetDocumentImports.targetId,
+        targetName: targets.name,
+        operationId: targetDocumentImports.operationId,
+        uploadedByCIN: targetDocumentImports.uploadedByCIN,
+        uploadedAt: targetDocumentImports.uploadedAt,
+        sourceFileName: targetDocumentImports.sourceFileName,
+        snapshotJson: targetDocumentImports.snapshotJson,
+      })
+      .from(targetDocumentImports)
+      // A real bug found in production: deleting a target left its document
+      // imports showing forever in the Operation's "Imported Documents"
+      // dropdown, since this query never checked whether the target they
+      // belonged to had been deleted — unlike every other target-joining
+      // query in this file. An INNER join (not the previous leftJoin) plus
+      // isNull(targets.deletedAt) below excludes both a soft-deleted
+      // target's imports AND a genuinely orphaned import with no target row
+      // at all (targetId/operationId carry no DB-level foreign key here,
+      // and deleteTarget's hard-purge historically left rows behind — see
+      // its own comment) — a leftJoin can't tell those two cases apart from
+      // a live one, since a join MISS also comes back with targets.deletedAt
+      // as SQL NULL, same as a live target's actual null value.
+      .innerJoin(targets, eq(targetDocumentImports.targetId, targets.id))
+      .where(
+        and(
+          eq(targetDocumentImports.operationId, operationId),
+          isNull(targets.deletedAt)
+        )
+      )
+      .orderBy(asc(targetDocumentImports.uploadedAt))
+  );
 }
 
 /** Every document import recorded for one target, oldest first — across all

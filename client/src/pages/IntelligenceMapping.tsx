@@ -116,7 +116,6 @@ import {
   Search,
   LocateFixed,
   Navigation2,
-  Compass,
   ExternalLink,
   Settings,
   Clock,
@@ -204,18 +203,15 @@ function useVisualViewportInset(): {
 }
 
 // Isolated from the main IntelligenceMapping component on purpose: the
-// map's heading changes independently of React — Heading-Up mode's own
-// tween calls map.setHeading() up to ~10 times a second while rotating
-// (see animateHeadingTo) — and this button's rotating compass arrow is the
-// only thing on the whole page that needs to know about it on every tick.
-// When that lived as component-level state on IntelligenceMapping itself,
-// every single heading tick re-rendered that entire multi-thousand-line
-// page — competing with the browser's own map rendering for the same JS
-// main thread, and making Heading-Up's rotation visibly lag and stutter
-// even on powerful hardware (confirmed identical on two iPhone 16s, which
-// rules out a device-performance explanation). Keeping the subscription
-// local here means only this one small button re-renders on each tick,
-// not the whole page.
+// map's heading changes independently of React — a manual twist-to-rotate
+// gesture can fire "heading_changed" many times in quick succession — and
+// this button's rotating compass arrow is the only thing on the whole page
+// that needs to know about it on every tick. When that lived as
+// component-level state on IntelligenceMapping itself, every single
+// heading tick re-rendered that entire multi-thousand-line page —
+// competing with the browser's own map rendering for the same JS main
+// thread. Keeping the subscription local here means only this one small
+// button re-renders on each tick, not the whole page.
 function NorthUpButton({
   map,
   isMapActuallyVector,
@@ -1261,75 +1257,6 @@ function animateLatLngTo(
   animRef.current.set(key, requestAnimationFrame(step));
 }
 
-// Same tween engine as animateLatLngTo above, for the map's own rotation in
-// Heading-Up mode. map.setHeading() previously got called directly, once
-// per GPS poll tick, with the raw new value and no interpolation — exactly
-// the "stop-start stutter" animateLatLngTo was built to fix for the pin's
-// position and the follow-mode camera centre, just never applied to the
-// map's heading too. North Up never rotates, so it never showed this;
-// Heading-Up snapping the WHOLE map background once a second is the
-// "jerky in heads up, fine in north up" symptom. Headings wrap at 360°, so
-// this interpolates the shortest angular path rather than a naive linear
-// blend between the two raw values (which would spin the long way round
-// whenever the path crosses the 0°/360° boundary).
-function animateHeadingTo(
-  key: string,
-  getCurrent: () => number,
-  setHeading: (h: number) => void,
-  to: number,
-  animRef: { current: Map<string, number> },
-  lastUpdateRef: { current: Map<string, number> }
-): void {
-  const existingFrame = animRef.current.get(key);
-  if (existingFrame != null) cancelAnimationFrame(existingFrame);
-
-  const from = getCurrent();
-  // Shortest signed delta in (-180, 180], e.g. from=350,to=10 → +20, not -340.
-  const delta = ((((to - from) % 360) + 540) % 360) - 180;
-  const now = performance.now();
-  const lastUpdateAt = lastUpdateRef.current.get(key);
-  lastUpdateRef.current.set(key, now);
-
-  // Same clamped-to-actual-elapsed-time duration as animateLatLngTo, for
-  // the same reason — matches the real gap between poll ticks rather than
-  // a fixed guess.
-  const durationMs =
-    lastUpdateAt != null
-      ? Math.min(Math.max(now - lastUpdateAt, 400), 3000)
-      : 1000;
-
-  // Calling map.setHeading() on every animation frame (~60/s) made this
-  // WORSE than the original once-a-second snap, not better — still slow
-  // and jerky even with this tween in place. The pin's own arrow glyph
-  // never goes through setHeading() at all (it's a plain CSS rotate off
-  // the same live heading) and stays perfectly smooth throughout, which
-  // narrows this to setHeading() itself: the vector map appears to run its
-  // own short internal easing on each call, and calling it again before
-  // that finishes interrupts it rather than extending it — 60 interrupted,
-  // barely-started eases per second reads as "barely moves." Spacing real
-  // calls out to roughly 10/s gives each one room to actually finish
-  // before the next lands, while still scheduling via requestAnimationFrame
-  // so the timing stays smooth and frame-aligned.
-  const MIN_CALL_INTERVAL_MS = 90;
-  let lastCallAt = 0;
-
-  const startTime = now;
-  const step = (frameNow: number) => {
-    const t = Math.min(1, (frameNow - startTime) / durationMs);
-    const isLastFrame = t >= 1;
-    if (isLastFrame || frameNow - lastCallAt >= MIN_CALL_INTERVAL_MS) {
-      lastCallAt = frameNow;
-      setHeading((((from + delta * t) % 360) + 360) % 360);
-    }
-    if (!isLastFrame) {
-      animRef.current.set(key, requestAnimationFrame(step));
-    } else {
-      animRef.current.delete(key);
-    }
-  };
-  animRef.current.set(key, requestAnimationFrame(step));
-}
-
 // Eases a live team pin's DivIconOverlay smoothly from its current position
 // to a new one, instead of jumping instantly — the underlying GPS fix only
 // arrives once a second (see the userLocations query's refetchInterval), so
@@ -1607,42 +1534,19 @@ export default function IntelligenceMapping() {
   // tick, which is what NorthUpButton exists to avoid — see its own
   // comment). Kept in sync via the "heading_changed" listener below.
   const mapHeadingRef = useRef(0);
-  // Set for a short window around every programmatic map.setHeading() call
-  // Heading-Up's own tween makes — see the "dragstart" listener in
-  // handleMapReady. Google's vector map appears to fire "dragstart" as an
-  // internal side effect of a heading change (it likely shares code with
-  // the manual twist-to-rotate gesture, which legitimately IS a drag), not
-  // just from a real user-initiated drag the way the comment there
-  // originally assumed. Left unguarded, every one of Heading-Up's own
-  // setHeading() calls (now firing ~10/s, see animateHeadingTo) was
-  // mistaken for the user grabbing the map, continuously re-arming
-  // markUserMapInteracting's 500ms lockout faster than it could ever
-  // expire — permanently blocking the separate follow-mode camera tween
-  // for as long as the map kept rotating, which is exactly "heading-up
-  // doesn't keep me centred." A real user-initiated drag still correctly
-  // interrupts everything outside this narrow window.
-  const programmaticHeadingChangeRef = useRef(false);
-  const programmaticHeadingResetTimeoutRef = useRef<ReturnType<
-    typeof setTimeout
-  > | null>(null);
   // Ground truth for whether the map can actually rotate. Map.tsx's
   // getMapRenderPreference() (localStorage/URL) only decides which Map ID
   // gets *requested* — Google can still silently instantiate a raster map
   // regardless of that request (e.g. WebGL unavailable on the device, or
-  // the vector Map ID failing to load), in which case .setHeading()
-  // becomes a harmless no-op with no error. That's exactly the earlier
-  // bug's failure mode (see MAP_RENDER_STORAGE_KEY's own history in
-  // Map.tsx) recurring for a different underlying reason:
-  // the arrow/pill still rotate correctly (pure CSS, computed from
-  // mapHeadingRef vs. live GPS heading) since that math doesn't care
-  // whether the map itself actually turned, so only the map background
-  // visibly fails to follow — which reads as "heading-up doesn't work"
-  // with no other symptom. Synced from the real map.getRenderingType()
-  // via a "renderingtype_changed" listener in handleMapReady, not
-  // inferred. actualRenderingTypeRef is the one the live-marker effect's
-  // setHeading() gate uses (a ref, not the state, since that effect reads
-  // refs rather than depending on renders); isMapActuallyVector is the
-  // state the UI buttons below read for their disabled/title text.
+  // the vector Map ID failing to load), in which case .setHeading()/
+  // .setTilt() become a harmless no-op with no error. That's exactly the
+  // earlier bug's failure mode (see MAP_RENDER_STORAGE_KEY's own history
+  // in Map.tsx) recurring for a different underlying reason. Synced from
+  // the real map.getRenderingType() via a "renderingtype_changed" listener
+  // in handleMapReady, not inferred. actualRenderingTypeRef is the ref
+  // version for effects that read refs rather than depending on renders;
+  // isMapActuallyVector is the state the UI buttons below read for their
+  // disabled/title text.
   const actualRenderingTypeRef = useRef<"VECTOR" | "RASTER" | "UNINITIALIZED">(
     "UNINITIALIZED"
   );
@@ -2226,14 +2130,6 @@ export default function IntelligenceMapping() {
   const followModeRef = useRef(false);
   // Own position ref — updated whenever liveUsers refreshes
   const ownPositionRef = useRef<{ lat: number; lng: number } | null>(null);
-  // Heading-up mode: continuously rotates the map (vector-only) to match
-  // this device's own live travel heading, so "up" on screen means "the
-  // way I'm going" rather than true north. Only meaningful alongside
-  // Follow Me (rotating around a point that isn't centred on you reads as
-  // the map spinning for no reason), so toggling one on/off follows the
-  // other — see the Follow-me/Heading-up buttons below.
-  const [headingUpMode, setHeadingUpMode] = useState(false);
-  const headingUpModeRef = useRef(false);
   // True while the user has an active pan/zoom gesture on the map (wheel,
   // pinch, drag) — see the wheel/touch/dragstart listeners in
   // handleMapReady. Follow-me's camera tween checks this before starting a
@@ -3310,8 +3206,8 @@ export default function IntelligenceMapping() {
     } else if (motionState === "moving") {
       // Screen rotation, not raw compass bearing: the arrow/rings need to
       // point the right way relative to the map as currently displayed,
-      // which drifts from true north whenever heading-up mode (or a manual
-      // rotate gesture) has the map itself rotated. Subtracting the map's
+      // which drifts from true north whenever a manual rotate gesture has
+      // the map itself rotated. Subtracting the map's
       // own current heading converts "true compass bearing" into "on-screen
       // angle" — at mapHeadingRef 0 (North Up, the default) this is a no-op.
       // The shape's own rotation offset (non-zero for a handful of emoji
@@ -3829,40 +3725,6 @@ export default function IntelligenceMapping() {
           mapCenterLastUpdateRef
         );
       }
-      // Heading-up: rotate the map to match this device's own live travel
-      // heading. Geolocation only reports a heading while actually moving
-      // (it's null at rest), so simply skip the call rather than snapping
-      // to 0 when stationary — the map keeps whatever heading it last had
-      // until the officer starts moving again.
-      if (
-        headingUpModeRef.current &&
-        mapRef.current &&
-        actualRenderingTypeRef.current === "VECTOR" &&
-        ownEntry.heading != null
-      ) {
-        const map = mapRef.current;
-        animateHeadingTo(
-          "own-heading",
-          () => map.getHeading() ?? 0,
-          h => {
-            // See programmaticHeadingChangeRef's own comment (declared
-            // above) — re-armed on every call for as long as the tween
-            // keeps calling setHeading(), so it only reads false again a
-            // moment after the map actually settles.
-            programmaticHeadingChangeRef.current = true;
-            if (programmaticHeadingResetTimeoutRef.current) {
-              clearTimeout(programmaticHeadingResetTimeoutRef.current);
-            }
-            programmaticHeadingResetTimeoutRef.current = setTimeout(() => {
-              programmaticHeadingChangeRef.current = false;
-            }, 150);
-            map.setHeading(h);
-          },
-          ownEntry.heading,
-          mapCenterAnimRef,
-          mapCenterLastUpdateRef
-        );
-      }
       // On Foot auto-revert: speed over 15 km/h switches the pin back to
       // the vehicle arrow automatically — officers forget to switch it
       // back manually after getting back in a car. Fires the mutation
@@ -4071,13 +3933,6 @@ export default function IntelligenceMapping() {
         const frame = mapCenterAnimRef.current.get("own");
         if (frame != null) cancelAnimationFrame(frame);
         mapCenterAnimRef.current.delete("own");
-        // Same for the heading tween — a manual twist-to-rotate gesture
-        // should immediately take over from Heading-Up's automatic
-        // rotation, exactly like a manual pan/zoom already takes over from
-        // the camera-follow tween above.
-        const headingFrame = mapCenterAnimRef.current.get("own-heading");
-        if (headingFrame != null) cancelAnimationFrame(headingFrame);
-        mapCenterAnimRef.current.delete("own-heading");
         if (userMapInteractingTimeoutRef.current) {
           clearTimeout(userMapInteractingTimeoutRef.current);
         }
@@ -4085,13 +3940,7 @@ export default function IntelligenceMapping() {
           userMapInteractingRef.current = false;
         }, 500);
       };
-      map.addListener("dragstart", () => {
-        // See programmaticHeadingChangeRef's own comment — Heading-Up's
-        // own setHeading() calls appear to fire this event too, and must
-        // not be mistaken for a real user grabbing the map.
-        if (programmaticHeadingChangeRef.current) return;
-        markUserMapInteracting();
-      });
+      map.addListener("dragstart", markUserMapInteracting);
       const mapDiv = map.getDiv();
       mapDiv.addEventListener("wheel", markUserMapInteracting, {
         passive: true,
@@ -6323,14 +6172,6 @@ export default function IntelligenceMapping() {
                   if (next && ownPositionRef.current) {
                     mapRef.current?.panTo(ownPositionRef.current);
                   }
-                  // Heading-up only makes sense centred on you — turning
-                  // Follow Me off while it's on would otherwise leave the
-                  // map spinning around a point that's no longer you.
-                  if (!next && headingUpModeRef.current) {
-                    setHeadingUpMode(false);
-                    headingUpModeRef.current = false;
-                    mapRef.current?.setHeading(0);
-                  }
                 }}
                 className={`flex items-center justify-center rounded-lg shadow-md border transition-colors ${
                   followMode
@@ -6341,54 +6182,6 @@ export default function IntelligenceMapping() {
               >
                 <Navigation2
                   className={`w-5 h-5 ${followMode ? "text-white" : "text-sky-600"}`}
-                />
-              </button>
-              {/* Heading-up toggle — rotates the map to match this
-                device's own live travel heading (vector-only, same as 3D/
-                North-Up). Requires Follow Me, since rotating around a
-                point that isn't centred on you just reads as the map
-                spinning for no reason — turning this on switches Follow
-                Me on too if it wasn't already. */}
-              <button
-                title={
-                  !isMapActuallyVector
-                    ? "Heading-up requires Vector map rendering, which isn't available on this device"
-                    : headingUpMode
-                      ? "Turn off heading-up rotation"
-                      : "Rotate map to my direction of travel"
-                }
-                disabled={!isMapActuallyVector}
-                onClick={e => {
-                  e.stopPropagation();
-                  if (!headingUpMode) {
-                    if (!ownPositionRef.current) {
-                      toast.error(
-                        "Location not available — enable location sharing first"
-                      );
-                      return;
-                    }
-                    if (!followMode) {
-                      setFollowMode(true);
-                      followModeRef.current = true;
-                      mapRef.current?.panTo(ownPositionRef.current);
-                    }
-                    setHeadingUpMode(true);
-                    headingUpModeRef.current = true;
-                  } else {
-                    setHeadingUpMode(false);
-                    headingUpModeRef.current = false;
-                    mapRef.current?.setHeading(0);
-                  }
-                }}
-                className={`flex items-center justify-center rounded-lg shadow-md border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                  headingUpMode
-                    ? "bg-sky-600 border-sky-700 hover:bg-sky-700"
-                    : "bg-white border-gray-200 hover:bg-gray-50"
-                }`}
-                style={{ width: "40px", height: "40px" }}
-              >
-                <Compass
-                  className={`w-5 h-5 ${headingUpMode ? "text-white" : "text-sky-600"}`}
                 />
               </button>
             </div>

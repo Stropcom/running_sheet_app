@@ -645,10 +645,26 @@ export function composeAddress(parts: StructuredAddressParts): {
  * Compose a Location-type Target's registry name + bracket form from its
  * structured address fields — the counterpart to composeTargetName for a
  * Target whose subject is an address rather than a person, so no
- * First Name/s or Surname is required. Reuses composeAddress's own "short"
- * (business name if set, else the street) as name, so it matches the
- * Intelligence folder's own address entity display exactly rather than
- * inventing a separate convention; tgt is that same string upper-cased.
+ * First Name/s or Surname is required.
+ *
+ * name runs composeAddress's "full" string through formatIntelAddress —
+ * the same "Street, SUBURB" (business name kept, state/bracket/postcode
+ * dropped) form every other address entity already uses throughout the
+ * Intelligence folder (see formatIntelAddress in shared/addressFormat.ts).
+ * A first attempt at this used composeAddress's own "short" (street only,
+ * no suburb) directly, since that matches the RS observation-text bracket
+ * convention — but that's a different, narrower convention (what an
+ * officer types inside brackets), not what the Intelligence folder
+ * displays for an address entity's label; using it here made a Location
+ * target's own card the only address entry in the whole folder missing
+ * its suburb, and a real, reported bug ("doesn't get displayed or
+ * recorded in the Intelligence folder correctly").
+ *
+ * tgt stays the bracket-only form ("short", upper-cased) — that ONE still
+ * needs to match the bare bracket convention, since it's what a bare
+ * "(47 Francis Street)" mention in observation text is compared against
+ * elsewhere, and officers never write the suburb inside a bracket.
+ *
  * Returns empty strings until composeAddress's own required fields (house
  * number, street name + type, suburb) are present.
  */
@@ -656,9 +672,9 @@ export function composeLocationTargetName(parts: StructuredAddressParts): {
   name: string;
   tgt: string;
 } {
-  const { short } = composeAddress(parts);
+  const { full, short } = composeAddress(parts);
   if (!short) return { name: "", tgt: "" };
-  return { name: short, tgt: short.toUpperCase() };
+  return { name: formatIntelAddress(full), tgt: short.toUpperCase() };
 }
 
 /**

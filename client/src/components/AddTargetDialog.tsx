@@ -41,8 +41,6 @@ import {
   Merge,
   User,
   MapPin,
-  ChevronDown,
-  Info,
 } from "lucide-react";
 import {
   TargetIdentityFields,
@@ -229,10 +227,6 @@ export function AddTargetDialog({
   // introducing separate fields — see composeVehicleTargetName/
   // composeLocationTargetName in addressFormat.ts.
   const [targetType, setTargetType] = useState<TargetType>("person");
-  // Whether the optional "Link a known person" section is open — always
-  // true (and irrelevant) for a Person target, since Identity is the
-  // primary section then; starts collapsed for Vehicle/Location.
-  const [personExpanded, setPersonExpanded] = useState(false);
   const [identity, setIdentity] = useState<StructuredNameParts>(
     () => initialIdentity ?? EMPTY_NAME_PARTS
   );
@@ -320,7 +314,6 @@ export function AddTargetDialog({
   const resetAndClose = () => {
     setOperation(initialOperation ?? null);
     setTargetType("person");
-    setPersonExpanded(false);
     setIdentity(EMPTY_NAME_PARTS);
     setAddress(EMPTY_ADDRESS_PARTS);
     setVehicle(EMPTY_VEHICLE_PARTS);
@@ -854,6 +847,146 @@ export function AddTargetDialog({
     };
   };
 
+  // The Address and Vehicle sections/their dynamic extras, as fragments so
+  // they can be reordered below — whichever one is this target's PRIMARY
+  // identity (Home Address/Location Identity for a Location target,
+  // Vehicle 1/Vehicle Identity for a Vehicle target) renders first, right
+  // under the Target Type toggle, instead of always in the same fixed
+  // Address-then-Vehicle order that only made sense when a target was
+  // always a person and both were just optional attributes of them.
+  const addressGroup = (
+    <>
+      <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+        <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+          <Home className="w-3 h-3" />
+          {targetType === "location" ? "Location Identity" : "Home Address"}
+        </p>
+        <TargetAddressFields value={address} onChange={setAddress} />
+      </div>
+
+      {/* Dynamic extra addresses */}
+      {extraAddresses.map((ea, i) => (
+        <div
+          key={i}
+          className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+              <Home className="w-3 h-3" /> Additional Address {i + 2}
+            </span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 text-destructive hover:text-destructive"
+              onClick={() =>
+                setExtraAddresses(v => v.filter((_, idx) => idx !== i))
+              }
+            >
+              <X className="w-3 h-3" />
+            </Button>
+          </div>
+          <TargetAddressFields
+            value={ea}
+            onChange={v =>
+              setExtraAddresses(list =>
+                list.map((item, idx) => (idx === i ? { ...item, ...v } : item))
+              )
+            }
+            label={ea.label}
+            onLabelChange={v =>
+              setExtraAddresses(list =>
+                list.map((item, idx) =>
+                  idx === i ? { ...item, label: v } : item
+                )
+              )
+            }
+          />
+        </div>
+      ))}
+      <Button
+        size="sm"
+        variant="outline"
+        className="gap-1.5 self-start"
+        onClick={() =>
+          setExtraAddresses(v => [
+            ...v,
+            {
+              ...EMPTY_ADDRESS_PARTS,
+              id: makeExtraId(),
+              label: "",
+              full: "",
+              short: "",
+            },
+          ])
+        }
+      >
+        <Plus className="w-3.5 h-3.5" /> Add Address
+      </Button>
+    </>
+  );
+
+  const vehicleGroup = (
+    <>
+      <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+        <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+          <Car className="w-3 h-3" />
+          {targetType === "vehicle" ? "Vehicle Identity" : "Vehicle 1"}
+        </p>
+        <TargetVehicleFields value={vehicle} onChange={setVehicle} />
+      </div>
+
+      {/* Dynamic extra vehicles */}
+      {extraVehicles.map((ev, i) => (
+        <div
+          key={i}
+          className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+              <Car className="w-3 h-3" /> Vehicle {i + 2}
+            </span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 text-destructive hover:text-destructive"
+              onClick={() =>
+                setExtraVehicles(v => v.filter((_, idx) => idx !== i))
+              }
+            >
+              <X className="w-3 h-3" />
+            </Button>
+          </div>
+          <TargetVehicleFields
+            value={ev}
+            onChange={v =>
+              setExtraVehicles(list =>
+                list.map((item, idx) => (idx === i ? { ...item, ...v } : item))
+              )
+            }
+          />
+        </div>
+      ))}
+      <Button
+        size="sm"
+        variant="outline"
+        className="gap-1.5 self-start"
+        onClick={() =>
+          setExtraVehicles(v => [
+            ...v,
+            {
+              ...EMPTY_VEHICLE_PARTS,
+              id: makeExtraId(),
+              full: "",
+              short: "",
+            },
+          ])
+        }
+      >
+        <Plus className="w-3.5 h-3.5" /> Add Vehicle
+      </Button>
+    </>
+  );
+
   return (
     <>
       <Dialog
@@ -920,181 +1053,27 @@ export function AddTargetDialog({
                   Location
                 </button>
               </div>
-              <span className="text-xs text-muted-foreground">
-                What this Target record identifies. Defaults to Person — most
-                operations target an individual.
-              </span>
             </div>
 
-            {targetType === "person" ? (
+            {targetType === "person" && (
               <TargetIdentityFields
                 value={identity}
                 onChange={setIdentity}
                 onSurnameBlur={checkNameOnBlur}
               />
-            ) : (
-              <>
-                <div className="rounded-lg border border-border/60 overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setPersonExpanded(v => !v)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 bg-muted/20 text-xs font-semibold text-foreground"
-                  >
-                    <span>Link a known person (optional)</span>
-                    <ChevronDown
-                      className={`w-4 h-4 transition-transform ${personExpanded ? "rotate-180" : ""}`}
-                    />
-                  </button>
-                  {personExpanded && (
-                    <div className="p-3">
-                      <TargetIdentityFields
-                        value={identity}
-                        onChange={setIdentity}
-                      />
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5">
-                  <Info className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
-                  <span className="text-xs text-amber-800 dark:text-amber-300">
-                    Sort by Surname, duplicate-name matching and name-typo
-                    checks won't apply to this target — same as a business-name
-                    associate today.
-                  </span>
-                </div>
-              </>
             )}
 
-            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-              <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Home className="w-3 h-3" />
-                {targetType === "location"
-                  ? "Location Identity"
-                  : "Home Address"}
-              </p>
-              <TargetAddressFields value={address} onChange={setAddress} />
-            </div>
-
-            {/* Dynamic extra addresses */}
-            {extraAddresses.map((ea, i) => (
-              <div
-                key={i}
-                className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                    <Home className="w-3 h-3" /> Additional Address {i + 2}
-                  </span>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6 text-destructive hover:text-destructive"
-                    onClick={() =>
-                      setExtraAddresses(v => v.filter((_, idx) => idx !== i))
-                    }
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
-                <TargetAddressFields
-                  value={ea}
-                  onChange={v =>
-                    setExtraAddresses(list =>
-                      list.map((item, idx) =>
-                        idx === i ? { ...item, ...v } : item
-                      )
-                    )
-                  }
-                  label={ea.label}
-                  onLabelChange={v =>
-                    setExtraAddresses(list =>
-                      list.map((item, idx) =>
-                        idx === i ? { ...item, label: v } : item
-                      )
-                    )
-                  }
-                />
-              </div>
-            ))}
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 self-start"
-              onClick={() =>
-                setExtraAddresses(v => [
-                  ...v,
-                  {
-                    ...EMPTY_ADDRESS_PARTS,
-                    id: makeExtraId(),
-                    label: "",
-                    full: "",
-                    short: "",
-                  },
-                ])
-              }
-            >
-              <Plus className="w-3.5 h-3.5" /> Add Address
-            </Button>
-
-            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-              <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Car className="w-3 h-3" />
-                {targetType === "vehicle" ? "Vehicle Identity" : "Vehicle 1"}
-              </p>
-              <TargetVehicleFields value={vehicle} onChange={setVehicle} />
-            </div>
-
-            {/* Dynamic extra vehicles */}
-            {extraVehicles.map((ev, i) => (
-              <div
-                key={i}
-                className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                    <Car className="w-3 h-3" /> Vehicle {i + 2}
-                  </span>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6 text-destructive hover:text-destructive"
-                    onClick={() =>
-                      setExtraVehicles(v => v.filter((_, idx) => idx !== i))
-                    }
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
-                <TargetVehicleFields
-                  value={ev}
-                  onChange={v =>
-                    setExtraVehicles(list =>
-                      list.map((item, idx) =>
-                        idx === i ? { ...item, ...v } : item
-                      )
-                    )
-                  }
-                />
-              </div>
-            ))}
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 self-start"
-              onClick={() =>
-                setExtraVehicles(v => [
-                  ...v,
-                  {
-                    ...EMPTY_VEHICLE_PARTS,
-                    id: makeExtraId(),
-                    full: "",
-                    short: "",
-                  },
-                ])
-              }
-            >
-              <Plus className="w-3.5 h-3.5" /> Add Vehicle
-            </Button>
+            {targetType === "vehicle" ? (
+              <>
+                {vehicleGroup}
+                {addressGroup}
+              </>
+            ) : (
+              <>
+                {addressGroup}
+                {vehicleGroup}
+              </>
+            )}
 
             {/* Associates — same position as AssociatesSection on the
                 saved target's own card (server/db.ts requires a real

@@ -5,7 +5,11 @@ import { detectAndEmbedFaces, cosineSimilarity } from "./faceRecognition";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
-import { buildRunningSheetTitle } from "@shared/runningSheetTitle";
+import { TARGET_TYPES } from "../drizzle/schema";
+import {
+  buildRunningSheetTitle,
+  getTargetTitleBracket,
+} from "@shared/runningSheetTitle";
 import { getSessionCookieOptions } from "./_core/cookies";
 import {
   processAttachmentUpload,
@@ -920,7 +924,7 @@ export const appRouter = router({
           sheetDate: input.sheetDate,
           authorCIN,
           operationName: operation?.name ?? "Untitled Operation",
-          targetSurname: target?.surname ?? null,
+          targetBracketLabel: getTargetTitleBracket(target ?? null),
         });
         const id = await createRunningSheet({
           operationId: input.operationId,
@@ -3053,6 +3057,10 @@ export const appRouter = router({
       create: protectedProcedure
         .input(
           z.object({
+            // What this target record identifies — see targets.targetType's
+            // own comment in schema.ts. Optional so the DB default
+            // ("person") still applies for any caller that predates this.
+            targetType: z.enum(TARGET_TYPES).optional(),
             name: z.string().min(1).max(255),
             tgt: z.string().optional().nullable(),
             hbf: z.string().optional().nullable(),
@@ -3116,6 +3124,7 @@ export const appRouter = router({
       createLinkedFromAssociate: protectedProcedure
         .input(
           z.object({
+            targetType: z.enum(TARGET_TYPES).optional(),
             name: z.string().min(1).max(255),
             tgt: z.string().optional().nullable(),
             hbf: z.string().optional().nullable(),

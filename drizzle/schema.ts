@@ -475,6 +475,12 @@ export type InsertIntelligenceGeocodeCache =
 // operations — they are linked via the operation_target_links join table.
 // operationId is kept nullable for backward-compat with legacy rows.
 
+// What a Target record identifies — see targets.targetType's own comment.
+// A single source of truth for both the DB enum and the TS union type, so
+// they can never drift apart.
+export const TARGET_TYPES = ["person", "vehicle", "location"] as const;
+export type TargetType = (typeof TARGET_TYPES)[number];
+
 export const targets = mysqlTable("targets", {
   id: int("id").autoincrement().primaryKey(),
   operationId: int("operationId"), // nullable — legacy field, use join table instead
@@ -488,6 +494,14 @@ export const targets = mysqlTable("targets", {
   // only their shared identity fields (name/address/vehicle — see
   // LINKED_SYNC_FIELDS in server/db.ts) are kept in sync.
   linkedAssociateId: int("linkedAssociateId"),
+  // What this Target record identifies. Defaults to "person" (the only
+  // option before this column existed, so every pre-existing row backfills
+  // to it correctly). "vehicle"/"location" let a vehicle or an address
+  // stand in as the subject itself, with no named person required — see
+  // composeVehicleTargetName/composeLocationTargetName in addressFormat.ts
+  // for how name/tgt get composed for those, and recomputeRunningSheetTitle
+  // for how the running sheet title bracket is chosen per type.
+  targetType: mysqlEnum("targetType", TARGET_TYPES).default("person").notNull(),
   name: varchar("name", { length: 255 }).notNull(), // e.g. "Target 1" or a codename
   tgt: text("tgt"), // Target (person) details
   hbf: text("hbf"), // Home Address Full

@@ -48,6 +48,8 @@ import {
   Users,
   Pencil,
   FileText,
+  User,
+  MapPin,
 } from "lucide-react";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { cn } from "@/lib/utils";
@@ -67,6 +69,7 @@ import {
 } from "@/components/TargetStructuredFields";
 import {
   AddTargetDialog,
+  computePrimaryIdentity,
   type RegistryCreatePayload,
 } from "@/components/AddTargetDialog";
 import {
@@ -90,6 +93,7 @@ import {
 } from "@/components/PossibleDuplicateAlert";
 import { runDuplicateChecks } from "@/lib/duplicateCheck";
 import { IndicesBadge } from "@/components/IndicesBadge";
+import type { TargetType } from "@shared/types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -97,6 +101,7 @@ type WildField = { label: string; value: string };
 
 type RegistryTarget = {
   id: number;
+  targetType: TargetType;
   name: string;
   tgt: string | null;
   hbf: string | null;
@@ -139,6 +144,18 @@ type RegistryTarget = {
    * stay in sync. */
   linkedAssociateId?: number | null;
 };
+
+/** The Target Registry card icon per targetType — reuses the exact same
+ * User/Car/MapPin icons the Intelligence folder already uses for its own
+ * person/vehicle/address entity groupings, so a Vehicle/Location target
+ * reads consistently between the two screens. */
+function targetTypeIcon(targetType: TargetType) {
+  if (targetType === "vehicle")
+    return <Car className="w-5 h-5 text-rose-400" />;
+  if (targetType === "location")
+    return <MapPin className="w-5 h-5 text-rose-400" />;
+  return <User className="w-5 h-5 text-rose-400" />;
+}
 
 // Initial lock state for a set of extra address/vehicle entries — "locked"
 // (needs an explicit Edit/Add-new choice) when the entry already has a
@@ -528,9 +545,26 @@ function TargetCard({
   };
 
   const handleSave = () => {
-    const { name, tgt } = composeTargetName(identity);
+    // name/tgt come from whichever fields are this target's PRIMARY
+    // identity — Identity for a Person target (unchanged), but Vehicle 1 /
+    // Home Address for a Vehicle/Location target, since editing e.g. this
+    // target's own registration needs to update its registry name and
+    // Running Sheet title bracket too, not just v1f — see
+    // computePrimaryIdentity's own comment in AddTargetDialog.tsx.
+    const { name, tgt } = computePrimaryIdentity(
+      target.targetType,
+      identity,
+      address,
+      vehicle
+    );
     if (!name) {
-      toast.error("Enter both First Name/s and Surname.");
+      toast.error(
+        target.targetType === "vehicle"
+          ? "Enter Registration, Colour, Make and Model."
+          : target.targetType === "location"
+            ? "Enter House No, Street Name, Street Type and Suburb."
+            : "Enter both First Name/s and Surname."
+      );
       return;
     }
     const { full: hbf, short: hb } = composeAddress(address);
@@ -673,7 +707,7 @@ function TargetCard({
           onClick={() => setExpanded(v => !v)}
         >
           <div className="p-2.5 rounded-lg bg-rose-400/10 border border-rose-400/20 shrink-0">
-            <Target className="w-5 h-5 text-rose-400" />
+            {targetTypeIcon(target.targetType)}
           </div>
           <span className="flex-1 font-semibold text-sm text-foreground truncate">
             {target.name}
@@ -732,56 +766,62 @@ function TargetCard({
               </div>
             )}
 
-            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-              <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Target className="w-3 h-3" /> Name
-                {target.linkedAssociateId && (
-                  <Badge
-                    variant="secondary"
-                    className="text-[10px] gap-1 font-medium normal-case tracking-normal ml-1"
-                    title="This target's name/address/vehicle stay in sync with a linked Associate record elsewhere in the registry — the same real person, filed both ways."
-                  >
-                    <Link2 className="h-2.5 w-2.5" /> Linked to an associate
-                  </Badge>
-                )}
-              </p>
-              {nameMode === "locked" ? (
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
-                  <p className="text-sm text-foreground flex-1">
-                    {target.name}
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5 text-xs h-7 sm:shrink-0"
-                    onClick={startEditName}
-                  >
-                    <Pencil className="w-3 h-3" /> Edit
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <TargetIdentityFields
-                    value={identity}
-                    onChange={v => mark(() => setIdentity(v))}
-                  />
-                  {target.name && (
+            {target.targetType === "person" && (
+              <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
+                <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                  <Target className="w-3 h-3" />
+                  Name
+                  {target.linkedAssociateId && (
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] gap-1 font-medium normal-case tracking-normal ml-1"
+                      title="This target's name/address/vehicle stay in sync with a linked Associate record elsewhere in the registry — the same real person, filed both ways."
+                    >
+                      <Link2 className="h-2.5 w-2.5" /> Linked to an associate
+                    </Badge>
+                  )}
+                </p>
+                {nameMode === "locked" ? (
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
+                    <p className="text-sm text-foreground flex-1">
+                      {target.name}
+                    </p>
                     <Button
                       size="sm"
-                      variant="ghost"
-                      className="gap-1.5 text-xs self-start"
-                      onClick={cancelNameEdit}
+                      variant="outline"
+                      className="gap-1.5 text-xs h-7 sm:shrink-0"
+                      onClick={startEditName}
                     >
-                      Cancel
+                      <Pencil className="w-3 h-3" /> Edit
                     </Button>
-                  )}
-                </div>
-              )}
-            </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <TargetIdentityFields
+                      value={identity}
+                      onChange={v => mark(() => setIdentity(v))}
+                    />
+                    {target.name && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="gap-1.5 text-xs self-start"
+                        onClick={cancelNameEdit}
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
-            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-              <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Home className="w-3 h-3" /> Home Address
+            <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3">
+              <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                <Home className="w-3 h-3" />
+                {target.targetType === "location"
+                  ? "Location Identity"
+                  : "Home Address"}
               </p>
               {addressMode === "locked" ? (
                 <div className="flex flex-col">
@@ -843,9 +883,9 @@ function TargetCard({
               return (
                 <div
                   key={ea.id}
-                  className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
+                  className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3 flex flex-col gap-2"
                 >
-                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5">
                     <Home className="w-3 h-3" /> Additional Address {i + 2}
                   </span>
                   {mode === "locked" ? (
@@ -909,9 +949,12 @@ function TargetCard({
               <Plus className="w-3.5 h-3.5" /> Add Address
             </Button>
 
-            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-              <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Car className="w-3 h-3" /> Vehicle 1
+            <div className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3">
+              <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                <Car className="w-3 h-3" />
+                {target.targetType === "vehicle"
+                  ? "Vehicle Identity"
+                  : "Vehicle 1"}
               </p>
               {vehicleMode === "locked" ? (
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
@@ -963,9 +1006,9 @@ function TargetCard({
               return (
                 <div
                   key={ev.id}
-                  className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
+                  className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3 flex flex-col gap-2"
                 >
-                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
                     <Car className="w-3 h-3" /> Vehicle {i + 2}
                   </span>
                   {mode === "locked" ? (
@@ -1833,8 +1876,8 @@ function AssociatesSection({ targetId }: { targetId: number }) {
   const [addingNew, setAddingNew] = useState(false);
 
   return (
-    <div className="mt-2 pt-3 border-t border-border/50 flex flex-col gap-2">
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+    <div className="mt-2 rounded-lg border border-l-4 border-violet-500/30 border-l-violet-500 bg-violet-500/5 p-3 flex flex-col gap-2">
+      <p className="text-xs font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide flex items-center gap-1.5">
         <Users className="w-3.5 h-3.5" /> Associates
       </p>
       {(assocList ?? []).map(a => (
@@ -2133,7 +2176,7 @@ export default function TargetRegistryPage() {
                 {/* Header */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="p-2.5 rounded-lg bg-rose-400/10 border border-rose-400/20 shrink-0">
-                    <Target className="w-5 h-5 text-rose-400" />
+                    {targetTypeIcon(t.targetType)}
                   </div>
                   <Button
                     variant="ghost"
@@ -2224,7 +2267,13 @@ export default function TargetRegistryPage() {
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <Target className="w-4 h-4 text-primary" />
+                  {selectedTileTarget.targetType === "vehicle" ? (
+                    <Car className="w-4 h-4 text-primary" />
+                  ) : selectedTileTarget.targetType === "location" ? (
+                    <MapPin className="w-4 h-4 text-primary" />
+                  ) : (
+                    <User className="w-4 h-4 text-primary" />
+                  )}
                   {selectedTileTarget.name}
                 </DialogTitle>
               </DialogHeader>

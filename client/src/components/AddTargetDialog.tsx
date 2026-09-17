@@ -31,7 +31,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, X, Home, Car, Users, AlertTriangle, Merge } from "lucide-react";
+import {
+  Plus,
+  X,
+  Home,
+  Car,
+  Users,
+  AlertTriangle,
+  Merge,
+  User,
+  MapPin,
+} from "lucide-react";
 import {
   TargetIdentityFields,
   TargetAddressFields,
@@ -48,11 +58,14 @@ import {
   composeAssociateName,
   composeAddress,
   composeVehicle,
+  composeVehicleTargetName,
+  composeLocationTargetName,
   ddMmYyyyToIso,
   type StructuredNameParts,
   type StructuredAddressParts,
   type StructuredVehicleParts,
 } from "@/lib/addressFormat";
+import type { TargetType } from "@shared/types";
 import {
   TargetMergeDialog,
   type ExistingTargetLike,
@@ -85,6 +98,7 @@ export interface RegistryCreatePayload {
    * `background` above; see targetDocumentImports in schema.ts. */
   documentSnapshotJson: string | null;
   documentSourceFileName: string | null;
+  targetType: TargetType;
   name: string;
   tgt: string | null;
   hbf: string | null;
@@ -167,6 +181,23 @@ function isPartialVehicle(
   return hasAny && !composeVehicle(v).full;
 }
 
+/** The composed name/tgt for whichever fields are this Target's PRIMARY
+ * identity, chosen by targetType — composeTargetName(identity) for a
+ * Person (unchanged), composeVehicleTargetName(vehicle) for a Vehicle,
+ * composeLocationTargetName(address) for a Location. Both name and tgt
+ * come back as empty strings until that type's own required fields are
+ * filled in, same as composeTargetName already does for Person. */
+export function computePrimaryIdentity(
+  targetType: TargetType,
+  identity: StructuredNameParts,
+  address: StructuredAddressParts,
+  vehicle: StructuredVehicleParts & { vehicleType: string }
+): { name: string; tgt: string } {
+  if (targetType === "vehicle") return composeVehicleTargetName(vehicle);
+  if (targetType === "location") return composeLocationTargetName(address);
+  return composeTargetName(identity);
+}
+
 export function AddTargetDialog({
   open,
   onClose,
@@ -224,6 +255,15 @@ export function AddTargetDialog({
     id: number;
     name: string;
   } | null>(() => initialOperation ?? null);
+  // What this Target record identifies — defaults to Person, the only
+  // option before this existed, so every existing flow (document import,
+  // possible-duplicate merge, etc.) is unaffected unless an officer
+  // deliberately switches it. Vehicle/Location reuse the exact same
+  // vehicle/address state below as their PRIMARY identity (promoted from
+  // "optional attribute of a person" to "the subject itself") rather than
+  // introducing separate fields — see composeVehicleTargetName/
+  // composeLocationTargetName in addressFormat.ts.
+  const [targetType, setTargetType] = useState<TargetType>("person");
   const [identity, setIdentity] = useState<StructuredNameParts>(
     () => initialIdentity ?? EMPTY_NAME_PARTS
   );
@@ -310,6 +350,7 @@ export function AddTargetDialog({
 
   const resetAndClose = () => {
     setOperation(initialOperation ?? null);
+    setTargetType("person");
     setIdentity(EMPTY_NAME_PARTS);
     setAddress(EMPTY_ADDRESS_PARTS);
     setVehicle(EMPTY_VEHICLE_PARTS);
@@ -333,7 +374,12 @@ export function AddTargetDialog({
   };
 
   const buildPayload = (): RegistryCreatePayload => {
-    const { name, tgt } = composeTargetName(identity);
+    const { name, tgt } = computePrimaryIdentity(
+      targetType,
+      identity,
+      address,
+      vehicle
+    );
     const { full: hbf, short: hb } = composeAddress(address);
     const { full: v1f, short: v1 } = composeVehicle(vehicle);
     return {
@@ -343,6 +389,7 @@ export function AddTargetDialog({
         ? JSON.stringify(initialDocumentSnapshot)
         : null,
       documentSourceFileName: initialDocumentSnapshot?.sourceFileName || null,
+      targetType,
       name,
       tgt: tgt || null,
       hbf: hbf || null,
@@ -484,6 +531,10 @@ export function AddTargetDialog({
       ? JSON.stringify(initialDocumentSnapshot)
       : null,
     documentSourceFileName: initialDocumentSnapshot?.sourceFileName || null,
+    // Only reachable via the person-duplicate-match flow, which is skipped
+    // entirely for a Vehicle/Location target (see composedName below) — so
+    // targetType is always "person" by the time this runs.
+    targetType: "person",
     name: associate.name,
     tgt: associate.tgt,
     hbf: associate.hbf,
@@ -513,7 +564,26 @@ export function AddTargetDialog({
     existingAssociateId: associate.id,
   });
 
-  const composedName = composeTargetName(identity).name;
+  // The PRIMARY identity for this target, per its targetType — what
+  // actually gets saved as name/tgt (see buildPayload) and what gates
+  // whether there's enough to save at all (see handleSave).
+  const primaryComposedName = computePrimaryIdentity(
+    targetType,
+    identity,
+    address,
+    vehicle
+  ).name;
+  // The composed PERSON name from the Identity fields specifically — used
+  // only for the possible-duplicate-PERSON flow (checkNameOnBlur,
+  // handleSave's findPossibleDuplicate check, the merge/link-and-copy
+  // dialogs). Forced empty for a Vehicle/Location target even if the
+  // optional "Link a known person" fields are filled in: that flow exists
+  // to catch a duplicate Target/Associate record for the same real person,
+  // which doesn't apply when the person is only an optional attribute of
+  // this target rather than the target itself — same reasoning as the
+  // Sort-by-Surname/name-typo checks not applying either.
+  const composedName =
+    targetType === "person" ? composeTargetName(identity).name : "";
 
   const runSecondaryChecks = async () => {
     const { full: hbf } = composeAddress(address);
@@ -545,8 +615,14 @@ export function AddTargetDialog({
       toast.error("Select an operation for this target.");
       return;
     }
-    if (!composedName) {
-      toast.error("Enter both First Name/s and Surname.");
+    if (!primaryComposedName) {
+      toast.error(
+        targetType === "vehicle"
+          ? "Enter Registration, Colour, Make and Model."
+          : targetType === "location"
+            ? "Enter House No, Street Name, Street Type and Suburb."
+            : "Enter both First Name/s and Surname."
+      );
       return;
     }
     // Block the save outright rather than silently dropping a partially-
@@ -570,10 +646,13 @@ export function AddTargetDialog({
       );
       return;
     }
-    // Already resolved for this exact name at the surname field's onBlur
-    // (no match, or the officer already said "different person") — don't
-    // ask again.
-    if (composedName === dupCheckedForName) {
+    // No person name to duplicate-check for a Vehicle/Location target (see
+    // composedName's own comment) — skip straight to the address/vehicle
+    // secondary checks, which still apply regardless of type.
+    // Otherwise: already resolved for this exact name at the surname
+    // field's onBlur (no match, or the officer already said "different
+    // person") — don't ask again.
+    if (!composedName || composedName === dupCheckedForName) {
       await runSecondaryChecks();
       return;
     }
@@ -826,6 +905,170 @@ export function AddTargetDialog({
     };
   };
 
+  // The Address and Vehicle sections/their dynamic extras, as fragments so
+  // they can be reordered below — whichever one is this target's PRIMARY
+  // identity (Home Address/Location Identity for a Location target,
+  // Vehicle 1/Vehicle Identity for a Vehicle target) renders first, right
+  // under the Target Type toggle, instead of always in the same fixed
+  // Address-then-Vehicle order that only made sense when a target was
+  // always a person and both were just optional attributes of them.
+  const addressGroup = (
+    <>
+      <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3">
+        <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+          <Home className="w-3 h-3" />
+          {targetType === "location" ? "Location Identity" : "Home Address"}
+        </p>
+        <TargetAddressFields value={address} onChange={setAddress} />
+        {isPartialAddress(address) && (
+          <p className="text-xs text-destructive mt-2">
+            Missing a house number, street type or suburb — this address won't
+            save until every field is filled in.
+          </p>
+        )}
+      </div>
+
+      {/* Dynamic extra addresses */}
+      {extraAddresses.map((ea, i) => (
+        <div
+          key={i}
+          className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3 flex flex-col gap-2"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5">
+              <Home className="w-3 h-3" /> Additional Address {i + 2}
+            </span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 text-destructive hover:text-destructive"
+              onClick={() =>
+                setExtraAddresses(v => v.filter((_, idx) => idx !== i))
+              }
+            >
+              <X className="w-3 h-3" />
+            </Button>
+          </div>
+          <TargetAddressFields
+            value={ea}
+            onChange={v =>
+              setExtraAddresses(list =>
+                list.map((item, idx) => (idx === i ? { ...item, ...v } : item))
+              )
+            }
+            label={ea.label}
+            onLabelChange={v =>
+              setExtraAddresses(list =>
+                list.map((item, idx) =>
+                  idx === i ? { ...item, label: v } : item
+                )
+              )
+            }
+          />
+          {isPartialAddress(ea) && (
+            <p className="text-xs text-destructive">
+              Missing a house number, street type or suburb — this address won't
+              save until every field is filled in.
+            </p>
+          )}
+        </div>
+      ))}
+      <Button
+        size="sm"
+        variant="outline"
+        className="gap-1.5 self-start"
+        onClick={() =>
+          setExtraAddresses(v => [
+            ...v,
+            {
+              ...EMPTY_ADDRESS_PARTS,
+              id: makeExtraId(),
+              label: "",
+              full: "",
+              short: "",
+            },
+          ])
+        }
+      >
+        <Plus className="w-3.5 h-3.5" /> Add Address
+      </Button>
+    </>
+  );
+
+  const vehicleGroup = (
+    <>
+      <div className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3">
+        <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+          <Car className="w-3 h-3" />
+          {targetType === "vehicle" ? "Vehicle Identity" : "Vehicle 1"}
+        </p>
+        <TargetVehicleFields value={vehicle} onChange={setVehicle} />
+        {isPartialVehicle(vehicle) && (
+          <p className="text-xs text-destructive mt-2">
+            Missing a colour, make or model — this vehicle won't save until
+            every field is filled in.
+          </p>
+        )}
+      </div>
+
+      {/* Dynamic extra vehicles */}
+      {extraVehicles.map((ev, i) => (
+        <div
+          key={i}
+          className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3 flex flex-col gap-2"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
+              <Car className="w-3 h-3" /> Vehicle {i + 2}
+            </span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 text-destructive hover:text-destructive"
+              onClick={() =>
+                setExtraVehicles(v => v.filter((_, idx) => idx !== i))
+              }
+            >
+              <X className="w-3 h-3" />
+            </Button>
+          </div>
+          <TargetVehicleFields
+            value={ev}
+            onChange={v =>
+              setExtraVehicles(list =>
+                list.map((item, idx) => (idx === i ? { ...item, ...v } : item))
+              )
+            }
+          />
+          {isPartialVehicle(ev) && (
+            <p className="text-xs text-destructive">
+              Missing a colour, make or model — this vehicle won't save until
+              every field is filled in.
+            </p>
+          )}
+        </div>
+      ))}
+      <Button
+        size="sm"
+        variant="outline"
+        className="gap-1.5 self-start"
+        onClick={() =>
+          setExtraVehicles(v => [
+            ...v,
+            {
+              ...EMPTY_VEHICLE_PARTS,
+              id: makeExtraId(),
+              full: "",
+              short: "",
+            },
+          ])
+        }
+      >
+        <Plus className="w-3.5 h-3.5" /> Add Vehicle
+      </Button>
+    </>
+  );
+
   return (
     <>
       <Dialog
@@ -850,169 +1093,82 @@ export function AddTargetDialog({
               />
             </div>
 
-            <TargetIdentityFields
-              value={identity}
-              onChange={setIdentity}
-              onSurnameBlur={checkNameOnBlur}
-            />
-
-            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-              <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Home className="w-3 h-3" /> Home Address
-              </p>
-              <TargetAddressFields value={address} onChange={setAddress} />
-              {isPartialAddress(address) && (
-                <p className="text-xs text-destructive mt-2">
-                  Missing a house number, street type or suburb — this address
-                  won't save until every field is filled in.
-                </p>
-              )}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Target Type
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTargetType("person")}
+                  className={`flex-1 flex flex-col items-center justify-center gap-1 rounded-lg border py-2.5 text-xs font-semibold transition-colors ${
+                    targetType === "person"
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-muted-foreground border-border hover:bg-muted/50"
+                  }`}
+                >
+                  <User className="w-4 h-4" />
+                  Person
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTargetType("vehicle")}
+                  className={`flex-1 flex flex-col items-center justify-center gap-1 rounded-lg border py-2.5 text-xs font-semibold transition-colors ${
+                    targetType === "vehicle"
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-muted-foreground border-border hover:bg-muted/50"
+                  }`}
+                >
+                  <Car className="w-4 h-4" />
+                  Vehicle
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTargetType("location")}
+                  className={`flex-1 flex flex-col items-center justify-center gap-1 rounded-lg border py-2.5 text-xs font-semibold transition-colors ${
+                    targetType === "location"
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-muted-foreground border-border hover:bg-muted/50"
+                  }`}
+                >
+                  <MapPin className="w-4 h-4" />
+                  Location
+                </button>
+              </div>
             </div>
 
-            {/* Dynamic extra addresses */}
-            {extraAddresses.map((ea, i) => (
-              <div
-                key={i}
-                className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                    <Home className="w-3 h-3" /> Additional Address {i + 2}
-                  </span>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6 text-destructive hover:text-destructive"
-                    onClick={() =>
-                      setExtraAddresses(v => v.filter((_, idx) => idx !== i))
-                    }
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
-                <TargetAddressFields
-                  value={ea}
-                  onChange={v =>
-                    setExtraAddresses(list =>
-                      list.map((item, idx) =>
-                        idx === i ? { ...item, ...v } : item
-                      )
-                    )
-                  }
-                  label={ea.label}
-                  onLabelChange={v =>
-                    setExtraAddresses(list =>
-                      list.map((item, idx) =>
-                        idx === i ? { ...item, label: v } : item
-                      )
-                    )
-                  }
-                />
-                {isPartialAddress(ea) && (
-                  <p className="text-xs text-destructive">
-                    Missing a house number, street type or suburb — this address
-                    won't save until every field is filled in.
-                  </p>
-                )}
-              </div>
-            ))}
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 self-start"
-              onClick={() =>
-                setExtraAddresses(v => [
-                  ...v,
-                  {
-                    ...EMPTY_ADDRESS_PARTS,
-                    id: makeExtraId(),
-                    label: "",
-                    full: "",
-                    short: "",
-                  },
-                ])
-              }
-            >
-              <Plus className="w-3.5 h-3.5" /> Add Address
-            </Button>
-
-            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-              <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Car className="w-3 h-3" /> Vehicle 1
-              </p>
-              <TargetVehicleFields value={vehicle} onChange={setVehicle} />
-              {isPartialVehicle(vehicle) && (
-                <p className="text-xs text-destructive mt-2">
-                  Missing a colour, make or model — this vehicle won't save
-                  until every field is filled in.
+            {targetType === "person" && (
+              <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
+                <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                  <User className="w-3 h-3" />
+                  Person Identity
                 </p>
-              )}
-            </div>
-
-            {/* Dynamic extra vehicles */}
-            {extraVehicles.map((ev, i) => (
-              <div
-                key={i}
-                className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                    <Car className="w-3 h-3" /> Vehicle {i + 2}
-                  </span>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6 text-destructive hover:text-destructive"
-                    onClick={() =>
-                      setExtraVehicles(v => v.filter((_, idx) => idx !== i))
-                    }
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
-                <TargetVehicleFields
-                  value={ev}
-                  onChange={v =>
-                    setExtraVehicles(list =>
-                      list.map((item, idx) =>
-                        idx === i ? { ...item, ...v } : item
-                      )
-                    )
-                  }
+                <TargetIdentityFields
+                  value={identity}
+                  onChange={setIdentity}
+                  onSurnameBlur={checkNameOnBlur}
                 />
-                {isPartialVehicle(ev) && (
-                  <p className="text-xs text-destructive">
-                    Missing a colour, make or model — this vehicle won't save
-                    until every field is filled in.
-                  </p>
-                )}
               </div>
-            ))}
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 self-start"
-              onClick={() =>
-                setExtraVehicles(v => [
-                  ...v,
-                  {
-                    ...EMPTY_VEHICLE_PARTS,
-                    id: makeExtraId(),
-                    full: "",
-                    short: "",
-                  },
-                ])
-              }
-            >
-              <Plus className="w-3.5 h-3.5" /> Add Vehicle
-            </Button>
+            )}
+
+            {targetType === "vehicle" ? (
+              <>
+                {vehicleGroup}
+                {addressGroup}
+              </>
+            ) : (
+              <>
+                {addressGroup}
+                {vehicleGroup}
+              </>
+            )}
 
             {/* Associates — same position as AssociatesSection on the
                 saved target's own card (server/db.ts requires a real
                 targetId, so these are staged here and created right after
                 the target itself saves). */}
-            <div className="mt-2 pt-3 border-t border-border/50 flex flex-col gap-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+            <div className="mt-2 rounded-lg border border-l-4 border-violet-500/30 border-l-violet-500 bg-violet-500/5 p-3 flex flex-col gap-2">
+              <p className="text-xs font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide flex items-center gap-1.5">
                 <Users className="w-3.5 h-3.5" /> Associates
               </p>
               {associates.map((assoc, i) => (

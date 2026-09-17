@@ -1,0 +1,1 @@
+ALTER TABLE `targets` ADD `targetType` enum('person','vehicle','location') DEFAULT 'person' NOT NULL;

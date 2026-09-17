@@ -8,7 +8,10 @@ import {
   type RollupExportRow,
 } from "@/lib/rollupSection";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { buildRunningSheetTitle } from "@shared/runningSheetTitle";
+import {
+  buildRunningSheetTitle,
+  getTargetTitleBracket,
+} from "@shared/runningSheetTitle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -2002,8 +2005,10 @@ export default function OperationDetail() {
     sheetDate: newSheetDate || null,
     authorCIN: cinList.find(c => c.isAuthor)?.cin ?? null,
     operationName: operation?.name ?? "…",
-    targetSurname:
-      targetMode === "link" ? (newSheetTarget?.surname ?? null) : null,
+    targetBracketLabel:
+      targetMode === "link"
+        ? getTargetTitleBracket(newSheetTarget ?? null)
+        : null,
   });
 
   // Fetch all users so we can add a whole team at once

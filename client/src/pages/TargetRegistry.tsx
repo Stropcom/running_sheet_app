@@ -48,6 +48,8 @@ import {
   Users,
   Pencil,
   FileText,
+  User,
+  MapPin,
 } from "lucide-react";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { cn } from "@/lib/utils";
@@ -67,6 +69,7 @@ import {
 } from "@/components/TargetStructuredFields";
 import {
   AddTargetDialog,
+  computePrimaryIdentity,
   type RegistryCreatePayload,
 } from "@/components/AddTargetDialog";
 import {
@@ -90,6 +93,7 @@ import {
 } from "@/components/PossibleDuplicateAlert";
 import { runDuplicateChecks } from "@/lib/duplicateCheck";
 import { IndicesBadge } from "@/components/IndicesBadge";
+import type { TargetType } from "@shared/types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -97,6 +101,7 @@ type WildField = { label: string; value: string };
 
 type RegistryTarget = {
   id: number;
+  targetType: TargetType;
   name: string;
   tgt: string | null;
   hbf: string | null;
@@ -139,6 +144,18 @@ type RegistryTarget = {
    * stay in sync. */
   linkedAssociateId?: number | null;
 };
+
+/** The Target Registry card icon per targetType — reuses the exact same
+ * User/Car/MapPin icons the Intelligence folder already uses for its own
+ * person/vehicle/address entity groupings, so a Vehicle/Location target
+ * reads consistently between the two screens. */
+function targetTypeIcon(targetType: TargetType) {
+  if (targetType === "vehicle")
+    return <Car className="w-5 h-5 text-rose-400" />;
+  if (targetType === "location")
+    return <MapPin className="w-5 h-5 text-rose-400" />;
+  return <User className="w-5 h-5 text-rose-400" />;
+}
 
 // Initial lock state for a set of extra address/vehicle entries — "locked"
 // (needs an explicit Edit/Add-new choice) when the entry already has a
@@ -528,9 +545,26 @@ function TargetCard({
   };
 
   const handleSave = () => {
-    const { name, tgt } = composeTargetName(identity);
+    // name/tgt come from whichever fields are this target's PRIMARY
+    // identity — Identity for a Person target (unchanged), but Vehicle 1 /
+    // Home Address for a Vehicle/Location target, since editing e.g. this
+    // target's own registration needs to update its registry name and
+    // Running Sheet title bracket too, not just v1f — see
+    // computePrimaryIdentity's own comment in AddTargetDialog.tsx.
+    const { name, tgt } = computePrimaryIdentity(
+      target.targetType,
+      identity,
+      address,
+      vehicle
+    );
     if (!name) {
-      toast.error("Enter both First Name/s and Surname.");
+      toast.error(
+        target.targetType === "vehicle"
+          ? "Enter Registration, Colour, Make and Model."
+          : target.targetType === "location"
+            ? "Enter House No, Street Name, Street Type and Suburb."
+            : "Enter both First Name/s and Surname."
+      );
       return;
     }
     const { full: hbf, short: hb } = composeAddress(address);
@@ -673,7 +707,7 @@ function TargetCard({
           onClick={() => setExpanded(v => !v)}
         >
           <div className="p-2.5 rounded-lg bg-rose-400/10 border border-rose-400/20 shrink-0">
-            <Target className="w-5 h-5 text-rose-400" />
+            {targetTypeIcon(target.targetType)}
           </div>
           <span className="flex-1 font-semibold text-sm text-foreground truncate">
             {target.name}
@@ -734,7 +768,10 @@ function TargetCard({
 
             <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
               <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Target className="w-3 h-3" /> Name
+                <Target className="w-3 h-3" />
+                {target.targetType === "person"
+                  ? "Name"
+                  : "Linked Person (optional)"}
                 {target.linkedAssociateId && (
                   <Badge
                     variant="secondary"
@@ -781,7 +818,10 @@ function TargetCard({
 
             <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
               <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Home className="w-3 h-3" /> Home Address
+                <Home className="w-3 h-3" />
+                {target.targetType === "location"
+                  ? "Location Identity"
+                  : "Home Address"}
               </p>
               {addressMode === "locked" ? (
                 <div className="flex flex-col">
@@ -911,7 +951,10 @@ function TargetCard({
 
             <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
               <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Car className="w-3 h-3" /> Vehicle 1
+                <Car className="w-3 h-3" />
+                {target.targetType === "vehicle"
+                  ? "Vehicle Identity"
+                  : "Vehicle 1"}
               </p>
               {vehicleMode === "locked" ? (
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
@@ -2133,7 +2176,7 @@ export default function TargetRegistryPage() {
                 {/* Header */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="p-2.5 rounded-lg bg-rose-400/10 border border-rose-400/20 shrink-0">
-                    <Target className="w-5 h-5 text-rose-400" />
+                    {targetTypeIcon(t.targetType)}
                   </div>
                   <Button
                     variant="ghost"
@@ -2224,7 +2267,13 @@ export default function TargetRegistryPage() {
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <Target className="w-4 h-4 text-primary" />
+                  {selectedTileTarget.targetType === "vehicle" ? (
+                    <Car className="w-4 h-4 text-primary" />
+                  ) : selectedTileTarget.targetType === "location" ? (
+                    <MapPin className="w-4 h-4 text-primary" />
+                  ) : (
+                    <User className="w-4 h-4 text-primary" />
+                  )}
                   {selectedTileTarget.name}
                 </DialogTitle>
               </DialogHeader>

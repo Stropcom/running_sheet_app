@@ -31,7 +31,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, X, Home, Car, Users, AlertTriangle, Merge } from "lucide-react";
+import {
+  Plus,
+  X,
+  Home,
+  Car,
+  Users,
+  AlertTriangle,
+  Merge,
+  User,
+  MapPin,
+  ChevronDown,
+  Info,
+} from "lucide-react";
 import {
   TargetIdentityFields,
   TargetAddressFields,
@@ -48,11 +60,14 @@ import {
   composeAssociateName,
   composeAddress,
   composeVehicle,
+  composeVehicleTargetName,
+  composeLocationTargetName,
   ddMmYyyyToIso,
   type StructuredNameParts,
   type StructuredAddressParts,
   type StructuredVehicleParts,
 } from "@/lib/addressFormat";
+import type { TargetType } from "@shared/types";
 import {
   TargetMergeDialog,
   type ExistingTargetLike,
@@ -85,6 +100,7 @@ export interface RegistryCreatePayload {
    * `background` above; see targetDocumentImports in schema.ts. */
   documentSnapshotJson: string | null;
   documentSourceFileName: string | null;
+  targetType: TargetType;
   name: string;
   tgt: string | null;
   hbf: string | null;
@@ -128,6 +144,23 @@ export interface StagedAssociate {
   identity: StructuredNameParts;
   address: StructuredAddressParts;
   vehicle: StructuredVehicleParts & { vehicleType: string };
+}
+
+/** The composed name/tgt for whichever fields are this Target's PRIMARY
+ * identity, chosen by targetType — composeTargetName(identity) for a
+ * Person (unchanged), composeVehicleTargetName(vehicle) for a Vehicle,
+ * composeLocationTargetName(address) for a Location. Both name and tgt
+ * come back as empty strings until that type's own required fields are
+ * filled in, same as composeTargetName already does for Person. */
+export function computePrimaryIdentity(
+  targetType: TargetType,
+  identity: StructuredNameParts,
+  address: StructuredAddressParts,
+  vehicle: StructuredVehicleParts & { vehicleType: string }
+): { name: string; tgt: string } {
+  if (targetType === "vehicle") return composeVehicleTargetName(vehicle);
+  if (targetType === "location") return composeLocationTargetName(address);
+  return composeTargetName(identity);
 }
 
 export function AddTargetDialog({
@@ -187,6 +220,19 @@ export function AddTargetDialog({
     id: number;
     name: string;
   } | null>(() => initialOperation ?? null);
+  // What this Target record identifies — defaults to Person, the only
+  // option before this existed, so every existing flow (document import,
+  // possible-duplicate merge, etc.) is unaffected unless an officer
+  // deliberately switches it. Vehicle/Location reuse the exact same
+  // vehicle/address state below as their PRIMARY identity (promoted from
+  // "optional attribute of a person" to "the subject itself") rather than
+  // introducing separate fields — see composeVehicleTargetName/
+  // composeLocationTargetName in addressFormat.ts.
+  const [targetType, setTargetType] = useState<TargetType>("person");
+  // Whether the optional "Link a known person" section is open — always
+  // true (and irrelevant) for a Person target, since Identity is the
+  // primary section then; starts collapsed for Vehicle/Location.
+  const [personExpanded, setPersonExpanded] = useState(false);
   const [identity, setIdentity] = useState<StructuredNameParts>(
     () => initialIdentity ?? EMPTY_NAME_PARTS
   );
@@ -273,6 +319,8 @@ export function AddTargetDialog({
 
   const resetAndClose = () => {
     setOperation(initialOperation ?? null);
+    setTargetType("person");
+    setPersonExpanded(false);
     setIdentity(EMPTY_NAME_PARTS);
     setAddress(EMPTY_ADDRESS_PARTS);
     setVehicle(EMPTY_VEHICLE_PARTS);
@@ -296,7 +344,12 @@ export function AddTargetDialog({
   };
 
   const buildPayload = (): RegistryCreatePayload => {
-    const { name, tgt } = composeTargetName(identity);
+    const { name, tgt } = computePrimaryIdentity(
+      targetType,
+      identity,
+      address,
+      vehicle
+    );
     const { full: hbf, short: hb } = composeAddress(address);
     const { full: v1f, short: v1 } = composeVehicle(vehicle);
     return {
@@ -306,6 +359,7 @@ export function AddTargetDialog({
         ? JSON.stringify(initialDocumentSnapshot)
         : null,
       documentSourceFileName: initialDocumentSnapshot?.sourceFileName || null,
+      targetType,
       name,
       tgt: tgt || null,
       hbf: hbf || null,
@@ -447,6 +501,10 @@ export function AddTargetDialog({
       ? JSON.stringify(initialDocumentSnapshot)
       : null,
     documentSourceFileName: initialDocumentSnapshot?.sourceFileName || null,
+    // Only reachable via the person-duplicate-match flow, which is skipped
+    // entirely for a Vehicle/Location target (see composedName below) — so
+    // targetType is always "person" by the time this runs.
+    targetType: "person",
     name: associate.name,
     tgt: associate.tgt,
     hbf: associate.hbf,
@@ -476,7 +534,26 @@ export function AddTargetDialog({
     existingAssociateId: associate.id,
   });
 
-  const composedName = composeTargetName(identity).name;
+  // The PRIMARY identity for this target, per its targetType — what
+  // actually gets saved as name/tgt (see buildPayload) and what gates
+  // whether there's enough to save at all (see handleSave).
+  const primaryComposedName = computePrimaryIdentity(
+    targetType,
+    identity,
+    address,
+    vehicle
+  ).name;
+  // The composed PERSON name from the Identity fields specifically — used
+  // only for the possible-duplicate-PERSON flow (checkNameOnBlur,
+  // handleSave's findPossibleDuplicate check, the merge/link-and-copy
+  // dialogs). Forced empty for a Vehicle/Location target even if the
+  // optional "Link a known person" fields are filled in: that flow exists
+  // to catch a duplicate Target/Associate record for the same real person,
+  // which doesn't apply when the person is only an optional attribute of
+  // this target rather than the target itself — same reasoning as the
+  // Sort-by-Surname/name-typo checks not applying either.
+  const composedName =
+    targetType === "person" ? composeTargetName(identity).name : "";
 
   const runSecondaryChecks = async () => {
     const { full: hbf } = composeAddress(address);
@@ -508,14 +585,23 @@ export function AddTargetDialog({
       toast.error("Select an operation for this target.");
       return;
     }
-    if (!composedName) {
-      toast.error("Enter both First Name/s and Surname.");
+    if (!primaryComposedName) {
+      toast.error(
+        targetType === "vehicle"
+          ? "Enter Registration, Colour, Make and Model."
+          : targetType === "location"
+            ? "Enter House No, Street Name, Street Type and Suburb."
+            : "Enter both First Name/s and Surname."
+      );
       return;
     }
-    // Already resolved for this exact name at the surname field's onBlur
-    // (no match, or the officer already said "different person") — don't
-    // ask again.
-    if (composedName === dupCheckedForName) {
+    // No person name to duplicate-check for a Vehicle/Location target (see
+    // composedName's own comment) — skip straight to the address/vehicle
+    // secondary checks, which still apply regardless of type.
+    // Otherwise: already resolved for this exact name at the surname
+    // field's onBlur (no match, or the officer already said "different
+    // person") — don't ask again.
+    if (!composedName || composedName === dupCheckedForName) {
       await runSecondaryChecks();
       return;
     }
@@ -792,15 +878,99 @@ export function AddTargetDialog({
               />
             </div>
 
-            <TargetIdentityFields
-              value={identity}
-              onChange={setIdentity}
-              onSurnameBlur={checkNameOnBlur}
-            />
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Target Type
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTargetType("person")}
+                  className={`flex-1 flex flex-col items-center justify-center gap-1 rounded-lg border py-2.5 text-xs font-semibold transition-colors ${
+                    targetType === "person"
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-muted-foreground border-border hover:bg-muted/50"
+                  }`}
+                >
+                  <User className="w-4 h-4" />
+                  Person
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTargetType("vehicle")}
+                  className={`flex-1 flex flex-col items-center justify-center gap-1 rounded-lg border py-2.5 text-xs font-semibold transition-colors ${
+                    targetType === "vehicle"
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-muted-foreground border-border hover:bg-muted/50"
+                  }`}
+                >
+                  <Car className="w-4 h-4" />
+                  Vehicle
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTargetType("location")}
+                  className={`flex-1 flex flex-col items-center justify-center gap-1 rounded-lg border py-2.5 text-xs font-semibold transition-colors ${
+                    targetType === "location"
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-muted-foreground border-border hover:bg-muted/50"
+                  }`}
+                >
+                  <MapPin className="w-4 h-4" />
+                  Location
+                </button>
+              </div>
+              <span className="text-xs text-muted-foreground">
+                What this Target record identifies. Defaults to Person — most
+                operations target an individual.
+              </span>
+            </div>
+
+            {targetType === "person" ? (
+              <TargetIdentityFields
+                value={identity}
+                onChange={setIdentity}
+                onSurnameBlur={checkNameOnBlur}
+              />
+            ) : (
+              <>
+                <div className="rounded-lg border border-border/60 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setPersonExpanded(v => !v)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 bg-muted/20 text-xs font-semibold text-foreground"
+                  >
+                    <span>Link a known person (optional)</span>
+                    <ChevronDown
+                      className={`w-4 h-4 transition-transform ${personExpanded ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  {personExpanded && (
+                    <div className="p-3">
+                      <TargetIdentityFields
+                        value={identity}
+                        onChange={setIdentity}
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5">
+                  <Info className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                  <span className="text-xs text-amber-800 dark:text-amber-300">
+                    Sort by Surname, duplicate-name matching and name-typo
+                    checks won't apply to this target — same as a business-name
+                    associate today.
+                  </span>
+                </div>
+              </>
+            )}
 
             <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
               <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Home className="w-3 h-3" /> Home Address
+                <Home className="w-3 h-3" />
+                {targetType === "location"
+                  ? "Location Identity"
+                  : "Home Address"}
               </p>
               <TargetAddressFields value={address} onChange={setAddress} />
             </div>
@@ -868,7 +1038,8 @@ export function AddTargetDialog({
 
             <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
               <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Car className="w-3 h-3" /> Vehicle 1
+                <Car className="w-3 h-3" />
+                {targetType === "vehicle" ? "Vehicle Identity" : "Vehicle 1"}
               </p>
               <TargetVehicleFields value={vehicle} onChange={setVehicle} />
             </div>

@@ -642,6 +642,26 @@ export function composeAddress(parts: StructuredAddressParts): {
 }
 
 /**
+ * Compose a Location-type Target's registry name + bracket form from its
+ * structured address fields — the counterpart to composeTargetName for a
+ * Target whose subject is an address rather than a person, so no
+ * First Name/s or Surname is required. Reuses composeAddress's own "short"
+ * (business name if set, else the street) as name, so it matches the
+ * Intelligence folder's own address entity display exactly rather than
+ * inventing a separate convention; tgt is that same string upper-cased.
+ * Returns empty strings until composeAddress's own required fields (house
+ * number, street name + type, suburb) are present.
+ */
+export function composeLocationTargetName(parts: StructuredAddressParts): {
+  name: string;
+  tgt: string;
+} {
+  const { short } = composeAddress(parts);
+  if (!short) return { name: "", tgt: "" };
+  return { name: short, tgt: short.toUpperCase() };
+}
+
+/**
  * Map a Google Geocoder result's address_components to the subset of
  * StructuredAddressParts they cover — house number, unit/subpremise, street
  * (split into name + type against the same abbreviation map used elsewhere
@@ -732,4 +752,35 @@ export function composeVehicle(
   const short = `Vehicle ${registration}`;
   const full = `${description}, bearing ${state} registration ${registration} (${short})`;
   return { full, short };
+}
+
+/**
+ * Compose a Vehicle-type Target's registry name + bracket form from its
+ * structured vehicle fields — the counterpart to composeTargetName for a
+ * Target whose subject is a vehicle rather than a person, so no
+ * First Name/s or Surname is required. name uses the Intelligence
+ * folder's own "[rego] [colour] [make] [model] [type]" order (see
+ * composeVehicle's own comment) rather than composeVehicle's "Vehicle
+ * [rego]" bracket, since this IS the target's primary identity, not an
+ * attribute of one; tgt is that same string upper-cased, matching how
+ * composeTargetName's tgt is the upper-cased bracket form. Returns empty
+ * strings until registration, colour, make and model are all present —
+ * the same required set composeVehicle itself enforces.
+ */
+export function composeVehicleTargetName(
+  parts: StructuredVehicleParts & { vehicleType?: string }
+): {
+  name: string;
+  tgt: string;
+} {
+  const registration = parts.registration.trim().toUpperCase();
+  const colour = parts.colour.trim();
+  const make = parts.make.trim();
+  const model = parts.model.trim();
+  const vehicleType = (parts.vehicleType ?? "").trim();
+  if (!registration || !colour || !make || !model) return { name: "", tgt: "" };
+  const name = [registration, colour, make, model, vehicleType]
+    .filter(Boolean)
+    .join(" ");
+  return { name, tgt: name.toUpperCase() };
 }

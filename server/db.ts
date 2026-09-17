@@ -82,6 +82,7 @@ import {
   InsertShortcut,
   targets,
   InsertTarget,
+  TargetType,
   targetFieldHistory,
   InsertTargetFieldHistory,
   targetDocumentImports,
@@ -151,7 +152,10 @@ import {
   collapseToVisits,
   crossOperationNames,
 } from "./entityAttribution";
-import { buildRunningSheetTitle } from "../shared/runningSheetTitle";
+import {
+  buildRunningSheetTitle,
+  getTargetTitleBracket,
+} from "../shared/runningSheetTitle";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _pool: Awaited<ReturnType<typeof createPromisePool>> | null = null;
@@ -754,7 +758,7 @@ export async function recomputeRunningSheetTitle(
     createdAt: sheet.createdAt,
     authorCIN,
     operationName: operation.name,
-    targetSurname: target?.surname ?? null,
+    targetBracketLabel: getTargetTitleBracket(target ?? null),
   });
 
   await db
@@ -7032,6 +7036,7 @@ export async function getAllIntelligenceEntities(): Promise<
     .select({
       targetId: targets.id,
       targetName: targets.name,
+      targetType: targets.targetType,
       surname: targets.surname,
       tgt: targets.tgt,
       hb: targets.hb,
@@ -7054,6 +7059,7 @@ export async function getAllIntelligenceEntities(): Promise<
     .select({
       targetId: targets.id,
       targetName: targets.name,
+      targetType: targets.targetType,
       surname: targets.surname,
       tgt: targets.tgt,
       hb: targets.hb,
@@ -7080,6 +7086,7 @@ export async function getAllIntelligenceEntities(): Promise<
   const targetRows: Array<{
     targetId: number;
     targetName: string;
+    targetType: TargetType;
     surname: string | null;
     tgt: string | null;
     hb: string | null;
@@ -7154,12 +7161,23 @@ export async function getAllIntelligenceEntities(): Promise<
         ? linkedSheets
         : [{ sheetId: 0, sheetTitle: "(no sheet linked)" }];
 
-    // Target person entity — keyed by full name, carries tgtAlias
+    // Target entity — keyed by full name, carries tgtAlias. type follows
+    // targetType: "person" (the only option before targetType existed) for
+    // a Person target, or "vehicle"/"address" when a Vehicle or Location
+    // stands in as the subject itself — see the Golden Rule/CLAUDE.md's
+    // Target Type note. "location" maps to "address" here since that's
+    // IntelligenceEntity's own type name for the same concept.
+    const entityType: IntelligenceEntity["type"] =
+      t.targetType === "vehicle"
+        ? "vehicle"
+        : t.targetType === "location"
+          ? "address"
+          : "person";
     const nameKey = `target::${t.targetName}`;
     if (!entityMap.has(nameKey)) {
       entityMap.set(nameKey, {
         shortForm: t.targetName,
-        type: "person",
+        type: entityType,
         isTarget: true,
         tgtAlias: t.tgt?.trim() || null,
         targetId: t.targetId,
@@ -7184,21 +7202,34 @@ export async function getAllIntelligenceEntities(): Promise<
     // For each full/abbreviated pair, only register the full version if it is set;
     // the abbreviated version is only used as a fallback when the full field is empty.
     // This prevents HBF + HB (or V1F + V1) from appearing as two separate entities.
+    // HBF is skipped entirely for a Location target and V1F for a Vehicle
+    // target — for those, the field IS the primary card entity keyed above
+    // (target::${t.targetName}), not a secondary attribute of it, so
+    // registering it again here under its own vehicle::/address:: key would
+    // just duplicate the same card as a second, identical-looking entity.
     const locationFields: Array<{
       label: string;
       value: string | null;
       type: IntelligenceEntity["type"];
     }> = [
-      {
-        label: "HBF",
-        value: t.hbf?.trim() || t.hb?.trim() || null,
-        type: "address",
-      },
-      {
-        label: "V1F",
-        value: t.v1f?.trim() || t.v1?.trim() || null,
-        type: "vehicle",
-      },
+      ...(t.targetType === "location"
+        ? []
+        : [
+            {
+              label: "HBF",
+              value: t.hbf?.trim() || t.hb?.trim() || null,
+              type: "address" as const,
+            },
+          ]),
+      ...(t.targetType === "vehicle"
+        ? []
+        : [
+            {
+              label: "V1F",
+              value: t.v1f?.trim() || t.v1?.trim() || null,
+              type: "vehicle" as const,
+            },
+          ]),
       {
         label: "V2F",
         value: t.v2f?.trim() || t.v2?.trim() || null,

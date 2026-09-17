@@ -766,55 +766,55 @@ function TargetCard({
               </div>
             )}
 
-            <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
-              <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                <Target className="w-3 h-3" />
-                {target.targetType === "person"
-                  ? "Name"
-                  : "Linked Person (optional)"}
-                {target.linkedAssociateId && (
-                  <Badge
-                    variant="secondary"
-                    className="text-[10px] gap-1 font-medium normal-case tracking-normal ml-1"
-                    title="This target's name/address/vehicle stay in sync with a linked Associate record elsewhere in the registry — the same real person, filed both ways."
-                  >
-                    <Link2 className="h-2.5 w-2.5" /> Linked to an associate
-                  </Badge>
-                )}
-              </p>
-              {nameMode === "locked" ? (
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
-                  <p className="text-sm text-foreground flex-1">
-                    {target.name}
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5 text-xs h-7 sm:shrink-0"
-                    onClick={startEditName}
-                  >
-                    <Pencil className="w-3 h-3" /> Edit
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <TargetIdentityFields
-                    value={identity}
-                    onChange={v => mark(() => setIdentity(v))}
-                  />
-                  {target.name && (
+            {target.targetType === "person" && (
+              <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
+                <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                  <Target className="w-3 h-3" />
+                  Name
+                  {target.linkedAssociateId && (
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] gap-1 font-medium normal-case tracking-normal ml-1"
+                      title="This target's name/address/vehicle stay in sync with a linked Associate record elsewhere in the registry — the same real person, filed both ways."
+                    >
+                      <Link2 className="h-2.5 w-2.5" /> Linked to an associate
+                    </Badge>
+                  )}
+                </p>
+                {nameMode === "locked" ? (
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
+                    <p className="text-sm text-foreground flex-1">
+                      {target.name}
+                    </p>
                     <Button
                       size="sm"
-                      variant="ghost"
-                      className="gap-1.5 text-xs self-start"
-                      onClick={cancelNameEdit}
+                      variant="outline"
+                      className="gap-1.5 text-xs h-7 sm:shrink-0"
+                      onClick={startEditName}
                     >
-                      Cancel
+                      <Pencil className="w-3 h-3" /> Edit
                     </Button>
-                  )}
-                </div>
-              )}
-            </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <TargetIdentityFields
+                      value={identity}
+                      onChange={v => mark(() => setIdentity(v))}
+                    />
+                    {target.name && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="gap-1.5 text-xs self-start"
+                        onClick={cancelNameEdit}
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3">
               <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">

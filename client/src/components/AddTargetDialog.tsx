@@ -856,8 +856,8 @@ export function AddTargetDialog({
   // always a person and both were just optional attributes of them.
   const addressGroup = (
     <>
-      <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-        <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+      <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3">
+        <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
           <Home className="w-3 h-3" />
           {targetType === "location" ? "Location Identity" : "Home Address"}
         </p>
@@ -868,10 +868,10 @@ export function AddTargetDialog({
       {extraAddresses.map((ea, i) => (
         <div
           key={i}
-          className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
+          className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3 flex flex-col gap-2"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+            <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5">
               <Home className="w-3 h-3" /> Additional Address {i + 2}
             </span>
             <Button
@@ -927,8 +927,8 @@ export function AddTargetDialog({
 
   const vehicleGroup = (
     <>
-      <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-        <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+      <div className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3">
+        <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
           <Car className="w-3 h-3" />
           {targetType === "vehicle" ? "Vehicle Identity" : "Vehicle 1"}
         </p>
@@ -939,10 +939,10 @@ export function AddTargetDialog({
       {extraVehicles.map((ev, i) => (
         <div
           key={i}
-          className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
+          className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3 flex flex-col gap-2"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+            <span className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
               <Car className="w-3 h-3" /> Vehicle {i + 2}
             </span>
             <Button
@@ -1056,11 +1056,17 @@ export function AddTargetDialog({
             </div>
 
             {targetType === "person" && (
-              <TargetIdentityFields
-                value={identity}
-                onChange={setIdentity}
-                onSurnameBlur={checkNameOnBlur}
-              />
+              <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
+                <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                  <User className="w-3 h-3" />
+                  Person Identity
+                </p>
+                <TargetIdentityFields
+                  value={identity}
+                  onChange={setIdentity}
+                  onSurnameBlur={checkNameOnBlur}
+                />
+              </div>
             )}
 
             {targetType === "vehicle" ? (
@@ -1079,8 +1085,8 @@ export function AddTargetDialog({
                 saved target's own card (server/db.ts requires a real
                 targetId, so these are staged here and created right after
                 the target itself saves). */}
-            <div className="mt-2 pt-3 border-t border-border/50 flex flex-col gap-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+            <div className="mt-2 rounded-lg border border-l-4 border-violet-500/30 border-l-violet-500 bg-violet-500/5 p-3 flex flex-col gap-2">
+              <p className="text-xs font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide flex items-center gap-1.5">
                 <Users className="w-3.5 h-3.5" /> Associates
               </p>
               {associates.map((assoc, i) => (

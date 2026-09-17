@@ -883,9 +883,9 @@ function TargetCard({
               return (
                 <div
                   key={ea.id}
-                  className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
+                  className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3 flex flex-col gap-2"
                 >
-                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5">
                     <Home className="w-3 h-3" /> Additional Address {i + 2}
                   </span>
                   {mode === "locked" ? (
@@ -1006,9 +1006,9 @@ function TargetCard({
               return (
                 <div
                   key={ev.id}
-                  className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
+                  className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3 flex flex-col gap-2"
                 >
-                  <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
                     <Car className="w-3 h-3" /> Vehicle {i + 2}
                   </span>
                   {mode === "locked" ? (

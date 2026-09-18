@@ -2185,24 +2185,28 @@ export default function OperationDetail() {
               </div>
             )}
           </div>
-          <div className="shrink-0 flex flex-col gap-1.5 w-24">
-            <Button
-              size="sm"
-              className="gap-1.5 justify-center"
-              onClick={() => setCreateOpen(true)}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 justify-center"
-              onClick={() => setExportOpen(true)}
-            >
-              <FileDown className="w-3.5 h-3.5" />
-              Export
-            </Button>
+          <div className="shrink-0">
+            {activeTab === "sheets" && (
+              <Button
+                size="sm"
+                className="gap-1.5 justify-center"
+                onClick={() => setCreateOpen(true)}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add<span className="hidden sm:inline">&nbsp;Running Sheet</span>
+              </Button>
+            )}
+            {activeTab === "rollup" && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 justify-center"
+                onClick={() => setExportOpen(true)}
+              >
+                <FileDown className="w-3.5 h-3.5" />
+                Export
+              </Button>
+            )}
           </div>
         </div>
 

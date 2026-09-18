@@ -9659,7 +9659,7 @@ export default function IntelligenceMapping() {
                                     : mapQeAddress;
                                 return (
                                   <div className="flex flex-col gap-1 md:gap-1.5">
-                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
+                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-pink-500/70">
                                       Vehicle arriving
                                     </span>
                                     <div className="flex flex-wrap gap-1 md:gap-1.5">
@@ -9675,7 +9675,7 @@ export default function IntelligenceMapping() {
                                             key={d.rego}
                                             onClick={() => appendText(text)}
                                             title={text}
-                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
                                           >
                                             <span className="font-mono normal-case">
                                               {d.rego}
@@ -9732,7 +9732,7 @@ export default function IntelligenceMapping() {
                                 if (arrivalsHere.length === 0) return null;
                                 return (
                                   <div className="flex flex-col gap-1 md:gap-1.5">
-                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
+                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-pink-500/70">
                                       Vehicle departing
                                     </span>
                                     <div className="flex flex-wrap gap-1 md:gap-1.5">
@@ -9748,7 +9748,7 @@ export default function IntelligenceMapping() {
                                             key={a.rego}
                                             onClick={() => appendText(text)}
                                             title={text}
-                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
                                           >
                                             <span className="font-mono normal-case">
                                               {a.rego}
@@ -9887,7 +9887,7 @@ export default function IntelligenceMapping() {
                                 if (vehiclesHere.length === 0) return null;
                                 return (
                                   <div className="flex flex-col gap-1 md:gap-1.5">
-                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
+                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-pink-500/70">
                                       Walked in
                                     </span>
                                     <div className="flex flex-wrap gap-1 md:gap-1.5">
@@ -9905,7 +9905,7 @@ export default function IntelligenceMapping() {
                                             key={a.rego}
                                             onClick={() => appendText(text)}
                                             title={text}
-                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
                                           >
                                             On foot{" "}
                                             <span className="font-mono normal-case">
@@ -9978,7 +9978,7 @@ export default function IntelligenceMapping() {
                                   return null;
                                 return (
                                   <div className="flex flex-col gap-1 md:gap-1.5">
-                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
+                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-pink-500/70">
                                       Walked out
                                     </span>
                                     <div className="flex flex-wrap gap-1 md:gap-1.5">
@@ -9994,7 +9994,7 @@ export default function IntelligenceMapping() {
                                             key={a.rego}
                                             onClick={() => appendText(text)}
                                             title={text}
-                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
                                           >
                                             To{" "}
                                             <span className="font-mono normal-case">

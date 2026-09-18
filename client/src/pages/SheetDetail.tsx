@@ -4604,7 +4604,7 @@ export default function SheetDetail({
             }) =>
               chips.length === 0 ? null : (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[9px] font-bold uppercase tracking-wide text-amber-500/70 shrink-0">
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-pink-500/70 shrink-0">
                     {label}
                   </span>
                   {chips.map(chip => (
@@ -4613,9 +4613,9 @@ export default function SheetDetail({
                       onMouseDown={e => e.preventDefault()}
                       onClick={() => insertAtFocused(chip.text)}
                       title={chip.text}
-                      className="inline-flex items-center px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none cursor-pointer"
+                      className="inline-flex items-center px-2 py-0.5 rounded border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none cursor-pointer"
                     >
-                      <span className="text-[10px] font-mono leading-none">
+                      <span className="text-[10px] font-mono font-bold leading-none">
                         {chip.rego}
                       </span>
                     </button>
@@ -4868,7 +4868,7 @@ export default function SheetDetail({
                                   title={`Insert: ${chip.insertValue}`}
                                   className="inline-flex items-center px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
                                 >
-                                  <span className="text-[10px] font-mono max-w-[140px] truncate leading-none">
+                                  <span className="text-[10px] font-mono font-bold max-w-[140px] truncate leading-none">
                                     {chip.insertValue}
                                   </span>
                                 </button>

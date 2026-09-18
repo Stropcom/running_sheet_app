@@ -47,7 +47,12 @@ const OBSERVER_ALLOWED_MUTATIONS = new Set([
 // customMarker.list, mapShape.list) ignores whatever operationIds the
 // client sends and substitutes the investigator's own grant server-side —
 // see getInvestigatorAllowedOperationIds in server/db.ts — so a tampered
-// client request can't widen what comes back.
+// client request can't widen what comes back. intelligence.userLocations
+// is the one exception: it was never operation-scoped for any role (see
+// its own doc comment on getUserLocations) — an investigator sees the
+// same live team pins any other logged-in user does, deliberately, since
+// situational awareness of who's where is the whole point of giving them
+// the map.
 const INVESTIGATOR_ALLOWED_PATHS = new Set([
   "auth.me",
   "auth.logout",
@@ -57,6 +62,7 @@ const INVESTIGATOR_ALLOWED_PATHS = new Set([
   "profile.updatePassword",
   "operation.list",
   "intelligence.mappingLocations",
+  "intelligence.userLocations",
   "intelligence.myLocationState",
   "intelligence.updateUserLocation",
   "intelligence.clearUserLocation",

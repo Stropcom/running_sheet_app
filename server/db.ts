@@ -13091,6 +13091,7 @@ export interface UserLocationRow {
   userId: number;
   deviceId: string;
   name: string;
+  role: "observer" | "member" | "admin" | "investigator";
   team: "TEAM1" | "TEAM2" | "PTT" | null;
   lat: number;
   lng: number;
@@ -13135,6 +13136,7 @@ export async function getUserLocations(
       userId: userLocations.userId,
       deviceId: userLocations.deviceId,
       name: users.name,
+      role: users.role,
       team: users.team,
       lat: userLocations.lat,
       lng: userLocations.lng,

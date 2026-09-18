@@ -325,6 +325,7 @@ interface LiveUser {
   userId: number;
   deviceId: string;
   name: string;
+  role: "observer" | "member" | "admin" | "investigator";
   team: "TEAM1" | "TEAM2" | "PTT" | null;
   lat: number;
   lng: number;
@@ -596,8 +597,15 @@ const TEAM_COLOURS: Record<string, string> = {
   PTT: "#f9a825", // yellow
   null: "#6b7280", // grey for unassigned
 };
+// Investigator accounts have no TEAM1/TEAM2/PTT (they aren't a
+// surveillance team member), so they'd otherwise fall through to the
+// generic "unassigned" grey above — deliberately darker instead, so their
+// pin still reads as a distinct, recognised category rather than looking
+// like a misconfigured account.
+const INVESTIGATOR_PIN_COLOUR = "#374151"; // dark grey
 
-function getTeamColour(team: string | null): string {
+function getTeamColour(team: string | null, role?: LiveUser["role"]): string {
+  if (role === "investigator") return INVESTIGATOR_PIN_COLOUR;
   return TEAM_COLOURS[team ?? "null"] ?? "#6b7280";
 }
 
@@ -2434,15 +2442,14 @@ export default function IntelligenceMapping() {
     { refetchInterval: 30_000 }
   );
 
-  // Live user locations — poll every 1 second. Not for Investigator
-  // accounts: they share only their own position (see the Location
-  // section replacing the Teams panel for them), never see other
-  // officers' — this endpoint isn't in INVESTIGATOR_ALLOWED_PATHS either,
-  // so it's blocked server-side regardless; skipping the request here
-  // just avoids a pointless 1s-polling 403.
+  // Live user locations — poll every 1 second. Investigator accounts DO
+  // see everyone's pins here (situational awareness is the point of
+  // giving them the map at all) — it's only the Teams PANEL (the
+  // sidebar roster with per-team hide/collapse controls) they don't get;
+  // see its own "not for Investigator" comment further down.
   const { data: liveUsers } = trpc.intelligence.userLocations.useQuery(
     { operationIds: selectedOpIds },
-    { refetchInterval: 1000, enabled: !isInvestigator }
+    { refetchInterval: 1000, enabled: true }
   );
 
   // Live trails for any officers currently being tracked. Each officer's
@@ -3165,7 +3172,8 @@ export default function IntelligenceMapping() {
   // the indicator centres itself on the overlay's local (0,0) via its own
   // translate, independent of the pill's width/height entirely.
   const createUserPinElement = useCallback((liveUser: LiveUser) => {
-    const color = liveUser.pinColor ?? getTeamColour(liveUser.team);
+    const color =
+      liveUser.pinColor ?? getTeamColour(liveUser.team, liveUser.role);
     const label = liveUser.name.toUpperCase();
     const pinKey = `${liveUser.userId}_${liveUser.deviceId}`;
     const isMoving = liveUser.speed != null && liveUser.speed > 0.5;
@@ -7060,9 +7068,13 @@ export default function IntelligenceMapping() {
               </div>
               {/* end Location */}
 
-              {/* ── TEAMS (Live Location) — not for Investigator accounts:
-                  they only share their own position (the Location section
-                  above), never see the wider team roster. */}
+              {/* ── TEAMS (Live Location) — the roster PANEL (per-team
+                  hide/collapse, member list) isn't shown to Investigator
+                  accounts, but their map still renders every officer's
+                  live pin same as everyone else's (see the userLocations
+                  query above) — they just can't filter/hide by team from
+                  here, and don't get the Location section's page-mate
+                  wall-of-names view either. */}
               {!isInvestigator && (
                 <div className="px-3 py-3">
                   <div className="flex items-center justify-between mb-3">

@@ -4615,7 +4615,7 @@ export default function SheetDetail({
                       title={chip.text}
                       className="inline-flex items-center px-2 py-0.5 rounded border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none cursor-pointer"
                     >
-                      <span className="text-[10px] font-mono font-bold leading-none">
+                      <span className="text-[10px] font-mono font-bold">
                         {chip.rego}
                       </span>
                     </button>
@@ -4868,7 +4868,7 @@ export default function SheetDetail({
                                   title={`Insert: ${chip.insertValue}`}
                                   className="inline-flex items-center px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
                                 >
-                                  <span className="text-[10px] font-mono font-bold max-w-[140px] truncate leading-none">
+                                  <span className="text-[10px] font-mono font-bold max-w-[140px] truncate">
                                     {chip.insertValue}
                                   </span>
                                 </button>

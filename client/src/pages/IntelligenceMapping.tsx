@@ -9609,7 +9609,14 @@ export default function IntelligenceMapping() {
                                 </div>
                               );
                             })()}
-                          {/* Vehicle arriving chips — reuses the occupant
+                          {/* Continuity chip groups — arriving/departing/
+                          walked in/out laid out side by side (each still its
+                          own label-above-chips column) rather than each
+                          taking a full-width row, since there are up to four
+                          of these and stacking them ate a lot of vertical
+                          space in the popup. */}
+                          <div className="flex flex-wrap gap-x-4 gap-y-1.5 md:gap-x-6">
+                            {/* Vehicle arriving chips — reuses the occupant
                             description from the vehicle's last logged
                             departure anywhere in this operation, so the
                             officer doesn't have to retype it when the same
@@ -9617,70 +9624,70 @@ export default function IntelligenceMapping() {
                             chip per still-pending (un-arrived) vehicle —
                             always requires an explicit tap, never inserted
                             automatically, since this writes into the record. */}
-                          {mapQeAddress &&
-                            rsPendingDepartures &&
-                            rsPendingDepartures.length > 0 &&
-                            (() => {
-                              const appendText = (text: string) => {
-                                pushInlineUndo(rsInlineText);
-                                setRsInlineText(prev =>
-                                  prev ? `${prev} ${text}` : text
+                            {mapQeAddress &&
+                              rsPendingDepartures &&
+                              rsPendingDepartures.length > 0 &&
+                              (() => {
+                                const appendText = (text: string) => {
+                                  pushInlineUndo(rsInlineText);
+                                  setRsInlineText(prev =>
+                                    prev ? `${prev} ${text}` : text
+                                  );
+                                  resetInlineTimer();
+                                  rsInlineInputRef.current?.focus();
+                                };
+                                const bracketMatch = mapQeAddress.match(
+                                  /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
                                 );
-                                resetInlineTimer();
-                                rsInlineInputRef.current?.focus();
-                              };
-                              const bracketMatch = mapQeAddress.match(
-                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                              );
-                              const toTitleCase = (s: string) =>
-                                s
-                                  .toLowerCase()
-                                  .replace(/\b\w/g, c => c.toUpperCase());
-                              const shortAddr = bracketMatch
-                                ? toTitleCase(bracketMatch[2])
-                                : (mapQeAddress.split(",")[0]?.trim() ??
-                                  mapQeAddress);
-                              // App-wide rule: first mention of an address in
-                              // this sheet is written in full (with its
-                              // bracket short-form, which is what Intelligence
-                              // relies on to register the location) — every
-                              // later mention just uses the short form.
-                              const arriveAddr =
-                                rsAddressMentionedData?.mentioned
-                                  ? shortAddr
-                                  : mapQeAddress;
-                              return (
-                                <div className="flex flex-col gap-1 md:gap-1.5">
-                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
-                                    Vehicle arriving
-                                  </span>
-                                  <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                    {rsPendingDepartures.map(d => {
-                                      const occupantDesc =
-                                        shortenAlreadyMentionedNames(
-                                          d.occupantDesc,
-                                          rsUsedBracketCodes
+                                const toTitleCase = (s: string) =>
+                                  s
+                                    .toLowerCase()
+                                    .replace(/\b\w/g, c => c.toUpperCase());
+                                const shortAddr = bracketMatch
+                                  ? toTitleCase(bracketMatch[2])
+                                  : (mapQeAddress.split(",")[0]?.trim() ??
+                                    mapQeAddress);
+                                // App-wide rule: first mention of an address in
+                                // this sheet is written in full (with its
+                                // bracket short-form, which is what Intelligence
+                                // relies on to register the location) — every
+                                // later mention just uses the short form.
+                                const arriveAddr =
+                                  rsAddressMentionedData?.mentioned
+                                    ? shortAddr
+                                    : mapQeAddress;
+                                return (
+                                  <div className="flex flex-col gap-1 md:gap-1.5">
+                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
+                                      Vehicle arriving
+                                    </span>
+                                    <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                      {rsPendingDepartures.map(d => {
+                                        const occupantDesc =
+                                          shortenAlreadyMentionedNames(
+                                            d.occupantDesc,
+                                            rsUsedBracketCodes
+                                          );
+                                        const text = `Vehicle ${d.rego}, ${occupantDesc}, arrived at ${arriveAddr}`;
+                                        return (
+                                          <button
+                                            key={d.rego}
+                                            onClick={() => appendText(text)}
+                                            title={text}
+                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                          >
+                                            <span className="font-mono normal-case">
+                                              {d.rego}
+                                            </span>{" "}
+                                            arriving
+                                          </button>
                                         );
-                                      const text = `Vehicle ${d.rego}, ${occupantDesc}, arrived at ${arriveAddr}`;
-                                      return (
-                                        <button
-                                          key={d.rego}
-                                          onClick={() => appendText(text)}
-                                          title={text}
-                                          className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                        >
-                                          <span className="font-mono normal-case">
-                                            {d.rego}
-                                          </span>{" "}
-                                          arriving
-                                        </button>
-                                      );
-                                    })}
+                                      })}
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })()}
-                          {/* Vehicle departing chips — mirror of the arriving
+                                );
+                              })()}
+                            {/* Vehicle departing chips — mirror of the arriving
                             chips above: reuses the occupant description from
                             the vehicle's most recent logged arrival, for when
                             that vehicle is now departing THAT SAME location.
@@ -9693,67 +9700,67 @@ export default function IntelligenceMapping() {
                             establishing a new address mention the way an
                             arrival can be. Requires an explicit tap, same as
                             the arriving chips. */}
-                          {mapQeAddress &&
-                            rsPendingArrivals &&
-                            rsPendingArrivals.length > 0 &&
-                            (() => {
-                              const appendText = (text: string) => {
-                                pushInlineUndo(rsInlineText);
-                                setRsInlineText(prev =>
-                                  prev ? `${prev} ${text}` : text
+                            {mapQeAddress &&
+                              rsPendingArrivals &&
+                              rsPendingArrivals.length > 0 &&
+                              (() => {
+                                const appendText = (text: string) => {
+                                  pushInlineUndo(rsInlineText);
+                                  setRsInlineText(prev =>
+                                    prev ? `${prev} ${text}` : text
+                                  );
+                                  resetInlineTimer();
+                                  rsInlineInputRef.current?.focus();
+                                };
+                                const bracketMatch = mapQeAddress.match(
+                                  /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
                                 );
-                                resetInlineTimer();
-                                rsInlineInputRef.current?.focus();
-                              };
-                              const bracketMatch = mapQeAddress.match(
-                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                              );
-                              const toTitleCase = (s: string) =>
-                                s
-                                  .toLowerCase()
-                                  .replace(/\b\w/g, c => c.toUpperCase());
-                              const shortAddr = bracketMatch
-                                ? toTitleCase(bracketMatch[2])
-                                : (mapQeAddress.split(",")[0]?.trim() ??
-                                  mapQeAddress);
-                              const arrivalsHere = rsPendingArrivals.filter(
-                                a =>
-                                  a.address.trim().toLowerCase() ===
-                                  shortAddr.trim().toLowerCase()
-                              );
-                              if (arrivalsHere.length === 0) return null;
-                              return (
-                                <div className="flex flex-col gap-1 md:gap-1.5">
-                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
-                                    Vehicle departing
-                                  </span>
-                                  <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                    {arrivalsHere.map(a => {
-                                      const occupantDesc =
-                                        shortenAlreadyMentionedNames(
-                                          a.occupantDesc,
-                                          rsUsedBracketCodes
+                                const toTitleCase = (s: string) =>
+                                  s
+                                    .toLowerCase()
+                                    .replace(/\b\w/g, c => c.toUpperCase());
+                                const shortAddr = bracketMatch
+                                  ? toTitleCase(bracketMatch[2])
+                                  : (mapQeAddress.split(",")[0]?.trim() ??
+                                    mapQeAddress);
+                                const arrivalsHere = rsPendingArrivals.filter(
+                                  a =>
+                                    a.address.trim().toLowerCase() ===
+                                    shortAddr.trim().toLowerCase()
+                                );
+                                if (arrivalsHere.length === 0) return null;
+                                return (
+                                  <div className="flex flex-col gap-1 md:gap-1.5">
+                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
+                                      Vehicle departing
+                                    </span>
+                                    <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                      {arrivalsHere.map(a => {
+                                        const occupantDesc =
+                                          shortenAlreadyMentionedNames(
+                                            a.occupantDesc,
+                                            rsUsedBracketCodes
+                                          );
+                                        const text = `Vehicle ${a.rego}, ${occupantDesc}, departed ${shortAddr} and continued via:`;
+                                        return (
+                                          <button
+                                            key={a.rego}
+                                            onClick={() => appendText(text)}
+                                            title={text}
+                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                          >
+                                            <span className="font-mono normal-case">
+                                              {a.rego}
+                                            </span>{" "}
+                                            departing
+                                          </button>
                                         );
-                                      const text = `Vehicle ${a.rego}, ${occupantDesc}, departed ${shortAddr} and continued via:`;
-                                      return (
-                                        <button
-                                          key={a.rego}
-                                          onClick={() => appendText(text)}
-                                          title={text}
-                                          className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                        >
-                                          <span className="font-mono normal-case">
-                                            {a.rego}
-                                          </span>{" "}
-                                          departing
-                                        </button>
-                                      );
-                                    })}
+                                      })}
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })()}
-                          {/* Walked in chip — for occupants who exit a
+                                );
+                              })()}
+                            {/* Walked in chip — for occupants who exit a
                             parked vehicle here and continue on foot into
                             this location ("... exited the vehicle, walked
                             [route], entered X and continued out of sight.").
@@ -9781,133 +9788,136 @@ export default function IntelligenceMapping() {
                             to type over — unlike the occupant description
                             or address, the route taken genuinely varies
                             every time and can't be reused from anywhere. */}
-                          {mapQeAddress &&
-                            (() => {
-                              // Insert at the caret rather than forcing the
-                              // text to the end of the observation — the
-                              // officer may have already clicked/tabbed back
-                              // into the middle of what they've typed (e.g.
-                              // to fix a word) before tapping this chip, and
-                              // the old "always append at the end" behaviour
-                              // would silently move the walk-in text away
-                              // from where they were looking. Still opens
-                              // its own paragraph (blank line before) so it
-                              // reads as a distinct sentence, same as before.
-                              const appendText = (text: string) => {
-                                pushInlineUndo(rsInlineText);
-                                const textarea = rsInlineInputRef.current;
-                                const pos =
-                                  textarea?.selectionStart ??
-                                  rsInlineText.length;
-                                const selEnd = textarea?.selectionEnd ?? pos;
-                                const before = rsInlineText.slice(0, pos);
-                                const after = rsInlineText.slice(selEnd);
-                                const lead = before
-                                  ? before.endsWith("\n\n")
-                                    ? ""
-                                    : before.endsWith("\n")
-                                      ? "\n"
-                                      : "\n\n"
-                                  : "";
-                                const inserted = `${before}${lead}${text}`;
-                                setRsInlineText(`${inserted}${after}`);
-                                resetInlineTimer();
-                                requestAnimationFrame(() => {
-                                  textarea?.focus();
-                                  const cursor = inserted.length;
-                                  textarea?.setSelectionRange(cursor, cursor);
-                                });
-                              };
-                              const bracketMatch = mapQeAddress.match(
-                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                              );
-                              const toTitleCase = (s: string) =>
-                                s
-                                  .toLowerCase()
-                                  .replace(/\b\w/g, c => c.toUpperCase());
-                              const shortAddr = bracketMatch
-                                ? toTitleCase(bracketMatch[2])
-                                : (mapQeAddress.split(",")[0]?.trim() ??
-                                  mapQeAddress);
-                              const vehiclesHereByRego = new Map<
-                                string,
-                                { rego: string; occupantDesc: string }
-                              >();
-                              (rsPendingArrivals ?? [])
-                                .filter(
-                                  a =>
-                                    a.address.trim().toLowerCase() ===
-                                    shortAddr.trim().toLowerCase()
-                                )
-                                .forEach(a =>
-                                  vehiclesHereByRego.set(a.rego, a)
+                            {mapQeAddress &&
+                              (() => {
+                                // Insert at the caret rather than forcing the
+                                // text to the end of the observation — the
+                                // officer may have already clicked/tabbed back
+                                // into the middle of what they've typed (e.g.
+                                // to fix a word) before tapping this chip, and
+                                // the old "always append at the end" behaviour
+                                // would silently move the walk-in text away
+                                // from where they were looking. Still opens
+                                // its own paragraph (blank line before) so it
+                                // reads as a distinct sentence, same as before.
+                                const appendText = (text: string) => {
+                                  pushInlineUndo(rsInlineText);
+                                  const textarea = rsInlineInputRef.current;
+                                  const pos =
+                                    textarea?.selectionStart ??
+                                    rsInlineText.length;
+                                  const selEnd = textarea?.selectionEnd ?? pos;
+                                  const before = rsInlineText.slice(0, pos);
+                                  const after = rsInlineText.slice(selEnd);
+                                  const lead = before
+                                    ? before.endsWith("\n\n")
+                                      ? ""
+                                      : before.endsWith("\n")
+                                        ? "\n"
+                                        : "\n\n"
+                                    : "";
+                                  const inserted = `${before}${lead}${text}`;
+                                  setRsInlineText(`${inserted}${after}`);
+                                  resetInlineTimer();
+                                  requestAnimationFrame(() => {
+                                    textarea?.focus();
+                                    const cursor = inserted.length;
+                                    textarea?.setSelectionRange(cursor, cursor);
+                                  });
+                                };
+                                const bracketMatch = mapQeAddress.match(
+                                  /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
                                 );
-                              // Draft: a vehicle-arrival sentence already
-                              // typed into THIS unsaved observation — mined
-                              // client-side with the same patterns the
-                              // server uses on saved rows, so a vehicle just
-                              // typed above offers the chip immediately
-                              // rather than only after this row is
-                              // submitted and the next one opened. Takes
-                              // priority over a same-rego saved entry since
-                              // it reflects what's actually on screen right
-                              // now.
-                              const draftArriveMatch = rsInlineText.match(
-                                VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN
-                              );
-                              if (draftArriveMatch) {
-                                const draftAddress =
-                                  extractArrivalAddress(rsInlineText);
-                                if (
-                                  draftAddress &&
-                                  draftAddress.trim().toLowerCase() ===
-                                    shortAddr.trim().toLowerCase()
-                                ) {
-                                  vehiclesHereByRego.set(
-                                    draftArriveMatch[1].toUpperCase(),
-                                    {
-                                      rego: draftArriveMatch[1].toUpperCase(),
-                                      occupantDesc: draftArriveMatch[2].trim(),
-                                    }
+                                const toTitleCase = (s: string) =>
+                                  s
+                                    .toLowerCase()
+                                    .replace(/\b\w/g, c => c.toUpperCase());
+                                const shortAddr = bracketMatch
+                                  ? toTitleCase(bracketMatch[2])
+                                  : (mapQeAddress.split(",")[0]?.trim() ??
+                                    mapQeAddress);
+                                const vehiclesHereByRego = new Map<
+                                  string,
+                                  { rego: string; occupantDesc: string }
+                                >();
+                                (rsPendingArrivals ?? [])
+                                  .filter(
+                                    a =>
+                                      a.address.trim().toLowerCase() ===
+                                      shortAddr.trim().toLowerCase()
+                                  )
+                                  .forEach(a =>
+                                    vehiclesHereByRego.set(a.rego, a)
                                   );
+                                // Draft: a vehicle-arrival sentence already
+                                // typed into THIS unsaved observation — mined
+                                // client-side with the same patterns the
+                                // server uses on saved rows, so a vehicle just
+                                // typed above offers the chip immediately
+                                // rather than only after this row is
+                                // submitted and the next one opened. Takes
+                                // priority over a same-rego saved entry since
+                                // it reflects what's actually on screen right
+                                // now.
+                                const draftArriveMatch = rsInlineText.match(
+                                  VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN
+                                );
+                                if (draftArriveMatch) {
+                                  const draftAddress =
+                                    extractArrivalAddress(rsInlineText);
+                                  if (
+                                    draftAddress &&
+                                    draftAddress.trim().toLowerCase() ===
+                                      shortAddr.trim().toLowerCase()
+                                  ) {
+                                    vehiclesHereByRego.set(
+                                      draftArriveMatch[1].toUpperCase(),
+                                      {
+                                        rego: draftArriveMatch[1].toUpperCase(),
+                                        occupantDesc:
+                                          draftArriveMatch[2].trim(),
+                                      }
+                                    );
+                                  }
                                 }
-                              }
-                              const vehiclesHere = Array.from(
-                                vehiclesHereByRego.values()
-                              );
-                              if (vehiclesHere.length === 0) return null;
-                              return (
-                                <div className="flex flex-col gap-1 md:gap-1.5">
-                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
-                                    Walked in
-                                  </span>
-                                  <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                    {vehiclesHere.map(a => {
-                                      const names =
-                                        shortenAlreadyMentionedNames(
-                                          extractOccupantNames(a.occupantDesc),
-                                          rsUsedBracketCodes
+                                const vehiclesHere = Array.from(
+                                  vehiclesHereByRego.values()
+                                );
+                                if (vehiclesHere.length === 0) return null;
+                                return (
+                                  <div className="flex flex-col gap-1 md:gap-1.5">
+                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
+                                      Walked in
+                                    </span>
+                                    <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                      {vehiclesHere.map(a => {
+                                        const names =
+                                          shortenAlreadyMentionedNames(
+                                            extractOccupantNames(
+                                              a.occupantDesc
+                                            ),
+                                            rsUsedBracketCodes
+                                          );
+                                        const text = `${names} exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`;
+                                        return (
+                                          <button
+                                            key={a.rego}
+                                            onClick={() => appendText(text)}
+                                            title={text}
+                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                          >
+                                            On foot{" "}
+                                            <span className="font-mono normal-case">
+                                              ({a.rego})
+                                            </span>
+                                          </button>
                                         );
-                                      const text = `${names} exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`;
-                                      return (
-                                        <button
-                                          key={a.rego}
-                                          onClick={() => appendText(text)}
-                                          title={text}
-                                          className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                        >
-                                          On foot{" "}
-                                          <span className="font-mono normal-case">
-                                            ({a.rego})
-                                          </span>
-                                        </button>
-                                      );
-                                    })}
+                                      })}
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })()}
-                          {/* Walked out chip — mirror of "Walked in": for
+                                );
+                              })()}
+                            {/* Walked out chip — mirror of "Walked in": for
                             occupants who exit this location on foot and
                             walk back to a vehicle ("... exited X and
                             walked [route] towards Vehicle REGO."). Reuses BOTH the
@@ -9929,73 +9939,74 @@ export default function IntelligenceMapping() {
                             This also means the chip naturally disappears
                             once that vehicle has already departed, with no
                             extra logic needed. */}
-                          {mapQeAddress &&
-                            rsPendingWalkIns &&
-                            rsPendingWalkIns.length > 0 &&
-                            rsPendingArrivals &&
-                            (() => {
-                              const appendText = (text: string) => {
-                                pushInlineUndo(rsInlineText);
-                                setRsInlineText(prev =>
-                                  prev ? `${prev} ${text}` : text
+                            {mapQeAddress &&
+                              rsPendingWalkIns &&
+                              rsPendingWalkIns.length > 0 &&
+                              rsPendingArrivals &&
+                              (() => {
+                                const appendText = (text: string) => {
+                                  pushInlineUndo(rsInlineText);
+                                  setRsInlineText(prev =>
+                                    prev ? `${prev} ${text}` : text
+                                  );
+                                  resetInlineTimer();
+                                  rsInlineInputRef.current?.focus();
+                                };
+                                const bracketMatch = mapQeAddress.match(
+                                  /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
                                 );
-                                resetInlineTimer();
-                                rsInlineInputRef.current?.focus();
-                              };
-                              const bracketMatch = mapQeAddress.match(
-                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                              );
-                              const toTitleCase = (s: string) =>
-                                s
-                                  .toLowerCase()
-                                  .replace(/\b\w/g, c => c.toUpperCase());
-                              const shortAddr = bracketMatch
-                                ? toTitleCase(bracketMatch[2])
-                                : (mapQeAddress.split(",")[0]?.trim() ??
-                                  mapQeAddress);
-                              const walkInHere = rsPendingWalkIns.find(
-                                w =>
-                                  w.location.trim().toLowerCase() ===
-                                  shortAddr.trim().toLowerCase()
-                              );
-                              const regosHere = rsPendingArrivals.filter(
-                                a =>
-                                  a.address.trim().toLowerCase() ===
-                                  shortAddr.trim().toLowerCase()
-                              );
-                              if (!walkInHere || regosHere.length === 0)
-                                return null;
-                              return (
-                                <div className="flex flex-col gap-1 md:gap-1.5">
-                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
-                                    Walked out
-                                  </span>
-                                  <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                    {regosHere.map(a => {
-                                      const walkOutNames =
-                                        shortenAlreadyMentionedNames(
-                                          walkInHere.names,
-                                          rsUsedBracketCodes
+                                const toTitleCase = (s: string) =>
+                                  s
+                                    .toLowerCase()
+                                    .replace(/\b\w/g, c => c.toUpperCase());
+                                const shortAddr = bracketMatch
+                                  ? toTitleCase(bracketMatch[2])
+                                  : (mapQeAddress.split(",")[0]?.trim() ??
+                                    mapQeAddress);
+                                const walkInHere = rsPendingWalkIns.find(
+                                  w =>
+                                    w.location.trim().toLowerCase() ===
+                                    shortAddr.trim().toLowerCase()
+                                );
+                                const regosHere = rsPendingArrivals.filter(
+                                  a =>
+                                    a.address.trim().toLowerCase() ===
+                                    shortAddr.trim().toLowerCase()
+                                );
+                                if (!walkInHere || regosHere.length === 0)
+                                  return null;
+                                return (
+                                  <div className="flex flex-col gap-1 md:gap-1.5">
+                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
+                                      Walked out
+                                    </span>
+                                    <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                      {regosHere.map(a => {
+                                        const walkOutNames =
+                                          shortenAlreadyMentionedNames(
+                                            walkInHere.names,
+                                            rsUsedBracketCodes
+                                          );
+                                        const text = `${walkOutNames} exited ${shortAddr} and walked ${walkInHere.route} towards Vehicle ${a.rego}.`;
+                                        return (
+                                          <button
+                                            key={a.rego}
+                                            onClick={() => appendText(text)}
+                                            title={text}
+                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                          >
+                                            To{" "}
+                                            <span className="font-mono normal-case">
+                                              {a.rego}
+                                            </span>
+                                          </button>
                                         );
-                                      const text = `${walkOutNames} exited ${shortAddr} and walked ${walkInHere.route} towards Vehicle ${a.rego}.`;
-                                      return (
-                                        <button
-                                          key={a.rego}
-                                          onClick={() => appendText(text)}
-                                          title={text}
-                                          className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                        >
-                                          To{" "}
-                                          <span className="font-mono normal-case">
-                                            {a.rego}
-                                          </span>
-                                        </button>
-                                      );
-                                    })}
+                                      })}
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })()}
+                                );
+                              })()}
+                          </div>
                           {/* CIN picker — multi-select with TEAM */}
                           {rosterCins.length > 0 && (
                             <div className="flex flex-wrap gap-1.5 md:gap-2">

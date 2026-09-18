@@ -339,3 +339,55 @@ export function computeUsedAddressLabels(
   }
   return labels;
 }
+
+/** Best-effort strip of role descriptors ("driver", "front passenger",
+ * "sole occupant", etc.) from a vehicle occupantDesc string (e.g. "HOGAN
+ * driver, Denise HOLLY (HOLLY) front passenger") down to just the names
+ * ("HOGAN and Denise HOLLY (HOLLY)") — used to pre-fill a "Walked in" chip's
+ * names from the vehicle's known occupants. Deliberately best-effort rather
+ * than a strict parser: the officer reviews and edits the inserted text
+ * before submitting either way, same trust level the occupantDesc text
+ * itself already has (it's reused verbatim elsewhere with no validation),
+ * so an imperfect strip here is a minor edit, not a silent wrong fact in
+ * the record. Shared by the RS Quick Entry map popup and the full sheet
+ * table's own continuity chips. */
+export function extractOccupantNames(occupantDesc: string): string {
+  const ROLE_WORD =
+    /\b(?:driver|front passenger|rear passenger|sole occupant|unseen occupants?|passenger)\b/gi;
+  return occupantDesc
+    .split(",")
+    .map(part =>
+      part
+        .replace(ROLE_WORD, "")
+        .replace(/\band\b/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    )
+    .filter(Boolean)
+    .join(" and ");
+}
+
+/** App-wide rule: a person's full name + bracket short-form is only correct
+ * on their FIRST mention anywhere in the sheet — every later mention should
+ * be short-form only (e.g. "FLETCHER", not "Madeleine Rose FLETCHER
+ * (FLETCHER)"). occupantDesc/walk-in names text is reused verbatim from
+ * whichever earlier row it was captured from, and that row's own wording is
+ * whatever the officer originally typed there — if that was itself a first
+ * mention (the common case, since a vehicle's occupants are usually
+ * introduced when it first arrives), the full name would otherwise get
+ * pasted into every future row a chip inserts it into, compounding
+ * indefinitely instead of shortening like a vehicle's own rego already
+ * does. Best-effort same as extractOccupantNames: only collapses a "Full
+ * Name (CODE)" span whose CODE is already known (via usedBracketCodes) to
+ * have appeared somewhere earlier in this sheet — a name genuinely being
+ * introduced for the first time here is untouched. */
+export function shortenAlreadyMentionedNames(
+  text: string,
+  usedBracketCodes: Set<string>
+): string {
+  return text.replace(
+    /(?:[A-Z][a-zA-Z'-]*\s+)+\(([A-Z][A-Z'-]*)\)/g,
+    (match, code: string) =>
+      usedBracketCodes.has(code.toUpperCase()) ? code : match
+  );
+}

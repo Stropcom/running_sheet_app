@@ -100,6 +100,8 @@ import {
   computeUsedBracketCodes,
   computeUsedVehicleRegos,
   computeUsedAddressLabels,
+  extractOccupantNames,
+  shortenAlreadyMentionedNames,
   type PersonMentionSuggestion,
 } from "@/lib/mentionAutocomplete";
 import {
@@ -2508,9 +2510,42 @@ export default function SheetDetail({
     }
   );
 
+  // Continuity chips (vehicle arriving/departing, walked in/out) — same
+  // sheet-scoped "pending" queries the RS Quick Entry map popup uses (see
+  // getPendingVehicleDepartures/Arrivals/WalkIns in server/db.ts). The
+  // popup additionally filters these to whichever address pin is open;
+  // the full sheet table has no such single-address context, so it shows
+  // every pending entry across the sheet instead — see the render block
+  // below for how each chip type's text is derived without it.
+  const { data: pendingDepartures } =
+    trpc.row.pendingVehicleDepartures.useQuery(
+      { sheetId },
+      {
+        enabled: isAuthenticated && !!sheetId && isOnline,
+        refetchInterval: isOnline ? 10000 : false,
+      }
+    );
+  const { data: pendingArrivals } = trpc.row.pendingVehicleArrivals.useQuery(
+    { sheetId },
+    {
+      enabled: isAuthenticated && !!sheetId && isOnline,
+      refetchInterval: isOnline ? 10000 : false,
+    }
+  );
+  const { data: pendingWalkIns } = trpc.row.pendingWalkIns.useQuery(
+    { sheetId },
+    {
+      enabled: isAuthenticated && !!sheetId && isOnline,
+      refetchInterval: isOnline ? 10000 : false,
+    }
+  );
+
   const invalidateRows = useCallback(() => {
     utils.row.list.invalidate({ sheetId });
     utils.row.entityChips.invalidate({ sheetId });
+    utils.row.pendingVehicleDepartures.invalidate({ sheetId });
+    utils.row.pendingVehicleArrivals.invalidate({ sheetId });
+    utils.row.pendingWalkIns.invalidate({ sheetId });
   }, [utils, sheetId]);
 
   // Cache sheet data to IndexedDB whenever we have fresh data online
@@ -4490,6 +4525,103 @@ export default function SheetDetail({
               : [];
             const hasAnyField = fields.some(f => f.value);
             const hasEntityChips = !!(entityChips && entityChips.length > 0);
+            // Continuity chips — same underlying "pending" data as the RS
+            // Quick Entry map popup's continuity chips (see the queries
+            // above), adapted for a surface with no single selected address:
+            // "Vehicle departing" and "Walked in" both use a pending
+            // arrival's own already-known address, so they need no
+            // placeholder; "Vehicle arriving" has no way to know a
+            // not-yet-observed destination, so it uses a literal
+            // "[location]" placeholder to type over — the same pattern the
+            // popup already uses for "[route]", which is equally unknowable
+            // in advance.
+            const vehicleArrivingChips = (pendingDepartures ?? []).map(d => ({
+              key: `arr-${d.rego}`,
+              rego: d.rego,
+              text: `Vehicle ${d.rego}, ${shortenAlreadyMentionedNames(d.occupantDesc, usedBracketCodes)}, arrived at [location]`,
+            }));
+            const vehicleDepartingChips = (pendingArrivals ?? []).map(a => ({
+              key: `dep-${a.rego}`,
+              rego: a.rego,
+              text: `Vehicle ${a.rego}, ${shortenAlreadyMentionedNames(a.occupantDesc, usedBracketCodes)}, departed ${a.address} and continued via:`,
+            }));
+            const walkedInChips = (pendingArrivals ?? []).map(a => ({
+              key: `wi-${a.rego}`,
+              rego: a.rego,
+              text: `${shortenAlreadyMentionedNames(extractOccupantNames(a.occupantDesc), usedBracketCodes)} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
+            }));
+            const walkedOutChips = (pendingWalkIns ?? []).flatMap(w => {
+              const arrivalsHere = (pendingArrivals ?? []).filter(
+                a =>
+                  a.address.trim().toLowerCase() ===
+                  w.location.trim().toLowerCase()
+              );
+              return arrivalsHere.map(a => ({
+                key: `wo-${w.location}-${a.rego}`,
+                rego: a.rego,
+                text: `${shortenAlreadyMentionedNames(w.names, usedBracketCodes)} exited ${w.location} and walked ${w.route} towards Vehicle ${a.rego}.`,
+              }));
+            });
+            const hasContinuityChips =
+              vehicleArrivingChips.length > 0 ||
+              vehicleDepartingChips.length > 0 ||
+              walkedInChips.length > 0 ||
+              walkedOutChips.length > 0;
+            const insertAtFocused = (text: string) => {
+              const el = focusedTextareaRef.current;
+              if (!el) return;
+              el.focus();
+              const start = el.selectionStart ?? el.value.length;
+              const end = el.selectionEnd ?? el.value.length;
+              const before = el.value.slice(0, start);
+              const after = el.value.slice(end);
+              const insert =
+                before && !before.endsWith(" ") ? ` ${text}` : text;
+              try {
+                document.execCommand("insertText", false, insert);
+              } catch {
+                const nativeInputValueSetter =
+                  Object.getOwnPropertyDescriptor(
+                    window.HTMLTextAreaElement.prototype,
+                    "value"
+                  )?.set ||
+                  Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype,
+                    "value"
+                  )?.set;
+                if (nativeInputValueSetter) {
+                  nativeInputValueSetter.call(el, before + insert + after);
+                  el.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+              }
+            };
+            const ContinuityChipGroup = ({
+              label,
+              chips,
+            }: {
+              label: string;
+              chips: { key: string; rego: string; text: string }[];
+            }) =>
+              chips.length === 0 ? null : (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-amber-500/70 shrink-0">
+                    {label}
+                  </span>
+                  {chips.map(chip => (
+                    <button
+                      key={chip.key}
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => insertAtFocused(chip.text)}
+                      title={chip.text}
+                      className="inline-flex items-center px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none cursor-pointer"
+                    >
+                      <span className="text-[10px] font-mono leading-none">
+                        {chip.rego}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              );
             return (
               <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
                 {/* Header — always visible. Tapping the main area toggles collapse; pencil navigates to edit */}
@@ -4734,14 +4866,38 @@ export default function SheetDetail({
                                   onMouseDown={e => e.preventDefault()}
                                   onClick={insertIntoFocused}
                                   title={`Insert: ${chip.insertValue}`}
-                                  className="px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
+                                  className="inline-flex items-center px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
                                 >
-                                  <span className="text-[10px] font-mono max-w-[140px] truncate">
+                                  <span className="text-[10px] font-mono max-w-[140px] truncate leading-none">
                                     {chip.insertValue}
                                   </span>
                                 </button>
                               );
                             })}
+                          </div>
+                        )}
+                        {/* Continuity chips — vehicle arriving/departing,
+                        walked in/out. See ContinuityChipGroup/the chip
+                        arrays above for how these mirror the RS Quick Entry
+                        map popup's own continuity chips. */}
+                        {hasContinuityChips && (
+                          <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-2">
+                            <ContinuityChipGroup
+                              label="Vehicle arriving"
+                              chips={vehicleArrivingChips}
+                            />
+                            <ContinuityChipGroup
+                              label="Vehicle departing"
+                              chips={vehicleDepartingChips}
+                            />
+                            <ContinuityChipGroup
+                              label="Walked in"
+                              chips={walkedInChips}
+                            />
+                            <ContinuityChipGroup
+                              label="Walked out"
+                              chips={walkedOutChips}
+                            />
                           </div>
                         )}
                       </div>

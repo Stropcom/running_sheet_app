@@ -11,6 +11,7 @@ import OperationDetail from "./pages/OperationDetail";
 import SheetDetail from "./pages/SheetDetail";
 import AuditLogPage from "./pages/AuditLogPage";
 import AdminPage from "./pages/AdminPage";
+import AdminUserProfilePage from "./pages/AdminUserProfilePage";
 import LoginPage from "./pages/LoginPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
 import MyProfilePage from "./pages/MyProfilePage";
@@ -268,6 +269,7 @@ function Router() {
       />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
+      <Route path="/admin/users/:id" component={AdminUserProfilePage} />
       <Route path="/administration/smeac" component={SmeacBriefingListPage} />
       <Route
         path="/administration/smeac/new"

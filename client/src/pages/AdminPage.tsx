@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -30,39 +31,45 @@ import {
 import { toast } from "sonner";
 import {
   UserPlus,
-  Pencil,
-  Trash2,
   Loader2,
   ShieldCheck,
   Users,
   ShieldAlert,
   Crown,
   Eye,
+  Archive,
 } from "lucide-react";
 
-type Role = "observer" | "member" | "admin";
+export type Role = "observer" | "member" | "admin";
 
-const ROLE_COLORS: Record<Role, string> = {
+export const ROLE_COLORS: Record<Role, string> = {
   admin: "bg-red-500/15 text-red-400 border-red-500/30",
   member: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   observer: "bg-sky-500/15 text-sky-400 border-sky-500/30",
 };
 
-const ROLE_ICONS: Record<Role, React.ReactNode> = {
+export const ROLE_ICONS: Record<Role, React.ReactNode> = {
   admin: <Crown className="w-3 h-3" />,
   member: <ShieldCheck className="w-3 h-3" />,
   observer: <Eye className="w-3 h-3" />,
 };
 
-const ROLE_LABELS: Record<Role, string> = {
+export const ROLE_LABELS: Record<Role, string> = {
   admin: "Admin",
   member: "Member",
   observer: "Observer",
 };
 
-type TeamValue = "TEAM1" | "TEAM2" | "PTT" | undefined;
+// Archived-ness isn't a 4th `role` value (see archivedAt's own comment on
+// the users table in drizzle/schema.ts) — this badge is presentational
+// only, shown instead of the real role badge above whenever a row/profile
+// is archived.
+export const NONE_BADGE_CLASS =
+  "bg-foreground/5 text-muted-foreground border-foreground/10";
 
-interface UserFormData {
+export type TeamValue = "TEAM1" | "TEAM2" | "PTT" | undefined;
+
+export interface UserFormData {
   name: string;
   cin: string;
   unit: string;
@@ -73,7 +80,7 @@ interface UserFormData {
   role: Role;
 }
 
-const emptyForm = (): UserFormData => ({
+export const emptyForm = (): UserFormData => ({
   name: "",
   cin: "",
   unit: "",
@@ -88,54 +95,91 @@ const emptyForm = (): UserFormData => ({
 // This is the fix for the "one letter at a time" focus-loss bug.
 // When defined inside the parent, React treats it as a new component type on every
 // render and unmounts/remounts all inputs, losing focus after each keystroke.
-interface UserFormFieldsProps {
+export interface UserFormFieldsProps {
   form: UserFormData;
   setForm: React.Dispatch<React.SetStateAction<UserFormData>>;
   isEdit?: boolean;
+  disabled?: boolean;
+  /** Shown as a plain read-only line in place of the Access Level select —
+   * used by the profile page while a user is archived, since their real
+   * role is preserved underneath (not actually "none") but the admin UI
+   * presents it as such. See archivedAt's comment in drizzle/schema.ts. */
+  accessLevelOverride?: string;
 }
 
-function UserFormFields({ form, setForm, isEdit = false }: UserFormFieldsProps) {
+export function UserFormFields({
+  form,
+  setForm,
+  isEdit = false,
+  disabled = false,
+  accessLevelOverride,
+}: UserFormFieldsProps) {
   return (
     <div className="grid gap-4 py-2">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Full Name *</Label>
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+            Full Name *
+          </Label>
           <Input
             placeholder="John Smith"
             value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            disabled={disabled}
+            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">CIN *</Label>
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+            CIN *
+          </Label>
           <Input
             placeholder="ABC123"
             value={form.cin}
-            onChange={(e) => setForm((f) => ({ ...f, cin: e.target.value.toUpperCase() }))}
+            disabled={disabled}
+            onChange={e =>
+              setForm(f => ({ ...f, cin: e.target.value.toUpperCase() }))
+            }
           />
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Unit</Label>
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+            Unit
+          </Label>
           <Input
             placeholder="e.g. Alpha Company"
             value={form.unit}
-            onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
+            disabled={disabled}
+            onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Mobile Phone</Label>
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+            Mobile Phone
+          </Label>
           <Input
             placeholder="e.g. 0400 000 000"
             value={form.phone}
-            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            disabled={disabled}
+            onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
           />
         </div>
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Team</Label>
-        <Select value={form.team ?? "__none__"} onValueChange={(v) => setForm((f) => ({ ...f, team: v === "__none__" ? undefined : v as TeamValue }))}>
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+          Team
+        </Label>
+        <Select
+          value={form.team ?? "__none__"}
+          disabled={disabled}
+          onValueChange={v =>
+            setForm(f => ({
+              ...f,
+              team: v === "__none__" ? undefined : (v as TeamValue),
+            }))
+          }
+        >
           <SelectTrigger>
             <SelectValue placeholder="Select team (optional)" />
           </SelectTrigger>
@@ -149,11 +193,16 @@ function UserFormFields({ form, setForm, isEdit = false }: UserFormFieldsProps) 
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">Username *</Label>
+          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+            Username *
+          </Label>
           <Input
             placeholder="jsmith"
             value={form.username}
-            onChange={(e) => setForm((f) => ({ ...f, username: e.target.value.toLowerCase() }))}
+            disabled={disabled}
+            onChange={e =>
+              setForm(f => ({ ...f, username: e.target.value.toLowerCase() }))
+            }
           />
         </div>
         <div className="space-y-1.5">
@@ -164,22 +213,39 @@ function UserFormFields({ form, setForm, isEdit = false }: UserFormFieldsProps) 
             type="password"
             placeholder={isEdit ? "Leave blank to keep" : "Enter password"}
             value={form.password}
-            onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+            disabled={disabled}
+            onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
           />
         </div>
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground">Access Level *</Label>
-        <Select value={form.role} onValueChange={(v) => setForm((f) => ({ ...f, role: v as Role }))}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="observer">Observer — view only</SelectItem>
-            <SelectItem value="member">Full Access — own CIN certify only</SelectItem>
-            <SelectItem value="admin">Full Access + User Management</SelectItem>
-          </SelectContent>
-        </Select>
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+          Access Level *
+        </Label>
+        {accessLevelOverride ? (
+          <div className="h-9 px-3 flex items-center rounded-md border border-input bg-muted/40 text-sm italic text-muted-foreground">
+            {accessLevelOverride}
+          </div>
+        ) : (
+          <Select
+            value={form.role}
+            disabled={disabled}
+            onValueChange={v => setForm(f => ({ ...f, role: v as Role }))}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="observer">Observer — view only</SelectItem>
+              <SelectItem value="member">
+                Full Access — own CIN certify only
+              </SelectItem>
+              <SelectItem value="admin">
+                Full Access + User Management
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        )}
       </div>
     </div>
   );
@@ -189,6 +255,7 @@ function UserFormFields({ form, setForm, isEdit = false }: UserFormFieldsProps) 
 
 export default function AdminPage() {
   const { user: currentUser, isAuthenticated } = useAuth();
+  const [, navigate] = useLocation();
   const utils = trpc.useUtils();
 
   const { data: users, isLoading } = trpc.admin.listUsers.useQuery(undefined, {
@@ -196,38 +263,16 @@ export default function AdminPage() {
   });
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<NonNullable<typeof users>[0] | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [form, setForm] = useState<UserFormData>(emptyForm());
-
-  const invalidate = () => utils.admin.listUsers.invalidate();
 
   const createUser = trpc.admin.createUser.useMutation({
     onSuccess: () => {
       toast.success("User created successfully.");
       setCreateOpen(false);
       setForm(emptyForm());
-      invalidate();
+      utils.admin.listUsers.invalidate();
     },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const updateUser = trpc.admin.updateUser.useMutation({
-    onSuccess: () => {
-      toast.success("User updated successfully.");
-      setEditTarget(null);
-      invalidate();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
-  const deleteUser = trpc.admin.deleteUser.useMutation({
-    onSuccess: () => {
-      toast.success("User deleted.");
-      setDeleteTarget(null);
-      invalidate();
-    },
-    onError: (e) => toast.error(e.message),
+    onError: e => toast.error(e.message),
   });
 
   const handleCreate = () => {
@@ -236,34 +281,6 @@ export default function AdminPage() {
       return;
     }
     createUser.mutate(form);
-  };
-
-  const handleUpdate = () => {
-    if (!editTarget) return;
-    const payload: Parameters<typeof updateUser.mutate>[0] = { id: editTarget.id };
-    if (form.name) payload.name = form.name;
-    if (form.cin) payload.cin = form.cin;
-    payload.unit = form.unit;
-    payload.team = form.team ?? null;
-    payload.phone = form.phone || null;
-    if (form.username) payload.username = form.username;
-    if (form.password) payload.password = form.password;
-    payload.role = form.role;
-    updateUser.mutate(payload);
-  };
-
-  const openEdit = (u: NonNullable<typeof users>[0]) => {
-    setEditTarget(u);
-    setForm({
-      name: u.name ?? "",
-      cin: u.cin ?? "",
-      unit: u.unit ?? "",
-      team: (u.team as TeamValue) ?? undefined,
-      phone: (u as { phone?: string | null }).phone ?? "",
-      username: u.username ?? "",
-      password: "",
-      role: (u.role as Role) ?? "observer",
-    });
   };
 
   if (!isAuthenticated) return null;
@@ -276,11 +293,15 @@ export default function AdminPage() {
             <ShieldAlert className="w-8 h-8 text-destructive" />
           </div>
           <p className="text-foreground font-medium">Access Denied</p>
-          <p className="text-muted-foreground text-sm mt-1">Admin role required.</p>
+          <p className="text-muted-foreground text-sm mt-1">
+            Admin role required.
+          </p>
         </div>
       </DashboardLayout>
     );
   }
+
+  const archivedCount = users?.filter(u => u.archivedAt).length ?? 0;
 
   return (
     <DashboardLayout>
@@ -292,14 +313,21 @@ export default function AdminPage() {
               <Users className="w-4 h-4 text-primary" />
             </div>
             <div>
-              <h1 className="text-xl font-semibold text-foreground">User Management</h1>
+              <h1 className="text-xl font-semibold text-foreground">
+                User Management
+              </h1>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {users?.length ?? 0} registered user{(users?.length ?? 0) !== 1 ? "s" : ""}
+                {users?.length ?? 0} registered user
+                {(users?.length ?? 0) !== 1 ? "s" : ""}
+                {archivedCount > 0 ? ` — ${archivedCount} archived` : ""}
               </p>
             </div>
           </div>
           <Button
-            onClick={() => { setForm(emptyForm()); setCreateOpen(true); }}
+            onClick={() => {
+              setForm(emptyForm());
+              setCreateOpen(true);
+            }}
             size="sm"
             className="gap-2"
           >
@@ -313,81 +341,119 @@ export default function AdminPage() {
           <Table className="min-w-[600px]">
             <TableHeader>
               <TableRow className="border-border/60 bg-muted/30">
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Name</TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">CIN</TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden sm:table-cell">Unit</TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden sm:table-cell">Team</TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden md:table-cell">Username</TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Access Level</TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden lg:table-cell">Last Sign In</TableHead>
-                <TableHead className="w-20" />
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                  Name
+                </TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                  CIN
+                </TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden sm:table-cell">
+                  Unit
+                </TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden sm:table-cell">
+                  Team
+                </TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden md:table-cell">
+                  Username
+                </TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                  Access Level
+                </TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden lg:table-cell">
+                  Last Sign In
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                  <TableCell
+                    colSpan={7}
+                    className="text-center py-12 text-muted-foreground"
+                  >
                     <Loader2 className="w-5 h-5 animate-spin mx-auto" />
                   </TableCell>
                 </TableRow>
               ) : !users?.length ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-12 text-muted-foreground text-sm">
+                  <TableCell
+                    colSpan={7}
+                    className="text-center py-12 text-muted-foreground text-sm"
+                  >
                     No users registered yet. Add the first user above.
                   </TableCell>
                 </TableRow>
               ) : (
-                users.map((u) => (
-                  <TableRow key={u.id} className="border-border/40 hover:bg-accent/10 transition-colors">
-                    <TableCell className="font-medium text-foreground">
-                      {u.name}
-                      {u.id === currentUser?.id && (
-                        <span className="ml-2 text-xs text-muted-foreground">(you)</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="font-mono text-sm text-foreground/80">{u.cin || "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{u.unit || "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{u.team ? u.team.replace("TEAM", "TEAM ") : "—"}</TableCell>
-                    <TableCell className="font-mono text-sm text-muted-foreground hidden md:table-cell">{u.username}</TableCell>
-                    <TableCell>
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${ROLE_COLORS[u.role as Role]}`}
-                      >
-                        {ROLE_ICONS[u.role as Role]}
-                        {ROLE_LABELS[u.role as Role]}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">
-                      {u.lastSignedIn ? new Date(u.lastSignedIn).toLocaleString() : "Never"}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1 justify-end">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                          onClick={() => openEdit(u)}
+                users.map(u => {
+                  const archived = !!u.archivedAt;
+                  return (
+                    <TableRow
+                      key={u.id}
+                      className={`border-border/40 hover:bg-accent/10 transition-colors ${archived ? "opacity-50" : ""}`}
+                    >
+                      <TableCell className="font-medium">
+                        <button
+                          onClick={() => navigate(`/admin/users/${u.id}`)}
+                          className="text-primary hover:underline underline-offset-2 font-medium text-left"
                         >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </Button>
-                        {u.id !== currentUser?.id && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                            onClick={() => setDeleteTarget(u.id)}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
+                          {u.name}
+                        </button>
+                        {u.id === currentUser?.id && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            (you)
+                          </span>
                         )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
+                        {archived && (
+                          <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10.5px] font-semibold uppercase tracking-wide border bg-foreground/5 text-muted-foreground border-foreground/10">
+                            <Archive className="w-2.5 h-2.5" />
+                            Archived
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm text-foreground/80">
+                        {u.cin || "—"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">
+                        {u.unit || "—"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">
+                        {u.team ? u.team.replace("TEAM", "TEAM ") : "—"}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm text-muted-foreground hidden md:table-cell">
+                        {u.username}
+                      </TableCell>
+                      <TableCell>
+                        {archived ? (
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${NONE_BADGE_CLASS}`}
+                          >
+                            None
+                          </span>
+                        ) : (
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${ROLE_COLORS[u.role as Role]}`}
+                          >
+                            {ROLE_ICONS[u.role as Role]}
+                            {ROLE_LABELS[u.role as Role]}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">
+                        {u.lastSignedIn
+                          ? new Date(u.lastSignedIn).toLocaleString()
+                          : "Never"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
         </div>
+        <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1.5">
+          Click a name to open their profile — Edit and Archive both live there
+          now.
+        </p>
 
         {/* Create Dialog */}
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -400,56 +466,14 @@ export default function AdminPage() {
             </DialogHeader>
             <UserFormFields form={form} setForm={setForm} />
             <DialogFooter>
-              <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => setCreateOpen(false)}>
+                Cancel
+              </Button>
               <Button onClick={handleCreate} disabled={createUser.isPending}>
-                {createUser.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                {createUser.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
                 Create User
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Edit Dialog */}
-        <Dialog open={!!editTarget} onOpenChange={(o) => !o && setEditTarget(null)}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Pencil className="w-4 h-4" />
-                Edit User — {editTarget?.name}
-              </DialogTitle>
-            </DialogHeader>
-            <UserFormFields form={form} setForm={setForm} isEdit />
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditTarget(null)}>Cancel</Button>
-              <Button onClick={handleUpdate} disabled={updateUser.isPending}>
-                {updateUser.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                Save Changes
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Delete Confirm Dialog */}
-        <Dialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-          <DialogContent className="sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle className="text-destructive flex items-center gap-2">
-                <Trash2 className="w-4 h-4" />
-                Delete User
-              </DialogTitle>
-            </DialogHeader>
-            <p className="text-sm text-muted-foreground py-2">
-              This action cannot be undone. The user will lose all access immediately.
-            </p>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-              <Button
-                variant="destructive"
-                onClick={() => deleteTarget !== null && deleteUser.mutate({ id: deleteTarget })}
-                disabled={deleteUser.isPending}
-              >
-                {deleteUser.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                Delete User
               </Button>
             </DialogFooter>
           </DialogContent>

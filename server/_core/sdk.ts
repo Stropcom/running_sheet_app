@@ -1,4 +1,8 @@
-import { AXIOS_TIMEOUT_MS, COOKIE_NAME, SESSION_EXPIRY_MS } from "@shared/const";
+import {
+  AXIOS_TIMEOUT_MS,
+  COOKIE_NAME,
+  SESSION_EXPIRY_MS,
+} from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
 import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
@@ -303,6 +307,10 @@ class SDKServer {
 
     if (!user) {
       throw ForbiddenError("User not found");
+    }
+
+    if (user.archivedAt) {
+      throw ForbiddenError("This account has been archived.");
     }
 
     await db.updateLastSignedIn(user.id);

@@ -1977,7 +1977,7 @@ export default function OperationDetail() {
       toast.error("User list not available");
       return;
     }
-    const members = allUsers.filter(u => u.team === teamKey);
+    const members = allUsers.filter(u => u.team === teamKey && !u.archivedAt);
     if (members.length === 0) {
       toast.error("No members found in that team");
       return;

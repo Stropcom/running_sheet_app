@@ -109,6 +109,21 @@ export const users = mysqlTable("users", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  // Archiving — for an officer who has left, without losing their history.
+  // Deliberately NOT a 4th `role` value: `role` stays exactly what it was
+  // (restored automatically on un-archive, no separate "what were they
+  // before" column needed) and every existing role-based check elsewhere
+  // in the app keeps working unchanged. Archived-ness is layered on top:
+  // login and session auth both reject an archived user (see auth.login
+  // and authenticateRequest in _core/sdk.ts), and the CIN pickers used to
+  // add someone to a team/operation/running sheet (users.listForCin, the
+  // CTO Roster's own user list) filter them out — but nothing already on
+  // record (rows, certifications, statements, witness lists, audit log)
+  // references a live user row, so none of that is affected. The admin
+  // UI presents this as the user's "Access Level: None" even though the
+  // underlying role column is untouched — see AdminUserProfilePage.tsx.
+  archivedAt: bigint("archivedAt", { mode: "number" }),
+  archivedByCIN: varchar("archivedByCIN", { length: 64 }),
 });
 
 export type User = typeof users.$inferSelect;
@@ -798,6 +813,8 @@ export const auditLogs = mysqlTable("audit_logs", {
     "user_created",
     "user_updated",
     "user_deleted",
+    "user_archived",
+    "user_restored",
     "operation_status_changed",
     "password_changed",
     "attachment_added",

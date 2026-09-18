@@ -328,6 +328,24 @@ export async function updateUserRole(
   await db.update(users).set({ role }).where(eq(users.id, userId));
 }
 
+export async function archiveUser(userId: number, archivedByCIN: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(users)
+    .set({ archivedAt: Date.now(), archivedByCIN })
+    .where(eq(users.id, userId));
+}
+
+export async function restoreUser(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(users)
+    .set({ archivedAt: null, archivedByCIN: null })
+    .where(eq(users.id, userId));
+}
+
 export async function updateLastSignedIn(userId: number) {
   const db = await getDb();
   if (!db) return;

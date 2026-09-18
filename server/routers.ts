@@ -101,6 +101,8 @@ import {
   recomputeRunningSheetTitlesForOperation,
   createSheetRow,
   createUser,
+  archiveUser,
+  restoreUser,
   deactivateAllCertificationsForRow,
   deactivateCertification,
   deleteOperation,
@@ -628,6 +630,13 @@ export const appRouter = router({
           throw new TRPCError({
             code: "UNAUTHORIZED",
             message: "Invalid username or password.",
+          });
+
+        if (user.archivedAt)
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "This account has been archived. Contact an administrator.",
           });
 
         // Create session token using the existing SDK (using username as openId-equivalent)
@@ -2786,6 +2795,19 @@ export const appRouter = router({
       return getAllUsers();
     }),
 
+    getUser: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const user = await getUserById(input.id);
+        if (!user)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "User not found.",
+          });
+        const { passwordHash: _passwordHash, ...safe } = user;
+        return safe;
+      }),
+
     createUser: adminProcedure
       .input(
         z.object({
@@ -2896,6 +2918,47 @@ export const appRouter = router({
         await updateUserRole(input.userId, input.role);
         return { success: true };
       }),
+
+    /** Reversible — signs the officer out and hides them from CIN pickers
+     * (adding to a team/operation/running sheet) without touching anything
+     * already recorded against their CIN. See archivedAt's own comment on
+     * the users table for why this isn't a 4th `role` value. */
+    archiveUser: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        if (input.id === ctx.user.id)
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Cannot archive your own account.",
+          });
+        await archiveUser(input.id, ctx.user.cin ?? "Unknown");
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_archived",
+          details: `User ID ${input.id} archived`,
+          createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
+
+    restoreUser: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await restoreUser(input.id);
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_restored",
+          details: `User ID ${input.id} restored from archive`,
+          createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
   }),
   // ─── Users (public list for CIN validation) ────────────────────────────────
 
@@ -2903,12 +2966,14 @@ export const appRouter = router({
     /** Returns all registered users as {cin, name, unit} for CIN autocomplete/validation */
     listForCin: protectedProcedure.query(async () => {
       const all = await getAllUsers();
-      return all.map(u => ({
-        cin: u.cin,
-        name: u.name,
-        unit: u.unit ?? "",
-        team: u.team ?? "",
-      }));
+      return all
+        .filter(u => !u.archivedAt)
+        .map(u => ({
+          cin: u.cin,
+          name: u.name,
+          unit: u.unit ?? "",
+          team: u.team ?? "",
+        }));
     }),
   }),
 
@@ -5949,12 +6014,14 @@ export const appRouter = router({
   opManager: router({
     listUsers: certifierOrAdminProcedure.query(async () => {
       const users = await getAllUsers();
-      return users.map(u => ({
-        id: u.id,
-        name: u.name,
-        cin: u.cin ?? null,
-        phone: u.phone ?? null,
-      }));
+      return users
+        .filter(u => !u.archivedAt)
+        .map(u => ({
+          id: u.id,
+          name: u.name,
+          cin: u.cin ?? null,
+          phone: u.phone ?? null,
+        }));
     }),
 
     getPriorityBoard: certifierOrAdminProcedure

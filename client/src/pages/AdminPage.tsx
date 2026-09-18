@@ -244,15 +244,15 @@ export function UserFormFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="investigator">
-                Investigator — mapping page only, allocated operations
-              </SelectItem>
               <SelectItem value="observer">Observer — view only</SelectItem>
               <SelectItem value="member">
                 Full Access — own CIN certify only
               </SelectItem>
               <SelectItem value="admin">
                 Full Access + User Management
+              </SelectItem>
+              <SelectItem value="investigator">
+                Investigator — mapping page only, allocated operations
               </SelectItem>
             </SelectContent>
           </Select>

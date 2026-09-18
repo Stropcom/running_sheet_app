@@ -5592,13 +5592,14 @@ export default function IntelligenceMapping() {
       },
       {
         onSuccess: (data, vars) => {
-          const now2 = new Date();
-          const h24b = now2.getHours();
-          const minb = now2.getMinutes();
-          const timeStr2 = `${String(h24b % 12 === 0 ? 12 : h24b % 12).padStart(2, "0")}:${String(minb).padStart(2, "0")} ${h24b < 12 ? "AM" : "PM"}`;
+          // The row's own recorded time, not the wall-clock time the save
+          // happened to complete at — those can genuinely differ (a manual
+          // time override, or just submit lag), and "Last Entry" is meant
+          // to confirm what got written to the record, not when the tap
+          // landed.
           setRsLastEntry({
             label: vars.observation ?? "Entry",
-            time: timeStr2,
+            time: vars.time ?? timeStr,
           });
           setRsAddingRow(false);
           // Attach all selected CINs — use the locally captured variable, not the ref

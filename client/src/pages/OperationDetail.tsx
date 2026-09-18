@@ -898,11 +898,9 @@ function TargetPanel({
 
 function DeploymentRollupPanel({
   operationId,
-  operationName,
   targets,
 }: {
   operationId: number;
-  operationName?: string | null;
   targets?: { id: number; name: string }[];
 }) {
   const { viewMode } = useViewMode();
@@ -926,86 +924,31 @@ function DeploymentRollupPanel({
 
   const showTargetFilter = (targets?.length ?? 0) > 1;
 
-  // ── PDF export dialog ────────────────────────────────────────────────────
-  const [exportOpen, setExportOpen] = useState(false);
-  const [exportMode, setExportMode] = useState<"operation" | "target">(
-    "operation"
-  );
-  const [exportTargetId, setExportTargetId] = useState<number | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
-
-  const handleExport = async () => {
-    if (exportMode === "target" && !exportTargetId) {
-      toast.error("Pick a target to export.");
-      return;
-    }
-    setIsExporting(true);
-    try {
-      const exportRows = await trpcClient.summary.exportRollup.query({
-        operationId,
-        targetId: exportMode === "target" ? exportTargetId : null,
-      });
-      if (exportRows.length === 0) {
-        toast.error("No Supervisor Summaries to export for this selection.");
-        return;
-      }
-      const targetName =
-        exportMode === "target"
-          ? (targets?.find(t => t.id === exportTargetId)?.name ?? null)
-          : null;
-      buildRollupExportPdf({
-        operationName: operationName ?? "Operation",
-        targetName,
-        rows: exportRows,
-      });
-      setExportOpen(false);
-    } catch {
-      toast.error("Couldn't build the export — please try again.");
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        {showTargetFilter ? (
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-medium text-muted-foreground">
-              Target
-            </label>
-            <Select
-              value={targetFilter ? String(targetFilter) : "all"}
-              onValueChange={v =>
-                setTargetFilter(v === "all" ? null : Number(v))
-              }
-            >
-              <SelectTrigger className="h-8 w-[220px] text-sm">
-                <SelectValue placeholder="All targets" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All targets</SelectItem>
-                {targets?.map(t => (
-                  <SelectItem key={t.id} value={String(t.id)}>
-                    {t.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        ) : (
-          <div />
-        )}
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5"
-          onClick={() => setExportOpen(true)}
-        >
-          <FileDown className="w-3.5 h-3.5" />
-          Export
-        </Button>
-      </div>
+      {showTargetFilter && (
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-muted-foreground">
+            Target
+          </label>
+          <Select
+            value={targetFilter ? String(targetFilter) : "all"}
+            onValueChange={v => setTargetFilter(v === "all" ? null : Number(v))}
+          >
+            <SelectTrigger className="h-8 w-[220px] text-sm">
+              <SelectValue placeholder="All targets" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All targets</SelectItem>
+              {targets?.map(t => (
+                <SelectItem key={t.id} value={String(t.id)}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex flex-col gap-2">
@@ -1054,66 +997,6 @@ function DeploymentRollupPanel({
           </div>
         </>
       )}
-
-      {/* Export dialog */}
-      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Export Deployment Rollup</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-col gap-4 py-1">
-            <RadioGroup
-              value={exportMode}
-              onValueChange={v => setExportMode(v as "operation" | "target")}
-              className="gap-2.5"
-            >
-              <label className="flex items-center gap-2.5 text-sm cursor-pointer">
-                <RadioGroupItem value="operation" />
-                Operation export — every summary in this operation
-              </label>
-              <label className="flex items-center gap-2.5 text-sm cursor-pointer">
-                <RadioGroupItem value="target" />
-                Target export — one target only
-              </label>
-            </RadioGroup>
-
-            {exportMode === "target" && (
-              <Select
-                value={exportTargetId ? String(exportTargetId) : undefined}
-                onValueChange={v => setExportTargetId(Number(v))}
-              >
-                <SelectTrigger className="h-9 text-sm">
-                  <SelectValue placeholder="Choose a target…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {targets?.map(t => (
-                    <SelectItem key={t.id} value={String(t.id)}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setExportOpen(false)}
-              disabled={isExporting}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleExport}
-              disabled={isExporting}
-              className="gap-1.5"
-            >
-              <FileDown className="w-3.5 h-3.5" />
-              {isExporting ? "Building…" : "Export PDF"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -2094,7 +1977,7 @@ export default function OperationDetail() {
       toast.error("User list not available");
       return;
     }
-    const members = allUsers.filter(u => u.team === teamKey);
+    const members = allUsers.filter(u => u.team === teamKey && !u.archivedAt);
     if (members.length === 0) {
       toast.error("No members found in that team");
       return;
@@ -2182,6 +2065,48 @@ export default function OperationDetail() {
     });
   };
 
+  // ── PDF export dialog — lives in the header (see Add/Export button
+  // stack below) so it's reachable from any tab, not just Deployment
+  // Rollup ────────────────────────────────────────────────────────────────
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportMode, setExportMode] = useState<"operation" | "target">(
+    "operation"
+  );
+  const [exportTargetId, setExportTargetId] = useState<number | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (exportMode === "target" && !exportTargetId) {
+      toast.error("Pick a target to export.");
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const exportRows = await trpcClient.summary.exportRollup.query({
+        operationId,
+        targetId: exportMode === "target" ? exportTargetId : null,
+      });
+      if (exportRows.length === 0) {
+        toast.error("No Supervisor Summaries to export for this selection.");
+        return;
+      }
+      const targetName =
+        exportMode === "target"
+          ? (operationTargets?.find(t => t.id === exportTargetId)?.name ?? null)
+          : null;
+      buildRollupExportPdf({
+        operationName: operation?.name ?? "Operation",
+        targetName,
+        rows: exportRows,
+      });
+      setExportOpen(false);
+    } catch {
+      toast.error("Couldn't build the export — please try again.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const isLoading = opLoading || sheetsLoading;
 
   return (
@@ -2203,8 +2128,8 @@ export default function OperationDetail() {
         </div>
 
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
-          <div>
+        <div className="flex items-start justify-between gap-3 mb-6">
+          <div className="min-w-0">
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2.5 rounded-lg bg-blue-700/10 border border-blue-700/20">
                 <FolderOpen className="w-5 h-5 text-blue-700" />
@@ -2260,16 +2185,28 @@ export default function OperationDetail() {
               </div>
             )}
           </div>
-          <div className="shrink-0 w-full sm:w-auto">
-            <Button
-              size="sm"
-              className="gap-2 justify-center w-full sm:w-auto"
-              onClick={() => setCreateOpen(true)}
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">New Sheet</span>
-              <span className="sm:hidden">Add</span>
-            </Button>
+          <div className="shrink-0">
+            {activeTab === "sheets" && (
+              <Button
+                size="sm"
+                className="gap-1.5 justify-center"
+                onClick={() => setCreateOpen(true)}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add<span className="hidden sm:inline">&nbsp;Running Sheet</span>
+              </Button>
+            )}
+            {activeTab === "rollup" && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 justify-center"
+                onClick={() => setExportOpen(true)}
+              >
+                <FileDown className="w-3.5 h-3.5" />
+                Export
+              </Button>
+            )}
           </div>
         </div>
 
@@ -2499,7 +2436,6 @@ export default function OperationDetail() {
           <TabsContent value="rollup">
             <DeploymentRollupPanel
               operationId={operationId}
-              operationName={operation?.name}
               targets={operationTargets}
             />
           </TabsContent>
@@ -2593,6 +2529,68 @@ export default function OperationDetail() {
                 {updateOperation.isPending ? "Saving…" : "Save Changes"}
               </Button>
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Export Deployment Rollup Dialog — the header's Export button
+          applies regardless of which tab is active, since it always
+          exports the operation's rollup, not the tab's own content. */}
+      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Export Deployment Rollup</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-1">
+            <RadioGroup
+              value={exportMode}
+              onValueChange={v => setExportMode(v as "operation" | "target")}
+              className="gap-2.5"
+            >
+              <label className="flex items-center gap-2.5 text-sm cursor-pointer">
+                <RadioGroupItem value="operation" />
+                Operation export — every summary in this operation
+              </label>
+              <label className="flex items-center gap-2.5 text-sm cursor-pointer">
+                <RadioGroupItem value="target" />
+                Target export — one target only
+              </label>
+            </RadioGroup>
+
+            {exportMode === "target" && (
+              <Select
+                value={exportTargetId ? String(exportTargetId) : undefined}
+                onValueChange={v => setExportTargetId(Number(v))}
+              >
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder="Choose a target…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {operationTargets?.map(t => (
+                    <SelectItem key={t.id} value={String(t.id)}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setExportOpen(false)}
+              disabled={isExporting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="gap-1.5"
+            >
+              <FileDown className="w-3.5 h-3.5" />
+              {isExporting ? "Building…" : "Export PDF"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

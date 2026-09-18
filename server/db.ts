@@ -329,6 +329,44 @@ export async function updateUserRole(
   await db.update(users).set({ role }).where(eq(users.id, userId));
 }
 
+export async function archiveUser(userId: number, archivedByCIN: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(users)
+    .set({ archivedAt: Date.now(), archivedByCIN })
+    .where(eq(users.id, userId));
+}
+
+export async function restoreUser(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(users)
+    .set({ archivedAt: null, archivedByCIN: null })
+    .where(eq(users.id, userId));
+}
+
+/** Parses a User row's investigatorOperationIds JSON column — empty for
+ * every non-investigator, or an investigator with nothing granted yet.
+ * The single point every operation-scoped query funnels an investigator's
+ * request through (see server/_core/trpc.ts's INVESTIGATOR_ALLOWED_PATHS
+ * for the matching procedure allowlist). */
+export function getInvestigatorAllowedOperationIds(user: {
+  role: string;
+  investigatorOperationIds?: string | null;
+}): number[] {
+  if (user.role !== "investigator" || !user.investigatorOperationIds) return [];
+  try {
+    const parsed = JSON.parse(user.investigatorOperationIds);
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is number => typeof id === "number")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function updateLastSignedIn(userId: number) {
   const db = await getDb();
   if (!db) return;
@@ -13213,6 +13251,7 @@ export interface UserLocationRow {
   userId: number;
   deviceId: string;
   name: string;
+  role: "observer" | "member" | "admin" | "investigator";
   team: "TEAM1" | "TEAM2" | "PTT" | null;
   lat: number;
   lng: number;
@@ -13257,6 +13296,7 @@ export async function getUserLocations(
       userId: userLocations.userId,
       deviceId: userLocations.deviceId,
       name: users.name,
+      role: users.role,
       team: users.team,
       lat: userLocations.lat,
       lng: userLocations.lng,

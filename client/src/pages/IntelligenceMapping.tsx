@@ -325,6 +325,7 @@ interface LiveUser {
   userId: number;
   deviceId: string;
   name: string;
+  role: "observer" | "member" | "admin" | "investigator";
   team: "TEAM1" | "TEAM2" | "PTT" | null;
   lat: number;
   lng: number;
@@ -596,8 +597,15 @@ const TEAM_COLOURS: Record<string, string> = {
   PTT: "#f9a825", // yellow
   null: "#6b7280", // grey for unassigned
 };
+// Investigator accounts have no TEAM1/TEAM2/PTT (they aren't a
+// surveillance team member), so they'd otherwise fall through to the
+// generic "unassigned" grey above — deliberately darker instead, so their
+// pin still reads as a distinct, recognised category rather than looking
+// like a misconfigured account.
+const INVESTIGATOR_PIN_COLOUR = "#374151"; // dark grey
 
-function getTeamColour(team: string | null): string {
+function getTeamColour(team: string | null, role?: LiveUser["role"]): string {
+  if (role === "investigator") return INVESTIGATOR_PIN_COLOUR;
   return TEAM_COLOURS[team ?? "null"] ?? "#6b7280";
 }
 
@@ -1287,6 +1295,20 @@ function shortenAlreadyMentionedNames(
 export default function IntelligenceMapping() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
+  // Investigator accounts are map-only, locked to their allocated
+  // operation(s) — see INVESTIGATOR_ALLOWED_PATHS in server/_core/trpc.ts
+  // for the real (server-side) enforcement; everything gated on this flag
+  // below is the matching client-side experience, not the boundary itself.
+  const isInvestigator = user?.role === "investigator";
+  const investigatorOperationIds = useMemo<number[]>(() => {
+    if (!isInvestigator || !(user as any)?.investigatorOperationIds) return [];
+    try {
+      const parsed = JSON.parse((user as any).investigatorOperationIds);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, [isInvestigator, user]);
 
   // SMEAC briefing overlay — opened via ?smeac=<id>, e.g. from the Post
   // notification. Purely additive: doesn't touch any map/marker state below.
@@ -1332,6 +1354,19 @@ export default function IntelligenceMapping() {
     }
     return false;
   });
+  // Investigator accounts don't get to choose an operation filter at all —
+  // it's locked to exactly their grant, overriding whatever a previous
+  // (non-investigator) session on this browser left in localStorage. The
+  // operation picker itself is hidden for them below (a static label
+  // instead), so this is what actually enforces "only their operation" on
+  // the client; operation.list, mappingLocations, customMarker.list and
+  // mapShape.list all re-enforce the same grant server-side regardless.
+  useEffect(() => {
+    if (!isInvestigator) return;
+    setSelectedOpIds(investigatorOperationIds);
+    setOpsExplicitlySet(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInvestigator, investigatorOperationIds]);
   const [selectedTargetIds, setSelectedTargetIds] = useState<number[]>(() => {
     try {
       const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
@@ -1545,17 +1580,17 @@ export default function IntelligenceMapping() {
   // Target/Operation profile sub-views shown inline within the right pane
   // (null = normal pane content). Mutually exclusive — opening one clears
   // the other, since both occupy the same pane body.
-  const [paneTargetProfileId, setPaneTargetProfileId] = useState<number | null>(
-    null
-  );
-  const [paneOperationProfileId, setPaneOperationProfileId] = useState<
+  const [paneTargetProfileId, setPaneTargetProfileIdRaw] = useState<
+    number | null
+  >(null);
+  const [paneOperationProfileId, setPaneOperationProfileIdRaw] = useState<
     number | null
   >(null);
   // Operation Images, browsed inside the pane the same way the profiles are,
   // rather than navigating away to /images and losing the map. Two levels:
   // the operation's running-sheet folders, then one sheet's photos — mirroring
   // the Images page's own hierarchy (it reuses the very same components).
-  const [paneImagesOpId, setPaneImagesOpId] = useState<number | null>(null);
+  const [paneImagesOpId, setPaneImagesOpIdRaw] = useState<number | null>(null);
   const [paneImagesSheetId, setPaneImagesSheetId] = useState<number | null>(
     null
   );
@@ -1564,9 +1599,26 @@ export default function IntelligenceMapping() {
   // can work the sheet without leaving the map. Unlike those, this renders
   // the full SheetDetail page component itself (embedded mode — see its own
   // props), not a purpose-built read view.
-  const [paneSheetDetailId, setPaneSheetDetailId] = useState<number | null>(
+  const [paneSheetDetailId, setPaneSheetDetailIdRaw] = useState<number | null>(
     null
   );
+  // Investigator accounts are map-only view + own-location-share — no RS,
+  // Images or Profile pane access (server-side, none of the data those
+  // panes need is even in their allowlist — see INVESTIGATOR_ALLOWED_PATHS
+  // in server/_core/trpc.ts). Rebinding the setters here, once, means every
+  // existing trigger throughout this file (pin clicks, list rows, popup
+  // buttons) stays untouched and simply becomes a no-op for this role,
+  // rather than needing each one individually gated.
+  const setPaneTargetProfileId = isInvestigator
+    ? () => {}
+    : setPaneTargetProfileIdRaw;
+  const setPaneOperationProfileId = isInvestigator
+    ? () => {}
+    : setPaneOperationProfileIdRaw;
+  const setPaneImagesOpId = isInvestigator ? () => {} : setPaneImagesOpIdRaw;
+  const setPaneSheetDetailId = isInvestigator
+    ? () => {}
+    : setPaneSheetDetailIdRaw;
   // Pane width — resizable by dragging its left edge, remembered separately for the
   // normal pane content vs. the Target Profile sub-view (which wants more room)
   const [panelWidthNormal, setPanelWidthNormal] = useState<number>(() => {
@@ -2340,7 +2392,11 @@ export default function IntelligenceMapping() {
     { refetchInterval: 30_000 }
   );
 
-  // Live user locations — poll every 1 second
+  // Live user locations — poll every 1 second. Investigator accounts DO
+  // see everyone's pins here (situational awareness is the point of
+  // giving them the map at all) — it's only the Teams PANEL (the
+  // sidebar roster with per-team hide/collapse controls) they don't get;
+  // see its own "not for Investigator" comment further down.
   const { data: liveUsers } = trpc.intelligence.userLocations.useQuery(
     { operationIds: selectedOpIds },
     { refetchInterval: 1000, enabled: true }
@@ -2527,8 +2583,13 @@ export default function IntelligenceMapping() {
     },
   });
 
-  // Intelligence entities for associate/vehicle dropdowns
-  const { data: intelEntities } = trpc.intelligence.getEntities.useQuery();
+  // Intelligence entities for associate/vehicle dropdowns — not scoped
+  // per-operation today, so not offered to Investigator accounts at all
+  // (blocked server-side too, not in INVESTIGATOR_ALLOWED_PATHS).
+  const { data: intelEntities } = trpc.intelligence.getEntities.useQuery(
+    undefined,
+    { enabled: !isInvestigator }
+  );
   const assocPersonOptions = useMemo(() => {
     if (!intelEntities) return [];
     return (intelEntities as any[])
@@ -2753,7 +2814,11 @@ export default function IntelligenceMapping() {
   }, [generalShortcuts, assignedTarget, targetShortcutsForSheet]);
 
   // Targets per operation
-  const { data: allTargets } = trpc.target.registry.list.useQuery();
+  // Also unscoped (every target, every operation) — not offered to
+  // Investigator accounts; blocked server-side too.
+  const { data: allTargets } = trpc.target.registry.list.useQuery(undefined, {
+    enabled: !isInvestigator,
+  });
   const opTargetMap = new Map<number, Array<{ id: number; name: string }>>();
   if (allTargets) {
     for (const t of allTargets as any[]) {
@@ -3057,7 +3122,8 @@ export default function IntelligenceMapping() {
   // the indicator centres itself on the overlay's local (0,0) via its own
   // translate, independent of the pill's width/height entirely.
   const createUserPinElement = useCallback((liveUser: LiveUser) => {
-    const color = liveUser.pinColor ?? getTeamColour(liveUser.team);
+    const color =
+      liveUser.pinColor ?? getTeamColour(liveUser.team, liveUser.role);
     const label = liveUser.name.toUpperCase();
     const pinKey = `${liveUser.userId}_${liveUser.deviceId}`;
     const isMoving = liveUser.speed != null && liveUser.speed > 0.5;
@@ -6567,6 +6633,16 @@ export default function IntelligenceMapping() {
                   <p className="text-xs text-muted-foreground text-center py-3">
                     No operations found.
                   </p>
+                ) : isInvestigator ? (
+                  // Investigator accounts don't get a picker at all — just a
+                  // static readout of their allocated operation(s), locked
+                  // by the effect above and re-enforced server-side.
+                  <div className="w-full px-3 py-2 rounded-xl border-2 border-purple-500/30 bg-purple-500/5 text-xs text-foreground">
+                    {(operations as any[])
+                      .filter((op: any) => selectedOpIds.includes(op.id))
+                      .map((op: any) => op.name)
+                      .join(", ") || "No operation allocated"}
+                  </div>
                 ) : (
                   <Popover
                     open={opsDropdownOpen}
@@ -6942,181 +7018,91 @@ export default function IntelligenceMapping() {
               </div>
               {/* end Location */}
 
-              {/* ── TEAMS (Live Location) ── */}
-              <div className="px-3 py-3">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Radio className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                      TEAMS
-                    </span>
+              {/* ── TEAMS (Live Location) — the roster PANEL (per-team
+                  hide/collapse, member list) isn't shown to Investigator
+                  accounts, but their map still renders every officer's
+                  live pin same as everyone else's (see the userLocations
+                  query above) — they just can't filter/hide by team from
+                  here, and don't get the Location section's page-mate
+                  wall-of-names view either. */}
+              {!isInvestigator && (
+                <div className="px-3 py-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Radio className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                        TEAMS
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                {/* GPS error */}
-                {gpsError && (
-                  <div className="flex items-start gap-1.5 mb-3 p-2.5 rounded-xl border-2 border-amber-500/30 bg-amber-500/10">
-                    <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
-                    <span className="text-[10px] text-amber-400 leading-tight">
-                      {gpsError}
-                    </span>
-                  </div>
-                )}
+                  {/* GPS error */}
+                  {gpsError && (
+                    <div className="flex items-start gap-1.5 mb-3 p-2.5 rounded-xl border-2 border-amber-500/30 bg-amber-500/10">
+                      <AlertTriangle className="h-3 w-3 text-amber-500 mt-0.5 flex-shrink-0" />
+                      <span className="text-[10px] text-amber-400 leading-tight">
+                        {gpsError}
+                      </span>
+                    </div>
+                  )}
 
-                {/* Team rows — collapsible with memory */}
-                <div className="flex flex-col gap-2">
-                  {[
-                    {
-                      key: "TEAM1",
-                      label: "Team 1",
-                      colour: TEAM_COLOURS.TEAM1,
-                      users: liveUsersByTeam.TEAM1,
-                    },
-                    {
-                      key: "TEAM2",
-                      label: "Team 2",
-                      colour: TEAM_COLOURS.TEAM2,
-                      users: liveUsersByTeam.TEAM2,
-                    },
-                    {
-                      key: "PTT",
-                      label: "PTT",
-                      colour: TEAM_COLOURS.PTT,
-                      users: liveUsersByTeam.PTT,
-                    },
-                  ].map(({ key, label, colour, users: teamUsers }) => {
-                    const isCollapsed = collapsedTeams.has(key);
-                    return (
-                      <div
-                        key={key}
-                        className="rounded-xl border-2 border-border overflow-hidden"
-                      >
-                        {/* Team header — tap to collapse/expand */}
-                        <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
-                          <button
-                            onClick={() =>
-                              setCollapsedTeams(prev => {
-                                const next = new Set(prev);
-                                next.has(key)
-                                  ? next.delete(key)
-                                  : next.add(key);
-                                return next;
-                              })
-                            }
-                            className="flex items-center gap-2 flex-1 min-w-0"
-                          >
-                            <div
-                              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                              style={{ background: colour }}
-                            />
-                            <span
-                              className="text-[11px] font-semibold"
-                              style={{ color: colour }}
-                            >
-                              {label}
-                            </span>
-                            {teamUsers.length > 0 && (
-                              <span className="text-[10px] text-muted-foreground">
-                                ({teamUsers.length})
-                              </span>
-                            )}
-                            {isCollapsed ? (
-                              <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />
-                            ) : (
-                              <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />
-                            )}
-                          </button>
-                          <button
-                            onClick={() => toggleTeamVisibility(key)}
-                            className="ml-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground flex-shrink-0 px-2.5 py-1 rounded-md border border-border/50 bg-background/50 transition-colors"
-                          >
-                            {hiddenTeams.has(key) ? "Show" : "Hide"}
-                          </button>
-                        </div>
-                        {/* Team members — shown when not collapsed */}
-                        {!isCollapsed && (
-                          <div className="px-3 py-2 border-t border-border bg-card">
-                            {teamUsers.length === 0 ? (
-                              <p className="text-[10px] text-muted-foreground/50 italic">
-                                No units online
-                              </p>
-                            ) : (
-                              <div className="flex flex-col gap-0.5">
-                                {teamUsers.map(u => (
-                                  <div
-                                    key={u.userId}
-                                    className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
-                                  >
-                                    <span className="text-[11px] text-foreground font-medium truncate">
-                                      {u.name.toUpperCase()}
-                                      {u.userId === user?.id && (
-                                        <span className="ml-1 text-[9px] text-muted-foreground">
-                                          (you)
-                                        </span>
-                                      )}
-                                    </span>
-                                    <div className="flex items-center gap-1 flex-shrink-0">
-                                      <button
-                                        onClick={() =>
-                                          toggleUserTrace(u.userId)
-                                        }
-                                        className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors ${
-                                          tracedUserIds.has(u.userId)
-                                            ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
-                                            : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
-                                        }`}
-                                      >
-                                        {tracedUserIds.has(u.userId)
-                                          ? "Tracking"
-                                          : "Track"}
-                                      </button>
-                                      <button
-                                        onClick={() =>
-                                          toggleUserVisibility(u.userId)
-                                        }
-                                        className="text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border/50 bg-background/50 text-muted-foreground hover:text-foreground transition-colors"
-                                      >
-                                        {hiddenUsers.has(u.userId)
-                                          ? "Show"
-                                          : "Hide"}
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-
-                  {/* Unassigned users */}
-                  {liveUsersByTeam.unassigned.length > 0 &&
-                    (() => {
-                      const isCollapsed = collapsedTeams.has("null");
+                  {/* Team rows — collapsible with memory */}
+                  <div className="flex flex-col gap-2">
+                    {[
+                      {
+                        key: "TEAM1",
+                        label: "Team 1",
+                        colour: TEAM_COLOURS.TEAM1,
+                        users: liveUsersByTeam.TEAM1,
+                      },
+                      {
+                        key: "TEAM2",
+                        label: "Team 2",
+                        colour: TEAM_COLOURS.TEAM2,
+                        users: liveUsersByTeam.TEAM2,
+                      },
+                      {
+                        key: "PTT",
+                        label: "PTT",
+                        colour: TEAM_COLOURS.PTT,
+                        users: liveUsersByTeam.PTT,
+                      },
+                    ].map(({ key, label, colour, users: teamUsers }) => {
+                      const isCollapsed = collapsedTeams.has(key);
                       return (
-                        <div className="rounded-xl border-2 border-border overflow-hidden">
+                        <div
+                          key={key}
+                          className="rounded-xl border-2 border-border overflow-hidden"
+                        >
+                          {/* Team header — tap to collapse/expand */}
                           <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
                             <button
                               onClick={() =>
                                 setCollapsedTeams(prev => {
                                   const next = new Set(prev);
-                                  next.has("null")
-                                    ? next.delete("null")
-                                    : next.add("null");
+                                  next.has(key)
+                                    ? next.delete(key)
+                                    : next.add(key);
                                   return next;
                                 })
                               }
                               className="flex items-center gap-2 flex-1 min-w-0"
                             >
-                              <div className="w-2.5 h-2.5 rounded-full bg-gray-500 flex-shrink-0" />
-                              <span className="text-[11px] font-semibold text-muted-foreground">
-                                Unassigned
+                              <div
+                                className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                                style={{ background: colour }}
+                              />
+                              <span
+                                className="text-[11px] font-semibold"
+                                style={{ color: colour }}
+                              >
+                                {label}
                               </span>
-                              <span className="text-[10px] text-muted-foreground">
-                                ({liveUsersByTeam.unassigned.length})
-                              </span>
+                              {teamUsers.length > 0 && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  ({teamUsers.length})
+                                </span>
+                              )}
                               {isCollapsed ? (
                                 <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />
                               ) : (
@@ -7124,64 +7110,162 @@ export default function IntelligenceMapping() {
                               )}
                             </button>
                             <button
-                              onClick={() => toggleTeamVisibility("null")}
+                              onClick={() => toggleTeamVisibility(key)}
                               className="ml-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground flex-shrink-0 px-2.5 py-1 rounded-md border border-border/50 bg-background/50 transition-colors"
                             >
-                              {hiddenTeams.has("null") ? "Show" : "Hide"}
+                              {hiddenTeams.has(key) ? "Show" : "Hide"}
                             </button>
                           </div>
+                          {/* Team members — shown when not collapsed */}
                           {!isCollapsed && (
                             <div className="px-3 py-2 border-t border-border bg-card">
-                              <div className="flex flex-col gap-0.5">
-                                {liveUsersByTeam.unassigned.map(u => (
-                                  <div
-                                    key={u.userId}
-                                    className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
-                                  >
-                                    <span className="text-[11px] text-foreground font-medium truncate">
-                                      {u.name.toUpperCase()}
-                                      {u.userId === user?.id && (
-                                        <span className="ml-1 text-[9px] text-muted-foreground">
-                                          (you)
-                                        </span>
-                                      )}
-                                    </span>
-                                    <div className="flex items-center gap-1 flex-shrink-0">
-                                      <button
-                                        onClick={() =>
-                                          toggleUserTrace(u.userId)
-                                        }
-                                        className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors ${
-                                          tracedUserIds.has(u.userId)
-                                            ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
-                                            : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
-                                        }`}
-                                      >
-                                        {tracedUserIds.has(u.userId)
-                                          ? "Tracking"
-                                          : "Track"}
-                                      </button>
-                                      <button
-                                        onClick={() =>
-                                          toggleUserVisibility(u.userId)
-                                        }
-                                        className="text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border/50 bg-background/50 text-muted-foreground hover:text-foreground transition-colors"
-                                      >
-                                        {hiddenUsers.has(u.userId)
-                                          ? "Show"
-                                          : "Hide"}
-                                      </button>
+                              {teamUsers.length === 0 ? (
+                                <p className="text-[10px] text-muted-foreground/50 italic">
+                                  No units online
+                                </p>
+                              ) : (
+                                <div className="flex flex-col gap-0.5">
+                                  {teamUsers.map(u => (
+                                    <div
+                                      key={u.userId}
+                                      className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
+                                    >
+                                      <span className="text-[11px] text-foreground font-medium truncate">
+                                        {u.name.toUpperCase()}
+                                        {u.userId === user?.id && (
+                                          <span className="ml-1 text-[9px] text-muted-foreground">
+                                            (you)
+                                          </span>
+                                        )}
+                                      </span>
+                                      <div className="flex items-center gap-1 flex-shrink-0">
+                                        <button
+                                          onClick={() =>
+                                            toggleUserTrace(u.userId)
+                                          }
+                                          className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors ${
+                                            tracedUserIds.has(u.userId)
+                                              ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
+                                              : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
+                                          }`}
+                                        >
+                                          {tracedUserIds.has(u.userId)
+                                            ? "Tracking"
+                                            : "Track"}
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            toggleUserVisibility(u.userId)
+                                          }
+                                          className="text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border/50 bg-background/50 text-muted-foreground hover:text-foreground transition-colors"
+                                        >
+                                          {hiddenUsers.has(u.userId)
+                                            ? "Show"
+                                            : "Hide"}
+                                        </button>
+                                      </div>
                                     </div>
-                                  </div>
-                                ))}
-                              </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
                       );
-                    })()}
+                    })}
+
+                    {/* Unassigned users */}
+                    {liveUsersByTeam.unassigned.length > 0 &&
+                      (() => {
+                        const isCollapsed = collapsedTeams.has("null");
+                        return (
+                          <div className="rounded-xl border-2 border-border overflow-hidden">
+                            <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
+                              <button
+                                onClick={() =>
+                                  setCollapsedTeams(prev => {
+                                    const next = new Set(prev);
+                                    next.has("null")
+                                      ? next.delete("null")
+                                      : next.add("null");
+                                    return next;
+                                  })
+                                }
+                                className="flex items-center gap-2 flex-1 min-w-0"
+                              >
+                                <div className="w-2.5 h-2.5 rounded-full bg-gray-500 flex-shrink-0" />
+                                <span className="text-[11px] font-semibold text-muted-foreground">
+                                  Unassigned
+                                </span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  ({liveUsersByTeam.unassigned.length})
+                                </span>
+                                {isCollapsed ? (
+                                  <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />
+                                ) : (
+                                  <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />
+                                )}
+                              </button>
+                              <button
+                                onClick={() => toggleTeamVisibility("null")}
+                                className="ml-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground flex-shrink-0 px-2.5 py-1 rounded-md border border-border/50 bg-background/50 transition-colors"
+                              >
+                                {hiddenTeams.has("null") ? "Show" : "Hide"}
+                              </button>
+                            </div>
+                            {!isCollapsed && (
+                              <div className="px-3 py-2 border-t border-border bg-card">
+                                <div className="flex flex-col gap-0.5">
+                                  {liveUsersByTeam.unassigned.map(u => (
+                                    <div
+                                      key={u.userId}
+                                      className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
+                                    >
+                                      <span className="text-[11px] text-foreground font-medium truncate">
+                                        {u.name.toUpperCase()}
+                                        {u.userId === user?.id && (
+                                          <span className="ml-1 text-[9px] text-muted-foreground">
+                                            (you)
+                                          </span>
+                                        )}
+                                      </span>
+                                      <div className="flex items-center gap-1 flex-shrink-0">
+                                        <button
+                                          onClick={() =>
+                                            toggleUserTrace(u.userId)
+                                          }
+                                          className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors ${
+                                            tracedUserIds.has(u.userId)
+                                              ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
+                                              : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
+                                          }`}
+                                        >
+                                          {tracedUserIds.has(u.userId)
+                                            ? "Tracking"
+                                            : "Track"}
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            toggleUserVisibility(u.userId)
+                                          }
+                                          className="text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border/50 bg-background/50 text-muted-foreground hover:text-foreground transition-colors"
+                                        >
+                                          {hiddenUsers.has(u.userId)
+                                            ? "Show"
+                                            : "Hide"}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                  </div>
                 </div>
-              </div>
+              )}
               {/* end TEAMS */}
             </div>
           )}

@@ -36,6 +36,42 @@ const OBSERVER_ALLOWED_MUTATIONS = new Set([
   "wipc.generateWipcRequest",
 ]);
 
+// Investigator is a map-only role — the opposite default from Observer
+// above: everything is denied by default, and a path has to be
+// deliberately allowlisted here to be reachable at all (both queries and
+// mutations), rather than only mutations being restricted. This is the
+// actual security boundary for "only the mapping page, for their
+// allocated operation(s)" — the client-side route guard in
+// DashboardLayout is just the matching UX, not the enforcement. Every
+// operation-scoped procedure below (operation.list, mappingLocations,
+// customMarker.list, mapShape.list) ignores whatever operationIds the
+// client sends and substitutes the investigator's own grant server-side —
+// see getInvestigatorAllowedOperationIds in server/db.ts — so a tampered
+// client request can't widen what comes back. intelligence.userLocations
+// is the one exception: it was never operation-scoped for any role (see
+// its own doc comment on getUserLocations) — an investigator sees the
+// same live team pins any other logged-in user does, deliberately, since
+// situational awareness of who's where is the whole point of giving them
+// the map.
+const INVESTIGATOR_ALLOWED_PATHS = new Set([
+  "auth.me",
+  "auth.logout",
+  "auth.setNewPassword",
+  "profile.me",
+  "profile.updateColorPalette",
+  "profile.updatePassword",
+  "operation.list",
+  "intelligence.mappingLocations",
+  "intelligence.userLocations",
+  "intelligence.myLocationState",
+  "intelligence.updateUserLocation",
+  "intelligence.clearUserLocation",
+  "intelligence.setOnFoot",
+  "intelligence.getPinOverrides",
+  "customMarker.list",
+  "mapShape.list",
+]);
+
 const requireUser = t.middleware(async opts => {
   const { ctx, next, path, type } = opts;
 
@@ -61,6 +97,16 @@ const requireUser = t.middleware(async opts => {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Observers have view and export access only.",
+    });
+  }
+
+  if (
+    ctx.user.role === "investigator" &&
+    !INVESTIGATOR_ALLOWED_PATHS.has(path)
+  ) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Investigator accounts have map-only access.",
     });
   }
 

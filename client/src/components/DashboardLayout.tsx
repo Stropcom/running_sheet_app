@@ -1423,6 +1423,12 @@ const ROLE_CONFIG = {
     color: "text-muted-foreground",
     badge: "border-border bg-muted/50 text-muted-foreground",
   },
+  investigator: {
+    label: "Investigator",
+    icon: Binoculars,
+    color: "text-purple-400",
+    badge: "border-purple-400/30 bg-purple-400/10 text-purple-400",
+  },
 };
 
 export default function DashboardLayout({
@@ -1450,6 +1456,12 @@ export default function DashboardLayout({
   });
   const { loading, user } = useAuth();
   const [, setLocation] = useLocation();
+  // Investigator accounts are map-only (see server/_core/trpc.ts's
+  // INVESTIGATOR_ALLOWED_PATHS, the real enforcement — this is just the
+  // matching client-side redirect so a typed URL bounces straight back
+  // instead of rendering a page whose every query then fails).
+  const isInvestigator = user?.role === "investigator";
+  const [investigatorPath] = useLocation();
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
@@ -1509,6 +1521,17 @@ export default function DashboardLayout({
       setLocation("/change-password");
     }
   }, [user, setLocation]);
+
+  const INVESTIGATOR_ALLOWED_ROUTES = ["/intelligence/mapping", "/profile"];
+  useEffect(() => {
+    if (
+      isInvestigator &&
+      !user?.mustChangePassword &&
+      !INVESTIGATOR_ALLOWED_ROUTES.includes(investigatorPath)
+    ) {
+      setLocation("/intelligence/mapping");
+    }
+  }, [isInvestigator, investigatorPath, user?.mustChangePassword, setLocation]);
 
   if (loading) return <DashboardLayoutSkeleton />;
 
@@ -1583,6 +1606,11 @@ function DashboardLayoutContent({
   fillViewport?: boolean;
 }) {
   const { user, logout } = useAuth();
+  // Investigator accounts are map-only — see INVESTIGATOR_ALLOWED_PATHS in
+  // server/_core/trpc.ts for the real (server-side) enforcement; this just
+  // trims the sidebar/header down to match so nothing renders that would
+  // fail anyway.
+  const isInvestigator = user?.role === "investigator";
   const { theme, toggleTheme } = useTheme();
   const [location, setLocation] = useLocation();
   const {
@@ -1670,6 +1698,7 @@ function DashboardLayoutContent({
     {
       staleTime: 30_000,
       refetchOnWindowFocus: true,
+      enabled: !isInvestigator,
     }
   );
   const { data: governanceTodo } = trpc.sheet.governanceTodo.useQuery(
@@ -1677,6 +1706,7 @@ function DashboardLayoutContent({
     {
       staleTime: 30_000,
       refetchOnWindowFocus: true,
+      enabled: !isInvestigator,
     }
   );
   const { data: unlinkedImagesTodo } = trpc.sheet.unlinkedImagesTodo.useQuery(
@@ -1684,6 +1714,7 @@ function DashboardLayoutContent({
     {
       staleTime: 30_000,
       refetchOnWindowFocus: true,
+      enabled: !isInvestigator,
     }
   );
   const certifyCount = outstanding?.length ?? 0;
@@ -1784,8 +1815,13 @@ function DashboardLayoutContent({
     "court",
   ];
   const [navOrder, setNavOrder] = useState<string[]>(DEFAULT_NAV_ORDER);
+  // Investigator accounts are map-only — feed the existing nav renderer a
+  // single-item list rather than touching its (drag-reorder-capable)
+  // rendering code, so every other role's sidebar stays untouched.
+  const effectiveNavOrder = isInvestigator ? ["mapping"] : navOrder;
   const { data: sidebarOrderData } = trpc.sidebar.getOrder.useQuery(undefined, {
     staleTime: Infinity,
+    enabled: !isInvestigator,
   });
   const setSidebarOrderMutation = trpc.sidebar.setOrder.useMutation({
     onSuccess: () => dashboardUtils.sidebar.getOrder.invalidate(),
@@ -1930,10 +1966,12 @@ function DashboardLayoutContent({
                 className={`h-5 w-5 text-sidebar-foreground/70 ${refreshing ? "animate-spin" : ""}`}
               />
             </button>
-            <NotificationBell
-              className="hover:bg-sidebar-accent h-10 w-10"
-              iconClassName="h-5 w-5 text-sidebar-foreground/70"
-            />
+            {!isInvestigator && (
+              <NotificationBell
+                className="hover:bg-sidebar-accent h-10 w-10"
+                iconClassName="h-5 w-5 text-sidebar-foreground/70"
+              />
+            )}
           </div>
 
           {/* Centre: wordmark, absolutely positioned so it sits at true screen
@@ -2031,10 +2069,10 @@ function DashboardLayoutContent({
                     onDragEnd={handleDragEnd}
                   >
                     <SortableContext
-                      items={navOrder}
+                      items={effectiveNavOrder}
                       strategy={rectSortingStrategy}
                     >
-                      {navOrder.map(key => (
+                      {effectiveNavOrder.map(key => (
                         <SortableNavTile
                           key={key}
                           id={key}
@@ -2063,10 +2101,10 @@ function DashboardLayoutContent({
                     onDragEnd={handleDragEnd}
                   >
                     <SortableContext
-                      items={navOrder}
+                      items={effectiveNavOrder}
                       strategy={verticalListSortingStrategy}
                     >
-                      {navOrder.map(key => (
+                      {effectiveNavOrder.map(key => (
                         <SortableNavItem
                           key={key}
                           id={key}
@@ -2413,10 +2451,12 @@ function DashboardLayoutContent({
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <NotificationBell
-                  className="h-11 w-11 hover:bg-accent"
-                  iconClassName="h-6 w-6 text-muted-foreground"
-                />
+                {!isInvestigator && (
+                  <NotificationBell
+                    className="h-11 w-11 hover:bg-accent"
+                    iconClassName="h-6 w-6 text-muted-foreground"
+                  />
+                )}
                 <ViewToggle />
                 {/* Active RS quick-link (mobile) */}
                 <button

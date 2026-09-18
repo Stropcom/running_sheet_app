@@ -1,0 +1,5 @@
+ALTER TABLE `audit_logs` MODIFY COLUMN `action` enum('row_created','row_updated','row_deleted','member_added','member_removed','certified','uncertified','sheet_created','sheet_updated','sheet_deleted','sheet_closed','sheet_reopened','sheet_moved','sheet_copied','user_login','user_logout','user_created','user_updated','user_deleted','user_archived','user_restored','operation_status_changed','password_changed','attachment_added','attachment_deleted','summary_completed','summary_reopened','smeac_briefing_posted','smeac_briefing_deleted','uco_guide_posted','uco_guide_deleted') NOT NULL;--> statement-breakpoint
+ALTER TABLE `users` MODIFY COLUMN `role` enum('observer','member','admin','investigator') NOT NULL DEFAULT 'observer';--> statement-breakpoint
+ALTER TABLE `users` ADD `archivedAt` bigint;--> statement-breakpoint
+ALTER TABLE `users` ADD `archivedByCIN` varchar(64);--> statement-breakpoint
+ALTER TABLE `users` ADD `investigatorOperationIds` text;

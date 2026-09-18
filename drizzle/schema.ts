@@ -27,7 +27,12 @@ export const users = mysqlTable("users", {
   team: mysqlEnum("team", ["TEAM1", "TEAM2", "PTT"]),
   email: varchar("email", { length: 320 }),
   phone: varchar("phone", { length: 32 }),
-  role: mysqlEnum("role", ["observer", "member", "admin"])
+  // "investigator" is a fourth, map-only tier — see INVESTIGATOR_ALLOWED_PATHS
+  // in server/_core/trpc.ts (default-deny: every procedure not explicitly
+  // allowlisted there is rejected for this role, both queries and
+  // mutations) and investigatorOperationIds below for which operations
+  // they can see.
+  role: mysqlEnum("role", ["observer", "member", "admin", "investigator"])
     .default("observer")
     .notNull(),
   // Legacy OAuth field — kept nullable so existing rows are not broken
@@ -109,6 +114,30 @@ export const users = mysqlTable("users", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+  // Archiving — for an officer who has left, without losing their history.
+  // Deliberately NOT a 4th `role` value: `role` stays exactly what it was
+  // (restored automatically on un-archive, no separate "what were they
+  // before" column needed) and every existing role-based check elsewhere
+  // in the app keeps working unchanged. Archived-ness is layered on top:
+  // login and session auth both reject an archived user (see auth.login
+  // and authenticateRequest in _core/sdk.ts), and the CIN pickers used to
+  // add someone to a team/operation/running sheet (users.listForCin, the
+  // CTO Roster's own user list) filter them out — but nothing already on
+  // record (rows, certifications, statements, witness lists, audit log)
+  // references a live user row, so none of that is affected. The admin
+  // UI presents this as the user's "Access Level: None" even though the
+  // underlying role column is untouched — see AdminUserProfilePage.tsx.
+  archivedAt: bigint("archivedAt", { mode: "number" }),
+  archivedByCIN: varchar("archivedByCIN", { length: 64 }),
+  // Investigator accounts only — JSON array of operation ids they're allowed
+  // to see (e.g. "[4,7]"). Null/empty for every other role, and meaningless
+  // for them since only role === "investigator" is ever checked against it.
+  // A plain JSON column rather than a join table: this is always a short,
+  // low-cardinality list per account, matching how extraAddresses/
+  // extraVehicles/wildFields already store small one-to-many data
+  // elsewhere in this schema rather than normalising every case into its
+  // own table.
+  investigatorOperationIds: text("investigatorOperationIds"),
 });
 
 export type User = typeof users.$inferSelect;
@@ -798,6 +827,8 @@ export const auditLogs = mysqlTable("audit_logs", {
     "user_created",
     "user_updated",
     "user_deleted",
+    "user_archived",
+    "user_restored",
     "operation_status_changed",
     "password_changed",
     "attachment_added",

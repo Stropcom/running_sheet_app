@@ -69,6 +69,7 @@ import {
   Tag,
   User,
   Car,
+  Undo2,
 } from "lucide-react";
 import {
   Select,
@@ -2591,6 +2592,36 @@ export default function SheetDetail({
     onError: e => toast.error(e.message),
   });
 
+  // Session-scoped undo stack for this officer's own row edits (observation/time),
+  // laptop/iPad only. Only ever populated from edits made while online, against
+  // rows that were unlocked (not fully certified) at the time of the edit — undo
+  // itself re-checks isLocked before applying, since certification can land
+  // between the edit and the undo click. Cleared implicitly on page reload; not
+  // persisted, since it's a convenience for catching a mis-edit, not part of the
+  // record.
+  type UndoEntry = {
+    rowId: number;
+    previous: Omit<RowSaveInput, "id">;
+  };
+  const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
+  const pushUndoEntry = (input: RowSaveInput) => {
+    if (!isOnline) return;
+    const row = rows?.find(r => r.id === input.id);
+    if (!row || row.isLocked) return;
+    const previous: Omit<RowSaveInput, "id"> = {};
+    if (input.observation !== undefined)
+      previous.observation = row.observation ?? "";
+    if (input.time !== undefined) previous.time = row.time ?? "";
+    if (input.timeMinutes !== undefined)
+      previous.timeMinutes = row.timeMinutes ?? undefined;
+    if (input.dayOffset !== undefined)
+      previous.dayOffset = row.dayOffset ?? undefined;
+    if (input.rowDate !== undefined)
+      previous.rowDate = row.rowDate ?? undefined;
+    if (Object.keys(previous).length === 0) return;
+    setUndoStack(stack => [...stack.slice(-19), { rowId: input.id, previous }]);
+  };
+
   // Offline-aware wrappers — queue locally when offline, call server when online
   const addRow = useMemo(
     () => ({
@@ -2660,6 +2691,7 @@ export default function SheetDetail({
         rowDate?: string;
         observation?: string;
       }) => {
+        pushUndoEntry(input);
         if (isOnline) {
           _updateRowOnline.mutate(input);
         } else {
@@ -3692,6 +3724,27 @@ export default function SheetDetail({
       return next;
     });
 
+  // Step back through this officer's own recent edits (see the undo stack
+  // built up in pushUndoEntry, above). Re-checks isLocked here rather than
+  // trusting the state at capture time, since the row may have been
+  // certified in the meantime.
+  const handleUndo = () => {
+    const entry = undoStack[undoStack.length - 1];
+    if (!entry) return;
+    setUndoStack(stack => stack.slice(0, -1));
+    const row = rows?.find(r => r.id === entry.rowId);
+    if (!row) {
+      toast.error("Can't undo — that row no longer exists");
+      return;
+    }
+    if (row.isLocked) {
+      toast.error("Can't undo — that row has since been certified");
+      return;
+    }
+    updateRow.mutate({ id: entry.rowId, ...entry.previous });
+    toast.success("Last edit undone");
+  };
+
   // Edit sheet state
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [editSheetDate, setEditSheetDate] = useState("");
@@ -4214,7 +4267,8 @@ export default function SheetDetail({
                           disabled={!canCloseSheet || closeSheet.isPending}
                         >
                           <LockKeyhole className="w-4 h-4" />
-                          Close Sheet
+                          Close
+                          <span className="hidden sm:inline"> Sheet</span>
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
@@ -4247,7 +4301,13 @@ export default function SheetDetail({
                   onClick={handleExport}
                 >
                   <Download className="w-4 h-4" />
-                  {exportFetching ? "Preparing..." : "Export PDF"}
+                  {exportFetching ? (
+                    "Preparing..."
+                  ) : (
+                    <>
+                      Export<span className="hidden sm:inline"> PDF</span>
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
@@ -4758,7 +4818,7 @@ export default function SheetDetail({
               disabled={addRow.isPending}
             >
               <Plus className="w-4 h-4" />
-              Add Row
+              Add<span className="hidden sm:inline"> Row</span>
             </Button>
           )}
           <Tooltip>
@@ -4778,6 +4838,22 @@ export default function SheetDetail({
                 : "Showing oldest first — click to show newest first"}
             </TooltipContent>
           </Tooltip>
+          {/* Undo last edit — laptop/iPad only, hidden on mobile */}
+          {canEdit && undoStack.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0 hidden sm:inline-flex"
+                  onClick={handleUndo}
+                >
+                  <Undo2 className="w-4 h-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Undo last edit</TooltipContent>
+            </Tooltip>
+          )}
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             <input

@@ -11,6 +11,48 @@ happen before."
 
 ---
 
+## 2026-09-18 — App down after deploy: crash-looping on missing `sharp` prebuilt binary, because the deploy command skipped `pnpm install`
+
+After a routine deploy the app wouldn't come up. `pm2 status` showed
+`online`, but the process was actually crash-looping (restart count
+climbing) — `pm2 logs runlog --lines 50 --nostream` showed
+`runlog-error.log` repeating: `Something went wrong installing the "sharp"
+module` / `Cannot find module '../build/Release/sharp-linux-x64.node'`,
+resolving `sharp@0.32.6` (no prebuilt binary for this platform/arch).
+
+**Root cause:** `package.json` has pinned `"sharp": "^0.35.3"` via a
+`pnpm.overrides` entry for a while (present since at least the last
+`runlogtest`→`LocalAI` merge), but the deploy command given out this
+session was the short form —
+`git checkout <branch> && git pull origin <branch> && pnpm build && pm2
+restart runlog` — which **never runs `pnpm install`**. The droplet's
+`node_modules/sharp` was still whatever pre-override version had been
+installed previously (`0.32.6`, missing its native binary), since nothing
+ever told pnpm to re-resolve. `pnpm build` alone can't fix a `node_modules`
+that's out of sync with `package.json`/the lockfile — only `pnpm install`
+reconciles that.
+
+This is **not** a code bug from this session's changes — the override was
+already correct in the committed `package.json`/`pnpm-lock.yaml` (confirmed
+`sharp@0.35.3` in the lockfile, no `0.32.6` reference anywhere in it). It's
+purely a gap in the short deploy command used repeatedly this session,
+which had drifted from the documented `/opt/runlog/deploy.sh` procedure
+below (2026-08-06 entry) that always included `pnpm install
+--frozen-lockfile`.
+
+**Fix:** `cd /opt/runlog && pnpm install && pnpm build && pm2 restart
+runlog`.
+
+**Going forward: always include `pnpm install` in any deploy command given
+out, not just `pnpm build`** — the short form is only safe when
+`package.json`/the lockfile genuinely haven't changed since the droplet's
+`node_modules` was last installed, which isn't easy to verify in the
+moment and wasn't checked here. Prefer pointing at `/opt/runlog/deploy.sh`
+(if still present on the droplet) over composing an ad-hoc command, since
+it already encodes this plus the DB backup and health-check retry loop.
+
+---
+
 ## 2026-09-06 — Correction: droplet is back on `claude/claude-md-docs-o4trnz`, not `main`
 
 The 2026-08-16 entry below records the droplet being switched to track

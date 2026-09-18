@@ -103,6 +103,7 @@ import {
   createUser,
   archiveUser,
   restoreUser,
+  getInvestigatorAllowedOperationIds,
   deactivateAllCertificationsForRow,
   deactivateCertification,
   deleteOperation,
@@ -723,9 +724,12 @@ export const appRouter = router({
   // ─── Operations ─────────────────────────────────────────────────────────────
 
   operation: router({
-    list: protectedProcedure.query(async () => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       await autoArchiveEligibleOperations();
-      return getOperations();
+      const all = await getOperations();
+      if (ctx.user.role !== "investigator") return all;
+      const allowed = new Set(getInvestigatorAllowedOperationIds(ctx.user));
+      return all.filter(op => allowed.has(op.id));
     }),
 
     get: protectedProcedure
@@ -2818,7 +2822,8 @@ export const appRouter = router({
           phone: z.string().optional(),
           username: z.string().min(1),
           password: z.string().min(1),
-          role: z.enum(["observer", "member", "admin"]),
+          role: z.enum(["observer", "member", "admin", "investigator"]),
+          investigatorOperationIds: z.array(z.number()).optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -2832,6 +2837,10 @@ export const appRouter = router({
           username: input.username.trim().toLowerCase(),
           passwordHash,
           role: input.role,
+          investigatorOperationIds:
+            input.role === "investigator"
+              ? JSON.stringify(input.investigatorOperationIds ?? [])
+              : null,
           loginMethod: "local",
           lastSignedIn: new Date(),
           // Admin-set password is a temporary one — force a real password
@@ -2861,11 +2870,14 @@ export const appRouter = router({
           phone: z.string().nullable().optional(),
           username: z.string().min(1).optional(),
           password: z.string().min(1).optional(),
-          role: z.enum(["observer", "member", "admin"]).optional(),
+          role: z
+            .enum(["observer", "member", "admin", "investigator"])
+            .optional(),
+          investigatorOperationIds: z.array(z.number()).optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
-        const { id, password, ...rest } = input;
+        const { id, password, investigatorOperationIds, ...rest } = input;
         const updateData: Record<string, unknown> = { ...rest };
         if (password) {
           updateData.passwordHash = await bcrypt.hash(password, 12);
@@ -2873,6 +2885,18 @@ export const appRouter = router({
         if (rest.cin) updateData.cin = rest.cin.toUpperCase();
         if (rest.username)
           updateData.username = rest.username.trim().toLowerCase();
+        if (rest.role === "investigator") {
+          updateData.investigatorOperationIds = JSON.stringify(
+            investigatorOperationIds ?? []
+          );
+        } else if (rest.role) {
+          // Switched away from Investigator — drop the stale grant list.
+          updateData.investigatorOperationIds = null;
+        } else if (investigatorOperationIds !== undefined) {
+          updateData.investigatorOperationIds = JSON.stringify(
+            investigatorOperationIds
+          );
+        }
         await updateUser(id, updateData as Parameters<typeof updateUser>[1]);
         await createAuditLog({
           sheetId: 0,
@@ -3806,7 +3830,18 @@ export const appRouter = router({
           targetIds: z.array(z.number()).optional(),
         })
       )
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        if (ctx.user.role === "investigator") {
+          // Ignore whatever the client sent — substitute the investigator's
+          // own grant, and drop targetIds entirely (it's an OR match
+          // against operationIds in getIntelMappingLocations, so a
+          // tampered targetId could otherwise reach a target outside
+          // their allowed operations).
+          return getIntelMappingLocations(
+            getInvestigatorAllowedOperationIds(ctx.user),
+            undefined
+          );
+        }
         return getIntelMappingLocations(input.operationIds, input.targetIds);
       }),
 
@@ -3841,7 +3876,9 @@ export const appRouter = router({
           input.deviceId,
           input.lat,
           input.lng,
-          input.operationIds,
+          ctx.user.role === "investigator"
+            ? getInvestigatorAllowedOperationIds(ctx.user)
+            : input.operationIds,
           input.sharingEnabled,
           input.speed ?? null,
           input.heading ?? null,
@@ -5663,7 +5700,10 @@ export const appRouter = router({
   customMarker: router({
     list: protectedProcedure
       .input(z.object({ operationIds: z.array(z.number()).optional() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        if (ctx.user.role === "investigator") {
+          return getCustomMarkers(getInvestigatorAllowedOperationIds(ctx.user));
+        }
         return getCustomMarkers(input.operationIds);
       }),
 
@@ -5748,7 +5788,10 @@ export const appRouter = router({
   mapShape: router({
     list: protectedProcedure
       .input(z.object({ operationIds: z.array(z.number()).optional() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        if (ctx.user.role === "investigator") {
+          return getMapShapes(getInvestigatorAllowedOperationIds(ctx.user));
+        }
         return getMapShapes(input.operationIds);
       }),
 

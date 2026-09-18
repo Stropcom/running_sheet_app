@@ -38,26 +38,30 @@ import {
   Crown,
   Eye,
   Archive,
+  Binoculars,
 } from "lucide-react";
 
-export type Role = "observer" | "member" | "admin";
+export type Role = "observer" | "member" | "admin" | "investigator";
 
 export const ROLE_COLORS: Record<Role, string> = {
   admin: "bg-red-500/15 text-red-400 border-red-500/30",
   member: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   observer: "bg-sky-500/15 text-sky-400 border-sky-500/30",
+  investigator: "bg-purple-500/15 text-purple-400 border-purple-500/30",
 };
 
 export const ROLE_ICONS: Record<Role, React.ReactNode> = {
   admin: <Crown className="w-3 h-3" />,
   member: <ShieldCheck className="w-3 h-3" />,
   observer: <Eye className="w-3 h-3" />,
+  investigator: <Binoculars className="w-3 h-3" />,
 };
 
 export const ROLE_LABELS: Record<Role, string> = {
   admin: "Admin",
   member: "Member",
   observer: "Observer",
+  investigator: "Investigator",
 };
 
 // Archived-ness isn't a 4th `role` value (see archivedAt's own comment on
@@ -78,6 +82,9 @@ export interface UserFormData {
   username: string;
   password: string;
   role: Role;
+  /** Investigator role only — which operations this login can see. Ignored
+   * (and cleared server-side) for every other role. */
+  investigatorOperationIds: number[];
 }
 
 export const emptyForm = (): UserFormData => ({
@@ -89,6 +96,7 @@ export const emptyForm = (): UserFormData => ({
   username: "",
   password: "",
   role: "observer",
+  investigatorOperationIds: [],
 });
 
 // ─── Form fields extracted OUTSIDE the parent component to prevent remounting ──
@@ -243,10 +251,87 @@ export function UserFormFields({
               <SelectItem value="admin">
                 Full Access + User Management
               </SelectItem>
+              <SelectItem value="investigator">
+                Investigator — mapping page only, allocated operations
+              </SelectItem>
             </SelectContent>
           </Select>
         )}
       </div>
+      {!accessLevelOverride && form.role === "investigator" && (
+        <InvestigatorOperationPicker
+          selected={form.investigatorOperationIds}
+          disabled={disabled}
+          onChange={ids =>
+            setForm(f => ({ ...f, investigatorOperationIds: ids }))
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/** Which operations an Investigator login can see — the server-side grant
+ * this drives lives in users.investigatorOperationIds (see its comment in
+ * drizzle/schema.ts); every map query substitutes this list server-side
+ * regardless of what the client sends, so this picker is purely about
+ * setting the grant, not itself part of the security boundary. */
+function InvestigatorOperationPicker({
+  selected,
+  disabled,
+  onChange,
+}: {
+  selected: number[];
+  disabled?: boolean;
+  onChange: (ids: number[]) => void;
+}) {
+  const { data: operations, isLoading } = trpc.operation.list.useQuery();
+  const toggle = (id: number) => {
+    onChange(
+      selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id]
+    );
+  };
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+        Allocated Operations *
+      </Label>
+      <div className="rounded-md border border-input max-h-44 overflow-y-auto divide-y divide-border/60">
+        {isLoading ? (
+          <div className="p-3 text-sm text-muted-foreground flex items-center gap-2">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Loading operations…
+          </div>
+        ) : !operations?.length ? (
+          <div className="p-3 text-sm text-muted-foreground">
+            No operations exist yet.
+          </div>
+        ) : (
+          operations.map(op => (
+            <label
+              key={op.id}
+              className={`flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-accent/40 ${
+                disabled ? "pointer-events-none opacity-60" : ""
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="accent-primary"
+                checked={selected.includes(op.id)}
+                disabled={disabled}
+                onChange={() => toggle(op.id)}
+              />
+              {op.name}
+            </label>
+          ))
+        )}
+      </div>
+      {selected.length === 0 && (
+        <p className="text-xs text-destructive">
+          Pick at least one operation — an Investigator with none granted sees
+          an empty map.
+        </p>
+      )}
     </div>
   );
 }
@@ -278,6 +363,13 @@ export default function AdminPage() {
   const handleCreate = () => {
     if (!form.name || !form.cin || !form.username || !form.password) {
       toast.error("Name, CIN, username, and password are required.");
+      return;
+    }
+    if (
+      form.role === "investigator" &&
+      form.investigatorOperationIds.length === 0
+    ) {
+      toast.error("Pick at least one allocated operation for an Investigator.");
       return;
     }
     createUser.mutate(form);

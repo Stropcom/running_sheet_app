@@ -346,6 +346,26 @@ export async function restoreUser(userId: number) {
     .where(eq(users.id, userId));
 }
 
+/** Parses a User row's investigatorOperationIds JSON column — empty for
+ * every non-investigator, or an investigator with nothing granted yet.
+ * The single point every operation-scoped query funnels an investigator's
+ * request through (see server/_core/trpc.ts's INVESTIGATOR_ALLOWED_PATHS
+ * for the matching procedure allowlist). */
+export function getInvestigatorAllowedOperationIds(user: {
+  role: string;
+  investigatorOperationIds?: string | null;
+}): number[] {
+  if (user.role !== "investigator" || !user.investigatorOperationIds) return [];
+  try {
+    const parsed = JSON.parse(user.investigatorOperationIds);
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is number => typeof id === "number")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function updateLastSignedIn(userId: number) {
   const db = await getDb();
   if (!db) return;

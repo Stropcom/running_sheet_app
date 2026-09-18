@@ -48,6 +48,15 @@ export default function AdminUserProfilePage() {
 
   useEffect(() => {
     if (profile) {
+      let investigatorOperationIds: number[] = [];
+      if (profile.investigatorOperationIds) {
+        try {
+          const parsed = JSON.parse(profile.investigatorOperationIds);
+          if (Array.isArray(parsed)) investigatorOperationIds = parsed;
+        } catch {
+          /* ignore malformed value, treat as no grant */
+        }
+      }
       setForm({
         name: profile.name ?? "",
         cin: profile.cin ?? "",
@@ -57,6 +66,7 @@ export default function AdminUserProfilePage() {
         username: profile.username ?? "",
         password: "",
         role: (profile.role as Role) ?? "observer",
+        investigatorOperationIds,
       });
     }
   }, [profile]);
@@ -103,6 +113,13 @@ export default function AdminUserProfilePage() {
       toast.error("Name, CIN, and username are required.");
       return;
     }
+    if (
+      form.role === "investigator" &&
+      form.investigatorOperationIds.length === 0
+    ) {
+      toast.error("Pick at least one allocated operation for an Investigator.");
+      return;
+    }
     updateUser.mutate({
       id: userId,
       name: form.name,
@@ -113,6 +130,7 @@ export default function AdminUserProfilePage() {
       username: form.username,
       password: form.password || undefined,
       role: form.role,
+      investigatorOperationIds: form.investigatorOperationIds,
     });
   };
 

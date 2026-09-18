@@ -27,7 +27,12 @@ export const users = mysqlTable("users", {
   team: mysqlEnum("team", ["TEAM1", "TEAM2", "PTT"]),
   email: varchar("email", { length: 320 }),
   phone: varchar("phone", { length: 32 }),
-  role: mysqlEnum("role", ["observer", "member", "admin"])
+  // "investigator" is a fourth, map-only tier — see INVESTIGATOR_ALLOWED_PATHS
+  // in server/_core/trpc.ts (default-deny: every procedure not explicitly
+  // allowlisted there is rejected for this role, both queries and
+  // mutations) and investigatorOperationIds below for which operations
+  // they can see.
+  role: mysqlEnum("role", ["observer", "member", "admin", "investigator"])
     .default("observer")
     .notNull(),
   // Legacy OAuth field — kept nullable so existing rows are not broken
@@ -124,6 +129,15 @@ export const users = mysqlTable("users", {
   // underlying role column is untouched — see AdminUserProfilePage.tsx.
   archivedAt: bigint("archivedAt", { mode: "number" }),
   archivedByCIN: varchar("archivedByCIN", { length: 64 }),
+  // Investigator accounts only — JSON array of operation ids they're allowed
+  // to see (e.g. "[4,7]"). Null/empty for every other role, and meaningless
+  // for them since only role === "investigator" is ever checked against it.
+  // A plain JSON column rather than a join table: this is always a short,
+  // low-cardinality list per account, matching how extraAddresses/
+  // extraVehicles/wildFields already store small one-to-many data
+  // elsewhere in this schema rather than normalising every case into its
+  // own table.
+  investigatorOperationIds: text("investigatorOperationIds"),
 });
 
 export type User = typeof users.$inferSelect;

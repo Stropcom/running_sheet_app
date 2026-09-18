@@ -223,14 +223,18 @@ export function detectAddressSpaceCompletion(
  * detectable the same way a rego's letter+digit shape is, so this works
  * for a person who's never been seen before, unlike the registry-search
  * dropdown above which can only suggest someone already known to
- * Intelligence. Deliberately narrower than the save-time name-recovery
- * logic in extractEntitiesFromText (which can walk back up to 4 words):
- * if ANOTHER capitalised word sits directly before the matched first name
- * (single space, no punctuation between — e.g. "Mei Lin CHOW", "Whitney
- * Storm STEWART"), that's actually a longer multi-word first/middle name
- * this simple two-word check can't safely resolve, so it bails rather
- * than risk auto-bracketing a truncated name — same guard
- * detectMentionTrigger above already uses for the same reason.
+ * Intelligence.
+ *
+ * Handles a middle name too ("Mei Lin CHOW", "Whitney Storm STEWART",
+ * "Roger David MOORE") by walking back through as many more
+ * capitalised-first-name-shaped words as are actually there, up to 3
+ * given names total — the same "2-4 words" convention the save-time
+ * name-recovery logic in extractEntitiesFromText (server/db.ts) already
+ * uses. Once that walk-back stops (a non-name word, or the start of the
+ * text), if there's STILL another capitalised word sitting right before
+ * whatever we've consumed, that's a longer run than this can safely
+ * resolve — bail rather than risk auto-bracketing a truncated name, same
+ * guard detectMentionTrigger above uses for the same reason.
  */
 export function detectPersonNameSpaceCompletion(
   text: string,
@@ -243,8 +247,17 @@ export function detectPersonNameSpaceCompletion(
   const textBefore = text.slice(0, cursorPos);
   const m = textBefore.match(/\b([A-Z][a-z'-]+)\s+([A-Z]{2,}(?:[-'][A-Z]+)?)$/);
   if (!m || m.index === undefined) return null;
-  const beforeFirstName = textBefore.slice(0, m.index);
-  if (/[A-Z][A-Za-z'-]*\s$/.test(beforeFirstName)) return null;
+
+  const givenNameWordRe = /([A-Z][a-z'-]+)\s$/;
+  let nameStart = m.index;
+  for (let givenNames = 1; givenNames < 3; givenNames++) {
+    const prevWord = textBefore.slice(0, nameStart).match(givenNameWordRe);
+    if (!prevWord || prevWord.index === undefined) break;
+    nameStart = prevWord.index;
+  }
+  const beforeFullName = textBefore.slice(0, nameStart);
+  if (/[A-Z][A-Za-z'-]*\s$/.test(beforeFullName)) return null;
+
   const surname = m[2];
   if (usedBracketCodes.has(surname.toUpperCase())) return null;
   return { surname };

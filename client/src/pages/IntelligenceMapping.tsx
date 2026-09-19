@@ -2257,6 +2257,12 @@ export default function IntelligenceMapping() {
   // each line starts where they started rather than showing earlier history.
   const trackStartsRef = useRef<Map<number, number>>(new Map());
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+  // Tracks the placeId of a POI whose native Google info window is showing
+  // (first tap), so a second tap on that SAME POI opens our own action
+  // sheet instead of just re-showing Google's popup. Any tap elsewhere
+  // (blank map, a different POI, our own overlays) clears it, so the next
+  // tap on this POI again starts from "first tap" behaviour.
+  const lastTappedPlaceIdRef = useRef<string | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   // Persisted address → lat/lng cache (see GEOCODE_CACHE_KEY above) — a Map
   // preserves insertion order, which doubles as the LRU-ish eviction order
@@ -4002,9 +4008,20 @@ export default function IntelligenceMapping() {
           }
           if (!e.placeId) {
             infoWindowRef.current?.close();
+            lastTappedPlaceIdRef.current = null;
             return;
           }
           if (!e.latLng) return;
+          // First tap on a POI: let Google's own info window show (name,
+          // photo, rating, hours) and just remember which place it was.
+          // Only a second tap on that SAME POI — while its native popup is
+          // presumably still open — brings up our RS Quick Entry / Marker /
+          // Shape / Waze action sheet, so the two never appear stacked.
+          if (lastTappedPlaceIdRef.current !== e.placeId) {
+            lastTappedPlaceIdRef.current = e.placeId;
+            return;
+          }
+          lastTappedPlaceIdRef.current = null;
           // Prevent the default Google info window from opening
           e.stop?.();
           const lat = e.latLng.lat();

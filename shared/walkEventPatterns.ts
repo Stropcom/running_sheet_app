@@ -40,20 +40,36 @@ export const WALK_IN_PATTERN =
 export const WALK_IN_TOWARDS_PATTERN =
   /([A-Za-z][^.\n]*?)\s*exited the vehicle,?\s*walked\s+(.+?)\s+and continued out of sight/i;
 
+// Positional/connector phrases officers write between "towards" and the
+// actual address ("towards the front of 64 Matheson Road", "towards the
+// vicinity of 64 Matheson Road") — stripped so the extracted location
+// matches the exact address text used elsewhere (e.g. by a vehicle's own
+// "arrived at 64 Matheson Road"), which is a plain string comparison, not
+// fuzzy. Applied in a loop since these could in principle stack (a real
+// example hasn't been seen, but there's no cost to tolerating it).
+const WALK_IN_LOCATION_PREFIX_RE =
+  /^(?:the\s+(?:front(?:\s+door)?|back|rear|side)\s+of|the\s+door\s+of|the\s+entrance\s+of|(?:in\s+)?the\s+vicinity\s+of|outside(?:\s+of)?|near|the\s+residence\s+at)\s+/i;
+
 // Best-effort destination extraction from a WALK_IN_TOWARDS_PATTERN route
 // clause — e.g. "towards 45 Francis Street" -> "45 Francis Street",
 // "across the road towards the residence at 18 Pepperbush Road" ->
 // "18 Pepperbush Road". The destination always comes after the LAST
-// "towards" in the clause, so strip up to and including that, then drop a
-// leading "the residence at " if the officer added one. Falls back to the
-// whole clause when there's no "towards" at all — same trust level as
-// extractOccupantNames in IntelligenceMapping.tsx: worst case the address
-// match later doesn't line up and the chip just doesn't appear, it never
-// inserts anything wrong into the record.
+// "towards" in the clause, so strip up to and including that, then drop
+// any leading positional phrase (see WALK_IN_LOCATION_PREFIX_RE). Falls
+// back to the whole clause when there's no "towards" at all — same trust
+// level as extractOccupantNames in IntelligenceMapping.tsx: worst case the
+// address match later doesn't line up and the chip just doesn't appear, it
+// never inserts anything wrong into the record.
 export function extractWalkInTowardsLocation(route: string): string {
   const towardsMatch = route.match(/towards\s+(.+)$/i);
-  const location = towardsMatch ? towardsMatch[1] : route;
-  return location.replace(/^the residence at\s+/i, "").trim();
+  let location = towardsMatch ? towardsMatch[1] : route;
+  let stripped: string;
+  while (
+    (stripped = location.replace(WALK_IN_LOCATION_PREFIX_RE, "")) !== location
+  ) {
+    location = stripped;
+  }
+  return location.trim();
 }
 
 // Canonical form is "... exited <location> and walked <route> towards

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RS_CANONICAL_CHIP_ORDER } from "@/lib/rsChipOrder";
 import {
-  VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN,
+  matchVehicleArrival,
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
 import { DivIconOverlay } from "@/lib/divIconOverlay";
@@ -9860,9 +9860,8 @@ export default function IntelligenceMapping() {
                                 // priority over a same-rego saved entry since
                                 // it reflects what's actually on screen right
                                 // now.
-                                const draftArriveMatch = rsInlineText.match(
-                                  VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN
-                                );
+                                const draftArriveMatch =
+                                  matchVehicleArrival(rsInlineText);
                                 if (draftArriveMatch) {
                                   const draftAddress =
                                     extractArrivalAddress(rsInlineText);
@@ -9872,11 +9871,11 @@ export default function IntelligenceMapping() {
                                       shortAddr.trim().toLowerCase()
                                   ) {
                                     vehiclesHereByRego.set(
-                                      draftArriveMatch[1].toUpperCase(),
+                                      draftArriveMatch.rego,
                                       {
-                                        rego: draftArriveMatch[1].toUpperCase(),
+                                        rego: draftArriveMatch.rego,
                                         occupantDesc:
-                                          draftArriveMatch[2].trim(),
+                                          draftArriveMatch.occupantDesc,
                                       }
                                     );
                                   }

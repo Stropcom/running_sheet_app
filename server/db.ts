@@ -26,7 +26,7 @@ import {
 import {
   VEHICLE_DEPART_PATTERN,
   VEHICLE_ARRIVE_PATTERN,
-  VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN,
+  matchVehicleArrival,
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
 import {
@@ -5082,19 +5082,16 @@ export async function getPendingVehicleArrivals(
 
   rows.forEach((row, idx) => {
     if (!row.observation) return;
-    const arriveMatch = row.observation.match(
-      VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN
-    );
+    const arriveMatch = matchVehicleArrival(row.observation);
     if (arriveMatch) {
-      const rego = arriveMatch[1].toUpperCase();
-      lastArrivalByRego.set(rego, {
-        occupantDesc: arriveMatch[2].trim(),
+      lastArrivalByRego.set(arriveMatch.rego, {
+        occupantDesc: arriveMatch.occupantDesc,
         address: extractArrivalAddress(row.observation) ?? "",
         sheetId: row.sheetId,
         rowId: row.id,
         orderIdx: idx,
       });
-      departedRegos.delete(rego);
+      departedRegos.delete(arriveMatch.rego);
       return;
     }
     const departMatch = row.observation.match(VEHICLE_DEPART_PATTERN);

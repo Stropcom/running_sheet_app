@@ -72,6 +72,24 @@ export function extractWalkInTowardsLocation(route: string): string {
   return location.trim();
 }
 
+// The genuine route/path content of a WALK_IN_TOWARDS_PATTERN clause —
+// whatever comes BEFORE "towards", e.g. "across the road" in "across the
+// road towards 18 Pepperbush Road". Empty when there's nothing before
+// "towards" (e.g. "towards the front of 64 Matheson Road" is pure
+// destination, no separate route was ever described).
+//
+// Reusing the raw captured route clause verbatim in a "Walked out" chip
+// (which also states the destination via its own location text) silently
+// duplicated the address — "exited 64 Matheson Road and walked towards the
+// front of 64 Matheson Road towards Vehicle REGO." A caller building that
+// sentence should use THIS instead of the raw clause, and drop the "and
+// walked ROUTE" part of the sentence entirely when it's empty, rather than
+// reusing the destination-bearing raw text as if it were route content.
+export function extractWalkInTowardsRoute(route: string): string {
+  const idx = route.search(/\btowards\b/i);
+  return idx > 0 ? route.slice(0, idx).trim() : "";
+}
+
 // Canonical form is "... exited <location> and walked <route> towards
 // Vehicle <rego>." — also still matches the older "... exited <location>,
 // walked <route>, to Vehicle <rego>." phrasing (comma-separated, "to"

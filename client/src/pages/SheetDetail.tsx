@@ -4556,10 +4556,20 @@ export default function SheetDetail({
                   a.address.trim().toLowerCase() ===
                   w.location.trim().toLowerCase()
               );
+              const names = shortenAlreadyMentionedNames(
+                w.names,
+                usedBracketCodes
+              );
+              // w.route is only ever genuine route/path text (e.g. "across
+              // the road") — never the destination, which would duplicate
+              // the address already stated via w.location. It's empty
+              // whenever the walk-in had no separate route content at all.
               return arrivalsHere.map(a => ({
                 key: `wo-${w.location}-${a.rego}`,
                 rego: a.rego,
-                text: `${shortenAlreadyMentionedNames(w.names, usedBracketCodes)} exited ${w.location} and walked ${w.route} towards Vehicle ${a.rego}.`,
+                text: w.route
+                  ? `${names} exited ${w.location} and walked ${w.route} towards Vehicle ${a.rego}.`
+                  : `${names} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
               }));
             });
             const hasContinuityChips =

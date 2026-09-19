@@ -9982,7 +9982,15 @@ export default function IntelligenceMapping() {
                                             walkInHere.names,
                                             rsUsedBracketCodes
                                           );
-                                        const text = `${walkOutNames} exited ${shortAddr} and walked ${walkInHere.route} towards Vehicle ${a.rego}.`;
+                                        // walkInHere.route is only ever
+                                        // genuine route/path text -- never
+                                        // the destination, which would
+                                        // duplicate shortAddr. Empty when
+                                        // the walk-in had no separate route
+                                        // content at all.
+                                        const text = walkInHere.route
+                                          ? `${walkOutNames} exited ${shortAddr} and walked ${walkInHere.route} towards Vehicle ${a.rego}.`
+                                          : `${walkOutNames} exited ${shortAddr} and walked towards Vehicle ${a.rego}.`;
                                         return (
                                           <button
                                             key={a.rego}

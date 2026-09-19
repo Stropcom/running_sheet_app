@@ -14,6 +14,7 @@ import {
   WALK_IN_TOWARDS_PATTERN,
   WALK_OUT_PATTERN,
   extractWalkInTowardsLocation,
+  extractWalkInTowardsRoute,
 } from "@shared/walkEventPatterns";
 
 describe("WALK_IN_PATTERN", () => {
@@ -168,6 +169,28 @@ describe("extractWalkInTowardsLocation", () => {
     expect(extractWalkInTowardsLocation("through the car park")).toBe(
       "through the car park"
     );
+  });
+});
+
+describe("extractWalkInTowardsRoute", () => {
+  it("extracts genuine route text before 'towards'", () => {
+    expect(
+      extractWalkInTowardsRoute("across the road towards 18 Pepperbush Road")
+    ).toBe("across the road");
+  });
+
+  it("returns empty when the clause is pure destination with nothing before 'towards'", () => {
+    expect(extractWalkInTowardsRoute("towards 45 Francis Street")).toBe("");
+  });
+
+  it("returns empty for a destination with a positional prefix, not the prefix itself", () => {
+    expect(
+      extractWalkInTowardsRoute("towards the front of 64 Matheson Road")
+    ).toBe("");
+  });
+
+  it("returns empty when there's no 'towards' at all", () => {
+    expect(extractWalkInTowardsRoute("through the car park")).toBe("");
   });
 });
 

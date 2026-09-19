@@ -34,6 +34,7 @@ import {
   WALK_IN_TOWARDS_PATTERN,
   WALK_OUT_PATTERN,
   extractWalkInTowardsLocation,
+  extractWalkInTowardsRoute,
 } from "@shared/walkEventPatterns";
 import {
   classifyVisitDirection,
@@ -5191,8 +5192,14 @@ export async function getPendingWalkIns(
     const towardsMatch = row.observation.match(WALK_IN_TOWARDS_PATTERN);
     if (towardsMatch) {
       const names = towardsMatch[1].trim();
-      const route = towardsMatch[2].trim();
-      const location = extractWalkInTowardsLocation(route);
+      const rawRoute = towardsMatch[2].trim();
+      const location = extractWalkInTowardsLocation(rawRoute);
+      // NOT the raw captured clause — that still contains the destination
+      // ("towards the front of 64 Matheson Road"), and reusing it verbatim
+      // in a "Walked out" chip (which also states `location`) duplicated
+      // the address. This is just whatever route content came before
+      // "towards", if any — empty when the clause was pure destination.
+      const route = extractWalkInTowardsRoute(rawRoute);
       const key = location.toLowerCase();
       lastWalkInByLocationKey.set(key, {
         names,

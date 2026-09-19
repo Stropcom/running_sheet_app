@@ -6893,86 +6893,81 @@ export default function IntelligenceMapping() {
               </div>
               {/* end RS Selection */}
 
-              {/* ── PROFILES (Operation behind the selected RS, then its Target) ── */}
-              {rsSelectedSheetId !== null &&
-                (() => {
-                  const sheet = rsSheetsData
-                    ? (rsSheetsData as any[]).find(
-                        (s: any) => s.id === rsSelectedSheetId
-                      )
-                    : null;
-                  const opId = sheet?.operationId ?? null;
-                  if (!opId && !rsTargetData) return null;
-                  return (
-                    <div className="px-3 py-3 border-b border-border space-y-2">
-                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-                        Profiles
-                      </span>
-                      {opId && (
-                        <button
-                          onClick={() => {
-                            setPaneOperationProfileId(opId);
-                            setPaneTargetProfileId(null);
-                            setPaneImagesOpId(null);
-                            setPaneImagesSheetId(null);
-                            setPaneSheetDetailId(null);
-                          }}
-                          className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 active:scale-[0.98] transition-all min-w-0"
-                        >
-                          <FolderOpen className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
-                          <span className="text-xs font-semibold text-blue-500 truncate flex-1 text-left">
-                            {(operations as any[] | undefined)?.find(
-                              (o: any) => o.id === opId
-                            )?.name ?? "Operation profile"}
-                          </span>
-                          <ExternalLink className="h-3 w-3 text-blue-500/60 flex-shrink-0" />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })()}
+              {/* ── PROFILES (one per selected operation, driven by the
+                Operations filter above — not the RS selection, so it's
+                available as soon as an operation is picked even with no
+                running sheet chosen yet, and shows one link per operation
+                when more than one is selected) ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Profiles
+                </span>
+                {selectedOpIds.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    Select an operation above to open its profile.
+                  </p>
+                ) : (
+                  (operations as any[] | undefined)
+                    ?.filter((op: any) => selectedOpIds.includes(op.id))
+                    .map((op: any) => (
+                      <button
+                        key={op.id}
+                        onClick={() => {
+                          setPaneOperationProfileId(op.id);
+                          setPaneTargetProfileId(null);
+                          setPaneImagesOpId(null);
+                          setPaneImagesSheetId(null);
+                          setPaneSheetDetailId(null);
+                        }}
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 active:scale-[0.98] transition-all min-w-0"
+                      >
+                        <FolderOpen className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+                        <span className="text-xs font-semibold text-blue-500 truncate flex-1 text-left">
+                          {op.name}
+                        </span>
+                        <ExternalLink className="h-3 w-3 text-blue-500/60 flex-shrink-0" />
+                      </button>
+                    ))
+                )}
+              </div>
               {/* end Profiles */}
 
-              {/* ── IMAGES (linked to the selected RS's operation) ── */}
+              {/* ── IMAGES (one per selected operation, same
+                Operations-filter-driven pattern as Profiles above, and
+                labelled with the operation's own name rather than a
+                generic "Operation Images" so multiple operations' links
+                are distinguishable) ── */}
               <div className="px-3 py-3 border-b border-border space-y-2">
                 <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
                   Images
                 </span>
-                {(() => {
-                  const sheet =
-                    rsSelectedSheetId !== null && rsSheetsData
-                      ? (rsSheetsData as any[]).find(
-                          (s: any) => s.id === rsSelectedSheetId
-                        )
-                      : null;
-                  const opId = sheet?.operationId ?? null;
-                  if (!opId) {
-                    return (
-                      <p className="text-[11px] text-muted-foreground leading-snug">
-                        Select a running sheet above to open its operation's
-                        images.
-                      </p>
-                    );
-                  }
-                  return (
-                    <button
-                      onClick={() => {
-                        setPaneImagesOpId(opId);
-                        setPaneImagesSheetId(null);
-                        setPaneTargetProfileId(null);
-                        setPaneOperationProfileId(null);
-                        setPaneSheetDetailId(null);
-                      }}
-                      className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 active:scale-[0.98] transition-all min-w-0"
-                    >
-                      <ImageIcon className="h-3.5 w-3.5 text-pink-500 flex-shrink-0" />
-                      <span className="text-xs font-semibold text-pink-500 truncate flex-1 text-left">
-                        Operation Images
-                      </span>
-                      <ExternalLink className="h-3 w-3 text-pink-500/60 flex-shrink-0" />
-                    </button>
-                  );
-                })()}
+                {selectedOpIds.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    Select an operation above to open its images.
+                  </p>
+                ) : (
+                  (operations as any[] | undefined)
+                    ?.filter((op: any) => selectedOpIds.includes(op.id))
+                    .map((op: any) => (
+                      <button
+                        key={op.id}
+                        onClick={() => {
+                          setPaneImagesOpId(op.id);
+                          setPaneImagesSheetId(null);
+                          setPaneTargetProfileId(null);
+                          setPaneOperationProfileId(null);
+                          setPaneSheetDetailId(null);
+                        }}
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 active:scale-[0.98] transition-all min-w-0"
+                      >
+                        <ImageIcon className="h-3.5 w-3.5 text-pink-500 flex-shrink-0" />
+                        <span className="text-xs font-semibold text-pink-500 truncate flex-1 text-left">
+                          {op.name} Images
+                        </span>
+                        <ExternalLink className="h-3 w-3 text-pink-500/60 flex-shrink-0" />
+                      </button>
+                    ))
+                )}
               </div>
               {/* end Images */}
 

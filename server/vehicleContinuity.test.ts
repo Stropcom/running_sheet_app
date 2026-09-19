@@ -90,6 +90,37 @@ describe("extractArrivalAddress", () => {
       "Vehicle 1BISH0, BISHOP driver and sole occupant, travelled through the car park of Bicton Tavern, 1 Point Walter Road, BICTON WA (Bicton Tavern) and parked in a car bay.";
     expect(extractArrivalAddress(text)).toBe("Bicton Tavern");
   });
+
+  it("recognises 'parked in the vicinity of X' (a real-world example)", () => {
+    const text =
+      "Vehicle 1BISH0, BISHOP driver and sole occupant, travelled on Cornish Crescent, MANNING and street parked in the vicinity of 21 Cornish Crescent, MANNING WA (21 Cornish Crescent)";
+    expect(extractArrivalAddress(text)).toBe("21 Cornish Crescent");
+  });
+
+  it("recognises 'stopped near X' and 'parked outside X'", () => {
+    expect(
+      extractArrivalAddress(
+        "Vehicle 1ABC123, HOGAN driver, stopped near 34 Duke Street"
+      )
+    ).toBe("34 Duke Street");
+    expect(
+      extractArrivalAddress(
+        "Vehicle 1ABC123, HOGAN driver, parked outside 34 Duke Street"
+      )
+    ).toBe("34 Duke Street");
+  });
+
+  it("does NOT treat the car-park shape's own trailing 'parked in a car bay' as naming an address", () => {
+    // Regression: a naive "find the verb, take whatever follows" approach
+    // wrongly returned "in a car bay" as the address here, because
+    // "parked" is also the last word before "in a car bay" -- the real
+    // fix requires the verb to be directly followed by a recognised
+    // connector phrase, not just any word.
+    const text =
+      "Vehicle 1BISH0, BISHOP driver and sole occupant, travelled through the car park of 64 Matheson Road and parked in a car bay.";
+    expect(extractArrivalAddress(text)).not.toBe("in a car bay");
+    expect(extractArrivalAddress(text)).toBe("64 Matheson Road");
+  });
 });
 
 describe("matchVehicleArrival", () => {
@@ -130,6 +161,15 @@ describe("matchVehicleArrival", () => {
     expect(matchVehicleArrival(parked)?.occupantDesc).toBe(
       "BISHOP driver and sole occupant"
     );
+  });
+
+  it("matches a modifier word between 'and' and the verb (a real-world example: 'and street parked')", () => {
+    const text =
+      "Vehicle 1BISH0, BISHOP driver and sole occupant, travelled on Cornish Crescent, MANNING and street parked in the vicinity of 21 Cornish Crescent, MANNING WA (21 Cornish Crescent)";
+    expect(matchVehicleArrival(text)).toEqual({
+      rego: "1BISH0",
+      occupantDesc: "BISHOP driver and sole occupant",
+    });
   });
 
   it("matches the 'travelled through the car park of X and parked' narrative", () => {

@@ -187,6 +187,7 @@ import {
   type GovernanceUpsertInput,
   getGovernanceRecordsBySheetIds,
   computeGovernancePercent,
+  computeAllRowsSigned,
   getSheetSummary,
   upsertSheetSummary,
   orderTeamCins,
@@ -1118,15 +1119,7 @@ export const appRouter = router({
             getMembersByRowIds(rowIds),
             getCertificationsByRowIds(rowIds),
           ]);
-          const certRowIds = new Set(certs.map(c => c.rowId));
-          // A row is certified if every non-spacer member in that row has an active cert
-          const nonSpacerMembers = members.filter(
-            m => m.memberName !== "__SPACE__"
-          );
-          const allMembersCertified = nonSpacerMembers.every(m =>
-            certRowIds.has(m.rowId)
-          );
-          allSigned = nonSpacerMembers.length === 0 || allMembersCertified;
+          allSigned = computeAllRowsSigned(rows, members, certs);
         } else {
           // No rows — treat as all signed (empty sheet)
           allSigned = true;
@@ -4243,18 +4236,7 @@ export const appRouter = router({
         return sheets.map(sheet => {
           const rows = rowsBySheet[sheet.id] ?? [];
           const allSigned =
-            rows.length > 0 &&
-            rows.every(r => {
-              const members = allMembers.filter(m => m.rowId === r.id);
-              return (
-                members.length > 0 &&
-                members.every(m =>
-                  allCerts.some(
-                    c => c.rowId === r.id && c.memberId === m.id && c.isActive
-                  )
-                )
-              );
-            });
+            rows.length > 0 && computeAllRowsSigned(rows, allMembers, allCerts);
           const rec = govRecords.find(g => g.sheetId === sheet.id) ?? null;
           const percent = computeGovernancePercent(rec, allSigned);
           const isOverdue =

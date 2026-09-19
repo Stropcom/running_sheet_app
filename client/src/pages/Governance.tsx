@@ -250,7 +250,10 @@ export default function GovernancePage() {
     if (rows.length === 0) return false;
     return rows.every(r => {
       const members = r.members ?? [];
-      if (members.length === 0) return true; // row with no members is not blocking
+      // A row with no CIN attached has nobody who could certify it -- that's
+      // the problem, not something to wave through. Blocks completion the
+      // same as an uncertified member would.
+      if (members.length === 0) return false;
       return members.every((m: { id: number }) =>
         (r.certifications ?? []).some(
           (c: { memberId: number; isActive: boolean }) =>

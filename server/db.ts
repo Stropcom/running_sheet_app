@@ -8989,6 +8989,64 @@ export interface GovernanceSummary {
   dueDate: number | null;
 }
 
+export interface RowSignOffRow {
+  id: number;
+}
+export interface RowSignOffMember {
+  id: number;
+  rowId: number;
+  memberName: string;
+}
+export interface RowSignOffCert {
+  rowId: number;
+  memberId: number;
+  isActive: boolean;
+}
+
+// Whether ONE row has been signed off: it has at least one real CIN (a
+// spacer entry alone doesn't count, and neither does having none at all --
+// a row with no CIN attached has nobody who could certify it, so it's
+// unsigned, not exempt) and every one of those CINs has its OWN active
+// certification. Deliberately per-member, not "does this row have ANY
+// cert at all" -- the latter would let one certified CIN on a row cover
+// for another, uncertified, one.
+export function isRowSignedOff(
+  row: RowSignOffRow,
+  members: RowSignOffMember[],
+  certs: RowSignOffCert[]
+): boolean {
+  const rowMembers = members.filter(
+    m => m.rowId === row.id && m.memberName !== "__SPACE__"
+  );
+  return (
+    rowMembers.length > 0 &&
+    rowMembers.every(m =>
+      certs.some(c => c.rowId === row.id && c.memberId === m.id && c.isActive)
+    )
+  );
+}
+
+// Whether EVERY row in a sheet is signed off (see isRowSignedOff) -- the
+// single definition of "all signed"/"allSigned" used for closing a sheet,
+// the Governance page, and every "outstanding"/"incomplete" report.
+// Previously reimplemented separately at each call site and drifted: three
+// of five copies flattened members across the whole sheet instead of
+// checking per row, so a row with no CIN at all contributed nothing to the
+// check and was silently treated as fine rather than blocking; one of
+// those three also checked certification at the wrong granularity (row
+// has any cert vs. this specific member has their own). Returns true for
+// an empty `rows` array (vacuous) -- callers that want "no rows" to mean
+// something other than signed decide that themselves, since the two real
+// callers disagree on purpose (an empty sheet is fine to close, but
+// shouldn't display as 100% governance-complete).
+export function computeAllRowsSigned(
+  rows: RowSignOffRow[],
+  members: RowSignOffMember[],
+  certs: RowSignOffCert[]
+): boolean {
+  return rows.every(row => isRowSignedOff(row, members, certs));
+}
+
 /**
  * Compute a governance completion % for a sheet.
  * allSigned must be passed in from the caller (it requires row/cert queries).
@@ -9117,18 +9175,7 @@ export async function getGovernanceTodoForCin(cin: string): Promise<
       getCertificationsByRowIds(rowIds),
     ]);
     const allSigned =
-      rows.length > 0 &&
-      rows.every(r => {
-        const rowMems = members.filter(m => m.rowId === r.id);
-        return (
-          rowMems.length > 0 &&
-          rowMems.every(m =>
-            certs.some(
-              c => c.rowId === r.id && c.memberId === m.id && c.isActive
-            )
-          )
-        );
-      });
+      rows.length > 0 && computeAllRowsSigned(rows, members, certs);
 
     const rec = govRecords.find(g => g.sheetId === sheet.id);
     const op = ops.find(o => o.id === sheet.operationId);
@@ -14379,23 +14426,23 @@ export async function getIncompleteRunningSheets(): Promise<
     // Compute uncertified row count
     const sheetRowObjs = allRows.filter(r => r.sheetId === sheet.id);
     const sheetRowIds = sheetRowObjs.map(r => r.id);
-    const sheetMembers = allRowMembers.filter(
-      m => sheetRowIds.includes(m.rowId) && m.memberName !== "__SPACE__"
+    const sheetMembers = allRowMembers.filter(m =>
+      sheetRowIds.includes(m.rowId)
     );
-    const certRowMemberIds = new Set(
-      allCerts.filter(c => sheetRowIds.includes(c.rowId)).map(c => c.memberId)
-    );
-    const uncertifiedRowCount = sheetRowObjs.filter(row => {
-      const rowMems = sheetMembers.filter(m => m.rowId === row.id);
-      return (
-        rowMems.length > 0 && rowMems.some(m => !certRowMemberIds.has(m.id))
-      );
-    }).length;
+    const sheetCerts = allCerts.filter(c => sheetRowIds.includes(c.rowId));
+    const uncertifiedRowCount = sheetRowObjs.filter(
+      row => !isRowSignedOff(row, sheetMembers, sheetCerts)
+    ).length;
 
+    // Per row, not flattened across the whole sheet -- a row with no CIN
+    // contributed nothing to a flat "every member" check, so it was
+    // silently treated as fine instead of blocking (same bug as the
+    // sheet.close mutation and the client Governance page's own
+    // allSigned). See computeAllRowsSigned's own comment for the shared
+    // fix.
     const allSigned =
       sheetRowObjs.length === 0 ||
-      (sheetMembers.length > 0 &&
-        sheetMembers.every(m => certRowMemberIds.has(m.id)));
+      computeAllRowsSigned(sheetRowObjs, sheetMembers, sheetCerts);
 
     // Governance percent
     const govRec = govRecords.find(g => g.sheetId === sheet.id) ?? null;

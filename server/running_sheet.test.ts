@@ -66,6 +66,36 @@ vi.mock("./db", () => ({
   }),
   createOperation: vi.fn().mockResolvedValue(1),
   deleteOperation: vi.fn().mockResolvedValue(undefined),
+  getAttachmentById: vi.fn().mockResolvedValue({
+    id: 1,
+    rowId: 1,
+    operationId: 1,
+    isManualUpload: false,
+    key: "row-attachments/1.jpg",
+    url: "https://example.com/1.jpg",
+    mimeType: "image/jpeg",
+    caption: null,
+    uploadedBy: 1,
+    uploadedByCIN: "484",
+    createdAt: new Date(),
+    deletedAt: null,
+    deletedByCIN: null,
+  }),
+  softDeleteAttachment: vi.fn().mockResolvedValue(undefined),
+  // Default: row unlocked, sheet open -- individual tests override this to
+  // exercise the guard.
+  getAttachmentRowSheetInfo: vi.fn().mockResolvedValue({
+    sheetId: 1,
+    sheetTitle: "Test Sheet",
+    sheetCins: null,
+    isRowLocked: false,
+    isSheetClosed: false,
+  }),
+  linkAttachmentToEntity: vi.fn().mockResolvedValue(1),
+  unlinkAttachmentFromEntity: vi.fn().mockResolvedValue(undefined),
+  getEntityLinkById: vi
+    .fn()
+    .mockResolvedValue({ id: 1, attachmentId: 1, category: "target" }),
 }));
 
 // ─── Context factories ────────────────────────────────────────────────────────
@@ -410,5 +440,128 @@ describe("auditLog.all", () => {
     const caller = appRouter.createCaller(makeCtx("observer"));
     const result = await caller.auditLog.all();
     expect(Array.isArray(result)).toBe(true);
+  });
+});
+
+// ─── Attachment lock/closed-sheet guard tests ──────────────────────────────────
+// A photo's identity (its entity link, or its very existence) is part of
+// the same evidentiary record as the row's observation text -- these mirror
+// row.update's own "throws FORBIDDEN when row is locked" test above, for
+// the attachment-entity mutations that previously had no such check at all.
+
+describe("attachment.delete", () => {
+  it("throws FORBIDDEN when the row's sheet is closed", async () => {
+    const { getAttachmentRowSheetInfo } = await import("./db");
+    vi.mocked(getAttachmentRowSheetInfo).mockResolvedValueOnce({
+      sheetId: 1,
+      sheetTitle: "Test Sheet",
+      sheetCins: null,
+      isRowLocked: false,
+      isSheetClosed: true,
+    });
+    const caller = appRouter.createCaller(makeCtx("member"));
+    await expect(caller.attachment.delete({ id: 1 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
+
+  it("throws FORBIDDEN when the row itself is locked (sheet still open)", async () => {
+    const { getAttachmentRowSheetInfo } = await import("./db");
+    vi.mocked(getAttachmentRowSheetInfo).mockResolvedValueOnce({
+      sheetId: 1,
+      sheetTitle: "Test Sheet",
+      sheetCins: null,
+      isRowLocked: true,
+      isSheetClosed: false,
+    });
+    const caller = appRouter.createCaller(makeCtx("member"));
+    await expect(caller.attachment.delete({ id: 1 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
+
+  it("succeeds when the row is unlocked and the sheet is open", async () => {
+    const caller = appRouter.createCaller(makeCtx("member"));
+    const result = await caller.attachment.delete({ id: 1 });
+    expect(result.success).toBe(true);
+  });
+
+  it("succeeds for a manually-uploaded photo with no row (nothing to guard)", async () => {
+    const { getAttachmentById, getAttachmentRowSheetInfo } = await import(
+      "./db"
+    );
+    vi.mocked(getAttachmentById).mockResolvedValueOnce({
+      id: 2,
+      rowId: null,
+      operationId: 1,
+      isManualUpload: true,
+      key: "manual-uploads/2.jpg",
+      url: "https://example.com/2.jpg",
+      mimeType: "image/jpeg",
+      caption: null,
+      uploadedBy: 1,
+      uploadedByCIN: "484",
+      createdAt: new Date(),
+      deletedAt: null,
+      deletedByCIN: null,
+    } as never);
+    vi.mocked(getAttachmentRowSheetInfo).mockResolvedValueOnce(null);
+    const caller = appRouter.createCaller(makeCtx("member"));
+    const result = await caller.attachment.delete({ id: 2 });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("attachment.linkToEntity", () => {
+  it("throws FORBIDDEN when the row's sheet is closed", async () => {
+    const { getAttachmentRowSheetInfo } = await import("./db");
+    vi.mocked(getAttachmentRowSheetInfo).mockResolvedValueOnce({
+      sheetId: 1,
+      sheetTitle: "Test Sheet",
+      sheetCins: null,
+      isRowLocked: false,
+      isSheetClosed: true,
+    });
+    const caller = appRouter.createCaller(makeCtx("member"));
+    await expect(
+      caller.attachment.linkToEntity({
+        attachmentId: 1,
+        category: "associate",
+        entityLabel: "SMITH",
+      })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("succeeds when the row is unlocked and the sheet is open", async () => {
+    const caller = appRouter.createCaller(makeCtx("member"));
+    const result = await caller.attachment.linkToEntity({
+      attachmentId: 1,
+      category: "associate",
+      entityLabel: "SMITH",
+    });
+    expect(result.id).toBe(1);
+  });
+});
+
+describe("attachment.unlinkFromEntity", () => {
+  it("throws FORBIDDEN when the row's sheet is closed", async () => {
+    const { getAttachmentRowSheetInfo } = await import("./db");
+    vi.mocked(getAttachmentRowSheetInfo).mockResolvedValueOnce({
+      sheetId: 1,
+      sheetTitle: "Test Sheet",
+      sheetCins: null,
+      isRowLocked: false,
+      isSheetClosed: true,
+    });
+    const caller = appRouter.createCaller(makeCtx("member"));
+    await expect(
+      caller.attachment.unlinkFromEntity({ linkId: 1 })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("succeeds when the row is unlocked and the sheet is open", async () => {
+    const caller = appRouter.createCaller(makeCtx("member"));
+    const result = await caller.attachment.unlinkFromEntity({ linkId: 1 });
+    expect(result.success).toBe(true);
   });
 });

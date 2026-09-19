@@ -96,6 +96,25 @@ export async function processAttachmentUpload(params: {
   if (!row) throw new AttachmentUploadError(404, "Row not found.");
   const sheet = await getRunningSheetById(row.sheetId);
   if (!sheet) throw new AttachmentUploadError(404, "Running sheet not found.");
+  // A new photo is part of the same evidentiary record as the row's
+  // observation text -- row.update already refuses to touch a row once
+  // it's locked (fully certified), and the attachment-entity-link
+  // mutations (server/routers.ts) refuse to relabel an existing photo on
+  // one for the same reason. Covers both upload entry points (the tRPC
+  // mutation and the raw binary route below) since they both funnel
+  // through here.
+  if (row.isLocked) {
+    throw new AttachmentUploadError(
+      400,
+      "This row is certified/locked. Uncertify it to add a new image."
+    );
+  }
+  if (sheet.closedAt) {
+    throw new AttachmentUploadError(
+      400,
+      "This row's running sheet is closed. Reopen it to add a new image."
+    );
+  }
 
   const { buffer, mimeType } = await normalizeAndValidateImage(params);
 
@@ -144,6 +163,23 @@ export async function processManualAttachmentUpload(params: {
     const row = await getRowById(params.rowId);
     if (!row)
       throw new AttachmentUploadError(404, "Running sheet row not found.");
+    // Same rule as processAttachmentUpload -- a manual upload tagged to a
+    // row is still becoming part of that row's evidentiary record, so it
+    // shouldn't be able to bypass the lock/closed check just by going
+    // through the Images-folder upload path instead of the row's own.
+    if (row.isLocked) {
+      throw new AttachmentUploadError(
+        400,
+        "This row is certified/locked. Uncertify it to add a new image."
+      );
+    }
+    const sheet = await getRunningSheetById(row.sheetId);
+    if (sheet?.closedAt) {
+      throw new AttachmentUploadError(
+        400,
+        "This row's running sheet is closed. Reopen it to add a new image."
+      );
+    }
   }
 
   const { buffer, mimeType } = await normalizeAndValidateImage(params);

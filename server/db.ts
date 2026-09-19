@@ -1586,6 +1586,19 @@ export async function unlinkAttachmentFromEntity(linkId: number) {
     .where(eq(attachmentEntityLinks.id, linkId));
 }
 
+// Used by attachment.unlinkFromEntity's row-lock guard, which only has the
+// link id (not the attachment id) to work from.
+export async function getEntityLinkById(linkId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [link] = await db
+    .select()
+    .from(attachmentEntityLinks)
+    .where(eq(attachmentEntityLinks.id, linkId))
+    .limit(1);
+  return link;
+}
+
 export async function getEntityLinksByAttachmentId(attachmentId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -1789,7 +1802,11 @@ const FACE_IDENTITY_PRIORITY: Record<string, number> = {
  * or notify about. Used by confirmFaceMatch to check whether the row
  * holding an "Unidentified Person" photo is certified/locked before
  * auto-renaming it. */
-async function getAttachmentRowSheetInfo(attachmentId: number): Promise<{
+// Attachments with no row (isManualUpload) return null here -- the inner
+// join finds nothing to match against, which is exactly right: a photo
+// that was never part of a running sheet row has no row/sheet lock to
+// respect.
+export async function getAttachmentRowSheetInfo(attachmentId: number): Promise<{
   sheetId: number;
   sheetTitle: string;
   sheetCins: string | null;

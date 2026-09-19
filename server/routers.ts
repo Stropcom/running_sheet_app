@@ -291,6 +291,8 @@ import {
   reinstateAttachment,
   linkAttachmentToEntity,
   unlinkAttachmentFromEntity,
+  getEntityLinkById,
+  getAttachmentRowSheetInfo,
   getEntityLinksByAttachmentId,
   getEntityLinkCounts,
   getAttachmentsForEntity,
@@ -411,6 +413,28 @@ async function guardActiveSheet(sheetId: number) {
   if (!sheet)
     throw new TRPCError({ code: "NOT_FOUND", message: "Sheet not found." });
   await guardActiveOperation(sheet.operationId);
+}
+
+// A photo's identity (which Target/Associate/Vehicle/person it's tagged
+// as) is part of the same evidentiary record as the row's observation
+// text — row.update/member.add already refuse to touch a row once it's
+// locked (fully certified), but the attachment-entity-link mutations
+// (linking, unlinking, confirming a face, uploading a new photo) didn't
+// check this at all, so a photo could be relabelled after its row was
+// certified or its sheet closed. Mirrors the check
+// confirmFaceMatch/db.ts already applies to its own (automatic,
+// FR-triggered) rename path. Attachments with no row (manual uploads not
+// tied to any sheet) have nothing to guard against.
+async function guardAttachmentRowUnlocked(attachmentId: number) {
+  const info = await getAttachmentRowSheetInfo(attachmentId);
+  if (info && (info.isRowLocked || info.isSheetClosed)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: info.isSheetClosed
+        ? "This photo's running sheet is closed. Reopen it to change this image."
+        : "This photo's row is certified/locked. Uncertify it to change this image.",
+    });
+  }
 }
 
 // Structured input fields shared by target.create/update and
@@ -1670,6 +1694,7 @@ export const appRouter = router({
           attachment.rowId != null
             ? await getRowById(attachment.rowId)
             : undefined;
+        await guardAttachmentRowUnlocked(input.id);
         // Soft-delete — goes to the Recycle Bin for 7 days before purge
         await softDeleteAttachment(
           input.id,
@@ -1722,6 +1747,7 @@ export const appRouter = router({
             message: "targetId is required for target links.",
           });
         }
+        await guardAttachmentRowUnlocked(input.attachmentId);
         const id = await linkAttachmentToEntity(input);
         return { id };
       }),
@@ -1729,6 +1755,13 @@ export const appRouter = router({
     unlinkFromEntity: protectedProcedure
       .input(z.object({ linkId: z.number() }))
       .mutation(async ({ input }) => {
+        const link = await getEntityLinkById(input.linkId);
+        if (!link)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Link not found.",
+          });
+        await guardAttachmentRowUnlocked(link.attachmentId);
         await unlinkAttachmentFromEntity(input.linkId);
         return { success: true };
       }),
@@ -1921,6 +1954,7 @@ export const appRouter = router({
             code: "NOT_FOUND",
             message: "Attachment not found.",
           });
+        await guardAttachmentRowUnlocked(input.attachmentId);
         let faces;
         try {
           const buffer = await storageGetBytes(attachment.key);
@@ -1995,6 +2029,7 @@ export const appRouter = router({
             code: "NOT_FOUND",
             message: "Attachment not found.",
           });
+        await guardAttachmentRowUnlocked(input.attachmentId);
         let faces;
         try {
           const buffer = await storageGetBytes(attachment.key);

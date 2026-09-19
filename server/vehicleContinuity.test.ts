@@ -21,6 +21,7 @@ import { describe, it, expect } from "vitest";
 import {
   extractArrivalAddress,
   matchVehicleArrival,
+  VEHICLE_DEPART_PATTERN,
 } from "@shared/vehicleEventPatterns";
 import { normalizeObservationPunctuation } from "./db";
 
@@ -223,5 +224,40 @@ describe("matchVehicleArrival", () => {
       });
       expect(extractArrivalAddress(normalized)).toBe("64 Matheson Road");
     });
+  });
+});
+
+describe("VEHICLE_DEPART_PATTERN", () => {
+  it("matches the standard 'departed' form", () => {
+    const text =
+      "Vehicle 1BISH0, BISHOP driver and sole occupant, departed 5 Edgecumbe Street and continued via:";
+    const m = text.match(VEHICLE_DEPART_PATTERN);
+    expect(m?.[1]).toBe("1BISH0");
+    expect(m?.[2].trim()).toBe("BISHOP driver and sole occupant");
+  });
+
+  it("matches 'reversed' as an equivalent departure verb (a real-world example)", () => {
+    const text =
+      "Vehicle 1BISH0, BISHOP driver and sole occupant, reversed from the driveway of 5 Edgecumbe Street and continued via:";
+    const m = text.match(VEHICLE_DEPART_PATTERN);
+    expect(m?.[1]).toBe("1BISH0");
+    expect(m?.[2].trim()).toBe("BISHOP driver and sole occupant");
+  });
+
+  it("matches 'exited' as an equivalent departure verb", () => {
+    const text =
+      "Vehicle 1BISH0, BISHOP driver and sole occupant, exited 5 Edgecumbe Street and continued via:";
+    const m = text.match(VEHICLE_DEPART_PATTERN);
+    expect(m?.[1]).toBe("1BISH0");
+    expect(m?.[2].trim()).toBe("BISHOP driver and sole occupant");
+  });
+
+  it("does not cross-match WALK_IN_PATTERN's unrelated 'NAME exited the vehicle' wording", () => {
+    // "exited" here means a person on foot, not the vehicle departing --
+    // there's no "Vehicle REGO," immediately before it, so this must not
+    // register as a vehicle departure.
+    const text =
+      "KENNEDY and JOHNS exited the vehicle, walked through the car park, entered Sapore Espresso Bar and continued out of sight.";
+    expect(text.match(VEHICLE_DEPART_PATTERN)).toBeNull();
   });
 });

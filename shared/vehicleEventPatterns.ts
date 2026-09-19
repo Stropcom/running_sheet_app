@@ -6,8 +6,22 @@
 // Officers sometimes put a comma directly after the rego ("Vehicle 1FAD531,
 // HOGAN driver...") and sometimes don't ("Vehicle 1FAD531 HOGAN driver...") —
 // the ",?\s*" after the rego capture tolerates either.
+//
+// "Departed", "reversed", and "exited" are all written as the departure
+// verb in practice ("...departed X and continued via:" / "...reversed
+// from the driveway of X and continued via:" / "...exited X and continued
+// via:"). Unlike the arrival side's VEHICLE_ARRIVE_VIA_TRAVEL_PATTERN, this
+// still requires the comma to sit directly before the verb rather than
+// tolerating an intervening travel clause — no real example of that shape
+// has come up for departures yet, so it hasn't been built; extend the same
+// way if one does. Note "exited" here means the VEHICLE departing a
+// location, distinct from WALK_IN_PATTERN's "NAME exited the vehicle"
+// (a person on foot) — the two can't cross-match since this pattern
+// requires a leading "Vehicle REGO" and WALK_IN_PATTERN's "exited" is
+// never preceded by a comma, but keep that distinction in mind if either
+// pattern's shape changes.
 export const VEHICLE_DEPART_PATTERN =
-  /Vehicle\s+([A-Za-z0-9]{5,8}),?\s*(.+?),\s*departed\b/i;
+  /Vehicle\s+([A-Za-z0-9]{5,8}),?\s*(.+?),\s*(?:departed|reversed|exited)\b/i;
 
 // "Arrived", "parked", and "stopped" are all written as the arrival verb in
 // practice ("...arrived at X" / "...parked at X" / "...stopped at X") — the

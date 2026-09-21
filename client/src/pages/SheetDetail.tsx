@@ -968,9 +968,11 @@ function CinCertifyRow({
             </TooltipContent>
           </Tooltip>
         ) : (
-          <ShieldCheck
-            className={`w-4 h-4 shrink-0 ${cert ? "text-[var(--certified-color)]" : "text-red-500"}`}
-          />
+          <span className="flex w-6 h-6 items-center justify-center shrink-0">
+            <ShieldCheck
+              className={`w-4 h-4 shrink-0 ${cert ? "text-[var(--certified-color)]" : "text-red-500"}`}
+            />
+          </span>
         )}
       </span>
 
@@ -1075,7 +1077,9 @@ function CinCertifyCell({
     <div className="flex flex-col min-w-[130px]">
       {showTeamCollapse ? (
         <div className="flex items-center gap-1.5 h-8">
-          <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
+          <span className="flex w-6 h-6 items-center justify-center shrink-0">
+            <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
+          </span>
           <span className="text-sm font-mono font-semibold text-emerald-500">
             TEAM
           </span>
@@ -1196,18 +1200,20 @@ function CinCertifyCell({
             )}
           </div>
         ) : (
-          <div className="flex items-center gap-3 mt-0.5">
+          <div className="flex items-center mt-0.5">
             <button
               onClick={() => setAdding(true)}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors w-fit"
             >
-              <UserPlus className="w-3 h-3" />
+              <span className="flex w-6 h-6 items-center justify-center shrink-0">
+                <UserPlus className="w-3 h-3" />
+              </span>
               Add
             </button>
             {rosterCins && rosterCins.length > 1 && (
               <button
                 onClick={addAllTeamCins}
-                className="flex items-center gap-1 text-xs text-primary/80 hover:text-primary transition-colors w-fit"
+                className="flex items-center gap-1 text-xs text-primary/80 hover:text-primary transition-colors w-fit ml-2"
                 title={`Add all ${rosterCins.length} rostered CINs`}
               >
                 <Users className="w-3 h-3" />
@@ -1237,10 +1243,12 @@ function CinCertifyCell({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-xs gap-1.5 text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 mt-1 w-fit"
+              className="h-7 pl-0 pr-2 gap-1 text-xs text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 mt-1 w-fit"
               onClick={() => onUncertifyAll(row.id)}
             >
-              <Unlock className="w-3 h-3" />
+              <span className="flex w-6 h-6 items-center justify-center shrink-0">
+                <Unlock className="w-3 h-3" />
+              </span>
               Uncertify All
             </Button>
           </TooltipTrigger>
@@ -1253,10 +1261,12 @@ function CinCertifyCell({
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 px-2 text-xs gap-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-1 w-fit"
+          className="h-7 pl-0 pr-2 gap-1 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-1 w-fit"
           onClick={() => onDeleteRow(row.id)}
         >
-          <Trash2 className="w-3 h-3" />
+          <span className="flex w-6 h-6 items-center justify-center shrink-0">
+            <Trash2 className="w-3 h-3" />
+          </span>
           Delete row
         </Button>
       )}

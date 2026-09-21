@@ -14,6 +14,7 @@ import {
   WALK_IN_TOWARDS_PATTERN,
   WALK_OUT_PATTERN,
   extractWalkInTowardsLocation,
+  extractWalkInTowardsRoute,
 } from "@shared/walkEventPatterns";
 
 describe("WALK_IN_PATTERN", () => {
@@ -111,10 +112,85 @@ describe("extractWalkInTowardsLocation", () => {
     ).toBe("18 Pepperbush Road");
   });
 
+  it("drops a leading 'the front of'", () => {
+    expect(
+      extractWalkInTowardsLocation("towards the front of 64 Matheson Road")
+    ).toBe("64 Matheson Road");
+  });
+
+  it("drops a leading 'the vicinity of'", () => {
+    expect(
+      extractWalkInTowardsLocation("towards the vicinity of 64 Matheson Road")
+    ).toBe("64 Matheson Road");
+  });
+
+  it("drops a leading 'in the vicinity of'", () => {
+    expect(
+      extractWalkInTowardsLocation(
+        "towards in the vicinity of 64 Matheson Road"
+      )
+    ).toBe("64 Matheson Road");
+  });
+
+  it("drops a leading 'outside'/'outside of'", () => {
+    expect(
+      extractWalkInTowardsLocation("towards outside 64 Matheson Road")
+    ).toBe("64 Matheson Road");
+    expect(
+      extractWalkInTowardsLocation("towards outside of 64 Matheson Road")
+    ).toBe("64 Matheson Road");
+  });
+
+  it("drops a leading 'near'", () => {
+    expect(extractWalkInTowardsLocation("towards near 64 Matheson Road")).toBe(
+      "64 Matheson Road"
+    );
+  });
+
+  it("drops a leading 'the front door of'", () => {
+    expect(
+      extractWalkInTowardsLocation("towards the front door of 64 Matheson Road")
+    ).toBe("64 Matheson Road");
+  });
+
+  it("drops a leading 'the door of'", () => {
+    expect(
+      extractWalkInTowardsLocation("towards the door of 64 Matheson Road")
+    ).toBe("64 Matheson Road");
+  });
+
+  it("drops a leading 'the entrance of'", () => {
+    expect(
+      extractWalkInTowardsLocation("towards the entrance of 64 Matheson Road")
+    ).toBe("64 Matheson Road");
+  });
+
   it("falls back to the whole clause when there's no 'towards'", () => {
     expect(extractWalkInTowardsLocation("through the car park")).toBe(
       "through the car park"
     );
+  });
+});
+
+describe("extractWalkInTowardsRoute", () => {
+  it("extracts genuine route text before 'towards'", () => {
+    expect(
+      extractWalkInTowardsRoute("across the road towards 18 Pepperbush Road")
+    ).toBe("across the road");
+  });
+
+  it("returns empty when the clause is pure destination with nothing before 'towards'", () => {
+    expect(extractWalkInTowardsRoute("towards 45 Francis Street")).toBe("");
+  });
+
+  it("returns empty for a destination with a positional prefix, not the prefix itself", () => {
+    expect(
+      extractWalkInTowardsRoute("towards the front of 64 Matheson Road")
+    ).toBe("");
+  });
+
+  it("returns empty when there's no 'towards' at all", () => {
+    expect(extractWalkInTowardsRoute("through the car park")).toBe("");
   });
 });
 

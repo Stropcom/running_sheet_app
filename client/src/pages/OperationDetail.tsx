@@ -1058,7 +1058,7 @@ function buildRollupExportPdf(params: {
   });
 
   const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>RunLog Deployment Rollup — ${esc(operationName)}</title>
+<html><head><meta charset="utf-8"><title>RunLog Deployment Summaries — ${esc(operationName)}</title>
 <style>
 * { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 @page{ margin:20mm 15mm; @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em} @bottom-center{content:"Page " counter(page) " of " counter(pages);font-family:'Roboto',sans-serif;font-size:11px;font-weight:700;color:${BLUE_DARK};letter-spacing:0.04em} }
@@ -1112,7 +1112,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 </style></head><body>
 <div class="cover-header">
   <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog</span></div>
-  <div class="main-title">Deployment Rollup</div>
+  <div class="main-title">Deployment Summaries</div>
   <div class="op-date-line">${esc(operationName)}</div>
   <div class="sheet-name">${esc(scopeLine)} &middot; ${rows.length} summar${rows.length !== 1 ? "ies" : "y"}</div>
 </div>
@@ -2210,7 +2210,7 @@ export default function OperationDetail() {
           </div>
         </div>
 
-        {/* Main tabs: Running Sheets | Deployment Rollup */}
+        {/* Main tabs: Running Sheets | Deployment Summaries */}
         <Tabs
           value={activeTab}
           onValueChange={v => {
@@ -2225,21 +2225,28 @@ export default function OperationDetail() {
               its own line on a narrow screen rather than squeezing the tabs
               off one row. */}
           <div className="flex flex-wrap items-center gap-2 mb-4">
-            {/* Both tabs carry their full names at every width. At the
-                default text-sm the pair measures 341px, which overflows a
-                phone row (342px usable at 390px, 312px at 360px) —
-                text-[11px] brings it to 289px, so it sits on one row with
-                room to spare. w-full on mobile lets the two triggers split
-                the row evenly rather than leaving a ragged gap; from sm up
-                the list goes back to sizing to its content. */}
-            <TabsList className="w-full sm:w-fit">
-              <TabsTrigger value="sheets" className="text-[11px] sm:text-sm">
-                <FileText className="w-3.5 h-3.5 mr-1.5" />
-                Running Sheets
+            {/* grid-cols-2 (not the default flex-1) so the two triggers are
+                always exactly the same width as each other — matching the
+                wider "Deployment Summaries" label — rather than each sizing
+                to its own text. min-w-0 + truncate on the label lets it
+                ellipsize instead of overflowing if that shared width ever
+                gets tight on a narrow phone. w-full on mobile lets the grid
+                fill the row; from sm up the list goes back to sizing to its
+                (now-equal) columns. */}
+            <TabsList className="grid grid-cols-2 w-full sm:w-fit">
+              <TabsTrigger
+                value="sheets"
+                className="w-full min-w-0 text-[11px] sm:text-sm"
+              >
+                <FileText className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                <span className="truncate">Running Sheets</span>
               </TabsTrigger>
-              <TabsTrigger value="rollup" className="text-[11px] sm:text-sm">
-                <History className="w-3.5 h-3.5 mr-1.5" />
-                Deployment Rollup
+              <TabsTrigger
+                value="rollup"
+                className="w-full min-w-0 text-[11px] sm:text-sm"
+              >
+                <History className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                <span className="truncate">Deployment Summaries</span>
               </TabsTrigger>
               {/* No visible "Add Target" trigger — target creation/editing
                   lives in the New Running Sheet dialog, the Edit Running
@@ -2432,7 +2439,7 @@ export default function OperationDetail() {
             )}
           </TabsContent>
 
-          {/* ── Deployment Rollup tab ── */}
+          {/* ── Deployment Summaries tab ── */}
           <TabsContent value="rollup">
             <DeploymentRollupPanel
               operationId={operationId}
@@ -2533,13 +2540,13 @@ export default function OperationDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Export Deployment Rollup Dialog — the header's Export button
+      {/* Export Deployment Summaries Dialog — the header's Export button
           applies regardless of which tab is active, since it always
           exports the operation's rollup, not the tab's own content. */}
       <Dialog open={exportOpen} onOpenChange={setExportOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Export Deployment Rollup</DialogTitle>
+            <DialogTitle>Export Deployment Summaries</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4 py-1">
             <RadioGroup

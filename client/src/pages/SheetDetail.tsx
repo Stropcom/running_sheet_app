@@ -918,13 +918,12 @@ function CinCertifyRow({
 
   const canToggle = canCertify && !isLocked;
 
-  // A single rounded chip carries both the CIN and its certify state — a
-  // tap anywhere on it certifies/uncertifies; a 1s press-and-hold on the
-  // narrow zone at its right edge removes it (same fill-sweep mechanic as
-  // the spacer row above), so the two gestures never collide.
-  const pillBase = `relative z-10 flex items-center gap-1.5 h-full min-w-0 pl-2.5 border rounded-full text-xs font-bold ${
-    canRemove ? "pr-8" : "pr-2.5"
-  } ${
+  // A single rounded chip, sized to fit its content, carries both the CIN
+  // and its certify state — a tap anywhere on it certifies/uncertifies.
+  // Removing it is a separate 1s press-and-hold in the blank space to the
+  // chip's right (same fill-sweep mechanic as the spacer row above), so
+  // the two gestures never share a hit target.
+  const pillBase = `relative flex items-center gap-1.5 h-full min-w-0 px-2.5 border rounded-full text-xs font-bold ${
     cert
       ? "text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)]"
       : "text-red-500 border-red-500/35 bg-red-500/5"
@@ -938,7 +937,7 @@ function CinCertifyRow({
 
   return (
     <div className={`flex items-center ${ROW_H}`}>
-      <div className="relative inline-flex items-stretch h-7 max-w-full rounded-full overflow-hidden">
+      <div className="inline-flex items-stretch h-7 max-w-full rounded-full shrink-0">
         {canToggle ? (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -995,28 +994,26 @@ function CinCertifyRow({
         ) : (
           <span className={`${pillBase} cursor-default`}>{pillContent}</span>
         )}
+      </div>
 
-        {/* Fill sweep during a hold — clipped to the pill's rounded shape */}
-        {canRemove && (
+      {/* Hold zone — the blank space to the right of the pill, press-and-hold
+          1s to remove. A red fill sweeps across it as visual feedback. */}
+      {canRemove && (
+        <div
+          className="relative flex-1 h-full min-w-[28px]"
+          style={{ touchAction: "none" }}
+          onPointerDown={startHold}
+          onPointerUp={cancelHold}
+          onPointerLeave={cancelHold}
+          onPointerCancel={cancelHold}
+        >
           <div
             ref={fillRef}
-            className="absolute inset-0 bg-destructive/25 pointer-events-none z-0"
+            className="absolute inset-0 rounded-md bg-destructive/20 pointer-events-none"
             style={{ width: "0%" }}
           />
-        )}
-
-        {/* Hold zone — right edge of the pill, press-and-hold 1s to remove */}
-        {canRemove && (
-          <div
-            className="absolute right-0 top-0 bottom-0 z-20 w-8 border-l border-black/10 dark:border-white/10"
-            style={{ touchAction: "none" }}
-            onPointerDown={startHold}
-            onPointerUp={cancelHold}
-            onPointerLeave={cancelHold}
-            onPointerCancel={cancelHold}
-          />
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

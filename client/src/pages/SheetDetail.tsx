@@ -893,11 +893,23 @@ function CinCertifyRow({
     }
   };
 
+  // Suppresses the native long-press text-selection/"Copy" callout that
+  // iOS and Android would otherwise show wherever a press-and-hold gesture
+  // lands, including on the plain-text CIN inside the pill below —
+  // WebkitTouchCallout is iOS Safari-specific, userSelect covers the rest.
+  const noCalloutStyle: React.CSSProperties = {
+    WebkitTouchCallout: "none",
+    WebkitUserSelect: "none",
+    userSelect: "none",
+  };
+
   if (isSpacer) {
     return (
       <div
         className={`relative flex items-center gap-1 ${ROW_H} select-none`}
-        style={canRemove ? { touchAction: "none" } : undefined}
+        style={
+          canRemove ? { ...noCalloutStyle, touchAction: "none" } : undefined
+        }
         onPointerDown={startHold}
         onPointerUp={cancelHold}
         onPointerLeave={cancelHold}
@@ -936,7 +948,10 @@ function CinCertifyRow({
   );
 
   return (
-    <div className={`flex items-center ${ROW_H}`}>
+    <div
+      className={`flex items-center ${ROW_H} select-none`}
+      style={noCalloutStyle}
+    >
       <div className="inline-flex items-stretch h-7 max-w-full rounded-full shrink-0">
         {canToggle ? (
           <Tooltip>
@@ -1001,7 +1016,7 @@ function CinCertifyRow({
       {canRemove && (
         <div
           className="relative flex-1 h-full min-w-[28px]"
-          style={{ touchAction: "none" }}
+          style={{ ...noCalloutStyle, touchAction: "none" }}
           onPointerDown={startHold}
           onPointerUp={cancelHold}
           onPointerLeave={cancelHold}

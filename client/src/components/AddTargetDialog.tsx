@@ -1061,47 +1061,38 @@ export function AddTargetDialog({
               </div>
             </div>
 
-            {/* The primary identity boxes sit side by side from md up (2
-                columns — iPad-portrait width) and, for a Person target,
-                a 3rd column from lg (Person/Address/Vehicle, laptop
-                width) — Vehicle/Location targets have no Person Identity
-                box so stay at 2 columns even at lg. Dynamic extras
-                (additional addresses/vehicles) stay a full-width list
-                below the grid at every size — a variable-length list
-                doesn't suit a fixed column. */}
-            <div
-              className={`grid gap-3 md:items-start ${
-                targetType === "person"
-                  ? "md:grid-cols-2 lg:grid-cols-3"
-                  : "md:grid-cols-2"
-              }`}
-            >
-              {targetType === "person" && (
-                <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
-                  <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                    <User className="w-3 h-3" />
-                    Person Identity
-                  </p>
-                  <TargetIdentityFields
-                    value={identity}
-                    onChange={setIdentity}
-                    onSurnameBlur={checkNameOnBlur}
-                  />
-                </div>
-              )}
+            {/* Stacked vertically, one full-width box per row — same as the
+                dynamic extras (additional addresses/vehicles) below, so
+                the whole dialog reads as one consistent list rather than
+                the primary boxes sitting apart in a grid while everything
+                else stacks. The wider dialog width (see DialogContent's
+                className) still gives each box more breathing room on
+                iPad/laptop, just without splitting them into columns. */}
+            {targetType === "person" && (
+              <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
+                <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                  <User className="w-3 h-3" />
+                  Person Identity
+                </p>
+                <TargetIdentityFields
+                  value={identity}
+                  onChange={setIdentity}
+                  onSurnameBlur={checkNameOnBlur}
+                />
+              </div>
+            )}
 
-              {targetType === "vehicle" ? (
-                <>
-                  {vehiclePrimaryBox}
-                  {addressPrimaryBox}
-                </>
-              ) : (
-                <>
-                  {addressPrimaryBox}
-                  {vehiclePrimaryBox}
-                </>
-              )}
-            </div>
+            {targetType === "vehicle" ? (
+              <>
+                {vehiclePrimaryBox}
+                {addressPrimaryBox}
+              </>
+            ) : (
+              <>
+                {addressPrimaryBox}
+                {vehiclePrimaryBox}
+              </>
+            )}
 
             {targetType === "vehicle" ? (
               <>

@@ -1105,13 +1105,11 @@ function CinCertifyCell({
   return (
     <div className="flex flex-col min-w-[130px]">
       {showTeamCollapse ? (
-        <div className="flex items-center gap-1.5 h-8">
-          <span className="flex w-6 h-6 items-center justify-center shrink-0">
-            <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
-          </span>
-          <span className="text-sm font-mono font-semibold text-emerald-500">
-            TEAM
-          </span>
+        <div className="flex items-center h-8">
+          <div className="inline-flex items-center gap-1.5 h-7 px-2.5 border rounded-full text-xs font-bold text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)]">
+            <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+            <span className="font-mono">TEAM</span>
+          </div>
         </div>
       ) : total === 0 ? (
         <span className="text-xs text-muted-foreground italic h-8 flex items-center">

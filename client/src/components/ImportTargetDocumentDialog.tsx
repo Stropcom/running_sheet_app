@@ -524,7 +524,7 @@ export function ImportTargetDocumentDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-primary" />
-            Import from Document
+            Import Target
           </DialogTitle>
         </DialogHeader>
 

@@ -3215,16 +3215,19 @@ export default function IntelligenceMapping() {
       } else {
         glyph = "🚶"; // walking (also covers "just stopped", under 10s)
       }
-      // sin(heading) > 0 means the heading has an eastward component (the
-      // 0-180° half of the compass, measured clockwise from north); < 0
-      // means westward (180-360°). Defaults to facing right/east when
-      // heading is unavailable or exactly due north/south (sin = 0) rather
-      // than remembering a "last known side" — a deliberate
-      // simplification, since that ambiguous case only ever lasts one
-      // frame in practice and isn't worth extra state to smooth over.
+      // The 🚶/🏃/🧍 glyphs render already facing left/west by default in
+      // the platform emoji font (confirmed on iOS), so no mirror is needed
+      // for westward travel — only eastward travel needs a horizontal
+      // flip. sin(heading) > 0 means the heading has an eastward component
+      // (the 0-180° half of the compass, measured clockwise from north);
+      // <= 0 means westward or due north/south, which defaults to the
+      // glyph's own native west-facing pose rather than remembering a
+      // "last known side" — a deliberate simplification, since that
+      // ambiguous case only ever lasts one frame in practice and isn't
+      // worth extra state to smooth over.
       const heading = liveUser.heading ?? 0;
-      const faceWest = Math.sin((heading * Math.PI) / 180) < 0;
-      indicator.innerHTML = `<span style="font-size:26px;line-height:32px;width:32px;height:32px;display:block;text-align:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));transform:scaleX(${faceWest ? -1 : 1});">${glyph}</span>`;
+      const faceEast = Math.sin((heading * Math.PI) / 180) > 0;
+      indicator.innerHTML = `<span style="font-size:26px;line-height:32px;width:32px;height:32px;display:block;text-align:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));transform:scaleX(${faceEast ? -1 : 1});">${glyph}</span>`;
     } else if (motionState === "moving") {
       // Screen rotation, not raw compass bearing: the arrow/rings need to
       // point the right way relative to the map as currently displayed,

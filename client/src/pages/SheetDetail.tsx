@@ -827,41 +827,11 @@ function SortableCinItem({
   isLocked: boolean;
   onRemove: () => void;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: member.id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 10 : undefined,
-  };
   const ROW_H = "h-8";
   const isSpacer = member.memberName === SPACER;
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`flex items-center gap-1 group/member ${ROW_H}`}
-    >
-      {/* Drag handle — only shown when editable and row not locked */}
-      {canEdit && !isLocked && (
-        <button
-          {...attributes}
-          {...listeners}
-          className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground shrink-0 p-0.5 -ml-1"
-          tabIndex={-1}
-          aria-label="Drag to reorder"
-        >
-          <GripVertical className="w-3 h-3" />
-        </button>
-      )}
+    <div className={`flex items-center gap-1 group/member ${ROW_H}`}>
       {isSpacer ? (
         /* Spacer — blank row for visual separation, remove on hover */
         <span className="flex-1 min-w-0" />
@@ -943,29 +913,6 @@ function MemberCell({
     addSequentially(rosterCins, 0);
   };
 
-  // dnd-kit sensors — pointer (desktop) + touch with 250ms delay (mobile tap-hold)
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 250, tolerance: 5 },
-    })
-  );
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = row.members.findIndex(m => m.id === active.id);
-    const newIndex = row.members.findIndex(m => m.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-    const reordered = arrayMove(row.members, oldIndex, newIndex);
-    // Mark this row as manually reordered so auto-sort is suppressed going forward
-    onManualReorder?.(row.id);
-    onReorderMembers(
-      row.id,
-      reordered.map(m => m.id)
-    );
-  };
-
   // A fully-certified row (isLocked) whose members are exactly the full
   // daily roster collapses to a single green "TEAM" pill instead of every
   // CIN — the individual CINs are still the real data underneath (used by
@@ -985,33 +932,24 @@ function MemberCell({
           </span>
         </div>
       ) : (
-        /* CIN list — drag handles allow full reordering */
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={row.members.map(m => m.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            {row.members.map(member => {
-              const cert = !!row.certifications.find(
-                c => c.memberId === member.id && c.isActive
-              );
-              return (
-                <SortableCinItem
-                  key={member.id}
-                  member={member}
-                  cert={cert}
-                  canEdit={canEdit}
-                  isLocked={row.isLocked}
-                  onRemove={() => onRemoveMember(member.id, row.id)}
-                />
-              );
-            })}
-          </SortableContext>
-        </DndContext>
+        /* CIN list */
+        <>
+          {row.members.map(member => {
+            const cert = !!row.certifications.find(
+              c => c.memberId === member.id && c.isActive
+            );
+            return (
+              <SortableCinItem
+                key={member.id}
+                member={member}
+                cert={cert}
+                canEdit={canEdit}
+                isLocked={row.isLocked}
+                onRemove={() => onRemoveMember(member.id, row.id)}
+              />
+            );
+          })}
+        </>
       )}
 
       {/* Add button — sits below all CINs */}

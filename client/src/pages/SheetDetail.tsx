@@ -788,16 +788,15 @@ function exportToPDF(
   }, 400);
 }
 
-// ─── Sortable CIN item ────────────────────────────────────────────────────────
+// ─── CIN item helpers ───────────────────────────────────────────────────────
 
 const SPACER = "__SPACE__";
 
 // True when a row's real (non-spacer) members are exactly the full daily
 // roster — same CINs, no more, no fewer, duplicates collapsed by set
 // equality. Used to collapse a fully-certified row's member list down to a
-// single "TEAM" pill (MemberCell) and a single certify/uncertify control
-// (CertifyCell) — never for a row that merely happens to have every member
-// certified, only one that IS the whole team.
+// single "TEAM" pill in CinCertifyCell — never for a row that merely
+// happens to have every member certified, only one that IS the whole team.
 function isFullTeamMembers(
   members: { memberName: string }[],
   rosterCins: string[] | undefined
@@ -814,73 +813,253 @@ function isFullTeamMembers(
   return Array.from(rosterSet).every(cin => realSet.has(cin));
 }
 
-function SortableCinItem({
+// A single member row: certify/uncertify shield inline with the CIN, plus
+// the remove-CIN control — the merged replacement for the old separate
+// CIN and Certify columns (Option A from the column-merge mockup).
+function CinCertifyRow({
+  row,
   member,
   cert,
   canEdit,
+  canCertify,
   isLocked,
+  onCertify,
+  onUncertify,
   onRemove,
 }: {
+  row: SheetRow;
   member: Member;
-  cert: boolean;
+  cert: Certification | undefined;
   canEdit: boolean;
+  canCertify: boolean;
   isLocked: boolean;
+  onCertify: (rowId: number, memberId: number) => void;
+  onUncertify: (rowId: number, memberId: number) => void;
   onRemove: () => void;
 }) {
   const ROW_H = "h-8";
   const isSpacer = member.memberName === SPACER;
+  const canRemove = canEdit && !isLocked;
+
+  // Removing a CIN (or a spacer) is a press-and-hold, not a tap — a red fill
+  // sweeps across the row over HOLD_MS; releasing early cancels. No icon, no
+  // reserved space, and much harder to trigger by accident than a plain tap
+  // on a legal record. Driven imperatively via a ref (not React state) so
+  // the fill animates every frame without re-rendering the row.
+  const HOLD_MS = 1000;
+  const fillRef = useRef<HTMLDivElement>(null);
+  const holdRef = useRef<{
+    active: boolean;
+    start: number;
+    raf: number | null;
+  }>({ active: false, start: 0, raf: null });
+
+  useEffect(() => {
+    return () => {
+      if (holdRef.current.raf) cancelAnimationFrame(holdRef.current.raf);
+    };
+  }, []);
+
+  const startHold = (e: React.PointerEvent) => {
+    if (!canRemove) return;
+    const hold = holdRef.current;
+    hold.active = true;
+    hold.start = performance.now();
+    if (fillRef.current) {
+      fillRef.current.style.transition = "none";
+    }
+    const step = (now: number) => {
+      if (!hold.active) return;
+      const pct = Math.min(1, (now - hold.start) / HOLD_MS);
+      if (fillRef.current) fillRef.current.style.width = `${pct * 100}%`;
+      if (pct >= 1) {
+        hold.active = false;
+        onRemove();
+        return;
+      }
+      hold.raf = requestAnimationFrame(step);
+    };
+    hold.raf = requestAnimationFrame(step);
+  };
+
+  const cancelHold = () => {
+    const hold = holdRef.current;
+    if (!hold.active) return;
+    hold.active = false;
+    if (hold.raf) cancelAnimationFrame(hold.raf);
+    if (fillRef.current) {
+      fillRef.current.style.transition = "width 0.2s ease";
+      fillRef.current.style.width = "0%";
+    }
+  };
+
+  // Suppresses the native long-press text-selection/"Copy" callout that
+  // iOS and Android would otherwise show wherever a press-and-hold gesture
+  // lands, including on the plain-text CIN inside the pill below —
+  // WebkitTouchCallout is iOS Safari-specific, userSelect covers the rest.
+  const noCalloutStyle: React.CSSProperties = {
+    WebkitTouchCallout: "none",
+    WebkitUserSelect: "none",
+    userSelect: "none",
+  };
+
+  if (isSpacer) {
+    return (
+      <div
+        className={`relative flex items-center gap-1 ${ROW_H} select-none`}
+        style={
+          canRemove ? { ...noCalloutStyle, touchAction: "none" } : undefined
+        }
+        onPointerDown={startHold}
+        onPointerUp={cancelHold}
+        onPointerLeave={cancelHold}
+        onPointerCancel={cancelHold}
+      >
+        {/* Spacer — blank row for visual separation, press-and-hold to remove */}
+        {canRemove && (
+          <div
+            ref={fillRef}
+            className="absolute inset-0 bg-destructive/15 pointer-events-none"
+            style={{ width: "0%" }}
+          />
+        )}
+        <span className="relative z-10 flex-1 min-w-0" />
+      </div>
+    );
+  }
+
+  const canToggle = canCertify && !isLocked;
+
+  // A single rounded chip, sized to fit its content, carries both the CIN
+  // and its certify state — a tap anywhere on it certifies/uncertifies.
+  // Removing it is a separate 1s press-and-hold in the blank space to the
+  // chip's right (same fill-sweep mechanic as the spacer row above), so
+  // the two gestures never share a hit target.
+  const pillBase = `relative flex items-center gap-1.5 h-full min-w-0 px-2.5 border rounded-full text-xs font-bold ${
+    cert
+      ? "text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)]"
+      : "text-red-500 border-red-500/35 bg-red-500/5"
+  }`;
+  const pillContent = (
+    <>
+      <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+      <span className="font-mono truncate">{member.memberName}</span>
+    </>
+  );
 
   return (
-    <div className={`flex items-center gap-1 group/member ${ROW_H}`}>
-      {isSpacer ? (
-        /* Spacer — blank row for visual separation, remove on hover */
-        <span className="flex-1 min-w-0" />
-      ) : (
-        <span
-          className={`text-sm font-mono font-medium flex-1 min-w-0 ${cert ? "text-[var(--certified-color)]" : "text-foreground"}`}
+    <div
+      className={`flex items-center ${ROW_H} select-none`}
+      style={noCalloutStyle}
+    >
+      <div className="inline-flex items-stretch h-7 max-w-full rounded-full shrink-0">
+        {canToggle ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={`${pillBase} cursor-pointer`}
+                onClick={() =>
+                  cert
+                    ? onUncertify(row.id, member.id)
+                    : onCertify(row.id, member.id)
+                }
+              >
+                {pillContent}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              {cert ? (
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium">
+                    Certified by{" "}
+                    {(cert as any).certifiedByCIN || cert.certifiedByName} — tap
+                    to uncertify
+                  </span>
+                  <span className="text-muted-foreground flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {format(new Date(cert.certifiedAt), "MMM d, yyyy HH:mm:ss")}
+                  </span>
+                </div>
+              ) : (
+                `Certify ${member.memberName}`
+              )}
+            </TooltipContent>
+          </Tooltip>
+        ) : cert ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={`${pillBase} cursor-default`}>
+                {pillContent}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium">
+                  Certified by{" "}
+                  {(cert as any).certifiedByCIN || cert.certifiedByName}
+                </span>
+                <span className="text-muted-foreground flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {format(new Date(cert.certifiedAt), "MMM d, yyyy HH:mm:ss")}
+                </span>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <span className={`${pillBase} cursor-default`}>{pillContent}</span>
+        )}
+      </div>
+
+      {/* Hold zone — the blank space to the right of the pill, press-and-hold
+          1s to remove. A red fill sweeps across it as visual feedback. */}
+      {canRemove && (
+        <div
+          className="relative flex-1 h-full min-w-[28px]"
+          style={{ ...noCalloutStyle, touchAction: "none" }}
+          onPointerDown={startHold}
+          onPointerUp={cancelHold}
+          onPointerLeave={cancelHold}
+          onPointerCancel={cancelHold}
         >
-          {member.memberName}
-        </span>
-      )}
-      {canEdit && !isLocked && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="w-6 h-6 opacity-0 group-hover/member:opacity-100 text-muted-foreground hover:text-destructive shrink-0"
-              onClick={onRemove}
-            >
-              <Trash2 className="w-3 h-3" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            {isSpacer ? "Remove space" : "Remove this CIN"}
-          </TooltipContent>
-        </Tooltip>
+          <div
+            ref={fillRef}
+            className="absolute inset-0 rounded-md bg-destructive/20 pointer-events-none"
+            style={{ width: "0%" }}
+          />
+        </div>
       )}
     </div>
   );
 }
 
-// ─── Member Cell ──────────────────────────────────────────────────────────────
+// ─── CIN + Certify Cell ─────────────────────────────────────────────────────
+// Merges what used to be two separate columns (CIN, Certify) into one —
+// each member's shield sits inline with their CIN (CinCertifyRow above),
+// with the same "TEAM" collapse, "Uncertify All", and "Delete row" controls
+// as before.
 
-function MemberCell({
+function CinCertifyCell({
   row,
   canEdit,
+  canCertify,
   onAddMember,
   onRemoveMember,
-  onReorderMembers,
-  onManualReorder,
+  onCertify,
+  onUncertify,
+  onUncertifyAll,
+  onDeleteRow,
   rosterCins,
 }: {
   row: SheetRow;
   canEdit: boolean;
+  canCertify: boolean;
   onAddMember: (rowId: number, name: string) => void;
   onRemoveMember: (memberId: number, rowId: number) => void;
-  onReorderMembers: (rowId: number, orderedIds: number[]) => void;
-  /** Called when the user manually drags to reorder — disables auto-sort for this row */
-  onManualReorder?: (rowId: number) => void;
+  onCertify: (rowId: number, memberId: number) => void;
+  onUncertify: (rowId: number, memberId: number) => void;
+  onUncertifyAll: (rowId: number) => void;
+  onDeleteRow?: (rowId: number) => void;
   rosterCins?: string[];
 }) {
   const [adding, setAdding] = useState(false);
@@ -913,43 +1092,45 @@ function MemberCell({
     addSequentially(rosterCins, 0);
   };
 
+  const total = row.members.length;
+
   // A fully-certified row (isLocked) whose members are exactly the full
   // daily roster collapses to a single green "TEAM" pill instead of every
-  // CIN — the individual CINs are still the real data underneath (used by
-  // Witness List generation and everywhere else); this is display only.
-  // Uncertifying (via CertifyCell) drops row.isLocked, which reverts this
-  // automatically since the check below no longer holds.
+  // CIN + shield — the individual CINs are still the real data underneath
+  // (used by Witness List generation and everywhere else); this is display
+  // only. "Uncertify All" below still un-collapses it, same as ever.
   const showTeamCollapse =
     row.isLocked && isFullTeamMembers(row.members, rosterCins);
 
   return (
-    <div className="flex flex-col min-w-[40px]">
+    <div className="flex flex-col min-w-[90px]">
       {showTeamCollapse ? (
-        <div className="flex items-center gap-1.5 h-8">
-          <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
-          <span className="text-sm font-mono font-semibold text-emerald-500">
-            TEAM
-          </span>
+        <div className="flex items-center h-8">
+          <div className="inline-flex items-center gap-1.5 h-7 px-2.5 border rounded-full text-xs font-bold text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)]">
+            <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+            <span className="font-mono">TEAM</span>
+          </div>
         </div>
-      ) : (
-        /* CIN list */
-        <>
-          {row.members.map(member => {
-            const cert = !!row.certifications.find(
-              c => c.memberId === member.id && c.isActive
-            );
-            return (
-              <SortableCinItem
-                key={member.id}
-                member={member}
-                cert={cert}
-                canEdit={canEdit}
-                isLocked={row.isLocked}
-                onRemove={() => onRemoveMember(member.id, row.id)}
-              />
-            );
-          })}
-        </>
+      ) : total === 0 ? null : (
+        row.members.map(member => {
+          const cert = row.certifications.find(
+            c => c.memberId === member.id && c.isActive
+          );
+          return (
+            <CinCertifyRow
+              key={member.id}
+              row={row}
+              member={member}
+              cert={cert}
+              canEdit={canEdit}
+              canCertify={canCertify}
+              isLocked={row.isLocked}
+              onCertify={onCertify}
+              onUncertify={onUncertify}
+              onRemove={() => onRemoveMember(member.id, row.id)}
+            />
+          );
+        })
       )}
 
       {/* Add button — sits below all CINs */}
@@ -1042,12 +1223,14 @@ function MemberCell({
             )}
           </div>
         ) : (
-          <div className="flex items-center gap-3 mt-0.5">
+          <div className="flex flex-col mt-0.5">
             <button
               onClick={() => setAdding(true)}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors w-fit"
             >
-              <UserPlus className="w-3 h-3" />
+              <span className="flex w-6 h-6 items-center justify-center shrink-0">
+                <UserPlus className="w-3 h-3" />
+              </span>
               Add
             </button>
             {rosterCins && rosterCins.length > 1 && (
@@ -1056,12 +1239,62 @@ function MemberCell({
                 className="flex items-center gap-1 text-xs text-primary/80 hover:text-primary transition-colors w-fit"
                 title={`Add all ${rosterCins.length} rostered CINs`}
               >
-                <Users className="w-3 h-3" />
+                <span className="flex w-6 h-6 items-center justify-center shrink-0">
+                  <Users className="w-3 h-3" />
+                </span>
                 Team
               </button>
             )}
           </div>
         ))}
+
+      {/* Locked badge — the certified count is redundant with the shields */}
+      {row.isLocked && (
+        <div className="flex items-center gap-1.5 mt-1">
+          <Badge
+            variant="outline"
+            className="gap-1 text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)] text-xs py-0 px-1.5"
+          >
+            <Lock className="w-2.5 h-2.5" />
+            Locked
+          </Badge>
+        </div>
+      )}
+
+      {/* Footer actions */}
+      {row.isLocked && canCertify && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 pl-0 pr-2 gap-1 text-xs text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 mt-1 w-fit"
+              onClick={() => onUncertifyAll(row.id)}
+            >
+              <span className="flex w-6 h-6 items-center justify-center shrink-0">
+                <Unlock className="w-3 h-3" />
+              </span>
+              Uncertify All
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            Remove all certifications and unlock row
+          </TooltipContent>
+        </Tooltip>
+      )}
+      {!row.isLocked && onDeleteRow && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 pl-0 pr-2 gap-1 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-1 w-fit"
+          onClick={() => onDeleteRow(row.id)}
+        >
+          <span className="flex w-6 h-6 items-center justify-center shrink-0">
+            <Trash2 className="w-3 h-3" />
+          </span>
+          Delete row
+        </Button>
+      )}
     </div>
   );
 }
@@ -1226,205 +1459,6 @@ function ObservationAttachments({
           }}
           currentOperationId={operationId}
         />
-      )}
-    </div>
-  );
-}
-
-// ─── Certify Column ───────────────────────────────────────────────────────────
-
-function CertifyCell({
-  row,
-  canCertify,
-  onCertify,
-  onUncertify,
-  onUncertifyAll,
-  onDeleteRow,
-  rosterCins,
-}: {
-  row: SheetRow;
-  canCertify: boolean;
-  onCertify: (rowId: number, memberId: number) => void;
-  onUncertify: (rowId: number, memberId: number) => void;
-  onUncertifyAll: (rowId: number) => void;
-  onDeleteRow?: (rowId: number) => void;
-  rosterCins?: string[];
-}) {
-  const total = row.members.length;
-  const certified = row.certifications.filter(c => c.isActive).length;
-
-  if (total === 0) {
-    // Empty row — show delete button immediately so accidental rows can be removed
-    return (
-      <div className="flex flex-col items-center">
-        <span className="text-xs text-muted-foreground italic">No members</span>
-        {onDeleteRow && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs gap-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-1"
-            onClick={() => onDeleteRow(row.id)}
-          >
-            <Trash2 className="w-3 h-3" />
-            Delete row
-          </Button>
-        )}
-      </div>
-    );
-  }
-
-  // Height of each member sub-row — must match MemberCell's member row height
-  const ROW_H = "h-8";
-
-  // Mirrors MemberCell's "TEAM" pill collapse — same condition, so the two
-  // columns stay row-aligned. Certifications aren't touched by this at
-  // all; "Uncertify All" below still un-collapses it, same as ever.
-  const showTeamCollapse =
-    row.isLocked && isFullTeamMembers(row.members, rosterCins);
-
-  return (
-    <div className="flex flex-col items-center">
-      {/* One row per member — same fixed height as MemberCell member rows */}
-      {showTeamCollapse ? (
-        <div
-          className={`flex flex-col items-center justify-center ${ROW_H} w-full`}
-        >
-          <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
-        </div>
-      ) : (
-        row.members.map(m => {
-          const cert = row.certifications.find(
-            c => c.memberId === m.id && c.isActive
-          );
-          return (
-            <div
-              key={m.id}
-              className={`flex flex-col items-center justify-center ${ROW_H} w-full`}
-            >
-              {/* Shield: single certify/uncertify toggle — no cross, just the shield */}
-              {cert ? (
-                /* Certified: green shield + certifier CIN side by side */
-                <div className="flex items-center justify-center gap-1">
-                  {canCertify && !row.isLocked ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="w-6 h-6 shrink-0 text-emerald-500 hover:text-red-400 hover:bg-red-400/10"
-                          onClick={() => onUncertify(row.id, m.id)}
-                        >
-                          <ShieldCheck className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        Uncertify {m.memberName}
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
-                  )}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="text-xs font-mono font-medium text-emerald-500 cursor-default">
-                        {(cert as any).certifiedByCIN || cert.certifiedByName}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="text-xs">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-medium">
-                          Certified by{" "}
-                          {(cert as any).certifiedByCIN || cert.certifiedByName}
-                        </span>
-                        <span className="text-muted-foreground flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {format(
-                            new Date(cert.certifiedAt),
-                            "MMM d, yyyy HH:mm:ss"
-                          )}
-                        </span>
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-              ) : (
-                /* Uncertified: red shield centred, "Certify" label below */
-                <div className="flex flex-col items-center justify-center gap-0">
-                  {canCertify && !row.isLocked ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="w-6 h-6 shrink-0 text-red-500 hover:text-emerald-500 hover:bg-emerald-500/10"
-                          onClick={() => onCertify(row.id, m.id)}
-                        >
-                          <ShieldCheck className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        Certify {m.memberName}
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <ShieldCheck className="w-4 h-4 shrink-0 text-red-500" />
-                  )}
-                  <span className="text-[10px] leading-none text-red-500 font-medium">
-                    Certify
-                  </span>
-                </div>
-              )}
-            </div>
-          );
-        })
-      )}
-
-      {/* Summary — at the bottom */}
-      <div className="flex items-center justify-center gap-1.5 mt-1 w-full">
-        {row.isLocked ? (
-          <Badge
-            variant="outline"
-            className="gap-1 text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)] text-xs py-0 px-1.5"
-          >
-            <Lock className="w-2.5 h-2.5" />
-            Locked
-          </Badge>
-        ) : (
-          <span className="text-xs text-muted-foreground">
-            {certified}/{total} certified
-          </span>
-        )}
-      </div>
-
-      {/* Footer actions */}
-      {row.isLocked && canCertify && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs gap-1.5 text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 mt-1"
-              onClick={() => onUncertifyAll(row.id)}
-            >
-              <Unlock className="w-3 h-3" />
-              Uncertify All
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            Remove all certifications and unlock row
-          </TooltipContent>
-        </Tooltip>
-      )}
-      {!row.isLocked && onDeleteRow && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs gap-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-1"
-          onClick={() => onDeleteRow(row.id)}
-        >
-          <Trash2 className="w-3 h-3" />
-          Delete row
-        </Button>
       )}
     </div>
   );
@@ -4944,15 +4978,14 @@ export default function SheetDetail({
                   <tr className="bg-muted/30">
                     <th className="w-32">Time</th>
                     <th>Observation</th>
-                    <th className="w-36">CIN</th>
-                    <th className="w-24 text-center">Certify</th>
+                    <th className="w-28">CIN</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRows.length === 0 && searchQuery ? (
                     <tr>
                       <td
-                        colSpan={4}
+                        colSpan={3}
                         className="py-12 text-center text-sm text-muted-foreground italic"
                       >
                         No rows match your search.
@@ -5024,7 +5057,7 @@ export default function SheetDetail({
                                   key={`divider-${row.id}`}
                                   className="date-divider-row"
                                 >
-                                  <td colSpan={4} className="py-1.5 px-4">
+                                  <td colSpan={3} className="py-1.5 px-4">
                                     <div className="flex items-center gap-3">
                                       <div className="flex-1 h-px bg-border" />
                                       <span className="text-[10px] font-semibold tracking-widest text-muted-foreground whitespace-nowrap">
@@ -5406,11 +5439,12 @@ export default function SheetDetail({
                               />
                             </td>
 
-                            {/* Member / CIN */}
+                            {/* CIN / Certify */}
                             <td>
-                              <MemberCell
+                              <CinCertifyCell
                                 row={row}
                                 canEdit={canEdit}
+                                canCertify={canCertify}
                                 onAddMember={(rowId, name) =>
                                   addMember.mutate({ rowId, memberName: name })
                                 }
@@ -5431,19 +5465,6 @@ export default function SheetDetail({
                                     removeMember.mutate({ id, rowId });
                                   }
                                 }}
-                                onReorderMembers={(rowId, orderedIds) =>
-                                  reorderMember.mutate({ rowId, orderedIds })
-                                }
-                                onManualReorder={markManualReorder}
-                                rosterCins={rosterCinList}
-                              />
-                            </td>
-
-                            {/* Certify */}
-                            <td>
-                              <CertifyCell
-                                row={row}
-                                canCertify={canCertify}
                                 onCertify={(rowId, memberId) =>
                                   certify.mutate({ rowId, memberId })
                                 }

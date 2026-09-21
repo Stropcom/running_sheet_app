@@ -80,6 +80,18 @@ export interface VehicleArrivalMatch {
   occupantDesc: string;
 }
 
+// "...parked and unattended in the driveway at X" describes a vehicle an
+// officer simply found already present — nobody was observed arriving in
+// it, so there's no continuity to track: no "Vehicle departing" or "Walked
+// in" chip should be offered off the back of it. Checked once, up front in
+// matchVehicleArrival below, rather than per-pattern, since any of the
+// three arrival shapes there could in principle be followed by this
+// wording. "Unattended" alone (without also requiring "parked" right next
+// to it) is deliberately the whole trigger — an officer only ever writes
+// it to mean exactly this, and requiring it be adjacent to "parked" would
+// miss "parked, unattended, in the driveway" and similar minor rewordings.
+const UNATTENDED_RE = /\bunattended\b/i;
+
 // Tries every recognised arrival narrative shape and returns the
 // rego/occupants from whichever one matches — the single place that knows
 // all the ways an arrival can be written, reused by both
@@ -97,6 +109,7 @@ export interface VehicleArrivalMatch {
 // otherwise let the generic pattern win first and swallow the whole travel
 // clause into "occupants".
 export function matchVehicleArrival(text: string): VehicleArrivalMatch | null {
+  if (UNATTENDED_RE.test(text)) return null;
   const viaTravel = text.match(VEHICLE_ARRIVE_VIA_TRAVEL_PATTERN);
   if (viaTravel) {
     return {

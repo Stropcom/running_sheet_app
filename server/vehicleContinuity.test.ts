@@ -190,6 +190,26 @@ describe("matchVehicleArrival", () => {
     ).toBe(null);
   });
 
+  // Regression: a vehicle an officer simply found already present ("parked
+  // and unattended") isn't an arrival anyone witnessed — there's no
+  // continuity to track, so it shouldn't offer a "Vehicle departing" or
+  // "Walked in" chip. Before this, the direct pattern's loose occupant
+  // capture treated the whole multi-vehicle description as "occupants" and
+  // matched it as a genuine arrival.
+  it("returns null for a vehicle found 'parked and unattended' — no arrival was observed", () => {
+    const text =
+      "A Blue Volvo XC60 station sedan, bearing WA registration 1SEA310 (Vehicle 1SEA310), a White BMW 330i Sedan, bearing WA registration 1BLM92 (Vehicle 1BLM92), and a Grey Volkswagen Transporter van, bearing WA registration 1STAR6 (Vehicle 1STAR6), parked and unattended in the driveway at 12 Marine Parade.";
+    expect(matchVehicleArrival(text)).toBe(null);
+  });
+
+  it("returns null for 'unattended' with any recognised arrival narrative shape", () => {
+    expect(
+      matchVehicleArrival(
+        "Vehicle 1BISH0, BISHOP driver and sole occupant, travelled on Smith Street, PERTH and arrived at 64 Matheson Road, unattended."
+      )
+    ).toBe(null);
+  });
+
   // Regression: normalizeObservationPunctuation (server/db.ts) guarantees a
   // comma right before "arrived"/"departed" at save time, inserting one
   // even when the officer wrote "and arrived" — which technically satisfies

@@ -4112,10 +4112,21 @@ export default function SheetDetail({
 
   const isLoading = sheetLoading || rowsLoading;
 
-  // Rendered in two different spots depending on breakpoint: next to the
-  // title on sm+ (single-row header), next to Close/Export on mobile (the
-  // title's own row is back-arrow + title only there, see below).
-  const editOrClosedBadge = (
+  // The CLOSED badge is the same in both spots — it's a status indicator,
+  // not an action button, so it doesn't need to match Close/Export's size.
+  const closedBadge = (
+    <Badge
+      variant="secondary"
+      className="gap-1.5 bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 shrink-0"
+    >
+      <LockKeyhole className="w-3 h-3" />
+      CLOSED
+    </Badge>
+  );
+
+  // Rendered next to the title on sm+ (single-row header) as a compact
+  // icon-only button — there's no Close/Export alongside it there to match.
+  const editOrClosedBadgeCompact = (
     <>
       {!isClosed && (
         <Button
@@ -4128,15 +4139,27 @@ export default function SheetDetail({
           <Pencil className="w-3.5 h-3.5" />
         </Button>
       )}
-      {isClosed && (
-        <Badge
-          variant="secondary"
-          className="gap-1.5 bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 shrink-0"
+      {isClosed && closedBadge}
+    </>
+  );
+
+  // Rendered on mobile instead, grouped with Close/Export on the header's
+  // second row — sized to match those (size="sm" + label) rather than the
+  // compact icon button, so the three read as one evenly-matched row.
+  const editOrClosedBadgeFull = (
+    <>
+      {!isClosed && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-2"
+          onClick={openEditSheet}
         >
-          <LockKeyhole className="w-3 h-3" />
-          CLOSED
-        </Badge>
+          <Pencil className="w-4 h-4" />
+          Edit
+        </Button>
       )}
+      {isClosed && closedBadge}
     </>
   );
 
@@ -4155,11 +4178,16 @@ export default function SheetDetail({
                 Close/Export pushed right by sm:ml-auto on the actions row.
                 Below sm: two rows instead, since all of that together left
                 the title almost no room on a phone. Row 1 there is just
-                back-arrow + title (title drops to text-base so the full
-                thing has a better chance of fitting on one line); the
+                back-arrow + title — the title wraps instead of truncating
+                below sm (sm:truncate only kicks in at sm+, where the row
+                has enough width that one line is realistic) so the full
+                title is always readable, not cut off with "…". The
                 edit-pencil/CLOSED badge moves down to sit with Close/Export
-                on row 2 (left-aligned there, opposite Close/Export on the
-                right, instead of every control bunched on one side). */}
+                on row 2, sized to match them there (editOrClosedBadgeFull)
+                instead of the compact icon button used next to the title on
+                sm+, and grouped with them (no gap-widening ml-auto between)
+                so the row reads as one evenly-matched set, right-aligned as
+                a whole. */}
             <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-6">
               <div className="flex items-center gap-4">
                 <Button
@@ -4176,26 +4204,26 @@ export default function SheetDetail({
                   ) : (
                     <>
                       <div className="min-w-0">
-                        <h1 className="text-base sm:text-xl font-semibold text-foreground truncate">
+                        <h1 className="text-base sm:text-xl font-semibold text-foreground sm:truncate">
                           {sheet?.title}
                         </h1>
                       </div>
                       {sheet && (
                         <div className="hidden sm:flex items-center gap-2">
-                          {editOrClosedBadge}
+                          {editOrClosedBadgeCompact}
                         </div>
                       )}
                     </>
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
+              <div className="flex items-center justify-end gap-2 flex-wrap sm:ml-auto">
                 {sheet && !sheetLoading && (
                   <div className="flex sm:hidden items-center gap-2">
-                    {editOrClosedBadge}
+                    {editOrClosedBadgeFull}
                   </div>
                 )}
-                <div className="flex items-center gap-2 flex-wrap ml-auto sm:ml-0">
+                <div className="flex items-center gap-2 flex-wrap">
                   {/* Offline indicator */}
                   {!isOnline && (
                     <Tooltip>

@@ -847,23 +847,27 @@ export function AddTargetDialog({
     };
   };
 
-  // The Address and Vehicle sections/their dynamic extras, as fragments so
-  // they can be reordered below — whichever one is this target's PRIMARY
-  // identity (Home Address/Location Identity for a Location target,
-  // Vehicle 1/Vehicle Identity for a Vehicle target) renders first, right
-  // under the Target Type toggle, instead of always in the same fixed
-  // Address-then-Vehicle order that only made sense when a target was
-  // always a person and both were just optional attributes of them.
-  const addressGroup = (
-    <>
-      <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3">
-        <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
-          <Home className="w-3 h-3" />
-          {targetType === "location" ? "Location Identity" : "Home Address"}
-        </p>
-        <TargetAddressFields value={address} onChange={setAddress} />
-      </div>
+  // The Address and Vehicle sections split into their PRIMARY box (one
+  // element, placed side by side with Person Identity in the responsive
+  // grid below) and their dynamic extras (a variable-length list, always
+  // full-width beneath the grid regardless of screen size) — whichever one
+  // is this target's PRIMARY identity (Home Address/Location Identity for
+  // a Location target, Vehicle 1/Vehicle Identity for a Vehicle target)
+  // renders first, instead of always in the same fixed Address-then-Vehicle
+  // order that only made sense when a target was always a person and both
+  // were just optional attributes of them.
+  const addressPrimaryBox = (
+    <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3">
+      <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+        <Home className="w-3 h-3" />
+        {targetType === "location" ? "Location Identity" : "Home Address"}
+      </p>
+      <TargetAddressFields value={address} onChange={setAddress} />
+    </div>
+  );
 
+  const addressExtras = (
+    <>
       {/* Dynamic extra addresses */}
       {extraAddresses.map((ea, i) => (
         <div
@@ -925,16 +929,18 @@ export function AddTargetDialog({
     </>
   );
 
-  const vehicleGroup = (
-    <>
-      <div className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3">
-        <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
-          <Car className="w-3 h-3" />
-          {targetType === "vehicle" ? "Vehicle Identity" : "Vehicle 1"}
-        </p>
-        <TargetVehicleFields value={vehicle} onChange={setVehicle} />
-      </div>
+  const vehiclePrimaryBox = (
+    <div className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3">
+      <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+        <Car className="w-3 h-3" />
+        {targetType === "vehicle" ? "Vehicle Identity" : "Vehicle 1"}
+      </p>
+      <TargetVehicleFields value={vehicle} onChange={setVehicle} />
+    </div>
+  );
 
+  const vehicleExtras = (
+    <>
       {/* Dynamic extra vehicles */}
       {extraVehicles.map((ev, i) => (
         <div
@@ -995,7 +1001,7 @@ export function AddTargetDialog({
           if (!v) resetAndClose();
         }}
       >
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="md:max-w-2xl lg:max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Target to Registry</DialogTitle>
           </DialogHeader>
@@ -1055,29 +1061,57 @@ export function AddTargetDialog({
               </div>
             </div>
 
-            {targetType === "person" && (
-              <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
-                <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                  <User className="w-3 h-3" />
-                  Person Identity
-                </p>
-                <TargetIdentityFields
-                  value={identity}
-                  onChange={setIdentity}
-                  onSurnameBlur={checkNameOnBlur}
-                />
-              </div>
-            )}
+            {/* The primary identity boxes sit side by side from md up (2
+                columns — iPad-portrait width) and, for a Person target,
+                a 3rd column from lg (Person/Address/Vehicle, laptop
+                width) — Vehicle/Location targets have no Person Identity
+                box so stay at 2 columns even at lg. Dynamic extras
+                (additional addresses/vehicles) stay a full-width list
+                below the grid at every size — a variable-length list
+                doesn't suit a fixed column. */}
+            <div
+              className={`grid gap-3 md:items-start ${
+                targetType === "person"
+                  ? "md:grid-cols-2 lg:grid-cols-3"
+                  : "md:grid-cols-2"
+              }`}
+            >
+              {targetType === "person" && (
+                <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
+                  <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                    <User className="w-3 h-3" />
+                    Person Identity
+                  </p>
+                  <TargetIdentityFields
+                    value={identity}
+                    onChange={setIdentity}
+                    onSurnameBlur={checkNameOnBlur}
+                  />
+                </div>
+              )}
+
+              {targetType === "vehicle" ? (
+                <>
+                  {vehiclePrimaryBox}
+                  {addressPrimaryBox}
+                </>
+              ) : (
+                <>
+                  {addressPrimaryBox}
+                  {vehiclePrimaryBox}
+                </>
+              )}
+            </div>
 
             {targetType === "vehicle" ? (
               <>
-                {vehicleGroup}
-                {addressGroup}
+                {vehicleExtras}
+                {addressExtras}
               </>
             ) : (
               <>
-                {addressGroup}
-                {vehicleGroup}
+                {addressExtras}
+                {vehicleExtras}
               </>
             )}
 
@@ -1171,18 +1205,22 @@ export function AddTargetDialog({
               </Button>
             </div>
 
-            {/* Depart / Arrive */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Depart (DEP)
-              </label>
-              <Input value={dep} onChange={e => setDep(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Arrive (ARR)
-              </label>
-              <Input value={arr} onChange={e => setArr(e.target.value)} />
+            {/* Depart / Arrive — simple single-line fields, so they pair up
+                side by side from sm rather than needing the wider md/lg
+                grid the bordered identity boxes above need room for. */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Depart (DEP)
+                </label>
+                <Input value={dep} onChange={e => setDep(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Arrive (ARR)
+                </label>
+                <Input value={arr} onChange={e => setArr(e.target.value)} />
+              </div>
             </div>
           </div>
           <DialogFooter>

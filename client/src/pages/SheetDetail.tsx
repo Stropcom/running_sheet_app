@@ -839,70 +839,140 @@ function CinCertifyRow({
 }) {
   const ROW_H = "h-8";
   const isSpacer = member.memberName === SPACER;
+  const canRemove = canEdit && !isLocked;
+
+  // Removing a CIN (or a spacer) is a press-and-hold, not a tap — a red fill
+  // sweeps across the row over HOLD_MS; releasing early cancels. No icon, no
+  // reserved space, and much harder to trigger by accident than a plain tap
+  // on a legal record. Driven imperatively via a ref (not React state) so
+  // the fill animates every frame without re-rendering the row.
+  const HOLD_MS = 1000;
+  const fillRef = useRef<HTMLDivElement>(null);
+  const holdRef = useRef<{
+    active: boolean;
+    start: number;
+    raf: number | null;
+  }>({ active: false, start: 0, raf: null });
+
+  useEffect(() => {
+    return () => {
+      if (holdRef.current.raf) cancelAnimationFrame(holdRef.current.raf);
+    };
+  }, []);
+
+  const startHold = (e: React.PointerEvent) => {
+    if (!canRemove) return;
+    if ((e.target as HTMLElement).closest("[data-shield-btn]")) return;
+    const hold = holdRef.current;
+    hold.active = true;
+    hold.start = performance.now();
+    if (fillRef.current) {
+      fillRef.current.style.transition = "none";
+    }
+    const step = (now: number) => {
+      if (!hold.active) return;
+      const pct = Math.min(1, (now - hold.start) / HOLD_MS);
+      if (fillRef.current) fillRef.current.style.width = `${pct * 100}%`;
+      if (pct >= 1) {
+        hold.active = false;
+        onRemove();
+        return;
+      }
+      hold.raf = requestAnimationFrame(step);
+    };
+    hold.raf = requestAnimationFrame(step);
+  };
+
+  const cancelHold = () => {
+    const hold = holdRef.current;
+    if (!hold.active) return;
+    hold.active = false;
+    if (hold.raf) cancelAnimationFrame(hold.raf);
+    if (fillRef.current) {
+      fillRef.current.style.transition = "width 0.2s ease";
+      fillRef.current.style.width = "0%";
+    }
+  };
 
   if (isSpacer) {
     return (
-      <div className={`flex items-center gap-1 group/member ${ROW_H}`}>
-        {/* Spacer — blank row for visual separation, remove on hover */}
-        <span className="flex-1 min-w-0" />
-        {canEdit && !isLocked && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="w-6 h-6 opacity-0 group-hover/member:opacity-100 text-muted-foreground hover:text-destructive shrink-0"
-                onClick={onRemove}
-              >
-                <Trash2 className="w-3 h-3" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs">
-              Remove space
-            </TooltipContent>
-          </Tooltip>
+      <div
+        className={`relative flex items-center gap-1 ${ROW_H} select-none`}
+        style={canRemove ? { touchAction: "none" } : undefined}
+        onPointerDown={startHold}
+        onPointerUp={cancelHold}
+        onPointerLeave={cancelHold}
+        onPointerCancel={cancelHold}
+      >
+        {/* Spacer — blank row for visual separation, press-and-hold to remove */}
+        {canRemove && (
+          <div
+            ref={fillRef}
+            className="absolute inset-0 bg-destructive/15 pointer-events-none"
+            style={{ width: "0%" }}
+          />
         )}
+        <span className="relative z-10 flex-1 min-w-0" />
       </div>
     );
   }
 
   const canToggle = canCertify && !isLocked;
-  const cinTextClass = `text-sm font-mono font-medium flex-1 min-w-0 truncate ${cert ? "text-[var(--certified-color)]" : "text-foreground"}`;
+  const cinTextClass = `relative z-10 text-sm font-mono font-medium flex-1 min-w-0 truncate ${cert ? "text-[var(--certified-color)]" : "text-foreground"}`;
 
   return (
-    <div className={`flex items-center gap-1 group/member ${ROW_H}`}>
-      {/* Shield: single certify/uncertify toggle */}
-      {canToggle ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`w-6 h-6 shrink-0 ${
-                cert
-                  ? "text-[var(--certified-color)] hover:text-red-400 hover:bg-red-400/10"
-                  : "text-red-500 hover:text-emerald-500 hover:bg-emerald-500/10"
-              }`}
-              onClick={() =>
-                cert
-                  ? onUncertify(row.id, member.id)
-                  : onCertify(row.id, member.id)
-              }
-            >
-              <ShieldCheck className="w-4 h-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            {cert
-              ? `Uncertify ${member.memberName}`
-              : `Certify ${member.memberName}`}
-          </TooltipContent>
-        </Tooltip>
-      ) : (
-        <ShieldCheck
-          className={`w-4 h-4 shrink-0 ${cert ? "text-[var(--certified-color)]" : "text-red-500"}`}
+    <div
+      className={`relative flex items-center gap-1.5 ${ROW_H} select-none`}
+      style={canRemove ? { touchAction: "none" } : undefined}
+      onPointerDown={startHold}
+      onPointerUp={cancelHold}
+      onPointerLeave={cancelHold}
+      onPointerCancel={cancelHold}
+    >
+      {/* Press-and-hold (1s) anywhere on this row except the shield removes
+          the CIN — the fill below sweeps left-to-right as visual feedback */}
+      {canRemove && (
+        <div
+          ref={fillRef}
+          className="absolute inset-0 bg-destructive/15 pointer-events-none"
+          style={{ width: "0%" }}
         />
       )}
+
+      {/* Shield: single certify/uncertify toggle */}
+      <span data-shield-btn className="relative z-10 shrink-0">
+        {canToggle ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={`w-6 h-6 shrink-0 ${
+                  cert
+                    ? "text-[var(--certified-color)] hover:text-red-400 hover:bg-red-400/10"
+                    : "text-red-500 hover:text-emerald-500 hover:bg-emerald-500/10"
+                }`}
+                onClick={() =>
+                  cert
+                    ? onUncertify(row.id, member.id)
+                    : onCertify(row.id, member.id)
+                }
+              >
+                <ShieldCheck className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              {cert
+                ? `Uncertify ${member.memberName}`
+                : `Certify ${member.memberName}`}
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <ShieldCheck
+            className={`w-4 h-4 shrink-0 ${cert ? "text-[var(--certified-color)]" : "text-red-500"}`}
+          />
+        )}
+      </span>
 
       {/* CIN — tooltip shows who certified it and when, once certified */}
       {cert ? (
@@ -927,24 +997,6 @@ function CinCertifyRow({
         </Tooltip>
       ) : (
         <span className={cinTextClass}>{member.memberName}</span>
-      )}
-
-      {canEdit && !isLocked && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="w-6 h-6 opacity-0 group-hover/member:opacity-100 text-muted-foreground hover:text-destructive shrink-0"
-              onClick={onRemove}
-            >
-              <Trash2 className="w-3 h-3" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            Remove this CIN
-          </TooltipContent>
-        </Tooltip>
       )}
     </div>
   );

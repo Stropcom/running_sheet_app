@@ -2226,13 +2226,14 @@ export default function OperationDetail() {
               off one row. */}
           <div className="flex flex-wrap items-center gap-2 mb-4">
             {/* grid-cols-2 (not the default flex-1) so the two triggers are
-                always exactly the same width as each other — matching the
-                wider "Deployment Summaries" label — rather than each sizing
-                to its own text. min-w-0 + truncate on the label lets it
-                ellipsize instead of overflowing if that shared width ever
-                gets tight on a narrow phone. w-full on mobile lets the grid
-                fill the row; from sm up the list goes back to sizing to its
-                (now-equal) columns. */}
+                always exactly the same width as each other, rather than
+                each sizing to its own text. "Deployment Summaries" shortens
+                to just "Summaries" below sm — even matched to "Running
+                Sheets" width, the full label didn't fit on a phone; sm+ has
+                room for the full name. min-w-0 + truncate stays on as a
+                safety net if that shared width ever gets tight regardless.
+                w-full on mobile lets the grid fill the row; from sm up the
+                list goes back to sizing to its (still-equal) columns. */}
             <TabsList className="grid grid-cols-2 w-full sm:w-fit">
               <TabsTrigger
                 value="sheets"
@@ -2246,7 +2247,10 @@ export default function OperationDetail() {
                 className="w-full min-w-0 text-[11px] sm:text-sm"
               >
                 <History className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-                <span className="truncate">Deployment Summaries</span>
+                <span className="truncate sm:hidden">Summaries</span>
+                <span className="truncate hidden sm:inline">
+                  Deployment Summaries
+                </span>
               </TabsTrigger>
               {/* No visible "Add Target" trigger — target creation/editing
                   lives in the New Running Sheet dialog, the Edit Running

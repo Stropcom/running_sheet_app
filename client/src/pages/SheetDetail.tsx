@@ -1010,7 +1010,6 @@ function CinCertifyCell({
   };
 
   const total = row.members.length;
-  const certified = row.certifications.filter(c => c.isActive).length;
 
   // A fully-certified row (isLocked) whose members are exactly the full
   // daily roster collapses to a single green "TEAM" pill instead of every
@@ -1166,22 +1165,16 @@ function CinCertifyCell({
           </div>
         ))}
 
-      {/* Summary — omitted while the row has no members yet */}
-      {total > 0 && (
+      {/* Locked badge — the certified count is redundant with the shields */}
+      {row.isLocked && (
         <div className="flex items-center gap-1.5 mt-1">
-          {row.isLocked ? (
-            <Badge
-              variant="outline"
-              className="gap-1 text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)] text-xs py-0 px-1.5"
-            >
-              <Lock className="w-2.5 h-2.5" />
-              Locked
-            </Badge>
-          ) : (
-            <span className="text-xs text-muted-foreground">
-              {certified}/{total} certified
-            </span>
-          )}
+          <Badge
+            variant="outline"
+            className="gap-1 text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)] text-xs py-0 px-1.5"
+          >
+            <Lock className="w-2.5 h-2.5" />
+            Locked
+          </Badge>
         </div>
       )}
 
@@ -4898,7 +4891,7 @@ export default function SheetDetail({
                   <tr className="bg-muted/30">
                     <th className="w-32">Time</th>
                     <th>Observation</th>
-                    <th className="w-44">CIN / Certify</th>
+                    <th className="w-44">Certify / CIN</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -5359,7 +5352,7 @@ export default function SheetDetail({
                               />
                             </td>
 
-                            {/* CIN / Certify */}
+                            {/* Certify / CIN */}
                             <td>
                               <CinCertifyCell
                                 row={row}

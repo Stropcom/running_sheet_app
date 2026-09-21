@@ -4112,6 +4112,34 @@ export default function SheetDetail({
 
   const isLoading = sheetLoading || rowsLoading;
 
+  // Rendered in two different spots depending on breakpoint: next to the
+  // title on sm+ (single-row header), next to Close/Export on mobile (the
+  // title's own row is back-arrow + title only there, see below).
+  const editOrClosedBadge = (
+    <>
+      {!isClosed && (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="w-7 h-7 shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={openEditSheet}
+          title="Edit sheet title"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </Button>
+      )}
+      {isClosed && (
+        <Badge
+          variant="secondary"
+          className="gap-1.5 bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 shrink-0"
+        >
+          <LockKeyhole className="w-3 h-3" />
+          CLOSED
+        </Badge>
+      )}
+    </>
+  );
+
   const Chrome = embedded ? React.Fragment : DashboardLayout;
   return (
     <Chrome>
@@ -4123,12 +4151,16 @@ export default function SheetDetail({
             open until explicitly closed" behaviour. */}
         {!embedded && (
           <>
-            {/* Two rows on every width, not one: title/back-arrow above,
-                Close/Export below — squeezing them onto one row left the
-                title with almost no room to breathe (see the old single-row
-                layout in git history), especially on a phone where the
-                title is what an officer actually needs to read. */}
-            <div className="flex flex-col gap-3 mb-6">
+            {/* sm+: one row — back-arrow/title/edit-or-badge on the left,
+                Close/Export pushed right by sm:ml-auto on the actions row.
+                Below sm: two rows instead, since all of that together left
+                the title almost no room on a phone. Row 1 there is just
+                back-arrow + title (title drops to text-base so the full
+                thing has a better chance of fitting on one line); the
+                edit-pencil/CLOSED badge moves down to sit with Close/Export
+                on row 2 (left-aligned there, opposite Close/Export on the
+                right, instead of every control bunched on one side). */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-6">
               <div className="flex items-center gap-4">
                 <Button
                   variant="ghost"
@@ -4144,130 +4176,119 @@ export default function SheetDetail({
                   ) : (
                     <>
                       <div className="min-w-0">
-                        <h1 className="text-xl font-semibold text-foreground truncate">
+                        <h1 className="text-base sm:text-xl font-semibold text-foreground truncate">
                           {sheet?.title}
                         </h1>
                       </div>
                       {sheet && (
-                        <>
-                          {!isClosed && (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="w-7 h-7 shrink-0 text-muted-foreground hover:text-foreground"
-                              onClick={openEditSheet}
-                              title="Edit sheet title"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                          )}
-                          {isClosed && (
-                            <Badge
-                              variant="secondary"
-                              className="gap-1.5 bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 shrink-0"
-                            >
-                              <LockKeyhole className="w-3 h-3" />
-                              CLOSED
-                            </Badge>
-                          )}
-                        </>
+                        <div className="hidden sm:flex items-center gap-2">
+                          {editOrClosedBadge}
+                        </div>
                       )}
                     </>
                   )}
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-2 flex-wrap">
-                {/* Offline indicator */}
-                {!isOnline && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-xs font-medium">
-                        {syncStatus === "syncing" ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <WifiOff className="w-3.5 h-3.5" />
-                        )}
-                        {hasPendingOfflineChanges
-                          ? "Offline — changes queued"
-                          : "Offline"}
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      No internet connection. Changes are saved locally and will
-                      sync automatically when you reconnect.
-                    </TooltipContent>
-                  </Tooltip>
+              <div className="flex items-center gap-2 flex-wrap sm:ml-auto">
+                {sheet && !sheetLoading && (
+                  <div className="flex sm:hidden items-center gap-2">
+                    {editOrClosedBadge}
+                  </div>
                 )}
-                {/* Close / Reopen button */}
-                {canManageClose &&
-                  (isClosed ? (
+                <div className="flex items-center gap-2 flex-wrap ml-auto sm:ml-0">
+                  {/* Offline indicator */}
+                  {!isOnline && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="gap-2 border-amber-400 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
-                          onClick={() => reopenSheet.mutate({ id: sheetId })}
-                          disabled={reopenSheet.isPending}
-                        >
-                          <LockKeyholeOpen className="w-4 h-4" />
-                          Reopen
-                        </Button>
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-xs font-medium">
+                          {syncStatus === "syncing" ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <WifiOff className="w-3.5 h-3.5" />
+                          )}
+                          {hasPendingOfflineChanges
+                            ? "Offline — changes queued"
+                            : "Offline"}
+                        </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        Reopen this running sheet for editing
+                        No internet connection. Changes are saved locally and
+                        will sync automatically when you reconnect.
                       </TooltipContent>
                     </Tooltip>
-                  ) : (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className={`gap-2 ${
-                            canCloseSheet
-                              ? "border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950"
-                              : "opacity-40 cursor-not-allowed"
-                          }`}
-                          onClick={() =>
-                            canCloseSheet && closeSheet.mutate({ id: sheetId })
-                          }
-                          disabled={!canCloseSheet || closeSheet.isPending}
-                        >
-                          <LockKeyhole className="w-4 h-4" />
-                          Close
-                          <span className="hidden sm:inline"> Sheet</span>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {canCloseSheet
-                          ? "Close and lock this running sheet"
-                          : !canCloseByRole
-                            ? "Only the Team Leader or Admin can close this sheet"
-                            : !allRowsCertified
-                              ? "All rows must be certified before closing"
-                              : !govComplete
-                                ? "Governance must be 100% complete before closing"
-                                : "Close sheet"}
-                      </TooltipContent>
-                    </Tooltip>
-                  ))}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-2"
-                  disabled={exportFetching}
-                  onClick={handleExport}
-                >
-                  <Download className="w-4 h-4" />
-                  {exportFetching ? (
-                    "Preparing..."
-                  ) : (
-                    <>
-                      Export<span className="hidden sm:inline"> PDF</span>
-                    </>
                   )}
-                </Button>
+                  {/* Close / Reopen button */}
+                  {canManageClose &&
+                    (isClosed ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-2 border-amber-400 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
+                            onClick={() => reopenSheet.mutate({ id: sheetId })}
+                            disabled={reopenSheet.isPending}
+                          >
+                            <LockKeyholeOpen className="w-4 h-4" />
+                            Reopen
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Reopen this running sheet for editing
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className={`gap-2 ${
+                              canCloseSheet
+                                ? "border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950"
+                                : "opacity-40 cursor-not-allowed"
+                            }`}
+                            onClick={() =>
+                              canCloseSheet &&
+                              closeSheet.mutate({ id: sheetId })
+                            }
+                            disabled={!canCloseSheet || closeSheet.isPending}
+                          >
+                            <LockKeyhole className="w-4 h-4" />
+                            Close
+                            <span className="hidden sm:inline"> Sheet</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {canCloseSheet
+                            ? "Close and lock this running sheet"
+                            : !canCloseByRole
+                              ? "Only the Team Leader or Admin can close this sheet"
+                              : !allRowsCertified
+                                ? "All rows must be certified before closing"
+                                : !govComplete
+                                  ? "Governance must be 100% complete before closing"
+                                  : "Close sheet"}
+                        </TooltipContent>
+                      </Tooltip>
+                    ))}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-2"
+                    disabled={exportFetching}
+                    onClick={handleExport}
+                  >
+                    <Download className="w-4 h-4" />
+                    {exportFetching ? (
+                      "Preparing..."
+                    ) : (
+                      <>
+                        Export<span className="hidden sm:inline"> PDF</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
 

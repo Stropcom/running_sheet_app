@@ -207,9 +207,9 @@ export default function GovernancePage() {
   > | null>(null);
 
   // Section expand state
-  const [tlExpanded, setTlExpanded] = useState(true);
-  const [opExpanded, setOpExpanded] = useState(true);
-  const [imgExpanded, setImgExpanded] = useState(true);
+  const [tlExpanded, setTlExpanded] = useState(false);
+  const [opExpanded, setOpExpanded] = useState(false);
+  const [imgExpanded, setImgExpanded] = useState(false);
 
   // Track previous allSigned value to detect transitions
   const prevAllSignedRef = React.useRef<boolean | null>(null);
@@ -832,8 +832,8 @@ export default function GovernancePage() {
         {/* ── Imagery Section ── */}
         <div className="mb-3">
           <SectionHeader
-            title="Imagery"
-            subtitle="Photos and videos taken during surveillance"
+            title="Operative — Imagery"
+            subtitle="Author - tasks - photos/video taken"
             percent={imgPercent}
             expanded={imgExpanded}
             onToggle={() => setImgExpanded(v => !v)}

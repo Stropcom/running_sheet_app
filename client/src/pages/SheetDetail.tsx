@@ -862,7 +862,6 @@ function CinCertifyRow({
 
   const startHold = (e: React.PointerEvent) => {
     if (!canRemove) return;
-    if ((e.target as HTMLElement).closest("[data-shield-btn]")) return;
     const hold = holdRef.current;
     hold.active = true;
     hold.start = performance.now();
@@ -918,88 +917,106 @@ function CinCertifyRow({
   }
 
   const canToggle = canCertify && !isLocked;
-  const cinTextClass = `relative z-10 text-sm font-mono font-medium flex-1 min-w-0 truncate ${cert ? "text-[var(--certified-color)]" : "text-foreground"}`;
+
+  // A single rounded chip carries both the CIN and its certify state — a
+  // tap anywhere on it certifies/uncertifies; a 1s press-and-hold on the
+  // narrow zone at its right edge removes it (same fill-sweep mechanic as
+  // the spacer row above), so the two gestures never collide.
+  const pillBase = `relative z-10 flex items-center gap-1.5 h-full min-w-0 pl-2.5 border rounded-full text-xs font-bold ${
+    canRemove ? "pr-8" : "pr-2.5"
+  } ${
+    cert
+      ? "text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)]"
+      : "text-red-500 border-red-500/35 bg-red-500/5"
+  }`;
+  const pillContent = (
+    <>
+      <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+      <span className="font-mono truncate">{member.memberName}</span>
+    </>
+  );
 
   return (
-    <div
-      className={`relative flex items-center gap-1.5 ${ROW_H} select-none`}
-      style={canRemove ? { touchAction: "none" } : undefined}
-      onPointerDown={startHold}
-      onPointerUp={cancelHold}
-      onPointerLeave={cancelHold}
-      onPointerCancel={cancelHold}
-    >
-      {/* Press-and-hold (1s) anywhere on this row except the shield removes
-          the CIN — the fill below sweeps left-to-right as visual feedback */}
-      {canRemove && (
-        <div
-          ref={fillRef}
-          className="absolute inset-0 bg-destructive/15 pointer-events-none"
-          style={{ width: "0%" }}
-        />
-      )}
-
-      {/* Shield: single certify/uncertify toggle */}
-      <span data-shield-btn className="relative z-10 shrink-0">
+    <div className={`flex items-center ${ROW_H}`}>
+      <div className="relative inline-flex items-stretch h-7 max-w-full rounded-full overflow-hidden">
         {canToggle ? (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={`w-6 h-6 shrink-0 ${
-                  cert
-                    ? "text-[var(--certified-color)] hover:text-red-400 hover:bg-red-400/10"
-                    : "text-red-500 hover:text-emerald-500 hover:bg-emerald-500/10"
-                }`}
+              <button
+                type="button"
+                className={`${pillBase} cursor-pointer`}
                 onClick={() =>
                   cert
                     ? onUncertify(row.id, member.id)
                     : onCertify(row.id, member.id)
                 }
               >
-                <ShieldCheck className="w-4 h-4" />
-              </Button>
+                {pillContent}
+              </button>
             </TooltipTrigger>
             <TooltipContent side="top" className="text-xs">
-              {cert
-                ? `Uncertify ${member.memberName}`
-                : `Certify ${member.memberName}`}
+              {cert ? (
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium">
+                    Certified by{" "}
+                    {(cert as any).certifiedByCIN || cert.certifiedByName} — tap
+                    to uncertify
+                  </span>
+                  <span className="text-muted-foreground flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {format(new Date(cert.certifiedAt), "MMM d, yyyy HH:mm:ss")}
+                  </span>
+                </div>
+              ) : (
+                `Certify ${member.memberName}`
+              )}
+            </TooltipContent>
+          </Tooltip>
+        ) : cert ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={`${pillBase} cursor-default`}>
+                {pillContent}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium">
+                  Certified by{" "}
+                  {(cert as any).certifiedByCIN || cert.certifiedByName}
+                </span>
+                <span className="text-muted-foreground flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {format(new Date(cert.certifiedAt), "MMM d, yyyy HH:mm:ss")}
+                </span>
+              </div>
             </TooltipContent>
           </Tooltip>
         ) : (
-          <span className="flex w-6 h-6 items-center justify-center shrink-0">
-            <ShieldCheck
-              className={`w-4 h-4 shrink-0 ${cert ? "text-[var(--certified-color)]" : "text-red-500"}`}
-            />
-          </span>
+          <span className={`${pillBase} cursor-default`}>{pillContent}</span>
         )}
-      </span>
 
-      {/* CIN — tooltip shows who certified it and when, once certified */}
-      {cert ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className={`${cinTextClass} cursor-default`}>
-              {member.memberName}
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            <div className="flex flex-col gap-0.5">
-              <span className="font-medium">
-                Certified by{" "}
-                {(cert as any).certifiedByCIN || cert.certifiedByName}
-              </span>
-              <span className="text-muted-foreground flex items-center gap-1">
-                <Clock className="w-3 h-3" />
-                {format(new Date(cert.certifiedAt), "MMM d, yyyy HH:mm:ss")}
-              </span>
-            </div>
-          </TooltipContent>
-        </Tooltip>
-      ) : (
-        <span className={cinTextClass}>{member.memberName}</span>
-      )}
+        {/* Fill sweep during a hold — clipped to the pill's rounded shape */}
+        {canRemove && (
+          <div
+            ref={fillRef}
+            className="absolute inset-0 bg-destructive/25 pointer-events-none z-0"
+            style={{ width: "0%" }}
+          />
+        )}
+
+        {/* Hold zone — right edge of the pill, press-and-hold 1s to remove */}
+        {canRemove && (
+          <div
+            className="absolute right-0 top-0 bottom-0 z-20 w-8 border-l border-black/10 dark:border-white/10"
+            style={{ touchAction: "none" }}
+            onPointerDown={startHold}
+            onPointerUp={cancelHold}
+            onPointerLeave={cancelHold}
+            onPointerCancel={cancelHold}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -1200,7 +1217,7 @@ function CinCertifyCell({
             )}
           </div>
         ) : (
-          <div className="flex items-center mt-0.5">
+          <div className="flex flex-col mt-0.5">
             <button
               onClick={() => setAdding(true)}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors w-fit"
@@ -1213,10 +1230,12 @@ function CinCertifyCell({
             {rosterCins && rosterCins.length > 1 && (
               <button
                 onClick={addAllTeamCins}
-                className="flex items-center gap-1 text-xs text-primary/80 hover:text-primary transition-colors w-fit ml-2"
+                className="flex items-center gap-1 text-xs text-primary/80 hover:text-primary transition-colors w-fit"
                 title={`Add all ${rosterCins.length} rostered CINs`}
               >
-                <Users className="w-3 h-3" />
+                <span className="flex w-6 h-6 items-center justify-center shrink-0">
+                  <Users className="w-3 h-3" />
+                </span>
                 Team
               </button>
             )}

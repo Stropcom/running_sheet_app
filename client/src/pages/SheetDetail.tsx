@@ -1105,17 +1105,13 @@ function CinCertifyCell({
   return (
     <div className="flex flex-col min-w-[130px]">
       {showTeamCollapse ? (
-        <div className="flex items-center h-8">
+        <div className="flex items-center justify-end h-8">
           <div className="inline-flex items-center gap-1.5 h-7 px-2.5 border rounded-full text-xs font-bold text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)]">
             <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
             <span className="font-mono">TEAM</span>
           </div>
         </div>
-      ) : total === 0 ? (
-        <span className="text-xs text-muted-foreground italic h-8 flex items-center">
-          No members
-        </span>
-      ) : (
+      ) : total === 0 ? null : (
         row.members.map(member => {
           const cert = row.certifications.find(
             c => c.memberId === member.id && c.isActive
@@ -1227,7 +1223,7 @@ function CinCertifyCell({
             )}
           </div>
         ) : (
-          <div className="flex flex-col mt-0.5">
+          <div className="flex flex-col items-end mt-0.5">
             <button
               onClick={() => setAdding(true)}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors w-fit"
@@ -1254,7 +1250,7 @@ function CinCertifyCell({
 
       {/* Locked badge — the certified count is redundant with the shields */}
       {row.isLocked && (
-        <div className="flex items-center gap-1.5 mt-1">
+        <div className="flex items-center justify-end gap-1.5 mt-1">
           <Badge
             variant="outline"
             className="gap-1 text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)] text-xs py-0 px-1.5"
@@ -1272,7 +1268,7 @@ function CinCertifyCell({
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 pl-0 pr-2 gap-1 text-xs text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 mt-1 w-fit"
+              className="h-7 pl-0 pr-2 gap-1 text-xs text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 mt-1 w-fit ml-auto"
               onClick={() => onUncertifyAll(row.id)}
             >
               <span className="flex w-6 h-6 items-center justify-center shrink-0">
@@ -1290,7 +1286,7 @@ function CinCertifyCell({
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 pl-0 pr-2 gap-1 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-1 w-fit"
+          className="h-7 pl-0 pr-2 gap-1 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-1 w-fit ml-auto"
           onClick={() => onDeleteRow(row.id)}
         >
           <span className="flex w-6 h-6 items-center justify-center shrink-0">
@@ -4982,7 +4978,7 @@ export default function SheetDetail({
                   <tr className="bg-muted/30">
                     <th className="w-32">Time</th>
                     <th>Observation</th>
-                    <th className="w-44">Certify / CIN</th>
+                    <th className="w-44 text-right">CIN</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -5443,7 +5439,7 @@ export default function SheetDetail({
                               />
                             </td>
 
-                            {/* Certify / CIN */}
+                            {/* CIN / Certify */}
                             <td>
                               <CinCertifyCell
                                 row={row}

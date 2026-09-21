@@ -4124,7 +4124,7 @@ export default function SheetDetail({
     </Badge>
   );
 
-  // Rendered next to the title on sm+ (single-row header) as a compact
+  // Rendered next to the title on lg+ (single-row header) as a compact
   // icon-only button — there's no Close/Export alongside it there to match.
   const editOrClosedBadgeCompact = (
     <>
@@ -4174,21 +4174,30 @@ export default function SheetDetail({
             open until explicitly closed" behaviour. */}
         {!embedded && (
           <>
-            {/* sm+: one row — back-arrow/title/edit-or-badge on the left,
-                Close/Export pushed right by sm:ml-auto on the actions row.
-                Below sm: two rows instead, since all of that together left
-                the title almost no room on a phone. Row 1 there is just
-                back-arrow + title — the title wraps instead of truncating
-                below sm (sm:truncate only kicks in at sm+, where the row
-                has enough width that one line is realistic) so the full
-                title is always readable, not cut off with "…". The
-                edit-pencil/CLOSED badge moves down to sit with Close/Export
-                on row 2, sized to match them there (editOrClosedBadgeFull)
-                instead of the compact icon button used next to the title on
-                sm+, and grouped with them (no gap-widening ml-auto between)
-                so the row reads as one evenly-matched set, right-aligned as
-                a whole. */}
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-6">
+            {/* lg+ (genuine laptop width): one row — back-arrow/title/
+                edit-or-badge on the left, Close/Export pushed right by
+                lg:ml-auto on the actions row. Below lg: two rows instead.
+                This used to switch at sm (640px), which a phone in
+                landscape clears easily (most run 700-930px) — landscape
+                phones were dropping into the "one row" layout meant for
+                real desktop width, and there wasn't room there for both
+                Close and Export next to the title, so the action buttons
+                wrapped onto their own line anyway, just awkwardly. lg
+                (1024px) reliably excludes phones in either orientation and
+                iPad portrait (768px), so they all get the deliberate
+                two-row treatment instead. Row 1 there is just back-arrow +
+                title — the title wraps instead of truncating below lg
+                (lg:truncate only kicks in at lg+, where the row has enough
+                width that one line is realistic) so the full title is
+                always readable, not cut off with "…". The edit-pencil/
+                CLOSED badge moves down to sit with Close/Export on row 2,
+                sized to match them there (editOrClosedBadgeFull) instead of
+                the compact icon button used next to the title on lg+, and
+                grouped with them (no gap-widening ml-auto between) so the
+                row reads as one evenly-matched set — left-aligned, under
+                the back-arrow/title above it, not floating off to the
+                right. */}
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4 mb-6">
               <div className="flex items-center gap-4">
                 <Button
                   variant="ghost"
@@ -4204,12 +4213,12 @@ export default function SheetDetail({
                   ) : (
                     <>
                       <div className="min-w-0">
-                        <h1 className="text-base sm:text-xl font-semibold text-foreground sm:truncate">
+                        <h1 className="text-base lg:text-xl font-semibold text-foreground lg:truncate">
                           {sheet?.title}
                         </h1>
                       </div>
                       {sheet && (
-                        <div className="hidden sm:flex items-center gap-2">
+                        <div className="hidden lg:flex items-center gap-2">
                           {editOrClosedBadgeCompact}
                         </div>
                       )}
@@ -4217,9 +4226,9 @@ export default function SheetDetail({
                   )}
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-2 flex-wrap sm:ml-auto">
+              <div className="flex items-center gap-2 flex-wrap lg:ml-auto">
                 {sheet && !sheetLoading && (
-                  <div className="flex sm:hidden items-center gap-2">
+                  <div className="flex lg:hidden items-center gap-2">
                     {editOrClosedBadgeFull}
                   </div>
                 )}
@@ -4284,7 +4293,7 @@ export default function SheetDetail({
                           >
                             <LockKeyhole className="w-4 h-4" />
                             Close
-                            <span className="hidden sm:inline"> Sheet</span>
+                            <span className="hidden lg:inline"> Sheet</span>
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>
@@ -4312,7 +4321,7 @@ export default function SheetDetail({
                       "Preparing..."
                     ) : (
                       <>
-                        Export<span className="hidden sm:inline"> PDF</span>
+                        Export<span className="hidden lg:inline"> PDF</span>
                       </>
                     )}
                   </Button>

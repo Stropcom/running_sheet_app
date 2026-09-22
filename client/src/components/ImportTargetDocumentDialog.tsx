@@ -63,6 +63,7 @@ import {
   type ExtraVehicle,
 } from "@/components/TargetStructuredFields";
 import type { StagedAssociate } from "@/components/AddTargetDialog";
+import { reflowNarrativeText } from "@/lib/textFormat";
 import {
   composeAddress,
   composeVehicle,
@@ -524,7 +525,7 @@ export function ImportTargetDocumentDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-primary" />
-            Import from Document
+            Import Target
           </DialogTitle>
         </DialogHeader>
 
@@ -802,7 +803,7 @@ export function ImportTargetDocumentDialog({
                         Narrative / Background
                       </p>
                       <p className="text-sm whitespace-pre-wrap">
-                        {result.freeText.trim()}
+                        {reflowNarrativeText(result.freeText.trim())}
                       </p>
                       <p className="text-[11px] text-muted-foreground italic">
                         Saved verbatim as this target's background against

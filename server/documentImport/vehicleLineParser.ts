@@ -70,6 +70,13 @@ const COLOURS = new Set([
   "charcoal",
 ]);
 
+// "dark grey", "light blue" — the modifier describes the colour but isn't
+// one itself; parseDescription drops it so the real colour word underneath
+// still gets recognised, rather than "dark"/"light" swallowing the colour
+// slot and pushing make/model out of place (e.g. "dark grey Toyota Prado"
+// parsing as colour="", make="dark", model="grey Toyota").
+const COLOUR_MODIFIERS = new Set(["dark", "light"]);
+
 // Mirrors client/src/lib/addressFormat.ts's VEHICLE_TYPE_OPTIONS values —
 // kept as a separate, server-owned copy for the same reason
 // addressLineParser.ts keeps its own street-type list (that file is
@@ -162,6 +169,9 @@ function parseDescription(
     year = words.shift()!;
   }
 
+  if (words.length > 0 && COLOUR_MODIFIERS.has(words[0].toLowerCase())) {
+    words.shift();
+  }
   let colour = "";
   if (words.length > 0 && COLOURS.has(words[0].toLowerCase())) {
     colour = words.shift()!;

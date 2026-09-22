@@ -625,6 +625,7 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                         version={idx + 1}
                         isCurrent={idx === versionsForOp.length - 1}
                         subject={profile.name}
+                        previous={versionsForOp[idx - 1] ?? null}
                       />
                     ))}
                   </div>

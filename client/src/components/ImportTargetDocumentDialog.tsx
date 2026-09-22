@@ -382,6 +382,21 @@ export function ImportTargetDocumentDialog({
             });
           })
         );
+        // Nothing downstream (Target/Operation profile's associate list,
+        // the Intelligence folder's entity map) was refetching this on its
+        // own — an update here landed in the database fine but stayed
+        // invisible on an already-open profile page until a manual reload,
+        // which read as "recognised the name but didn't actually update
+        // it." Invalidate every cache the new address/vehicle could appear
+        // in, even if some of the updates above failed — whichever ones
+        // succeeded should still show up immediately.
+        await Promise.all([
+          utils.associate.listForTarget.invalidate(),
+          utils.associate.getById.invalidate(),
+          utils.intelligence.targetProfile.invalidate(),
+          utils.intelligence.operationProfile.invalidate(),
+        ]);
+
         const failed = results.filter(r => r.status === "rejected").length;
         if (failed > 0) {
           toast.error(

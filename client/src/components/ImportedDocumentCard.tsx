@@ -8,6 +8,7 @@ import {
   composeAssociateName,
 } from "@/lib/addressFormat";
 import type { DocumentImportPrefill } from "@/components/ImportTargetDocumentDialog";
+import { reflowNarrativeText } from "@/lib/textFormat";
 
 // One row per document uploaded via "Import Target" that was actually saved
 // — shown exactly as parsed and confirmed by the officer, never re-derived
@@ -190,7 +191,7 @@ export function ImportedDocumentCard({
                 Background
               </p>
               <p className="whitespace-pre-wrap text-foreground">
-                {background}
+                {reflowNarrativeText(background)}
               </p>
             </div>
           )}

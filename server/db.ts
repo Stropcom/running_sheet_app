@@ -9685,21 +9685,46 @@ function buildSummaryEntryFields(
 
 /**
  * A row that is nothing but the "Travelled Via" route mechanics — the bare
- * "continued via:" trigger, its paired street-list row, or a self-contained
- * "continued via: <streets>, whereat" row — carries no observational
- * content of its own, so it never gets a Summary line. This is deliberately
- * narrower than "the row mentions continued via" — a row that WRAPS a via
- * clause in real narrative (e.g. "departed 44 Smith St and continued via:
- * Jones Ave, whereat continued surveillance") still gets a line; only the
- * via clause inside it is shortened, by buildSummaryAbbreviatedText's
- * "departed ... continued via:" step. A blanket exclusion on any row
- * mentioning "continued via" would silently drop that real narrative along
- * with the route detail.
+ * "continued via:" trigger, its paired street-list row, a self-contained
+ * "continued via: <streets>, whereat" row, or the "tv" shortcut's own
+ * auto-fill — carries no observational content of its own, so it never
+ * gets a Summary line. This is deliberately narrower than "the row mentions
+ * continued via" — a row that WRAPS a via clause in real narrative (e.g.
+ * "departed 44 Smith St and continued via: Jones Ave, whereat continued
+ * surveillance") still gets a line; only the via clause inside it is
+ * shortened, by buildSummaryAbbreviatedText's "departed ... continued via:"
+ * step. A blanket exclusion on any row mentioning "continued via" would
+ * silently drop that real narrative along with the route detail.
+ *
+ * The "tv" shortcut (see travelledVia.getStreets in routers.ts) replaces a
+ * row's whole text with just the street list itself — no "continued via"
+ * wording anywhere, e.g.:
+ *   Canning Highway, BICTON,
+ *   Stock Road,
+ *   Leach Highway, MYAREE, whereat;
+ * The two regex checks above never matched this shape (they both require
+ * the text to START with "continued via"), so every "tv"-filled row was
+ * silently falling through into the Summary as a normal entry — the third
+ * check below is specifically for it: every line but the last ends in a
+ * bare trailing comma, and the last ends with a comma immediately before
+ * "whereat" (the generator's own closing word) and nothing else. A real
+ * narrative row that happens to use the word "whereat" always has more
+ * text after it, so this doesn't risk swallowing one.
  */
-function isPureTravelledViaRow(observation: string): boolean {
+export function isPureTravelledViaRow(observation: string): boolean {
   const trimmed = observation.trim();
+  if (!trimmed) return false;
   if (/^continued via[;:]\s*$/i.test(trimmed)) return true;
-  return /^continued via[;:].*\bwhereat[;:.,]?\s*$/i.test(trimmed);
+  if (/^continued via[;:].*\bwhereat[;:.,]?\s*$/i.test(trimmed)) return true;
+
+  const lines = trimmed
+    .split("\n")
+    .map(l => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return false;
+  const last = lines[lines.length - 1];
+  if (!/,\s*whereat[;:.,]?$/i.test(last)) return false;
+  return lines.slice(0, -1).every(line => /,$/.test(line));
 }
 
 function isPureTravelledViaFollowUp(

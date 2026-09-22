@@ -1819,7 +1819,9 @@ export default function OperationDetail() {
       ? "target"
       : tabParam === "rollup"
         ? "rollup"
-        : "sheets";
+        : tabParam === "profile"
+          ? "profile"
+          : "sheets";
   const autoExpandTargetId = searchParams.get("targetId")
     ? parseInt(searchParams.get("targetId")!, 10)
     : undefined;

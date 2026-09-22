@@ -232,6 +232,17 @@ function getImplCtor(): DivIconOverlayImplCtor {
     };
 
     private handlePointerDown = (e: PointerEvent) => {
+      // Stop this reaching the map's own pointer handling BEFORE the
+      // draggable check below can return early — same reasoning as
+      // handleClick's stopPropagation above (see its comment): a
+      // business/place icon baked into the map tiles underneath this
+      // marker gets hit-tested by Google on the raw pointerdown itself on
+      // a touch device, ahead of the synthesized "click" handleClick stops
+      // later. A non-draggable marker (the normal state — a marker is only
+      // draggable while "Move…" is active) skipped this stopPropagation
+      // entirely, so the POI's own action sheet still opened alongside
+      // this marker's popup even though handleClick's own fix ran too.
+      e.stopPropagation();
       if (!this._draggable) return;
       const projection = this.getProjection();
       if (!projection) return;

@@ -9,6 +9,12 @@ import {
 } from "@/lib/addressFormat";
 import type { DocumentImportPrefill } from "@/components/ImportTargetDocumentDialog";
 import { reflowNarrativeText } from "@/lib/textFormat";
+import {
+  diffDocumentSnapshots,
+  countChanges,
+  type DiffLine,
+  type DiffStatus,
+} from "@/lib/documentImportDiff";
 
 // One row per document uploaded via "Import Target" that was actually saved
 // — shown exactly as parsed and confirmed by the officer, never re-derived
@@ -35,11 +41,51 @@ export function formatImportDate(value: string | Date): string {
   });
 }
 
+// Shared line/pill decoration for a diffed field — added/removed/changed
+// since the previous version get a coloured left border + tint (matching
+// the border-l-4 + /5 background convention AddTargetDialog's own field
+// group boxes already use), "unchanged" renders exactly as before.
+function diffLineClasses(status: DiffStatus): string {
+  switch (status) {
+    case "added":
+      return "border-l-2 border-emerald-500 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300";
+    case "removed":
+      return "border-l-2 border-red-500 bg-red-500/10 text-red-700 dark:text-red-400 line-through decoration-2";
+    case "changed":
+      return "border-l-2 border-amber-500 bg-amber-500/10 text-amber-800 dark:text-amber-300";
+    default:
+      return "";
+  }
+}
+
+const DIFF_MARKER_BG: Record<Exclude<DiffStatus, "unchanged">, string> = {
+  added: "bg-emerald-500",
+  removed: "bg-red-500",
+  changed: "bg-amber-500",
+};
+const DIFF_MARKER_SYMBOL: Record<Exclude<DiffStatus, "unchanged">, string> = {
+  added: "+",
+  removed: "−",
+  changed: "~",
+};
+
+function DiffMarker({ status }: { status: DiffStatus }) {
+  if (status === "unchanged") return null;
+  return (
+    <span
+      className={`inline-flex items-center justify-center w-3.5 h-3.5 rounded text-[9px] font-bold text-white shrink-0 ${DIFF_MARKER_BG[status]}`}
+    >
+      {DIFF_MARKER_SYMBOL[status]}
+    </span>
+  );
+}
+
 export function ImportedDocumentCard({
   row,
   version,
   isCurrent,
   subject,
+  previous,
 }: {
   row: DocumentImportRow;
   version: number;
@@ -53,6 +99,11 @@ export function ImportedDocumentCard({
   // so a card always reads as "who does this document relate to",
   // consistently, on either page.
   subject?: string;
+  /** The import immediately before this one (by upload order), if any —
+   * when given, fields that are new/gone/different since that version are
+   * highlighted inline instead of this version's fields rendering plain.
+   * Omitted (or null) for Version 1, which has nothing to compare against. */
+  previous?: DocumentImportRow | null;
 }) {
   // Collapsed by default even when there's only one — an officer shouldn't
   // be greeted with a wall of imported-document text before they've even
@@ -67,23 +118,63 @@ export function ImportedDocumentCard({
   }
   if (!snapshot) return null;
 
+  let previousSnapshot: DocumentImportPrefill | null = null;
+  if (previous) {
+    try {
+      previousSnapshot = JSON.parse(previous.snapshotJson);
+    } catch {
+      previousSnapshot = null;
+    }
+  }
+  const diff = diffDocumentSnapshots(snapshot, previousSnapshot);
+  const changeCount = countChanges(diff);
+  const allDiffLines = diff
+    ? [
+        ...diff.addresses,
+        ...diff.vehicles,
+        ...diff.associates,
+        ...diff.backgroundParagraphs,
+      ]
+    : [];
+  const hasAdded = allDiffLines.some(l => l.status === "added");
+  const hasRemoved = allDiffLines.some(l => l.status === "removed");
+  const hasChanged = allDiffLines.some(l => l.status === "changed");
+
   const { firstNames, surname } = snapshot.identity;
   const name =
     firstNames.trim() && surname.trim()
       ? `${firstNames.trim()} ${surname.trim().toUpperCase()}`
       : "";
-  const address = composeAddress(snapshot.address).full;
-  const vehicle = composeVehicle(snapshot.vehicle).full;
-  const extraAddresses = snapshot.extraAddresses
-    .map(a => composeAddress(a).full)
-    .filter(Boolean);
-  const extraVehicles = snapshot.extraVehicles
-    .map(v => composeVehicle(v).full)
-    .filter(Boolean);
-  const associateNames = snapshot.associates
-    .map(a => composeAssociateName(a.identity, a.address.businessName).name)
-    .filter(Boolean);
   const background = snapshot.background.trim();
+
+  // Plain (undecorated) fallbacks for when there's nothing to diff against
+  // — same lines diff.addresses/vehicles/associates would otherwise carry,
+  // just all "unchanged" so they render with no highlight at all.
+  const addressLines: DiffLine[] =
+    diff?.addresses ??
+    [snapshot.address, ...snapshot.extraAddresses]
+      .map(a => composeAddress(a).full)
+      .filter(Boolean)
+      .map(text => ({ text, status: "unchanged" as const }));
+  const vehicleLines: DiffLine[] =
+    diff?.vehicles ??
+    [snapshot.vehicle, ...snapshot.extraVehicles]
+      .map(v => composeVehicle(v).full)
+      .filter(Boolean)
+      .map(text => ({ text, status: "unchanged" as const }));
+  const associateLines: DiffLine[] =
+    diff?.associates ??
+    snapshot.associates
+      .map(a => composeAssociateName(a.identity, a.address.businessName).name)
+      .filter(Boolean)
+      .map(text => ({ text, status: "unchanged" as const }));
+  const backgroundParagraphLines: DiffLine[] =
+    diff?.backgroundParagraphs ??
+    reflowNarrativeText(background)
+      .split("\n\n")
+      .map(p => p.trim())
+      .filter(Boolean)
+      .map(text => ({ text, status: "unchanged" as const }));
 
   return (
     <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
@@ -115,6 +206,13 @@ export function ImportedDocumentCard({
             Uploaded {formatImportDate(row.uploadedAt)}
             {row.uploadedByCIN ? ` · CIN ${row.uploadedByCIN}` : ""}
             {row.sourceFileName ? ` · ${row.sourceFileName}` : ""}
+            {changeCount > 0 && (
+              <span className="text-emerald-700 dark:text-emerald-400 font-medium">
+                {" "}
+                · {changeCount} change{changeCount !== 1 ? "s" : ""} since V
+                {version - 1}
+              </span>
+            )}
           </p>
         </div>
         <ChevronDown
@@ -134,69 +232,107 @@ export function ImportedDocumentCard({
             </p>
             <p className="text-foreground">{name || "—"}</p>
           </div>
-          {(address || extraAddresses.length > 0) && (
+          {addressLines.length > 0 && (
             <div>
               <p className="font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                Address{extraAddresses.length > 0 ? "es" : ""}
+                Address{addressLines.length > 1 ? "es" : ""}
               </p>
               <div className="space-y-0.5">
-                {address && (
-                  <p className="font-mono text-foreground">
-                    {formatIntelAddress(address)}
-                  </p>
-                )}
-                {extraAddresses.map((a, i) => (
-                  <p key={i} className="font-mono text-foreground">
-                    {formatIntelAddress(a)}
+                {addressLines.map((line, i) => (
+                  <p
+                    key={i}
+                    className={`font-mono text-foreground flex items-baseline gap-1.5 px-1.5 -mx-1.5 rounded ${diffLineClasses(line.status)}`}
+                  >
+                    <DiffMarker status={line.status} />
+                    <span>{formatIntelAddress(line.text)}</span>
                   </p>
                 ))}
               </div>
             </div>
           )}
-          {(vehicle || extraVehicles.length > 0) && (
+          {vehicleLines.length > 0 && (
             <div>
               <p className="font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                Vehicle{extraVehicles.length > 0 ? "s" : ""}
+                Vehicle{vehicleLines.length > 1 ? "s" : ""}
               </p>
               <div className="space-y-0.5">
-                {vehicle && (
-                  <p className="font-mono text-foreground">
-                    {formatIntelVehicle(vehicle)}
-                  </p>
-                )}
-                {extraVehicles.map((v, i) => (
-                  <p key={i} className="font-mono text-foreground">
-                    {formatIntelVehicle(v)}
+                {vehicleLines.map((line, i) => (
+                  <p
+                    key={i}
+                    className={`font-mono text-foreground flex items-baseline gap-1.5 px-1.5 -mx-1.5 rounded ${diffLineClasses(line.status)}`}
+                  >
+                    <DiffMarker status={line.status} />
+                    <span>{formatIntelVehicle(line.text)}</span>
+                    {line.status === "changed" && line.wasText && (
+                      <span className="font-sans text-[10px] text-muted-foreground line-through">
+                        was {formatIntelVehicle(line.wasText)}
+                      </span>
+                    )}
                   </p>
                 ))}
               </div>
             </div>
           )}
-          {associateNames.length > 0 && (
+          {associateLines.length > 0 && (
             <div>
               <p className="font-semibold uppercase tracking-wider text-muted-foreground mb-1">
                 Associates mentioned
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {associateNames.map((n, i) => (
+                {associateLines.map((line, i) => (
                   <span
                     key={i}
-                    className="inline-flex items-center px-2 py-0.5 rounded-full bg-muted text-foreground"
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${
+                      line.status === "unchanged"
+                        ? "bg-muted text-foreground"
+                        : diffLineClasses(line.status)
+                    }`}
                   >
-                    {n}
+                    <DiffMarker status={line.status} />
+                    {line.text}
                   </span>
                 ))}
               </div>
             </div>
           )}
-          {background && (
+          {backgroundParagraphLines.length > 0 && (
             <div>
               <p className="font-semibold uppercase tracking-wider text-muted-foreground mb-1">
                 Background
               </p>
-              <p className="whitespace-pre-wrap text-foreground">
-                {reflowNarrativeText(background)}
-              </p>
+              <div className="space-y-1.5">
+                {backgroundParagraphLines.map((line, i) => (
+                  <p
+                    key={i}
+                    className={`whitespace-pre-wrap text-foreground flex items-baseline gap-1.5 px-1.5 -mx-1.5 rounded ${line.status === "added" ? diffLineClasses("added") : ""}`}
+                  >
+                    <DiffMarker status={line.status} />
+                    <span>{line.text}</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+          {changeCount > 0 && (
+            <div className="flex flex-wrap gap-3 text-[10.5px] text-muted-foreground pt-2 mt-1 border-t border-border/30">
+              {hasAdded && (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-sm bg-emerald-500 inline-block" />
+                  Added since Version {version - 1}
+                </span>
+              )}
+              {hasRemoved && (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-sm bg-red-500 inline-block" />
+                  Removed since Version {version - 1}
+                </span>
+              )}
+              {hasChanged && (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-sm bg-amber-500 inline-block" />
+                  Changed since Version {version - 1}
+                </span>
+              )}
             </div>
           )}
         </div>

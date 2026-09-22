@@ -206,6 +206,7 @@ function ImportedDocumentsSection({ operationId }: { operationId: number }) {
               row={row}
               version={idx + 1}
               isCurrent={idx === rows.length - 1}
+              previous={rows[idx - 1] ?? null}
             />
           ))
         )}

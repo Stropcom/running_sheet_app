@@ -1306,8 +1306,22 @@ export function AddTargetDialog({
           documentSourceFileName={
             initialDocumentSnapshot?.sourceFileName || null
           }
-          onMerged={() => {
+          onMerged={async targetId => {
+            // A real bug found in production: merging into an EXISTING
+            // target (the path a document re-import takes whenever it
+            // matches one already in the registry) never saved the
+            // associates staged from that document at all — only saveAsNew
+            // and the link-and-copy flow called saveStagedAssociates, so a
+            // newly-mentioned associate the officer confirmed "Create as
+            // new" for on the review screen silently never became a real
+            // Associate record, despite showing up fine in the Imported
+            // Documents diff (which only reflects the parsed snapshot, not
+            // the registry).
+            await saveStagedAssociates(targetId);
             utils.target.registry.list.invalidate();
+            utils.associate.listForTarget.invalidate();
+            utils.intelligence.targetProfile.invalidate();
+            utils.intelligence.operationProfile.invalidate();
             resetAndClose();
           }}
         />

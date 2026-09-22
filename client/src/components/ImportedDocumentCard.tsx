@@ -44,10 +44,14 @@ export function ImportedDocumentCard({
   row: DocumentImportRow;
   version: number;
   isCurrent: boolean;
-  // Overrides the default "Imported for {name}" subject — the Operation
-  // profile (grouped by target) leaves this unset to show the parsed
-  // name/target name; the Target profile (grouped by operation) passes the
-  // operation's name instead, since the target itself is already known.
+  // Overrides the default "Imported for {name}" subject, which otherwise
+  // falls back to the parsed snapshot name or row.targetName (only
+  // populated when the caller's own query joins it). Both the Operation
+  // profile (grouped by target) and the Target profile (grouped by
+  // operation) always show the TARGET's name here — the target profile
+  // passes it explicitly since its own query doesn't join targetName —
+  // so a card always reads as "who does this document relate to",
+  // consistently, on either page.
   subject?: string;
 }) {
   // Collapsed by default even when there's only one — an officer shouldn't

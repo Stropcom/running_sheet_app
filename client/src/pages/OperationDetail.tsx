@@ -62,6 +62,7 @@ import {
   ArrowUpDown,
   ChevronDown,
   FileDown,
+  IdCard,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -101,6 +102,7 @@ import {
   type StructuredVehicleParts,
 } from "@/lib/addressFormat";
 import { CopyPlus } from "lucide-react";
+import { OperationProfileContent } from "@/components/OperationProfileContent";
 import { useLocation, useParams, useSearch } from "wouter";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -2225,16 +2227,15 @@ export default function OperationDetail() {
               its own line on a narrow screen rather than squeezing the tabs
               off one row. */}
           <div className="flex flex-wrap items-center gap-2 mb-4">
-            {/* grid-cols-2 (not the default flex-1) so the two triggers are
-                always exactly the same width as each other, rather than
-                each sizing to its own text. "Deployment Summaries" shortens
-                to just "Summaries" below sm — even matched to "Running
-                Sheets" width, the full label didn't fit on a phone; sm+ has
-                room for the full name. min-w-0 + truncate stays on as a
-                safety net if that shared width ever gets tight regardless.
-                w-full on mobile lets the grid fill the row; from sm up the
-                list goes back to sizing to its (still-equal) columns. */}
-            <TabsList className="grid grid-cols-2 w-full sm:w-fit">
+            {/* grid-cols-3 (not the default flex-1) so all three triggers
+                stay exactly the same width as each other at every screen
+                size, not just on mobile — equal-width, symmetrical tabs is
+                a standing UI requirement for this app, see CLAUDE.md.
+                "Deployment Summaries" and "Operation Profile" each shorten
+                below sm, where there isn't room for the full label; sm+
+                shows the full name. min-w-0 + truncate stays on as a
+                safety net if that shared width ever gets tight regardless. */}
+            <TabsList className="grid grid-cols-3 w-full">
               <TabsTrigger
                 value="sheets"
                 className="w-full min-w-0 text-[11px] sm:text-sm"
@@ -2250,6 +2251,16 @@ export default function OperationDetail() {
                 <span className="truncate sm:hidden">Summaries</span>
                 <span className="truncate hidden sm:inline">
                   Deployment Summaries
+                </span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="profile"
+                className="w-full min-w-0 text-[11px] sm:text-sm"
+              >
+                <IdCard className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                <span className="truncate sm:hidden">Profile</span>
+                <span className="truncate hidden sm:inline">
+                  Operation Profile
                 </span>
               </TabsTrigger>
               {/* No visible "Add Target" trigger — target creation/editing
@@ -2449,6 +2460,13 @@ export default function OperationDetail() {
               operationId={operationId}
               targets={operationTargets}
             />
+          </TabsContent>
+
+          {/* ── Operation Profile tab — the same Operation Profile page
+              ("Full Profile" from the Intelligence folder) mounted inline,
+              so an officer doesn't have to leave this page to see it. */}
+          <TabsContent value="profile">
+            <OperationProfileContent operationId={operationId} />
           </TabsContent>
 
           {/* ── Add Target tab ── */}

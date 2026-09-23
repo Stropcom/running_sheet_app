@@ -1549,8 +1549,8 @@ export function AddTargetDialog({
             </AlertDialogTitle>
             <AlertDialogDescription>
               "{composedName}" looks like it may be the same person as an
-              existing target, <strong>{dupMatch?.name}</strong> (
-              {dupMatch?.reason}). Is this the same person?
+              existing target, <strong>{dupMatch?.name}</strong>. Is this the
+              same person?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex flex-col sm:flex-col gap-2">

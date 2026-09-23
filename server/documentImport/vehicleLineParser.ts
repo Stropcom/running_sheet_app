@@ -286,11 +286,28 @@ export function findVehicleLines(text: string): ParsedVehicleLine[] {
     // first, which is the shape most real training documents actually
     // use — one uninterrupted sentence with the closing "." as literally
     // its last character.
+    //
+    // A trailing sentence doesn't always get the courtesy of its own
+    // closing period before the NEXT vehicle anchor either — some source
+    // documents' own vehicle line has none at all (the description simply
+    // stops), so nothing marks where it ends except the next recognisable
+    // field starting right after it with nothing but a space (e.g. "...
+    // wagon Current Address: 24 Sorrento Street..." — a real training
+    // document, Operation HARBOUR). A short Title-Case/ALL-CAPS label
+    // immediately followed by a colon is as reliable a stop signal as the
+    // closing period above, so whichever of the two comes first wins.
     const descArea = text.slice(anchor.end, nextAnchorIdx);
     const sentenceEnd = descArea.match(/\.(?=\s|$)/);
-    const sliceEnd = sentenceEnd
-      ? anchor.end + sentenceEnd.index! + 1
-      : nextAnchorIdx;
+    const labelStart = descArea.match(
+      /\b[A-Z][a-zA-Z]*(?:\s[A-Z][a-zA-Z]*){0,3}:\s/
+    );
+    const sentenceEndIdx = sentenceEnd ? sentenceEnd.index! + 1 : null;
+    const labelStartIdx = labelStart ? labelStart.index! : null;
+    const cutIdx =
+      sentenceEndIdx !== null && labelStartIdx !== null
+        ? Math.min(sentenceEndIdx, labelStartIdx)
+        : (sentenceEndIdx ?? labelStartIdx);
+    const sliceEnd = cutIdx !== null ? anchor.end + cutIdx : nextAnchorIdx;
     const chunk = text.slice(anchor.index, sliceEnd);
     const description = text.slice(anchor.end, sliceEnd);
     out.push(parseDescription(anchor.token, anchor.state, chunk, description));

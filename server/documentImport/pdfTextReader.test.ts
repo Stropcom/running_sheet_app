@@ -85,6 +85,32 @@ const WIDE_COLUMN_GLUE_FIXTURE = join(
   __dirname,
   "__fixtures__/target-profile-pdf-wide-column-glue.pdf"
 );
+// A real training PDF (Operation HARBOUR) whose header grid packs its
+// label/value pairs only ~14pt apart (NAME/ROLE, tighter than any prior
+// fixture's own spacing), and whose "VEHICLES"/"LOCATION OF INTEREST"
+// labels sit VERTICALLY CENTRED beside their own tall, multi-line values
+// rather than top-aligned with them — a genuinely new layout shape none
+// of the fixtures above cover. Caused three compounding failures found
+// against the real document: (1) "PASSPORT"/"VEHICLES" hard-wrapped
+// mid-word came out with a spurious space ("PASSPO RT"/"VEHICLE S") since
+// the packed-width heuristic alone can't tell a narrow forced break from
+// a real word-boundary wrap when the SAME x-bucket also carries much
+// wider content elsewhere on the page; (2) "ROLE" landed glued onto
+// NAME's own value, the gap between them being real but under
+// splitLineIntoColumns' 18pt floor; (3) "Current Address:"/"Warehouse:"
+// each sat on their own line with no row-mate at their own y (their tall
+// value's FIRST line, and an unrelated vehicle line elsewhere, happened
+// to share y with each OTHER instead), so the labels were silently
+// dropped and their own values ended up glued onto whichever unrelated
+// vehicle line coincidentally shared a y — real content loss, not just a
+// cosmetic split. See pdfTextReader.ts's KNOWN_VOCABULARY_WORDS/
+// isStandaloneColonLabel/resplitEmbeddedLabels and
+// targetProfileFieldMap.ts's splitParagraphsIntoSections/
+// expandEmbeddedLabels for the fixes.
+const VERTICALLY_CENTERED_LABELS_FIXTURE = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-vertically-centered-labels.pdf"
+);
 
 describe("readPdfText", () => {
   it("reads colon-separated labelled lines as synthetic table rows", async () => {
@@ -248,6 +274,55 @@ describe("readPdfText", () => {
       const result = await readPdfText(readFileSync(NARROW_GRID_FIXTURE));
       const rows = result.tables[0].rows;
       expect(rows.some(r => r[0] === "PASSPORT")).toBe(true);
+    });
+  });
+
+  describe("vertically-centred labels beside a tall multi-line value (Operation HARBOUR fixture)", () => {
+    it("doesn't insert a spurious space rejoining a word hard-wrapped mid-token, even when its own column also carries much wider content elsewhere on the page", async () => {
+      const result = await readPdfText(
+        readFileSync(VERTICALLY_CENTERED_LABELS_FIXTURE)
+      );
+      const rows = result.tables[0].rows;
+      expect(rows).toContainEqual(["PASSPORT", "UAE Passport N7843021"]);
+      const joined = result.paragraphs.join("\n");
+      expect(joined).toContain("VEHICLES");
+      expect(joined).not.toContain("VEHICLE S");
+    });
+
+    it("splits a label from a value it's merged into when their gap is real but under the usual column-split threshold", async () => {
+      const result = await readPdfText(
+        readFileSync(VERTICALLY_CENTERED_LABELS_FIXTURE)
+      );
+      const rows = result.tables[0].rows;
+      expect(rows).toContainEqual(["NAME", "Rafiq Hassan KADER"]);
+      expect(rows).toContainEqual(["ROLE", "Broker"]);
+    });
+
+    it("keeps a standalone label and its own multi-line value together instead of dropping the label and losing part of the value to an unrelated line elsewhere on the page", async () => {
+      const result = await readPdfText(
+        readFileSync(VERTICALLY_CENTERED_LABELS_FIXTURE)
+      );
+      const joined = result.paragraphs.join("\n");
+      expect(joined).toContain(
+        "Current Address: 24 Sorrento Street, NORTH BEACH WA 6020."
+      );
+      expect(joined).toContain(
+        "Warehouse: 19 Furnace Road, WELSHPOOL WA 6106."
+      );
+      // The vehicle these two addresses used to leak into (see the fixed
+      // bug) must stay clean, with nothing from the address section stuck
+      // onto its own description.
+      expect(joined).toContain("1RFK221 (WA) 2022 grey Lexus RX350 wagon");
+      expect(joined).not.toContain("wagon BEACH WA 6020");
+    });
+
+    it("doesn't glue an unrelated list section (Associates:) into one cell just because it's also a standalone colon-terminated line (no regression from the label-eligibility fix above)", async () => {
+      const result = await readPdfText(
+        readFileSync(VERTICALLY_CENTERED_LABELS_FIXTURE)
+      );
+      expect(
+        result.paragraphs.some(p => p.startsWith("Matthew John KEARNS"))
+      ).toBe(true);
     });
   });
 });

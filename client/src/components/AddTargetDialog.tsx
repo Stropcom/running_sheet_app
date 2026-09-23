@@ -41,6 +41,9 @@ import {
   Merge,
   User,
   MapPin,
+  Check,
+  Loader2,
+  Image as ImageIcon,
 } from "lucide-react";
 import {
   TargetIdentityFields,
@@ -201,6 +204,20 @@ export function computePrimaryIdentity(
   return composeTargetName(identity);
 }
 
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 export function AddTargetDialog({
   open,
   onClose,
@@ -324,7 +341,7 @@ export function AddTargetDialog({
   // skip re-asking about a name that was already cleared at the surname
   // field's onBlur, instead of prompting the same question twice.
   const [dupCheckedForName, setDupCheckedForName] = useState("");
-  // Both "Yes — merge details" and "Yes, same person — link and copy" need
+  // Both "Yes, same person — continue" and "Yes, same person — link and copy" need
   // an Operation picked before they can proceed (the merge/link links the
   // existing record to it) — but the duplicate check that offers them
   // fires on the Surname field's blur, routinely before the officer has
@@ -359,6 +376,81 @@ export function AddTargetDialog({
   const notDuplicateMutation =
     trpc.intelligence.markEntitiesNotDuplicate.useMutation();
   const mergeEntitiesMutation = trpc.intelligence.mergeEntities.useMutation();
+
+  // ── Duplicate-photo detection for staged import images ──
+  // A document re-imported for a target that already exists (dupMatch) very
+  // often still embeds the exact same photo it did last time — nothing
+  // upstream (the parser, the review screen) has any way to know that, since
+  // neither one has visibility into what's already in the target's Images
+  // folder. Once dupMatch names a candidate existing target, fetch its
+  // current photos and hash-compare each one (SHA-256 over the raw bytes,
+  // client-side, no server change needed) against every staged image's own
+  // bytes — a genuinely identical photo re-encodes to byte-identical PNG
+  // data every time (see docxTableReader.ts/pdfTextReader.ts), so this is an
+  // exact-match check, not a fuzzy one. Matches default to unchecked in the
+  // Photos section below, same as a matched associate defaults to "skip"
+  // territory — the officer can still re-tick one deliberately.
+  const [duplicateImageKeys, setDuplicateImageKeys] = useState<Set<string>>(
+    new Set()
+  );
+  const [checkingImageDuplicates, setCheckingImageDuplicates] = useState(false);
+  const [imageChoices, setImageChoices] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const candidateTargetId = dupMatch?.id;
+    const staged = initialImages ?? [];
+    if (!candidateTargetId || staged.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      setCheckingImageDuplicates(true);
+      try {
+        const existingPhotos = await utils.attachment.byEntity.fetch({
+          category: "target",
+          targetId: candidateTargetId,
+        });
+        if (cancelled || !existingPhotos || existingPhotos.length === 0) return;
+        const existingHashes = await Promise.all(
+          existingPhotos.map(async (p: any) => {
+            try {
+              const buf = await (await fetch(p.url)).arrayBuffer();
+              return await sha256Hex(buf);
+            } catch {
+              return null;
+            }
+          })
+        );
+        const existingHashSet = new Set(
+          existingHashes.filter((h): h is string => !!h)
+        );
+        if (existingHashSet.size === 0) return;
+        const dupes = new Set<string>();
+        for (const img of staged) {
+          try {
+            const hash = await sha256Hex(base64ToArrayBuffer(img.dataBase64));
+            if (existingHashSet.has(hash)) dupes.add(img.key);
+          } catch {
+            // Couldn't hash this one — leave it kept rather than guess.
+          }
+        }
+        if (!cancelled && dupes.size > 0) {
+          setDuplicateImageKeys(dupes);
+          setImageChoices(prev => {
+            const next = { ...prev };
+            dupes.forEach(key => {
+              next[key] = false;
+            });
+            return next;
+          });
+        }
+      } finally {
+        if (!cancelled) setCheckingImageDuplicates(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dupMatch?.id]);
 
   const resetAndClose = () => {
     setOperation(initialOperation ?? null);
@@ -455,7 +547,14 @@ export function AddTargetDialog({
   // staged at once that flow doesn't fit well inside this dialog; a genuine
   // duplicate can still be merged afterward from the Target Registry the
   // same way any other duplicate is.
-  const saveStagedAssociates = async (targetId: number) => {
+  // Returns the staged→real id mapping for whichever associates saved
+  // successfully, so saveStagedImages can resolve a photo staged as
+  // "associate X" to that associate's actual id — associates must exist
+  // before a photo can be linked to one, which is exactly why this always
+  // runs (and is awaited) before saveStagedImages at every call site.
+  const saveStagedAssociates = async (
+    targetId: number
+  ): Promise<Record<string, number>> => {
     const toCreate = associates
       .map(a => {
         const { name, tgt } = composeAssociateName(
@@ -466,42 +565,54 @@ export function AddTargetDialog({
         const { full: hbf, short: hb } = composeAddress(a.address);
         const { full: v1f, short: v1 } = composeVehicle(a.vehicle);
         return {
-          targetId,
-          name,
-          tgt: tgt || null,
-          hbf: hbf || null,
-          hb: hb || null,
-          v1f: v1f || null,
-          v1: v1 || null,
-          firstNames: a.identity.firstNames || null,
-          surname: a.identity.surname || null,
-          bornDate: ddMmYyyyToIso(a.identity.bornDate) || null,
-          addrUnitNo: a.address.unitNo || null,
-          addrHouseNo: a.address.houseNo || null,
-          addrStreetName: a.address.streetName || null,
-          addrStreetType: a.address.streetType || null,
-          addrSuburb: a.address.suburb || null,
-          addrState: a.address.state || null,
-          addrBusinessName: a.address.businessName || null,
-          vehRegistration: a.vehicle.registration || null,
-          vehState: a.vehicle.state || null,
-          vehColour: a.vehicle.colour || null,
-          vehMake: a.vehicle.make || null,
-          vehModel: a.vehicle.model || null,
-          vehType: a.vehicle.vehicleType || null,
+          key: a.key,
+          payload: {
+            targetId,
+            name,
+            tgt: tgt || null,
+            hbf: hbf || null,
+            hb: hb || null,
+            v1f: v1f || null,
+            v1: v1 || null,
+            firstNames: a.identity.firstNames || null,
+            surname: a.identity.surname || null,
+            bornDate: ddMmYyyyToIso(a.identity.bornDate) || null,
+            addrUnitNo: a.address.unitNo || null,
+            addrHouseNo: a.address.houseNo || null,
+            addrStreetName: a.address.streetName || null,
+            addrStreetType: a.address.streetType || null,
+            addrSuburb: a.address.suburb || null,
+            addrState: a.address.state || null,
+            addrBusinessName: a.address.businessName || null,
+            vehRegistration: a.vehicle.registration || null,
+            vehState: a.vehicle.state || null,
+            vehColour: a.vehicle.colour || null,
+            vehMake: a.vehicle.make || null,
+            vehModel: a.vehicle.model || null,
+            vehType: a.vehicle.vehicleType || null,
+          },
         };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
-    if (toCreate.length === 0) return;
+    if (toCreate.length === 0) return {};
     const results = await Promise.allSettled(
-      toCreate.map(payload => associateCreateMut.mutateAsync(payload))
+      toCreate.map(item => associateCreateMut.mutateAsync(item.payload))
     );
-    const failed = results.filter(r => r.status === "rejected").length;
+    const idByKey: Record<string, number> = {};
+    let failed = 0;
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") {
+        idByKey[toCreate[i].key] = r.value.id;
+      } else {
+        failed++;
+      }
+    });
     if (failed > 0) {
       toast.error(
         `Target saved, but ${failed} associate${failed > 1 ? "s" : ""} failed to save — add ${failed > 1 ? "them" : "it"} from the target's card in the registry.`
       );
     }
+    return idByKey;
   };
 
   // Uploads every image the officer kept on the import review screen
@@ -518,12 +629,17 @@ export function AddTargetDialog({
   // (UploadImageDialog/FaceSelectPicker). Same best-effort-per-item,
   // Promise.allSettled-style failure handling as saveStagedAssociates above
   // — one bad photo shouldn't stop the rest from saving.
-  const saveStagedImages = async (targetId: number) => {
-    const toSave = initialImages ?? [];
+  const saveStagedImages = async (
+    targetId: number,
+    associateIdByKey: Record<string, number> = {}
+  ) => {
+    const toSave = (initialImages ?? []).filter(
+      img => imageChoices[img.key] ?? true
+    );
     if (toSave.length === 0) return;
     const opId = operation?.id;
     if (!opId) return; // OperationPicker is required before any save path reaches here
-    const { name: entityLabel } = computePrimaryIdentity(
+    const { name: targetEntityLabel } = computePrimaryIdentity(
       targetType,
       identity,
       address,
@@ -532,6 +648,36 @@ export function AddTargetDialog({
     let failed = 0;
     for (const img of toSave) {
       try {
+        // A photo staged as "this is associate X" only actually links to
+        // that associate if X saved successfully (see saveStagedAssociates'
+        // return) — otherwise it falls back to the target rather than
+        // silently disappearing.
+        let category: "target" | "associate" = "target";
+        let linkedTargetId: number | undefined = targetId;
+        let entityLabel = targetEntityLabel;
+        const linkTo = img.linkTo;
+        if (linkTo.type === "associate") {
+          const associateId = associateIdByKey[linkTo.associateKey];
+          const staged = associates.find(a => a.key === linkTo.associateKey);
+          if (associateId && staged) {
+            const { name } = composeAssociateName(
+              staged.identity,
+              staged.address.businessName
+            );
+            if (name) {
+              category = "associate";
+              linkedTargetId = undefined;
+              entityLabel = name;
+            }
+          }
+        } else if (linkTo.type === "existingAssociate") {
+          // Associates link by normalized name text, not a real id (see
+          // linkAttachmentToEntity in db.ts) — the id on this variant is
+          // just provenance, entityLabel is what actually matters here.
+          category = "associate";
+          linkedTargetId = undefined;
+          entityLabel = linkTo.entityLabel;
+        }
         const uploaded = await uploadImageMut.mutateAsync({
           operationId: opId,
           dataBase64: img.dataBase64,
@@ -550,15 +696,15 @@ export function AddTargetDialog({
           await confirmEntityFaceMut.mutateAsync({
             attachmentId: uploaded.id,
             faceIndex: faces[0].index,
-            category: "target",
-            targetId,
+            category,
+            targetId: linkedTargetId,
             entityLabel,
           });
         } else {
           await linkToEntityMut.mutateAsync({
             attachmentId: uploaded.id,
-            category: "target",
-            targetId,
+            category,
+            targetId: linkedTargetId,
             entityLabel,
           });
         }
@@ -577,8 +723,8 @@ export function AddTargetDialog({
     setSaving(true);
     try {
       const result = await onSave(buildPayload());
-      await saveStagedAssociates(result.id);
-      await saveStagedImages(result.id);
+      const associateIdByKey = await saveStagedAssociates(result.id);
+      await saveStagedImages(result.id, associateIdByKey);
       resetAndClose();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to save target.");
@@ -883,16 +1029,16 @@ export function AddTargetDialog({
           return;
         }
         const result = await onSave(buildLinkedPayload(associate));
-        await saveStagedAssociates(result.id);
-        await saveStagedImages(result.id);
+        const associateIdByKey = await saveStagedAssociates(result.id);
+        await saveStagedImages(result.id, associateIdByKey);
       } else {
         // No registry record to copy from — just a text mention (or, in
         // theory, an associate match this dialog can't link into). Save the
         // target as entered, then fold the mined mention in as an alias so
         // future sightings of it are recognized as this same identity.
         const result = await onSave(buildPayload());
-        await saveStagedAssociates(result.id);
-        await saveStagedImages(result.id);
+        const associateIdByKey = await saveStagedAssociates(result.id);
+        await saveStagedImages(result.id, associateIdByKey);
         if (warning.kind !== "target") {
           await mergeEntitiesMutation.mutateAsync({
             type: warning.kind,
@@ -1361,6 +1507,70 @@ export function AddTargetDialog({
               </Button>
             </div>
 
+            {/* Photos — staged from a document import (see
+                ImportTargetDocumentDialog.tsx). Duplicate-photo detection
+                only has a target to compare against once dupMatch names one
+                (see the effect above) — a photo the target already has on
+                file defaults unticked, same "officer stays in control"
+                pattern as a matched associate defaulting to skip. */}
+            {(initialImages ?? []).length > 0 && (
+              <div className="mt-2 rounded-lg border border-l-4 border-indigo-500/30 border-l-indigo-500 bg-indigo-500/5 p-3 flex flex-col gap-2.5">
+                <p className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wide flex items-center gap-1.5">
+                  <ImageIcon className="w-3.5 h-3.5" /> Photos
+                </p>
+                {checkingImageDuplicates && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Checking for photos already on file…
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2.5">
+                  {(initialImages ?? []).map(img => {
+                    const kept = imageChoices[img.key] ?? true;
+                    const isDup = duplicateImageKeys.has(img.key);
+                    return (
+                      <button
+                        key={img.key}
+                        type="button"
+                        onClick={() =>
+                          setImageChoices(prev => ({
+                            ...prev,
+                            [img.key]: !kept,
+                          }))
+                        }
+                        title={
+                          kept
+                            ? "Tap to discard this photo"
+                            : "Tap to keep this photo"
+                        }
+                        className={`relative rounded-md overflow-hidden border-2 transition-colors ${
+                          kept
+                            ? "border-indigo-500"
+                            : "border-border opacity-40 grayscale"
+                        }`}
+                      >
+                        <img
+                          src={`data:${img.mimeType};base64,${img.dataBase64}`}
+                          alt="Extracted from document"
+                          className="w-20 h-20 object-cover block"
+                        />
+                        {kept && (
+                          <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-indigo-500 text-white flex items-center justify-center">
+                            <Check className="h-2.5 w-2.5" />
+                          </span>
+                        )}
+                        {isDup && (
+                          <span className="absolute bottom-0 left-0 right-0 bg-amber-500 text-white text-[8px] font-bold text-center py-0.5 leading-none">
+                            ALREADY HAVE
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Depart / Arrive — simple single-line fields, so they pair up
                 side by side from sm rather than needing the wider md/lg
                 grid the bordered identity boxes above need room for. */}
@@ -1409,13 +1619,13 @@ export function AddTargetDialog({
             </AlertDialogTitle>
             <AlertDialogDescription>
               "{composedName}" looks like it may be the same person as an
-              existing target, <strong>{dupMatch?.name}</strong> (
-              {dupMatch?.reason}). Is this the same person?
+              existing target, <strong>{dupMatch?.name}</strong>. Is this the
+              same person?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex flex-col sm:flex-col gap-2">
             <Button onClick={handleMergeInstead} className="w-full">
-              <Merge className="w-4 h-4 mr-1.5" /> Yes — merge details
+              <Merge className="w-4 h-4 mr-1.5" /> Yes, same person — continue
             </Button>
             <Button
               variant="outline"
@@ -1484,8 +1694,8 @@ export function AddTargetDialog({
             // Associate record, despite showing up fine in the Imported
             // Documents diff (which only reflects the parsed snapshot, not
             // the registry).
-            await saveStagedAssociates(targetId);
-            await saveStagedImages(targetId);
+            const associateIdByKey = await saveStagedAssociates(targetId);
+            await saveStagedImages(targetId, associateIdByKey);
             utils.target.registry.list.invalidate();
             utils.associate.listForTarget.invalidate();
             utils.intelligence.targetProfile.invalidate();

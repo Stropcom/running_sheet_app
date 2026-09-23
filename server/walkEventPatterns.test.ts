@@ -170,6 +170,24 @@ describe("extractWalkInTowardsLocation", () => {
       "through the car park"
     );
   });
+
+  it("drops a leading 'down the driveway of' with no 'towards' at all", () => {
+    expect(
+      extractWalkInTowardsLocation("down the driveway of 115 Bateman Road")
+    ).toBe("115 Bateman Road");
+  });
+
+  it("drops a leading 'up the driveway of' with no 'towards' at all", () => {
+    expect(
+      extractWalkInTowardsLocation("up the driveway of 115 Bateman Road")
+    ).toBe("115 Bateman Road");
+  });
+
+  it("drops a leading 'along the driveway of' with no 'towards' at all", () => {
+    expect(
+      extractWalkInTowardsLocation("along the driveway of 115 Bateman Road")
+    ).toBe("115 Bateman Road");
+  });
 });
 
 describe("extractWalkInTowardsRoute", () => {

@@ -142,7 +142,7 @@ describe("readPdfText", () => {
 
   it("returns an empty result for a non-PDF buffer instead of throwing", async () => {
     const result = await readPdfText(Buffer.from("not a pdf file"));
-    expect(result).toEqual({ tables: [], paragraphs: [] });
+    expect(result).toEqual({ tables: [], paragraphs: [], images: [] });
   });
 
   describe("narrow multi-column grid table (Operation COBALT fixture)", () => {

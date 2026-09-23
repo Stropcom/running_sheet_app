@@ -47,8 +47,18 @@ export const WALK_IN_TOWARDS_PATTERN =
 // "arrived at 64 Matheson Road"), which is a plain string comparison, not
 // fuzzy. Applied in a loop since these could in principle stack (a real
 // example hasn't been seen, but there's no cost to tolerating it).
+//
+// Also the ONLY thing standing between a match and a miss for
+// WALK_IN_TOWARDS_PATTERN's no-"towards" fallback case ("... walked down
+// the driveway of 115 Bateman Road and continued out of sight.") —
+// extractWalkInTowardsLocation falls back to the whole captured clause
+// when there's no "towards" to split on (see its own comment), so without
+// a matching prefix here that whole clause — "down the driveway of 115
+// Bateman Road" — becomes the "location", which then never matches the
+// vehicle's own plain "115 Bateman Road" address and silently drops the
+// "Walked out" chip for it.
 const WALK_IN_LOCATION_PREFIX_RE =
-  /^(?:the\s+(?:front(?:\s+door)?|back|rear|side)\s+of|the\s+door\s+of|the\s+entrance\s+of|(?:in\s+)?the\s+vicinity\s+of|outside(?:\s+of)?|near|the\s+residence\s+at)\s+/i;
+  /^(?:the\s+(?:front(?:\s+door)?|back|rear|side)\s+of|the\s+door\s+of|the\s+entrance\s+of|(?:up|down|along)\s+the\s+driveway\s+of|(?:in\s+)?the\s+vicinity\s+of|outside(?:\s+of)?|near|the\s+residence\s+at)\s+/i;
 
 // Best-effort destination extraction from a WALK_IN_TOWARDS_PATTERN route
 // clause — e.g. "towards 45 Francis Street" -> "45 Francis Street",

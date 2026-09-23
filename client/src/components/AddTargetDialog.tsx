@@ -633,6 +633,13 @@ export function AddTargetDialog({
               entityLabel = name;
             }
           }
+        } else if (linkTo.type === "existingAssociate") {
+          // Associates link by normalized name text, not a real id (see
+          // linkAttachmentToEntity in db.ts) — the id on this variant is
+          // just provenance, entityLabel is what actually matters here.
+          category = "associate";
+          linkedTargetId = undefined;
+          entityLabel = linkTo.entityLabel;
         }
         const uploaded = await uploadImageMut.mutateAsync({
           operationId: opId,

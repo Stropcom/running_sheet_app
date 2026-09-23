@@ -84,12 +84,20 @@ export interface StagedImage {
   mimeType: string;
   width: number;
   height: number;
-  /** Who this photo is of — the primary target (default) or one of the
-   * associates staged from the same document, matched by that associate's
-   * own `key` in `associates` below. Resolved to a real associate id in
-   * AddTargetDialog's saveStagedImages once that associate is actually
-   * created — see its own comment. */
-  linkTo: { type: "target" } | { type: "associate"; associateKey: string };
+  /** Who this photo is of:
+   * - "target" (default) — the primary target.
+   * - "associate" — one of the NEW associates staged from the same
+   *   document, matched by that associate's own `key` in `associates`
+   *   below. No real id exists yet — resolved in AddTargetDialog's
+   *   saveStagedImages once that associate is actually created.
+   * - "existingAssociate" — an associate candidate that matched (and is
+   *   being updated into) an ALREADY-REGISTERED associate. Its id is
+   *   already known at review time, so the photo can link to it directly
+   *   with no "wait for creation" step. */
+  linkTo:
+    | { type: "target" }
+    | { type: "associate"; associateKey: string }
+    | { type: "existingAssociate"; associateId: number; entityLabel: string };
 }
 
 export interface DocumentImportPrefill {
@@ -606,16 +614,35 @@ export function ImportTargetDocumentDialog({
           .filter(img => imageChoices[img.key] ?? true)
           .map(img => {
             const linkKey = imageLinkChoices[img.key];
-            const linkedAssociateStillCreating =
-              linkKey &&
-              (associateChoices[linkKey] ?? "create") === "create" &&
-              associateCandidates.some(a => a.key === linkKey);
-            return {
-              ...img,
-              linkTo: linkedAssociateStillCreating
-                ? { type: "associate" as const, associateKey: linkKey }
-                : { type: "target" as const },
-            };
+            const candidate = linkKey
+              ? associateCandidates.find(a => a.key === linkKey)
+              : undefined;
+            const choice = candidate
+              ? (associateChoices[candidate.key] ?? "create")
+              : null;
+            if (candidate && choice === "create") {
+              return {
+                ...img,
+                linkTo: {
+                  type: "associate" as const,
+                  associateKey: candidate.key,
+                },
+              };
+            }
+            if (candidate && choice === "update") {
+              const match = associateMatches[candidate.key];
+              if (match) {
+                return {
+                  ...img,
+                  linkTo: {
+                    type: "existingAssociate" as const,
+                    associateId: match.id,
+                    entityLabel: match.name,
+                  },
+                };
+              }
+            }
+            return { ...img, linkTo: { type: "target" as const } };
           }),
         background: result.freeText.trim(),
         sourceFileName: fileName,
@@ -802,8 +829,12 @@ export function ImportTargetDocumentDialog({
                     it to say who it's actually of — it defaults to this target.
                   </p>
                   {(() => {
+                    // Both "create" (a brand-new associate) and "update"
+                    // (matches an already-registered one) can take a linked
+                    // photo — only "skip" genuinely has no record for a
+                    // photo to end up on.
                     const linkableAssociates = associateCandidates.filter(
-                      a => (associateChoices[a.key] ?? "create") === "create"
+                      a => (associateChoices[a.key] ?? "create") !== "skip"
                     );
                     return (
                       <div className="flex flex-col gap-2">
@@ -892,14 +923,20 @@ export function ImportTargetDocumentDialog({
                                       </button>
                                     ))}
                                   </div>
-                                  {linkedAssociate && (
-                                    <span className="text-[10px] text-muted-foreground">
-                                      Linked to associate{" "}
-                                      {linkedAssociate.firstNames}{" "}
-                                      {linkedAssociate.surname} once they're
-                                      saved.
-                                    </span>
-                                  )}
+                                  {linkedAssociate &&
+                                    (() => {
+                                      const isUpdate =
+                                        associateChoices[
+                                          linkedAssociate.key
+                                        ] === "update";
+                                      return (
+                                        <span className="text-[10px] text-muted-foreground">
+                                          {isUpdate
+                                            ? `Linked to existing associate ${linkedAssociate.firstNames} ${linkedAssociate.surname}.`
+                                            : `Linked to associate ${linkedAssociate.firstNames} ${linkedAssociate.surname} once they're saved.`}
+                                        </span>
+                                      );
+                                    })()}
                                 </div>
                               )}
                             </div>

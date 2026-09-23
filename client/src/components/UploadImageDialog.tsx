@@ -25,7 +25,7 @@ import {
   Search,
   ImagePlus,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FaceSelectPicker } from "@/components/FaceSelectPicker";
 
@@ -200,6 +200,29 @@ export function UploadImageDialog({
     return ((knownEntitySelected ? restrictedOps : allOperations) ??
       []) as any[];
   }, [restrictedOps, allOperations, knownEntitySelected]);
+
+  // Picking a known entity restricts the Operation choice to that entity's
+  // own operations — but the already-chosen Operation is very often ALREADY
+  // one of those (an officer usually picks the entity for the operation
+  // they're already working in), so the old behaviour of unconditionally
+  // clearing operationId the instant an entity was clicked was wrong: it
+  // wiped a perfectly valid Operation, which also hid the Running Sheet
+  // section (gated on operationId != null, see below) and greyed out
+  // Upload (canSubmit requires operationId), even though nothing was
+  // actually invalid. Only reset once restrictedOps has actually loaded
+  // for the newly-picked entity AND the current choice isn't in it — a
+  // real invalidation, not every entity click.
+  useEffect(() => {
+    if (!knownEntitySelected || !restrictedOps) return;
+    if (
+      operationId != null &&
+      !restrictedOps.some((o: any) => o.id === operationId)
+    ) {
+      setOperationId(null);
+      setSheetId(null);
+      setRowId(null);
+    }
+  }, [knownEntitySelected, restrictedOps, operationId]);
 
   const filteredEntities = useMemo(() => {
     if (!entities || !entityTab || entityTab === "unidentified_person")
@@ -469,6 +492,13 @@ export function UploadImageDialog({
                 </p>
               ) : (
                 <Select
+                  // Forces Radix to remount instead of showing a stale
+                  // cached selection when operationId genuinely gets reset
+                  // to null (see the effect above) — its controlled `value`
+                  // going back to undefined otherwise falls back to
+                  // whatever it last rendered, showing an Operation name
+                  // that's no longer actually selected.
+                  key={operationId ?? "none"}
                   value={operationId != null ? String(operationId) : undefined}
                   onValueChange={v => {
                     setOperationId(Number(v));
@@ -624,11 +654,16 @@ export function UploadImageDialog({
                           <button
                             key={`${e.shortForm}-${idx}`}
                             onClick={() => {
+                              // Does NOT reset operationId here — see the
+                              // effect above this component's return, which
+                              // only clears it once restrictedOps confirms
+                              // the current choice genuinely isn't valid for
+                              // this entity, instead of wiping a still-valid
+                              // Operation on every click.
                               setSelectedEntity({
                                 targetId: e.targetId,
                                 entityLabel: e.shortForm,
                               });
-                              setOperationId(null);
                             }}
                             className={`text-left px-3 py-2 rounded-lg text-sm transition-colors truncate shrink-0 bg-background ${
                               isSelected

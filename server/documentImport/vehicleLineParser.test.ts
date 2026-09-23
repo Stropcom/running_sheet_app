@@ -141,6 +141,28 @@ describe("findVehicleLines", () => {
     });
   });
 
+  // Regression: a real training-document example (Operation HARBOUR) —
+  // some vehicle descriptions in the same document have no trailing
+  // period at all, so the sentence-boundary cutoff above never fires; a
+  // short Title-Case label immediately followed by a colon is just as
+  // reliable a stop signal, and needs to win even when it comes BEFORE a
+  // later period that belongs to the following labelled text, not this
+  // vehicle's own description.
+  it("stops a vehicle's own description at an immediately-following label, even with no period to stop at first", () => {
+    const text =
+      "1RFK221 (WA) 2022 grey Lexus RX350 wagon Current Address: 24 Sorrento Street, NORTH BEACH WA 6020.";
+    const result = findVehicleLines(text);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      registration: "1RFK221",
+      colour: "Grey",
+      make: "Lexus",
+      model: "RX350",
+      confident: true,
+      raw: "1RFK221 (WA) 2022 grey Lexus RX350 wagon",
+    });
+  });
+
   // Regression: a real training-document example — "No plate observed"
   // introduced a second, distinct vehicle with no rego of its own, and
   // with nothing to anchor on it collapsed straight into the HiAce's own

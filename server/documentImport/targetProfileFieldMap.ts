@@ -216,13 +216,38 @@ export function isHeadingLine(line: string): boolean {
 
 function splitParagraphsIntoSections(paragraphs: string[]): ParagraphSection[] {
   const sections: ParagraphSection[] = [];
-  let current: ParagraphSection | null = null;
+  // Two or more headings can sit back to back with nothing between them —
+  // not one combined heading (pdfTextReader.ts's own row-handling already
+  // keeps genuinely distinct labels as separate heading paragraphs), but
+  // two real, separate sections whose own content isn't sequential in the
+  // document's reading order at all: each one's true value lives in its
+  // own column further down the page (a real training document, Operation
+  // HARBOUR: "VEHICLES" and "LOCATION OF INTEREST" sit side by side, each
+  // with its own tall multi-line value beside the other's). There's no way
+  // to tell from this flat paragraph stream which later paragraph belongs
+  // to which of the two headings, so every heading in an unbroken run
+  // shares the SAME upcoming content until a real (non-heading) line
+  // actually arrives — downstream, the anchor-based vehicle scan and the
+  // address-block parser (which now skips vehicle-shaped lines instead of
+  // reporting them, see parseAddressBlock) each pick their own relevant
+  // subset out of that shared pool correctly regardless. A heading found
+  // AFTER real content has already started flowing always starts a fresh,
+  // single-section group as before.
+  let activeGroup: ParagraphSection[] = [];
+  let groupHasContent = false;
   for (const p of paragraphs) {
     if (isHeadingLine(p)) {
-      current = { heading: p.trim(), lines: [] };
-      sections.push(current);
-    } else if (current) {
-      current.lines.push(p);
+      const section: ParagraphSection = { heading: p.trim(), lines: [] };
+      sections.push(section);
+      if (groupHasContent || activeGroup.length === 0) {
+        activeGroup = [section];
+        groupHasContent = false;
+      } else {
+        activeGroup.push(section);
+      }
+    } else if (activeGroup.length > 0) {
+      for (const s of activeGroup) s.lines.push(p);
+      groupHasContent = true;
     }
   }
   return sections;
@@ -292,12 +317,43 @@ function splitPersonName(full: string): {
  * SUBURB WA") used to be silently dropped — now it's reported via
  * `unparsed` instead, so the officer sees "we found a Current Address,
  * couldn't read it" rather than nothing at all. */
+// Splits a single line carrying more than one "Label: value" fact into
+// its own separate lines, one per embedded label — a row-flattening
+// coincidence upstream (two unrelated multi-line blocks landing on the
+// same y purely by chance of shared line-height, see pdfTextReader.ts's
+// own comments on this) can leave several distinct labelled facts glued
+// onto one PDF text line with nothing but a space between them (a real
+// training document, Operation HARBOUR: "...Sprinter van. Frequent
+// Location: Marina complex, ... Additional Location: Unit 6/42..." all
+// as one line). Only ever splits BEFORE an embedded label that ISN'T
+// already at the very start of the line — parseAddressBlock's own
+// labelMatch already handles a label sitting right at position 0.
+const EMBEDDED_LABEL_RE = /\b[A-Z][a-zA-Z]*(?:\s[A-Z][a-zA-Z]*){0,3}:\s/g;
+function expandEmbeddedLabels(line: string): string[] {
+  const starts: number[] = [];
+  EMBEDDED_LABEL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = EMBEDDED_LABEL_RE.exec(line)) !== null) {
+    if (m.index > 0) starts.push(m.index);
+  }
+  if (starts.length === 0) return [line];
+  const parts: string[] = [];
+  let prev = 0;
+  for (const idx of starts) {
+    parts.push(line.slice(prev, idx).trim());
+    prev = idx;
+  }
+  parts.push(line.slice(prev).trim());
+  return parts.filter(Boolean);
+}
+
 function parseAddressBlock(text: string): {
   addresses: ParsedAddressEntry[];
   unparsed: UnparsedItem[];
 } {
   const lines = text
     .split("\n")
+    .flatMap(expandEmbeddedLabels)
     .map(l => l.trim())
     .filter(Boolean);
   const addresses: ParsedAddressEntry[] = [];
@@ -327,7 +383,17 @@ function parseAddressBlock(text: string): {
     const parsed = parseAddressLine(line) ?? parseAddressLineLoose(line);
     if (parsed) {
       addresses.push({ ...parsed, label: pendingLabel });
-    } else {
+    } else if (findVehicleLines(line).length === 0) {
+      // A line that's actually vehicle-shaped (findVehicleLines
+      // recognises a real rego anchor in it) was never meant as an
+      // address in the first place — it only ended up here because two
+      // section headings sharing a row with no content between them (see
+      // pdfTextReader.ts's own row-flattening) can occasionally leave a
+      // LOCATION OF INTEREST section carrying a stray VEHICLES line.
+      // Reporting it as "we found an address here but couldn't read it"
+      // would be misleading; silently dropping it here costs nothing
+      // since the vehicle itself is still read correctly via its own
+      // VEHICLES-section/narrative-scan path.
       unparsed.push({ kind: "address", label: pendingLabel, raw: line });
     }
     pendingLabel = "";

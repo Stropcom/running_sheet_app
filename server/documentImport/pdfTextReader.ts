@@ -67,6 +67,18 @@ const STANDARD_FONT_DATA_URL =
 // added here too so a PDF using that wording still gets picked up.
 const LINE_LABELS = Array.from(ALL_KNOWN_LABELS).concat("SUBJECT");
 
+// Single-word labels only (multi-word ones like "LOCATION OF INTEREST"
+// need their own dedicated column-splitting, since a label spanning
+// several PDF text items can't be recognised by checking one item at a
+// time) — used by resplitEmbeddedLabels below to catch a label that
+// landed INSIDE another column's own text because the gap in front of it
+// was too tight for splitLineIntoColumns' pixel-width threshold to catch
+// (found against a real training document whose NAME/ROLE columns sit
+// only ~14pt apart — under that threshold's 18pt floor).
+const SINGLE_WORD_LABELS = new Set(
+  LINE_LABELS.filter(l => !/\s/.test(l)).map(l => l.toUpperCase())
+);
+
 // Longest-first so "LOCATION OF INTEREST" is tried before any shorter
 // label that happens to be one of its own words.
 const LABEL_ALTERNATION = LINE_LABELS.slice()
@@ -84,6 +96,50 @@ const LEADING_LABEL_RE = new RegExp(`^(${LABEL_ALTERNATION})\\b`, "i");
 function canonicalLabel(raw: string): string {
   const upper = raw.trim().toUpperCase();
   return LINE_LABELS.find(l => l.toUpperCase() === upper) ?? raw.trim();
+}
+
+// Individual words drawn from the app's own known label vocabulary
+// (LINE_LABELS split on whitespace), plus a handful of recurring
+// document-title/section words seen across real training documents
+// (OPERATION, TARGET, PROFILE, VERSION, ASSOCIATE/S) that aren't
+// themselves field labels but appear the same way — used as the
+// tiebreaker in clusterIntoCells' word-join decision below, see its own
+// comment for why a pure pixel-width guess isn't reliable enough on its
+// own. Deliberately NOT a general English dictionary: that would risk
+// forcing together two genuinely separate real words (a name, a place)
+// that just happen to look plausible concatenated — restricting this to
+// the app's own controlled vocabulary keeps the false-positive risk near
+// zero while still covering every case found so far.
+const KNOWN_VOCABULARY_WORDS = new Set(
+  LINE_LABELS.flatMap(l => l.toUpperCase().split(/\s+/)).concat([
+    "OPERATION",
+    "TARGET",
+    "PROFILE",
+    "VERSION",
+    "ASSOCIATE",
+    "ASSOCIATES",
+  ])
+);
+
+// "Associates:" (and close variants) is excluded even though it's a
+// standalone colon line too — it introduces a LIST of separate people,
+// each with their own name/address/vehicle on their own following lines,
+// not one single fact whose value happens to wrap across several lines.
+// Eagerly walking its own column here would glue that whole list into one
+// cell (see the real training document, Operation COBALT, whose own
+// regression test exists specifically to keep "Trent HOLLOWAY" as its own
+// separate paragraph line — findAssociateBlocks elsewhere depends on that
+// shape to recognise an associate at all).
+const LIST_INTRO_LABEL_RE = /^associates?$/i;
+
+/** A standalone "Word(s):" line — nothing else on it — is unambiguously a
+ * field label regardless of whether anything else on the page happens to
+ * share its y (see clusterIntoCells' own eligibility comment): real prose
+ * essentially never ends a whole line at a bare label-shaped colon. */
+function isStandaloneColonLabel(text: string): boolean {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^([A-Za-z][A-Za-z\s]{0,40}):$/);
+  return !!match && !LIST_INTRO_LABEL_RE.test(match[1].trim());
 }
 
 interface PositionedItem {
@@ -308,16 +364,37 @@ function clusterIntoCells(lines: Line[]): {
   for (let i = 0; i < segments.length; i++) {
     if (segConsumed[i]) continue;
     const s0 = segments[i];
-    // Co-occurrence (hasRowMate) is the only eligibility gate — see the
+    if (s0.width <= 0) continue;
+    // Co-occurrence (hasRowMate) is the main eligibility gate — see the
     // function comment for why a width check here, tried twice, silently
-    // dropped genuine table values instead of just mis-joining them.
-    if (s0.width <= 0 || !hasRowMate[i]) continue;
+    // dropped genuine table values instead of just mis-joining them. A
+    // standalone "Word(s):" line is ALSO always eligible regardless of
+    // row-mates: unlike a plain narrow value, a bare label ending a whole
+    // line in a colon is unambiguous on its own (see
+    // isStandaloneColonLabel), and without this a label whose own value
+    // wraps across several lines with nothing else sharing its exact y
+    // (a real training document, "Current Address:"/"Warehouse:" each on
+    // their own line, their multi-line value immediately below at the
+    // same x) is silently skipped entirely — losing the label AND every
+    // word of its value, which then sits orphaned as bare paragraph text
+    // with no home, while whichever OTHER cell coincidentally shares a
+    // wrapped sub-line's y elsewhere on the page (a wholly unrelated
+    // block — this page's own real bug, an "1RFK221 (WA) ... Lexus"
+    // vehicle line and a "BEACH WA 6020." address fragment landing on
+    // the exact same y purely by coincidence of shared line-height) gets
+    // wrongly glued to it instead once buildPageUnits groups same-y cells
+    // into a "row". Catching the label here first means its own full
+    // value gets consumed as part of THIS cell before the outer loop
+    // ever reaches that orphaned fragment as its own segment.
+    const s0Text = columnText(s0.items);
+    if (!hasRowMate[i] && !isStandaloneColonLabel(s0Text)) continue;
     segConsumed[i] = true;
     const bucket = bucketKey(s0.x0);
     const items = [...s0.items];
     let lastY = s0.y;
     let lastWidth = s0.width;
     let lastHeight = s0.height;
+    let lastSegmentText = s0Text;
     const firstIdx = s0.lineIdx;
     let lastIdx = s0.lineIdx;
 
@@ -328,10 +405,33 @@ function clusterIntoCells(lines: Line[]): {
       const gap = lastY - sj.y;
       if (gap <= 0 || gap > lastHeight * WRAP_CONTINUATION_MAX_GAP_RATIO) break;
       const max = colMaxWidth.get(bucket) ?? lastWidth;
-      const packed =
+      // The width-based guess is a coin flip on a page where the same
+      // x-bucket legitimately carries both narrow label cells and much
+      // wider values (this column's own "colMaxWidth" then reflects the
+      // wide ones, so a genuinely narrow forced mid-word break like
+      // "PASSPO"/"RT" or "VEHICLE"/"S" never looks "packed" relative to
+      // it) — never trusted on its own in either direction: overridden to
+      // FALSE when the next segment itself starts with one of this
+      // document family's own known field labels (a real leftover word
+      // fragment from a mid-word break is never itself a whole recognised
+      // label — see a real training document, BLUEGUM, where a name line
+      // and the following "DOB ..." line happened to pack tightly purely
+      // by coincidence, joining into "HASSANDOB" with no space), and
+      // rescued to TRUE — but only when the width guess said "not
+      // packed", never overriding a correct packed=true — when joining
+      // without a space produces a real word from the app's own known
+      // vocabulary (see KNOWN_VOCABULARY_WORDS) rather than guessing at
+      // English generally, which risks forcing together two genuinely
+      // separate words that just happen to look plausible joined.
+      const widthPacked =
         !startsWithKnownLabel(sj.items) &&
         lastWidth <= NARROW_JOIN_MAX_WIDTH &&
         lastWidth >= max * PACKED_WIDTH_RATIO;
+      const sjText = columnText(sj.items);
+      const vocabPacked =
+        !widthPacked &&
+        KNOWN_VOCABULARY_WORDS.has((lastSegmentText + sjText).toUpperCase());
+      const packed = widthPacked || vocabPacked;
       if (!packed) {
         items.push({
           str: " ",
@@ -347,6 +447,7 @@ function clusterIntoCells(lines: Line[]): {
       lastY = sj.y;
       lastWidth = sj.width;
       lastHeight = sj.height || lastHeight;
+      lastSegmentText = sjText;
       lastIdx = sj.lineIdx;
     }
 
@@ -414,6 +515,7 @@ function buildPageUnits(lines: Line[]): PageUnit[] {
       firstIdx: Math.min(...rowCells.map(c => c.firstIdx)),
     });
   }
+
   const rowAtIdx = new Map(rows.map(r => [r.firstIdx, r]));
 
   const units: PageUnit[] = [];
@@ -496,7 +598,35 @@ function splitLineIntoColumns(items: PositionedItem[]): PositionedItem[][] {
     runningEndX = item.x + item.width;
   }
   if (current.length > 0) columns.push(current);
-  return columns;
+  return resplitEmbeddedLabels(columns);
+}
+
+/** Catches a recognised single-word label (see SINGLE_WORD_LABELS) that
+ * ended up merged into an earlier column's own text — the gap in front of
+ * it was real but too narrow for splitLineIntoColumns' own pixel-width
+ * threshold to treat as a column break. Content, not geometry, is the
+ * stronger signal here: "...KADER" immediately followed by the exact word
+ * "ROLE" is never genuinely part of the same value, regardless of how
+ * tight the gap between them was set. Only ever splits BEFORE an embedded
+ * label that isn't already a column's own first item, so a column that's
+ * already correctly just the label on its own is left untouched. */
+function resplitEmbeddedLabels(
+  columns: PositionedItem[][]
+): PositionedItem[][] {
+  const result: PositionedItem[][] = [];
+  for (const col of columns) {
+    let start = 0;
+    for (let k = 1; k < col.length; k++) {
+      const text = col[k].str.trim().toUpperCase();
+      if (!text || !SINGLE_WORD_LABELS.has(text)) continue;
+      let end = k;
+      while (end > start && col[end - 1].str.trim() === "") end--;
+      if (end > start) result.push(col.slice(start, end));
+      start = k;
+    }
+    if (start < col.length) result.push(col.slice(start));
+  }
+  return result;
 }
 
 function columnText(items: PositionedItem[]): string {
@@ -776,6 +906,35 @@ export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
         let rows: string[][] | null;
         let y: number;
         if (unit.kind === "row") {
+          // A row whose every cell is itself a bare recognised label (no
+          // value cell alongside any of them in THIS row) is two or more
+          // section headings that happen to share a y purely because
+          // they're each vertically centred beside their own tall,
+          // multi-line value elsewhere on the page (e.g. "VEHICLES" and
+          // "LOCATION OF INTEREST" sitting side by side, their actual
+          // values several lines below) — not one combined heading.
+          // Emitting each as its own heading paragraph, rather than
+          // falling through to the flattened "VEHICLES LOCATION OF
+          // INTEREST" single-line join below, matters beyond cosmetics:
+          // findParagraphSection's own heading regexes are substring
+          // matches (VEHICLES_HEADING_RE, LOCATION_HEADING_RE), so a
+          // combined heading like that satisfies BOTH — pulling the exact
+          // same following paragraphs in as both this target's VEHICLES
+          // value and its LOCATION OF INTEREST value, corrupting the
+          // latter with vehicle text parseAddressBlock can't read (and
+          // reports as a confusing duplicate needsReview entry).
+          const cellTexts = unit.cells.map(c => columnText(c.items));
+          if (
+            cellTexts.length > 1 &&
+            cellTexts.every(t =>
+              LINE_LABELS.some(l => l.toUpperCase() === t.toUpperCase())
+            )
+          ) {
+            flushParagraph();
+            for (const t of cellTexts) paragraphs.push(canonicalLabel(t));
+            prevLineY = null;
+            continue;
+          }
           text = unit.cells
             .map(c => columnText(c.items))
             .filter(Boolean)

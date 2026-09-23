@@ -287,7 +287,7 @@ export function AddTargetDialog({
   // skip re-asking about a name that was already cleared at the surname
   // field's onBlur, instead of prompting the same question twice.
   const [dupCheckedForName, setDupCheckedForName] = useState("");
-  // Both "Yes — merge details" and "Yes, same person — link and copy" need
+  // Both "Yes, same person — continue" and "Yes, same person — link and copy" need
   // an Operation picked before they can proceed (the merge/link links the
   // existing record to it) — but the duplicate check that offers them
   // fires on the Surname field's blur, routinely before the officer has
@@ -1345,7 +1345,7 @@ export function AddTargetDialog({
           </AlertDialogHeader>
           <AlertDialogFooter className="flex flex-col sm:flex-col gap-2">
             <Button onClick={handleMergeInstead} className="w-full">
-              <Merge className="w-4 h-4 mr-1.5" /> Yes — merge details
+              <Merge className="w-4 h-4 mr-1.5" /> Yes, same person — continue
             </Button>
             <Button
               variant="outline"

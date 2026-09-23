@@ -12,8 +12,23 @@ export interface DocumentTable {
   rows: string[][];
 }
 
+/** A photo embedded in the source document (docx: a `word/media/*` part; PDF:
+ * a page's own image XObject) — re-encoded to PNG so every downstream
+ * consumer (the review screen, the upload-to-attachment path) deals with one
+ * consistent format regardless of the document's original encoding. Tiny
+ * images (letterhead logos, decorative rules/icons) are filtered out by the
+ * reader before this is populated — see MIN_IMAGE_DIMENSION in
+ * docxTableReader.ts/pdfTextReader.ts. */
+export interface ExtractedDocumentImage {
+  dataBase64: string;
+  mimeType: "image/png";
+  width: number;
+  height: number;
+}
+
 export interface DocumentReadResult {
   tables: DocumentTable[];
   /** Paragraph text outside any table, in document order. */
   paragraphs: string[];
+  images: ExtractedDocumentImage[];
 }

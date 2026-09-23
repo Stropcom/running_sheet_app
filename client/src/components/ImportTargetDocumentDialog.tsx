@@ -54,6 +54,7 @@ import {
   Mail,
   Phone,
   Link2,
+  Check,
 } from "lucide-react";
 import {
   EMPTY_ADDRESS_PARTS,
@@ -72,6 +73,19 @@ import {
   type StructuredVehicleParts,
 } from "@/lib/addressFormat";
 
+// A photo extracted from the source document that the officer chose to
+// keep on this review screen — staged the same way associates are (see
+// StagedAssociate), actually saved (uploaded to the target's Images folder
+// + run through on-device face recognition, see saveStagedImages in
+// AddTargetDialog.tsx) once the target itself is saved.
+export interface StagedImage {
+  key: string;
+  dataBase64: string;
+  mimeType: string;
+  width: number;
+  height: number;
+}
+
 export interface DocumentImportPrefill {
   identity: StructuredNameParts;
   address: typeof EMPTY_ADDRESS_PARTS;
@@ -79,6 +93,7 @@ export interface DocumentImportPrefill {
   extraAddresses: ExtraAddress[];
   extraVehicles: ExtraVehicle[];
   associates: StagedAssociate[];
+  images: StagedImage[];
   /** The document's free-text narrative, verbatim — carried through to
    * AddTargetDialog as the new target's "{Operation name} background". */
   background: string;
@@ -181,6 +196,9 @@ export function ImportTargetDocumentDialog({
   const [associateChoices, setAssociateChoices] = useState<
     Record<string, AssociateChoice>
   >({});
+  // Keyed by image key, kept-by-default (absent === kept) so a fresh parse
+  // needs no separate init effect the way associateChoices does.
+  const [imageChoices, setImageChoices] = useState<Record<string, boolean>>({});
 
   const result = parseMut.data;
 
@@ -272,6 +290,20 @@ export function ImportTargetDocumentDialog({
       }));
   }, [result]);
 
+  // Every extracted photo the parser found, with a stable key for the
+  // keep/discard toggle and the eventual save — same one-memo-per-result
+  // pattern as associateCandidates above.
+  const imageCandidates: StagedImage[] = useMemo(() => {
+    if (!result) return [];
+    return result.images.map(img => ({
+      key: makeExtraId(),
+      dataBase64: img.dataBase64,
+      mimeType: img.mimeType,
+      width: img.width,
+      height: img.height,
+    }));
+  }, [result]);
+
   const reset = () => {
     setFileName("");
     setError("");
@@ -279,6 +311,7 @@ export function ImportTargetDocumentDialog({
     setPrimaryMatch(null);
     setAssociateMatches({});
     setAssociateChoices({});
+    setImageChoices({});
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -555,6 +588,7 @@ export function ImportTargetDocumentDialog({
           ...unparsedExtraVehicles,
         ],
         associates,
+        images: imageCandidates.filter(img => imageChoices[img.key] ?? true),
         background: result.freeText.trim(),
         sourceFileName: fileName,
       });
@@ -724,6 +758,57 @@ export function ImportTargetDocumentDialog({
                       )}
                     </p>
                   ))}
+                </div>
+              )}
+
+              {imageCandidates.length > 0 && (
+                <div className="rounded-lg border border-l-4 border-indigo-500/30 border-l-indigo-500 bg-indigo-500/5 p-3 flex flex-col gap-2">
+                  <p className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wide">
+                    Photos found ({imageCandidates.length})
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Each kept photo is uploaded to this target's Images folder
+                    and run through face recognition once you save — tap to
+                    untick any that aren't a photo of this person.
+                  </p>
+                  <div className="flex flex-wrap gap-2.5">
+                    {imageCandidates.map(img => {
+                      const kept = imageChoices[img.key] ?? true;
+                      return (
+                        <button
+                          key={img.key}
+                          type="button"
+                          onClick={() =>
+                            setImageChoices(prev => ({
+                              ...prev,
+                              [img.key]: !kept,
+                            }))
+                          }
+                          title={
+                            kept
+                              ? "Tap to discard this photo"
+                              : "Tap to keep this photo"
+                          }
+                          className={`relative rounded-md overflow-hidden border-2 transition-colors ${
+                            kept
+                              ? "border-indigo-500"
+                              : "border-border opacity-40 grayscale"
+                          }`}
+                        >
+                          <img
+                            src={`data:${img.mimeType};base64,${img.dataBase64}`}
+                            alt="Extracted from document"
+                            className="w-20 h-20 object-cover block"
+                          />
+                          {kept && (
+                            <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-indigo-500 text-white flex items-center justify-center">
+                              <Check className="h-2.5 w-2.5" />
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -935,6 +1020,10 @@ export function ImportTargetDocumentDialog({
                 <span className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-sm bg-violet-500 shrink-0" />
                   Associates section
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-indigo-500 shrink-0" />
+                  Photos section
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 shrink-0" />

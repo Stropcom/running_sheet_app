@@ -76,7 +76,10 @@ import {
 } from "@/components/PossibleDuplicateAlert";
 import { runDuplicateChecks } from "@/lib/duplicateCheck";
 import { OperationPicker } from "@/components/OperationPicker";
-import type { DocumentImportPrefill } from "@/components/ImportTargetDocumentDialog";
+import type {
+  DocumentImportPrefill,
+  StagedImage,
+} from "@/components/ImportTargetDocumentDialog";
 
 // Referenced only for the merge dialog's incoming.wildFields shape — Wild
 // Fields is deprecated app-wide, this dialog never collects one, but the
@@ -172,6 +175,7 @@ export function AddTargetDialog({
   initialExtraAddresses,
   initialExtraVehicles,
   initialAssociates,
+  initialImages,
   initialBackground,
   initialDocumentSnapshot,
 }: {
@@ -201,6 +205,11 @@ export function AddTargetDialog({
   initialExtraAddresses?: ExtraAddress[];
   initialExtraVehicles?: ExtraVehicle[];
   initialAssociates?: StagedAssociate[];
+  /** Photos the officer chose to keep on the import review screen — same
+   * one-time-seed treatment as the other initial* import fields: read
+   * directly (no local state), uploaded and run through face recognition
+   * against the just-saved target once it exists (see saveStagedImages). */
+  initialImages?: StagedImage[];
   /** The document's free-text narrative — carried straight through to the
    * saved target's "{Operation name} background" (see RegistryCreatePayload
    * .background), same one-time-seed treatment as the other initial* import
@@ -251,6 +260,9 @@ export function AddTargetDialog({
   const [linking, setLinking] = useState(false);
   const utils = trpc.useUtils();
   const associateCreateMut = trpc.associate.create.useMutation();
+  const uploadImageMut = trpc.attachment.uploadManual.useMutation();
+  const confirmEntityFaceMut = trpc.attachment.confirmEntityFace.useMutation();
+  const linkToEntityMut = trpc.attachment.linkToEntity.useMutation();
 
   // ── Possible-duplicate detection (fires on Save, not while typing) ──
   // A name that fuzzy-matches an existing target offers a merge instead of
@@ -336,6 +348,17 @@ export function AddTargetDialog({
     onClose();
   };
 
+  // documentSnapshotJson is a permanent version-history record (see
+  // targetDocumentImports in schema.ts, shown on the Target/Operation
+  // profile's Imported Documents panel) — but a kept photo already gets its
+  // own durable copy as a real Attachment once saved (see
+  // saveStagedImages), so storing the same base64 bytes a second time here
+  // would just bloat that JSON column for no reason and duplicate the
+  // photo. Strip it before persisting the snapshot.
+  const documentSnapshotForHistory = (
+    prefill: DocumentImportPrefill
+  ): DocumentImportPrefill => ({ ...prefill, images: [] });
+
   const buildPayload = (): RegistryCreatePayload => {
     const { name, tgt } = computePrimaryIdentity(
       targetType,
@@ -349,7 +372,7 @@ export function AddTargetDialog({
       linkToOperationId: operation!.id,
       background: initialBackground?.trim() || null,
       documentSnapshotJson: initialDocumentSnapshot
-        ? JSON.stringify(initialDocumentSnapshot)
+        ? JSON.stringify(documentSnapshotForHistory(initialDocumentSnapshot))
         : null,
       documentSourceFileName: initialDocumentSnapshot?.sourceFileName || null,
       targetType,
@@ -444,11 +467,81 @@ export function AddTargetDialog({
     }
   };
 
+  // Uploads every image the officer kept on the import review screen
+  // against the just-saved target's Operation, then runs on-device face
+  // recognition (server/faceRecognition/ — no external AI/LLM call, see
+  // CLAUDE.md's Golden Rule) so the photo is registered against the right
+  // person automatically. Only auto-registers when exactly one face is
+  // detected — a document photo is almost always a single portrait/mugshot,
+  // but zero faces (a non-portrait scan) or 2+ (a group photo, where which
+  // face is this target is genuinely ambiguous) still gets the photo
+  // attached to the target, just without a face embedding recorded; an
+  // officer can tag a specific face from the target's own Images folder
+  // afterward the same way any manually-uploaded photo is tagged
+  // (UploadImageDialog/FaceSelectPicker). Same best-effort-per-item,
+  // Promise.allSettled-style failure handling as saveStagedAssociates above
+  // — one bad photo shouldn't stop the rest from saving.
+  const saveStagedImages = async (targetId: number) => {
+    const toSave = initialImages ?? [];
+    if (toSave.length === 0) return;
+    const opId = operation?.id;
+    if (!opId) return; // OperationPicker is required before any save path reaches here
+    const { name: entityLabel } = computePrimaryIdentity(
+      targetType,
+      identity,
+      address,
+      vehicle
+    );
+    let failed = 0;
+    for (const img of toSave) {
+      try {
+        const uploaded = await uploadImageMut.mutateAsync({
+          operationId: opId,
+          dataBase64: img.dataBase64,
+          mimeType: img.mimeType,
+          fileName: `imported-photo-${img.key}.png`,
+        });
+        let faces: { index: number }[] = [];
+        try {
+          faces = await utils.attachment.detectFaces.fetch({
+            attachmentId: uploaded.id,
+          });
+        } catch {
+          faces = [];
+        }
+        if (faces.length === 1) {
+          await confirmEntityFaceMut.mutateAsync({
+            attachmentId: uploaded.id,
+            faceIndex: faces[0].index,
+            category: "target",
+            targetId,
+            entityLabel,
+          });
+        } else {
+          await linkToEntityMut.mutateAsync({
+            attachmentId: uploaded.id,
+            category: "target",
+            targetId,
+            entityLabel,
+          });
+        }
+      } catch {
+        failed++;
+      }
+    }
+    if (failed > 0) {
+      toast.error(
+        `Target saved, but ${failed} photo${failed > 1 ? "s" : ""} failed to save — add ${failed > 1 ? "them" : "it"} from the target's Images folder.`
+      );
+    }
+  };
+
   const saveAsNew = async () => {
     setSaving(true);
     try {
       const result = await onSave(buildPayload());
       await saveStagedAssociates(result.id);
+      await saveStagedImages(result.id);
       resetAndClose();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to save target.");
@@ -491,7 +584,7 @@ export function AddTargetDialog({
     linkToOperationId: operation!.id,
     background: initialBackground?.trim() || null,
     documentSnapshotJson: initialDocumentSnapshot
-      ? JSON.stringify(initialDocumentSnapshot)
+      ? JSON.stringify(documentSnapshotForHistory(initialDocumentSnapshot))
       : null,
     documentSourceFileName: initialDocumentSnapshot?.sourceFileName || null,
     // Only reachable via the person-duplicate-match flow, which is skipped
@@ -733,6 +826,7 @@ export function AddTargetDialog({
         }
         const result = await onSave(buildLinkedPayload(associate));
         await saveStagedAssociates(result.id);
+        await saveStagedImages(result.id);
       } else {
         // No registry record to copy from — just a text mention (or, in
         // theory, an associate match this dialog can't link into). Save the
@@ -740,6 +834,7 @@ export function AddTargetDialog({
         // future sightings of it are recognized as this same identity.
         const result = await onSave(buildPayload());
         await saveStagedAssociates(result.id);
+        await saveStagedImages(result.id);
         if (warning.kind !== "target") {
           await mergeEntitiesMutation.mutateAsync({
             type: warning.kind,
@@ -1300,7 +1395,9 @@ export function AddTargetDialog({
           background={initialBackground?.trim() || null}
           documentSnapshotJson={
             initialDocumentSnapshot
-              ? JSON.stringify(initialDocumentSnapshot)
+              ? JSON.stringify(
+                  documentSnapshotForHistory(initialDocumentSnapshot)
+                )
               : null
           }
           documentSourceFileName={
@@ -1318,6 +1415,7 @@ export function AddTargetDialog({
             // Documents diff (which only reflects the parsed snapshot, not
             // the registry).
             await saveStagedAssociates(targetId);
+            await saveStagedImages(targetId);
             utils.target.registry.list.invalidate();
             utils.associate.listForTarget.invalidate();
             utils.intelligence.targetProfile.invalidate();

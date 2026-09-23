@@ -57,7 +57,7 @@ function writeToLogFile(source: LogSource, entries: unknown[]) {
   const logPath = path.join(LOG_DIR, `${source}.log`);
 
   // Format entries with timestamps
-  const lines = entries.map((entry) => {
+  const lines = entries.map(entry => {
     const ts = new Date().toISOString();
     return `[${ts}] ${JSON.stringify(entry)}`;
   });
@@ -133,7 +133,7 @@ function vitePluginManusDebugCollector(): Plugin {
         }
 
         let body = "";
-        req.on("data", (chunk) => {
+        req.on("data", chunk => {
           body += chunk.toString();
         });
 
@@ -157,7 +157,12 @@ const pwaPlugin = VitePWA({
   strategies: "injectManifest",
   srcDir: "src",
   filename: "sw.ts",
-  includeAssets: ["favicon-32.png", "apple-touch-icon.png", "icon-192.png", "icon-512.png"],
+  includeAssets: [
+    "favicon-32.png",
+    "apple-touch-icon.png",
+    "icon-192.png",
+    "icon-512.png",
+  ],
   manifest: {
     name: "Running Sheet Log",
     short_name: "RunLog",
@@ -184,7 +189,14 @@ const pwaPlugin = VitePWA({
     ],
   },
   injectManifest: {
-    maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MiB
+    // The main JS bundle crossed the previous 4 MiB cap (it's grown to
+    // ~4.2 MB) — bumped with headroom rather than tuned to the exact
+    // current size, so normal incremental growth doesn't trip this again
+    // on the next unrelated feature. Precaching the JS bundle itself is
+    // what needs this; a real fix would be code-splitting the bundle down
+    // (see the build's own "chunks larger than 500 kB" warning) rather
+    // than keep raising this ceiling indefinitely.
+    maximumFileSizeToCacheInBytes: 6 * 1024 * 1024, // 6 MiB
     globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
     rollupFormat: "es",
   },
@@ -193,7 +205,14 @@ const pwaPlugin = VitePWA({
   },
 });
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector(), pwaPlugin];
+const plugins = [
+  react(),
+  tailwindcss(),
+  jsxLocPlugin(),
+  vitePluginManusRuntime(),
+  vitePluginManusDebugCollector(),
+  pwaPlugin,
+];
 
 export default defineConfig({
   plugins,

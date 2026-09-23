@@ -11,6 +11,66 @@ happen before."
 
 ---
 
+## 2026-09-23 — Deploy failed switching droplet to `LocalAI`: two branches independently generated migrations for the same schema change
+
+Switched the droplet's working copy from `main` to `LocalAI` (`git checkout
+LocalAI && git pull --ff-only`) to test the on-device AI document-import
+assist. `deploy.sh`'s `drizzle-kit migrate` step failed:
+`ER_DUP_FIELDNAME: Duplicate column name 'archivedAt'` on
+`ALTER TABLE users ADD archivedAt bigint`. **Failed safely** — `deploy.sh`
+runs `set -euo pipefail`, so it stopped before `pm2 restart`; production
+kept serving the previous (old) build throughout, confirmed via
+`pm2 status` (`online`) and `curl localhost:3000` (`200`) immediately after
+the failure.
+
+**Root cause**: the "reversible user archiving" feature (adds
+`users.archivedAt`/`archivedByCIN`) was developed on `runlogtest`, then
+merged into two different downstream branches at different times —
+`main` got it via commit `fc20d7c`, which carried `drizzle-kit generate`'s
+own auto-named migration file `0102_bouncy_red_wolf.sql`. Separately,
+`LocalAI` picked up the same feature (bundled together with the
+already-shared Investigator-role work) via its own independent
+`drizzle-kit generate`, producing a _different_ file —
+`0104_wide_hannibal_king.sql` — containing the identical
+`ALTER TABLE users ADD archivedAt` statement (plus a `users.role` enum
+widen and `investigatorOperationIds` column, both _also_ already covered
+by earlier, already-applied migrations shared by both branches). Two
+different files, two different auto-generated names, same real-world
+schema change — exactly the divergent-migration-authorship risk the
+2026-08-06 entry below describes, just triggered by a branch switch this
+time instead of a droplet-authored `db:push`.
+
+**Confirmed via the live schema** (not just git history) that every column/
+enum value `0104` would add already existed — i.e. `0104`'s entire effect
+was a no-op duplicate, safe to skip. Wrote a small read-only reconciliation
+script (`drizzle/meta/_journal.json` entries vs. real SHA-256 file-content
+hashes already recorded in `__drizzle_migrations`) to confirm `0104` was
+the _only_ discrepancy among all 106 migration files, then inserted a
+single `(hash, created_at)` row for it into `__drizzle_migrations` — no
+data-table changes, matching exactly what a successful real run of that
+migration would have recorded, just without re-running already-applied
+DDL. Re-ran `drizzle-kit migrate` (now a clean no-op) and `pm2 restart` —
+deploy completed successfully, droplet now running `LocalAI`.
+
+Also noticed (not yet followed up): `git status --porcelain drizzle/`
+showed an **untracked** file, `drizzle/0102_strong_vindicator.sql` — a
+migration that exists only on the droplet's disk, not in any branch's git
+history. Likely leftover from a past `db:push` (which includes
+`drizzle-kit generate`) run directly on the droplet rather than `migrate`
+— see the 2026-08-06 entry's own warning about why `generate` should never
+run there. Didn't factor into this incident (not in `_journal.json`, so
+`migrate` never touches it) but worth deleting/investigating next time
+someone's on the droplet, to stop it confusing a future `git status`
+check.
+
+**Takeaway for next branch switch**: after `git checkout <branch> && git
+pull`, before running `deploy.sh`, it's worth running the same
+hash-vs-journal reconciliation check proactively when switching to a
+branch that's had its own independent history for a while — cheaper than
+finding out mid-deploy.
+
+---
+
 ## 2026-09-18 — App down after deploy: crash-looping on missing `sharp` prebuilt binary, because the deploy command skipped `pnpm install`
 
 After a routine deploy the app wouldn't come up. `pm2 status` showed

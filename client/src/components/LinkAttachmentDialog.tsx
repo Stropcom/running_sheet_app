@@ -11,14 +11,23 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { FaceSelectPicker } from "@/components/FaceSelectPicker";
 
-type Category = "target" | "vehicle" | "associate" | "location" | "unidentified_person";
+type Category =
+  | "target"
+  | "vehicle"
+  | "associate"
+  | "location"
+  | "unidentified_person";
 
 const CATEGORY_TABS: { key: Category; label: string; icon: typeof Users }[] = [
   { key: "target", label: "Targets", icon: Users },
   { key: "vehicle", label: "Vehicles", icon: Car },
   { key: "associate", label: "Associates", icon: User },
   { key: "location", label: "Locations", icon: MapPin },
-  { key: "unidentified_person", label: "Unidentified Person", icon: HelpCircle },
+  {
+    key: "unidentified_person",
+    label: "Unidentified Person",
+    icon: HelpCircle,
+  },
 ];
 
 const CATEGORY_ICON: Record<Category, typeof Users> = {
@@ -27,6 +36,45 @@ const CATEGORY_ICON: Record<Category, typeof Users> = {
   associate: User,
   location: MapPin,
   unidentified_person: HelpCircle,
+};
+
+// Same per-category colour convention as UploadImageDialog.tsx's redesign —
+// full literal class strings, not string-interpolated colour names, since
+// Tailwind's JIT only picks up classes it can see written out in source.
+const CATEGORY_STYLES: Record<
+  Category,
+  { icon: string; activeBorder: string; activeBg: string; activeText: string }
+> = {
+  target: {
+    icon: "text-sky-500",
+    activeBorder: "border-sky-500",
+    activeBg: "bg-sky-500/10",
+    activeText: "text-sky-600 dark:text-sky-400",
+  },
+  vehicle: {
+    icon: "text-amber-500",
+    activeBorder: "border-amber-500",
+    activeBg: "bg-amber-500/10",
+    activeText: "text-amber-600 dark:text-amber-400",
+  },
+  associate: {
+    icon: "text-violet-500",
+    activeBorder: "border-violet-500",
+    activeBg: "bg-violet-500/10",
+    activeText: "text-violet-600 dark:text-violet-400",
+  },
+  location: {
+    icon: "text-emerald-500",
+    activeBorder: "border-emerald-500",
+    activeBg: "bg-emerald-500/10",
+    activeText: "text-emerald-600 dark:text-emerald-400",
+  },
+  unidentified_person: {
+    icon: "text-rose-500",
+    activeBorder: "border-rose-500",
+    activeBg: "bg-rose-500/10",
+    activeText: "text-rose-600 dark:text-rose-400",
+  },
 };
 
 function categoryForEntity(e: { type: string; isTarget?: boolean }): Category {
@@ -40,18 +88,28 @@ function categoryForEntity(e: { type: string; isTarget?: boolean }): Category {
 // see getAllIntelligenceEntities) already carries one occurrence per
 // operation it's linked to, so which operation(s) an entity belongs to is
 // derivable from data already being fetched here — no separate query needed.
-function operationNamesFor(e: { occurrences?: Array<{ operationName: string }> } | undefined): string[] {
+function operationNamesFor(
+  e: { occurrences?: Array<{ operationName: string }> } | undefined
+): string[] {
   if (!e?.occurrences) return [];
-  return Array.from(new Set(e.occurrences.map(o => o.operationName).filter(Boolean)));
+  return Array.from(
+    new Set(e.occurrences.map(o => o.operationName).filter(Boolean))
+  );
 }
 
-function findEntityForLink(link: { category: string; targetId?: number | null; entityLabel: string }, entities: any[] | undefined) {
+function findEntityForLink(
+  link: { category: string; targetId?: number | null; entityLabel: string },
+  entities: any[] | undefined
+) {
   if (!entities) return undefined;
   if (link.category === "target") {
     return entities.find(e => e.isTarget && e.targetId === link.targetId);
   }
   if (link.category === "unidentified_person") return undefined;
-  return entities.find(e => categoryForEntity(e) === link.category && e.shortForm === link.entityLabel);
+  return entities.find(
+    e =>
+      categoryForEntity(e) === link.category && e.shortForm === link.entityLabel
+  );
 }
 
 // Shown under each "currently linked" pill so an officer can see at a glance
@@ -113,11 +171,14 @@ function EntityCandidateRow({
     <button
       disabled={disabled}
       onClick={onPick}
-      className="text-left px-3 py-2 rounded-lg text-sm hover:bg-accent/50 transition-colors shrink-0"
+      className="text-left px-3 py-2 rounded-lg text-sm bg-background hover:bg-accent/50 transition-colors shrink-0"
     >
       <span className="block truncate">{e.shortForm}</span>
       {ops.length > 0 && (
-        <span className="block text-[10px] text-muted-foreground truncate" title={ops.join(", ")}>
+        <span
+          className="block text-[10px] text-muted-foreground truncate"
+          title={ops.join(", ")}
+        >
           {ops.length === 1 ? "Op: " : "Ops: "}
           {ops.join(", ")}
         </span>
@@ -143,12 +204,19 @@ export function LinkAttachmentDialog({
 }) {
   const [tab, setTab] = useState<Category>("target");
   const [search, setSearch] = useState("");
-  const [pickingEntity, setPickingEntity] = useState<{ category: "target" | "associate"; targetId?: number; entityLabel: string } | null>(null);
+  const [pickingEntity, setPickingEntity] = useState<{
+    category: "target" | "associate";
+    targetId?: number;
+    entityLabel: string;
+  } | null>(null);
   const utils = trpc.useUtils();
 
-  const { data: entities, isLoading } = trpc.intelligence.getEntities.useQuery(undefined, {
-    enabled: open,
-  });
+  const { data: entities, isLoading } = trpc.intelligence.getEntities.useQuery(
+    undefined,
+    {
+      enabled: open,
+    }
+  );
 
   const { data: currentLinks } = trpc.attachment.linksFor.useQuery(
     { attachmentId },
@@ -195,11 +263,14 @@ export function LinkAttachmentDialog({
   // an officer is almost always looking for — split those out to the top
   // instead of leaving them to scroll past everything else alphabetically.
   const { inCurrentOp, otherEntities } = useMemo(() => {
-    if (!currentOperationId) return { inCurrentOp: [] as any[], otherEntities: filtered };
+    if (!currentOperationId)
+      return { inCurrentOp: [] as any[], otherEntities: filtered };
     const inOp: any[] = [];
     const rest: any[] = [];
     for (const e of filtered) {
-      const linked = (e.occurrences ?? []).some((o: any) => o.operationId === currentOperationId);
+      const linked = (e.occurrences ?? []).some(
+        (o: any) => o.operationId === currentOperationId
+      );
       (linked ? inOp : rest).push(e);
     }
     return { inCurrentOp: inOp, otherEntities: rest };
@@ -212,22 +283,42 @@ export function LinkAttachmentDialog({
           <DialogTitle>Link photo to entity</DialogTitle>
         </DialogHeader>
 
+        {photoUrl && (
+          <div className="flex items-center gap-2.5 rounded-lg border border-border bg-muted/20 p-2">
+            <img
+              src={photoUrl}
+              alt="Photo being linked"
+              className="h-14 w-14 rounded-md object-cover border border-border shrink-0"
+            />
+            <p className="text-xs text-muted-foreground">Linking this photo</p>
+          </div>
+        )}
+
         {currentLinks && currentLinks.length > 0 && (
-          <div className="flex flex-col gap-1.5 pb-2 border-b border-border">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Currently linked</p>
-            <div className="flex flex-col gap-1">
+          <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3 flex flex-col gap-2">
+            <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">
+              Currently linked
+            </p>
+            <div className="flex flex-col gap-2">
               {currentLinks.map((link: any) => {
                 const Icon = CATEGORY_ICON[link.category as Category] ?? Users;
-                const linkedOps = operationNamesFor(findEntityForLink(link, entities as any[] | undefined));
+                const linkedOps = operationNamesFor(
+                  findEntityForLink(link, entities as any[] | undefined)
+                );
                 return (
                   <div key={link.id} className="flex flex-col gap-0.5">
-                    <span className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full bg-emerald-600/10 text-emerald-700 dark:text-emerald-400 text-xs font-medium w-fit max-w-full">
+                    <span className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full bg-background border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-xs font-medium w-fit max-w-full">
                       <Icon className="h-3 w-3 shrink-0" />
-                      <span className="truncate max-w-[260px]" title={link.entityLabel}>
+                      <span
+                        className="truncate max-w-[260px]"
+                        title={link.entityLabel}
+                      >
                         {link.entityLabel}
                       </span>
                       <button
-                        onClick={() => unlinkFromEntity.mutate({ linkId: link.id })}
+                        onClick={() =>
+                          unlinkFromEntity.mutate({ linkId: link.id })
+                        }
                         disabled={unlinkFromEntity.isPending}
                         title="Unlink"
                         className="h-4 w-4 rounded-full flex items-center justify-center hover:bg-emerald-600/20 transition-colors shrink-0"
@@ -236,7 +327,10 @@ export function LinkAttachmentDialog({
                       </button>
                     </span>
                     {linkedOps.length > 0 && (
-                      <p className="text-[10px] text-muted-foreground pl-2 truncate" title={linkedOps.join(", ")}>
+                      <p
+                        className="text-[10px] text-muted-foreground pl-2 truncate"
+                        title={linkedOps.join(", ")}
+                      >
                         {linkedOps.length === 1 ? "Op: " : "Ops: "}
                         {linkedOps.join(", ")}
                       </p>
@@ -256,128 +350,172 @@ export function LinkAttachmentDialog({
           </div>
         )}
 
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {currentLinks && currentLinks.length > 0 ? "Link to another" : "Link to"}
-        </p>
+        <div className="rounded-lg border border-l-4 border-violet-500/30 border-l-violet-500 bg-violet-500/5 p-3 flex flex-col gap-2.5">
+          <p className="text-xs font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide">
+            {currentLinks && currentLinks.length > 0
+              ? "Link to another"
+              : "Link to"}
+          </p>
 
-        <div className="flex gap-1 border-b border-border pb-2">
-          {CATEGORY_TABS.map(t => (
-            <button
-              key={t.key}
-              onClick={() => { setTab(t.key); setPickingEntity(null); }}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                tab === t.key
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted/50"
-              }`}
-            >
-              <t.icon className="h-3.5 w-3.5" />
-              {t.label}
-            </button>
-          ))}
-        </div>
+          <div className="grid grid-cols-5 max-[420px]:grid-cols-3 gap-1.5">
+            {CATEGORY_TABS.map(t => {
+              const styles = CATEGORY_STYLES[t.key];
+              const active = tab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => {
+                    setTab(t.key);
+                    setPickingEntity(null);
+                  }}
+                  className={`flex flex-col items-center gap-1 rounded-lg border px-1 py-2 text-center text-[10.5px] font-medium leading-tight transition-colors ${
+                    active
+                      ? `${styles.activeBorder} ${styles.activeBg} ${styles.activeText}`
+                      : "border-border bg-background text-muted-foreground hover:bg-muted/50"
+                  }`}
+                >
+                  <t.icon className={`h-4 w-4 ${active ? "" : styles.icon}`} />
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
 
-        {tab === "unidentified_person" ? (
-          photoUrl ? (
+          {tab === "unidentified_person" ? (
+            photoUrl ? (
+              <FaceSelectPicker
+                attachmentId={attachmentId}
+                photoUrl={photoUrl}
+                onDone={() => onOpenChange(false)}
+                onCancel={() => setTab("target")}
+              />
+            ) : (
+              <div className="flex flex-col gap-2 py-2">
+                <p className="text-sm text-muted-foreground">
+                  Tags this photo as a new, distinct Unidentified Person pool
+                  entry. Tap once per person if the photo shows more than one
+                  unidentified individual.
+                </p>
+                <button
+                  disabled={linkToEntity.isPending}
+                  onClick={() =>
+                    linkToEntity.mutate({
+                      attachmentId,
+                      category: "unidentified_person",
+                      entityLabel: `Unidentified Person #${attachmentId}`,
+                    })
+                  }
+                  className="text-left px-3 py-2 rounded-lg text-sm border border-border bg-background hover:bg-accent/50 transition-colors"
+                >
+                  + Tag as new Unidentified Person
+                </button>
+              </div>
+            )
+          ) : pickingEntity && photoUrl ? (
             <FaceSelectPicker
+              mode="entity"
               attachmentId={attachmentId}
               photoUrl={photoUrl}
-              onDone={() => onOpenChange(false)}
-              onCancel={() => setTab("target")}
+              category={pickingEntity.category}
+              targetId={pickingEntity.targetId}
+              entityLabel={pickingEntity.entityLabel}
+              onDone={() => {
+                setPickingEntity(null);
+                onOpenChange(false);
+              }}
+              onCancel={() => setPickingEntity(null)}
             />
           ) : (
-            <div className="flex flex-col gap-2 py-2">
-              <p className="text-sm text-muted-foreground">
-                Tags this photo as a new, distinct Unidentified Person pool entry. Tap once per person if the photo shows more than one unidentified individual.
-              </p>
-              <button
-                disabled={linkToEntity.isPending}
-                onClick={() =>
-                  linkToEntity.mutate({
-                    attachmentId,
-                    category: "unidentified_person",
-                    entityLabel: `Unidentified Person #${attachmentId}`,
-                  })
-                }
-                className="text-left px-3 py-2 rounded-lg text-sm border border-border hover:bg-accent/50 transition-colors"
-              >
-                + Tag as new Unidentified Person
-              </button>
-            </div>
-          )
-        ) : pickingEntity && photoUrl ? (
-          <FaceSelectPicker
-            mode="entity"
-            attachmentId={attachmentId}
-            photoUrl={photoUrl}
-            category={pickingEntity.category}
-            targetId={pickingEntity.targetId}
-            entityLabel={pickingEntity.entityLabel}
-            onDone={() => { setPickingEntity(null); onOpenChange(false); }}
-            onCancel={() => setPickingEntity(null)}
-          />
-        ) : (
-          <>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search…"
-                className="pl-8 h-9 text-sm"
-              />
-            </div>
+            <>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search…"
+                  className="pl-8 h-9 text-sm bg-background"
+                />
+              </div>
 
-            <div className="max-h-72 overflow-y-auto flex flex-col gap-1">
-              {isLoading ? (
-                <p className="text-sm text-muted-foreground text-center py-6">Loading…</p>
-              ) : filtered.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">No matches</p>
-              ) : (
-                <>
-                  {inCurrentOp.length > 0 && (
-                    <>
-                      <span className="inline-flex items-center w-fit mx-3 mt-1 mb-0.5 px-2 py-0.5 rounded-full border border-blue-700/50 bg-blue-700/10 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400 shrink-0">
-                        In this operation
-                      </span>
-                      {inCurrentOp.map((e, idx) => (
-                        <EntityCandidateRow
-                          key={`cur-${e.shortForm}-${idx}`}
-                          e={e}
-                          disabled={linkToEntity.isPending}
-                          onPick={() => {
-                            if (photoUrl && (tab === "target" || tab === "associate")) {
-                              setPickingEntity({ category: tab, targetId: e.targetId, entityLabel: e.shortForm });
-                              return;
-                            }
-                            linkToEntity.mutate({ attachmentId, category: tab, targetId: e.targetId, entityLabel: e.shortForm });
-                          }}
-                        />
-                      ))}
-                      <span className="inline-flex items-center w-fit mx-3 mt-2 mb-0.5 px-2 py-0.5 rounded-full border border-slate-500/50 bg-slate-500/10 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400 shrink-0">
-                        Other operations
-                      </span>
-                    </>
-                  )}
-                  {otherEntities.map((e, idx) => (
-                    <EntityCandidateRow
-                      key={`other-${e.shortForm}-${idx}`}
-                      e={e}
-                      disabled={linkToEntity.isPending}
-                      onPick={() => {
-                        if (photoUrl && (tab === "target" || tab === "associate")) {
-                          setPickingEntity({ category: tab, targetId: e.targetId, entityLabel: e.shortForm });
-                          return;
-                        }
-                        linkToEntity.mutate({ attachmentId, category: tab, targetId: e.targetId, entityLabel: e.shortForm });
-                      }}
-                    />
-                  ))}
-                </>
-              )}
-            </div>
-          </>
-        )}
+              <div className="max-h-72 overflow-y-auto flex flex-col gap-1">
+                {isLoading ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    Loading…
+                  </p>
+                ) : filtered.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    No matches
+                  </p>
+                ) : (
+                  <>
+                    {inCurrentOp.length > 0 && (
+                      <>
+                        <span className="inline-flex items-center w-fit mx-3 mt-1 mb-0.5 px-2 py-0.5 rounded-full border border-blue-700/50 bg-blue-700/10 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400 shrink-0">
+                          In this operation
+                        </span>
+                        {inCurrentOp.map((e, idx) => (
+                          <EntityCandidateRow
+                            key={`cur-${e.shortForm}-${idx}`}
+                            e={e}
+                            disabled={linkToEntity.isPending}
+                            onPick={() => {
+                              if (
+                                photoUrl &&
+                                (tab === "target" || tab === "associate")
+                              ) {
+                                setPickingEntity({
+                                  category: tab,
+                                  targetId: e.targetId,
+                                  entityLabel: e.shortForm,
+                                });
+                                return;
+                              }
+                              linkToEntity.mutate({
+                                attachmentId,
+                                category: tab,
+                                targetId: e.targetId,
+                                entityLabel: e.shortForm,
+                              });
+                            }}
+                          />
+                        ))}
+                        <span className="inline-flex items-center w-fit mx-3 mt-2 mb-0.5 px-2 py-0.5 rounded-full border border-slate-500/50 bg-slate-500/10 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400 shrink-0">
+                          Other operations
+                        </span>
+                      </>
+                    )}
+                    {otherEntities.map((e, idx) => (
+                      <EntityCandidateRow
+                        key={`other-${e.shortForm}-${idx}`}
+                        e={e}
+                        disabled={linkToEntity.isPending}
+                        onPick={() => {
+                          if (
+                            photoUrl &&
+                            (tab === "target" || tab === "associate")
+                          ) {
+                            setPickingEntity({
+                              category: tab,
+                              targetId: e.targetId,
+                              entityLabel: e.shortForm,
+                            });
+                            return;
+                          }
+                          linkToEntity.mutate({
+                            attachmentId,
+                            category: tab,
+                            targetId: e.targetId,
+                            entityLabel: e.shortForm,
+                          });
+                        }}
+                      />
+                    ))}
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

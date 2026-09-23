@@ -84,6 +84,20 @@ export interface StagedImage {
   mimeType: string;
   width: number;
   height: number;
+  /** Who this photo is of:
+   * - "target" (default) — the primary target.
+   * - "associate" — one of the NEW associates staged from the same
+   *   document, matched by that associate's own `key` in `associates`
+   *   below. No real id exists yet — resolved in AddTargetDialog's
+   *   saveStagedImages once that associate is actually created.
+   * - "existingAssociate" — an associate candidate that matched (and is
+   *   being updated into) an ALREADY-REGISTERED associate. Its id is
+   *   already known at review time, so the photo can link to it directly
+   *   with no "wait for creation" step. */
+  linkTo:
+    | { type: "target" }
+    | { type: "associate"; associateKey: string }
+    | { type: "existingAssociate"; associateId: number; entityLabel: string };
 }
 
 export interface DocumentImportPrefill {
@@ -199,6 +213,12 @@ export function ImportTargetDocumentDialog({
   // Keyed by image key, kept-by-default (absent === kept) so a fresh parse
   // needs no separate init effect the way associateChoices does.
   const [imageChoices, setImageChoices] = useState<Record<string, boolean>>({});
+  // Keyed by image key — value is "target" (default, absent === target) or
+  // an associate candidate's own key, for "which associate is this a photo
+  // of" instead of the primary target.
+  const [imageLinkChoices, setImageLinkChoices] = useState<
+    Record<string, string>
+  >({});
 
   const result = parseMut.data;
 
@@ -301,6 +321,7 @@ export function ImportTargetDocumentDialog({
       mimeType: img.mimeType,
       width: img.width,
       height: img.height,
+      linkTo: { type: "target" as const },
     }));
   }, [result]);
 
@@ -312,6 +333,7 @@ export function ImportTargetDocumentDialog({
     setAssociateMatches({});
     setAssociateChoices({});
     setImageChoices({});
+    setImageLinkChoices({});
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -588,7 +610,40 @@ export function ImportTargetDocumentDialog({
           ...unparsedExtraVehicles,
         ],
         associates,
-        images: imageCandidates.filter(img => imageChoices[img.key] ?? true),
+        images: imageCandidates
+          .filter(img => imageChoices[img.key] ?? true)
+          .map(img => {
+            const linkKey = imageLinkChoices[img.key];
+            const candidate = linkKey
+              ? associateCandidates.find(a => a.key === linkKey)
+              : undefined;
+            const choice = candidate
+              ? (associateChoices[candidate.key] ?? "create")
+              : null;
+            if (candidate && choice === "create") {
+              return {
+                ...img,
+                linkTo: {
+                  type: "associate" as const,
+                  associateKey: candidate.key,
+                },
+              };
+            }
+            if (candidate && choice === "update") {
+              const match = associateMatches[candidate.key];
+              if (match) {
+                return {
+                  ...img,
+                  linkTo: {
+                    type: "existingAssociate" as const,
+                    associateId: match.id,
+                    entityLabel: match.name,
+                  },
+                };
+              }
+            }
+            return { ...img, linkTo: { type: "target" as const } };
+          }),
         background: result.freeText.trim(),
         sourceFileName: fileName,
       });
@@ -612,10 +667,10 @@ export function ImportTargetDocumentDialog({
           {!result && (
             <>
               <p className="text-sm text-muted-foreground">
-                Upload a Word (.docx) or PDF (.pdf) document with
-                target/associate details — fields it recognises will pre-fill
-                the Add Target form for you to review and confirm. Nothing is
-                saved automatically.
+                Upload a Word (.docx) or PDF (.pdf) Baseball Card or Profile.
+              </p>
+              <p className="text-sm font-semibold text-destructive">
+                DO NOT upload photographs of documents.
               </p>
               <input
                 ref={fileInputRef}
@@ -678,14 +733,16 @@ export function ImportTargetDocumentDialog({
                   <p className="text-sm">
                     This name is close to{" "}
                     <span className="font-medium">{primaryMatch.name}</span>,
-                    already in the registry as a {primaryMatch.type} (
-                    {primaryMatch.reason}).
+                    already in the registry as a {primaryMatch.type}.
                   </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {primaryMatch.type === "target"
-                      ? 'Continuing will offer to merge these details into that existing target — any new home address is kept as the current one with the old kept as "Previous"; any new vehicle works the same way.'
-                      : "This person is currently filed as someone else's associate, not a target. Consider linking them from the Target Registry instead of continuing, unless this is genuinely a different person."}
-                  </p>
+                  {primaryMatch.type !== "target" && (
+                    <p className="text-[11px] text-muted-foreground">
+                      This person is currently filed as someone else's
+                      associate, not a target. Consider linking them from the
+                      Target Registry instead of continuing, unless this is
+                      genuinely a different person.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -762,53 +819,132 @@ export function ImportTargetDocumentDialog({
               )}
 
               {imageCandidates.length > 0 && (
-                <div className="rounded-lg border border-l-4 border-indigo-500/30 border-l-indigo-500 bg-indigo-500/5 p-3 flex flex-col gap-2">
+                <div className="rounded-lg border border-l-4 border-indigo-500/30 border-l-indigo-500 bg-indigo-500/5 p-3 flex flex-col gap-2.5">
                   <p className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wide">
                     Photos found ({imageCandidates.length})
                   </p>
                   <p className="text-[11px] text-muted-foreground">
-                    Each kept photo is uploaded to this target's Images folder
-                    and run through face recognition once you save — tap to
-                    untick any that aren't a photo of this person.
+                    Each kept photo is uploaded and run through face recognition
+                    once you save. Tap a photo to untick it, or tap a name below
+                    it to say who it's actually of — it defaults to this target.
                   </p>
-                  <div className="flex flex-wrap gap-2.5">
-                    {imageCandidates.map(img => {
-                      const kept = imageChoices[img.key] ?? true;
-                      return (
-                        <button
-                          key={img.key}
-                          type="button"
-                          onClick={() =>
-                            setImageChoices(prev => ({
-                              ...prev,
-                              [img.key]: !kept,
-                            }))
-                          }
-                          title={
-                            kept
-                              ? "Tap to discard this photo"
-                              : "Tap to keep this photo"
-                          }
-                          className={`relative rounded-md overflow-hidden border-2 transition-colors ${
-                            kept
-                              ? "border-indigo-500"
-                              : "border-border opacity-40 grayscale"
-                          }`}
-                        >
-                          <img
-                            src={`data:${img.mimeType};base64,${img.dataBase64}`}
-                            alt="Extracted from document"
-                            className="w-20 h-20 object-cover block"
-                          />
-                          {kept && (
-                            <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-indigo-500 text-white flex items-center justify-center">
-                              <Check className="h-2.5 w-2.5" />
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {(() => {
+                    // Both "create" (a brand-new associate) and "update"
+                    // (matches an already-registered one) can take a linked
+                    // photo — only "skip" genuinely has no record for a
+                    // photo to end up on.
+                    const linkableAssociates = associateCandidates.filter(
+                      a => (associateChoices[a.key] ?? "create") !== "skip"
+                    );
+                    return (
+                      <div className="flex flex-col gap-2">
+                        {imageCandidates.map(img => {
+                          const kept = imageChoices[img.key] ?? true;
+                          const linkKey = imageLinkChoices[img.key] ?? "target";
+                          const linkedAssociate = linkableAssociates.find(
+                            a => a.key === linkKey
+                          );
+                          return (
+                            <div
+                              key={img.key}
+                              className={`flex gap-2.5 rounded-md bg-background/70 border border-border/60 p-2 ${
+                                kept ? "" : "opacity-50"
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setImageChoices(prev => ({
+                                    ...prev,
+                                    [img.key]: !kept,
+                                  }))
+                                }
+                                title={
+                                  kept
+                                    ? "Tap to discard this photo"
+                                    : "Tap to keep this photo"
+                                }
+                                className={`relative shrink-0 rounded-md overflow-hidden border-2 transition-colors ${
+                                  kept
+                                    ? "border-indigo-500"
+                                    : "border-border grayscale"
+                                }`}
+                              >
+                                <img
+                                  src={`data:${img.mimeType};base64,${img.dataBase64}`}
+                                  alt="Extracted from document"
+                                  className="w-16 h-16 object-cover block"
+                                />
+                                {kept && (
+                                  <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-indigo-500 text-white flex items-center justify-center">
+                                    <Check className="h-2.5 w-2.5" />
+                                  </span>
+                                )}
+                              </button>
+                              {linkableAssociates.length > 0 && (
+                                <div className="flex flex-col gap-1 min-w-0">
+                                  <span className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                                    Who is this?
+                                  </span>
+                                  <div className="flex flex-wrap gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setImageLinkChoices(prev => ({
+                                          ...prev,
+                                          [img.key]: "target",
+                                        }))
+                                      }
+                                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors ${
+                                        linkKey === "target"
+                                          ? "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400"
+                                          : "border-border text-muted-foreground hover:bg-muted/50"
+                                      }`}
+                                    >
+                                      This target
+                                    </button>
+                                    {linkableAssociates.map(a => (
+                                      <button
+                                        key={a.key}
+                                        type="button"
+                                        onClick={() =>
+                                          setImageLinkChoices(prev => ({
+                                            ...prev,
+                                            [img.key]: a.key,
+                                          }))
+                                        }
+                                        className={`px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors truncate max-w-[160px] ${
+                                          linkKey === a.key
+                                            ? "border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-400"
+                                            : "border-border text-muted-foreground hover:bg-muted/50"
+                                        }`}
+                                      >
+                                        {a.firstNames} {a.surname}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  {linkedAssociate &&
+                                    (() => {
+                                      const isUpdate =
+                                        associateChoices[
+                                          linkedAssociate.key
+                                        ] === "update";
+                                      return (
+                                        <span className="text-[10px] text-muted-foreground">
+                                          {isUpdate
+                                            ? `Linked to existing associate ${linkedAssociate.firstNames} ${linkedAssociate.surname}.`
+                                            : `Linked to associate ${linkedAssociate.firstNames} ${linkedAssociate.surname} once they're saved.`}
+                                        </span>
+                                      );
+                                    })()}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

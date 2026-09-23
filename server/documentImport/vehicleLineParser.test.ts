@@ -140,6 +140,43 @@ describe("findVehicleLines", () => {
       raw: "1TLN902 (WA) 2023 black Lexus NX350h wagon.",
     });
   });
+
+  // Regression: a real training-document example — "No plate observed"
+  // introduced a second, distinct vehicle with no rego of its own, and
+  // with nothing to anchor on it collapsed straight into the HiAce's own
+  // description instead of being recognised as its own entry.
+  it("splits a 'no plate observed' vehicle out as its own entry with registration UNKNOWN", () => {
+    const text =
+      "1PORT9 (WA) Silver Toyota HiAce van No plate observed — black Ducati Motorbike.";
+    const result = findVehicleLines(text);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      registration: "1PORT9",
+      state: "WA",
+      colour: "Silver",
+      make: "Toyota",
+      model: "HiAce van",
+    });
+    expect(result[1]).toMatchObject({
+      registration: "UNKNOWN",
+      state: "",
+      colour: "Black",
+      make: "Ducati",
+      vehicleType: "Motorbike",
+    });
+  });
+
+  it("recognises 'no rego'/'plate unknown'/'unknown plate' the same way", () => {
+    expect(
+      findVehicleLines("no rego white Holden Commodore.")[0]
+    ).toMatchObject({ registration: "UNKNOWN", colour: "White" });
+    expect(
+      findVehicleLines("plate unknown white Holden Commodore.")[0]
+    ).toMatchObject({ registration: "UNKNOWN", colour: "White" });
+    expect(
+      findVehicleLines("unknown plate white Holden Commodore.")[0]
+    ).toMatchObject({ registration: "UNKNOWN", colour: "White" });
+  });
 });
 
 describe("parseVehicleLine", () => {

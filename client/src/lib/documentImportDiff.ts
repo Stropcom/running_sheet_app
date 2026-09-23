@@ -19,11 +19,6 @@ export interface DiffLine {
   status: DiffStatus;
   /** For a "changed" line only — the previous version's own composed text. */
   wasText?: string;
-  /** For an associate line that would otherwise show as "removed" but was
-   * suppressed because the name is still mentioned in this version's
-   * Background text (see diffAssociates) — shown as a small caption so it's
-   * clear why a previously-staged associate isn't flagged as gone. */
-  note?: string;
 }
 
 export interface SnapshotDiff {
@@ -64,36 +59,52 @@ function escapeRegExp(text: string): string {
 // at that import — NOT every associate the parser recognised in the text —
 // because an associate who already existed gets routed straight to
 // associate.update instead of being staged (see AddTargetDialog's
-// saveStagedAssociates). Diffing that narrow list by plain text would flag
-// someone as "removed" the moment they're recognised as already-registered
-// on a later import, even though they're still named in the document —
-// misleading, since they haven't actually disappeared. A name only counts
-// as genuinely removed if it's no longer mentioned anywhere in this
-// version's own Background text either.
+// saveStagedAssociates). Matched by tgt (surname, or business name for a
+// company associate — the same stable key composeAssociateName always
+// derives) rather than the full composed text, the same way diffVehicles
+// matches on registration: lets an edit (e.g. a DOB added, a spelling
+// correction) show as one "changed" line instead of an unrelated
+// remove+add pair. A previously-staged associate who drops out of the
+// current "create as new" list only shows as "removed" if their name is
+// no longer mentioned anywhere in this version's own Background text
+// either — otherwise they're just not staged again this time (routed to
+// associate.update instead) and are left exactly as they were.
 function diffAssociates(
   current: { name: string; tgt: string }[],
   previous: { name: string; tgt: string }[],
   currentBackground: string
 ): DiffLine[] {
-  const key = (name: string) => name.trim().toLowerCase();
-  const previousSet = new Set(previous.map(a => key(a.name)));
-  const currentSet = new Set(current.map(a => key(a.name)));
-  const lines: DiffLine[] = current.map(a => ({
-    text: a.name,
-    status: previousSet.has(key(a.name)) ? "unchanged" : "added",
-  }));
+  const keyOf = (a: { name: string; tgt: string }) =>
+    (a.tgt || a.name).trim().toLowerCase();
+  const previousByKey = new Map(previous.map(a => [keyOf(a), a]));
+  const matchedKeys = new Set<string>();
+  const lines: DiffLine[] = [];
+  for (const a of current) {
+    const k = keyOf(a);
+    const prev = previousByKey.get(k);
+    if (!prev) {
+      lines.push({ text: a.name, status: "added" });
+      continue;
+    }
+    matchedKeys.add(k);
+    lines.push(
+      prev.name.trim().toLowerCase() === a.name.trim().toLowerCase()
+        ? { text: a.name, status: "unchanged" }
+        : { text: a.name, status: "changed", wasText: prev.name }
+    );
+  }
   const backgroundLower = currentBackground.toLowerCase();
   for (const a of previous) {
-    if (currentSet.has(key(a.name))) continue;
+    const k = keyOf(a);
+    if (matchedKeys.has(k)) continue;
     const tgt = a.tgt.trim().toLowerCase();
     const stillMentioned =
       tgt.length > 0 &&
       new RegExp(`\\b${escapeRegExp(tgt)}\\b`).test(backgroundLower);
-    lines.push(
-      stillMentioned
-        ? { text: a.name, status: "unchanged", note: "still in Background" }
-        : { text: a.name, status: "removed" }
-    );
+    lines.push({
+      text: a.name,
+      status: stillMentioned ? "unchanged" : "removed",
+    });
   }
   return lines;
 }

@@ -56,10 +56,7 @@ describe("diffDocumentSnapshots associates", () => {
 
     const diff = diffDocumentSnapshots(current, previous)!;
     expect(diff.associates).toHaveLength(1);
-    expect(diff.associates[0]).toMatchObject({
-      status: "unchanged",
-      note: "still in Background",
-    });
+    expect(diff.associates[0].status).toBe("unchanged");
   });
 
   it("still flags an associate as removed when they're genuinely gone from the Background too", () => {
@@ -75,7 +72,6 @@ describe("diffDocumentSnapshots associates", () => {
     const diff = diffDocumentSnapshots(current, previous)!;
     expect(diff.associates).toHaveLength(1);
     expect(diff.associates[0].status).toBe("removed");
-    expect(diff.associates[0].note).toBeUndefined();
   });
 
   it("still flags a genuinely new associate as added", () => {
@@ -87,6 +83,35 @@ describe("diffDocumentSnapshots associates", () => {
     const diff = diffDocumentSnapshots(current, previous)!;
     expect(diff.associates).toHaveLength(1);
     expect(diff.associates[0].status).toBe("added");
+  });
+
+  it("marks an associate as changed (not removed+added) when the same person's details are edited between versions", () => {
+    const previous = prefill({
+      associates: [
+        { ...associate("Sarah Louise", "Mackay"), key: "sarah-mackay" },
+      ],
+    });
+    // Same person (same surname), but a DOB has now been captured — should
+    // read as one "changed" line, not an unrelated remove+add pair.
+    const current = prefill({
+      associates: [
+        {
+          key: "sarah-mackay",
+          identity: {
+            firstNames: "Sarah Louise",
+            surname: "Mackay",
+            bornDate: "01/01/1990",
+          },
+          address: EMPTY_ADDRESS_PARTS,
+          vehicle: EMPTY_VEHICLE_PARTS,
+        },
+      ],
+    });
+
+    const diff = diffDocumentSnapshots(current, previous)!;
+    expect(diff.associates).toHaveLength(1);
+    expect(diff.associates[0].status).toBe("changed");
+    expect(diff.associates[0].wasText).toBe("Sarah Louise MACKAY (MACKAY)");
   });
 
   it("doesn't false-positive on a surname that's only a substring of another word in the Background", () => {

@@ -290,9 +290,9 @@ export function ImportedDocumentCard({
                   >
                     <DiffMarker status={line.status} />
                     {line.text}
-                    {line.note && (
-                      <span className="italic text-muted-foreground/70 text-[10px]">
-                        {line.note}
+                    {line.status === "changed" && line.wasText && (
+                      <span className="font-sans text-[10px] text-muted-foreground line-through">
+                        was {line.wasText}
                       </span>
                     )}
                   </span>

@@ -41,6 +41,9 @@ import {
   Merge,
   User,
   MapPin,
+  Check,
+  Loader2,
+  Image as ImageIcon,
 } from "lucide-react";
 import {
   TargetIdentityFields,
@@ -162,6 +165,20 @@ export function computePrimaryIdentity(
   if (targetType === "vehicle") return composeVehicleTargetName(vehicle);
   if (targetType === "location") return composeLocationTargetName(address);
   return composeTargetName(identity);
+}
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 export function AddTargetDialog({
@@ -323,6 +340,81 @@ export function AddTargetDialog({
     trpc.intelligence.markEntitiesNotDuplicate.useMutation();
   const mergeEntitiesMutation = trpc.intelligence.mergeEntities.useMutation();
 
+  // ── Duplicate-photo detection for staged import images ──
+  // A document re-imported for a target that already exists (dupMatch) very
+  // often still embeds the exact same photo it did last time — nothing
+  // upstream (the parser, the review screen) has any way to know that, since
+  // neither one has visibility into what's already in the target's Images
+  // folder. Once dupMatch names a candidate existing target, fetch its
+  // current photos and hash-compare each one (SHA-256 over the raw bytes,
+  // client-side, no server change needed) against every staged image's own
+  // bytes — a genuinely identical photo re-encodes to byte-identical PNG
+  // data every time (see docxTableReader.ts/pdfTextReader.ts), so this is an
+  // exact-match check, not a fuzzy one. Matches default to unchecked in the
+  // Photos section below, same as a matched associate defaults to "skip"
+  // territory — the officer can still re-tick one deliberately.
+  const [duplicateImageKeys, setDuplicateImageKeys] = useState<Set<string>>(
+    new Set()
+  );
+  const [checkingImageDuplicates, setCheckingImageDuplicates] = useState(false);
+  const [imageChoices, setImageChoices] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const candidateTargetId = dupMatch?.id;
+    const staged = initialImages ?? [];
+    if (!candidateTargetId || staged.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      setCheckingImageDuplicates(true);
+      try {
+        const existingPhotos = await utils.attachment.byEntity.fetch({
+          category: "target",
+          targetId: candidateTargetId,
+        });
+        if (cancelled || !existingPhotos || existingPhotos.length === 0) return;
+        const existingHashes = await Promise.all(
+          existingPhotos.map(async (p: any) => {
+            try {
+              const buf = await (await fetch(p.url)).arrayBuffer();
+              return await sha256Hex(buf);
+            } catch {
+              return null;
+            }
+          })
+        );
+        const existingHashSet = new Set(
+          existingHashes.filter((h): h is string => !!h)
+        );
+        if (existingHashSet.size === 0) return;
+        const dupes = new Set<string>();
+        for (const img of staged) {
+          try {
+            const hash = await sha256Hex(base64ToArrayBuffer(img.dataBase64));
+            if (existingHashSet.has(hash)) dupes.add(img.key);
+          } catch {
+            // Couldn't hash this one — leave it kept rather than guess.
+          }
+        }
+        if (!cancelled && dupes.size > 0) {
+          setDuplicateImageKeys(dupes);
+          setImageChoices(prev => {
+            const next = { ...prev };
+            dupes.forEach(key => {
+              next[key] = false;
+            });
+            return next;
+          });
+        }
+      } finally {
+        if (!cancelled) setCheckingImageDuplicates(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dupMatch?.id]);
+
   const resetAndClose = () => {
     setOperation(initialOperation ?? null);
     setTargetType("person");
@@ -482,7 +574,9 @@ export function AddTargetDialog({
   // Promise.allSettled-style failure handling as saveStagedAssociates above
   // — one bad photo shouldn't stop the rest from saving.
   const saveStagedImages = async (targetId: number) => {
-    const toSave = initialImages ?? [];
+    const toSave = (initialImages ?? []).filter(
+      img => imageChoices[img.key] ?? true
+    );
     if (toSave.length === 0) return;
     const opId = operation?.id;
     if (!opId) return; // OperationPicker is required before any save path reaches here
@@ -1290,6 +1384,70 @@ export function AddTargetDialog({
                 <Plus className="w-3.5 h-3.5" /> Add Associate
               </Button>
             </div>
+
+            {/* Photos — staged from a document import (see
+                ImportTargetDocumentDialog.tsx). Duplicate-photo detection
+                only has a target to compare against once dupMatch names one
+                (see the effect above) — a photo the target already has on
+                file defaults unticked, same "officer stays in control"
+                pattern as a matched associate defaulting to skip. */}
+            {(initialImages ?? []).length > 0 && (
+              <div className="mt-2 rounded-lg border border-l-4 border-indigo-500/30 border-l-indigo-500 bg-indigo-500/5 p-3 flex flex-col gap-2.5">
+                <p className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wide flex items-center gap-1.5">
+                  <ImageIcon className="w-3.5 h-3.5" /> Photos
+                </p>
+                {checkingImageDuplicates && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Checking for photos already on file…
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2.5">
+                  {(initialImages ?? []).map(img => {
+                    const kept = imageChoices[img.key] ?? true;
+                    const isDup = duplicateImageKeys.has(img.key);
+                    return (
+                      <button
+                        key={img.key}
+                        type="button"
+                        onClick={() =>
+                          setImageChoices(prev => ({
+                            ...prev,
+                            [img.key]: !kept,
+                          }))
+                        }
+                        title={
+                          kept
+                            ? "Tap to discard this photo"
+                            : "Tap to keep this photo"
+                        }
+                        className={`relative rounded-md overflow-hidden border-2 transition-colors ${
+                          kept
+                            ? "border-indigo-500"
+                            : "border-border opacity-40 grayscale"
+                        }`}
+                      >
+                        <img
+                          src={`data:${img.mimeType};base64,${img.dataBase64}`}
+                          alt="Extracted from document"
+                          className="w-20 h-20 object-cover block"
+                        />
+                        {kept && (
+                          <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-indigo-500 text-white flex items-center justify-center">
+                            <Check className="h-2.5 w-2.5" />
+                          </span>
+                        )}
+                        {isDup && (
+                          <span className="absolute bottom-0 left-0 right-0 bg-amber-500 text-white text-[8px] font-bold text-center py-0.5 leading-none">
+                            ALREADY HAVE
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Depart / Arrive — simple single-line fields, so they pair up
                 side by side from sm rather than needing the wider md/lg

@@ -4008,13 +4008,35 @@ export default function IntelligenceMapping() {
             return;
           }
           if (!e.latLng) return;
+          // Google's own POI hit-testing for the base map runs independently
+          // of our DOM overlay markers — it's the Maps SDK's own internal
+          // gesture handling on the underlying vector tiles, not something a
+          // DOM stopPropagation() on our marker's own click/pointerdown
+          // listener can suppress (that only stops the event reaching
+          // ancestor DOM listeners; this "click" is a separate MapMouseEvent
+          // Maps fires on the map itself whenever a tap lands on a POI,
+          // whether or not a marker is drawn on top of it). So when one of
+          // our own custom map markers already sits at this spot, skip
+          // opening the generic POI card entirely — the marker's own popup
+          // (which already offers RS Quick Entry/Waze/etc, see its click
+          // listener above) is the one that should show, not both.
+          const tapLat = e.latLng.lat();
+          const tapLng = e.latLng.lng();
+          const POI_MARKER_SUPPRESS_RADIUS_M = 40;
+          const coincidesWithOwnMarker = customMarkersDataRef.current.some(
+            (cm: any) =>
+              haversineMetres(tapLat, tapLng, cm.lat, cm.lng) <=
+              POI_MARKER_SUPPRESS_RADIUS_M
+          );
+          if (coincidesWithOwnMarker) {
+            e.stop?.();
+            return;
+          }
           // A tap on any base-map POI always opens our own RS Quick Entry /
           // Marker / Shape / Waze action sheet directly — Google's native
           // info window (name/photo/rating/hours) is suppressed entirely so
           // it never appears instead of, or stacked with, our own popup.
           e.stop?.();
-          const lat = e.latLng.lat();
-          const lng = e.latLng.lng();
           // Look up the business details via Places API
           const service = new google.maps.places.PlacesService(map);
           service.getDetails(
@@ -4025,12 +4047,12 @@ export default function IntelligenceMapping() {
                 place
               ) {
                 setPoiTap({
-                  lat,
-                  lng,
+                  lat: tapLat,
+                  lng: tapLng,
                   name: place.name ?? "",
                   address:
                     place.formatted_address ??
-                    `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+                    `${tapLat.toFixed(5)}, ${tapLng.toFixed(5)}`,
                 });
               }
             }

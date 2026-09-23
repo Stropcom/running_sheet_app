@@ -640,10 +640,10 @@ export function ImportTargetDocumentDialog({
           {!result && (
             <>
               <p className="text-sm text-muted-foreground">
-                Upload a Word (.docx) or PDF (.pdf) document with
-                target/associate details — fields it recognises will pre-fill
-                the Add Target form for you to review and confirm. Nothing is
-                saved automatically.
+                Upload a Word (.docx) or PDF (.pdf) Baseball Card or Profile.
+              </p>
+              <p className="text-sm font-semibold text-destructive">
+                DO NOT upload photographs of documents.
               </p>
               <input
                 ref={fileInputRef}

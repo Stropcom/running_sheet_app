@@ -298,13 +298,13 @@ export default function IntelPackages() {
     };
   }
 
-  /** Deployment Rollup — every summary in scope, target-filtered for a
+  /** Deployment Summaries — every summary in scope, target-filtered for a
    * target package. Uses the same endpoint as the Operation page's own
    * Rollup export so both stay in step. */
   function buildRollupSection(rows: RollupExportRow[]): PackageSection | null {
     if (!rows.length) return null;
     return {
-      title: "Deployment Rollup",
+      title: "Deployment Summaries",
       html: buildRollupSheetBlocksHtml(rows),
     };
   }
@@ -681,7 +681,7 @@ export default function IntelPackages() {
                         ? "Target Profile"
                         : "Operation Profile"
                       : key === "rollup"
-                        ? "Deployment Rollup"
+                        ? "Deployment Summaries"
                         : key === "ego"
                           ? "Ego Network"
                           : key === "heatmap"

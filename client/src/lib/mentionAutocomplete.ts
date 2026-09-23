@@ -290,14 +290,18 @@ export function detectAddressSpaceCompletion(
  * detectable the same way a rego's letter+digit shape is, so this works
  * for a person who's never been seen before, unlike the registry-search
  * dropdown above which can only suggest someone already known to
- * Intelligence. Deliberately narrower than the save-time name-recovery
- * logic in extractEntitiesFromText (which can walk back up to 4 words):
- * if ANOTHER capitalised word sits directly before the matched first name
- * (single space, no punctuation between — e.g. "Mei Lin CHOW", "Whitney
- * Storm STEWART"), that's actually a longer multi-word first/middle name
- * this simple two-word check can't safely resolve, so it bails rather
- * than risk auto-bracketing a truncated name — same guard
- * detectMentionTrigger above already uses for the same reason.
+ * Intelligence.
+ *
+ * Handles a middle name too ("Mei Lin CHOW", "Whitney Storm STEWART",
+ * "Roger David MOORE") by walking back through as many more
+ * capitalised-first-name-shaped words as are actually there, up to 3
+ * given names total — the same "2-4 words" convention the save-time
+ * name-recovery logic in extractEntitiesFromText (server/db.ts) already
+ * uses. Once that walk-back stops (a non-name word, or the start of the
+ * text), if there's STILL another capitalised word sitting right before
+ * whatever we've consumed, that's a longer run than this can safely
+ * resolve — bail rather than risk auto-bracketing a truncated name, same
+ * guard detectMentionTrigger above uses for the same reason.
  */
 export function detectPersonNameSpaceCompletion(
   text: string,
@@ -310,8 +314,17 @@ export function detectPersonNameSpaceCompletion(
   const textBefore = text.slice(0, cursorPos);
   const m = textBefore.match(/\b([A-Z][a-z'-]+)\s+([A-Z]{2,}(?:[-'][A-Z]+)?)$/);
   if (!m || m.index === undefined) return null;
-  const beforeFirstName = textBefore.slice(0, m.index);
-  if (/[A-Z][A-Za-z'-]*\s$/.test(beforeFirstName)) return null;
+
+  const givenNameWordRe = /([A-Z][a-z'-]+)\s$/;
+  let nameStart = m.index;
+  for (let givenNames = 1; givenNames < 3; givenNames++) {
+    const prevWord = textBefore.slice(0, nameStart).match(givenNameWordRe);
+    if (!prevWord || prevWord.index === undefined) break;
+    nameStart = prevWord.index;
+  }
+  const beforeFullName = textBefore.slice(0, nameStart);
+  if (/[A-Z][A-Za-z'-]*\s$/.test(beforeFullName)) return null;
+
   const surname = m[2];
   if (usedBracketCodes.has(surname.toUpperCase())) return null;
   return { surname };
@@ -392,4 +405,56 @@ export function computeUsedAddressLabels(
     }
   }
   return labels;
+}
+
+/** Best-effort strip of role descriptors ("driver", "front passenger",
+ * "sole occupant", etc.) from a vehicle occupantDesc string (e.g. "HOGAN
+ * driver, Denise HOLLY (HOLLY) front passenger") down to just the names
+ * ("HOGAN and Denise HOLLY (HOLLY)") — used to pre-fill a "Walked in" chip's
+ * names from the vehicle's known occupants. Deliberately best-effort rather
+ * than a strict parser: the officer reviews and edits the inserted text
+ * before submitting either way, same trust level the occupantDesc text
+ * itself already has (it's reused verbatim elsewhere with no validation),
+ * so an imperfect strip here is a minor edit, not a silent wrong fact in
+ * the record. Shared by the RS Quick Entry map popup and the full sheet
+ * table's own continuity chips. */
+export function extractOccupantNames(occupantDesc: string): string {
+  const ROLE_WORD =
+    /\b(?:driver|front passenger|rear passenger|sole occupant|unseen occupants?|passenger)\b/gi;
+  return occupantDesc
+    .split(",")
+    .map(part =>
+      part
+        .replace(ROLE_WORD, "")
+        .replace(/\band\b/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    )
+    .filter(Boolean)
+    .join(" and ");
+}
+
+/** App-wide rule: a person's full name + bracket short-form is only correct
+ * on their FIRST mention anywhere in the sheet — every later mention should
+ * be short-form only (e.g. "FLETCHER", not "Madeleine Rose FLETCHER
+ * (FLETCHER)"). occupantDesc/walk-in names text is reused verbatim from
+ * whichever earlier row it was captured from, and that row's own wording is
+ * whatever the officer originally typed there — if that was itself a first
+ * mention (the common case, since a vehicle's occupants are usually
+ * introduced when it first arrives), the full name would otherwise get
+ * pasted into every future row a chip inserts it into, compounding
+ * indefinitely instead of shortening like a vehicle's own rego already
+ * does. Best-effort same as extractOccupantNames: only collapses a "Full
+ * Name (CODE)" span whose CODE is already known (via usedBracketCodes) to
+ * have appeared somewhere earlier in this sheet — a name genuinely being
+ * introduced for the first time here is untouched. */
+export function shortenAlreadyMentionedNames(
+  text: string,
+  usedBracketCodes: Set<string>
+): string {
+  return text.replace(
+    /(?:[A-Z][a-zA-Z'-]*\s+)+\(([A-Z][A-Z'-]*)\)/g,
+    (match, code: string) =>
+      usedBracketCodes.has(code.toUpperCase()) ? code : match
+  );
 }

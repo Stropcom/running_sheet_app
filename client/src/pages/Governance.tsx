@@ -207,9 +207,9 @@ export default function GovernancePage() {
   > | null>(null);
 
   // Section expand state
-  const [tlExpanded, setTlExpanded] = useState(true);
-  const [opExpanded, setOpExpanded] = useState(true);
-  const [imgExpanded, setImgExpanded] = useState(true);
+  const [tlExpanded, setTlExpanded] = useState(false);
+  const [opExpanded, setOpExpanded] = useState(false);
+  const [imgExpanded, setImgExpanded] = useState(false);
 
   // Track previous allSigned value to detect transitions
   const prevAllSignedRef = React.useRef<boolean | null>(null);
@@ -250,7 +250,10 @@ export default function GovernancePage() {
     if (rows.length === 0) return false;
     return rows.every(r => {
       const members = r.members ?? [];
-      if (members.length === 0) return true; // row with no members is not blocking
+      // A row with no CIN attached has nobody who could certify it -- that's
+      // the problem, not something to wave through. Blocks completion the
+      // same as an uncertified member would.
+      if (members.length === 0) return false;
       return members.every((m: { id: number }) =>
         (r.certifications ?? []).some(
           (c: { memberId: number; isActive: boolean }) =>
@@ -829,8 +832,8 @@ export default function GovernancePage() {
         {/* ── Imagery Section ── */}
         <div className="mb-3">
           <SectionHeader
-            title="Imagery"
-            subtitle="Photos and videos taken during surveillance"
+            title="Operative — Imagery"
+            subtitle="Author - tasks - photos/video taken"
             percent={imgPercent}
             expanded={imgExpanded}
             onToggle={() => setImgExpanded(v => !v)}

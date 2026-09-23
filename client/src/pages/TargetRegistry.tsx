@@ -2048,7 +2048,7 @@ export default function TargetRegistryPage() {
               className="gap-2"
               onClick={() => setShowImportDocument(true)}
             >
-              <FileText className="h-4 w-4" /> Import from Document
+              <FileText className="h-4 w-4" /> Import Target
             </Button>
             <Button className="gap-2" onClick={() => setShowCreate(true)}>
               <Plus className="h-4 w-4" /> Add Target
@@ -2321,6 +2321,7 @@ export default function TargetRegistryPage() {
         initialExtraAddresses={importPrefill?.extraAddresses}
         initialExtraVehicles={importPrefill?.extraVehicles}
         initialAssociates={importPrefill?.associates}
+        initialImages={importPrefill?.images}
         initialBackground={importPrefill?.background}
         initialDocumentSnapshot={importPrefill}
       />

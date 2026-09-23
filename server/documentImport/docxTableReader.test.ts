@@ -66,6 +66,6 @@ describe("readDocxTables", () => {
 
   it("returns an empty result for a non-docx buffer instead of throwing", async () => {
     const result = await readDocxTables(Buffer.from("not a docx file"));
-    expect(result).toEqual({ tables: [], paragraphs: [] });
+    expect(result).toEqual({ tables: [], paragraphs: [], images: [] });
   });
 });

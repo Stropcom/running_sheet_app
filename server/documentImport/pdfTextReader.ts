@@ -30,9 +30,13 @@
 // being lost, just without the structured label/value lookup.
 import { createRequire } from "module";
 import path from "path";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { getDocument, OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs";
+import sharp from "sharp";
 import { ALL_KNOWN_LABELS, isHeadingLine } from "./targetProfileFieldMap";
-import type { DocumentReadResult } from "./documentReadResult";
+import type {
+  DocumentReadResult,
+  ExtractedDocumentImage,
+} from "./documentReadResult";
 
 // pdfjs-dist's public type entrypoint doesn't re-export TextItem, so this
 // declares only the fields actually read below rather than depending on
@@ -603,6 +607,103 @@ function pairRowCells(cells: Cell[]): string[][] | null {
  * text layer at all (a scanned image) — the caller surfaces that as
  * "couldn't read this file" rather than a crash, the same tolerant-
  * failure pattern docxTableReader.ts uses. */
+// Below this, in either dimension, an embedded image is treated as
+// decorative (a letterhead logo, a signature scrawl, a divider rule) rather
+// than a genuine subject photo worth running through face recognition —
+// same threshold and reasoning as MIN_IMAGE_DIMENSION in
+// docxTableReader.ts.
+const MIN_IMAGE_DIMENSION = 120;
+
+// Minimal duck-typed surface of PDFPageProxy actually used below, following
+// the same pattern as RawTextItem above — pdfjs-dist's public type
+// entrypoint doesn't cleanly re-export PDFPageProxy from this module path.
+interface PageImageSource {
+  getOperatorList(): Promise<{ fnArray: number[]; argsArray: unknown[][] }>;
+  objs: { get(objId: string, callback: (data: unknown) => void): unknown };
+}
+
+interface RawPdfImage {
+  width: number;
+  height: number;
+  kind: number;
+  data: Uint8Array | Uint8ClampedArray;
+}
+
+function isRawPdfImage(v: unknown): v is RawPdfImage {
+  const r = v as RawPdfImage | null;
+  return (
+    !!r &&
+    typeof r === "object" &&
+    typeof r.width === "number" &&
+    typeof r.height === "number" &&
+    r.data instanceof Uint8Array
+  );
+}
+
+/** Pulls every embedded photo out of one PDF page's own content stream. A
+ * PDF has no separate "media" folder like a .docx (see the module comment)
+ * — an image is one of the drawing operators making up the page itself, so
+ * this walks the compiled operator list pdf.js already builds for text
+ * extraction, looking for paintImageXObject/paintImageXObjectRepeat calls,
+ * then resolves each one's decoded pixel data via page.objs (pdf.js decodes
+ * the image's own encoding — JPEG/FlateDecode/etc — into this raw form
+ * itself; nothing here re-implements image decoding). Running in Node (no
+ * OffscreenCanvas global) keeps pdf.js on its plain-object fallback path —
+ * {width, height, kind, data} — rather than the browser-only ImageBitmap
+ * path, so this never depends on a canvas library. Best-effort: one bad
+ * image, or a page whose operator list can't be walked, is skipped rather
+ * than failing the whole read. */
+async function extractPdfPageImages(
+  page: PageImageSource
+): Promise<ExtractedDocumentImage[]> {
+  const images: ExtractedDocumentImage[] = [];
+  try {
+    const opList = await page.getOperatorList();
+    const seen = new Set<string>();
+    for (let i = 0; i < opList.fnArray.length; i++) {
+      const fn = opList.fnArray[i];
+      if (fn !== OPS.paintImageXObject && fn !== OPS.paintImageXObjectRepeat)
+        continue;
+      const objId = opList.argsArray[i]?.[0];
+      if (typeof objId !== "string" || seen.has(objId)) continue;
+      seen.add(objId);
+      try {
+        const raw = await new Promise<unknown>(resolve =>
+          page.objs.get(objId, resolve)
+        );
+        if (!isRawPdfImage(raw)) continue;
+        if (raw.width < MIN_IMAGE_DIMENSION || raw.height < MIN_IMAGE_DIMENSION)
+          continue;
+        const channels =
+          raw.kind === ImageKind.RGBA_32BPP
+            ? 4
+            : raw.kind === ImageKind.RGB_24BPP
+              ? 3
+              : null;
+        // GRAYSCALE_1BPP (bit-packed) or unrecognised — skip rather than
+        // risk mis-decoding raw bytes with the wrong channel count.
+        if (channels === null) continue;
+        const png = await sharp(Buffer.from(raw.data), {
+          raw: { width: raw.width, height: raw.height, channels },
+        })
+          .png()
+          .toBuffer();
+        images.push({
+          dataBase64: png.toString("base64"),
+          mimeType: "image/png",
+          width: raw.width,
+          height: raw.height,
+        });
+      } catch {
+        // One undecodable image shouldn't drop the rest of the page.
+      }
+    }
+  } catch {
+    // Operator list couldn't be built for this page — no images from it.
+  }
+  return images;
+}
+
 export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
   try {
     const doc = await getDocument({
@@ -619,6 +720,7 @@ export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
 
     const tableRows: string[][] = [];
     const paragraphs: string[] = [];
+    const images: ExtractedDocumentImage[] = [];
     let paragraphBuffer: string[] = [];
     let prevLineY: number | null = null;
     let prevLineGap = 14;
@@ -632,6 +734,7 @@ export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
 
     for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
       const page = await doc.getPage(pageNum);
+      images.push(...(await extractPdfPageImages(page)));
       const content = await page.getTextContent();
       const items: PositionedItem[] = [];
       for (const raw of content.items) {
@@ -731,13 +834,18 @@ export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
     }
 
     if (tableRows.length === 0 && paragraphs.length === 0) {
-      return { tables: [], paragraphs: [] };
+      // No real text layer — this is a scanned/photographed PDF (already
+      // unsupported, see the module comment), where any "image" the walk
+      // above found is the whole page scan itself, not a discrete subject
+      // photo, so images are deliberately discarded here too.
+      return { tables: [], paragraphs: [], images: [] };
     }
     return {
       tables: tableRows.length > 0 ? [{ rows: tableRows }] : [],
       paragraphs,
+      images,
     };
   } catch {
-    return { tables: [], paragraphs: [] };
+    return { tables: [], paragraphs: [], images: [] };
   }
 }

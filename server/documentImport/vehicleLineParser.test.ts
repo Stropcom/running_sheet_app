@@ -218,4 +218,30 @@ describe("parseVehicleLine", () => {
     expect(result!.model).toBe("Commodore zonk");
     expect(result!.confident).toBe(true);
   });
+
+  // Regression: "dark grey Toyota Prado station sedan" used to leave the
+  // colour slot empty ("dark" isn't in COLOURS) and swallow "dark" into
+  // make instead — colour="", make="dark", model="grey Toyota Prado",
+  // unconfident. "dark"/"light" now get dropped so the real colour word
+  // underneath is recognised.
+  it("drops a 'dark'/'light' colour modifier instead of it swallowing the colour slot", () => {
+    const result = parseVehicleLine(
+      "1SBC214 (WA) dark grey Toyota Prado station sedan."
+    );
+    expect(result).not.toBeNull();
+    expect(result!.colour).toBe("Grey");
+    expect(result!.make).toBe("Toyota");
+    expect(result!.model).toBe("Prado");
+    expect(result!.vehicleType).toBe("station sedan");
+    expect(result!.confident).toBe(true);
+  });
+
+  it("drops a 'light' colour modifier the same way", () => {
+    const result = parseVehicleLine("1ABC123 (WA) light blue Mazda CX-5");
+    expect(result).not.toBeNull();
+    expect(result!.colour).toBe("Blue");
+    expect(result!.make).toBe("Mazda");
+    expect(result!.model).toBe("CX-5");
+    expect(result!.confident).toBe(true);
+  });
 });

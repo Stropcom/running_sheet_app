@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RS_CANONICAL_CHIP_ORDER } from "@/lib/rsChipOrder";
 import {
-  VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN,
+  matchVehicleArrival,
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
-import { DivIconOverlay } from "@/lib/divIconOverlay";
+import { DivIconOverlay, wasAnyMarkerJustTapped } from "@/lib/divIconOverlay";
 import {
   getMarkerDataUrl,
   getMarkerSvg,
@@ -32,6 +32,8 @@ import {
   computeUsedBracketCodes,
   computeUsedVehicleRegos,
   computeUsedAddressLabels,
+  extractOccupantNames,
+  shortenAlreadyMentionedNames,
   type PersonMentionSuggestion,
 } from "@/lib/mentionAutocomplete";
 import { MissingLocationAlert } from "@/components/MissingLocationAlert";
@@ -1236,58 +1238,6 @@ function animateLiveMarkerTo(
     to,
     animRef,
     lastUpdateRef
-  );
-}
-
-// Best-effort strip of role descriptors ("driver", "front passenger",
-// "sole occupant", etc.) from a vehicle occupantDesc string (e.g. "HOGAN
-// driver, Denise HOLLY (HOLLY) front passenger") down to just the names
-// ("HOGAN and Denise HOLLY (HOLLY)") — used to pre-fill the "Walked in"
-// chip's names from the vehicle's known occupants. Deliberately best-effort
-// rather than a strict parser: the officer reviews and edits the inserted
-// text before submitting either way, same trust level the occupantDesc
-// text itself already has (it's reused verbatim elsewhere with no
-// validation), so an imperfect strip here is a minor edit, not a silent
-// wrong fact in the record.
-function extractOccupantNames(occupantDesc: string): string {
-  const ROLE_WORD =
-    /\b(?:driver|front passenger|rear passenger|sole occupant|unseen occupants?|passenger)\b/gi;
-  return occupantDesc
-    .split(",")
-    .map(part =>
-      part
-        .replace(ROLE_WORD, "")
-        .replace(/\band\b/gi, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-    )
-    .filter(Boolean)
-    .join(" and ");
-}
-
-// App-wide rule (see the "Vehicle arriving" chip's own address-shortening
-// comment below): a person's full name + bracket short-form is only
-// correct on their FIRST mention anywhere in the sheet — every later
-// mention should be short-form only (e.g. "FLETCHER", not "Madeleine Rose
-// FLETCHER (FLETCHER)"). occupantDesc/walk-in names text is reused
-// verbatim from whichever earlier row it was captured from, and that
-// row's own wording is whatever the officer originally typed there — if
-// that was itself a first mention (the common case, since the vehicle's
-// occupants are usually introduced when it first arrives), the full name
-// would otherwise get pasted into every future row a chip inserts it
-// into, compounding indefinitely instead of shortening like the vehicle's
-// own rego already does. Best-effort same as extractOccupantNames: only
-// collapses a "Full Name (CODE)" span whose CODE is already known (via
-// rsUsedBracketCodes) to have appeared somewhere earlier in this sheet —
-// a name genuinely being introduced for the first time here is untouched.
-function shortenAlreadyMentionedNames(
-  text: string,
-  usedBracketCodes: Set<string>
-): string {
-  return text.replace(
-    /(?:[A-Z][a-zA-Z'-]*\s+)+\(([A-Z][A-Z'-]*)\)/g,
-    (match, code: string) =>
-      usedBracketCodes.has(code.toUpperCase()) ? code : match
   );
 }
 
@@ -3209,16 +3159,19 @@ export default function IntelligenceMapping() {
       } else {
         glyph = "🚶"; // walking (also covers "just stopped", under 10s)
       }
-      // sin(heading) > 0 means the heading has an eastward component (the
-      // 0-180° half of the compass, measured clockwise from north); < 0
-      // means westward (180-360°). Defaults to facing right/east when
-      // heading is unavailable or exactly due north/south (sin = 0) rather
-      // than remembering a "last known side" — a deliberate
-      // simplification, since that ambiguous case only ever lasts one
-      // frame in practice and isn't worth extra state to smooth over.
+      // The 🚶/🏃/🧍 glyphs render already facing left/west by default in
+      // the platform emoji font (confirmed on iOS), so no mirror is needed
+      // for westward travel — only eastward travel needs a horizontal
+      // flip. sin(heading) > 0 means the heading has an eastward component
+      // (the 0-180° half of the compass, measured clockwise from north);
+      // <= 0 means westward or due north/south, which defaults to the
+      // glyph's own native west-facing pose rather than remembering a
+      // "last known side" — a deliberate simplification, since that
+      // ambiguous case only ever lasts one frame in practice and isn't
+      // worth extra state to smooth over.
       const heading = liveUser.heading ?? 0;
-      const faceWest = Math.sin((heading * Math.PI) / 180) < 0;
-      indicator.innerHTML = `<span style="font-size:26px;line-height:32px;width:32px;height:32px;display:block;text-align:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));transform:scaleX(${faceWest ? -1 : 1});">${glyph}</span>`;
+      const faceEast = Math.sin((heading * Math.PI) / 180) > 0;
+      indicator.innerHTML = `<span style="font-size:26px;line-height:32px;width:32px;height:32px;display:block;text-align:center;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.35));transform:scaleX(${faceEast ? -1 : 1});">${glyph}</span>`;
     } else if (motionState === "moving") {
       // Screen rotation, not raw compass bearing: the arrow/rings need to
       // point the right way relative to the map as currently displayed,
@@ -4005,10 +3958,39 @@ export default function IntelligenceMapping() {
             return;
           }
           if (!e.latLng) return;
-          // Prevent the default Google info window from opening
+          const tapLat = e.latLng.lat();
+          const tapLng = e.latLng.lng();
+          // Google's own POI hit-testing for the base map runs independently
+          // of our DOM overlay markers — it's the Maps SDK's own internal
+          // gesture handling on the underlying vector tiles, not something a
+          // DOM stopPropagation() on our marker's own click/pointerdown
+          // listener can suppress (that only stops the event reaching
+          // ancestor DOM listeners; this "click" is a separate MapMouseEvent
+          // Maps fires on the map itself whenever a tap lands on a POI,
+          // whether or not a marker is drawn on top of it). A prior version
+          // of this check compared tapLat/tapLng against our own markers'
+          // registered position (within ~40m) instead of the timing check
+          // below — that worked for a precise desktop mouse click (which
+          // lands right on the marker glyph) but not for a touch tap, which
+          // can land on the POI's own label text (rendered offset from the
+          // marker icon on the base map) — e.latLng reports wherever the
+          // finger actually was, nowhere near the marker's own coordinates,
+          // so the distance check silently never matched on mobile. Timing
+          // instead of distance: if ANY of our own markers just had a
+          // pointerdown (same physical tap, see wasAnyMarkerJustTapped's own
+          // comment), skip the POI card regardless of where exactly the
+          // reported tap coordinates land — the marker's own popup (which
+          // already offers RS Quick Entry/Waze/etc, see its click listener
+          // above) is the one that should show, not both.
+          if (wasAnyMarkerJustTapped()) {
+            e.stop?.();
+            return;
+          }
+          // A tap on any base-map POI always opens our own RS Quick Entry /
+          // Marker / Shape / Waze action sheet directly — Google's native
+          // info window (name/photo/rating/hours) is suppressed entirely so
+          // it never appears instead of, or stacked with, our own popup.
           e.stop?.();
-          const lat = e.latLng.lat();
-          const lng = e.latLng.lng();
           // Look up the business details via Places API
           const service = new google.maps.places.PlacesService(map);
           service.getDetails(
@@ -4019,12 +4001,12 @@ export default function IntelligenceMapping() {
                 place
               ) {
                 setPoiTap({
-                  lat,
-                  lng,
+                  lat: tapLat,
+                  lng: tapLng,
                   name: place.name ?? "",
                   address:
                     place.formatted_address ??
-                    `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+                    `${tapLat.toFixed(5)}, ${tapLng.toFixed(5)}`,
                 });
               }
             }
@@ -5642,13 +5624,14 @@ export default function IntelligenceMapping() {
       },
       {
         onSuccess: (data, vars) => {
-          const now2 = new Date();
-          const h24b = now2.getHours();
-          const minb = now2.getMinutes();
-          const timeStr2 = `${String(h24b % 12 === 0 ? 12 : h24b % 12).padStart(2, "0")}:${String(minb).padStart(2, "0")} ${h24b < 12 ? "AM" : "PM"}`;
+          // The row's own recorded time, not the wall-clock time the save
+          // happened to complete at — those can genuinely differ (a manual
+          // time override, or just submit lag), and "Last Entry" is meant
+          // to confirm what got written to the record, not when the tap
+          // landed.
           setRsLastEntry({
             label: vars.observation ?? "Entry",
-            time: timeStr2,
+            time: vars.time ?? timeStr,
           });
           setRsAddingRow(false);
           // Attach all selected CINs — use the locally captured variable, not the ref
@@ -6892,86 +6875,81 @@ export default function IntelligenceMapping() {
               </div>
               {/* end RS Selection */}
 
-              {/* ── PROFILES (Operation behind the selected RS, then its Target) ── */}
-              {rsSelectedSheetId !== null &&
-                (() => {
-                  const sheet = rsSheetsData
-                    ? (rsSheetsData as any[]).find(
-                        (s: any) => s.id === rsSelectedSheetId
-                      )
-                    : null;
-                  const opId = sheet?.operationId ?? null;
-                  if (!opId && !rsTargetData) return null;
-                  return (
-                    <div className="px-3 py-3 border-b border-border space-y-2">
-                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-                        Profiles
-                      </span>
-                      {opId && (
-                        <button
-                          onClick={() => {
-                            setPaneOperationProfileId(opId);
-                            setPaneTargetProfileId(null);
-                            setPaneImagesOpId(null);
-                            setPaneImagesSheetId(null);
-                            setPaneSheetDetailId(null);
-                          }}
-                          className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 active:scale-[0.98] transition-all min-w-0"
-                        >
-                          <FolderOpen className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
-                          <span className="text-xs font-semibold text-blue-500 truncate flex-1 text-left">
-                            {(operations as any[] | undefined)?.find(
-                              (o: any) => o.id === opId
-                            )?.name ?? "Operation profile"}
-                          </span>
-                          <ExternalLink className="h-3 w-3 text-blue-500/60 flex-shrink-0" />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })()}
+              {/* ── PROFILES (one per selected operation, driven by the
+                Operations filter above — not the RS selection, so it's
+                available as soon as an operation is picked even with no
+                running sheet chosen yet, and shows one link per operation
+                when more than one is selected) ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Profiles
+                </span>
+                {selectedOpIds.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    Select an operation above to open its profile.
+                  </p>
+                ) : (
+                  (operations as any[] | undefined)
+                    ?.filter((op: any) => selectedOpIds.includes(op.id))
+                    .map((op: any) => (
+                      <button
+                        key={op.id}
+                        onClick={() => {
+                          setPaneOperationProfileId(op.id);
+                          setPaneTargetProfileId(null);
+                          setPaneImagesOpId(null);
+                          setPaneImagesSheetId(null);
+                          setPaneSheetDetailId(null);
+                        }}
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 active:scale-[0.98] transition-all min-w-0"
+                      >
+                        <FolderOpen className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
+                        <span className="text-xs font-semibold text-blue-500 truncate flex-1 text-left">
+                          {op.name}
+                        </span>
+                        <ExternalLink className="h-3 w-3 text-blue-500/60 flex-shrink-0" />
+                      </button>
+                    ))
+                )}
+              </div>
               {/* end Profiles */}
 
-              {/* ── IMAGES (linked to the selected RS's operation) ── */}
+              {/* ── IMAGES (one per selected operation, same
+                Operations-filter-driven pattern as Profiles above, and
+                labelled with the operation's own name rather than a
+                generic "Operation Images" so multiple operations' links
+                are distinguishable) ── */}
               <div className="px-3 py-3 border-b border-border space-y-2">
                 <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
                   Images
                 </span>
-                {(() => {
-                  const sheet =
-                    rsSelectedSheetId !== null && rsSheetsData
-                      ? (rsSheetsData as any[]).find(
-                          (s: any) => s.id === rsSelectedSheetId
-                        )
-                      : null;
-                  const opId = sheet?.operationId ?? null;
-                  if (!opId) {
-                    return (
-                      <p className="text-[11px] text-muted-foreground leading-snug">
-                        Select a running sheet above to open its operation's
-                        images.
-                      </p>
-                    );
-                  }
-                  return (
-                    <button
-                      onClick={() => {
-                        setPaneImagesOpId(opId);
-                        setPaneImagesSheetId(null);
-                        setPaneTargetProfileId(null);
-                        setPaneOperationProfileId(null);
-                        setPaneSheetDetailId(null);
-                      }}
-                      className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 active:scale-[0.98] transition-all min-w-0"
-                    >
-                      <ImageIcon className="h-3.5 w-3.5 text-pink-500 flex-shrink-0" />
-                      <span className="text-xs font-semibold text-pink-500 truncate flex-1 text-left">
-                        Operation Images
-                      </span>
-                      <ExternalLink className="h-3 w-3 text-pink-500/60 flex-shrink-0" />
-                    </button>
-                  );
-                })()}
+                {selectedOpIds.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    Select an operation above to open its images.
+                  </p>
+                ) : (
+                  (operations as any[] | undefined)
+                    ?.filter((op: any) => selectedOpIds.includes(op.id))
+                    .map((op: any) => (
+                      <button
+                        key={op.id}
+                        onClick={() => {
+                          setPaneImagesOpId(op.id);
+                          setPaneImagesSheetId(null);
+                          setPaneTargetProfileId(null);
+                          setPaneOperationProfileId(null);
+                          setPaneSheetDetailId(null);
+                        }}
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 active:scale-[0.98] transition-all min-w-0"
+                      >
+                        <ImageIcon className="h-3.5 w-3.5 text-pink-500 flex-shrink-0" />
+                        <span className="text-xs font-semibold text-pink-500 truncate flex-1 text-left">
+                          {op.name} Images
+                        </span>
+                        <ExternalLink className="h-3 w-3 text-pink-500/60 flex-shrink-0" />
+                      </button>
+                    ))
+                )}
               </div>
               {/* end Images */}
 
@@ -9609,7 +9587,14 @@ export default function IntelligenceMapping() {
                                 </div>
                               );
                             })()}
-                          {/* Vehicle arriving chips — reuses the occupant
+                          {/* Continuity chip groups — arriving/departing/
+                          walked in/out laid out side by side (each still its
+                          own label-above-chips column) rather than each
+                          taking a full-width row, since there are up to four
+                          of these and stacking them ate a lot of vertical
+                          space in the popup. */}
+                          <div className="flex flex-wrap gap-x-4 gap-y-1.5 md:gap-x-6">
+                            {/* Vehicle arriving chips — reuses the occupant
                             description from the vehicle's last logged
                             departure anywhere in this operation, so the
                             officer doesn't have to retype it when the same
@@ -9617,70 +9602,70 @@ export default function IntelligenceMapping() {
                             chip per still-pending (un-arrived) vehicle —
                             always requires an explicit tap, never inserted
                             automatically, since this writes into the record. */}
-                          {mapQeAddress &&
-                            rsPendingDepartures &&
-                            rsPendingDepartures.length > 0 &&
-                            (() => {
-                              const appendText = (text: string) => {
-                                pushInlineUndo(rsInlineText);
-                                setRsInlineText(prev =>
-                                  prev ? `${prev} ${text}` : text
+                            {mapQeAddress &&
+                              rsPendingDepartures &&
+                              rsPendingDepartures.length > 0 &&
+                              (() => {
+                                const appendText = (text: string) => {
+                                  pushInlineUndo(rsInlineText);
+                                  setRsInlineText(prev =>
+                                    prev ? `${prev} ${text}` : text
+                                  );
+                                  resetInlineTimer();
+                                  rsInlineInputRef.current?.focus();
+                                };
+                                const bracketMatch = mapQeAddress.match(
+                                  /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
                                 );
-                                resetInlineTimer();
-                                rsInlineInputRef.current?.focus();
-                              };
-                              const bracketMatch = mapQeAddress.match(
-                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                              );
-                              const toTitleCase = (s: string) =>
-                                s
-                                  .toLowerCase()
-                                  .replace(/\b\w/g, c => c.toUpperCase());
-                              const shortAddr = bracketMatch
-                                ? toTitleCase(bracketMatch[2])
-                                : (mapQeAddress.split(",")[0]?.trim() ??
-                                  mapQeAddress);
-                              // App-wide rule: first mention of an address in
-                              // this sheet is written in full (with its
-                              // bracket short-form, which is what Intelligence
-                              // relies on to register the location) — every
-                              // later mention just uses the short form.
-                              const arriveAddr =
-                                rsAddressMentionedData?.mentioned
-                                  ? shortAddr
-                                  : mapQeAddress;
-                              return (
-                                <div className="flex flex-col gap-1 md:gap-1.5">
-                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
-                                    Vehicle arriving
-                                  </span>
-                                  <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                    {rsPendingDepartures.map(d => {
-                                      const occupantDesc =
-                                        shortenAlreadyMentionedNames(
-                                          d.occupantDesc,
-                                          rsUsedBracketCodes
+                                const toTitleCase = (s: string) =>
+                                  s
+                                    .toLowerCase()
+                                    .replace(/\b\w/g, c => c.toUpperCase());
+                                const shortAddr = bracketMatch
+                                  ? toTitleCase(bracketMatch[2])
+                                  : (mapQeAddress.split(",")[0]?.trim() ??
+                                    mapQeAddress);
+                                // App-wide rule: first mention of an address in
+                                // this sheet is written in full (with its
+                                // bracket short-form, which is what Intelligence
+                                // relies on to register the location) — every
+                                // later mention just uses the short form.
+                                const arriveAddr =
+                                  rsAddressMentionedData?.mentioned
+                                    ? shortAddr
+                                    : mapQeAddress;
+                                return (
+                                  <div className="flex flex-col gap-1 md:gap-1.5">
+                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-pink-500/70">
+                                      Vehicle arriving
+                                    </span>
+                                    <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                      {rsPendingDepartures.map(d => {
+                                        const occupantDesc =
+                                          shortenAlreadyMentionedNames(
+                                            d.occupantDesc,
+                                            rsUsedBracketCodes
+                                          );
+                                        const text = `Vehicle ${d.rego}, ${occupantDesc}, arrived at ${arriveAddr}`;
+                                        return (
+                                          <button
+                                            key={d.rego}
+                                            onClick={() => appendText(text)}
+                                            title={text}
+                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                          >
+                                            <span className="font-mono normal-case">
+                                              {d.rego}
+                                            </span>{" "}
+                                            arriving
+                                          </button>
                                         );
-                                      const text = `Vehicle ${d.rego}, ${occupantDesc}, arrived at ${arriveAddr}`;
-                                      return (
-                                        <button
-                                          key={d.rego}
-                                          onClick={() => appendText(text)}
-                                          title={text}
-                                          className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                        >
-                                          <span className="font-mono normal-case">
-                                            {d.rego}
-                                          </span>{" "}
-                                          arriving
-                                        </button>
-                                      );
-                                    })}
+                                      })}
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })()}
-                          {/* Vehicle departing chips — mirror of the arriving
+                                );
+                              })()}
+                            {/* Vehicle departing chips — mirror of the arriving
                             chips above: reuses the occupant description from
                             the vehicle's most recent logged arrival, for when
                             that vehicle is now departing THAT SAME location.
@@ -9693,67 +9678,67 @@ export default function IntelligenceMapping() {
                             establishing a new address mention the way an
                             arrival can be. Requires an explicit tap, same as
                             the arriving chips. */}
-                          {mapQeAddress &&
-                            rsPendingArrivals &&
-                            rsPendingArrivals.length > 0 &&
-                            (() => {
-                              const appendText = (text: string) => {
-                                pushInlineUndo(rsInlineText);
-                                setRsInlineText(prev =>
-                                  prev ? `${prev} ${text}` : text
+                            {mapQeAddress &&
+                              rsPendingArrivals &&
+                              rsPendingArrivals.length > 0 &&
+                              (() => {
+                                const appendText = (text: string) => {
+                                  pushInlineUndo(rsInlineText);
+                                  setRsInlineText(prev =>
+                                    prev ? `${prev} ${text}` : text
+                                  );
+                                  resetInlineTimer();
+                                  rsInlineInputRef.current?.focus();
+                                };
+                                const bracketMatch = mapQeAddress.match(
+                                  /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
                                 );
-                                resetInlineTimer();
-                                rsInlineInputRef.current?.focus();
-                              };
-                              const bracketMatch = mapQeAddress.match(
-                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                              );
-                              const toTitleCase = (s: string) =>
-                                s
-                                  .toLowerCase()
-                                  .replace(/\b\w/g, c => c.toUpperCase());
-                              const shortAddr = bracketMatch
-                                ? toTitleCase(bracketMatch[2])
-                                : (mapQeAddress.split(",")[0]?.trim() ??
-                                  mapQeAddress);
-                              const arrivalsHere = rsPendingArrivals.filter(
-                                a =>
-                                  a.address.trim().toLowerCase() ===
-                                  shortAddr.trim().toLowerCase()
-                              );
-                              if (arrivalsHere.length === 0) return null;
-                              return (
-                                <div className="flex flex-col gap-1 md:gap-1.5">
-                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
-                                    Vehicle departing
-                                  </span>
-                                  <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                    {arrivalsHere.map(a => {
-                                      const occupantDesc =
-                                        shortenAlreadyMentionedNames(
-                                          a.occupantDesc,
-                                          rsUsedBracketCodes
+                                const toTitleCase = (s: string) =>
+                                  s
+                                    .toLowerCase()
+                                    .replace(/\b\w/g, c => c.toUpperCase());
+                                const shortAddr = bracketMatch
+                                  ? toTitleCase(bracketMatch[2])
+                                  : (mapQeAddress.split(",")[0]?.trim() ??
+                                    mapQeAddress);
+                                const arrivalsHere = rsPendingArrivals.filter(
+                                  a =>
+                                    a.address.trim().toLowerCase() ===
+                                    shortAddr.trim().toLowerCase()
+                                );
+                                if (arrivalsHere.length === 0) return null;
+                                return (
+                                  <div className="flex flex-col gap-1 md:gap-1.5">
+                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-pink-500/70">
+                                      Vehicle departing
+                                    </span>
+                                    <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                      {arrivalsHere.map(a => {
+                                        const occupantDesc =
+                                          shortenAlreadyMentionedNames(
+                                            a.occupantDesc,
+                                            rsUsedBracketCodes
+                                          );
+                                        const text = `Vehicle ${a.rego}, ${occupantDesc}, departed ${shortAddr} and continued via:`;
+                                        return (
+                                          <button
+                                            key={a.rego}
+                                            onClick={() => appendText(text)}
+                                            title={text}
+                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                          >
+                                            <span className="font-mono normal-case">
+                                              {a.rego}
+                                            </span>{" "}
+                                            departing
+                                          </button>
                                         );
-                                      const text = `Vehicle ${a.rego}, ${occupantDesc}, departed ${shortAddr} and continued via:`;
-                                      return (
-                                        <button
-                                          key={a.rego}
-                                          onClick={() => appendText(text)}
-                                          title={text}
-                                          className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                        >
-                                          <span className="font-mono normal-case">
-                                            {a.rego}
-                                          </span>{" "}
-                                          departing
-                                        </button>
-                                      );
-                                    })}
+                                      })}
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })()}
-                          {/* Walked in chip — for occupants who exit a
+                                );
+                              })()}
+                            {/* Walked in chip — for occupants who exit a
                             parked vehicle here and continue on foot into
                             this location ("... exited the vehicle, walked
                             [route], entered X and continued out of sight.").
@@ -9781,133 +9766,135 @@ export default function IntelligenceMapping() {
                             to type over — unlike the occupant description
                             or address, the route taken genuinely varies
                             every time and can't be reused from anywhere. */}
-                          {mapQeAddress &&
-                            (() => {
-                              // Insert at the caret rather than forcing the
-                              // text to the end of the observation — the
-                              // officer may have already clicked/tabbed back
-                              // into the middle of what they've typed (e.g.
-                              // to fix a word) before tapping this chip, and
-                              // the old "always append at the end" behaviour
-                              // would silently move the walk-in text away
-                              // from where they were looking. Still opens
-                              // its own paragraph (blank line before) so it
-                              // reads as a distinct sentence, same as before.
-                              const appendText = (text: string) => {
-                                pushInlineUndo(rsInlineText);
-                                const textarea = rsInlineInputRef.current;
-                                const pos =
-                                  textarea?.selectionStart ??
-                                  rsInlineText.length;
-                                const selEnd = textarea?.selectionEnd ?? pos;
-                                const before = rsInlineText.slice(0, pos);
-                                const after = rsInlineText.slice(selEnd);
-                                const lead = before
-                                  ? before.endsWith("\n\n")
-                                    ? ""
-                                    : before.endsWith("\n")
-                                      ? "\n"
-                                      : "\n\n"
-                                  : "";
-                                const inserted = `${before}${lead}${text}`;
-                                setRsInlineText(`${inserted}${after}`);
-                                resetInlineTimer();
-                                requestAnimationFrame(() => {
-                                  textarea?.focus();
-                                  const cursor = inserted.length;
-                                  textarea?.setSelectionRange(cursor, cursor);
-                                });
-                              };
-                              const bracketMatch = mapQeAddress.match(
-                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                              );
-                              const toTitleCase = (s: string) =>
-                                s
-                                  .toLowerCase()
-                                  .replace(/\b\w/g, c => c.toUpperCase());
-                              const shortAddr = bracketMatch
-                                ? toTitleCase(bracketMatch[2])
-                                : (mapQeAddress.split(",")[0]?.trim() ??
-                                  mapQeAddress);
-                              const vehiclesHereByRego = new Map<
-                                string,
-                                { rego: string; occupantDesc: string }
-                              >();
-                              (rsPendingArrivals ?? [])
-                                .filter(
-                                  a =>
-                                    a.address.trim().toLowerCase() ===
-                                    shortAddr.trim().toLowerCase()
-                                )
-                                .forEach(a =>
-                                  vehiclesHereByRego.set(a.rego, a)
+                            {mapQeAddress &&
+                              (() => {
+                                // Insert at the caret rather than forcing the
+                                // text to the end of the observation — the
+                                // officer may have already clicked/tabbed back
+                                // into the middle of what they've typed (e.g.
+                                // to fix a word) before tapping this chip, and
+                                // the old "always append at the end" behaviour
+                                // would silently move the walk-in text away
+                                // from where they were looking. Still opens
+                                // its own paragraph (blank line before) so it
+                                // reads as a distinct sentence, same as before.
+                                const appendText = (text: string) => {
+                                  pushInlineUndo(rsInlineText);
+                                  const textarea = rsInlineInputRef.current;
+                                  const pos =
+                                    textarea?.selectionStart ??
+                                    rsInlineText.length;
+                                  const selEnd = textarea?.selectionEnd ?? pos;
+                                  const before = rsInlineText.slice(0, pos);
+                                  const after = rsInlineText.slice(selEnd);
+                                  const lead = before
+                                    ? before.endsWith("\n\n")
+                                      ? ""
+                                      : before.endsWith("\n")
+                                        ? "\n"
+                                        : "\n\n"
+                                    : "";
+                                  const inserted = `${before}${lead}${text}`;
+                                  setRsInlineText(`${inserted}${after}`);
+                                  resetInlineTimer();
+                                  requestAnimationFrame(() => {
+                                    textarea?.focus();
+                                    const cursor = inserted.length;
+                                    textarea?.setSelectionRange(cursor, cursor);
+                                  });
+                                };
+                                const bracketMatch = mapQeAddress.match(
+                                  /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
                                 );
-                              // Draft: a vehicle-arrival sentence already
-                              // typed into THIS unsaved observation — mined
-                              // client-side with the same patterns the
-                              // server uses on saved rows, so a vehicle just
-                              // typed above offers the chip immediately
-                              // rather than only after this row is
-                              // submitted and the next one opened. Takes
-                              // priority over a same-rego saved entry since
-                              // it reflects what's actually on screen right
-                              // now.
-                              const draftArriveMatch = rsInlineText.match(
-                                VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN
-                              );
-                              if (draftArriveMatch) {
-                                const draftAddress =
-                                  extractArrivalAddress(rsInlineText);
-                                if (
-                                  draftAddress &&
-                                  draftAddress.trim().toLowerCase() ===
-                                    shortAddr.trim().toLowerCase()
-                                ) {
-                                  vehiclesHereByRego.set(
-                                    draftArriveMatch[1].toUpperCase(),
-                                    {
-                                      rego: draftArriveMatch[1].toUpperCase(),
-                                      occupantDesc: draftArriveMatch[2].trim(),
-                                    }
+                                const toTitleCase = (s: string) =>
+                                  s
+                                    .toLowerCase()
+                                    .replace(/\b\w/g, c => c.toUpperCase());
+                                const shortAddr = bracketMatch
+                                  ? toTitleCase(bracketMatch[2])
+                                  : (mapQeAddress.split(",")[0]?.trim() ??
+                                    mapQeAddress);
+                                const vehiclesHereByRego = new Map<
+                                  string,
+                                  { rego: string; occupantDesc: string }
+                                >();
+                                (rsPendingArrivals ?? [])
+                                  .filter(
+                                    a =>
+                                      a.address.trim().toLowerCase() ===
+                                      shortAddr.trim().toLowerCase()
+                                  )
+                                  .forEach(a =>
+                                    vehiclesHereByRego.set(a.rego, a)
                                   );
+                                // Draft: a vehicle-arrival sentence already
+                                // typed into THIS unsaved observation — mined
+                                // client-side with the same patterns the
+                                // server uses on saved rows, so a vehicle just
+                                // typed above offers the chip immediately
+                                // rather than only after this row is
+                                // submitted and the next one opened. Takes
+                                // priority over a same-rego saved entry since
+                                // it reflects what's actually on screen right
+                                // now.
+                                const draftArriveMatch =
+                                  matchVehicleArrival(rsInlineText);
+                                if (draftArriveMatch) {
+                                  const draftAddress =
+                                    extractArrivalAddress(rsInlineText);
+                                  if (
+                                    draftAddress &&
+                                    draftAddress.trim().toLowerCase() ===
+                                      shortAddr.trim().toLowerCase()
+                                  ) {
+                                    vehiclesHereByRego.set(
+                                      draftArriveMatch.rego,
+                                      {
+                                        rego: draftArriveMatch.rego,
+                                        occupantDesc:
+                                          draftArriveMatch.occupantDesc,
+                                      }
+                                    );
+                                  }
                                 }
-                              }
-                              const vehiclesHere = Array.from(
-                                vehiclesHereByRego.values()
-                              );
-                              if (vehiclesHere.length === 0) return null;
-                              return (
-                                <div className="flex flex-col gap-1 md:gap-1.5">
-                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
-                                    Walked in
-                                  </span>
-                                  <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                    {vehiclesHere.map(a => {
-                                      const names =
-                                        shortenAlreadyMentionedNames(
-                                          extractOccupantNames(a.occupantDesc),
-                                          rsUsedBracketCodes
+                                const vehiclesHere = Array.from(
+                                  vehiclesHereByRego.values()
+                                );
+                                if (vehiclesHere.length === 0) return null;
+                                return (
+                                  <div className="flex flex-col gap-1 md:gap-1.5">
+                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-pink-500/70">
+                                      Walked in
+                                    </span>
+                                    <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                      {vehiclesHere.map(a => {
+                                        const names =
+                                          shortenAlreadyMentionedNames(
+                                            extractOccupantNames(
+                                              a.occupantDesc
+                                            ),
+                                            rsUsedBracketCodes
+                                          );
+                                        const text = `${names} exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`;
+                                        return (
+                                          <button
+                                            key={a.rego}
+                                            onClick={() => appendText(text)}
+                                            title={text}
+                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                          >
+                                            On foot{" "}
+                                            <span className="font-mono normal-case">
+                                              ({a.rego})
+                                            </span>
+                                          </button>
                                         );
-                                      const text = `${names} exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`;
-                                      return (
-                                        <button
-                                          key={a.rego}
-                                          onClick={() => appendText(text)}
-                                          title={text}
-                                          className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                        >
-                                          On foot{" "}
-                                          <span className="font-mono normal-case">
-                                            ({a.rego})
-                                          </span>
-                                        </button>
-                                      );
-                                    })}
+                                      })}
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })()}
-                          {/* Walked out chip — mirror of "Walked in": for
+                                );
+                              })()}
+                            {/* Walked out chip — mirror of "Walked in": for
                             occupants who exit this location on foot and
                             walk back to a vehicle ("... exited X and
                             walked [route] towards Vehicle REGO."). Reuses BOTH the
@@ -9929,73 +9916,82 @@ export default function IntelligenceMapping() {
                             This also means the chip naturally disappears
                             once that vehicle has already departed, with no
                             extra logic needed. */}
-                          {mapQeAddress &&
-                            rsPendingWalkIns &&
-                            rsPendingWalkIns.length > 0 &&
-                            rsPendingArrivals &&
-                            (() => {
-                              const appendText = (text: string) => {
-                                pushInlineUndo(rsInlineText);
-                                setRsInlineText(prev =>
-                                  prev ? `${prev} ${text}` : text
+                            {mapQeAddress &&
+                              rsPendingWalkIns &&
+                              rsPendingWalkIns.length > 0 &&
+                              rsPendingArrivals &&
+                              (() => {
+                                const appendText = (text: string) => {
+                                  pushInlineUndo(rsInlineText);
+                                  setRsInlineText(prev =>
+                                    prev ? `${prev} ${text}` : text
+                                  );
+                                  resetInlineTimer();
+                                  rsInlineInputRef.current?.focus();
+                                };
+                                const bracketMatch = mapQeAddress.match(
+                                  /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
                                 );
-                                resetInlineTimer();
-                                rsInlineInputRef.current?.focus();
-                              };
-                              const bracketMatch = mapQeAddress.match(
-                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                              );
-                              const toTitleCase = (s: string) =>
-                                s
-                                  .toLowerCase()
-                                  .replace(/\b\w/g, c => c.toUpperCase());
-                              const shortAddr = bracketMatch
-                                ? toTitleCase(bracketMatch[2])
-                                : (mapQeAddress.split(",")[0]?.trim() ??
-                                  mapQeAddress);
-                              const walkInHere = rsPendingWalkIns.find(
-                                w =>
-                                  w.location.trim().toLowerCase() ===
-                                  shortAddr.trim().toLowerCase()
-                              );
-                              const regosHere = rsPendingArrivals.filter(
-                                a =>
-                                  a.address.trim().toLowerCase() ===
-                                  shortAddr.trim().toLowerCase()
-                              );
-                              if (!walkInHere || regosHere.length === 0)
-                                return null;
-                              return (
-                                <div className="flex flex-col gap-1 md:gap-1.5">
-                                  <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-amber-500/70">
-                                    Walked out
-                                  </span>
-                                  <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                    {regosHere.map(a => {
-                                      const walkOutNames =
-                                        shortenAlreadyMentionedNames(
-                                          walkInHere.names,
-                                          rsUsedBracketCodes
+                                const toTitleCase = (s: string) =>
+                                  s
+                                    .toLowerCase()
+                                    .replace(/\b\w/g, c => c.toUpperCase());
+                                const shortAddr = bracketMatch
+                                  ? toTitleCase(bracketMatch[2])
+                                  : (mapQeAddress.split(",")[0]?.trim() ??
+                                    mapQeAddress);
+                                const walkInHere = rsPendingWalkIns.find(
+                                  w =>
+                                    w.location.trim().toLowerCase() ===
+                                    shortAddr.trim().toLowerCase()
+                                );
+                                const regosHere = rsPendingArrivals.filter(
+                                  a =>
+                                    a.address.trim().toLowerCase() ===
+                                    shortAddr.trim().toLowerCase()
+                                );
+                                if (!walkInHere || regosHere.length === 0)
+                                  return null;
+                                return (
+                                  <div className="flex flex-col gap-1 md:gap-1.5">
+                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-pink-500/70">
+                                      Walked out
+                                    </span>
+                                    <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                      {regosHere.map(a => {
+                                        const walkOutNames =
+                                          shortenAlreadyMentionedNames(
+                                            walkInHere.names,
+                                            rsUsedBracketCodes
+                                          );
+                                        // walkInHere.route is only ever
+                                        // genuine route/path text -- never
+                                        // the destination, which would
+                                        // duplicate shortAddr. Empty when
+                                        // the walk-in had no separate route
+                                        // content at all.
+                                        const text = walkInHere.route
+                                          ? `${walkOutNames} exited ${shortAddr} and walked ${walkInHere.route} towards Vehicle ${a.rego}.`
+                                          : `${walkOutNames} exited ${shortAddr} and walked towards Vehicle ${a.rego}.`;
+                                        return (
+                                          <button
+                                            key={a.rego}
+                                            onClick={() => appendText(text)}
+                                            title={text}
+                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                          >
+                                            To{" "}
+                                            <span className="font-mono normal-case">
+                                              {a.rego}
+                                            </span>
+                                          </button>
                                         );
-                                      const text = `${walkOutNames} exited ${shortAddr} and walked ${walkInHere.route} towards Vehicle ${a.rego}.`;
-                                      return (
-                                        <button
-                                          key={a.rego}
-                                          onClick={() => appendText(text)}
-                                          title={text}
-                                          className="px-2 py-0.5 rounded text-[10px] font-bold border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                        >
-                                          To{" "}
-                                          <span className="font-mono normal-case">
-                                            {a.rego}
-                                          </span>
-                                        </button>
-                                      );
-                                    })}
+                                      })}
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })()}
+                                );
+                              })()}
+                          </div>
                           {/* CIN picker — multi-select with TEAM */}
                           {rosterCins.length > 0 && (
                             <div className="flex flex-wrap gap-1.5 md:gap-2">

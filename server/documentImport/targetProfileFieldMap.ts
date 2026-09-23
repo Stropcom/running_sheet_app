@@ -25,7 +25,10 @@ import {
   matchWholeLinePersonName,
   type CandidateEntity,
 } from "./freeTextEntityScan";
-import type { DocumentReadResult } from "./documentReadResult";
+import type {
+  DocumentReadResult,
+  ExtractedDocumentImage,
+} from "./documentReadResult";
 
 /** Labels this document format uses for fields the schema has no place for
  * today (see CLAUDE.md's Golden Rule discussion / the "Schema gap" decision
@@ -122,6 +125,11 @@ export interface TargetProfileImportResult {
    * review screen surfaces these explicitly instead of silently dropping
    * them. */
   needsReview: UnparsedItem[];
+  /** Photos embedded in the source document, re-encoded to PNG — a
+   * suggestion for the review screen (officer picks which to keep), not
+   * auto-saved. See ExtractedDocumentImage's own doc comment for the size
+   * filtering already applied by the reader. */
+  images: ExtractedDocumentImage[];
 }
 
 /** Finds every occurrence of `label` as a cell in `rows`, paired with the
@@ -1288,5 +1296,6 @@ export function mapDocumentToTargetProfile(
     associateBlocks,
     candidateEntities,
     needsReview: [...unparsedAddresses, ...unparsedVehicles],
+    images: result.images,
   };
 }

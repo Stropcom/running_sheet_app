@@ -69,6 +69,7 @@ import {
   Tag,
   User,
   Car,
+  Undo2,
 } from "lucide-react";
 import {
   Select,
@@ -100,6 +101,8 @@ import {
   computeUsedBracketCodes,
   computeUsedVehicleRegos,
   computeUsedAddressLabels,
+  extractOccupantNames,
+  shortenAlreadyMentionedNames,
   type PersonMentionSuggestion,
 } from "@/lib/mentionAutocomplete";
 import {
@@ -786,16 +789,15 @@ function exportToPDF(
   }, 400);
 }
 
-// ─── Sortable CIN item ────────────────────────────────────────────────────────
+// ─── CIN item helpers ───────────────────────────────────────────────────────
 
 const SPACER = "__SPACE__";
 
 // True when a row's real (non-spacer) members are exactly the full daily
 // roster — same CINs, no more, no fewer, duplicates collapsed by set
 // equality. Used to collapse a fully-certified row's member list down to a
-// single "TEAM" pill (MemberCell) and a single certify/uncertify control
-// (CertifyCell) — never for a row that merely happens to have every member
-// certified, only one that IS the whole team.
+// single "TEAM" pill in CinCertifyCell — never for a row that merely
+// happens to have every member certified, only one that IS the whole team.
 function isFullTeamMembers(
   members: { memberName: string }[],
   rosterCins: string[] | undefined
@@ -812,103 +814,253 @@ function isFullTeamMembers(
   return Array.from(rosterSet).every(cin => realSet.has(cin));
 }
 
-function SortableCinItem({
+// A single member row: certify/uncertify shield inline with the CIN, plus
+// the remove-CIN control — the merged replacement for the old separate
+// CIN and Certify columns (Option A from the column-merge mockup).
+function CinCertifyRow({
+  row,
   member,
   cert,
   canEdit,
+  canCertify,
   isLocked,
+  onCertify,
+  onUncertify,
   onRemove,
 }: {
+  row: SheetRow;
   member: Member;
-  cert: boolean;
+  cert: Certification | undefined;
   canEdit: boolean;
+  canCertify: boolean;
   isLocked: boolean;
+  onCertify: (rowId: number, memberId: number) => void;
+  onUncertify: (rowId: number, memberId: number) => void;
   onRemove: () => void;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: member.id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 10 : undefined,
-  };
   const ROW_H = "h-8";
   const isSpacer = member.memberName === SPACER;
+  const canRemove = canEdit && !isLocked;
+
+  // Removing a CIN (or a spacer) is a press-and-hold, not a tap — a red fill
+  // sweeps across the row over HOLD_MS; releasing early cancels. No icon, no
+  // reserved space, and much harder to trigger by accident than a plain tap
+  // on a legal record. Driven imperatively via a ref (not React state) so
+  // the fill animates every frame without re-rendering the row.
+  const HOLD_MS = 1000;
+  const fillRef = useRef<HTMLDivElement>(null);
+  const holdRef = useRef<{
+    active: boolean;
+    start: number;
+    raf: number | null;
+  }>({ active: false, start: 0, raf: null });
+
+  useEffect(() => {
+    return () => {
+      if (holdRef.current.raf) cancelAnimationFrame(holdRef.current.raf);
+    };
+  }, []);
+
+  const startHold = (e: React.PointerEvent) => {
+    if (!canRemove) return;
+    const hold = holdRef.current;
+    hold.active = true;
+    hold.start = performance.now();
+    if (fillRef.current) {
+      fillRef.current.style.transition = "none";
+    }
+    const step = (now: number) => {
+      if (!hold.active) return;
+      const pct = Math.min(1, (now - hold.start) / HOLD_MS);
+      if (fillRef.current) fillRef.current.style.width = `${pct * 100}%`;
+      if (pct >= 1) {
+        hold.active = false;
+        onRemove();
+        return;
+      }
+      hold.raf = requestAnimationFrame(step);
+    };
+    hold.raf = requestAnimationFrame(step);
+  };
+
+  const cancelHold = () => {
+    const hold = holdRef.current;
+    if (!hold.active) return;
+    hold.active = false;
+    if (hold.raf) cancelAnimationFrame(hold.raf);
+    if (fillRef.current) {
+      fillRef.current.style.transition = "width 0.2s ease";
+      fillRef.current.style.width = "0%";
+    }
+  };
+
+  // Suppresses the native long-press text-selection/"Copy" callout that
+  // iOS and Android would otherwise show wherever a press-and-hold gesture
+  // lands, including on the plain-text CIN inside the pill below —
+  // WebkitTouchCallout is iOS Safari-specific, userSelect covers the rest.
+  const noCalloutStyle: React.CSSProperties = {
+    WebkitTouchCallout: "none",
+    WebkitUserSelect: "none",
+    userSelect: "none",
+  };
+
+  if (isSpacer) {
+    return (
+      <div
+        className={`relative flex items-center gap-1 ${ROW_H} select-none`}
+        style={
+          canRemove ? { ...noCalloutStyle, touchAction: "none" } : undefined
+        }
+        onPointerDown={startHold}
+        onPointerUp={cancelHold}
+        onPointerLeave={cancelHold}
+        onPointerCancel={cancelHold}
+      >
+        {/* Spacer — blank row for visual separation, press-and-hold to remove */}
+        {canRemove && (
+          <div
+            ref={fillRef}
+            className="absolute inset-0 bg-destructive/15 pointer-events-none"
+            style={{ width: "0%" }}
+          />
+        )}
+        <span className="relative z-10 flex-1 min-w-0" />
+      </div>
+    );
+  }
+
+  const canToggle = canCertify && !isLocked;
+
+  // A single rounded chip, sized to fit its content, carries both the CIN
+  // and its certify state — a tap anywhere on it certifies/uncertifies.
+  // Removing it is a separate 1s press-and-hold in the blank space to the
+  // chip's right (same fill-sweep mechanic as the spacer row above), so
+  // the two gestures never share a hit target.
+  const pillBase = `relative flex items-center gap-1.5 h-full min-w-0 px-2.5 border rounded-full text-xs font-bold ${
+    cert
+      ? "text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)]"
+      : "text-red-500 border-red-500/35 bg-red-500/5"
+  }`;
+  const pillContent = (
+    <>
+      <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+      <span className="font-mono truncate">{member.memberName}</span>
+    </>
+  );
 
   return (
     <div
-      ref={setNodeRef}
-      style={style}
-      className={`flex items-center gap-1 group/member ${ROW_H}`}
+      className={`flex items-center ${ROW_H} select-none`}
+      style={noCalloutStyle}
     >
-      {/* Drag handle — only shown when editable and row not locked */}
-      {canEdit && !isLocked && (
-        <button
-          {...attributes}
-          {...listeners}
-          className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground shrink-0 p-0.5 -ml-1"
-          tabIndex={-1}
-          aria-label="Drag to reorder"
+      <div className="inline-flex items-stretch h-7 max-w-full rounded-full shrink-0">
+        {canToggle ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={`${pillBase} cursor-pointer`}
+                onClick={() =>
+                  cert
+                    ? onUncertify(row.id, member.id)
+                    : onCertify(row.id, member.id)
+                }
+              >
+                {pillContent}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              {cert ? (
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium">
+                    Certified by{" "}
+                    {(cert as any).certifiedByCIN || cert.certifiedByName} — tap
+                    to uncertify
+                  </span>
+                  <span className="text-muted-foreground flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {format(new Date(cert.certifiedAt), "MMM d, yyyy HH:mm:ss")}
+                  </span>
+                </div>
+              ) : (
+                `Certify ${member.memberName}`
+              )}
+            </TooltipContent>
+          </Tooltip>
+        ) : cert ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={`${pillBase} cursor-default`}>
+                {pillContent}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium">
+                  Certified by{" "}
+                  {(cert as any).certifiedByCIN || cert.certifiedByName}
+                </span>
+                <span className="text-muted-foreground flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {format(new Date(cert.certifiedAt), "MMM d, yyyy HH:mm:ss")}
+                </span>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <span className={`${pillBase} cursor-default`}>{pillContent}</span>
+        )}
+      </div>
+
+      {/* Hold zone — the blank space to the right of the pill, press-and-hold
+          1s to remove. A red fill sweeps across it as visual feedback. */}
+      {canRemove && (
+        <div
+          className="relative flex-1 h-full min-w-[28px]"
+          style={{ ...noCalloutStyle, touchAction: "none" }}
+          onPointerDown={startHold}
+          onPointerUp={cancelHold}
+          onPointerLeave={cancelHold}
+          onPointerCancel={cancelHold}
         >
-          <GripVertical className="w-3 h-3" />
-        </button>
-      )}
-      {isSpacer ? (
-        /* Spacer — blank row for visual separation, remove on hover */
-        <span className="flex-1 min-w-0" />
-      ) : (
-        <span
-          className={`text-sm font-mono font-medium flex-1 min-w-0 ${cert ? "text-[var(--certified-color)]" : "text-foreground"}`}
-        >
-          {member.memberName}
-        </span>
-      )}
-      {canEdit && !isLocked && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="w-6 h-6 opacity-0 group-hover/member:opacity-100 text-muted-foreground hover:text-destructive shrink-0"
-              onClick={onRemove}
-            >
-              <Trash2 className="w-3 h-3" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            {isSpacer ? "Remove space" : "Remove this CIN"}
-          </TooltipContent>
-        </Tooltip>
+          <div
+            ref={fillRef}
+            className="absolute inset-0 rounded-md bg-destructive/20 pointer-events-none"
+            style={{ width: "0%" }}
+          />
+        </div>
       )}
     </div>
   );
 }
 
-// ─── Member Cell ──────────────────────────────────────────────────────────────
+// ─── CIN + Certify Cell ─────────────────────────────────────────────────────
+// Merges what used to be two separate columns (CIN, Certify) into one —
+// each member's shield sits inline with their CIN (CinCertifyRow above),
+// with the same "TEAM" collapse, "Uncertify All", and "Delete row" controls
+// as before.
 
-function MemberCell({
+function CinCertifyCell({
   row,
   canEdit,
+  canCertify,
   onAddMember,
   onRemoveMember,
-  onReorderMembers,
-  onManualReorder,
+  onCertify,
+  onUncertify,
+  onUncertifyAll,
+  onDeleteRow,
   rosterCins,
 }: {
   row: SheetRow;
   canEdit: boolean;
+  canCertify: boolean;
   onAddMember: (rowId: number, name: string) => void;
   onRemoveMember: (memberId: number, rowId: number) => void;
-  onReorderMembers: (rowId: number, orderedIds: number[]) => void;
-  /** Called when the user manually drags to reorder — disables auto-sort for this row */
-  onManualReorder?: (rowId: number) => void;
+  onCertify: (rowId: number, memberId: number) => void;
+  onUncertify: (rowId: number, memberId: number) => void;
+  onUncertifyAll: (rowId: number) => void;
+  onDeleteRow?: (rowId: number) => void;
   rosterCins?: string[];
 }) {
   const [adding, setAdding] = useState(false);
@@ -941,75 +1093,45 @@ function MemberCell({
     addSequentially(rosterCins, 0);
   };
 
-  // dnd-kit sensors — pointer (desktop) + touch with 250ms delay (mobile tap-hold)
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 250, tolerance: 5 },
-    })
-  );
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = row.members.findIndex(m => m.id === active.id);
-    const newIndex = row.members.findIndex(m => m.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-    const reordered = arrayMove(row.members, oldIndex, newIndex);
-    // Mark this row as manually reordered so auto-sort is suppressed going forward
-    onManualReorder?.(row.id);
-    onReorderMembers(
-      row.id,
-      reordered.map(m => m.id)
-    );
-  };
+  const total = row.members.length;
 
   // A fully-certified row (isLocked) whose members are exactly the full
   // daily roster collapses to a single green "TEAM" pill instead of every
-  // CIN — the individual CINs are still the real data underneath (used by
-  // Witness List generation and everywhere else); this is display only.
-  // Uncertifying (via CertifyCell) drops row.isLocked, which reverts this
-  // automatically since the check below no longer holds.
+  // CIN + shield — the individual CINs are still the real data underneath
+  // (used by Witness List generation and everywhere else); this is display
+  // only. "Uncertify All" below still un-collapses it, same as ever.
   const showTeamCollapse =
     row.isLocked && isFullTeamMembers(row.members, rosterCins);
 
   return (
-    <div className="flex flex-col min-w-[40px]">
+    <div className="flex flex-col min-w-[90px]">
       {showTeamCollapse ? (
-        <div className="flex items-center gap-1.5 h-8">
-          <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
-          <span className="text-sm font-mono font-semibold text-emerald-500">
-            TEAM
-          </span>
+        <div className="flex items-center h-8">
+          <div className="inline-flex items-center gap-1.5 h-7 px-2.5 border rounded-full text-xs font-bold text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)]">
+            <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+            <span className="font-mono">TEAM</span>
+          </div>
         </div>
-      ) : (
-        /* CIN list — drag handles allow full reordering */
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={row.members.map(m => m.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            {row.members.map(member => {
-              const cert = !!row.certifications.find(
-                c => c.memberId === member.id && c.isActive
-              );
-              return (
-                <SortableCinItem
-                  key={member.id}
-                  member={member}
-                  cert={cert}
-                  canEdit={canEdit}
-                  isLocked={row.isLocked}
-                  onRemove={() => onRemoveMember(member.id, row.id)}
-                />
-              );
-            })}
-          </SortableContext>
-        </DndContext>
+      ) : total === 0 ? null : (
+        row.members.map(member => {
+          const cert = row.certifications.find(
+            c => c.memberId === member.id && c.isActive
+          );
+          return (
+            <CinCertifyRow
+              key={member.id}
+              row={row}
+              member={member}
+              cert={cert}
+              canEdit={canEdit}
+              canCertify={canCertify}
+              isLocked={row.isLocked}
+              onCertify={onCertify}
+              onUncertify={onUncertify}
+              onRemove={() => onRemoveMember(member.id, row.id)}
+            />
+          );
+        })
       )}
 
       {/* Add button — sits below all CINs */}
@@ -1102,12 +1224,14 @@ function MemberCell({
             )}
           </div>
         ) : (
-          <div className="flex items-center gap-3 mt-0.5">
+          <div className="flex flex-col mt-0.5">
             <button
               onClick={() => setAdding(true)}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors w-fit"
             >
-              <UserPlus className="w-3 h-3" />
+              <span className="flex w-6 h-6 items-center justify-center shrink-0">
+                <UserPlus className="w-3 h-3" />
+              </span>
               Add
             </button>
             {rosterCins && rosterCins.length > 1 && (
@@ -1116,12 +1240,62 @@ function MemberCell({
                 className="flex items-center gap-1 text-xs text-primary/80 hover:text-primary transition-colors w-fit"
                 title={`Add all ${rosterCins.length} rostered CINs`}
               >
-                <Users className="w-3 h-3" />
+                <span className="flex w-6 h-6 items-center justify-center shrink-0">
+                  <Users className="w-3 h-3" />
+                </span>
                 Team
               </button>
             )}
           </div>
         ))}
+
+      {/* Locked badge — the certified count is redundant with the shields */}
+      {row.isLocked && (
+        <div className="flex items-center gap-1.5 mt-1">
+          <Badge
+            variant="outline"
+            className="gap-1 text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)] text-xs py-0 px-1.5"
+          >
+            <Lock className="w-2.5 h-2.5" />
+            Locked
+          </Badge>
+        </div>
+      )}
+
+      {/* Footer actions */}
+      {row.isLocked && canCertify && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 pl-0 pr-2 gap-1 text-xs text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 mt-1 w-fit"
+              onClick={() => onUncertifyAll(row.id)}
+            >
+              <span className="flex w-6 h-6 items-center justify-center shrink-0">
+                <Unlock className="w-3 h-3" />
+              </span>
+              Uncertify All
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            Remove all certifications and unlock row
+          </TooltipContent>
+        </Tooltip>
+      )}
+      {!row.isLocked && onDeleteRow && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 pl-0 pr-2 gap-1 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-1 w-fit"
+          onClick={() => onDeleteRow(row.id)}
+        >
+          <span className="flex w-6 h-6 items-center justify-center shrink-0">
+            <Trash2 className="w-3 h-3" />
+          </span>
+          Delete row
+        </Button>
+      )}
     </div>
   );
 }
@@ -1286,205 +1460,6 @@ function ObservationAttachments({
           }}
           currentOperationId={operationId}
         />
-      )}
-    </div>
-  );
-}
-
-// ─── Certify Column ───────────────────────────────────────────────────────────
-
-function CertifyCell({
-  row,
-  canCertify,
-  onCertify,
-  onUncertify,
-  onUncertifyAll,
-  onDeleteRow,
-  rosterCins,
-}: {
-  row: SheetRow;
-  canCertify: boolean;
-  onCertify: (rowId: number, memberId: number) => void;
-  onUncertify: (rowId: number, memberId: number) => void;
-  onUncertifyAll: (rowId: number) => void;
-  onDeleteRow?: (rowId: number) => void;
-  rosterCins?: string[];
-}) {
-  const total = row.members.length;
-  const certified = row.certifications.filter(c => c.isActive).length;
-
-  if (total === 0) {
-    // Empty row — show delete button immediately so accidental rows can be removed
-    return (
-      <div className="flex flex-col items-center">
-        <span className="text-xs text-muted-foreground italic">No members</span>
-        {onDeleteRow && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs gap-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-1"
-            onClick={() => onDeleteRow(row.id)}
-          >
-            <Trash2 className="w-3 h-3" />
-            Delete row
-          </Button>
-        )}
-      </div>
-    );
-  }
-
-  // Height of each member sub-row — must match MemberCell's member row height
-  const ROW_H = "h-8";
-
-  // Mirrors MemberCell's "TEAM" pill collapse — same condition, so the two
-  // columns stay row-aligned. Certifications aren't touched by this at
-  // all; "Uncertify All" below still un-collapses it, same as ever.
-  const showTeamCollapse =
-    row.isLocked && isFullTeamMembers(row.members, rosterCins);
-
-  return (
-    <div className="flex flex-col items-center">
-      {/* One row per member — same fixed height as MemberCell member rows */}
-      {showTeamCollapse ? (
-        <div
-          className={`flex flex-col items-center justify-center ${ROW_H} w-full`}
-        >
-          <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
-        </div>
-      ) : (
-        row.members.map(m => {
-          const cert = row.certifications.find(
-            c => c.memberId === m.id && c.isActive
-          );
-          return (
-            <div
-              key={m.id}
-              className={`flex flex-col items-center justify-center ${ROW_H} w-full`}
-            >
-              {/* Shield: single certify/uncertify toggle — no cross, just the shield */}
-              {cert ? (
-                /* Certified: green shield + certifier CIN side by side */
-                <div className="flex items-center justify-center gap-1">
-                  {canCertify && !row.isLocked ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="w-6 h-6 shrink-0 text-emerald-500 hover:text-red-400 hover:bg-red-400/10"
-                          onClick={() => onUncertify(row.id, m.id)}
-                        >
-                          <ShieldCheck className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        Uncertify {m.memberName}
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-500" />
-                  )}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="text-xs font-mono font-medium text-emerald-500 cursor-default">
-                        {(cert as any).certifiedByCIN || cert.certifiedByName}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="text-xs">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-medium">
-                          Certified by{" "}
-                          {(cert as any).certifiedByCIN || cert.certifiedByName}
-                        </span>
-                        <span className="text-muted-foreground flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {format(
-                            new Date(cert.certifiedAt),
-                            "MMM d, yyyy HH:mm:ss"
-                          )}
-                        </span>
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-              ) : (
-                /* Uncertified: red shield centred, "Certify" label below */
-                <div className="flex flex-col items-center justify-center gap-0">
-                  {canCertify && !row.isLocked ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="w-6 h-6 shrink-0 text-red-500 hover:text-emerald-500 hover:bg-emerald-500/10"
-                          onClick={() => onCertify(row.id, m.id)}
-                        >
-                          <ShieldCheck className="w-4 h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        Certify {m.memberName}
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <ShieldCheck className="w-4 h-4 shrink-0 text-red-500" />
-                  )}
-                  <span className="text-[10px] leading-none text-red-500 font-medium">
-                    Certify
-                  </span>
-                </div>
-              )}
-            </div>
-          );
-        })
-      )}
-
-      {/* Summary — at the bottom */}
-      <div className="flex items-center justify-center gap-1.5 mt-1 w-full">
-        {row.isLocked ? (
-          <Badge
-            variant="outline"
-            className="gap-1 text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)] text-xs py-0 px-1.5"
-          >
-            <Lock className="w-2.5 h-2.5" />
-            Locked
-          </Badge>
-        ) : (
-          <span className="text-xs text-muted-foreground">
-            {certified}/{total} certified
-          </span>
-        )}
-      </div>
-
-      {/* Footer actions */}
-      {row.isLocked && canCertify && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs gap-1.5 text-muted-foreground hover:text-amber-400 hover:bg-amber-400/10 mt-1"
-              onClick={() => onUncertifyAll(row.id)}
-            >
-              <Unlock className="w-3 h-3" />
-              Uncertify All
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            Remove all certifications and unlock row
-          </TooltipContent>
-        </Tooltip>
-      )}
-      {!row.isLocked && onDeleteRow && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs gap-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-1"
-          onClick={() => onDeleteRow(row.id)}
-        >
-          <Trash2 className="w-3 h-3" />
-          Delete row
-        </Button>
       )}
     </div>
   );
@@ -2508,9 +2483,42 @@ export default function SheetDetail({
     }
   );
 
+  // Continuity chips (vehicle arriving/departing, walked in/out) — same
+  // sheet-scoped "pending" queries the RS Quick Entry map popup uses (see
+  // getPendingVehicleDepartures/Arrivals/WalkIns in server/db.ts). The
+  // popup additionally filters these to whichever address pin is open;
+  // the full sheet table has no such single-address context, so it shows
+  // every pending entry across the sheet instead — see the render block
+  // below for how each chip type's text is derived without it.
+  const { data: pendingDepartures } =
+    trpc.row.pendingVehicleDepartures.useQuery(
+      { sheetId },
+      {
+        enabled: isAuthenticated && !!sheetId && isOnline,
+        refetchInterval: isOnline ? 10000 : false,
+      }
+    );
+  const { data: pendingArrivals } = trpc.row.pendingVehicleArrivals.useQuery(
+    { sheetId },
+    {
+      enabled: isAuthenticated && !!sheetId && isOnline,
+      refetchInterval: isOnline ? 10000 : false,
+    }
+  );
+  const { data: pendingWalkIns } = trpc.row.pendingWalkIns.useQuery(
+    { sheetId },
+    {
+      enabled: isAuthenticated && !!sheetId && isOnline,
+      refetchInterval: isOnline ? 10000 : false,
+    }
+  );
+
   const invalidateRows = useCallback(() => {
     utils.row.list.invalidate({ sheetId });
     utils.row.entityChips.invalidate({ sheetId });
+    utils.row.pendingVehicleDepartures.invalidate({ sheetId });
+    utils.row.pendingVehicleArrivals.invalidate({ sheetId });
+    utils.row.pendingWalkIns.invalidate({ sheetId });
   }, [utils, sheetId]);
 
   // Cache sheet data to IndexedDB whenever we have fresh data online
@@ -2591,6 +2599,36 @@ export default function SheetDetail({
     onError: e => toast.error(e.message),
   });
 
+  // Session-scoped undo stack for this officer's own row edits (observation/time),
+  // laptop/iPad only. Only ever populated from edits made while online, against
+  // rows that were unlocked (not fully certified) at the time of the edit — undo
+  // itself re-checks isLocked before applying, since certification can land
+  // between the edit and the undo click. Cleared implicitly on page reload; not
+  // persisted, since it's a convenience for catching a mis-edit, not part of the
+  // record.
+  type UndoEntry = {
+    rowId: number;
+    previous: Omit<RowSaveInput, "id">;
+  };
+  const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
+  const pushUndoEntry = (input: RowSaveInput) => {
+    if (!isOnline) return;
+    const row = rows?.find(r => r.id === input.id);
+    if (!row || row.isLocked) return;
+    const previous: Omit<RowSaveInput, "id"> = {};
+    if (input.observation !== undefined)
+      previous.observation = row.observation ?? "";
+    if (input.time !== undefined) previous.time = row.time ?? "";
+    if (input.timeMinutes !== undefined)
+      previous.timeMinutes = row.timeMinutes ?? undefined;
+    if (input.dayOffset !== undefined)
+      previous.dayOffset = row.dayOffset ?? undefined;
+    if (input.rowDate !== undefined)
+      previous.rowDate = row.rowDate ?? undefined;
+    if (Object.keys(previous).length === 0) return;
+    setUndoStack(stack => [...stack.slice(-19), { rowId: input.id, previous }]);
+  };
+
   // Offline-aware wrappers — queue locally when offline, call server when online
   const addRow = useMemo(
     () => ({
@@ -2660,6 +2698,7 @@ export default function SheetDetail({
         rowDate?: string;
         observation?: string;
       }) => {
+        pushUndoEntry(input);
         if (isOnline) {
           _updateRowOnline.mutate(input);
         } else {
@@ -3692,6 +3731,27 @@ export default function SheetDetail({
       return next;
     });
 
+  // Step back through this officer's own recent edits (see the undo stack
+  // built up in pushUndoEntry, above). Re-checks isLocked here rather than
+  // trusting the state at capture time, since the row may have been
+  // certified in the meantime.
+  const handleUndo = () => {
+    const entry = undoStack[undoStack.length - 1];
+    if (!entry) return;
+    setUndoStack(stack => stack.slice(0, -1));
+    const row = rows?.find(r => r.id === entry.rowId);
+    if (!row) {
+      toast.error("Can't undo — that row no longer exists");
+      return;
+    }
+    if (row.isLocked) {
+      toast.error("Can't undo — that row has since been certified");
+      return;
+    }
+    updateRow.mutate({ id: entry.rowId, ...entry.previous });
+    toast.success("Last edit undone");
+  };
+
   // Edit sheet state
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [editSheetDate, setEditSheetDate] = useState("");
@@ -4096,6 +4156,57 @@ export default function SheetDetail({
 
   const isLoading = sheetLoading || rowsLoading;
 
+  // The CLOSED badge is the same in both spots — it's a status indicator,
+  // not an action button, so it doesn't need to match Close/Export's size.
+  const closedBadge = (
+    <Badge
+      variant="secondary"
+      className="gap-1.5 bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 shrink-0"
+    >
+      <LockKeyhole className="w-3 h-3" />
+      CLOSED
+    </Badge>
+  );
+
+  // Rendered next to the title on lg+ (single-row header) as a compact
+  // icon-only button — there's no Close/Export alongside it there to match.
+  const editOrClosedBadgeCompact = (
+    <>
+      {!isClosed && (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="w-7 h-7 shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={openEditSheet}
+          title="Edit sheet title"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </Button>
+      )}
+      {isClosed && closedBadge}
+    </>
+  );
+
+  // Rendered on mobile instead, grouped with Close/Export on the header's
+  // second row — sized to match those (size="sm" + label) rather than the
+  // compact icon button, so the three read as one evenly-matched row.
+  const editOrClosedBadgeFull = (
+    <>
+      {!isClosed && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-2"
+          onClick={openEditSheet}
+        >
+          <Pencil className="w-4 h-4" />
+          Edit
+        </Button>
+      )}
+      {isClosed && closedBadge}
+    </>
+  );
+
   const Chrome = embedded ? React.Fragment : DashboardLayout;
   return (
     <Chrome>
@@ -4107,8 +4218,31 @@ export default function SheetDetail({
             open until explicitly closed" behaviour. */}
         {!embedded && (
           <>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
-              <div className="flex items-center gap-4 min-w-0">
+            {/* lg+ (genuine laptop width): one row — back-arrow/title/
+                edit-or-badge on the left, Close/Export pushed right by
+                lg:ml-auto on the actions row. Below lg: two rows instead.
+                This used to switch at sm (640px), which a phone in
+                landscape clears easily (most run 700-930px) — landscape
+                phones were dropping into the "one row" layout meant for
+                real desktop width, and there wasn't room there for both
+                Close and Export next to the title, so the action buttons
+                wrapped onto their own line anyway, just awkwardly. lg
+                (1024px) reliably excludes phones in either orientation and
+                iPad portrait (768px), so they all get the deliberate
+                two-row treatment instead. Row 1 there is just back-arrow +
+                title — the title wraps instead of truncating below lg
+                (lg:truncate only kicks in at lg+, where the row has enough
+                width that one line is realistic) so the full title is
+                always readable, not cut off with "…". The edit-pencil/
+                CLOSED badge moves down to sit with Close/Export on row 2,
+                sized to match them there (editOrClosedBadgeFull) instead of
+                the compact icon button used next to the title on lg+, and
+                grouped with them (no gap-widening ml-auto between) so the
+                row reads as one evenly-matched set — left-aligned, under
+                the back-arrow/title above it, not floating off to the
+                right. */}
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3 lg:gap-4 mb-6">
+              <div className="flex items-center gap-4">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -4117,138 +4251,135 @@ export default function SheetDetail({
                 >
                   <ArrowLeft className="w-4 h-4" />
                 </Button>
-                <div className="min-w-0 flex items-center gap-2">
+                <div className="min-w-0 flex-1 flex items-center gap-2">
                   {sheetLoading ? (
                     <Skeleton className="h-7 w-64" />
                   ) : (
                     <>
                       <div className="min-w-0">
-                        <h1 className="text-xl font-semibold text-foreground truncate">
+                        <h1 className="text-base lg:text-xl font-semibold text-foreground lg:truncate">
                           {sheet?.title}
                         </h1>
                       </div>
                       {sheet && (
-                        <>
-                          {!isClosed && (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="w-7 h-7 shrink-0 text-muted-foreground hover:text-foreground"
-                              onClick={openEditSheet}
-                              title="Edit sheet title"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                          )}
-                          {isClosed && (
-                            <Badge
-                              variant="secondary"
-                              className="gap-1.5 bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300 shrink-0"
-                            >
-                              <LockKeyhole className="w-3 h-3" />
-                              CLOSED
-                            </Badge>
-                          )}
-                        </>
+                        <div className="hidden lg:flex items-center gap-2">
+                          {editOrClosedBadgeCompact}
+                        </div>
                       )}
                     </>
                   )}
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:shrink-0">
-                {/* Offline indicator */}
-                {!isOnline && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-xs font-medium">
-                        {syncStatus === "syncing" ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <WifiOff className="w-3.5 h-3.5" />
-                        )}
-                        {hasPendingOfflineChanges
-                          ? "Offline — changes queued"
-                          : "Offline"}
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      No internet connection. Changes are saved locally and will
-                      sync automatically when you reconnect.
-                    </TooltipContent>
-                  </Tooltip>
+              <div className="flex items-center gap-2 flex-wrap lg:ml-auto">
+                {sheet && !sheetLoading && (
+                  <div className="flex lg:hidden items-center gap-2">
+                    {editOrClosedBadgeFull}
+                  </div>
                 )}
-                {/* Close / Reopen button */}
-                {canManageClose &&
-                  (isClosed ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Offline indicator */}
+                  {!isOnline && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="flex-1 sm:flex-none min-w-[9.5rem] justify-center gap-2 border-amber-400 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
-                          onClick={() => reopenSheet.mutate({ id: sheetId })}
-                          disabled={reopenSheet.isPending}
-                        >
-                          <LockKeyholeOpen className="w-4 h-4" />
-                          Reopen
-                        </Button>
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 text-xs font-medium">
+                          {syncStatus === "syncing" ? (
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <WifiOff className="w-3.5 h-3.5" />
+                          )}
+                          {hasPendingOfflineChanges
+                            ? "Offline — changes queued"
+                            : "Offline"}
+                        </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        Reopen this running sheet for editing
+                        No internet connection. Changes are saved locally and
+                        will sync automatically when you reconnect.
                       </TooltipContent>
                     </Tooltip>
-                  ) : (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className={`flex-1 sm:flex-none min-w-[9.5rem] justify-center gap-2 ${
-                            canCloseSheet
-                              ? "border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950"
-                              : "opacity-40 cursor-not-allowed"
-                          }`}
-                          onClick={() =>
-                            canCloseSheet && closeSheet.mutate({ id: sheetId })
-                          }
-                          disabled={!canCloseSheet || closeSheet.isPending}
-                        >
-                          <LockKeyhole className="w-4 h-4" />
-                          Close Sheet
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {canCloseSheet
-                          ? "Close and lock this running sheet"
-                          : !canCloseByRole
-                            ? "Only the Team Leader or Admin can close this sheet"
-                            : !allRowsCertified
-                              ? "All rows must be certified before closing"
-                              : !govComplete
-                                ? "Governance must be 100% complete before closing"
-                                : "Close sheet"}
-                      </TooltipContent>
-                    </Tooltip>
-                  ))}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex-1 sm:flex-none min-w-[9.5rem] justify-center gap-2"
-                  onClick={() => setShowCheckSheetDialog(true)}
-                >
-                  <ClipboardCheck className="w-4 h-4" />
-                  Check Sheet
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex-1 sm:flex-none min-w-[9.5rem] justify-center gap-2"
-                  disabled={exportFetching}
-                  onClick={handleExport}
-                >
-                  <Download className="w-4 h-4" />
-                  {exportFetching ? "Preparing..." : "Export PDF"}
-                </Button>
+                  )}
+                  {/* Close / Reopen button */}
+                  {canManageClose &&
+                    (isClosed ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-2 border-amber-400 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
+                            onClick={() => reopenSheet.mutate({ id: sheetId })}
+                            disabled={reopenSheet.isPending}
+                          >
+                            <LockKeyholeOpen className="w-4 h-4" />
+                            Reopen
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Reopen this running sheet for editing
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className={`gap-2 ${
+                              canCloseSheet
+                                ? "border-emerald-500 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950"
+                                : "opacity-40 cursor-not-allowed"
+                            }`}
+                            onClick={() =>
+                              canCloseSheet &&
+                              closeSheet.mutate({ id: sheetId })
+                            }
+                            disabled={!canCloseSheet || closeSheet.isPending}
+                          >
+                            <LockKeyhole className="w-4 h-4" />
+                            Close
+                            <span className="hidden lg:inline"> Sheet</span>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {canCloseSheet
+                            ? "Close and lock this running sheet"
+                            : !canCloseByRole
+                              ? "Only the Team Leader or Admin can close this sheet"
+                              : !allRowsCertified
+                                ? "All rows must be certified before closing"
+                                : !govComplete
+                                  ? "Governance must be 100% complete before closing"
+                                  : "Close sheet"}
+                        </TooltipContent>
+                      </Tooltip>
+                    ))}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => setShowCheckSheetDialog(true)}
+                  >
+                    <ClipboardCheck className="w-4 h-4" />
+                    Check
+                    <span className="hidden lg:inline"> Sheet</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-2"
+                    disabled={exportFetching}
+                    onClick={handleExport}
+                  >
+                    <Download className="w-4 h-4" />
+                    {exportFetching ? (
+                      "Preparing..."
+                    ) : (
+                      <>
+                        Export<span className="hidden lg:inline"> PDF</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -4485,6 +4616,113 @@ export default function SheetDetail({
               : [];
             const hasAnyField = fields.some(f => f.value);
             const hasEntityChips = !!(entityChips && entityChips.length > 0);
+            // Continuity chips — same underlying "pending" data as the RS
+            // Quick Entry map popup's continuity chips (see the queries
+            // above), adapted for a surface with no single selected address:
+            // "Vehicle departing" and "Walked in" both use a pending
+            // arrival's own already-known address, so they need no
+            // placeholder; "Vehicle arriving" has no way to know a
+            // not-yet-observed destination, so it uses a literal
+            // "[location]" placeholder to type over — the same pattern the
+            // popup already uses for "[route]", which is equally unknowable
+            // in advance.
+            const vehicleArrivingChips = (pendingDepartures ?? []).map(d => ({
+              key: `arr-${d.rego}`,
+              rego: d.rego,
+              text: `Vehicle ${d.rego}, ${shortenAlreadyMentionedNames(d.occupantDesc, usedBracketCodes)}, arrived at [location]`,
+            }));
+            const vehicleDepartingChips = (pendingArrivals ?? []).map(a => ({
+              key: `dep-${a.rego}`,
+              rego: a.rego,
+              text: `Vehicle ${a.rego}, ${shortenAlreadyMentionedNames(a.occupantDesc, usedBracketCodes)}, departed ${a.address} and continued via:`,
+            }));
+            const walkedInChips = (pendingArrivals ?? []).map(a => ({
+              key: `wi-${a.rego}`,
+              rego: a.rego,
+              text: `${shortenAlreadyMentionedNames(extractOccupantNames(a.occupantDesc), usedBracketCodes)} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
+            }));
+            const walkedOutChips = (pendingWalkIns ?? []).flatMap(w => {
+              const arrivalsHere = (pendingArrivals ?? []).filter(
+                a =>
+                  a.address.trim().toLowerCase() ===
+                  w.location.trim().toLowerCase()
+              );
+              const names = shortenAlreadyMentionedNames(
+                w.names,
+                usedBracketCodes
+              );
+              // w.route is only ever genuine route/path text (e.g. "across
+              // the road") — never the destination, which would duplicate
+              // the address already stated via w.location. It's empty
+              // whenever the walk-in had no separate route content at all.
+              return arrivalsHere.map(a => ({
+                key: `wo-${w.location}-${a.rego}`,
+                rego: a.rego,
+                text: w.route
+                  ? `${names} exited ${w.location} and walked ${w.route} towards Vehicle ${a.rego}.`
+                  : `${names} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
+              }));
+            });
+            const hasContinuityChips =
+              vehicleArrivingChips.length > 0 ||
+              vehicleDepartingChips.length > 0 ||
+              walkedInChips.length > 0 ||
+              walkedOutChips.length > 0;
+            const insertAtFocused = (text: string) => {
+              const el = focusedTextareaRef.current;
+              if (!el) return;
+              el.focus();
+              const start = el.selectionStart ?? el.value.length;
+              const end = el.selectionEnd ?? el.value.length;
+              const before = el.value.slice(0, start);
+              const after = el.value.slice(end);
+              const insert =
+                before && !before.endsWith(" ") ? ` ${text}` : text;
+              try {
+                document.execCommand("insertText", false, insert);
+              } catch {
+                const nativeInputValueSetter =
+                  Object.getOwnPropertyDescriptor(
+                    window.HTMLTextAreaElement.prototype,
+                    "value"
+                  )?.set ||
+                  Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype,
+                    "value"
+                  )?.set;
+                if (nativeInputValueSetter) {
+                  nativeInputValueSetter.call(el, before + insert + after);
+                  el.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+              }
+            };
+            const ContinuityChipGroup = ({
+              label,
+              chips,
+            }: {
+              label: string;
+              chips: { key: string; rego: string; text: string }[];
+            }) =>
+              chips.length === 0 ? null : (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[9px] font-bold uppercase tracking-wide text-pink-500/70 shrink-0">
+                    {label}
+                  </span>
+                  {chips.map(chip => (
+                    <button
+                      key={chip.key}
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => insertAtFocused(chip.text)}
+                      title={chip.text}
+                      className="inline-flex items-center px-2 py-0.5 rounded border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none cursor-pointer"
+                    >
+                      <span className="text-[10px] font-mono font-bold">
+                        {chip.rego}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              );
             return (
               <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
                 {/* Header — always visible. Tapping the main area toggles collapse; pencil navigates to edit */}
@@ -4729,14 +4967,38 @@ export default function SheetDetail({
                                   onMouseDown={e => e.preventDefault()}
                                   onClick={insertIntoFocused}
                                   title={`Insert: ${chip.insertValue}`}
-                                  className="px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
+                                  className="inline-flex items-center px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
                                 >
-                                  <span className="text-[10px] font-mono max-w-[140px] truncate">
+                                  <span className="text-[10px] font-mono font-bold max-w-[140px] truncate">
                                     {chip.insertValue}
                                   </span>
                                 </button>
                               );
                             })}
+                          </div>
+                        )}
+                        {/* Continuity chips — vehicle arriving/departing,
+                        walked in/out. See ContinuityChipGroup/the chip
+                        arrays above for how these mirror the RS Quick Entry
+                        map popup's own continuity chips. */}
+                        {hasContinuityChips && (
+                          <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-2">
+                            <ContinuityChipGroup
+                              label="Vehicle arriving"
+                              chips={vehicleArrivingChips}
+                            />
+                            <ContinuityChipGroup
+                              label="Vehicle departing"
+                              chips={vehicleDepartingChips}
+                            />
+                            <ContinuityChipGroup
+                              label="Walked in"
+                              chips={walkedInChips}
+                            />
+                            <ContinuityChipGroup
+                              label="Walked out"
+                              chips={walkedOutChips}
+                            />
                           </div>
                         )}
                       </div>
@@ -4758,7 +5020,7 @@ export default function SheetDetail({
               disabled={addRow.isPending}
             >
               <Plus className="w-4 h-4" />
-              Add Row
+              Add<span className="hidden sm:inline"> Row</span>
             </Button>
           )}
           <Tooltip>
@@ -4778,6 +5040,22 @@ export default function SheetDetail({
                 : "Showing oldest first — click to show newest first"}
             </TooltipContent>
           </Tooltip>
+          {/* Undo last edit — laptop/iPad only, hidden on mobile */}
+          {canEdit && undoStack.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0 hidden sm:inline-flex"
+                  onClick={handleUndo}
+                >
+                  <Undo2 className="w-4 h-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Undo last edit</TooltipContent>
+            </Tooltip>
+          )}
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             <input
@@ -4819,15 +5097,14 @@ export default function SheetDetail({
                   <tr className="bg-muted/30">
                     <th className="w-32">Time</th>
                     <th>Observation</th>
-                    <th className="w-36">CIN</th>
-                    <th className="w-24 text-center">Certify</th>
+                    <th className="w-28">CIN</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRows.length === 0 && searchQuery ? (
                     <tr>
                       <td
-                        colSpan={4}
+                        colSpan={3}
                         className="py-12 text-center text-sm text-muted-foreground italic"
                       >
                         No rows match your search.
@@ -4899,7 +5176,7 @@ export default function SheetDetail({
                                   key={`divider-${row.id}`}
                                   className="date-divider-row"
                                 >
-                                  <td colSpan={4} className="py-1.5 px-4">
+                                  <td colSpan={3} className="py-1.5 px-4">
                                     <div className="flex items-center gap-3">
                                       <div className="flex-1 h-px bg-border" />
                                       <span className="text-[10px] font-semibold tracking-widest text-muted-foreground whitespace-nowrap">
@@ -5282,11 +5559,12 @@ export default function SheetDetail({
                               />
                             </td>
 
-                            {/* Member / CIN */}
+                            {/* CIN / Certify */}
                             <td>
-                              <MemberCell
+                              <CinCertifyCell
                                 row={row}
                                 canEdit={canEdit}
+                                canCertify={canCertify}
                                 onAddMember={(rowId, name) =>
                                   addMember.mutate({ rowId, memberName: name })
                                 }
@@ -5307,19 +5585,6 @@ export default function SheetDetail({
                                     removeMember.mutate({ id, rowId });
                                   }
                                 }}
-                                onReorderMembers={(rowId, orderedIds) =>
-                                  reorderMember.mutate({ rowId, orderedIds })
-                                }
-                                onManualReorder={markManualReorder}
-                                rosterCins={rosterCinList}
-                              />
-                            </td>
-
-                            {/* Certify */}
-                            <td>
-                              <CertifyCell
-                                row={row}
-                                canCertify={canCertify}
                                 onCertify={(rowId, memberId) =>
                                   certify.mutate({ rowId, memberId })
                                 }

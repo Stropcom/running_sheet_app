@@ -54,6 +54,7 @@ import {
   Mail,
   Phone,
   Link2,
+  Check,
 } from "lucide-react";
 import {
   EMPTY_ADDRESS_PARTS,
@@ -63,6 +64,7 @@ import {
   type ExtraVehicle,
 } from "@/components/TargetStructuredFields";
 import type { StagedAssociate } from "@/components/AddTargetDialog";
+import { reflowNarrativeText } from "@/lib/textFormat";
 import {
   composeAddress,
   composeVehicle,
@@ -71,6 +73,19 @@ import {
   type StructuredVehicleParts,
 } from "@/lib/addressFormat";
 
+// A photo extracted from the source document that the officer chose to
+// keep on this review screen — staged the same way associates are (see
+// StagedAssociate), actually saved (uploaded to the target's Images folder
+// + run through on-device face recognition, see saveStagedImages in
+// AddTargetDialog.tsx) once the target itself is saved.
+export interface StagedImage {
+  key: string;
+  dataBase64: string;
+  mimeType: string;
+  width: number;
+  height: number;
+}
+
 export interface DocumentImportPrefill {
   identity: StructuredNameParts;
   address: typeof EMPTY_ADDRESS_PARTS;
@@ -78,6 +93,7 @@ export interface DocumentImportPrefill {
   extraAddresses: ExtraAddress[];
   extraVehicles: ExtraVehicle[];
   associates: StagedAssociate[];
+  images: StagedImage[];
   /** The document's free-text narrative, verbatim — carried through to
    * AddTargetDialog as the new target's "{Operation name} background". */
   background: string;
@@ -105,6 +121,36 @@ interface AssociateCandidate {
 }
 
 type AssociateChoice = "create" | "update" | "skip";
+
+// Colours the choice about to be taken for one associate candidate — reuses
+// the exact green/amber/red meaning the Imported Documents diff cards
+// already use for added/changed/removed, so the same colour means the same
+// outcome everywhere in the app: create (new) = emerald, update (changing
+// an existing record) = amber, skip (nothing happens) = rose. Driven by the
+// live choice, not just the match type, so it updates as the officer
+// changes the dropdown.
+const ASSOCIATE_CHOICE_CLASSES: Record<
+  AssociateChoice,
+  { badge: string; select: string }
+> = {
+  create: {
+    badge:
+      "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    select:
+      "border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300",
+  },
+  update: {
+    badge:
+      "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+    select:
+      "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300",
+  },
+  skip: {
+    badge: "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400",
+    select:
+      "border-rose-500/40 bg-rose-500/10 text-rose-800 dark:text-rose-300",
+  },
+};
 
 const CANDIDATE_ICONS = {
   person: User,
@@ -150,6 +196,9 @@ export function ImportTargetDocumentDialog({
   const [associateChoices, setAssociateChoices] = useState<
     Record<string, AssociateChoice>
   >({});
+  // Keyed by image key, kept-by-default (absent === kept) so a fresh parse
+  // needs no separate init effect the way associateChoices does.
+  const [imageChoices, setImageChoices] = useState<Record<string, boolean>>({});
 
   const result = parseMut.data;
 
@@ -241,6 +290,20 @@ export function ImportTargetDocumentDialog({
       }));
   }, [result]);
 
+  // Every extracted photo the parser found, with a stable key for the
+  // keep/discard toggle and the eventual save — same one-memo-per-result
+  // pattern as associateCandidates above.
+  const imageCandidates: StagedImage[] = useMemo(() => {
+    if (!result) return [];
+    return result.images.map(img => ({
+      key: makeExtraId(),
+      dataBase64: img.dataBase64,
+      mimeType: img.mimeType,
+      width: img.width,
+      height: img.height,
+    }));
+  }, [result]);
+
   const reset = () => {
     setFileName("");
     setError("");
@@ -248,6 +311,7 @@ export function ImportTargetDocumentDialog({
     setPrimaryMatch(null);
     setAssociateMatches({});
     setAssociateChoices({});
+    setImageChoices({});
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -381,6 +445,21 @@ export function ImportTargetDocumentDialog({
             });
           })
         );
+        // Nothing downstream (Target/Operation profile's associate list,
+        // the Intelligence folder's entity map) was refetching this on its
+        // own — an update here landed in the database fine but stayed
+        // invisible on an already-open profile page until a manual reload,
+        // which read as "recognised the name but didn't actually update
+        // it." Invalidate every cache the new address/vehicle could appear
+        // in, even if some of the updates above failed — whichever ones
+        // succeeded should still show up immediately.
+        await Promise.all([
+          utils.associate.listForTarget.invalidate(),
+          utils.associate.getById.invalidate(),
+          utils.intelligence.targetProfile.invalidate(),
+          utils.intelligence.operationProfile.invalidate(),
+        ]);
+
         const failed = results.filter(r => r.status === "rejected").length;
         if (failed > 0) {
           toast.error(
@@ -509,6 +588,7 @@ export function ImportTargetDocumentDialog({
           ...unparsedExtraVehicles,
         ],
         associates,
+        images: imageCandidates.filter(img => imageChoices[img.key] ?? true),
         background: result.freeText.trim(),
         sourceFileName: fileName,
       });
@@ -524,7 +604,7 @@ export function ImportTargetDocumentDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-primary" />
-            Import from Document
+            Import Target
           </DialogTitle>
         </DialogHeader>
 
@@ -590,8 +670,8 @@ export function ImportTargetDocumentDialog({
               )}
 
               {primaryMatch && (
-                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 flex flex-col gap-1">
-                  <p className="text-xs font-bold text-amber-600 uppercase tracking-wide flex items-center gap-1.5">
+                <div className="rounded-lg border border-l-4 border-amber-500/40 border-l-amber-500 bg-amber-500/5 p-3 flex flex-col gap-1">
+                  <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
                     <Link2 className="w-3.5 h-3.5" />
                     Matches an existing {primaryMatch.type}
                   </p>
@@ -609,8 +689,8 @@ export function ImportTargetDocumentDialog({
                 </div>
               )}
 
-              <div className="rounded-lg border border-border/60 bg-muted/10 p-3 flex flex-col gap-1">
-                <p className="text-xs font-bold text-primary uppercase tracking-wide">
+              <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3 flex flex-col gap-1">
+                <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide">
                   Name
                 </p>
                 {result.name ? (
@@ -631,8 +711,8 @@ export function ImportTargetDocumentDialog({
               </div>
 
               {result.addresses.length > 0 && (
-                <div className="rounded-lg border border-border/60 bg-muted/10 p-3 flex flex-col gap-1">
-                  <p className="text-xs font-bold text-primary uppercase tracking-wide">
+                <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3 flex flex-col gap-1">
+                  <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">
                     Addresses ({result.addresses.length})
                   </p>
                   {result.addresses.map((a, i) => {
@@ -677,8 +757,8 @@ export function ImportTargetDocumentDialog({
               )}
 
               {result.vehicles.length > 0 && (
-                <div className="rounded-lg border border-border/60 bg-muted/10 p-3 flex flex-col gap-1">
-                  <p className="text-xs font-bold text-primary uppercase tracking-wide">
+                <div className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3 flex flex-col gap-1">
+                  <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide">
                     Vehicles ({result.vehicles.length})
                   </p>
                   {result.vehicles.map((v, i) => {
@@ -711,9 +791,60 @@ export function ImportTargetDocumentDialog({
                 </div>
               )}
 
+              {imageCandidates.length > 0 && (
+                <div className="rounded-lg border border-l-4 border-indigo-500/30 border-l-indigo-500 bg-indigo-500/5 p-3 flex flex-col gap-2">
+                  <p className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wide">
+                    Photos found ({imageCandidates.length})
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Each kept photo is uploaded to this target's Images folder
+                    and run through face recognition once you save — tap to
+                    untick any that aren't a photo of this person.
+                  </p>
+                  <div className="flex flex-wrap gap-2.5">
+                    {imageCandidates.map(img => {
+                      const kept = imageChoices[img.key] ?? true;
+                      return (
+                        <button
+                          key={img.key}
+                          type="button"
+                          onClick={() =>
+                            setImageChoices(prev => ({
+                              ...prev,
+                              [img.key]: !kept,
+                            }))
+                          }
+                          title={
+                            kept
+                              ? "Tap to discard this photo"
+                              : "Tap to keep this photo"
+                          }
+                          className={`relative rounded-md overflow-hidden border-2 transition-colors ${
+                            kept
+                              ? "border-indigo-500"
+                              : "border-border opacity-40 grayscale"
+                          }`}
+                        >
+                          <img
+                            src={`data:${img.mimeType};base64,${img.dataBase64}`}
+                            alt="Extracted from document"
+                            className="w-20 h-20 object-cover block"
+                          />
+                          {kept && (
+                            <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-indigo-500 text-white flex items-center justify-center">
+                              <Check className="h-2.5 w-2.5" />
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {result.needsReview.length > 0 && (
-                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 flex flex-col gap-2">
-                  <p className="text-xs font-bold text-amber-600 uppercase tracking-wide flex items-center gap-1.5">
+                <div className="rounded-lg border border-l-4 border-amber-500/40 border-l-amber-500 bg-amber-500/5 p-3 flex flex-col gap-2">
+                  <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
                     <AlertTriangle className="w-3.5 h-3.5" />
                     Needs your review ({result.needsReview.length})
                   </p>
@@ -760,17 +891,18 @@ export function ImportTargetDocumentDialog({
               )}
 
               {associateCandidates.length > 0 && (
-                <div className="rounded-lg border border-border/60 bg-muted/10 p-3 flex flex-col gap-3">
-                  <p className="text-xs font-bold text-primary uppercase tracking-wide">
+                <div className="rounded-lg border border-l-4 border-violet-500/30 border-l-violet-500 bg-violet-500/5 p-3 flex flex-col gap-2.5">
+                  <p className="text-xs font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide">
                     Associates found ({associateCandidates.length})
                   </p>
                   {associateCandidates.map(a => {
                     const match = associateMatches[a.key];
                     const choice = associateChoices[a.key] ?? "create";
+                    const colours = ASSOCIATE_CHOICE_CLASSES[choice];
                     return (
                       <div
                         key={a.key}
-                        className="flex flex-col gap-1 pb-2 border-b border-border/40 last:border-b-0 last:pb-0"
+                        className="rounded-md bg-background/70 border border-border/60 p-2.5 flex flex-col gap-1"
                       >
                         <span className="text-sm font-medium">
                           {a.firstNames} {a.surname}
@@ -795,11 +927,11 @@ export function ImportTargetDocumentDialog({
                             {a.vehicle.model}
                           </span>
                         )}
-                        {match && (
+                        {match ? (
                           <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <Badge
                               variant="outline"
-                              className="gap-1 font-normal text-[10px]"
+                              className={`gap-1 font-normal text-[10px] ${colours.badge}`}
                             >
                               <Link2 className="w-3 h-3" />
                               Matches existing {match.type}: {match.name}
@@ -813,7 +945,9 @@ export function ImportTargetDocumentDialog({
                                 }))
                               }
                             >
-                              <SelectTrigger className="h-7 w-auto text-xs gap-1.5">
+                              <SelectTrigger
+                                className={`h-7 w-auto text-xs gap-1.5 font-semibold border ${colours.select}`}
+                              >
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -831,6 +965,13 @@ export function ImportTargetDocumentDialog({
                               </SelectContent>
                             </Select>
                           </div>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className={`gap-1 font-normal text-[10px] mt-1 w-fit ${ASSOCIATE_CHOICE_CLASSES.create.badge}`}
+                          >
+                            New — no match found
+                          </Badge>
                         )}
                       </div>
                     );
@@ -838,38 +979,31 @@ export function ImportTargetDocumentDialog({
                 </div>
               )}
 
-              {(result.freeText.trim() ||
-                result.unmappedFields.length > 0 ||
-                result.candidateEntities.some(c => c.type !== "person")) && (
-                <div className="rounded-lg border border-border/60 bg-muted/10 p-3 flex flex-col gap-3">
-                  <p className="text-xs font-bold text-primary uppercase tracking-wide">
-                    Other details in this document
+              {result.freeText.trim() && (
+                <div className="rounded-lg border border-l-4 border-slate-400/40 border-l-slate-400 bg-slate-500/5 p-3 flex flex-col gap-1">
+                  <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                    Narrative / Background
                   </p>
+                  <p className="text-sm whitespace-pre-wrap">
+                    {reflowNarrativeText(result.freeText.trim())}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground italic">
+                    Saved verbatim as this target's background against whichever
+                    operation you pick or create on the next screen.
+                  </p>
+                </div>
+              )}
 
-                  {result.freeText.trim() && (
-                    <div className="flex flex-col gap-1">
-                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                        Narrative / Background
-                      </p>
-                      <p className="text-sm whitespace-pre-wrap">
-                        {result.freeText.trim()}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground italic">
-                        Saved verbatim as this target's background against
-                        whichever operation you pick or create on the next
-                        screen.
-                      </p>
-                    </div>
-                  )}
-
+              {(result.unmappedFields.length > 0 ||
+                result.candidateEntities.some(c => c.type !== "person")) && (
+                <div className="rounded-lg border border-dashed border-border p-3 flex flex-col gap-3">
                   {result.unmappedFields.length > 0 && (
                     <div className="flex flex-col gap-1">
                       <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                        Other fields
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        Not part of the Target Registry schema — shown for your
-                        awareness, not saved.
+                        Other fields{" "}
+                        <span className="font-normal normal-case">
+                          — not part of the Target Registry schema, not saved
+                        </span>
                       </p>
                       {result.unmappedFields.map((f, i) => (
                         <p key={i} className="text-sm">
@@ -885,11 +1019,10 @@ export function ImportTargetDocumentDialog({
                   {result.candidateEntities.some(c => c.type !== "person") && (
                     <div className="flex flex-col gap-1.5">
                       <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                        Other mentions
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        Detected in the free-text narrative — for your awareness
-                        only, not saved.
+                        Other mentions{" "}
+                        <span className="font-normal normal-case">
+                          — detected in the free-text narrative, not saved
+                        </span>
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {result.candidateEntities
@@ -916,6 +1049,37 @@ export function ImportTargetDocumentDialog({
                   )}
                 </div>
               )}
+
+              {/* Same colour meanings used throughout the app: field-type
+                  colours match the Add Target form's own boxes, and the
+                  associate action colours match the Imported Documents
+                  diff cards' added/changed/removed. */}
+              <div className="rounded-lg border border-border/60 p-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-sky-500 shrink-0" />
+                  Identity
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 shrink-0" />
+                  Address / new associate
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-amber-500 shrink-0" />
+                  Vehicle / will update
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-violet-500 shrink-0" />
+                  Associates section
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-indigo-500 shrink-0" />
+                  Photos section
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 shrink-0" />
+                  Will skip
+                </span>
+              </div>
             </div>
           )}
         </div>

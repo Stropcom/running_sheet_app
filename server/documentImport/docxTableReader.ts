@@ -9,6 +9,8 @@
 // DocumentReadResult shape for targetProfileFieldMap.ts to consume).
 import JSZip from "jszip";
 import { XMLParser } from "fast-xml-parser";
+import sharp from "sharp";
+import type { ExtractedDocumentImage } from "./documentReadResult";
 
 export interface DocxTable {
   /** Each row is a list of cell texts, in the order the cells actually
@@ -23,6 +25,46 @@ export interface DocxReadResult {
   tables: DocxTable[];
   /** Paragraph text outside any table, in document order. */
   paragraphs: string[];
+  images: ExtractedDocumentImage[];
+}
+
+// Below this, in either dimension, an embedded image is treated as
+// decorative (a letterhead logo, a divider rule, a bullet icon) rather than
+// a genuine subject photo worth running through face recognition.
+const MIN_IMAGE_DIMENSION = 120;
+
+/** Pulls every embedded picture out of a .docx's word/media/ part — these
+ * are literal separate files inside the zip (unlike a PDF, which has no
+ * equivalent and needs its own page-content-stream walk — see
+ * pdfTextReader.ts). Re-encodes each to PNG via sharp so the caller doesn't
+ * need to care whether the source was a .png/.jpeg/.bmp/etc, and drops
+ * anything sharp can't decode (e.g. a .wmf/.emf vector drawing) or that's
+ * too small to be a real subject photo. Best-effort: one bad image is
+ * skipped, not fatal to the whole read. */
+async function extractDocxImages(
+  zip: JSZip
+): Promise<ExtractedDocumentImage[]> {
+  const images: ExtractedDocumentImage[] = [];
+  for (const file of zip.file(/^word\/media\//)) {
+    try {
+      const raw = await file.async("nodebuffer");
+      const decoded = sharp(raw);
+      const meta = await decoded.metadata();
+      if (!meta.width || !meta.height) continue;
+      if (meta.width < MIN_IMAGE_DIMENSION || meta.height < MIN_IMAGE_DIMENSION)
+        continue;
+      const png = await decoded.png().toBuffer();
+      images.push({
+        dataBase64: png.toString("base64"),
+        mimeType: "image/png",
+        width: meta.width,
+        height: meta.height,
+      });
+    } catch {
+      // Not a decodable raster image — skip it rather than failing the read.
+    }
+  }
+  return images;
 }
 
 type XmlNode = Record<string, unknown>;
@@ -103,15 +145,16 @@ function cleanText(s: string): string {
 export async function readDocxTables(buffer: Buffer): Promise<DocxReadResult> {
   try {
     const zip = await JSZip.loadAsync(buffer);
+    const images = await extractDocxImages(zip);
     const docXmlFile = zip.file("word/document.xml");
-    if (!docXmlFile) return { tables: [], paragraphs: [] };
+    if (!docXmlFile) return { tables: [], paragraphs: [], images };
     const xml = await docXmlFile.async("text");
     const tree = parser.parse(xml) as unknown[];
 
     const documentNode = findAll(tree, "w:document")[0];
-    if (!documentNode) return { tables: [], paragraphs: [] };
+    if (!documentNode) return { tables: [], paragraphs: [], images };
     const bodyNode = findAll(documentNode["w:document"], "w:body")[0];
-    if (!bodyNode) return { tables: [], paragraphs: [] };
+    if (!bodyNode) return { tables: [], paragraphs: [], images };
     const body = bodyNode["w:body"];
 
     const tables: DocxTable[] = findAll(body, "w:tbl").map(tblNode => {
@@ -133,8 +176,8 @@ export async function readDocxTables(buffer: Buffer): Promise<DocxReadResult> {
       .map(p => cleanText(collectText(p["w:p"])))
       .filter(text => text.length > 0);
 
-    return { tables, paragraphs };
+    return { tables, paragraphs, images };
   } catch {
-    return { tables: [], paragraphs: [] };
+    return { tables: [], paragraphs: [], images: [] };
   }
 }

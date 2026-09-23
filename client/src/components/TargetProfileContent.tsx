@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -12,7 +11,6 @@ import {
   Users,
   AlertTriangle,
   Link2,
-  ChevronDown,
 } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
@@ -27,7 +25,10 @@ import {
   type IntelAssocEntity,
 } from "@/components/IntelEntityChip";
 import { IndicesBadge } from "@/components/IndicesBadge";
-import type { DocumentImportPrefill } from "@/components/ImportTargetDocumentDialog";
+import {
+  ImportedDocumentCard,
+  type DocumentImportRow,
+} from "@/components/ImportedDocumentCard";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
@@ -392,18 +393,9 @@ function useTargetProfile(targetId: number) {
 export function TargetProfileContent({ targetId }: { targetId: number }) {
   const [, navigate] = useLocation();
   const { data: profile, isLoading, error } = useTargetProfile(targetId);
-  const [expandedBackgrounds, setExpandedBackgrounds] = useState<
-    Record<number, boolean>
-  >({});
-  const [expandedBackgroundHistory, setExpandedBackgroundHistory] = useState<
-    Record<number, boolean>
-  >({});
-  // Every document import for this target, across all its operations — one
-  // query backs every operation's background panel below rather than one
-  // query per operation (which would violate the rules of hooks inside the
-  // .map() that renders them). Only the previous entries (all but the
-  // latest, which operationTargetLinks.background already shows above) are
-  // used, so this is purely "N earlier versions" history.
+  // Every document import for this target, across all its operations —
+  // grouped by operation and rendered as versioned cards below, mirroring
+  // the Operation profile's own "Imported Documents" panel.
   const { data: documentImports } =
     trpc.target.registry.documentImportsForTarget.useQuery(
       { targetId },
@@ -598,107 +590,45 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
             </div>
           </div>
 
-          {/* Operation background(s) — the document's free-text narrative,
-              verbatim, from when this target was created via document
-              import for that operation. Read-only, collapsed by default;
-              only rendered per operation that actually has one. */}
+          {/* Imported Documents — every document uploaded for this target,
+              grouped by operation, each version clearly numbered with
+              "Current" marked — mirrors the Operation profile's own
+              "Imported Documents" panel instead of folding older versions
+              into a single free-text background block. */}
           {profile.operations
-            .filter(op => op.background?.trim())
+            .filter(op =>
+              (documentImports ?? []).some(
+                (i: DocumentImportRow) => i.operationId === op.id
+              )
+            )
             .map(op => {
-              const expanded = expandedBackgrounds[op.id] ?? false;
-              const historyOpen = expandedBackgroundHistory[op.id] ?? false;
-              // All imports recorded for this (target, operation) — the last
-              // one is what operationTargetLinks.background already shows
-              // above (it's kept in sync on every import), so only the
-              // earlier ones are "history" here.
               const versionsForOp = (documentImports ?? []).filter(
-                (i: any) => i.operationId === op.id
+                (i: DocumentImportRow) => i.operationId === op.id
               );
-              const earlierVersions = versionsForOp.slice(0, -1);
               return (
                 <div
-                  key={`background-${op.id}`}
+                  key={`imports-${op.id}`}
                   className="rounded-xl border border-border/60 bg-card p-4 mb-4"
                 >
-                  <button
-                    onClick={() =>
-                      setExpandedBackgrounds(prev => ({
-                        ...prev,
-                        [op.id]: !expanded,
-                      }))
-                    }
-                    className="w-full flex items-center justify-between gap-2 text-left"
-                  >
-                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      {op.name} background
-                    </span>
-                    <ChevronDown
-                      className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`}
-                    />
-                  </button>
-                  {expanded && (
-                    <>
-                      <p className="text-sm text-foreground whitespace-pre-wrap mt-3 pt-3 border-t border-border/50">
-                        {op.background}
-                      </p>
-                      {earlierVersions.length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-border/50">
-                          <button
-                            onClick={() =>
-                              setExpandedBackgroundHistory(prev => ({
-                                ...prev,
-                                [op.id]: !historyOpen,
-                              }))
-                            }
-                            className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-                          >
-                            {historyOpen ? "Hide" : "Show"}{" "}
-                            {earlierVersions.length} earlier version
-                            {earlierVersions.length !== 1 ? "s" : ""}
-                          </button>
-                          {historyOpen && (
-                            <div className="mt-2 space-y-2">
-                              {earlierVersions
-                                .slice()
-                                .reverse()
-                                .map((imp: any, idx: number) => {
-                                  let snapshot: DocumentImportPrefill | null =
-                                    null;
-                                  try {
-                                    snapshot = JSON.parse(imp.snapshotJson);
-                                  } catch {
-                                    snapshot = null;
-                                  }
-                                  const text =
-                                    snapshot?.background?.trim() ?? "";
-                                  if (!text) return null;
-                                  return (
-                                    <div
-                                      key={imp.id}
-                                      className="rounded-lg border border-border/40 bg-muted/20 p-2.5"
-                                    >
-                                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">
-                                        Version {earlierVersions.length - idx} —{" "}
-                                        {new Date(
-                                          imp.uploadedAt
-                                        ).toLocaleDateString("en-AU", {
-                                          day: "2-digit",
-                                          month: "short",
-                                          year: "numeric",
-                                        })}
-                                      </p>
-                                      <p className="text-xs text-foreground whitespace-pre-wrap">
-                                        {text}
-                                      </p>
-                                    </div>
-                                  );
-                                })}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  )}
+                  <p className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wide mb-1">
+                    Imported Documents — {op.name}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mb-3">
+                    Every document uploaded for this target on this operation,
+                    verbatim as parsed.
+                  </p>
+                  <div className="space-y-2">
+                    {versionsForOp.map((row, idx) => (
+                      <ImportedDocumentCard
+                        key={row.id}
+                        row={row}
+                        version={idx + 1}
+                        isCurrent={idx === versionsForOp.length - 1}
+                        subject={profile.name}
+                        previous={versionsForOp[idx - 1] ?? null}
+                      />
+                    ))}
+                  </div>
                 </div>
               );
             })}

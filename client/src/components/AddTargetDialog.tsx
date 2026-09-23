@@ -76,7 +76,10 @@ import {
 } from "@/components/PossibleDuplicateAlert";
 import { runDuplicateChecks } from "@/lib/duplicateCheck";
 import { OperationPicker } from "@/components/OperationPicker";
-import type { DocumentImportPrefill } from "@/components/ImportTargetDocumentDialog";
+import type {
+  DocumentImportPrefill,
+  StagedImage,
+} from "@/components/ImportTargetDocumentDialog";
 
 // Referenced only for the merge dialog's incoming.wildFields shape — Wild
 // Fields is deprecated app-wide, this dialog never collects one, but the
@@ -209,6 +212,7 @@ export function AddTargetDialog({
   initialExtraAddresses,
   initialExtraVehicles,
   initialAssociates,
+  initialImages,
   initialBackground,
   initialDocumentSnapshot,
 }: {
@@ -238,6 +242,11 @@ export function AddTargetDialog({
   initialExtraAddresses?: ExtraAddress[];
   initialExtraVehicles?: ExtraVehicle[];
   initialAssociates?: StagedAssociate[];
+  /** Photos the officer chose to keep on the import review screen — same
+   * one-time-seed treatment as the other initial* import fields: read
+   * directly (no local state), uploaded and run through face recognition
+   * against the just-saved target once it exists (see saveStagedImages). */
+  initialImages?: StagedImage[];
   /** The document's free-text narrative — carried straight through to the
    * saved target's "{Operation name} background" (see RegistryCreatePayload
    * .background), same one-time-seed treatment as the other initial* import
@@ -288,6 +297,9 @@ export function AddTargetDialog({
   const [linking, setLinking] = useState(false);
   const utils = trpc.useUtils();
   const associateCreateMut = trpc.associate.create.useMutation();
+  const uploadImageMut = trpc.attachment.uploadManual.useMutation();
+  const confirmEntityFaceMut = trpc.attachment.confirmEntityFace.useMutation();
+  const linkToEntityMut = trpc.attachment.linkToEntity.useMutation();
 
   // ── Possible-duplicate detection (fires on Save, not while typing) ──
   // A name that fuzzy-matches an existing target offers a merge instead of
@@ -373,6 +385,17 @@ export function AddTargetDialog({
     onClose();
   };
 
+  // documentSnapshotJson is a permanent version-history record (see
+  // targetDocumentImports in schema.ts, shown on the Target/Operation
+  // profile's Imported Documents panel) — but a kept photo already gets its
+  // own durable copy as a real Attachment once saved (see
+  // saveStagedImages), so storing the same base64 bytes a second time here
+  // would just bloat that JSON column for no reason and duplicate the
+  // photo. Strip it before persisting the snapshot.
+  const documentSnapshotForHistory = (
+    prefill: DocumentImportPrefill
+  ): DocumentImportPrefill => ({ ...prefill, images: [] });
+
   const buildPayload = (): RegistryCreatePayload => {
     const { name, tgt } = computePrimaryIdentity(
       targetType,
@@ -386,7 +409,7 @@ export function AddTargetDialog({
       linkToOperationId: operation!.id,
       background: initialBackground?.trim() || null,
       documentSnapshotJson: initialDocumentSnapshot
-        ? JSON.stringify(initialDocumentSnapshot)
+        ? JSON.stringify(documentSnapshotForHistory(initialDocumentSnapshot))
         : null,
       documentSourceFileName: initialDocumentSnapshot?.sourceFileName || null,
       targetType,
@@ -481,11 +504,81 @@ export function AddTargetDialog({
     }
   };
 
+  // Uploads every image the officer kept on the import review screen
+  // against the just-saved target's Operation, then runs on-device face
+  // recognition (server/faceRecognition/ — no external AI/LLM call, see
+  // CLAUDE.md's Golden Rule) so the photo is registered against the right
+  // person automatically. Only auto-registers when exactly one face is
+  // detected — a document photo is almost always a single portrait/mugshot,
+  // but zero faces (a non-portrait scan) or 2+ (a group photo, where which
+  // face is this target is genuinely ambiguous) still gets the photo
+  // attached to the target, just without a face embedding recorded; an
+  // officer can tag a specific face from the target's own Images folder
+  // afterward the same way any manually-uploaded photo is tagged
+  // (UploadImageDialog/FaceSelectPicker). Same best-effort-per-item,
+  // Promise.allSettled-style failure handling as saveStagedAssociates above
+  // — one bad photo shouldn't stop the rest from saving.
+  const saveStagedImages = async (targetId: number) => {
+    const toSave = initialImages ?? [];
+    if (toSave.length === 0) return;
+    const opId = operation?.id;
+    if (!opId) return; // OperationPicker is required before any save path reaches here
+    const { name: entityLabel } = computePrimaryIdentity(
+      targetType,
+      identity,
+      address,
+      vehicle
+    );
+    let failed = 0;
+    for (const img of toSave) {
+      try {
+        const uploaded = await uploadImageMut.mutateAsync({
+          operationId: opId,
+          dataBase64: img.dataBase64,
+          mimeType: img.mimeType,
+          fileName: `imported-photo-${img.key}.png`,
+        });
+        let faces: { index: number }[] = [];
+        try {
+          faces = await utils.attachment.detectFaces.fetch({
+            attachmentId: uploaded.id,
+          });
+        } catch {
+          faces = [];
+        }
+        if (faces.length === 1) {
+          await confirmEntityFaceMut.mutateAsync({
+            attachmentId: uploaded.id,
+            faceIndex: faces[0].index,
+            category: "target",
+            targetId,
+            entityLabel,
+          });
+        } else {
+          await linkToEntityMut.mutateAsync({
+            attachmentId: uploaded.id,
+            category: "target",
+            targetId,
+            entityLabel,
+          });
+        }
+      } catch {
+        failed++;
+      }
+    }
+    if (failed > 0) {
+      toast.error(
+        `Target saved, but ${failed} photo${failed > 1 ? "s" : ""} failed to save — add ${failed > 1 ? "them" : "it"} from the target's Images folder.`
+      );
+    }
+  };
+
   const saveAsNew = async () => {
     setSaving(true);
     try {
       const result = await onSave(buildPayload());
       await saveStagedAssociates(result.id);
+      await saveStagedImages(result.id);
       resetAndClose();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to save target.");
@@ -528,7 +621,7 @@ export function AddTargetDialog({
     linkToOperationId: operation!.id,
     background: initialBackground?.trim() || null,
     documentSnapshotJson: initialDocumentSnapshot
-      ? JSON.stringify(initialDocumentSnapshot)
+      ? JSON.stringify(documentSnapshotForHistory(initialDocumentSnapshot))
       : null,
     documentSourceFileName: initialDocumentSnapshot?.sourceFileName || null,
     // Only reachable via the person-duplicate-match flow, which is skipped
@@ -791,6 +884,7 @@ export function AddTargetDialog({
         }
         const result = await onSave(buildLinkedPayload(associate));
         await saveStagedAssociates(result.id);
+        await saveStagedImages(result.id);
       } else {
         // No registry record to copy from — just a text mention (or, in
         // theory, an associate match this dialog can't link into). Save the
@@ -798,6 +892,7 @@ export function AddTargetDialog({
         // future sightings of it are recognized as this same identity.
         const result = await onSave(buildPayload());
         await saveStagedAssociates(result.id);
+        await saveStagedImages(result.id);
         if (warning.kind !== "target") {
           await mergeEntitiesMutation.mutateAsync({
             type: warning.kind,
@@ -905,29 +1000,27 @@ export function AddTargetDialog({
     };
   };
 
-  // The Address and Vehicle sections/their dynamic extras, as fragments so
-  // they can be reordered below — whichever one is this target's PRIMARY
-  // identity (Home Address/Location Identity for a Location target,
-  // Vehicle 1/Vehicle Identity for a Vehicle target) renders first, right
-  // under the Target Type toggle, instead of always in the same fixed
-  // Address-then-Vehicle order that only made sense when a target was
-  // always a person and both were just optional attributes of them.
-  const addressGroup = (
-    <>
-      <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3">
-        <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
-          <Home className="w-3 h-3" />
-          {targetType === "location" ? "Location Identity" : "Home Address"}
-        </p>
-        <TargetAddressFields value={address} onChange={setAddress} />
-        {isPartialAddress(address) && (
-          <p className="text-xs text-destructive mt-2">
-            Missing a house number, street type or suburb — this address won't
-            save until every field is filled in.
-          </p>
-        )}
-      </div>
+  // The Address and Vehicle sections split into their PRIMARY box (one
+  // element, placed side by side with Person Identity in the responsive
+  // grid below) and their dynamic extras (a variable-length list, always
+  // full-width beneath the grid regardless of screen size) — whichever one
+  // is this target's PRIMARY identity (Home Address/Location Identity for
+  // a Location target, Vehicle 1/Vehicle Identity for a Vehicle target)
+  // renders first, instead of always in the same fixed Address-then-Vehicle
+  // order that only made sense when a target was always a person and both
+  // were just optional attributes of them.
+  const addressPrimaryBox = (
+    <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3">
+      <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+        <Home className="w-3 h-3" />
+        {targetType === "location" ? "Location Identity" : "Home Address"}
+      </p>
+      <TargetAddressFields value={address} onChange={setAddress} />
+    </div>
+  );
 
+  const addressExtras = (
+    <>
       {/* Dynamic extra addresses */}
       {extraAddresses.map((ea, i) => (
         <div
@@ -995,22 +1088,18 @@ export function AddTargetDialog({
     </>
   );
 
-  const vehicleGroup = (
-    <>
-      <div className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3">
-        <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
-          <Car className="w-3 h-3" />
-          {targetType === "vehicle" ? "Vehicle Identity" : "Vehicle 1"}
-        </p>
-        <TargetVehicleFields value={vehicle} onChange={setVehicle} />
-        {isPartialVehicle(vehicle) && (
-          <p className="text-xs text-destructive mt-2">
-            Missing a colour, make or model — this vehicle won't save until
-            every field is filled in.
-          </p>
-        )}
-      </div>
+  const vehiclePrimaryBox = (
+    <div className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3">
+      <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+        <Car className="w-3 h-3" />
+        {targetType === "vehicle" ? "Vehicle Identity" : "Vehicle 1"}
+      </p>
+      <TargetVehicleFields value={vehicle} onChange={setVehicle} />
+    </div>
+  );
 
+  const vehicleExtras = (
+    <>
       {/* Dynamic extra vehicles */}
       {extraVehicles.map((ev, i) => (
         <div
@@ -1077,7 +1166,7 @@ export function AddTargetDialog({
           if (!v) resetAndClose();
         }}
       >
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="md:max-w-2xl lg:max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add Target to Registry</DialogTitle>
           </DialogHeader>
@@ -1137,6 +1226,13 @@ export function AddTargetDialog({
               </div>
             </div>
 
+            {/* Stacked vertically, one full-width box per row — same as the
+                dynamic extras (additional addresses/vehicles) below, so
+                the whole dialog reads as one consistent list rather than
+                the primary boxes sitting apart in a grid while everything
+                else stacks. The wider dialog width (see DialogContent's
+                className) still gives each box more breathing room on
+                iPad/laptop, just without splitting them into columns. */}
             {targetType === "person" && (
               <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
                 <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
@@ -1153,13 +1249,25 @@ export function AddTargetDialog({
 
             {targetType === "vehicle" ? (
               <>
-                {vehicleGroup}
-                {addressGroup}
+                {vehiclePrimaryBox}
+                {addressPrimaryBox}
               </>
             ) : (
               <>
-                {addressGroup}
-                {vehicleGroup}
+                {addressPrimaryBox}
+                {vehiclePrimaryBox}
+              </>
+            )}
+
+            {targetType === "vehicle" ? (
+              <>
+                {vehicleExtras}
+                {addressExtras}
+              </>
+            ) : (
+              <>
+                {addressExtras}
+                {vehicleExtras}
               </>
             )}
 
@@ -1253,18 +1361,22 @@ export function AddTargetDialog({
               </Button>
             </div>
 
-            {/* Depart / Arrive */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Depart (DEP)
-              </label>
-              <Input value={dep} onChange={e => setDep(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                Arrive (ARR)
-              </label>
-              <Input value={arr} onChange={e => setArr(e.target.value)} />
+            {/* Depart / Arrive — simple single-line fields, so they pair up
+                side by side from sm rather than needing the wider md/lg
+                grid the bordered identity boxes above need room for. */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Depart (DEP)
+                </label>
+                <Input value={dep} onChange={e => setDep(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Arrive (ARR)
+                </label>
+                <Input value={arr} onChange={e => setArr(e.target.value)} />
+              </div>
             </div>
           </div>
           <DialogFooter>
@@ -1353,14 +1465,31 @@ export function AddTargetDialog({
           background={initialBackground?.trim() || null}
           documentSnapshotJson={
             initialDocumentSnapshot
-              ? JSON.stringify(initialDocumentSnapshot)
+              ? JSON.stringify(
+                  documentSnapshotForHistory(initialDocumentSnapshot)
+                )
               : null
           }
           documentSourceFileName={
             initialDocumentSnapshot?.sourceFileName || null
           }
-          onMerged={() => {
+          onMerged={async targetId => {
+            // A real bug found in production: merging into an EXISTING
+            // target (the path a document re-import takes whenever it
+            // matches one already in the registry) never saved the
+            // associates staged from that document at all — only saveAsNew
+            // and the link-and-copy flow called saveStagedAssociates, so a
+            // newly-mentioned associate the officer confirmed "Create as
+            // new" for on the review screen silently never became a real
+            // Associate record, despite showing up fine in the Imported
+            // Documents diff (which only reflects the parsed snapshot, not
+            // the registry).
+            await saveStagedAssociates(targetId);
+            await saveStagedImages(targetId);
             utils.target.registry.list.invalidate();
+            utils.associate.listForTarget.invalidate();
+            utils.intelligence.targetProfile.invalidate();
+            utils.intelligence.operationProfile.invalidate();
             resetAndClose();
           }}
         />

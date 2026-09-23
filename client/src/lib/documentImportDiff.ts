@@ -19,6 +19,11 @@ export interface DiffLine {
   status: DiffStatus;
   /** For a "changed" line only — the previous version's own composed text. */
   wasText?: string;
+  /** For an associate line that would otherwise show as "removed" but was
+   * suppressed because the name is still mentioned in this version's
+   * Background text (see diffAssociates) — shown as a small caption so it's
+   * clear why a previously-staged associate isn't flagged as gone. */
+  note?: string;
 }
 
 export interface SnapshotDiff {
@@ -47,6 +52,48 @@ function diffByText(current: string[], previous: string[]): DiffLine[] {
     if (!currentSet.has(text.trim().toLowerCase())) {
       lines.push({ text, status: "removed" });
     }
+  }
+  return lines;
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Associates are stored per-version as only the ones staged "create as new"
+// at that import — NOT every associate the parser recognised in the text —
+// because an associate who already existed gets routed straight to
+// associate.update instead of being staged (see AddTargetDialog's
+// saveStagedAssociates). Diffing that narrow list by plain text would flag
+// someone as "removed" the moment they're recognised as already-registered
+// on a later import, even though they're still named in the document —
+// misleading, since they haven't actually disappeared. A name only counts
+// as genuinely removed if it's no longer mentioned anywhere in this
+// version's own Background text either.
+function diffAssociates(
+  current: { name: string; tgt: string }[],
+  previous: { name: string; tgt: string }[],
+  currentBackground: string
+): DiffLine[] {
+  const key = (name: string) => name.trim().toLowerCase();
+  const previousSet = new Set(previous.map(a => key(a.name)));
+  const currentSet = new Set(current.map(a => key(a.name)));
+  const lines: DiffLine[] = current.map(a => ({
+    text: a.name,
+    status: previousSet.has(key(a.name)) ? "unchanged" : "added",
+  }));
+  const backgroundLower = currentBackground.toLowerCase();
+  for (const a of previous) {
+    if (currentSet.has(key(a.name))) continue;
+    const tgt = a.tgt.trim().toLowerCase();
+    const stillMentioned =
+      tgt.length > 0 &&
+      new RegExp(`\\b${escapeRegExp(tgt)}\\b`).test(backgroundLower);
+    lines.push(
+      stillMentioned
+        ? { text: a.name, status: "unchanged", note: "still in Background" }
+        : { text: a.name, status: "removed" }
+    );
   }
   return lines;
 }
@@ -109,11 +156,11 @@ export function diffDocumentSnapshots(
     .filter(Boolean);
 
   const currentAssociates = current.associates
-    .map(a => composeAssociateName(a.identity, a.address.businessName).name)
-    .filter(Boolean);
+    .map(a => composeAssociateName(a.identity, a.address.businessName))
+    .filter(a => a.name);
   const previousAssociates = previous.associates
-    .map(a => composeAssociateName(a.identity, a.address.businessName).name)
-    .filter(Boolean);
+    .map(a => composeAssociateName(a.identity, a.address.businessName))
+    .filter(a => a.name);
 
   // Diffed at the same paragraph granularity the card actually displays
   // (after reflowNarrativeText), so "added" lines up exactly with what the
@@ -140,7 +187,11 @@ export function diffDocumentSnapshots(
       [current.vehicle, ...current.extraVehicles],
       [previous.vehicle, ...previous.extraVehicles]
     ),
-    associates: diffByText(currentAssociates, previousAssociates),
+    associates: diffAssociates(
+      currentAssociates,
+      previousAssociates,
+      current.background
+    ),
     backgroundParagraphs,
   };
 }

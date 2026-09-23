@@ -290,6 +290,11 @@ export function ImportedDocumentCard({
                   >
                     <DiffMarker status={line.status} />
                     {line.text}
+                    {line.note && (
+                      <span className="italic text-muted-foreground/70 text-[10px]">
+                        {line.note}
+                      </span>
+                    )}
                   </span>
                 ))}
               </div>

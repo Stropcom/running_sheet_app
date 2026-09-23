@@ -50,6 +50,17 @@ const PDF_DOB_OVERRUN_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-pdf-dob-overrun.pdf"
 );
+// A later "V3" export of the same underlying Operation HARBOUR training
+// scenario as the DOB-overrun fixture above (same subject, "Rafiq Hassan
+// KADER"), exhibiting a different, larger cluster of bugs from its own
+// distinct layout — see pdfTextReader.test.ts's own fixture comment for
+// the full breakdown (vertically-centred labels beside tall multi-line
+// values, causing real content loss downstream when a VEHICLES value
+// leaked into a LOCATION OF INTEREST address, or vice versa).
+const PDF_VERTICALLY_CENTERED_LABELS_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-vertically-centered-labels.pdf"
+);
 // A real training PDF (Operation SILVERBROOK) whose "Associates:" section
 // lists its FIRST associate inline in the section's own intro sentence
 // ("Associates: Madeleine Rose FLETCHER 63 Osprey Drive, YANGEBUP WA
@@ -895,6 +906,60 @@ describe("mapDocumentToTargetProfile — PDF documents", () => {
       bornDate: "18/08/1984",
       confident: true,
     });
+  });
+
+  it("correctly separates two vertically-centred label columns' own values (VEHICLES vs LOCATION OF INTEREST) instead of one leaking into the other, and doesn't flag either's already-correctly-parsed content as needing review", async () => {
+    const read = await readPdfText(
+      readFileSync(PDF_VERTICALLY_CENTERED_LABELS_FIXTURE_PATH)
+    );
+    const result = mapDocumentToTargetProfile(read);
+
+    expect(result.name).toMatchObject({
+      firstNames: "Rafiq Hassan",
+      surname: "KADER",
+      confident: true,
+    });
+    expect(result.unmappedFields).toContainEqual({
+      label: "ROLE",
+      value: "Broker",
+    });
+
+    expect(result.vehicles).toHaveLength(4);
+    expect(result.vehicles.map(v => v.registration)).toEqual(
+      expect.arrayContaining(["1RFK221", "1PORT9", "UNKNOWN", "1HBR604"])
+    );
+    // Neither vehicle picked up any of the address text that used to leak
+    // into it from the coincidentally-adjacent LOCATION OF INTEREST value.
+    for (const v of result.vehicles) {
+      expect(v.raw).not.toMatch(/Address|Warehouse|Location/);
+    }
+
+    expect(result.addresses).toHaveLength(4);
+    const byLabel = Object.fromEntries(
+      result.addresses.map(a => [a.label, a.raw])
+    );
+    expect(byLabel["Current Address"]).toBe(
+      "24 Sorrento Street, NORTH BEACH WA 6020"
+    );
+    expect(byLabel["Warehouse"]).toBe("19 Furnace Road, WELSHPOOL WA 6106");
+    expect(byLabel["Frequent Location"]).toBe(
+      "86 Southside Drive, HILLARYS WA 6025"
+    );
+    expect(byLabel["Additional Location"]).toBe(
+      "Unit 6/42 Sparks Road, HENDERSON WA 6166"
+    );
+
+    // The associate's own vehicle belongs to HER record, not the target's
+    // own vehicles list.
+    const sofia = result.associateBlocks.find(a => a.surname === "MARTINEZ");
+    expect(sofia?.vehicle).toMatchObject({ registration: "1SEM408" });
+    expect(result.vehicles.some(v => v.registration === "1SEM408")).toBe(false);
+
+    // The knock-on duplicate: a vehicle's own already-parsed text used to
+    // also get reported as an unparsed "address" once its section heading
+    // got corrupted into matching both VEHICLES_HEADING_RE and
+    // LOCATION_HEADING_RE.
+    expect(result.needsReview).toEqual([]);
   });
 
   it("recognises the FIRST associate listed even though its name leads straight into its own address in the same sentence, rather than sitting alone on its own line (the SILVERBROOK bug)", async () => {

@@ -130,6 +130,17 @@ const VEHICLE_ANCHOR = new RegExp(
  * description. */
 const BARE_REGO_ANCHOR = /(?:^|\n)\s*(\d[A-Za-z]{2,3}\d{3})\b/g;
 
+/** "No plate observed" (and close variants) still describes a distinct
+ * vehicle, not a continuation of whatever vehicle was described just
+ * before it — found against a real training document where "...Silver
+ * Toyota HiAce van No plate observed — black Ducati Motorbike." collapsed
+ * into one garbage vehicle, since nothing rego-shaped followed the HiAce
+ * to anchor a second entry. Anchors the same way BARE_REGO_ANCHOR does,
+ * with registration set to the literal "UNKNOWN" — the officer can
+ * correct it later if a real plate ever turns up. */
+const NO_PLATE_ANCHOR =
+  /\bno\s+(?:number\s+)?plate\s*(?:observed|sighted|seen)?\b|\bno\s+(?:rego|registration)\s*(?:observed|sighted|seen)?\b|\b(?:plate|rego|registration)\s+unknown\b|\bunknown\s+plate\b/gi;
+
 function stripVehicleType(words: string[]): {
   rest: string[];
   vehicleType: string;
@@ -160,6 +171,12 @@ function parseDescription(
 ): ParsedVehicleLine {
   const words = description
     .trim()
+    // A "no plate observed" anchor (see NO_PLATE_ANCHOR) is often followed
+    // by its actual description after a dash rather than a plain space —
+    // "No plate observed — black Ducati Motorbike" — which would otherwise
+    // land the dash itself as the first "word" and push colour/make/model
+    // out of place.
+    .replace(/^[—–-]\s*/, "")
     .replace(/\.+$/, "")
     .split(/\s+/)
     .filter(Boolean);
@@ -232,6 +249,21 @@ export function findVehicleLines(text: string): ParsedVehicleLine[] {
       token: bm[1],
       state: "",
       end: tokenIndex + bm[1].length,
+    });
+  }
+
+  // A third pass for "no plate observed" (see NO_PLATE_ANCHOR) — a
+  // vehicle with genuinely no registration recorded still needs its own
+  // anchor, or its description silently swallows into whatever vehicle
+  // was described immediately before it.
+  NO_PLATE_ANCHOR.lastIndex = 0;
+  let nm: RegExpExecArray | null;
+  while ((nm = NO_PLATE_ANCHOR.exec(text)) !== null) {
+    anchors.push({
+      index: nm.index,
+      token: "UNKNOWN",
+      state: "",
+      end: nm.index + nm[0].length,
     });
   }
   anchors.sort((a, b) => a.index - b.index);

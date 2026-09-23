@@ -510,7 +510,14 @@ export function AddTargetDialog({
   // staged at once that flow doesn't fit well inside this dialog; a genuine
   // duplicate can still be merged afterward from the Target Registry the
   // same way any other duplicate is.
-  const saveStagedAssociates = async (targetId: number) => {
+  // Returns the staged→real id mapping for whichever associates saved
+  // successfully, so saveStagedImages can resolve a photo staged as
+  // "associate X" to that associate's actual id — associates must exist
+  // before a photo can be linked to one, which is exactly why this always
+  // runs (and is awaited) before saveStagedImages at every call site.
+  const saveStagedAssociates = async (
+    targetId: number
+  ): Promise<Record<string, number>> => {
     const toCreate = associates
       .map(a => {
         const { name, tgt } = composeAssociateName(
@@ -521,42 +528,54 @@ export function AddTargetDialog({
         const { full: hbf, short: hb } = composeAddress(a.address);
         const { full: v1f, short: v1 } = composeVehicle(a.vehicle);
         return {
-          targetId,
-          name,
-          tgt: tgt || null,
-          hbf: hbf || null,
-          hb: hb || null,
-          v1f: v1f || null,
-          v1: v1 || null,
-          firstNames: a.identity.firstNames || null,
-          surname: a.identity.surname || null,
-          bornDate: ddMmYyyyToIso(a.identity.bornDate) || null,
-          addrUnitNo: a.address.unitNo || null,
-          addrHouseNo: a.address.houseNo || null,
-          addrStreetName: a.address.streetName || null,
-          addrStreetType: a.address.streetType || null,
-          addrSuburb: a.address.suburb || null,
-          addrState: a.address.state || null,
-          addrBusinessName: a.address.businessName || null,
-          vehRegistration: a.vehicle.registration || null,
-          vehState: a.vehicle.state || null,
-          vehColour: a.vehicle.colour || null,
-          vehMake: a.vehicle.make || null,
-          vehModel: a.vehicle.model || null,
-          vehType: a.vehicle.vehicleType || null,
+          key: a.key,
+          payload: {
+            targetId,
+            name,
+            tgt: tgt || null,
+            hbf: hbf || null,
+            hb: hb || null,
+            v1f: v1f || null,
+            v1: v1 || null,
+            firstNames: a.identity.firstNames || null,
+            surname: a.identity.surname || null,
+            bornDate: ddMmYyyyToIso(a.identity.bornDate) || null,
+            addrUnitNo: a.address.unitNo || null,
+            addrHouseNo: a.address.houseNo || null,
+            addrStreetName: a.address.streetName || null,
+            addrStreetType: a.address.streetType || null,
+            addrSuburb: a.address.suburb || null,
+            addrState: a.address.state || null,
+            addrBusinessName: a.address.businessName || null,
+            vehRegistration: a.vehicle.registration || null,
+            vehState: a.vehicle.state || null,
+            vehColour: a.vehicle.colour || null,
+            vehMake: a.vehicle.make || null,
+            vehModel: a.vehicle.model || null,
+            vehType: a.vehicle.vehicleType || null,
+          },
         };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
-    if (toCreate.length === 0) return;
+    if (toCreate.length === 0) return {};
     const results = await Promise.allSettled(
-      toCreate.map(payload => associateCreateMut.mutateAsync(payload))
+      toCreate.map(item => associateCreateMut.mutateAsync(item.payload))
     );
-    const failed = results.filter(r => r.status === "rejected").length;
+    const idByKey: Record<string, number> = {};
+    let failed = 0;
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") {
+        idByKey[toCreate[i].key] = r.value.id;
+      } else {
+        failed++;
+      }
+    });
     if (failed > 0) {
       toast.error(
         `Target saved, but ${failed} associate${failed > 1 ? "s" : ""} failed to save — add ${failed > 1 ? "them" : "it"} from the target's card in the registry.`
       );
     }
+    return idByKey;
   };
 
   // Uploads every image the officer kept on the import review screen
@@ -573,14 +592,17 @@ export function AddTargetDialog({
   // (UploadImageDialog/FaceSelectPicker). Same best-effort-per-item,
   // Promise.allSettled-style failure handling as saveStagedAssociates above
   // — one bad photo shouldn't stop the rest from saving.
-  const saveStagedImages = async (targetId: number) => {
+  const saveStagedImages = async (
+    targetId: number,
+    associateIdByKey: Record<string, number> = {}
+  ) => {
     const toSave = (initialImages ?? []).filter(
       img => imageChoices[img.key] ?? true
     );
     if (toSave.length === 0) return;
     const opId = operation?.id;
     if (!opId) return; // OperationPicker is required before any save path reaches here
-    const { name: entityLabel } = computePrimaryIdentity(
+    const { name: targetEntityLabel } = computePrimaryIdentity(
       targetType,
       identity,
       address,
@@ -589,6 +611,29 @@ export function AddTargetDialog({
     let failed = 0;
     for (const img of toSave) {
       try {
+        // A photo staged as "this is associate X" only actually links to
+        // that associate if X saved successfully (see saveStagedAssociates'
+        // return) — otherwise it falls back to the target rather than
+        // silently disappearing.
+        let category: "target" | "associate" = "target";
+        let linkedTargetId: number | undefined = targetId;
+        let entityLabel = targetEntityLabel;
+        const linkTo = img.linkTo;
+        if (linkTo.type === "associate") {
+          const associateId = associateIdByKey[linkTo.associateKey];
+          const staged = associates.find(a => a.key === linkTo.associateKey);
+          if (associateId && staged) {
+            const { name } = composeAssociateName(
+              staged.identity,
+              staged.address.businessName
+            );
+            if (name) {
+              category = "associate";
+              linkedTargetId = undefined;
+              entityLabel = name;
+            }
+          }
+        }
         const uploaded = await uploadImageMut.mutateAsync({
           operationId: opId,
           dataBase64: img.dataBase64,
@@ -607,15 +652,15 @@ export function AddTargetDialog({
           await confirmEntityFaceMut.mutateAsync({
             attachmentId: uploaded.id,
             faceIndex: faces[0].index,
-            category: "target",
-            targetId,
+            category,
+            targetId: linkedTargetId,
             entityLabel,
           });
         } else {
           await linkToEntityMut.mutateAsync({
             attachmentId: uploaded.id,
-            category: "target",
-            targetId,
+            category,
+            targetId: linkedTargetId,
             entityLabel,
           });
         }
@@ -634,8 +679,8 @@ export function AddTargetDialog({
     setSaving(true);
     try {
       const result = await onSave(buildPayload());
-      await saveStagedAssociates(result.id);
-      await saveStagedImages(result.id);
+      const associateIdByKey = await saveStagedAssociates(result.id);
+      await saveStagedImages(result.id, associateIdByKey);
       resetAndClose();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to save target.");
@@ -919,16 +964,16 @@ export function AddTargetDialog({
           return;
         }
         const result = await onSave(buildLinkedPayload(associate));
-        await saveStagedAssociates(result.id);
-        await saveStagedImages(result.id);
+        const associateIdByKey = await saveStagedAssociates(result.id);
+        await saveStagedImages(result.id, associateIdByKey);
       } else {
         // No registry record to copy from — just a text mention (or, in
         // theory, an associate match this dialog can't link into). Save the
         // target as entered, then fold the mined mention in as an alias so
         // future sightings of it are recognized as this same identity.
         const result = await onSave(buildPayload());
-        await saveStagedAssociates(result.id);
-        await saveStagedImages(result.id);
+        const associateIdByKey = await saveStagedAssociates(result.id);
+        await saveStagedImages(result.id, associateIdByKey);
         if (warning.kind !== "target") {
           await mergeEntitiesMutation.mutateAsync({
             type: warning.kind,
@@ -1572,8 +1617,8 @@ export function AddTargetDialog({
             // Associate record, despite showing up fine in the Imported
             // Documents diff (which only reflects the parsed snapshot, not
             // the registry).
-            await saveStagedAssociates(targetId);
-            await saveStagedImages(targetId);
+            const associateIdByKey = await saveStagedAssociates(targetId);
+            await saveStagedImages(targetId, associateIdByKey);
             utils.target.registry.list.invalidate();
             utils.associate.listForTarget.invalidate();
             utils.intelligence.targetProfile.invalidate();

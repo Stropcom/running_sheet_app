@@ -51,6 +51,24 @@
  *    a plain CSS z-index on the container.
  */
 
+// Set by every marker's own handlePointerDown (see below) and read by the
+// map's own POI-click listener (IntelligenceMapping.tsx) to suppress its
+// business/place quick-action card when the SAME physical tap also hit one
+// of our own markers — see handlePointerDown's own comment for why this
+// replaced an earlier distance-from-marker check that worked on desktop
+// (a precise mouse click lands right on the marker glyph) but not on touch
+// (a finger can land on the POI's own label text, rendered offset from the
+// marker icon, which reports e.latLng from wherever the finger actually
+// was — nowhere near the marker's registered position — rather than the
+// marker itself). Module-level rather than per-instance: the map's POI
+// listener doesn't know which specific marker (if any) was hit, only that
+// SOME marker's own pointerdown just ran a moment ago, as part of the same
+// physical tap that's now reaching the map's own POI hit-test.
+let lastMarkerPointerDownAt = 0;
+export function wasAnyMarkerJustTapped(withinMs = 400): boolean {
+  return Date.now() - lastMarkerPointerDownAt <= withinMs;
+}
+
 export type DivIconOverlayAnchor = "center" | "none";
 
 export interface DivIconOverlayOptions {
@@ -243,6 +261,16 @@ function getImplCtor(): DivIconOverlayImplCtor {
       // entirely, so the POI's own action sheet still opened alongside
       // this marker's popup even though handleClick's own fix ran too.
       e.stopPropagation();
+      // Record this as early in the gesture as possible (pointerdown, not
+      // the later synthesized click) — see wasAnyMarkerJustTapped's own
+      // comment above for why the map's own POI-click listener needs this
+      // timing signal instead of a distance check: stopPropagation only
+      // stops the DOM event reaching ancestor DOM listeners, but Google's
+      // own POI hit-test for the base map runs independently of DOM
+      // bubbling entirely (it's the Maps SDK's own gesture recognition
+      // against its vector tiles), so it still fires even though this
+      // event never reaches it.
+      lastMarkerPointerDownAt = Date.now();
       if (!this._draggable) return;
       const projection = this.getProjection();
       if (!projection) return;

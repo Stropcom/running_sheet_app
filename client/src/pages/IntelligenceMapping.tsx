@@ -4,7 +4,7 @@ import {
   matchVehicleArrival,
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
-import { DivIconOverlay } from "@/lib/divIconOverlay";
+import { DivIconOverlay, wasAnyMarkerJustTapped } from "@/lib/divIconOverlay";
 import {
   getMarkerDataUrl,
   getMarkerSvg,
@@ -4008,6 +4008,8 @@ export default function IntelligenceMapping() {
             return;
           }
           if (!e.latLng) return;
+          const tapLat = e.latLng.lat();
+          const tapLng = e.latLng.lng();
           // Google's own POI hit-testing for the base map runs independently
           // of our DOM overlay markers — it's the Maps SDK's own internal
           // gesture handling on the underlying vector tiles, not something a
@@ -4015,20 +4017,22 @@ export default function IntelligenceMapping() {
           // listener can suppress (that only stops the event reaching
           // ancestor DOM listeners; this "click" is a separate MapMouseEvent
           // Maps fires on the map itself whenever a tap lands on a POI,
-          // whether or not a marker is drawn on top of it). So when one of
-          // our own custom map markers already sits at this spot, skip
-          // opening the generic POI card entirely — the marker's own popup
-          // (which already offers RS Quick Entry/Waze/etc, see its click
-          // listener above) is the one that should show, not both.
-          const tapLat = e.latLng.lat();
-          const tapLng = e.latLng.lng();
-          const POI_MARKER_SUPPRESS_RADIUS_M = 40;
-          const coincidesWithOwnMarker = customMarkersDataRef.current.some(
-            (cm: any) =>
-              haversineMetres(tapLat, tapLng, cm.lat, cm.lng) <=
-              POI_MARKER_SUPPRESS_RADIUS_M
-          );
-          if (coincidesWithOwnMarker) {
+          // whether or not a marker is drawn on top of it). A prior version
+          // of this check compared tapLat/tapLng against our own markers'
+          // registered position (within ~40m) instead of the timing check
+          // below — that worked for a precise desktop mouse click (which
+          // lands right on the marker glyph) but not for a touch tap, which
+          // can land on the POI's own label text (rendered offset from the
+          // marker icon on the base map) — e.latLng reports wherever the
+          // finger actually was, nowhere near the marker's own coordinates,
+          // so the distance check silently never matched on mobile. Timing
+          // instead of distance: if ANY of our own markers just had a
+          // pointerdown (same physical tap, see wasAnyMarkerJustTapped's own
+          // comment), skip the POI card regardless of where exactly the
+          // reported tap coordinates land — the marker's own popup (which
+          // already offers RS Quick Entry/Waze/etc, see its click listener
+          // above) is the one that should show, not both.
+          if (wasAnyMarkerJustTapped()) {
             e.stop?.();
             return;
           }

@@ -678,14 +678,16 @@ export function ImportTargetDocumentDialog({
                   <p className="text-sm">
                     This name is close to{" "}
                     <span className="font-medium">{primaryMatch.name}</span>,
-                    already in the registry as a {primaryMatch.type} (
-                    {primaryMatch.reason}).
+                    already in the registry as a {primaryMatch.type}.
                   </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {primaryMatch.type === "target"
-                      ? 'Continuing will offer to merge these details into that existing target — any new home address is kept as the current one with the old kept as "Previous"; any new vehicle works the same way.'
-                      : "This person is currently filed as someone else's associate, not a target. Consider linking them from the Target Registry instead of continuing, unless this is genuinely a different person."}
-                  </p>
+                  {primaryMatch.type !== "target" && (
+                    <p className="text-[11px] text-muted-foreground">
+                      This person is currently filed as someone else's
+                      associate, not a target. Consider linking them from the
+                      Target Registry instead of continuing, unless this is
+                      genuinely a different person.
+                    </p>
+                  )}
                 </div>
               )}
 

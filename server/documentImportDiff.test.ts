@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { diffDocumentSnapshots } from "@/lib/documentImportDiff";
+import { diffDocumentSnapshots, countChanges } from "@/lib/documentImportDiff";
 import {
   EMPTY_ADDRESS_PARTS,
   EMPTY_VEHICLE_PARTS,
@@ -128,5 +128,70 @@ describe("diffDocumentSnapshots associates", () => {
 
     const diff = diffDocumentSnapshots(current, previous)!;
     expect(diff.associates[0].status).toBe("removed");
+  });
+});
+
+describe("diffDocumentSnapshots backgroundSections", () => {
+  it("groups the current Background into its own real sections, not one flat paragraph list", () => {
+    const previous = prefill({ background: "" });
+    const current = prefill({
+      background: [
+        "SUMMARY",
+        "Departed the address.",
+        "COMMUNICATIONS",
+        "Mobile: 0491 570 168",
+      ].join("\n\n"),
+    });
+
+    const diff = diffDocumentSnapshots(current, previous)!;
+    expect(diff.backgroundSections).toEqual([
+      {
+        heading: "SUMMARY",
+        paragraphs: [{ text: "Departed the address.", status: "added" }],
+      },
+      {
+        heading: "COMMUNICATIONS",
+        paragraphs: [{ text: "Mobile: 0491 570 168", status: "added" }],
+      },
+    ]);
+  });
+
+  it("matches a paragraph as unchanged against the previous version's own paragraphs regardless of which section it sat under there", () => {
+    // A paragraph that moved to a different heading between versions (or
+    // had no heading before but does now) should still read as unchanged
+    // — the previous version's own paragraphs are pooled flat, not
+    // matched section-by-section.
+    const previous = prefill({
+      background: "Nadia Farah QURESHI was seen at the address.",
+    });
+    const current = prefill({
+      background: [
+        "SUMMARY",
+        "Nadia Farah QURESHI was seen at the address.",
+      ].join("\n\n"),
+    });
+
+    const diff = diffDocumentSnapshots(current, previous)!;
+    expect(diff.backgroundSections).toEqual([
+      {
+        heading: "SUMMARY",
+        paragraphs: [
+          {
+            text: "Nadia Farah QURESHI was seen at the address.",
+            status: "unchanged",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("counts a newly-added background paragraph towards countChanges", () => {
+    const previous = prefill({ background: "SUMMARY\n\nOriginal note." });
+    const current = prefill({
+      background: "SUMMARY\n\nOriginal note.\n\nA brand new note.",
+    });
+
+    const diff = diffDocumentSnapshots(current, previous)!;
+    expect(countChanges(diff)).toBe(1);
   });
 });

@@ -5,7 +5,7 @@ import {
   composeAssociateName,
   type StructuredVehicleParts,
 } from "@/lib/addressFormat";
-import { reflowNarrativeText } from "@/lib/textFormat";
+import { groupNarrativeIntoSections } from "@/lib/textFormat";
 
 // Field-by-field comparison between one imported-document snapshot and the
 // version immediately before it — backs the "what changed" highlighting on
@@ -21,14 +21,27 @@ export interface DiffLine {
   wasText?: string;
 }
 
+export interface DiffSection {
+  /** Null for a run of paragraphs with no heading of their own (before the
+   * first real heading, or the whole thing when there's no heading at
+   * all) — see NarrativeSection. */
+  heading: string | null;
+  paragraphs: DiffLine[];
+}
+
 export interface SnapshotDiff {
   addresses: DiffLine[];
   vehicles: DiffLine[];
   associates: DiffLine[];
   /** Added/unchanged only — a paragraph dropped from the narrative isn't
    * surfaced as "removed" text here, just absent, since re-showing a whole
-   * stale paragraph inline reads as noise rather than a useful signal. */
-  backgroundParagraphs: DiffLine[];
+   * stale paragraph inline reads as noise rather than a useful signal.
+   * Grouped into the same sections the card actually renders (see
+   * groupNarrativeIntoSections) — matched against the PREVIOUS version's
+   * own paragraphs regardless of which section they sat under there, so a
+   * paragraph that moved to a different heading between versions still
+   * reads as unchanged rather than a spurious "added". */
+  backgroundSections: DiffSection[];
 }
 
 // Matches purely by composed text — an edited address/associate name has no
@@ -173,23 +186,27 @@ export function diffDocumentSnapshots(
     .map(a => composeAssociateName(a.identity, a.address.businessName))
     .filter(a => a.name);
 
-  // Diffed at the same paragraph granularity the card actually displays
-  // (after reflowNarrativeText), so "added" lines up exactly with what the
-  // officer sees rather than an internal line-break shape they never see.
-  const paragraphsOf = (text: string) =>
-    reflowNarrativeText(text.trim())
-      .split("\n\n")
-      .map(p => p.trim())
-      .filter(Boolean);
-  const currentParagraphs = paragraphsOf(current.background);
+  // Diffed at the same section/paragraph granularity the card actually
+  // displays (after groupNarrativeIntoSections), so "added" lines up
+  // exactly with what the officer sees rather than an internal line-break
+  // shape they never see. The previous version's own paragraphs are
+  // pooled flat across every section (not matched section-by-section) so
+  // a paragraph that moved under a different heading between versions
+  // still reads as unchanged.
+  const currentSections = groupNarrativeIntoSections(current.background);
   const previousParagraphSet = new Set(
-    paragraphsOf(previous.background).map(p => p.toLowerCase())
+    groupNarrativeIntoSections(previous.background)
+      .flatMap(s => s.paragraphs)
+      .map(p => p.toLowerCase())
   );
-  const backgroundParagraphs: DiffLine[] = currentParagraphs.map(text => ({
-    text,
-    status: previousParagraphSet.has(text.toLowerCase())
-      ? "unchanged"
-      : "added",
+  const backgroundSections: DiffSection[] = currentSections.map(section => ({
+    heading: section.heading,
+    paragraphs: section.paragraphs.map(text => ({
+      text,
+      status: previousParagraphSet.has(text.toLowerCase())
+        ? "unchanged"
+        : "added",
+    })),
   }));
 
   return {
@@ -203,7 +220,7 @@ export function diffDocumentSnapshots(
       previousAssociates,
       current.background
     ),
-    backgroundParagraphs,
+    backgroundSections,
   };
 }
 
@@ -213,6 +230,8 @@ export function countChanges(diff: SnapshotDiff | null): number {
     diff.addresses.filter(l => l.status !== "unchanged").length +
     diff.vehicles.filter(l => l.status !== "unchanged").length +
     diff.associates.filter(l => l.status !== "unchanged").length +
-    diff.backgroundParagraphs.filter(l => l.status !== "unchanged").length
+    diff.backgroundSections
+      .flatMap(s => s.paragraphs)
+      .filter(l => l.status !== "unchanged").length
   );
 }

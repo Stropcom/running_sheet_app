@@ -244,6 +244,36 @@ describe("matchVehicleArrival", () => {
       });
       expect(extractArrivalAddress(normalized)).toBe("64 Matheson Road");
     });
+
+    // Real bug report: a vehicle recorded for the first time AS it
+    // arrives — full description + bracket code declared in the same
+    // sentence, no earlier bare "Vehicle REGO" mention — never registered
+    // as an arrival at all, so no "Vehicle departing" chip was ever
+    // offered for it later. Root cause was the missing comma between the
+    // occupant description and "arrived"; normalizeObservationPunctuation's
+    // Rule 3 now inserts it, and the occupant-description capture must
+    // come out clean (no stray ")" or bracket residue), since it's reused
+    // verbatim to pre-fill the "Vehicle departing" chip's text later.
+    it("recognises a bracket-first-mention arrival with a clean occupant description (the real reported bug)", () => {
+      const raw =
+        "A white Toyota Hilux utility, bearing WA registration 1IUP467 (Vehicle 1IUP467), unseen occupant/s arrived at 115 Bateman Road, entered the driveway and continued out of sight.";
+      const normalized = normalizeObservationPunctuation(raw);
+      expect(matchVehicleArrival(normalized)).toEqual({
+        rego: "1IUP467",
+        occupantDesc: "unseen occupant/s",
+      });
+    });
+
+    it("extracts a clean address for a bracket-first-mention arrival with no trailing clause", () => {
+      const raw =
+        "A white Toyota Hilux utility, bearing WA registration 1IUP467 (Vehicle 1IUP467), unseen occupant/s arrived at 115 Bateman Road.";
+      const normalized = normalizeObservationPunctuation(raw);
+      expect(matchVehicleArrival(normalized)).toEqual({
+        rego: "1IUP467",
+        occupantDesc: "unseen occupant/s",
+      });
+      expect(extractArrivalAddress(normalized)).toBe("115 Bateman Road");
+    });
   });
 });
 
@@ -270,6 +300,28 @@ describe("VEHICLE_DEPART_PATTERN", () => {
     const m = text.match(VEHICLE_DEPART_PATTERN);
     expect(m?.[1]).toBe("1BISH0");
     expect(m?.[2].trim()).toBe("BISHOP driver and sole occupant");
+  });
+
+  // The departure-side mirror of the bracket-first-mention arrival bug —
+  // a vehicle sitting unseen (e.g. in a garage) that's only ever recorded
+  // for the first time as it departs, full description + bracket code in
+  // the same sentence.
+  it("matches a bracket-first-mention departure with a clean occupant description", () => {
+    const raw =
+      "A white Toyota Hilux utility, bearing WA registration 1IUP467 (Vehicle 1IUP467), unseen occupant/s departed 115 Bateman Road and continued via:";
+    const normalized = normalizeObservationPunctuation(raw);
+    const m = normalized.match(VEHICLE_DEPART_PATTERN);
+    expect(m?.[1]).toBe("1IUP467");
+    expect(m?.[2].trim()).toBe("unseen occupant/s");
+  });
+
+  it("does not cross into a second, different vehicle's bracket mentioned before the departure verb", () => {
+    const raw =
+      "(Vehicle 1ABC123), a Grey Volkswagen Transporter van, bearing WA registration 1STAR6 (Vehicle 1STAR6), unseen occupant/s departed 12 Marine Parade and continued via:";
+    const normalized = normalizeObservationPunctuation(raw);
+    const m = normalized.match(VEHICLE_DEPART_PATTERN);
+    expect(m?.[1]).toBe("1STAR6");
+    expect(m?.[2].trim()).toBe("unseen occupant/s");
   });
 
   it("does not cross-match WALK_IN_PATTERN's unrelated 'NAME exited the vehicle' wording", () => {

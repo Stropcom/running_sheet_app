@@ -4988,6 +4988,56 @@ export function normalizeObservationPunctuation(text: string): string {
       `Vehicle ${rego}${commaAfterRego || ","}${wsAfterRego}${middle}${commaBeforeKeyword || ","}${wsBeforeKeyword}${keyword}`
   );
 
+  // Rule 3: the mirror of Rule 2, for a "(Vehicle REGO) ... departed/arrived"
+  // narrative where the rego is written in bracket-shorthand form rather
+  // than bare — common when a vehicle is recorded for the first time AS it
+  // arrives/departs (full description + bracket code in the same sentence,
+  // e.g. "...bearing WA registration 1IUP467 (Vehicle 1IUP467), unseen
+  // occupant/s arrived at 115 Bateman Road", or a vehicle sitting unseen in
+  // a garage that's only ever recorded on departure the same way), so
+  // there's no earlier bare mention for Rule 2 to have already fixed. Rule
+  // 1 above already guarantees the comma right after the closing bracket;
+  // this only adds the second one, right before the keyword — mirroring
+  // Rule 2's own fix but anchored on the bracket instead of a bare mention.
+  // Deliberately a SEPARATE rule from Rule 2 (not just dropping its
+  // "(?<!\()" guard) — that guard exists to stop Rule 2 from misreading a
+  // LATER bracket back-reference to an already-bare-mentioned vehicle as
+  // part of that bare mention's own narrative (see Rule 2's comment); this
+  // rule only ever anchors on the bracket itself, so the two can't
+  // conflict. The occupant-description group requires at least one real
+  // character (`+?`, not `*?`) — without that, a bracket sitting directly
+  // next to a keyword with nothing in between (e.g. "(Vehicle 1ABC123),
+  // parked and unattended in the driveway." — no arrival was actually
+  // witnessed) would spuriously match with an empty "occupants" and insert
+  // a redundant second comma; requiring real content between them forces
+  // this rule to leave that case alone, matching the keyword set
+  // VEHICLE_DEPART_PATTERN/VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN and their
+  // variants actually recognise (shared/vehicleEventPatterns.ts) — wider
+  // than Rule 2's own "departed|arrived" pair, which only predates
+  // "reversed"/"exited"/"parked"/"stopped" being added to those patterns
+  // and hasn't been revisited since, a separate pre-existing gap left
+  // alone here rather than folded into this fix.
+  //
+  // The middle group's first character must be non-whitespace (`\S`) —
+  // without that, a bracket sitting directly against a keyword with only
+  // WHITESPACE between them (e.g. "(Vehicle 1ABC123), parked...", no real
+  // occupant text at all) could still satisfy "one or more characters" by
+  // letting the group's OWN leading `\s*` back off and hand the single
+  // space character to the middle group instead — verified against a real
+  // failing test before landing on this fix, not assumed correct by
+  // inspection alone.
+  result = result.replace(
+    /(\(Vehicle\s+[A-Za-z0-9]{2,8}\),\s*)((?:(?!\(Vehicle\s)\S)(?:(?!\(Vehicle\s).)*?)(,?)(\s*)(departed|reversed|exited|arrived|parked|stopped)\b/gi,
+    (
+      _match: string,
+      bracketPrefix: string,
+      middle: string,
+      existingComma: string,
+      ws: string,
+      keyword: string
+    ) => `${bracketPrefix}${middle}${existingComma || ","}${ws}${keyword}`
+  );
+
   return result;
 }
 

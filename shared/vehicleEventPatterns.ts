@@ -7,6 +7,34 @@
 // HOGAN driver...") and sometimes don't ("Vehicle 1FAD531 HOGAN driver...") —
 // the ",?\s*" after the rego capture tolerates either.
 //
+// The rego mention itself can be bare ("Vehicle 1FAD531 ...") or the
+// bracket-shorthand form ("(Vehicle 1FAD531) ..."), tried via the
+// `(?:\(Vehicle|Vehicle)` alternation with a matching optional `\)?` after
+// the rego — the bracket form is common when a vehicle already sitting
+// unseen (e.g. in a garage) is only ever recorded for the first time AS it
+// departs: the officer writes the full description + bracket code in the
+// same sentence as the departure itself, e.g. "...bearing WA registration
+// 1FAD531 (Vehicle 1FAD531), unseen occupant/s departed 34 Duke Street and
+// continued via:" — there's no earlier bare mention to anchor on. The
+// occupant-description group is guarded with a negative lookahead,
+// `(?!\(Vehicle\s)`, so it can never cross INTO a *different*
+// "(Vehicle REGO)" bracket appearing later in the same clause (e.g. a
+// second vehicle's own bracket mentioned before any departure verb) —
+// without it, a match starting at an earlier bare/bracket mention could
+// swallow a whole unrelated vehicle's bracket into this one's "occupants",
+// the same class of bug normalizeObservationPunctuation's Rule 2 guards
+// against for the comma-insertion step (see that function in
+// server/db.ts). An occupant's OWN bracket code (e.g. "Denise HOLLY
+// (HOLLY) front passenger") is unaffected — the lookahead only excludes
+// text starting with the literal "(Vehicle ", not parentheses in general.
+// The group's first character is additionally required to be
+// non-whitespace (`\S`) — without that, a bracket sitting directly
+// against the verb with nothing but whitespace between them (no real
+// occupant text at all) could still satisfy "one or more characters" by
+// letting the optional `\)?,?\s*` just before it back off and hand a bare
+// space to this group instead, matching a bug caught by a real failing
+// test in normalizeObservationPunctuation's mirror of this same fix.
+//
 // "Departed", "reversed", and "exited" are all written as the departure
 // verb in practice ("...departed X and continued via:" / "...reversed
 // from the driveway of X and continued via:" / "...exited X and continued
@@ -21,7 +49,7 @@
 // never preceded by a comma, but keep that distinction in mind if either
 // pattern's shape changes.
 export const VEHICLE_DEPART_PATTERN =
-  /Vehicle\s+([A-Za-z0-9]{5,8}),?\s*(.+?),\s*(?:departed|reversed|exited)\b/i;
+  /(?:\(Vehicle|Vehicle)\s+([A-Za-z0-9]{5,8})\)?,?\s*((?:(?!\(Vehicle\s)\S)(?:(?!\(Vehicle\s).)*?),\s*(?:departed|reversed|exited)\b/i;
 
 // "Arrived", "parked", and "stopped" are all written as the arrival verb in
 // practice ("...arrived at X" / "...parked at X" / "...stopped at X") — the
@@ -41,8 +69,15 @@ export const VEHICLE_ARRIVE_PATTERN =
 // insertion would otherwise swallow an intervening travel narrative into
 // the occupant description; matchVehicleArrival tries that pattern FIRST
 // for exactly this reason.
+//
+// Same bare-or-bracket rego support as VEHICLE_DEPART_PATTERN above (see
+// its comment for the full reasoning) — a vehicle recorded for the first
+// time as it arrives, full description + bracket code in one sentence,
+// e.g. "...bearing WA registration 1IUP467 (Vehicle 1IUP467), unseen
+// occupant/s arrived at 115 Bateman Road" — is exactly as common as the
+// departure-side equivalent, so both need the same fix.
 export const VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN =
-  /Vehicle\s+([A-Za-z0-9]{5,8}),?\s*(.+?),\s*(?:arrived|parked|stopped)\b/i;
+  /(?:\(Vehicle|Vehicle)\s+([A-Za-z0-9]{5,8})\)?,?\s*((?:(?!\(Vehicle\s)\S)(?:(?!\(Vehicle\s).)*?),\s*(?:arrived|parked|stopped)\b/i;
 
 // Officers often narrate the route between the occupants and the arrival
 // itself — "Vehicle REGO, occupants, travelled on Smith Street, PERTH and
@@ -62,7 +97,7 @@ export const VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN =
 // a save-time-inserted comma, ...) is tolerated without needing to be
 // enumerated.
 export const VEHICLE_ARRIVE_VIA_TRAVEL_PATTERN =
-  /Vehicle\s+([A-Za-z0-9]{5,8}),?\s*(.+?),\s*travelled\b.*?\b(?:arrived|parked|stopped)\b/i;
+  /(?:\(Vehicle|Vehicle)\s+([A-Za-z0-9]{5,8})\)?,?\s*((?:(?!\(Vehicle\s)\S)(?:(?!\(Vehicle\s).)*?),\s*travelled\b.*?\b(?:arrived|parked|stopped)\b/i;
 
 // A second real-world variant of the travel narrative above: the vehicle
 // travels through a location's car park and parks there directly, with no
@@ -73,7 +108,7 @@ export const VEHICLE_ARRIVE_VIA_TRAVEL_PATTERN =
 // park of") rather than reusing VEHICLE_ARRIVE_VIA_TRAVEL_PATTERN's "and
 // arrived/parked/stopped" ending.
 export const VEHICLE_ARRIVE_VIA_CARPARK_PATTERN =
-  /Vehicle\s+([A-Za-z0-9]{5,8}),?\s*(.+?),\s*travelled\s+through\s+the\s+car\s+park\s+of\s+(.+?)\s+and\s+parked\b/i;
+  /(?:\(Vehicle|Vehicle)\s+([A-Za-z0-9]{5,8})\)?,?\s*((?:(?!\(Vehicle\s)\S)(?:(?!\(Vehicle\s).)*?),\s*travelled\s+through\s+the\s+car\s+park\s+of\s+(.+?)\s+and\s+parked\b/i;
 
 export interface VehicleArrivalMatch {
   rego: string;

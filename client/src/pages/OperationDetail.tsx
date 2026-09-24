@@ -2497,7 +2497,7 @@ export default function OperationDetail() {
               <Input
                 placeholder="Operation name"
                 value={editName}
-                onChange={e => setEditName(e.target.value)}
+                onChange={e => setEditName(e.target.value.toUpperCase())}
                 autoFocus
               />
             </div>

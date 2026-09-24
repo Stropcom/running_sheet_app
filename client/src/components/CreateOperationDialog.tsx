@@ -80,7 +80,7 @@ export function CreateOperationDialog({
             </label>
             <Input
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={e => setName(e.target.value.toUpperCase())}
               onKeyDown={e => e.key === "Enter" && handleCreate()}
               autoFocus
             />

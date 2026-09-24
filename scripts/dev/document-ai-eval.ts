@@ -13,6 +13,19 @@
  * expectations on the RULES' output, not the AI's) — it's a reporting
  * tool for a human reviewer, not a CI gate.
  *
+ * Runs a forced smoke test first (runSmokeTest below), before the
+ * per-fixture loop — the AI-assist pass only ever runs against a
+ * document when the rules found something to be unsure about
+ * (needsReview items, or a low-confidence address/vehicle), and the real
+ * training fixtures here are exactly the documents the rule-based parser
+ * was already hardened against (see targetProfileFieldMap.test.ts's own
+ * "reports an empty needsReview for both real fixtures" test) — so it's
+ * entirely possible, and NOT a bug, for every fixture to come back 0
+ * confirmed/0 suggested/0 declined, meaning the model was never even
+ * invoked. The smoke test exists specifically so a 0/0/0 run still tells
+ * you whether the model loads and produces a sane reply at all, rather
+ * than leaving that question unanswered.
+ *
  * Usage: pnpm tsx scripts/dev/document-ai-eval.ts
  */
 import { readFile } from "node:fs/promises";
@@ -47,6 +60,35 @@ const FIXTURES_DIR = path.join(
 // geometry bug each and aren't representative documents to eval accuracy
 // against.
 const FIXTURE_NAME_FILTER = /^target-profile-training/;
+
+/**
+ * Forces one real model invocation regardless of what any fixture needs,
+ * so this script always answers "does the model actually load and run on
+ * this machine" even when every fixture's totals come back 0/0/0. Times
+ * the call, since the first invocation includes cold model load (reading
+ * ~1.5GB of ONNX weights off disk and initialising the runtime) as well
+ * as inference — worth knowing separately from steady-state latency.
+ */
+async function runSmokeTest(): Promise<void> {
+  console.log("=== Smoke test (forces the model to load) ===");
+  const startedAt = Date.now();
+  const reply = await suggestExtractedValue(
+    "address",
+    "",
+    "he was seen near the shop on the corner, sort of Wanneroo way"
+  );
+  const elapsedMs = Date.now() - startedAt;
+  console.log(
+    `  extract call: ${elapsedMs}ms, raw model reply: ${
+      reply === null ? "(none / unknown)" : `"${reply}"`
+    }`
+  );
+  if (reply === null) {
+    console.log(
+      "  (a null reply here is fine — this input is deliberately too vague for a real address. What matters is that the call completed at all, and how long it took.)"
+    );
+  }
+}
 
 async function evalOneFixture(fileName: string) {
   const buffer = await readFile(path.join(FIXTURES_DIR, fileName));
@@ -147,6 +189,8 @@ async function main() {
     );
     process.exit(1);
   }
+
+  await runSmokeTest();
 
   let totalConfirmed = 0;
   let totalSuggested = 0;

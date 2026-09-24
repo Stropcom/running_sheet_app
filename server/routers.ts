@@ -357,8 +357,14 @@ import { readPdfText } from "./documentImport/pdfTextReader";
 import { mapDocumentToTargetProfile } from "./documentImport/targetProfileFieldMap";
 import {
   getDocumentAIModelStatus,
-  suggestCleanValue,
+  suggestExtractedValue,
+  suggestVerifiedCorrection,
 } from "./documentImport/localDocumentAI";
+import {
+  verifyAISuggestion,
+  composeParsedValue,
+  type AIAssistOutcome,
+} from "./documentImport/documentAIVerify";
 import {
   createWipcAuditEntry,
   getWipcAuditLog,
@@ -3559,13 +3565,22 @@ export const appRouter = router({
           const mapped = mapDocumentToTargetProfile(read);
 
           // Local AI Roadmap Step 3 — additive only, never replaces what
-          // the rule-based mapper above already produced. Two passes, one
-          // shared call budget (MAX_AI_CALLS) across both so a pathological
-          // document can't turn one upload into dozens of sequential model
+          // the rule-based mapper above already produced, and never shown
+          // unverified: every model reply is re-parsed through the same
+          // deterministic parsers the rest of this pipeline trusts before
+          // it's returned (documentAIVerify.ts's verifyAISuggestion) — "AI
+          // proposes, deterministic code disposes". One shared call budget
+          // (MAX_AI_CALLS) across both passes so a pathological document
+          // can't turn one upload into dozens of sequential model
           // inference calls on a resource-constrained droplet — run one at
-          // a time, not in parallel, for the same reason:
+          // a time, not in parallel, for the same reason. Tightened from
+          // the previous model's budget of 10 now that each call is
+          // against a meaningfully heavier model:
           //   1. needsReview items — text the rules recognised as clearly
           //      meant to be an address/vehicle but couldn't parse at all.
+          //      Extractive task — there's no existing reading to compare
+          //      against, so the outcome is only ever "declined" or
+          //      "suggested", never "confirmed".
           //   2. Low-confidence pass — an address/vehicle the rules DID
           //      parse but flagged !confident (see ParsedAddressLine /
           //      ParsedVehicleLine's own doc comments) gets independently
@@ -3574,7 +3589,11 @@ export const appRouter = router({
           //      confident field is trusted as-is and never re-checked
           //      here, keeping this to the genuinely shaky subset rather
           //      than re-running the model over the whole document.
-          const MAX_AI_CALLS = 10;
+          //      Verify-and-correct task — the model is told the rules'
+          //      own reading and asked to confirm or correct it, so this
+          //      pass alone can come back "confirmed" (AI independently
+          //      agrees with the rules).
+          const MAX_AI_CALLS = 8;
           const aiModelStatus = await getDocumentAIModelStatus();
           let aiCallsUsed = 0;
 
@@ -3582,57 +3601,87 @@ export const appRouter = router({
             kind: "address" | "vehicle";
             label: string;
             raw: string;
-            suggested: string | null;
+            outcome: AIAssistOutcome;
           }> = [];
-          // Parallel to mapped.addresses/mapped.vehicles — null at an
-          // index means "not checked" (confident, or the call budget ran
-          // out), not "checked and found nothing".
-          const addressAiSuggestions: Array<string | null> = [];
-          const vehicleAiSuggestions: Array<string | null> = [];
+          // Parallel to mapped.addresses/mapped.vehicles — "declined" at
+          // an index also covers "not checked" (confident, or the call
+          // budget ran out), since both mean the same thing to the review
+          // screen: nothing to show beyond the rules' own reading.
+          const addressAiOutcomes: AIAssistOutcome[] = [];
+          const vehicleAiOutcomes: AIAssistOutcome[] = [];
 
           if (aiModelStatus === "ready") {
             for (const item of mapped.needsReview) {
               if (aiCallsUsed >= MAX_AI_CALLS) break;
               aiCallsUsed++;
-              const suggested = await suggestCleanValue(item.kind, item.raw);
+              const raw = await suggestExtractedValue(
+                item.kind,
+                item.label,
+                item.raw
+              );
+              const outcome: AIAssistOutcome = raw
+                ? verifyAISuggestion(item.kind, raw, null)
+                : { status: "declined" };
               aiSuggestions.push({
                 kind: item.kind,
                 label: item.label,
                 raw: item.raw,
-                suggested,
+                outcome,
               });
             }
             for (const a of mapped.addresses) {
               if (a.confident || aiCallsUsed >= MAX_AI_CALLS) {
-                addressAiSuggestions.push(null);
+                addressAiOutcomes.push({ status: "declined" });
                 continue;
               }
               aiCallsUsed++;
-              addressAiSuggestions.push(
-                await suggestCleanValue("address", a.raw)
+              const currentValue = composeParsedValue("address", a);
+              const raw = await suggestVerifiedCorrection(
+                "address",
+                a.label,
+                a.raw,
+                currentValue
+              );
+              addressAiOutcomes.push(
+                raw
+                  ? verifyAISuggestion("address", raw, currentValue)
+                  : { status: "declined" }
               );
             }
             for (const v of mapped.vehicles) {
               if (v.confident || aiCallsUsed >= MAX_AI_CALLS) {
-                vehicleAiSuggestions.push(null);
+                vehicleAiOutcomes.push({ status: "declined" });
                 continue;
               }
               aiCallsUsed++;
-              vehicleAiSuggestions.push(
-                await suggestCleanValue("vehicle", v.raw)
+              const currentValue = composeParsedValue("vehicle", v);
+              const raw = await suggestVerifiedCorrection(
+                "vehicle",
+                "",
+                v.raw,
+                currentValue
+              );
+              vehicleAiOutcomes.push(
+                raw
+                  ? verifyAISuggestion("vehicle", raw, currentValue)
+                  : { status: "declined" }
               );
             }
           } else {
-            mapped.addresses.forEach(() => addressAiSuggestions.push(null));
-            mapped.vehicles.forEach(() => vehicleAiSuggestions.push(null));
+            mapped.addresses.forEach(() =>
+              addressAiOutcomes.push({ status: "declined" })
+            );
+            mapped.vehicles.forEach(() =>
+              vehicleAiOutcomes.push({ status: "declined" })
+            );
           }
 
           return {
             ...mapped,
             aiModelStatus,
             aiSuggestions,
-            addressAiSuggestions,
-            vehicleAiSuggestions,
+            addressAiOutcomes,
+            vehicleAiOutcomes,
           };
         }),
     }),

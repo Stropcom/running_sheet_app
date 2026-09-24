@@ -73,6 +73,45 @@ import {
   type StructuredVehicleParts,
 } from "@/lib/addressFormat";
 
+// Mirrors server/documentImport/documentAIVerify.ts's AIAssistOutcome —
+// duplicated as a plain structural type rather than imported, same as the
+// rest of this dialog's result shape, since the client infers tRPC
+// payload shapes rather than importing server modules directly. Every
+// value here has already been through that module's deterministic
+// re-parse before it reached the client — "declined" covers both "the AI
+// had nothing" and "the AI's suggestion didn't verify", which read the
+// same to an officer either way (nothing to show).
+type AIAssistOutcome =
+  | { status: "declined" }
+  | { status: "confirmed"; value: string }
+  | { status: "suggested"; value: string };
+
+/** One line under a parsed field showing what the on-device AI made of
+ * the same text, when there's anything worth showing — silent for
+ * "declined". "confirmed" and "suggested" are deliberately distinct: the
+ * former means the AI's own independent read agrees with the rules
+ * (reassurance, not a prompt to act), the latter means it disagrees
+ * (worth a second look) — collapsing them into one flat "AI read this
+ * as..." line (the previous version of this dialog) loses exactly the
+ * distinction that makes the AI assist useful. */
+function AIAssistNote({ outcome }: { outcome: AIAssistOutcome | undefined }) {
+  if (!outcome || outcome.status === "declined") return null;
+  if (outcome.status === "confirmed") {
+    return (
+      <p className="text-xs text-emerald-700 dark:text-emerald-400 pl-2 border-l-2 border-emerald-500/40 flex items-center gap-1">
+        <Check className="h-3 w-3 shrink-0" />
+        AI independently reads this the same way.
+      </p>
+    );
+  }
+  return (
+    <p className="text-xs text-violet-700 dark:text-violet-400 pl-2 border-l-2 border-violet-500/40">
+      AI suggests: <span className="font-medium">{outcome.value}</span> —
+      compare against the original before using it.
+    </p>
+  );
+}
+
 // A photo extracted from the source document that the officer chose to
 // keep on this review screen — staged the same way associates are (see
 // StagedAssociate), actually saved (uploaded to the target's Images folder
@@ -773,7 +812,7 @@ export function ImportTargetDocumentDialog({
                     Addresses ({result.addresses.length})
                   </p>
                   {result.addresses.map((a, i) => {
-                    const aiCheck = result.addressAiSuggestions?.[i];
+                    const outcome = result.addressAiOutcomes?.[i];
                     return (
                       <div key={i} className="flex flex-col gap-0.5">
                         <p className="text-sm">
@@ -800,13 +839,7 @@ export function ImportTargetDocumentDialog({
                             </Badge>
                           )}
                         </p>
-                        {aiCheck && (
-                          <p className="text-xs text-primary pl-2 border-l-2 border-primary/40">
-                            AI's independent read:{" "}
-                            <span className="font-medium">{aiCheck}</span> —
-                            compare against the original before trusting either.
-                          </p>
-                        )}
+                        <AIAssistNote outcome={outcome} />
                       </div>
                     );
                   })}
@@ -819,7 +852,7 @@ export function ImportTargetDocumentDialog({
                     Vehicles ({result.vehicles.length})
                   </p>
                   {result.vehicles.map((v, i) => {
-                    const aiCheck = result.vehicleAiSuggestions?.[i];
+                    const outcome = result.vehicleAiOutcomes?.[i];
                     return (
                       <div key={i} className="flex flex-col gap-0.5">
                         <p className="text-sm">
@@ -835,13 +868,7 @@ export function ImportTargetDocumentDialog({
                             </Badge>
                           )}
                         </p>
-                        {aiCheck && (
-                          <p className="text-xs text-primary pl-2 border-l-2 border-primary/40">
-                            AI's independent read:{" "}
-                            <span className="font-medium">{aiCheck}</span> —
-                            compare against the original before trusting either.
-                          </p>
-                        )}
+                        <AIAssistNote outcome={outcome} />
                       </div>
                     );
                   })}
@@ -1005,15 +1032,7 @@ export function ImportTargetDocumentDialog({
                           </span>
                           <span className="italic">{u.raw}</span>
                         </p>
-                        {aiSuggestion?.suggested && (
-                          <p className="text-xs text-primary pl-2 border-l-2 border-primary/40">
-                            AI read this as:{" "}
-                            <span className="font-medium">
-                              {aiSuggestion.suggested}
-                            </span>{" "}
-                            — check it against the original before using it.
-                          </p>
-                        )}
+                        <AIAssistNote outcome={aiSuggestion?.outcome} />
                       </div>
                     );
                   })}

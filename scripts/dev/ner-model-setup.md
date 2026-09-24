@@ -12,6 +12,15 @@ step for whoever deploys this branch — same situation as
 `scripts/dev/voice-model-setup.md`, just on the server side instead of the
 client.
 
+## Library note
+
+This file runs on `@huggingface/transformers` now, not
+`@xenova/transformers` — upgraded when `server/documentImport/localDocumentAI.ts`'s
+model needed a newer ONNX runtime than the old package could provide (see
+that file's header for the full story). `dtype: "q8"` replaces the old
+`quantized: true` option in `getNerPipeline()`; nothing else about this
+model changed — same model ID, same file layout, same weight filename.
+
 ## What must never happen
 
 Per CLAUDE.md's Golden Rule, this app must never call an external AI/LLM
@@ -38,13 +47,14 @@ checked the results make sense.
 
 Model: **`Xenova/bert-base-NER`** — a general-purpose English NER model
 (person/organisation/location/misc), the standard example model in
-`@xenova/transformers`' own documentation for the `token-classification`
-pipeline. Confirmed as a real, correct model ID from this repo's own
+`@huggingface/transformers`' own documentation for the
+`token-classification` pipeline too (unchanged across the library
+upgrade). Confirmed as a real, correct model ID from this repo's own
 installed copy of the library
-(`node_modules/@xenova/transformers/types/pipelines.d.ts`'s own worked
-example uses this exact model), not just from memory — but double-check it
-still resolves on Hugging Face Hub before fetching, the same way you would
-for any dependency.
+(`node_modules/@huggingface/transformers/types/pipelines/token-classification.d.ts`'s
+own worked examples use this exact model), not just from memory — but
+double-check it still resolves on Hugging Face Hub before fetching, the
+same way you would for any dependency.
 
 From a machine that can reach the model host, fetch every file in the
 `Xenova/bert-base-NER` model repository on Hugging Face Hub

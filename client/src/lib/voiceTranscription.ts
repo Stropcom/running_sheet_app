@@ -1,17 +1,36 @@
 // Local, on-device speech-to-text for the Observation field's voice-input
 // button (RS Quick Entry). Runs entirely in the browser via a WASM build
-// of Whisper (@xenova/transformers, on top of onnxruntime-web) — no audio
-// or transcript ever leaves the device, no network call at runtime. This
-// is the Golden Rule's own "deterministic/on-device" pattern applied to a
-// genuinely NLP-shaped problem (see CLAUDE.md's "Planned — local voice
-// observation" note), not an exception to it.
+// of Whisper (@huggingface/transformers, on top of onnxruntime-web) — no
+// audio or transcript ever leaves the device, no network call at runtime.
+// This is the Golden Rule's own "deterministic/on-device" pattern applied
+// to a genuinely NLP-shaped problem (see CLAUDE.md's "Planned — local
+// voice observation" note), not an exception to it.
 //
-// Named transcribeVoiceClip, not transcribeAudio — deliberately, to avoid
-// any string collision with server/_core/voiceTranscription.ts's dead
-// Manus scaffolding function of that name, which the no-runtime-ai guard
-// blocks by literal string match wherever it appears outside _core. This
-// function has nothing to do with that one; different name avoids the
-// false-positive entirely rather than fighting the guard.
+// ⚠️ DISABLED — the mic button that calls into this file
+// (components/VoiceInputButton.tsx) is currently hidden, so nothing here
+// runs. Reason: this app was upgraded from @xenova/transformers to
+// @huggingface/transformers (see server/documentImport/localDocumentAI.ts's
+// header for the full story), and the newer onnxruntime-web version that
+// upgrade pulls in dropped the old single-threaded-safe WASM build
+// entirely — every file it now ships (checked all four variants: plain,
+// asyncify, jsep, jspi) unconditionally tries to construct a shared
+// WebAssembly.Memory at load time, which throws without
+// Cross-Origin-Opener/Embedder-Policy headers, REGARDLESS of the
+// numThreads=1 setting below (that only controls worker-thread count,
+// checked further down in the same file, after the shared-memory
+// construction already happened). This app doesn't set those headers, and
+// adding them site-wide risks breaking the Google Maps JS API embed
+// elsewhere in the app (a real, previously-documented conflict, not a
+// hypothetical one). The import/options below are updated to the new
+// library's real API so this at least compiles and is easy to pick back
+// up, but the wasmPaths config a few lines down has NOT been re-verified
+// against the new library's object-shaped requirement (confirmed via
+// node_modules/@huggingface/transformers/src/backends/onnx.js: it now
+// wants `{ wasm: string, mjs: string }`, not a bare path-prefix string) —
+// treat this whole file as unverified until the COOP/COEP question is
+// resolved and someone actually re-enables and tests it, likely alongside
+// CLAUDE.md's planned native (Capacitor) wrap rather than as a standalone
+// web fix.
 //
 // Two things must be self-hosted static assets for the "no network call"
 // guarantee to actually hold, since both default to fetching from a
@@ -24,29 +43,35 @@
 //      agency-controlled deployment step, not something to commit.
 //   2. onnxruntime-web's own WASM engine binaries — these ARE available
 //      locally (onnxruntime-web is a real npm dependency, pulled in
-//      transitively by @xenova/transformers), so scripts/dev/
+//      transitively by @huggingface/transformers), so scripts/dev/
 //      copy-onnx-wasm.ts copies them into client/public/onnx-wasm/
-//      automatically before `pnpm dev`/`pnpm build` — nothing to fetch or
-//      configure by hand for this half.
+//      automatically before `pnpm dev`/`pnpm build` — its file list is
+//      now stale (written for the old onnxruntime-web version's
+//      filenames, which no longer exist) and needs updating alongside
+//      whatever wasmPaths ends up being, not fixed blind here.
 import {
   env,
   AutoModelForSpeechSeq2Seq,
   AutoTokenizer,
   AutoProcessor,
   AutomaticSpeechRecognitionPipeline,
-} from "@xenova/transformers";
+} from "@huggingface/transformers";
 
 env.allowRemoteModels = false;
 env.allowLocalModels = true;
 env.localModelPath = "/models/";
 if (env.backends.onnx.wasm) {
+  // ⚠️ Not re-verified for the new library — see this file's header.
+  // The new onnxruntime-web version expects an object here
+  // ({ wasm: string, mjs: string }), not a bare string; left as the old
+  // shape since this whole path is unreachable while the mic button is
+  // hidden, and fixing it blind without also fixing copy-onnx-wasm.ts's
+  // file list and confirming which WASM variant to serve would just be
+  // another guess.
   env.backends.onnx.wasm.wasmPaths = "/onnx-wasm/";
-  // Multi-threaded WASM needs Cross-Origin-Opener/Embedder-Policy headers
-  // for SharedArrayBuffer, which this app doesn't set — that's a real risk
-  // to the Google Maps JS API embed elsewhere in the app if applied
-  // site-wide (see CLAUDE.md). Single-threaded is slower but always works
-  // with zero header changes; revisit only if scoped narrowly and tested
-  // against Maps first.
+  // Kept for whenever this is revisited — no longer sufficient on its
+  // own (see header): the newer WASM build needs COOP/COEP headers to
+  // even load, independent of this setting.
   env.backends.onnx.wasm.numThreads = 1;
 }
 
@@ -112,14 +137,20 @@ function getTranscriber(): Promise<AutomaticSpeechRecognitionPipeline> {
   if (!transcriberPromise) {
     transcriberPromise = (async () => {
       await evictStaleModelWeightCacheEntries();
-      const pretrainedOptions = { quantized: true };
+      // dtype, not the old package's `quantized: true` boolean — see
+      // server/documentImport/localDocumentAI.ts's getDocumentAIPipeline
+      // for why that option no longer exists at all in
+      // @huggingface/transformers. Only the model itself takes a dtype
+      // (it's the only one of these three with ONNX weight files to pick
+      // a quantization for) — the tokenizer/processor options types
+      // don't include it at all, confirmed from the installed package's
+      // own type declarations.
       const [tokenizer, model, processor] = await Promise.all([
-        AutoTokenizer.from_pretrained(VOICE_MODEL_ID, pretrainedOptions),
-        AutoModelForSpeechSeq2Seq.from_pretrained(
-          VOICE_MODEL_ID,
-          pretrainedOptions
-        ),
-        AutoProcessor.from_pretrained(VOICE_MODEL_ID, pretrainedOptions),
+        AutoTokenizer.from_pretrained(VOICE_MODEL_ID),
+        AutoModelForSpeechSeq2Seq.from_pretrained(VOICE_MODEL_ID, {
+          dtype: "q8",
+        }),
+        AutoProcessor.from_pretrained(VOICE_MODEL_ID),
       ]);
       return new AutomaticSpeechRecognitionPipeline({
         task: "automatic-speech-recognition",

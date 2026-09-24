@@ -8,7 +8,7 @@ other two local models (`scripts/dev/voice-model-setup.md`,
 network policy blocks fetching it directly, this is a one-time manual step
 for whoever deploys this branch.
 
-## ⚠️ Read this before deploying — heavier than the model this replaces
+## ⚠️ Read this before deploying — heavier than the model this replaces, and needs a newer library
 
 This step was upgraded from `Xenova/LaMini-Flan-T5-783M` to
 **`onnx-community/Qwen2.5-1.5B-Instruct`** — roughly 2x the parameter
@@ -16,15 +16,31 @@ count, for meaningfully better instruction-following (chat-template
 prompting, explicit "don't invent details" instructions, a
 verify-and-correct task in addition to plain extraction — see
 `localDocumentAI.ts`'s header). The quantized weight file itself is
-**confirmed 1505MB** (`onnx/model_quantized.onnx`, measured from a real
-fetch against the actual repo on the droplet this was deployed to — not
-an estimate). What that costs once loaded into
-RAM alongside the rest of the running app hasn't been confirmed the same
-way yet — watch memory closely through the model's first real load
-(`free -h`, `pm2 monit`, or `scripts/dev/document-ai-eval.ts`'s forced
-smoke test) rather than assuming it'll just work. If the app becomes
-unresponsive or the process gets OOM-killed when this runs, that's the
-droplet needing another resize, not a bug to chase in the code.
+**confirmed 1505MB** (`onnx/model_quantized.onnx`).
+
+**RAM: confirmed 8GB minimum, not an estimate.** A real deployment
+attempt on a 4GB droplet was OOM-killed by the kernel outright —
+`dmesg` showed the one Node process alone using ~3.6GB resident RAM
+once the model actually loaded, more than the droplet's entire 3.8Gi
+total. This droplet was resized to 8GB (2 vCPU, same 35GB disk) and
+that comfortably covers it (~3.6GB model + baseline app/MySQL/nginx
+against ~7.8Gi total). Do not deploy this to anything smaller than 8GB
+RAM — it will not just run slowly, it will be killed.
+
+**Library: this repo now runs `@huggingface/transformers`, not
+`@xenova/transformers`.** The model repo's ONNX files are built with a
+newer ONNX IR version (10) than `@xenova/transformers`' old bundled
+`onnxruntime-node@1.14.0` can parse at all — a real deploy attempt threw
+`Unsupported model IR version: 10, max supported IR version: 8` on
+every backend (native and WASM fallback both failed the same way). This
+isn't fixable by picking a different file or adding an option —
+`@xenova/transformers` genuinely cannot load any current onnx-community
+export. `@huggingface/transformers` (the same project/maintainer,
+continued under the Hugging Face org — see `package.json`) pulls in a
+current `onnxruntime-node`/`onnxruntime-web` that parses this fine.
+`server/localNER.ts` uses the same package now too, for consistency (one
+AI runtime library in the app, not two) — see that file's own header for
+anything specific to it.
 
 ## What must never happen
 
@@ -52,43 +68,33 @@ concrete eval to run first.
 ## What to fetch
 
 Model: **`onnx-community/Qwen2.5-1.5B-Instruct`** — a decoder-only,
-instruction-tuned chat model. `@xenova/transformers@2.17.2` (this repo's
-pinned version — see `package.json`) supports chat-array input directly
-on the `text-generation` pipeline: pass an array of `{role, content}`
-messages and it internally calls the tokenizer's own
+instruction-tuned chat model. `@huggingface/transformers@4.3.0` (this
+repo's pinned version — see `package.json`) supports chat-array input
+directly on the `text-generation` pipeline: pass an array of
+`{role, content}` messages and it internally calls the tokenizer's own
 `apply_chat_template` and returns only the newly generated assistant
 turn — confirmed from this repo's own installed copy of the library
-(`node_modules/@xenova/transformers/src/pipelines.js`'s
-`TextGenerationPipeline._call`, which special-cases chat input), not just
-from memory. That means the model's own `tokenizer_config.json` (which
-carries the chat template) must be fetched too, not just `config.json`.
+(`node_modules/@huggingface/transformers/src/pipelines/text-generation.js`,
+which special-cases chat input identically to how the previous
+`@xenova/transformers` version did), not just from memory. That means the
+model's own `tokenizer_config.json` (which carries the chat template)
+must be fetched too, not just `config.json`.
 
-Expected repo layout — the weight file is `onnx/model_quantized.onnx`.
-This went through two wrong turns before landing here, both real and
-both worth knowing about if this ever needs revisiting:
-
-1. First guess: `onnx/model_quantized.onnx`, from a web search result —
-   turned out right, but wasn't trusted enough at the time.
-2. "Fix": switched to `onnx/decoder_model_merged_quantized.onnx`,
-   because that's `@xenova/transformers`' own hardcoded default base
-   filename for any decoder-only causal LM
-   (`constructSession()`/`MODEL_TYPES.DecoderOnly` in
-   `node_modules/@xenova/transformers/src/models.js`) — but this repo
-   doesn't publish under that name at all (confirmed via a clean 404,
-   `x-error-code: EntryNotFound`, not a network issue).
-3. Actual fix: the _filename_ from step 1 was right all along — a real
-   fetch against the live 1.5B repo succeeded at 1505MB, no 404 — the
-   _code_ was wrong. onnx-community exports every model under the base
-   name `"model"` (confirmed via the sibling
-   `onnx-community/Qwen2.5-0.5B-Instruct` repo's real file listing:
-   `model.onnx`, `model_fp16.onnx`, `model_int8.onnx`, `model_q4.onnx`,
-   `model_quantized.onnx`, `model_uint8.onnx` — no `decoder_model_merged*`
-   files at all), not transformers.js's own default of
-   `"decoder_model_merged"`. `getDocumentAIPipeline()` in
-   `localDocumentAI.ts` now passes `model_file_name: "model"` to
-   `pipeline()` to override that default, so the filename below is
-   correct as written — no code-side override needed beyond what's
-   already there.
+Expected repo layout — the weight file is `onnx/model_quantized.onnx`,
+confirmed two ways: a real successful fetch against the live 1.5B repo
+(1505MB, no 404), and `@huggingface/transformers`' own default base
+filename for a decoder-only model being `"model"` (confirmed from
+`node_modules/@huggingface/transformers/src/models/session_config.js`'s
+`MODEL_SESSION_CONFIG[MODEL_TYPES.DecoderOnly]`) — combined with
+`dtype: "q8"` in `getDocumentAIPipeline()`
+(`server/documentImport/localDocumentAI.ts`), which maps to the
+`_quantized` filename suffix. No `model_file_name` override is needed —
+this library's own default already matches what onnx-community
+publishes (unlike the previous `@xenova/transformers` version, whose
+different default, `"decoder_model_merged"`, didn't exist in this repo
+at all and needed an explicit override — moot now, but see this file's
+git history if that class of mismatch ever resurfaces with a different
+model).
 
 ```
 server/models/
@@ -120,11 +126,16 @@ curl -L -o onnx/model_quantized.onnx "https://huggingface.co/onnx-community/Qwen
 working, 1505MB, during this model's own deployment), the repo's layout
 has changed since — browse
 `https://huggingface.co/onnx-community/Qwen2.5-1.5B-Instruct/tree/main/onnx`
-in a browser to see the real name(s) available, fetch that instead, and
-pass `{ model_file_name: "<real-name-without-_quantized.onnx-suffix>" }`
-as a `pipeline()` option in `getDocumentAIPipeline()`
-(`server/documentImport/localDocumentAI.ts`) to match — it currently
-passes `model_file_name: "model"`, matching the filename above.
+in a browser to see the real name(s) available. If it's still a `model*`
+family file but a different quantization (e.g. `model_int8.onnx` instead
+of `model_quantized.onnx`), just fetch that file and change `dtype` in
+`getDocumentAIPipeline()` (`server/documentImport/localDocumentAI.ts`) to
+match, per `DEFAULT_DTYPE_SUFFIX_MAPPING` in
+`node_modules/@huggingface/transformers/src/utils/dtypes.js` (`q8` →
+`_quantized`, `int8` → `_int8`, `fp16` → `_fp16`, `q4` → `_q4`, etc). If
+the base name isn't `"model"` at all, pass
+`{ model_file_name: "<real-base-name>" }` as an additional `pipeline()`
+option to override the library's default.
 
 ## Verifying it worked
 

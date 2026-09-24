@@ -1,5 +1,5 @@
 // Local, on-device document reading — Step 3 of the Local AI Roadmap. Runs
-// server-side in Node (same @xenova/transformers infrastructure as
+// server-side in Node (same @huggingface/transformers infrastructure as
 // server/localNER.ts — see that file's header for the general pattern) so
 // it can read a whole imported document, not just live-typed text. No
 // document text ever leaves this server — no runtime network call
@@ -36,13 +36,25 @@
 //
 // ⚠️ Heavier than Step 2's model, and than this step's original model —
 // Qwen2.5-1.5B-Instruct is roughly 2x LaMini-Flan-T5-783M's parameter
-// count and ~19x bert-base-NER's. Test carefully on whatever droplet
-// tier this runs on; see document-ai-model-setup.md's RAM guidance.
+// count and ~19x bert-base-NER's. Real, measured cost: ~3.6GB resident
+// RAM once loaded (a real OOM kill on a 4GB droplet confirmed this the
+// hard way) — needs an 8GB+ droplet tier. See
+// document-ai-model-setup.md's RAM guidance.
+//
+// Runs on @huggingface/transformers (the current, actively-developed
+// package — @xenova/transformers, this app's original choice, is the
+// predecessor of the same project/maintainer and is no longer where new
+// model conversions are published; see this file's git history for the
+// real, hard-learned reason for the switch — the old package's bundled
+// onnxruntime-node couldn't even parse this model's ONNX graph format at
+// all, a hard incompatibility no amount of RAM or filename fixing could
+// solve, confirmed via a real "Unsupported model IR version" error
+// against the actual 1.5B repo).
 import {
   env,
   pipeline,
   type TextGenerationPipeline,
-} from "@xenova/transformers";
+} from "@huggingface/transformers";
 
 env.allowRemoteModels = false;
 env.allowLocalModels = true;
@@ -71,15 +83,14 @@ const MIN_PLAUSIBLE_WEIGHT_BYTES = 100_000;
 // onnx-community/Qwen2.5-0.5B-Instruct repo's own
 // onnx/model_quantized.onnx blob page, 512MB, listed alongside its other
 // dtype variants: model.onnx, model_fp16.onnx, model_int8.onnx,
-// model_q4.onnx, model_quantized.onnx, model_uint8.onnx — onnx-community
-// exports every model under this same "model" base name regardless of
-// architecture). @xenova/transformers' own built-in default base name
-// for a decoder-only model is 'decoder_model_merged', NOT 'model' — see
-// getDocumentAIPipeline's model_file_name override below, which is the
-// actual piece needed to make this line up; that default genuinely
-// doesn't exist in this repo (confirmed via a clean 404 with
-// x-error-code: EntryNotFound against a real deploy attempt, not a
-// network issue) and must not be used.
+// model_q4.onnx, model_quantized.onnx, model_uint8.onnx). Confirmed
+// straight from @huggingface/transformers' own installed source
+// (node_modules/@huggingface/transformers/src/models/session_config.js's
+// MODEL_SESSION_CONFIG[MODEL_TYPES.DecoderOnly]) that 'model' is this
+// library's own default base filename for a decoder-only model too — no
+// override needed here, unlike the old @xenova/transformers package
+// (v2), whose different default ('decoder_model_merged') genuinely
+// doesn't exist in this repo and had to be explicitly overridden.
 const WEIGHT_FILE_PATHS = [
   `server/models/${DOCUMENT_AI_MODEL_ID}/onnx/model_quantized.onnx`,
 ];
@@ -122,15 +133,17 @@ let generatorPromise: Promise<TextGenerationPipeline> | null = null;
 function getDocumentAIPipeline(): Promise<TextGenerationPipeline> {
   if (!generatorPromise) {
     generatorPromise = pipeline("text-generation", DOCUMENT_AI_MODEL_ID, {
-      quantized: true,
-      // Overrides @xenova/transformers' built-in default base filename
-      // ('decoder_model_merged') with the base name onnx-community
-      // actually publishes its ONNX exports under ('model') — see
-      // WEIGHT_FILE_PATHS's comment above for how this was confirmed.
-      // Combined with quantized: true, this makes constructSession()
-      // (node_modules/@xenova/transformers/src/models.js) request
-      // exactly onnx/model_quantized.onnx, matching WEIGHT_FILE_PATHS.
-      model_file_name: "model",
+      // dtype, not the old package's `quantized: true` boolean — that
+      // option no longer exists in @huggingface/transformers at all
+      // (confirmed: no reference to it anywhere in the installed
+      // package's source). "q8" maps to the '_quantized' filename
+      // suffix (node_modules/@huggingface/transformers/src/utils/
+      // dtypes.js's DEFAULT_DTYPE_SUFFIX_MAPPING), matching
+      // WEIGHT_FILE_PATHS. Left unset, this would silently default to
+      // fp32 on Node (the full, unquantized, multi-gigabyte weights,
+      // which aren't even the file fetched onto the server) — this must
+      // stay explicit.
+      dtype: "q8",
     });
   }
   return generatorPromise;

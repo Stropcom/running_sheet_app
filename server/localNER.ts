@@ -1,11 +1,21 @@
 // Local, on-device named-entity recognition — Step 2 of the Local AI
-// Roadmap. Runs server-side in Node (via @xenova/transformers, the same
-// package the browser-side voice feature uses — see
+// Roadmap. Runs server-side in Node (via @huggingface/transformers, the
+// same package the browser-side voice feature uses — see
 // client/src/lib/voiceTranscription.ts's header comment for the general
 // pattern this mirrors) so it can scan historical observation text across
 // the whole Intelligence folder, not just one row as it's typed. No audio
 // or text ever leaves this server — no runtime network call, satisfying
 // CLAUDE.md's Golden Rule the same way the voice feature does.
+//
+// Upgraded from @xenova/transformers (this app's original choice) to
+// @huggingface/transformers (the same project/maintainer, continued
+// development under the HF org) when server/documentImport/localDocumentAI.ts's
+// model needed it — the old package's bundled ONNX runtime couldn't parse
+// a newer model's file format at all, a hard incompatibility with no
+// workaround short of the library upgrade. Switched this file to the same
+// package for consistency rather than running two different AI runtime
+// libraries side by side. See localDocumentAI.ts's header for the full
+// story if this ever needs re-litigating.
 //
 // What this is for: extractEntitiesFromText (db.ts) is regex/rule-based —
 // good at finding an entity shaped the way it expects, blind to one that
@@ -26,7 +36,7 @@ import {
   env,
   pipeline,
   type TokenClassificationPipeline,
-} from "@xenova/transformers";
+} from "@huggingface/transformers";
 
 env.allowRemoteModels = false;
 env.allowLocalModels = true;
@@ -72,8 +82,16 @@ let nerPipelinePromise: Promise<TokenClassificationPipeline> | null = null;
 
 function getNerPipeline(): Promise<TokenClassificationPipeline> {
   if (!nerPipelinePromise) {
+    // dtype, not the old package's `quantized: true` boolean — see
+    // localDocumentAI.ts's getDocumentAIPipeline for the full reasoning
+    // (that option no longer exists in @huggingface/transformers at
+    // all). "q8" maps to the same '_quantized' filename suffix as
+    // before, matching WEIGHT_FILE_PATH unchanged — bert-base-NER is an
+    // encoder-only model, whose default base filename ("model") didn't
+    // change between library versions the way the decoder-only Document
+    // AI model's did, so no other change was needed here.
     nerPipelinePromise = pipeline("token-classification", NER_MODEL_ID, {
-      quantized: true,
+      dtype: "q8",
     });
   }
   return nerPipelinePromise;
@@ -116,13 +134,16 @@ export interface RawTokenTag {
  * can be exercised directly in server/localNER.test.ts without needing the
  * real weights this sandbox can't fetch.
  *
- * No aggregation_strategy option exists in this package version (see
- * node_modules/@xenova/transformers/src/pipelines.js's
- * TokenClassificationPipeline._call — it only accepts ignore_labels) — the
- * pipeline always returns one raw WordPiece-level tag per token, e.g. a
- * two-word name like "Sarah Connor" comes back as two separate B-PER/
- * I-PER entries, and a name split mid-word ("Johnson" -> "John" +
- * "##son") comes back as two entries too. This merges those back by hand.
+ * getNerPipeline() deliberately doesn't pass aggregation_strategy: "simple"
+ * (an option @huggingface/transformers does support, unlike the
+ * @xenova/transformers version this app started on) — this merges raw
+ * per-token BIO tags into name spans by hand instead, kept as-is across
+ * the library upgrade rather than switched to the built-in aggregator, to
+ * avoid changing tested-by-inspection reconstruction logic and a library
+ * upgrade in the same change. A two-word name like "Sarah Connor" comes
+ * back as two separate B-PER/I-PER entries, and a name split mid-word
+ * ("Johnson" -> "John" + "##son") comes back as two entries too — this
+ * merges those back by hand.
  */
 export function mergePersonTokenTags(
   tokens: RawTokenTag[]

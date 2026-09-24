@@ -18,6 +18,7 @@
 import { readFile } from "node:fs/promises";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { readDocxTables } from "../../server/documentImport/docxTableReader";
 import { readPdfText } from "../../server/documentImport/pdfTextReader";
 import { mapDocumentToTargetProfile } from "../../server/documentImport/targetProfileFieldMap";
@@ -30,6 +31,11 @@ import {
   verifyAISuggestion,
   composeParsedValue,
 } from "../../server/documentImport/documentAIVerify";
+
+// package.json's "type": "module" means this runs as ESM under tsx, where
+// __dirname isn't defined — derive the equivalent from import.meta.url
+// instead, so this resolves correctly regardless of the shell's cwd.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const FIXTURES_DIR = path.join(
   __dirname,

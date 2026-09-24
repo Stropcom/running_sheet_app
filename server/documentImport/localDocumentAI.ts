@@ -64,19 +64,26 @@ export const DOCUMENT_AI_MODEL_ID = "onnx-community/Qwen2.5-1.5B-Instruct";
 const MIN_PLAUSIBLE_WEIGHT_BYTES = 100_000;
 
 // Decoder-only architecture (unlike LaMini-Flan-T5-783M's encoder/decoder
-// split this replaces) — a single merged weight file, per the confirmed
-// onnx/model_quantized.onnx layout of the sibling
-// onnx-community/Qwen2.5-0.5B-Instruct repo (a real search result, not a
-// guess — a GitHub issue against that same sibling repo reporting a 404
-// for the wrong filename "decoder_model_merged_quantized.onnx" confirms
-// that pattern does NOT apply to these Qwen2.5 ONNX conversions). ⚠️ Not
-// confirmed against the 1.5B repo itself (this sandbox's network policy
-// blocks reaching the model host directly) — verify the actual file name
-// when doing the manual fetch step
-// (scripts/dev/document-ai-model-setup.md) and correct here if it
-// differs.
+// split this replaces) — still a single weight file, but its name is
+// fixed by @xenova/transformers itself, not by whatever the model repo
+// happens to publish under. Confirmed straight from this repo's pinned
+// copy of the library (node_modules/@xenova/transformers/src/models.js):
+// constructSession() builds the path as
+// `onnx/${fileName}${quantized ? '_quantized' : ''}.onnx`, and for any
+// MODEL_TYPES.DecoderOnly model (which AutoModelForCausalLM.from_pretrained
+// resolves Qwen2ForCausalLM to) `fileName` defaults to
+// 'decoder_model_merged' — "merged" here is the library's own generic
+// default file-naming convention for a decoder-only causal LM, not
+// something specific to an encoder-decoder split like the T5 model this
+// replaces. An earlier version of this constant used
+// `onnx/model_quantized.onnx` based on a web search result for a sibling
+// repo — that was wrong; a real deployment attempt against the actual
+// 1.5B repo threw exactly the error this comment now explains
+// (`local_files_only=true ... file was not found locally at
+// ".../onnx/decoder_model_merged_quantized.onnx"`), which is what this
+// was corrected against instead of another guess.
 const WEIGHT_FILE_PATHS = [
-  `server/models/${DOCUMENT_AI_MODEL_ID}/onnx/model_quantized.onnx`,
+  `server/models/${DOCUMENT_AI_MODEL_ID}/onnx/decoder_model_merged_quantized.onnx`,
 ];
 
 // A chat-template model needs its tokenizer config (carries the Jinja

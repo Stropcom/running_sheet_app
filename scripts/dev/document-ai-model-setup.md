@@ -15,16 +15,16 @@ This step was upgraded from `Xenova/LaMini-Flan-T5-783M` to
 count, for meaningfully better instruction-following (chat-template
 prompting, explicit "don't invent details" instructions, a
 verify-and-correct task in addition to plain extraction — see
-`localDocumentAI.ts`'s header). Measured on this droplet: ~3.0Gi free at
-steady state (`free -h`). A real sibling model
-(`onnx-community/Qwen2.5-0.5B-Instruct`) has a confirmed 512MB q8
-`model_quantized.onnx` — extrapolating (not measured) puts the 1.5B q8
-weights at roughly ~1.4–1.6GB, ~1.8–2.2GB total runtime footprint. Watch
-memory closely the first time this actually runs (`free -h`, `pm2
-monit`) rather than assuming it'll just work. If the app becomes
-unresponsive or the process gets OOM-killed when a document import
-triggers this, that's the droplet needing another resize, not a bug to
-chase in the code.
+`localDocumentAI.ts`'s header). The quantized weight file itself is
+**confirmed 1505MB** (`onnx/decoder_model_merged_quantized.onnx`,
+measured from a real fetch against the actual repo on the droplet this
+was deployed to — not an estimate). What that costs once loaded into
+RAM alongside the rest of the running app hasn't been confirmed the same
+way yet — watch memory closely through the model's first real load
+(`free -h`, `pm2 monit`, or `scripts/dev/document-ai-eval.ts`'s forced
+smoke test) rather than assuming it'll just work. If the app becomes
+unresponsive or the process gets OOM-killed when this runs, that's the
+droplet needing another resize, not a bug to chase in the code.
 
 ## What must never happen
 
@@ -63,13 +63,17 @@ turn — confirmed from this repo's own installed copy of the library
 from memory. That means the model's own `tokenizer_config.json` (which
 carries the chat template) must be fetched too, not just `config.json`.
 
-Expected repo layout (⚠️ **not confirmed against the real 1.5B repo
-directly** — this sandbox's network policy blocks reaching the model host
-to check; inferred from the confirmed `onnx/model_quantized.onnx` layout
-of the sibling `onnx-community/Qwen2.5-0.5B-Instruct` repo, a single
-merged decoder file, unlike the encoder/decoder split the previous T5
-model used — check the actual file names in the 1.5B repo and adjust
-`WEIGHT_FILE_PATHS` in `localDocumentAI.ts` if they differ):
+Expected repo layout — the weight filename below is **not a guess about
+the repo**, it's fixed by `@xenova/transformers@2.17.2` itself (this
+repo's pinned version): `constructSession()` in
+`node_modules/@xenova/transformers/src/models.js` builds the path as
+`onnx/${fileName}${quantized ? '_quantized' : ''}.onnx`, and for any
+decoder-only causal LM (which `Qwen2ForCausalLM` is) `fileName` defaults
+to `'decoder_model_merged'` — confirmed the hard way, by a real deploy
+attempt against the actual 1.5B repo throwing exactly this filename in
+its "file was not found locally" error. (An earlier version of this doc
+said `onnx/model_quantized.onnx`, based on a web search result for a
+sibling repo — that was wrong; don't use it.)
 
 ```
 server/models/
@@ -79,7 +83,7 @@ server/models/
       tokenizer.json
       tokenizer_config.json
       onnx/
-        model_quantized.onnx
+        decoder_model_merged_quantized.onnx
 ```
 
 ## ⚠️ Git LFS trap — do not `git clone` the model repo directly
@@ -94,20 +98,31 @@ cd server/models/onnx-community/Qwen2.5-1.5B-Instruct
 for f in config.json tokenizer.json tokenizer_config.json; do
   curl -L -o "$f" "https://huggingface.co/onnx-community/Qwen2.5-1.5B-Instruct/resolve/main/$f"
 done
-curl -L -o onnx/model_quantized.onnx "https://huggingface.co/onnx-community/Qwen2.5-1.5B-Instruct/resolve/main/onnx/model_quantized.onnx"
+curl -L -o onnx/decoder_model_merged_quantized.onnx "https://huggingface.co/onnx-community/Qwen2.5-1.5B-Instruct/resolve/main/onnx/decoder_model_merged_quantized.onnx"
 ```
 
-**If the `onnx/` file 404s**, the repo's actual file name differs from
-what's assumed above — browse
+**If someone already fetched `onnx/model_quantized.onnx` under the old
+(wrong) instructions**, that file can be deleted — it's the wrong name
+and the app will never look for it:
+
+```bash
+rm -f server/models/onnx-community/Qwen2.5-1.5B-Instruct/onnx/model_quantized.onnx
+```
+
+**If the `decoder_model_merged_quantized.onnx` fetch 404s**, the repo's
+actual layout differs from this — browse
 `https://huggingface.co/onnx-community/Qwen2.5-1.5B-Instruct/tree/main/onnx`
-in a browser to see the real name, fetch that instead, and update
-`WEIGHT_FILE_PATHS` in `server/documentImport/localDocumentAI.ts` to
-match.
+in a browser to see the real name(s) available, fetch that instead, and
+either rename it to `decoder_model_merged_quantized.onnx` locally or pass
+`{ model_file_name: "<real-name-without-_quantized.onnx-suffix>" }` as a
+`pipeline()` option in `getDocumentAIPipeline()`
+(`server/documentImport/localDocumentAI.ts`) to override the library's
+default.
 
 ## Verifying it worked
 
 ```bash
-ls -la server/models/onnx-community/Qwen2.5-1.5B-Instruct/onnx/*.onnx
+ls -la server/models/onnx-community/Qwen2.5-1.5B-Instruct/onnx/decoder_model_merged_quantized.onnx
 ```
 
 Should be well over 1GB (a 1.5B-parameter model quantized to q8 is a

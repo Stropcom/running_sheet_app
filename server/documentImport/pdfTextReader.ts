@@ -358,6 +358,70 @@ function clusterIntoCells(lines: Line[]): {
       }
     }
   }
+  // A segment that itself lacks a row-mate can still be a genuine table
+  // cell's FIRST line, when its own wrap-continuation is what ends up
+  // coinciding with a real row-mate elsewhere — e.g. an address's first
+  // line ("14 Bannister Road, CANNING") shares no y with anything else on
+  // the page, but its own wrapped second line ("VALE WA 6155.") happens to
+  // land at the exact same y as an unrelated column's own first line,
+  // purely because two side-by-side wrapped lists (this address column and
+  // a neighbouring VEHICLES column) wrap to different line-counts per
+  // entry and drift out of sync after their first row. Without this, the
+  // first line is never even eligible to start a cell (the loop below
+  // skips it via the hasRowMate check), so it can never claim its own
+  // continuation before that continuation gets wrongly claimed by whatever
+  // unrelated row-mate it happens to coincide with instead. Found against
+  // a real training document (Operation COBALT V3) whose VEHICLES and
+  // LOCATION OF INTEREST columns sit side by side, each independently
+  // wrapping: "1KINGZ (WA) 2021 white BMW X5 4WD" (a complete vehicle
+  // entry) ended up with "VALE WA 6155." (the stray second line of a
+  // completely different address) appended to it, while that address's own
+  // first line was left with no suburb at all.
+  //
+  // Computed as connected components over the exact same gap/x-bucket
+  // adjacency test the main wrap-join loop below already applies (so this
+  // can never claim eligibility for a pairing that loop wouldn't also
+  // make), then flooded: every segment in a chain containing at least one
+  // already-row-mated member becomes eligible too. This only changes WHERE
+  // a cell's own wrap-join starts from — never how a join is decided once
+  // it starts, which stays exactly the loop below's existing logic.
+  const chainEligible = hasRowMate.slice();
+  {
+    const byBucket = new Map<number, number[]>();
+    segments.forEach((s, idx) => {
+      if (s.width <= 0) return;
+      const key = bucketKey(s.x0);
+      const list = byBucket.get(key);
+      if (list) list.push(idx);
+      else byBucket.set(key, [idx]);
+    });
+    for (const idxs of Array.from(byBucket.values())) {
+      idxs.sort((a: number, b: number) => segments[b].y - segments[a].y);
+      const chains: number[][] = [];
+      let current: number[] = [];
+      for (const idx of idxs) {
+        if (current.length > 0) {
+          const prev = segments[current[current.length - 1]];
+          const gap = prev.y - segments[idx].y;
+          if (
+            gap <= 0 ||
+            gap > (prev.height || 10) * WRAP_CONTINUATION_MAX_GAP_RATIO
+          ) {
+            chains.push(current);
+            current = [];
+          }
+        }
+        current.push(idx);
+      }
+      if (current.length > 0) chains.push(current);
+      for (const chain of chains) {
+        if (chain.some(idx => hasRowMate[idx])) {
+          for (const idx of chain) chainEligible[idx] = true;
+        }
+      }
+    }
+  }
+
   const segConsumed = new Array(segments.length).fill(false);
   const cells: Cell[] = [];
 
@@ -365,20 +429,20 @@ function clusterIntoCells(lines: Line[]): {
     if (segConsumed[i]) continue;
     const s0 = segments[i];
     if (s0.width <= 0) continue;
-    // Co-occurrence (hasRowMate) is the main eligibility gate — see the
-    // function comment for why a width check here, tried twice, silently
-    // dropped genuine table values instead of just mis-joining them. A
-    // standalone "Word(s):" line is ALSO always eligible regardless of
-    // row-mates: unlike a plain narrow value, a bare label ending a whole
-    // line in a colon is unambiguous on its own (see
-    // isStandaloneColonLabel), and without this a label whose own value
-    // wraps across several lines with nothing else sharing its exact y
-    // (a real training document, "Current Address:"/"Warehouse:" each on
-    // their own line, their multi-line value immediately below at the
-    // same x) is silently skipped entirely — losing the label AND every
-    // word of its value, which then sits orphaned as bare paragraph text
-    // with no home, while whichever OTHER cell coincidentally shares a
-    // wrapped sub-line's y elsewhere on the page (a wholly unrelated
+    // Co-occurrence (hasRowMate, extended to chainEligible above) is the
+    // main eligibility gate — see the function comment for why a width
+    // check here, tried twice, silently dropped genuine table values
+    // instead of just mis-joining them. A standalone "Word(s):" line is
+    // ALSO always eligible regardless of row-mates: unlike a plain narrow
+    // value, a bare label ending a whole line in a colon is unambiguous on
+    // its own (see isStandaloneColonLabel), and without this a label whose
+    // own value wraps across several lines with nothing else sharing its
+    // exact y (a real training document, "Current Address:"/"Warehouse:"
+    // each on their own line, their multi-line value immediately below at
+    // the same x) is silently skipped entirely — losing the label AND
+    // every word of its value, which then sits orphaned as bare paragraph
+    // text with no home, while whichever OTHER cell coincidentally shares
+    // a wrapped sub-line's y elsewhere on the page (a wholly unrelated
     // block — this page's own real bug, an "1RFK221 (WA) ... Lexus"
     // vehicle line and a "BEACH WA 6020." address fragment landing on
     // the exact same y purely by coincidence of shared line-height) gets
@@ -387,7 +451,7 @@ function clusterIntoCells(lines: Line[]): {
     // value gets consumed as part of THIS cell before the outer loop
     // ever reaches that orphaned fragment as its own segment.
     const s0Text = columnText(s0.items);
-    if (!hasRowMate[i] && !isStandaloneColonLabel(s0Text)) continue;
+    if (!chainEligible[i] && !isStandaloneColonLabel(s0Text)) continue;
     segConsumed[i] = true;
     const bucket = bucketKey(s0.x0);
     const items = [...s0.items];
@@ -473,6 +537,150 @@ function clusterIntoCells(lines: Line[]): {
   return { cells, consumed };
 }
 
+/** How far vertically (in multiples of the candidate line's own height) a
+ * label's value is allowed to sit above/below the label's own y and still
+ * count as "this label's own vertically-centred value" — generous enough
+ * to cover a 2-3 line value centred beside a single-line label, without
+ * reaching far enough to grab an unrelated row several rows away. */
+const LABEL_VALUE_VERTICAL_SEARCH_RATIO = 3;
+
+/**
+ * Recovers a label cell's own value when it's a vertically-CENTRED
+ * multi-line block rather than top-aligned with the label — a different
+ * shape of the same underlying layout issue clusterIntoCells' chainEligible
+ * mechanism (above) fixes for a wrapped LIST column. There, the label
+ * itself was the one missing a row-mate; here it's the opposite: the label
+ * ("NAME") sits in a row with plenty of row-mates (ROLE/COB alongside it,
+ * all sharing one y), so clusterIntoCells happily turns it into a cell —
+ * but its VALUE ("Marcus Andrew" / "VELASCO") straddles the label's own y
+ * with NEITHER line sharing it (found against a real training document,
+ * Operation COBALT V3, whose NAME value centres precisely between its own
+ * two lines rather than starting level with the label the way an earlier
+ * version of the same document's layout did — see this file's own test
+ * fixtures for both shapes). Since neither value line has a row-mate of
+ * its own, clusterIntoCells never turns either into a cell at all, and
+ * pairRowCells silently drops a label with no value cell next to it in
+ * its row (there being nothing there to find) — losing the whole value.
+ *
+ * Only ever claims an unconsumed LINE (never a cell already homed
+ * elsewhere) sitting in the x-gap between this label and whatever comes
+ * next in its own row, within a plausible vertical reach of the row's own
+ * y (see LABEL_VALUE_VERTICAL_SEARCH_RATIO) — deliberately conservative:
+ * a row with only one cell (the label, nothing else) is left alone
+ * entirely (isStandaloneColonLabel's job, not this), and a label whose
+ * value gap has nothing unconsumed sitting in it at all is left as the
+ * "value not found" case pairRowCells already handles safely.
+ *
+ * Mutates `consumed` for every line it claims, so buildPageUnits' final
+ * pass doesn't ALSO emit them as their own stray paragraph lines, and
+ * returns a new synthetic Cell (spliced into the row's own cells, sorted
+ * by x0) for each label recovered this way.
+ */
+function recoverCenteredLabelValues(
+  rows: { cells: Cell[]; firstIdx: number }[],
+  lines: Line[],
+  consumed: boolean[]
+): void {
+  for (const row of rows) {
+    if (row.cells.length < 2) continue;
+    for (let k = 0; k < row.cells.length; k++) {
+      const cell = row.cells[k];
+      const text = columnText(cell.items);
+      if (!LINE_LABELS.some(l => l.toUpperCase() === text.toUpperCase()))
+        continue;
+      const nextCell = row.cells[k + 1];
+      const nextIsLabel =
+        nextCell &&
+        LINE_LABELS.some(
+          l => l.toUpperCase() === columnText(nextCell.items).toUpperCase()
+        );
+      // A real value cell already sits right after this label — nothing
+      // to recover. A next cell that's ITSELF a label means this label's
+      // own slot is empty, same as having no next cell at all.
+      if (nextCell && !nextIsLabel) continue;
+
+      const cellX1 = cell.items.reduce(
+        (max, it) => Math.max(max, it.x + it.width),
+        cell.x0
+      );
+      const gapEnd = nextCell ? nextCell.x0 : Infinity;
+
+      const candidates = lines
+        .map((line, idx) => ({ line, idx }))
+        .filter(({ line, idx }) => {
+          if (consumed[idx] || line.items.length === 0) return false;
+          const x0 = line.items[0].x;
+          if (x0 < cellX1 || x0 >= gapEnd) return false;
+          const height = line.items[0].height || 10;
+          return (
+            Math.abs(line.y - cell.y) <=
+            height * LABEL_VALUE_VERTICAL_SEARCH_RATIO
+          );
+        });
+      if (candidates.length === 0) continue;
+
+      // Seed from whichever candidate sits closest to the label's own y
+      // (the middle of a vertically-centred value, not necessarily its
+      // first line), then grow outward in both directions through
+      // adjacent same-bucket candidates that satisfy the exact same
+      // wrap-continuation gap test clusterIntoCells' own wrap-join uses —
+      // stopping the moment a gap fails, so an unrelated line sitting
+      // further out in the same x-gap (a different row's own value,
+      // sitting further down the page) never gets pulled in.
+      candidates.sort(
+        (a, b) => Math.abs(a.line.y - cell.y) - Math.abs(b.line.y - cell.y)
+      );
+      const seed = candidates[0];
+      const bucket = bucketKey(seed.line.items[0].x);
+      const sameBucket = candidates
+        .filter(c => bucketKey(c.line.items[0].x) === bucket)
+        .sort((a, b) => b.line.y - a.line.y);
+      const seedPos = sameBucket.findIndex(c => c.idx === seed.idx);
+      const chain = [sameBucket[seedPos]];
+      for (let p = seedPos - 1; p >= 0; p--) {
+        const prevHeight = chain[0].line.items[0].height || 10;
+        const gap = chain[0].line.y - sameBucket[p].line.y;
+        if (gap <= 0 || gap > prevHeight * WRAP_CONTINUATION_MAX_GAP_RATIO)
+          break;
+        chain.unshift(sameBucket[p]);
+      }
+      for (let n = seedPos + 1; n < sameBucket.length; n++) {
+        const last = chain[chain.length - 1];
+        const lastHeight = last.line.items[0].height || 10;
+        const gap = last.line.y - sameBucket[n].line.y;
+        if (gap <= 0 || gap > lastHeight * WRAP_CONTINUATION_MAX_GAP_RATIO)
+          break;
+        chain.push(sameBucket[n]);
+      }
+
+      const items: PositionedItem[] = [];
+      chain.forEach((c, i) => {
+        if (i > 0) {
+          items.push({
+            str: " ",
+            x: c.line.items[0].x,
+            y: c.line.y,
+            width: 0,
+            height: 0,
+            hasEOL: false,
+          });
+        }
+        items.push(...c.line.items);
+        consumed[c.idx] = true;
+      });
+
+      const valueCell: Cell = {
+        x0: chain[0].line.items[0].x,
+        y: seed.line.y,
+        items,
+        firstIdx: Math.min(...chain.map(c => c.idx)),
+        lastIdx: Math.max(...chain.map(c => c.idx)),
+      };
+      row.cells.splice(k + 1, 0, valueCell);
+    }
+  }
+}
+
 /** One physical line (ordinary flowing text) or one aligned table row
  * (several cells from different columns sharing the same y) — the page's
  * natural reading-order stream after clusterIntoCells has pulled the
@@ -515,6 +723,8 @@ function buildPageUnits(lines: Line[]): PageUnit[] {
       firstIdx: Math.min(...rowCells.map(c => c.firstIdx)),
     });
   }
+
+  recoverCenteredLabelValues(rows, lines, consumed);
 
   const rowAtIdx = new Map(rows.map(r => [r.firstIdx, r]));
 

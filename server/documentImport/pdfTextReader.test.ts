@@ -111,6 +111,40 @@ const VERTICALLY_CENTERED_LABELS_FIXTURE = join(
   __dirname,
   "__fixtures__/target-profile-pdf-vertically-centered-labels.pdf"
 );
+// A real training PDF (Operation COBALT, "VERSION 3" update of the same
+// target the NARROW_GRID_FIXTURE above already covers) with two genuinely
+// new bugs found against the real document. First: "VEHICLES" and
+// "LOCATION OF INTEREST" sit as two side-by-side wrapped LIST columns
+// (several distinct entries each, wrapping to differing numbers of lines),
+// so their per-line y-coordinates drift out of sync after the first entry
+// -- coincidental y-collisions between unrelated wrapped-continuation
+// lines from the two different lists got wrongly merged into one row by
+// clusterIntoCells' hasRowMate/row-grouping mechanism, contaminating a
+// vehicle description with a stray address fragment (or vice versa) and
+// losing part of an address entirely. Fixed via chainEligible: a segment
+// lacking its own row-mate can still anchor its own genuine cell if ITS
+// OWN wrap-continuation coincidentally has a row-mate elsewhere --
+// computed as connected components over the same gap/x-bucket adjacency
+// test the existing wrap-join loop already uses, then flooded through
+// each chain. Second: the header grid's NAME row has ROLE/COB sitting
+// beside it, top-aligned with their own single-line values same as every
+// prior fixture -- but NAME's OWN value ("Marcus Andrew" / "VELASCO") is
+// vertically CENTRED relative to NAME's own y, so neither of its two
+// lines shares NAME's y and the existing hasRowMate-based eligibility
+// (even after the chainEligible fix above) never anchors it, dropping the
+// surname entirely. Distinct from the already-fixed HARBOUR bug above
+// (whole SECTION headings sharing a y, handled at the
+// targetProfileFieldMap.ts paragraph-section level) since this is within
+// one table ROW, not between two headings. Fixed via
+// recoverCenteredLabelValues: once a row's other label/value pairs are
+// known, search the gap between a still-unpaired label and its next
+// sibling cell for unconsumed lines sitting near the label's own y (not
+// necessarily sharing it), then grow a wrap-continuation chain from
+// whichever candidate sits closest.
+const WRAPPED_LIST_COLUMNS_FIXTURE = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-wrapped-list-columns.pdf"
+);
 
 describe("readPdfText", () => {
   it("reads colon-separated labelled lines as synthetic table rows", async () => {
@@ -323,6 +357,61 @@ describe("readPdfText", () => {
       expect(
         result.paragraphs.some(p => p.startsWith("Matthew John KEARNS"))
       ).toBe(true);
+    });
+  });
+
+  describe("two side-by-side wrapped list columns + a vertically-centred NAME value (Operation COBALT VERSION 3 fixture)", () => {
+    it("keeps a vehicle description clean of a stray address fragment from the adjacent LOCATION OF INTEREST column", async () => {
+      const result = await readPdfText(
+        readFileSync(WRAPPED_LIST_COLUMNS_FIXTURE)
+      );
+      const joined = result.paragraphs.join("\n");
+      expect(joined).toContain("1KINGZ (WA) 2021 white BMW X5 4WD");
+      expect(joined).toContain("SLICK1, (WA) 2019 black Audi RS3 hatch");
+      expect(joined).toContain(
+        "1CBT663 (WA) 2020 silver Toyota LandCruiser Prado wagon."
+      );
+      // Regression: without the chainEligible fix, a coincidental
+      // y-collision between these unrelated wrapped-continuation lines
+      // glued the LOCATION OF INTEREST column's own stray fragment onto
+      // the end of an unrelated vehicle entry.
+      expect(joined).not.toContain("4WD VALE WA 6155.");
+      expect(joined).not.toContain("RS3 hatch NORTHBRIDGE WA 6003.");
+      expect(joined).not.toContain("wagon. 6148 Additional Location");
+    });
+
+    it("keeps an address complete instead of losing its suburb/postcode to a coincidental y-collision with an unrelated vehicle line", async () => {
+      const result = await readPdfText(
+        readFileSync(WRAPPED_LIST_COLUMNS_FIXTURE)
+      );
+      const joined = result.paragraphs.join("\n");
+      expect(joined).toContain("14 Bannister Road, CANNING VALE WA 6155.");
+      expect(joined).toContain("88 Fitzgerald Street, NORTHBRIDGE WA 6003.");
+      expect(joined).toContain(
+        "66 Central Rd, Rossmoyne WA 6148 Additional Location: Unit 4/27 Baile Road, CANNING VALE WA 6155."
+      );
+      // Regression: the broken baseline stranded each address mid-word,
+      // e.g. "14 Bannister Road, CANNING" with "VALE WA 6155." claimed by
+      // the vehicle column instead.
+      expect(joined).not.toContain("14 Bannister Road, CANNING\n");
+      expect(joined).not.toContain("88 Fitzgerald Street,\n");
+    });
+
+    it("recovers a NAME value vertically centred beside its own label instead of dropping the surname", async () => {
+      const result = await readPdfText(
+        readFileSync(WRAPPED_LIST_COLUMNS_FIXTURE)
+      );
+      const rows = result.tables[0].rows;
+      expect(rows).toContainEqual(["NAME", "Marcus Andrew VELASCO"]);
+    });
+
+    it("doesn't disturb ROLE/COB, whose own values stay top-aligned same as every other fixture (no regression from the centred-value recovery)", async () => {
+      const result = await readPdfText(
+        readFileSync(WRAPPED_LIST_COLUMNS_FIXTURE)
+      );
+      const rows = result.tables[0].rows;
+      expect(rows).toContainEqual(["ROLE", "Principal"]);
+      expect(rows).toContainEqual(["COB", "New Zealand"]);
     });
   });
 });

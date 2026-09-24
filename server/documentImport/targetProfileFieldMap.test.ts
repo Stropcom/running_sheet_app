@@ -109,6 +109,18 @@ const PDF_HYPHENATED_SURNAME_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-pdf-hyphenated-surname.pdf"
 );
+// A later "VERSION 3" export of the same underlying Operation COBALT
+// training scenario as NARROW_GRID_FIXTURE (see pdfTextReader.test.ts),
+// same subject ("Marcus Andrew VELASCO"), exhibiting two new bugs from its
+// own distinct layout — see pdfTextReader.test.ts's own fixture comment
+// for the full breakdown (two side-by-side wrapped list columns whose
+// coincidental y-collisions contaminated a vehicle/address across
+// columns, and a NAME value vertically centred beside its own label
+// rather than top-aligned with its ROLE/COB row-mates).
+const PDF_WRAPPED_LIST_COLUMNS_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-wrapped-list-columns.pdf"
+);
 
 describe("mapDocumentToTargetProfile", () => {
   it("maps the real training document end-to-end", async () => {
@@ -1103,5 +1115,48 @@ describe("mapDocumentToTargetProfile — PDF documents", () => {
     expect(result.vehicles).toContainEqual(
       expect.objectContaining({ registration: "CW-1212", state: "NSW" })
     );
+  });
+
+  it("maps a NAME value vertically centred beside its label, and keeps two side-by-side wrapped list columns from contaminating each other (the COBALT VERSION 3 bugs)", async () => {
+    const read = await readPdfText(
+      readFileSync(PDF_WRAPPED_LIST_COLUMNS_FIXTURE_PATH)
+    );
+    const result = mapDocumentToTargetProfile(read);
+
+    // Regression: NAME's own value ("Marcus Andrew" / "VELASCO") sits
+    // vertically centred relative to NAME's own y rather than top-aligned
+    // with it, unlike its ROLE/COB row-mates — the existing hasRowMate-
+    // based cell eligibility never anchored it, dropping the name to null.
+    expect(result.name).toMatchObject({
+      firstNames: "Marcus Andrew",
+      surname: "VELASCO",
+      bornDate: "14/03/1985",
+      confident: true,
+    });
+
+    expect(result.vehicles).toHaveLength(4);
+    expect(result.vehicles.map(v => v.registration)).toEqual(
+      expect.arrayContaining(["1KINGZ", "SLICK1", "1FAD378", "1CBT663"])
+    );
+    // Regression: two side-by-side wrapped LIST columns (VEHICLES,
+    // LOCATION OF INTEREST) drift out of y-sync once their entries wrap to
+    // differing line counts, so a coincidental y-collision between
+    // unrelated continuation lines used to glue an address fragment onto
+    // a vehicle description.
+    for (const v of result.vehicles) {
+      expect(v.raw).not.toMatch(/Road|Street|Additional Location/);
+    }
+
+    expect(result.addresses).toHaveLength(4);
+    expect(result.addresses.map(a => a.raw)).toEqual(
+      expect.arrayContaining([
+        "14 Bannister Road, CANNING VALE WA 6155",
+        "88 Fitzgerald Street, NORTHBRIDGE WA 6003",
+        "66 Central Rd, Rossmoyne WA 6148",
+        "Unit 4/27 Baile Road, CANNING VALE WA 6155",
+      ])
+    );
+
+    expect(result.needsReview).toEqual([]);
   });
 });

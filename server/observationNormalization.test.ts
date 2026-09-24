@@ -17,11 +17,14 @@ describe("normalizeObservationPunctuation — vehicle bracket comma", () => {
   });
 
   it("inserts a comma when the bracket is followed by a space then a word", () => {
-    const input =
-      "parked outside (Vehicle 1ABC123) and departed shortly after.";
+    // Deliberately avoids any of Rule 3's departed/arrived-family keywords
+    // right after the bracket — this test isolates Rule 1 only; Rule 3's
+    // own behaviour (bracket + real occupant content + keyword) is covered
+    // separately below.
+    const input = "parked outside (Vehicle 1ABC123) and remained stationary.";
     const result = normalizeObservationPunctuation(input);
     expect(result).toBe(
-      "parked outside (Vehicle 1ABC123), and departed shortly after."
+      "parked outside (Vehicle 1ABC123), and remained stationary."
     );
   });
 
@@ -122,6 +125,79 @@ describe("normalizeObservationPunctuation — rego + departed/arrived comma", ()
     // The bracket-comma rule still applies; there's no departed/arrived to fix.
     expect(result).toBe(
       "Vehicle 1ABC123 (Vehicle 1ABC123), parked and unattended in the driveway."
+    );
+  });
+});
+
+describe("normalizeObservationPunctuation — Rule 3: bracket-first-mention rego + departed/arrived comma", () => {
+  // Real bug report: a vehicle recorded for the first time AS it arrives
+  // (full description + bracket code declared in the same sentence, no
+  // earlier bare "Vehicle REGO" mention for Rule 2 to have already fixed)
+  // never got its "Vehicle departing" continuity chip offered later,
+  // because nothing inserted the comma VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN
+  // needs between the occupant description and "arrived".
+  it("inserts the missing comma for a bracket-first-mention arrival (the real reported bug)", () => {
+    const input =
+      "A white Toyota Hilux utility, bearing WA registration 1IUP467 (Vehicle 1IUP467), unseen occupant/s arrived at 115 Bateman Road, entered the driveway and continued out of sight.";
+    const result = normalizeObservationPunctuation(input);
+    expect(result).toBe(
+      "A white Toyota Hilux utility, bearing WA registration 1IUP467 (Vehicle 1IUP467), unseen occupant/s, arrived at 115 Bateman Road, entered the driveway and continued out of sight."
+    );
+  });
+
+  // The same shape for a departure — a vehicle sitting unseen (e.g. in a
+  // garage) that's only ever recorded for the first time as it departs.
+  it("inserts the missing comma for a bracket-first-mention departure", () => {
+    const input =
+      "A white Toyota Hilux utility, bearing WA registration 1IUP467 (Vehicle 1IUP467), unseen occupant/s departed 115 Bateman Road and continued via:";
+    const result = normalizeObservationPunctuation(input);
+    expect(result).toBe(
+      "A white Toyota Hilux utility, bearing WA registration 1IUP467 (Vehicle 1IUP467), unseen occupant/s, departed 115 Bateman Road and continued via:"
+    );
+  });
+
+  it("is a no-op when the second comma is already present", () => {
+    const input =
+      "bearing WA registration 1IUP467 (Vehicle 1IUP467), unseen occupant/s, arrived at 115 Bateman Road.";
+    const result = normalizeObservationPunctuation(input);
+    expect(result).toBe(input);
+  });
+
+  it("recognises 'reversed'/'exited'/'parked'/'stopped', not just 'departed'/'arrived'", () => {
+    expect(
+      normalizeObservationPunctuation(
+        "1IUP467 (Vehicle 1IUP467) HOGAN driver reversed the driveway"
+      )
+    ).toBe("1IUP467 (Vehicle 1IUP467), HOGAN driver, reversed the driveway");
+    expect(
+      normalizeObservationPunctuation(
+        "1IUP467 (Vehicle 1IUP467) HOGAN driver parked outside"
+      )
+    ).toBe("1IUP467 (Vehicle 1IUP467), HOGAN driver, parked outside");
+  });
+
+  // Regression for the fix's own false-positive, caught by a real failing
+  // test before landing on the final regex: a bracket sitting directly
+  // against the keyword with no real occupant content between them (only
+  // Rule 1's own whitespace) must not get a spurious second comma.
+  it("does not insert a redundant comma when there is no real occupant content", () => {
+    const input =
+      "Vehicle 1ABC123 (Vehicle 1ABC123) parked and unattended in the driveway.";
+    const result = normalizeObservationPunctuation(input);
+    expect(result).toBe(
+      "Vehicle 1ABC123 (Vehicle 1ABC123), parked and unattended in the driveway."
+    );
+  });
+
+  // A LATER, unrelated vehicle's own bracket must not get swallowed into
+  // an earlier bracket's "occupants" — mirrors Rule 2's own guard against
+  // the same class of bug for bare mentions.
+  it("does not cross into a second, different vehicle's bracket", () => {
+    const input =
+      "(Vehicle 1ABC123), a Grey Volkswagen Transporter van, bearing WA registration 1STAR6 (Vehicle 1STAR6), unseen occupant/s arrived at 12 Marine Parade.";
+    const result = normalizeObservationPunctuation(input);
+    expect(result).toBe(
+      "(Vehicle 1ABC123), a Grey Volkswagen Transporter van, bearing WA registration 1STAR6 (Vehicle 1STAR6), unseen occupant/s, arrived at 12 Marine Parade."
     );
   });
 });

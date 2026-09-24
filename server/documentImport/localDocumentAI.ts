@@ -64,26 +64,24 @@ export const DOCUMENT_AI_MODEL_ID = "onnx-community/Qwen2.5-1.5B-Instruct";
 const MIN_PLAUSIBLE_WEIGHT_BYTES = 100_000;
 
 // Decoder-only architecture (unlike LaMini-Flan-T5-783M's encoder/decoder
-// split this replaces) — still a single weight file, but its name is
-// fixed by @xenova/transformers itself, not by whatever the model repo
-// happens to publish under. Confirmed straight from this repo's pinned
-// copy of the library (node_modules/@xenova/transformers/src/models.js):
-// constructSession() builds the path as
-// `onnx/${fileName}${quantized ? '_quantized' : ''}.onnx`, and for any
-// MODEL_TYPES.DecoderOnly model (which AutoModelForCausalLM.from_pretrained
-// resolves Qwen2ForCausalLM to) `fileName` defaults to
-// 'decoder_model_merged' — "merged" here is the library's own generic
-// default file-naming convention for a decoder-only causal LM, not
-// something specific to an encoder-decoder split like the T5 model this
-// replaces. An earlier version of this constant used
-// `onnx/model_quantized.onnx` based on a web search result for a sibling
-// repo — that was wrong; a real deployment attempt against the actual
-// 1.5B repo threw exactly the error this comment now explains
-// (`local_files_only=true ... file was not found locally at
-// ".../onnx/decoder_model_merged_quantized.onnx"`), which is what this
-// was corrected against instead of another guess.
+// split this replaces) — a single weight file, published by onnx-community
+// under the base name "model" (confirmed both by a real successful fetch
+// of onnx/model_quantized.onnx against the actual 1.5B repo, 1.5GB, not a
+// 404 — and by a direct hit on the sibling
+// onnx-community/Qwen2.5-0.5B-Instruct repo's own
+// onnx/model_quantized.onnx blob page, 512MB, listed alongside its other
+// dtype variants: model.onnx, model_fp16.onnx, model_int8.onnx,
+// model_q4.onnx, model_quantized.onnx, model_uint8.onnx — onnx-community
+// exports every model under this same "model" base name regardless of
+// architecture). @xenova/transformers' own built-in default base name
+// for a decoder-only model is 'decoder_model_merged', NOT 'model' — see
+// getDocumentAIPipeline's model_file_name override below, which is the
+// actual piece needed to make this line up; that default genuinely
+// doesn't exist in this repo (confirmed via a clean 404 with
+// x-error-code: EntryNotFound against a real deploy attempt, not a
+// network issue) and must not be used.
 const WEIGHT_FILE_PATHS = [
-  `server/models/${DOCUMENT_AI_MODEL_ID}/onnx/decoder_model_merged_quantized.onnx`,
+  `server/models/${DOCUMENT_AI_MODEL_ID}/onnx/model_quantized.onnx`,
 ];
 
 // A chat-template model needs its tokenizer config (carries the Jinja
@@ -125,6 +123,14 @@ function getDocumentAIPipeline(): Promise<TextGenerationPipeline> {
   if (!generatorPromise) {
     generatorPromise = pipeline("text-generation", DOCUMENT_AI_MODEL_ID, {
       quantized: true,
+      // Overrides @xenova/transformers' built-in default base filename
+      // ('decoder_model_merged') with the base name onnx-community
+      // actually publishes its ONNX exports under ('model') — see
+      // WEIGHT_FILE_PATHS's comment above for how this was confirmed.
+      // Combined with quantized: true, this makes constructSession()
+      // (node_modules/@xenova/transformers/src/models.js) request
+      // exactly onnx/model_quantized.onnx, matching WEIGHT_FILE_PATHS.
+      model_file_name: "model",
     });
   }
   return generatorPromise;

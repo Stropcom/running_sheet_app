@@ -162,8 +162,14 @@ const ROW_Y_TOLERANCE = 2;
  * height — comfortably covers normal single-line-spacing (~1.15x height
  * in practice) while staying well short of the gap to an unrelated row
  * further down the same column (typically 1.5x+, since it has to clear
- * whatever the intervening row's own cell used). */
-const WRAP_CONTINUATION_MAX_GAP_RATIO = 1.3;
+ * whatever the intervening row's own cell used). A real training document
+ * family (Operation NIGHTJAR/ORCHARD/CROSSWIND/MIRAGE) hard-wraps a
+ * 2-line label ("PASSPORT" as "PASSPOR"/"T", "PROMIS ID" as "PROMIS"/"ID")
+ * at a 1.38x gap — just outside the previous 1.3 threshold, so the two
+ * fragments never rejoined into one cell at all and were left as two
+ * separate stray lines. 1.4 covers this without reaching anywhere near
+ * the 1.5x+ next-row gap. */
+const WRAP_CONTINUATION_MAX_GAP_RATIO = 1.4;
 /** A line whose rendered width is at least this fraction of the widest
  * line ever seen starting at the same x is treated as having been packed
  * right up to its column's edge — see clusterIntoCells' own comment for
@@ -195,10 +201,18 @@ function bucketKey(x: number): number {
 /** One table cell, possibly rejoined from several wrapped physical lines —
  * see clusterIntoCells. `firstIdx`/`lastIdx` are its span within the page's
  * own `groupIntoLines` output, used to splice the cell (or the row it ends
- * up in) back into the page's natural reading order. */
+ * up in) back into the page's natural reading order. `y` is the cell's own
+ * FIRST line — its natural reading-order anchor, kept as the reference
+ * point candidate-value searches (recoverCenteredLabelValues) measure
+ * distance from. `centerY` is the midpoint between its first and last
+ * line, used instead of `y` specifically for deciding which OTHER cells
+ * share its row (buildPageUnits) — see centerY's own field comment for
+ * why the two need to differ for a short, vertically-centred multi-line
+ * cell. */
 interface Cell {
   x0: number;
   y: number;
+  centerY: number;
   items: PositionedItem[];
   firstIdx: number;
   lastIdx: number;
@@ -366,6 +380,7 @@ function clusterIntoCells(lines: Line[]): {
   // a cell's own wrap-join starts from — never how a join is decided once
   // it starts, which stays exactly the loop below's existing logic.
   const chainEligible = hasRowMate.slice();
+  const allChains: { members: number[]; centerY: number }[] = [];
   {
     const byBucket = new Map<number, number[]>();
     segments.forEach((s, idx) => {
@@ -398,6 +413,11 @@ function clusterIntoCells(lines: Line[]): {
         if (chain.some(idx => hasRowMate[idx])) {
           for (const idx of chain) chainEligible[idx] = true;
         }
+        allChains.push({
+          members: chain,
+          centerY:
+            (segments[chain[0]].y + segments[chain[chain.length - 1]].y) / 2,
+        });
       }
     }
   }
@@ -487,7 +507,14 @@ function clusterIntoCells(lines: Line[]): {
       lastIdx = sj.lineIdx;
     }
 
-    cells.push({ x0: s0.x0, y: s0.y, items, firstIdx, lastIdx });
+    cells.push({
+      x0: s0.x0,
+      y: s0.y,
+      centerY: (s0.y + lastY) / 2,
+      items,
+      firstIdx,
+      lastIdx,
+    });
   }
 
   // A raw line only counts as fully folded into cells (safe for
@@ -548,6 +575,99 @@ const LABEL_VALUE_VERTICAL_SEARCH_RATIO = 3;
  * returns a new synthetic Cell (spliced into the row's own cells, sorted
  * by x0) for each label recovered this way.
  */
+/**
+ * Reclaims a MULTI-LINE cell (its own centerY != its own first-line y —
+ * never a plain single-line cell, which already sits in its correct row)
+ * from wherever buildPageUnits' own plain-y row-grouping happened to land
+ * it, into an established row whose own y its CENTRE actually aligns
+ * with, before either recovery pass below runs. A short, vertically-
+ * centred multi-line cell (a 2-3 line value wrapped symmetrically around
+ * a row's own y, see Cell's own centerY field comment) still passes
+ * clusterIntoCells' chainEligible gate just fine whenever any ONE of its
+ * own lines happens to coincide with some unrelated cell elsewhere on the
+ * page — it forms a real Cell either way — but its FIRST line (what
+ * buildPageUnits' own row-grouping actually compares) can land it in
+ * completely the wrong row, paired with some unrelated cell that merely
+ * happens to share ITS first line's y. Neither recoverCenteredLabelValues
+ * nor recoverMissingLabelColumn can rescue it from there afterwards: both
+ * only ever search STILL-UNCONSUMED raw lines, and this cell is already
+ * fully formed and consumed, just homed wrong.
+ *
+ * Found against four real training documents (Operation NIGHTJAR/ORCHARD/
+ * CROSSWIND/MIRAGE) whose IDs value and PASSPORT/PROMIS ID's own merged
+ * label ended up sharing one wrong row together this way (each keyed off
+ * the OTHER's first line, not either's own true row) — not a lonely
+ * one-cell row apiece, which an earlier, narrower version of this
+ * function only checked for.
+ *
+ * Deliberately narrower than comparing every cell's centre during
+ * buildPageUnits' own row-grouping (tried and reverted): that fixed this
+ * exact case but fragmented an unrelated, more tightly-packed real
+ * training document (the ORIGINAL Operation COBALT fixture) into far too
+ * many tiny rows, several of them losing their own label/value pairing
+ * entirely. Restricting this pass to only cells that are genuinely
+ * multi-line — leaving every single-line cell's own row-membership
+ * exactly as plain-y grouping already decided it — is what keeps it from
+ * reaching that same over-eager territory: an ordinary single-line
+ * VEHICLES/LOCATION OF INTEREST list entry is never a candidate here at
+ * all, however its neighbours land. Only ever moves a cell INTO a row
+ * that already has two or more real cells of its own (a genuinely
+ * established row), and only when the candidate sits to the right of
+ * that row's own leftmost cell — matching the same conservative, row-
+ * scoped spirit as the two recovery passes below rather than any
+ * page-wide match.
+ */
+function reclaimOrphanCells(rows: { cells: Cell[]; firstIdx: number }[]): void {
+  for (const targetRow of rows) {
+    if (targetRow.cells.length < 2) continue;
+    // A genuine grid row already has at least one recognised label sitting
+    // immediately beside its own value (e.g. "DOB"/"14/03/1985") — the
+    // hallmark of a real label/value row, as opposed to two DIFFERENT
+    // labels (e.g. "VEHICLES"/"LOCATION OF INTEREST") coincidentally
+    // sharing a y with nothing between them at all. Two side-by-side
+    // wrapped LIST columns' own headings are exactly this second shape,
+    // and are never a genuine target: a vehicle/address list ENTRY (not
+    // the heading) is itself a short multi-line cell that can coincide
+    // with such a heading pair purely by chance (found against the real
+    // Operation COBALT V3 fixture, whose own VEHICLES/LOCATION OF
+    // INTEREST headings share a y this way — reclaiming a vehicle entry
+    // into that heading pair swallowed it out of the vehicles list
+    // entirely). Checked once per row rather than folded into the
+    // candidate loop below, since it depends only on the target row's own
+    // shape, never on which candidate is being considered.
+    const hasGenuineLabelValuePair = targetRow.cells.some((c, idx) => {
+      const isLabel = LINE_LABELS.some(
+        l => l.toUpperCase() === columnText(c.items).toUpperCase()
+      );
+      if (!isLabel) return false;
+      const next = targetRow.cells[idx + 1];
+      return (
+        !!next &&
+        !LINE_LABELS.some(
+          l => l.toUpperCase() === columnText(next.items).toUpperCase()
+        )
+      );
+    });
+    if (!hasGenuineLabelValuePair) continue;
+    const rowY = targetRow.cells[0].y;
+    for (const sourceRow of rows) {
+      if (sourceRow === targetRow) continue;
+      for (let i = sourceRow.cells.length - 1; i >= 0; i--) {
+        const cell = sourceRow.cells[i];
+        if (cell.centerY === cell.y) continue;
+        if (Math.abs(cell.centerY - rowY) > ROW_Y_TOLERANCE) continue;
+        if (cell.x0 < targetRow.cells[0].x0) continue;
+        targetRow.cells.push(cell);
+        sourceRow.cells.splice(i, 1);
+      }
+    }
+  }
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].cells.length === 0) rows.splice(i, 1);
+  }
+  for (const row of rows) row.cells.sort((a, b) => a.x0 - b.x0);
+}
+
 function recoverCenteredLabelValues(
   rows: { cells: Cell[]; firstIdx: number }[],
   lines: Line[],
@@ -591,39 +711,62 @@ function recoverCenteredLabelValues(
         });
       if (candidates.length === 0) continue;
 
-      // Seed from whichever candidate sits closest to the label's own y
-      // (the middle of a vertically-centred value, not necessarily its
-      // first line), then grow outward in both directions through
-      // adjacent same-bucket candidates that satisfy the exact same
-      // wrap-continuation gap test clusterIntoCells' own wrap-join uses —
-      // stopping the moment a gap fails, so an unrelated line sitting
-      // further out in the same x-gap (a different row's own value,
-      // sitting further down the page) never gets pulled in.
-      candidates.sort(
-        (a, b) => Math.abs(a.line.y - cell.y) - Math.abs(b.line.y - cell.y)
-      );
-      const seed = candidates[0];
-      const bucket = bucketKey(seed.line.items[0].x);
-      const sameBucket = candidates
-        .filter(c => bucketKey(c.line.items[0].x) === bucket)
-        .sort((a, b) => b.line.y - a.line.y);
-      const seedPos = sameBucket.findIndex(c => c.idx === seed.idx);
-      const chain = [sameBucket[seedPos]];
-      for (let p = seedPos - 1; p >= 0; p--) {
-        const prevHeight = chain[0].line.items[0].height || 10;
-        const gap = chain[0].line.y - sameBucket[p].line.y;
-        if (gap <= 0 || gap > prevHeight * WRAP_CONTINUATION_MAX_GAP_RATIO)
-          break;
-        chain.unshift(sameBucket[p]);
+      // Group every candidate into its own x-bucket wrap-chain FIRST (the
+      // same wrap-continuation gap test clusterIntoCells' own wrap-join
+      // uses), then pick whichever CHAIN's own centre sits closest to the
+      // label's own y — not whichever single LINE does. A gap can hold
+      // more than one genuinely different column's worth of leftover
+      // content (e.g. a still-missing value for THIS label sitting beside
+      // an entirely different label's own still-missing value further
+      // along the same row), and a single stray line from the WRONG
+      // column can coincidentally sit closer to this label's own y than
+      // this label's own true (multi-line, vertically-centred) value
+      // does — its own first line necessarily lands a little off-centre,
+      // while an unrelated single-line value can happen to land exactly
+      // on it. Comparing whole chains by their own centre, rather than
+      // any one line by itself, is what a real training document
+      // (Operation NIGHTJAR/ORCHARD/CROSSWIND/MIRAGE) needs: IDs' own
+      // 2-line value used to lose out to PROMIS ID's own single-line
+      // value sitting a hair closer to the row's own y purely by
+      // coincidence, wrongly attributing PROMIS ID's own figure to IDs
+      // and leaving PROMIS ID itself without a value to be found at all.
+      const byBucket = new Map<number, typeof candidates>();
+      for (const c of candidates) {
+        const key = bucketKey(c.line.items[0].x);
+        const list = byBucket.get(key);
+        if (list) list.push(c);
+        else byBucket.set(key, [c]);
       }
-      for (let n = seedPos + 1; n < sameBucket.length; n++) {
-        const last = chain[chain.length - 1];
-        const lastHeight = last.line.items[0].height || 10;
-        const gap = last.line.y - sameBucket[n].line.y;
-        if (gap <= 0 || gap > lastHeight * WRAP_CONTINUATION_MAX_GAP_RATIO)
-          break;
-        chain.push(sameBucket[n]);
-      }
+      const bucketChains = Array.from(byBucket.values()).map(list => {
+        const sorted = list.slice().sort((a, b) => b.line.y - a.line.y);
+        const chains: (typeof candidates)[] = [];
+        let current: typeof candidates = [];
+        for (const c of sorted) {
+          if (current.length > 0) {
+            const prev = current[current.length - 1];
+            const prevHeight = prev.line.items[0].height || 10;
+            const gap = prev.line.y - c.line.y;
+            if (
+              gap <= 0 ||
+              gap > prevHeight * WRAP_CONTINUATION_MAX_GAP_RATIO
+            ) {
+              chains.push(current);
+              current = [];
+            }
+          }
+          current.push(c);
+        }
+        if (current.length > 0) chains.push(current);
+        return chains;
+      });
+      const allChains = bucketChains.flat();
+      allChains.sort((a, b) => {
+        const centerA = (a[0].line.y + a[a.length - 1].line.y) / 2;
+        const centerB = (b[0].line.y + b[b.length - 1].line.y) / 2;
+        return Math.abs(centerA - cell.y) - Math.abs(centerB - cell.y);
+      });
+      const chain = allChains[0];
+      const seed = chain[0];
 
       const items: PositionedItem[] = [];
       chain.forEach((c, i) => {
@@ -644,12 +787,219 @@ function recoverCenteredLabelValues(
       const valueCell: Cell = {
         x0: chain[0].line.items[0].x,
         y: seed.line.y,
+        centerY: (chain[0].line.y + chain[chain.length - 1].line.y) / 2,
         items,
         firstIdx: Math.min(...chain.map(c => c.idx)),
         lastIdx: Math.max(...chain.map(c => c.idx)),
       };
       row.cells.splice(k + 1, 0, valueCell);
     }
+  }
+}
+
+/**
+ * Recovers an entire MISSING label+value column in a row's own trailing
+ * gap — a further variant of the same vertically-centred layout issue
+ * recoverCenteredLabelValues (above) fixes for a value alone, but here the
+ * LABEL itself never became a cell at all: its own hard-wrap (e.g.
+ * "PASSPORT" as "PASSPOR"/"T", "PROMIS ID" as "PROMIS"/"ID") sits
+ * vertically centred on the row's own y with NEITHER of its own lines
+ * landing on it, so clusterIntoCells' hasRowMate/chainEligible mechanism —
+ * which needs at least one line of a cell to share a row-mate — never
+ * turns it into a cell to begin with. recoverCenteredLabelValues can't
+ * help either: it only searches for a value once given an already-formed
+ * label cell, and there is none here for it to start from.
+ *
+ * Found against four real training documents (Operation NIGHTJAR/ORCHARD/
+ * CROSSWIND/MIRAGE) whose PASSPORT/PROMIS ID grid column worked by sheer
+ * coincidence on two of the four (one of the label's own hard-wrapped
+ * lines happened to land within ROW_Y_TOLERANCE of an unrelated cell
+ * elsewhere on the page) and silently failed on the other two — the
+ * label's own two fragments were left as bare orphaned paragraph text,
+ * and its value ended up glued onto the row's own last real cell instead
+ * (pairRowCells has no way to know an unrecognised trailing cell isn't
+ * just a continuation of the one before it).
+ *
+ * Deliberately scoped to only the row's own trailing gap (from its last
+ * known cell's x1 out to the page's right edge) and only the row's own
+ * vertical reach (LABEL_VALUE_VERTICAL_SEARCH_RATIO around its own y) —
+ * the same two safety properties recoverCenteredLabelValues already
+ * relies on — rather than any page-wide coincidental-centre match, which
+ * is exactly the shape of match clusterIntoCells' own chainEligible flood
+ * has to avoid making across two independently-wrapping LIST columns (the
+ * COBALT V3 bug). An earlier attempt at this fix granted chainEligible to
+ * any two same-length short wrap-chains whose centres coincided ANYWHERE
+ * on the page; it fixed this row but wrongly merged unrelated VEHICLES/
+ * LOCATION OF INTEREST list entries the same way COBALT V3 did, so it was
+ * reverted in favour of this row-scoped, gap-scoped version instead. Only
+ * ever proceeds once the candidate label text is confirmed against the
+ * app's own known label vocabulary (LINE_LABELS) — never guesses at an
+ * unrecognised word — which is what keeps this from firing on an ordinary
+ * narrative row that happens to have short wrapped fragments nearby.
+ */
+function recoverMissingLabelColumn(
+  rows: { cells: Cell[]; firstIdx: number }[],
+  lines: Line[],
+  consumed: boolean[]
+): void {
+  for (const row of rows) {
+    if (row.cells.length < 2) continue;
+
+    // This row's own LAST recognised label — not necessarily its last
+    // cell outright. buildPageUnits' own centerY-based row grouping can
+    // already have pulled the missing label's VALUE into this row on its
+    // own (its middle line coincidentally sharing a row-mate elsewhere —
+    // the very reason the label/value pair worked by accident on two of
+    // the four real documents this was found against), even though the
+    // label itself never formed a cell — leaving that value sitting as an
+    // unrecognised trailing cell nobody claims. When that's happened, the
+    // search below only needs to find the missing LABEL in the gap before
+    // it, not search for a value that's already present.
+    let lastLabelIdx = -1;
+    for (let k = 0; k < row.cells.length; k++) {
+      const text = columnText(row.cells[k].items);
+      if (LINE_LABELS.some(l => l.toUpperCase() === text.toUpperCase())) {
+        lastLabelIdx = k;
+      }
+    }
+    if (lastLabelIdx === -1) continue;
+    const lastLabelCell = row.cells[lastLabelIdx];
+
+    // The label's OWN value is presumed to be exactly the single cell
+    // right after it (every other label/value pairing in this file makes
+    // the same one-cell assumption — see recoverCenteredLabelValues'
+    // `nextCell`). Anything past THAT is the true leftover/orphan zone
+    // this function's own search should start from — not the label's own
+    // x1, which would otherwise re-scan straight through that already-
+    // legitimate value cell as if it were unclaimed.
+    const ownValueCell = row.cells[lastLabelIdx + 1];
+    const searchStartCell = ownValueCell ?? lastLabelCell;
+    const searchStartX1 = searchStartCell.items.reduce(
+      (max, it) => Math.max(max, it.x + it.width),
+      searchStartCell.x0
+    );
+
+    const orphanIdx = ownValueCell ? lastLabelIdx + 2 : lastLabelIdx + 1;
+    const afterCell = row.cells[orphanIdx];
+    const afterIsLabel =
+      afterCell &&
+      LINE_LABELS.some(
+        l => l.toUpperCase() === columnText(afterCell.items).toUpperCase()
+      );
+    const orphanValueCell = afterCell && !afterIsLabel ? afterCell : null;
+
+    const searchEndX = orphanValueCell ? orphanValueCell.x0 : Infinity;
+    const rowY = lastLabelCell.centerY;
+
+    type Candidate = { line: Line; idx: number };
+    const candidates: Candidate[] = lines
+      .map((line, idx) => ({ line, idx }))
+      .filter(({ line, idx }) => {
+        if (consumed[idx] || line.items.length === 0) return false;
+        const x0 = line.items[0].x;
+        if (x0 < searchStartX1 || x0 >= searchEndX) return false;
+        const height = line.items[0].height || 10;
+        return (
+          Math.abs(line.y - rowY) <= height * LABEL_VALUE_VERTICAL_SEARCH_RATIO
+        );
+      });
+    if (candidates.length === 0) continue;
+
+    const byBucket = new Map<number, Candidate[]>();
+    for (const c of candidates) {
+      const key = bucketKey(c.line.items[0].x);
+      const list = byBucket.get(key);
+      if (list) list.push(c);
+      else byBucket.set(key, [c]);
+    }
+    const chains: Candidate[][] = [];
+    for (const list of Array.from(byBucket.values())) {
+      list.sort((a, b) => b.line.y - a.line.y);
+      let current: Candidate[] = [];
+      for (const c of list) {
+        if (current.length > 0) {
+          const prev = current[current.length - 1];
+          const prevHeight = prev.line.items[0].height || 10;
+          const gap = prev.line.y - c.line.y;
+          if (gap <= 0 || gap > prevHeight * WRAP_CONTINUATION_MAX_GAP_RATIO) {
+            chains.push(current);
+            current = [];
+          }
+        }
+        current.push(c);
+      }
+      if (current.length > 0) chains.push(current);
+    }
+    chains.sort((a, b) => a[0].line.items[0].x - b[0].line.items[0].x);
+    if (chains.length === 0) continue;
+
+    const labelChain = chains[0];
+    const labelFragments = labelChain.map(c => columnText(c.line.items));
+    const matchedLabel = LINE_LABELS.find(
+      l =>
+        l.toUpperCase() === labelFragments.join("").toUpperCase() ||
+        l.toUpperCase() === labelFragments.join(" ").toUpperCase()
+    );
+    if (!matchedLabel) continue;
+
+    const buildCell = (chain: Candidate[]): Cell => {
+      const items: PositionedItem[] = [];
+      chain.forEach((c, i) => {
+        if (i > 0) {
+          items.push({
+            str: " ",
+            x: c.line.items[0].x,
+            y: c.line.y,
+            width: 0,
+            height: 0,
+            hasEOL: false,
+          });
+        }
+        items.push(...c.line.items);
+        consumed[c.idx] = true;
+      });
+      return {
+        x0: chain[0].line.items[0].x,
+        y: chain[0].line.y,
+        centerY: (chain[0].line.y + chain[chain.length - 1].line.y) / 2,
+        items,
+        firstIdx: Math.min(...chain.map(c => c.idx)),
+        lastIdx: Math.max(...chain.map(c => c.idx)),
+      };
+    };
+
+    const labelCell = buildCell(labelChain);
+    // Replace the raw joined fragments with the label's own canonical
+    // text: labelFragments.join("")/join(" ") above only decided WHETHER
+    // this is a real known label, not which of the two joins is right for
+    // display — "PASSPOR"+"T" needs no space, "PROMIS"+"ID" needs one, and
+    // there is no reliable geometric signal to tell them apart the way
+    // clusterIntoCells' own packed-width heuristic does for ordinary
+    // values (see its own comment) — the label vocabulary match already
+    // resolves that ambiguity outright, so use it directly.
+    labelCell.items = [
+      {
+        str: matchedLabel,
+        x: labelCell.x0,
+        y: labelCell.y,
+        width: 0,
+        height: 0,
+        hasEOL: false,
+      },
+    ];
+    row.cells.push(labelCell);
+
+    // Only search for a fresh value chain when there wasn't already an
+    // orphan value cell sitting in the row for this label to claim —
+    // searching again here would just rediscover (and duplicate) it,
+    // since the candidate search above is bounded to end at its own x0.
+    if (!orphanValueCell) {
+      const valueChain = chains[1];
+      if (valueChain) {
+        row.cells.push(buildCell(valueChain));
+      }
+    }
+    row.cells.sort((a, b) => a.x0 - b.x0);
   }
 }
 
@@ -696,7 +1046,25 @@ function buildPageUnits(lines: Line[]): PageUnit[] {
     });
   }
 
+  // reclaimOrphanCells first: a value cell whose own wrap lands it in its
+  // OWN single-cell row (nothing else shares its first line's exact y)
+  // needs to already be sitting in the right row before either recovery
+  // pass below gets a chance to search for it — neither one looks at
+  // already-FORMED cells, only still-unconsumed raw lines, so a value
+  // that's already a cell (just in the wrong row) is invisible to both.
+  reclaimOrphanCells(rows);
+  // recoverCenteredLabelValues first: it only ever touches a value for a
+  // label that's ALREADY a cell (e.g. IDs' own value, itself vertically
+  // centred), picking the single candidate closest to that label's own y
+  // and following just its own x-bucket's wrap chain — so it can't be
+  // confused by a genuinely different label's own gap sitting further
+  // along the same row. recoverMissingLabelColumn's search is coarser (it
+  // doesn't yet know which label a candidate belongs to until it tries to
+  // match one), so running it first — before IDs has its own value —
+  // finds IDs' OWN still-missing value sitting closest to the row and
+  // wrongly reads it as PROMIS ID's missing label.
   recoverCenteredLabelValues(rows, lines, consumed);
+  recoverMissingLabelColumn(rows, lines, consumed);
 
   const rowAtIdx = new Map(rows.map(r => [r.firstIdx, r]));
 

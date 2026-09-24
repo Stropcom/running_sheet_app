@@ -145,6 +145,33 @@ const WRAPPED_LIST_COLUMNS_FIXTURE = join(
   __dirname,
   "__fixtures__/target-profile-pdf-wrapped-list-columns.pdf"
 );
+// A real training PDF (Operation ORCHARD) whose header grid's third column
+// on two separate rows -- PASSPORT (beside DOB/OCG) and PROMIS ID (beside
+// ALIASES/IDs) -- hard-wraps BOTH its own label AND its own value into
+// short (2-3 line) blocks that straddle the row's shared y symmetrically,
+// with neither the label's nor the value's own individual lines landing
+// on it (see Cell's own centerY field comment in pdfTextReader.ts). A
+// label split this way ("PASSPOR"/"T", "PROMIS"/"ID") never independently
+// gets a row-mate of its own, so clusterIntoCells never turns it into a
+// cell at all -- the label vanished entirely, dropped as two orphaned
+// paragraph fragments, while its own value (which DOES independently
+// become a cell, via an unrelated coincidental row-mate elsewhere on the
+// page) ends up silently glued onto whichever real label happens to sit
+// last in the row instead (PASSPORT's own value onto OCG's, here).
+const VERTICALLY_CENTERED_GRID_COLUMN_FIXTURE = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-vertically-centered-grid-column.pdf"
+);
+// A real training PDF (Operation NIGHTJAR) with the exact same header-grid
+// shape as the ORCHARD fixture above, but whose own PASSPORT/PROMIS ID
+// values happen to land in a DIFFERENT wrong row (sharing one with each
+// other, or with an unrelated label fragment, rather than each ending up
+// alone) -- worked by pure coincidence on ORCHARD's own layout even before
+// reclaimOrphanCells existed, and needed it to be found and fixed here.
+const ORPHANED_GRID_VALUE_FIXTURE = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-orphaned-grid-value.pdf"
+);
 
 describe("readPdfText", () => {
   it("reads colon-separated labelled lines as synthetic table rows", async () => {
@@ -412,6 +439,71 @@ describe("readPdfText", () => {
       const rows = result.tables[0].rows;
       expect(rows).toContainEqual(["ROLE", "Principal"]);
       expect(rows).toContainEqual(["COB", "New Zealand"]);
+    });
+  });
+
+  describe("a header grid column whose own label AND value both hard-wrap into short, vertically-centred blocks (Operation ORCHARD/NIGHTJAR fixtures)", () => {
+    it("recovers PASSPORT and PROMIS ID as their own label/value pairs instead of dropping the label and gluing its value onto a neighbouring field (ORCHARD)", async () => {
+      const result = await readPdfText(
+        readFileSync(VERTICALLY_CENTERED_GRID_COLUMN_FIXTURE)
+      );
+      const rows = result.tables[0].rows;
+      expect(rows).toContainEqual(["PASSPORT", "Pakistani PassportKP4071832"]);
+      expect(rows).toContainEqual([
+        "IDs",
+        "WA DL 5902764; Customer ID OTG-7713",
+      ]);
+      expect(rows).toContainEqual(["PROMIS ID", "9341758"]);
+      // Regression: PASSPORT's own value used to land glued onto OCG's.
+      expect(rows).not.toContainEqual([
+        "OCG",
+        "Orchard Trading Group Pakistani PassportKP4071832",
+      ]);
+    });
+
+    it("doesn't disturb the row's own genuine single-line fields (no regression from the grid-column recovery)", async () => {
+      const result = await readPdfText(
+        readFileSync(VERTICALLY_CENTERED_GRID_COLUMN_FIXTURE)
+      );
+      const rows = result.tables[0].rows;
+      expect(rows).toContainEqual(["NAME", "Haris Imran BAIG"]);
+      expect(rows).toContainEqual(["DOB", "19/09/1984"]);
+      expect(rows).toContainEqual(["OCG", "Orchard Trading Group"]);
+      expect(rows).toContainEqual(["ALIASES", "Haris KHAN; ‘Harry’; H. BAIG"]);
+    });
+
+    it("recovers PASSPORT and PROMIS ID on a second real document whose own values land in a different wrong row than ORCHARD's (NIGHTJAR)", async () => {
+      const result = await readPdfText(
+        readFileSync(ORPHANED_GRID_VALUE_FIXTURE)
+      );
+      const rows = result.tables[0].rows;
+      expect(rows).toContainEqual([
+        "PASSPORT",
+        "Australian Passport PA6814720",
+      ]);
+      expect(rows).toContainEqual([
+        "IDs",
+        "WA DL 7304186; Client ID NJ- 20841",
+      ]);
+      expect(rows).toContainEqual(["PROMIS ID", "9286401"]);
+    });
+
+    it("still reads the ORIGINAL Operation COBALT fixture's own PASSPORT row correctly (no regression from reclaimOrphanCells)", async () => {
+      const result = await readPdfText(readFileSync(NARROW_GRID_FIXTURE));
+      const rows = result.tables[0].rows;
+      expect(rows.some(r => r[0] === "PASSPORT")).toBe(true);
+    });
+
+    it("doesn't reclaim a genuine vehicle-list entry into an unrelated pair of column headings that coincidentally share a y (no regression from reclaimOrphanCells on the COBALT V3 fixture)", async () => {
+      const result = await readPdfText(
+        readFileSync(WRAPPED_LIST_COLUMNS_FIXTURE)
+      );
+      const joined = result.paragraphs.join("\n");
+      expect(joined).toContain("SLICK1, (WA) 2019 black Audi RS3 hatch");
+      const rows = result.tables[0].rows;
+      expect(rows.some(r => r[0] === "VEHICLES" && /SLICK1/.test(r[1]))).toBe(
+        false
+      );
     });
   });
 });

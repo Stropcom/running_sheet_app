@@ -948,7 +948,15 @@ function isRawPdfImage(v: unknown): v is RawPdfImage {
     typeof r === "object" &&
     typeof r.width === "number" &&
     typeof r.height === "number" &&
-    r.data instanceof Uint8Array
+    // pdf.js's Node (non-canvas) fallback path decodes an RGB_24BPP/
+    // RGBA_32BPP image into a Uint8ClampedArray, not a plain Uint8Array —
+    // this interface's own field type already said so (see RawPdfImage
+    // above), but this guard only ever checked the plain-Uint8Array case,
+    // so every real photo silently failed the check and got skipped as if
+    // it weren't an image at all. Real regression: found against two
+    // actual training PDFs (each with one genuine embedded photo) that
+    // both decoded this way, extracting zero images from either.
+    (r.data instanceof Uint8Array || r.data instanceof Uint8ClampedArray)
   );
 }
 

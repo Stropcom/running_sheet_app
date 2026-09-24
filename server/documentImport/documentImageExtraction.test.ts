@@ -13,11 +13,31 @@
  * deliberately never surfaced).
  */
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "fs";
+import { join } from "path";
 import JSZip from "jszip";
 import sharp from "sharp";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { readDocxTables } from "./docxTableReader";
 import { readPdfText } from "./pdfTextReader";
+
+// A real training PDF (Operation ORCHARD) with one genuine embedded portrait
+// photo. Regression fixture for a real bug: pdf.js's Node (non-canvas)
+// fallback path decodes some real-world images into a Uint8ClampedArray
+// rather than a plain Uint8Array, and isRawPdfImage's own runtime guard only
+// ever checked for Uint8Array, silently discarding every image that decoded
+// this way — a real photo extracting to zero images. The PDFDocument built
+// at test time below (via pdf-lib's embedPng) happens to decode via a
+// different pdf.js path that already returns a plain Uint8Array, which is
+// exactly why that synthetic test never caught this — only a real embedded
+// photo exercises the code path this guards. Independently confirmed
+// against a second real document (Operation NIGHTJAR) with the same shape
+// during triage; not added as its own fixture since it exercises the exact
+// same code path.
+const PDF_EMBEDDED_PHOTO_CLAMPED_ARRAY_FIXTURE = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-embedded-photo-clamped-array.pdf"
+);
 
 const MINIMAL_DOCUMENT_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -159,5 +179,24 @@ describe("readPdfText — image extraction", () => {
     expect(result.tables).toHaveLength(0);
     expect(result.paragraphs).toHaveLength(0);
     expect(result.images).toHaveLength(0);
+  });
+
+  it("extracts a real embedded photo that pdf.js decodes as a Uint8ClampedArray, not just a plain Uint8Array (the ORCHARD/NIGHTJAR bug)", async () => {
+    const result = await readPdfText(
+      readFileSync(PDF_EMBEDDED_PHOTO_CLAMPED_ARRAY_FIXTURE)
+    );
+    expect(result.images).toHaveLength(1);
+    expect(result.images[0].width).toBe(343);
+    expect(result.images[0].height).toBe(458);
+    expect(result.images[0].mimeType).toBe("image/png");
+
+    // Decodes to a real, uncorrupted PNG at the right dimensions — not just
+    // present, but actually valid image data (guards against a fix that
+    // passes the type check but feeds sharp the wrong channel count).
+    const png = Buffer.from(result.images[0].dataBase64, "base64");
+    const meta = await sharp(png).metadata();
+    expect(meta.format).toBe("png");
+    expect(meta.width).toBe(343);
+    expect(meta.height).toBe(458);
   });
 });

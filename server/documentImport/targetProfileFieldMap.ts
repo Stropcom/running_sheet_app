@@ -29,6 +29,7 @@ import type {
   DocumentReadResult,
   ExtractedDocumentImage,
 } from "./documentReadResult";
+import { isHeadingLine } from "@shared/textSections";
 
 /** Labels this document format uses for fields the schema has no place for
  * today (see CLAUDE.md's Golden Rule discussion / the "Schema gap" decision
@@ -179,40 +180,18 @@ interface ParagraphSection {
   lines: string[];
 }
 
-/** A paragraph the document intends as a section heading, not body text.
- * Deliberately permissive — a numbered heading ("1. SUBJECT", "2. VEHICLE
- * & LOCATION OVERVIEW") or a short, mostly-capitalised line with no
- * sentence-ending punctuation ("VEHICLES", "LOCATIONS OF INTEREST",
- * "ASSOCIATES, BUSINESSES & CONTACTS") — rather than a fixed label list,
- * since real documents word these differently ("VEHICLES" vs "Vehicles of
- * Interest"). A line with any lowercase letter is never a heading by this
- * definition, which is what keeps this from misfiring on ordinary body
- * text (an associate's name-and-address paragraph always has lowercase
- * words in it somewhere). */
-export function isHeadingLine(line: string): boolean {
-  const trimmed = line.trim();
-  if (!trimmed || trimmed.length > 70) return false;
-  if (/^\d+[.)]\s*\S/.test(trimmed)) return true;
-  // A bare "Target"/"Subject" line is a real heading in some document
-  // families even though it isn't ALL-CAPS like every other heading here
-  // — e.g. a real training document (QUARRY) bundles the whole subject
-  // card into one table cell as "Target\nOliver James BISHOP\nDOB: ...".
-  // Matched by exact word rather than loosening the general ALL-CAPS rule
-  // below, which would risk misreading an ordinary Title Case sentence
-  // fragment elsewhere as a heading.
-  if (/^(target|subject|person of interest)$/i.test(trimmed)) return true;
-  // A "Label: value" content line (a DOB, an ID number, a phone) is never
-  // a heading, even when the value itself happens to contain no lowercase
-  // letters (a date, a numeric ID) — without this, "DOB: 03/11/1990" or
-  // "PROMIS ID: 9084417" reads as a heading under the ALL-CAPS rule below,
-  // splitting a real section (e.g. the "Target" subject card above) apart
-  // right after its first line. None of this document family's actual
-  // headings use a colon.
-  if (trimmed.includes(":")) return false;
-  if (/[a-z]/.test(trimmed)) return false;
-  if (/[.!?]$/.test(trimmed)) return false;
-  return /[A-Z]/.test(trimmed);
-}
+// isHeadingLine moved to shared/textSections.ts so the client's
+// Background-text display (client/src/lib/textFormat.ts) can group
+// paragraphs under the same real section headings this module uses to
+// split a document's own paragraph flow — deliberately permissive: a
+// numbered heading ("1. SUBJECT", "2. VEHICLE & LOCATION OVERVIEW") or a
+// short, mostly-capitalised line with no sentence-ending punctuation
+// ("VEHICLES", "LOCATIONS OF INTEREST", "ASSOCIATES, BUSINESSES &
+// CONTACTS") — rather than a fixed label list, since real documents word
+// these differently ("VEHICLES" vs "Vehicles of Interest"). A line with
+// any lowercase letter is never a heading by this definition, which is
+// what keeps this from misfiring on ordinary body text (an associate's
+// name-and-address paragraph always has lowercase words in it somewhere).
 
 function splitParagraphsIntoSections(paragraphs: string[]): ParagraphSection[] {
   const sections: ParagraphSection[] = [];

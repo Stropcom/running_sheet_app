@@ -8,11 +8,12 @@ import {
   composeAssociateName,
 } from "@/lib/addressFormat";
 import type { DocumentImportPrefill } from "@/components/ImportTargetDocumentDialog";
-import { reflowNarrativeText } from "@/lib/textFormat";
+import { groupNarrativeIntoSections } from "@/lib/textFormat";
 import {
   diffDocumentSnapshots,
   countChanges,
   type DiffLine,
+  type DiffSection,
   type DiffStatus,
 } from "@/lib/documentImportDiff";
 
@@ -133,7 +134,7 @@ export function ImportedDocumentCard({
         ...diff.addresses,
         ...diff.vehicles,
         ...diff.associates,
-        ...diff.backgroundParagraphs,
+        ...diff.backgroundSections.flatMap(s => s.paragraphs),
       ]
     : [];
   const hasAdded = allDiffLines.some(l => l.status === "added");
@@ -168,13 +169,16 @@ export function ImportedDocumentCard({
       .map(a => composeAssociateName(a.identity, a.address.businessName).name)
       .filter(Boolean)
       .map(text => ({ text, status: "unchanged" as const }));
-  const backgroundParagraphLines: DiffLine[] =
-    diff?.backgroundParagraphs ??
-    reflowNarrativeText(background)
-      .split("\n\n")
-      .map(p => p.trim())
-      .filter(Boolean)
-      .map(text => ({ text, status: "unchanged" as const }));
+  const backgroundSections: DiffSection[] = (
+    diff?.backgroundSections ??
+    groupNarrativeIntoSections(background).map(section => ({
+      heading: section.heading,
+      paragraphs: section.paragraphs.map(text => ({
+        text,
+        status: "unchanged" as const,
+      })),
+    }))
+  ).filter(s => s.paragraphs.length > 0);
 
   return (
     <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
@@ -300,20 +304,40 @@ export function ImportedDocumentCard({
               </div>
             </div>
           )}
-          {backgroundParagraphLines.length > 0 && (
+          {backgroundSections.length > 0 && (
             <div>
               <p className="font-semibold uppercase tracking-wider text-muted-foreground mb-1">
                 Background
               </p>
-              <div className="space-y-1.5">
-                {backgroundParagraphLines.map((line, i) => (
-                  <p
-                    key={i}
-                    className={`whitespace-pre-wrap text-foreground flex items-baseline gap-1.5 px-1.5 -mx-1.5 rounded ${line.status === "added" ? diffLineClasses("added") : ""}`}
-                  >
-                    <DiffMarker status={line.status} />
-                    <span>{line.text}</span>
-                  </p>
+              <div className="space-y-2">
+                {backgroundSections.map((section, si) => (
+                  <div key={si}>
+                    {section.heading && (
+                      <div className="flex items-center gap-1.5 bg-violet-500/10 border border-violet-500/20 rounded-t-md px-2 py-1">
+                        <span className="w-0.5 h-3 rounded-full bg-violet-500 shrink-0" />
+                        <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-400">
+                          {section.heading}
+                        </span>
+                      </div>
+                    )}
+                    <div
+                      className={`space-y-1.5 ${
+                        section.heading
+                          ? "border border-t-0 border-violet-500/20 rounded-b-md p-2"
+                          : ""
+                      }`}
+                    >
+                      {section.paragraphs.map((line, pi) => (
+                        <p
+                          key={pi}
+                          className={`whitespace-pre-wrap text-foreground flex items-baseline gap-1.5 px-1.5 -mx-1.5 rounded ${line.status === "added" ? diffLineClasses("added") : ""}`}
+                        >
+                          <DiffMarker status={line.status} />
+                          <span>{line.text}</span>
+                        </p>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>

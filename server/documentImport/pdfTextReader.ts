@@ -32,7 +32,8 @@ import { createRequire } from "module";
 import path from "path";
 import { getDocument, OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs";
 import sharp from "sharp";
-import { ALL_KNOWN_LABELS, isHeadingLine } from "./targetProfileFieldMap";
+import { ALL_KNOWN_LABELS } from "./targetProfileFieldMap";
+import { isHeadingLine } from "@shared/textSections";
 import type {
   DocumentReadResult,
   ExtractedDocumentImage,

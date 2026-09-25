@@ -1383,6 +1383,52 @@ const TAB_OPTIONS: Array<{
   icon: React.ReactNode;
 }> = [...ENTITY_TAB_OPTIONS, ...REPORT_TAB_OPTIONS];
 
+// Desktop/tablet entity tab bar colour-codes each tab to match its own
+// colour everywhere else in RunLog (Target Registry's own field sections,
+// the Imported Documents card) — Targets = sky, Associates = violet,
+// Vehicles = amber, Locations = emerald. Operations isn't one of those
+// four profile-entity colours (it's the containing folder, not a profile
+// type), so it gets a neutral slate treatment instead. Written as full
+// literal class strings, never interpolated from a colour name, since
+// Tailwind's build-time scanner can't see a class assembled from a
+// runtime variable. Mobile's <Select> dropdown (below) doesn't use this —
+// it stays plain text, matching its own existing look.
+const ENTITY_TAB_COLORS: Record<
+  "operations" | "targets" | "associates" | "vehicle" | "locations",
+  { icon: string; activeBg: string; activeText: string; bar: string }
+> = {
+  operations: {
+    icon: "text-slate-500 dark:text-slate-400",
+    activeBg: "bg-slate-500/10",
+    activeText: "text-slate-900 dark:text-slate-100",
+    bar: "bg-slate-500",
+  },
+  targets: {
+    icon: "text-sky-500",
+    activeBg: "bg-sky-500/10",
+    activeText: "text-sky-700 dark:text-sky-400",
+    bar: "bg-sky-500",
+  },
+  associates: {
+    icon: "text-violet-500",
+    activeBg: "bg-violet-500/10",
+    activeText: "text-violet-700 dark:text-violet-400",
+    bar: "bg-violet-500",
+  },
+  vehicle: {
+    icon: "text-amber-500",
+    activeBg: "bg-amber-500/10",
+    activeText: "text-amber-700 dark:text-amber-400",
+    bar: "bg-amber-500",
+  },
+  locations: {
+    icon: "text-emerald-500",
+    activeBg: "bg-emerald-500/10",
+    activeText: "text-emerald-700 dark:text-emerald-400",
+    bar: "bg-emerald-500",
+  },
+};
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function IntelligencePage() {
@@ -1741,53 +1787,60 @@ export default function IntelligencePage() {
             </Select>
           </div>
         ) : (
-          <div className="mb-5">
-            <div className="flex gap-1 flex-wrap border-b border-border/40 pb-0">
+          <div className="mb-5 space-y-3">
+            <div className="flex rounded-xl border border-border overflow-hidden bg-card divide-x divide-border">
               {ENTITY_TAB_OPTIONS.map(tab => {
                 const count = tabCounts[tab.value];
                 const isActive = activeTab === tab.value;
+                const colors =
+                  ENTITY_TAB_COLORS[
+                    tab.value as keyof typeof ENTITY_TAB_COLORS
+                  ];
                 return (
                   <button
                     key={tab.value}
                     onClick={() => setActiveTab(tab.value)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-px ${
-                      isActive
-                        ? "border-primary text-foreground"
-                        : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                    className={`flex-1 flex flex-col items-center gap-1 py-3 px-2 transition-colors ${
+                      isActive ? colors.activeBg : "hover:bg-muted/40"
                     }`}
                   >
-                    {tab.icon}
-                    {tab.label}
+                    <span className="flex items-center gap-1.5">
+                      <span className={colors.icon}>{tab.icon}</span>
+                      <span
+                        className={`text-xs font-semibold ${isActive ? colors.activeText : "text-foreground"}`}
+                      >
+                        {tab.label}
+                      </span>
+                    </span>
                     {count !== undefined && count > 0 && (
                       <span
-                        className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${
-                          isActive
-                            ? "bg-primary/15 text-primary"
-                            : "bg-muted text-muted-foreground"
-                        }`}
+                        className={`text-base font-bold ${isActive ? colors.activeText : "text-muted-foreground"}`}
                       >
                         {count}
                       </span>
                     )}
+                    <span
+                      className={`w-7 h-0.5 rounded-full ${isActive ? colors.bar : "bg-transparent"}`}
+                    />
                   </button>
                 );
               })}
             </div>
-            <div className="flex flex-wrap items-center gap-2 mt-3">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground shrink-0">
+            <div className="flex flex-col gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 Reports
               </span>
-              <div className="flex items-center gap-1 p-1 rounded-lg bg-muted/40 border border-border/50 flex-wrap">
+              <div className="flex gap-2">
                 {REPORT_TAB_OPTIONS.map(tab => {
                   const isActive = activeTab === tab.value;
                   return (
                     <button
                       key={tab.value}
                       onClick={() => setActiveTab(tab.value)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg border text-xs font-semibold transition-colors ${
                         isActive
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground hover:bg-background/60"
+                          ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-700 dark:text-indigo-400"
+                          : "border-indigo-500/20 bg-indigo-500/5 text-indigo-600/80 dark:text-indigo-400/70 hover:bg-indigo-500/10"
                       }`}
                     >
                       {tab.icon}

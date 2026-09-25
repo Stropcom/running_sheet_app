@@ -175,8 +175,16 @@ const ROW_Y_TOLERANCE = 2;
  * at a 1.38x gap — just outside the previous 1.3 threshold, so the two
  * fragments never rejoined into one cell at all and were left as two
  * separate stray lines. 1.4 covers this without reaching anywhere near
- * the 1.5x+ next-row gap. */
-const WRAP_CONTINUATION_MAX_GAP_RATIO = 1.4;
+ * the 1.5x+ next-row gap.
+ *
+ * Regression (Operation CROSSWIND V3): a later revision of the same
+ * document family's own header-table font renders that identical hard
+ * wrap at a 1.56-1.57x gap instead — "VEHICLES" as "VEHICLE"/"S",
+ * "LOCATION OF INTEREST" as "LOCATION"/"OF"/"INTEREST", "PASSPORT" and
+ * "PROMIS ID" the same way — just outside 1.4 too. Raised to 1.6, still
+ * comfortably short of the 1.5x+ next-row gap this document's own rows
+ * actually use (~5x here). */
+const WRAP_CONTINUATION_MAX_GAP_RATIO = 1.6;
 /** A line whose rendered width is at least this fraction of the widest
  * line ever seen starting at the same x is treated as having been packed
  * right up to its column's edge — see clusterIntoCells' own comment for
@@ -431,7 +439,26 @@ function clusterIntoCells(lines: Line[]): {
       }
       if (current.length > 0) chains.push(current);
       for (const chain of chains) {
-        if (chain.some(idx => hasRowMate[idx])) {
+        // A chain with no row-mate anywhere in it (e.g. a lone heading
+        // column like "VEHICLES" whose hard-wrapped "VEHICLE"/"S" happens
+        // to land at a y neither the vehicle list nor anything else on the
+        // page shares) is still unambiguously eligible when its own
+        // fully-joined, whitespace-collapsed text is EXACTLY one of the
+        // app's own known field/section labels — the same ground-truth
+        // vocabulary isStandaloneColonLabel already trusts unconditionally
+        // above, just reached a different way (no colon, but an exact
+        // whole-label match is just as unambiguous). Never fires on
+        // ordinary wrapped prose, which essentially never collapses to a
+        // known label's own exact text.
+        const chainCollapsed = chain
+          .map(idx => columnText(segments[idx].items))
+          .join(" ")
+          .replace(/\s+/g, "")
+          .toUpperCase();
+        const isKnownLabelChain = LINE_LABELS.some(
+          l => l.replace(/\s+/g, "").toUpperCase() === chainCollapsed
+        );
+        if (chain.some(idx => hasRowMate[idx]) || isKnownLabelChain) {
           for (const idx of chain) chainEligible[idx] = true;
         }
         allChains.push({
@@ -536,11 +563,42 @@ function clusterIntoCells(lines: Line[]): {
       lastIdx = sj.lineIdx;
     }
 
+    // The per-pair packed/not-packed guess above is tuned for a single
+    // forced mid-TOKEN break ("VEHICLE"/"S") and can still misjudge a
+    // multi-WORD known label's own word-boundary wrap (e.g. "LOCATION" —
+    // itself the widest word in this narrow column — judged "packed"
+    // against "OF" the same way a real mid-word break would be, gluing
+    // them into "LOCATIONOF" with no space at all). Once the whole chain
+    // is assembled, comparing its whitespace-collapsed text against the
+    // app's own known label vocabulary (the same LINE_LABELS the row-
+    // pairing logic below already treats as ground truth) is a safe,
+    // exact-match-only correction — it only ever overrides the guess when
+    // the reconstructed text is unambiguously one specific known label,
+    // never a general guess at spacing.
+    const joinedText = columnText(items);
+    const collapsed = joinedText.replace(/\s+/g, "").toUpperCase();
+    const knownLabel = LINE_LABELS.find(
+      l => l.replace(/\s+/g, "").toUpperCase() === collapsed
+    );
+    const finalItems =
+      knownLabel && knownLabel !== joinedText
+        ? [
+            {
+              str: knownLabel,
+              x: s0.x0,
+              y: s0.y,
+              width: lastWidth,
+              height: s0.height,
+              hasEOL: false,
+            },
+          ]
+        : items;
+
     cells.push({
       x0: s0.x0,
       y: s0.y,
       centerY: (s0.y + lastY) / 2,
-      items,
+      items: finalItems,
       firstIdx,
       lastIdx,
     });

@@ -190,6 +190,21 @@ const HEADING_SHARES_VALUE_ROW_FIXTURE = join(
   __dirname,
   "__fixtures__/target-profile-pdf-heading-shares-value-row.pdf"
 );
+// A third Operation CROSSWIND training PDF (same fictional subject as the
+// two fixtures above), whose header-table font renders a hard-wrapped
+// heading ("VEHICLES" as "VEHICLE"/"S", "LOCATION OF INTEREST" as
+// "LOCATION"/"OF"/"INTEREST", "PASSPORT" as "PASSPOR"/"T", "PROMIS ID" as
+// "PROMIS"/"ID") at a noticeably wider line-to-line gap (1.56-1.57x the
+// line's own height) than the ORCHARD/NIGHTJAR fixtures' 1.38x — just
+// outside the WRAP_CONTINUATION_MAX_GAP_RATIO threshold that already
+// covered those. "VEHICLES" and "PASSPORT"/"PROMIS ID" also have no row-
+// mate anywhere on the page (clusterIntoCells' usual eligibility signal),
+// unlike "LOCATION OF INTEREST" which coincidentally lands beside the
+// VEHICLES column's own wrapped lines.
+const HEADING_HARD_WRAP_WIDE_GAP_FIXTURE = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-heading-hard-wrap-wide-gap.pdf"
+);
 
 describe("readPdfText", () => {
   it("reads colon-separated labelled lines as synthetic table rows", async () => {
@@ -562,6 +577,36 @@ describe("readPdfText", () => {
       // table rows above.
       expect(result.paragraphs).not.toContain("NAME");
       expect(result.paragraphs).not.toContain("ROLE");
+    });
+  });
+
+  describe("a heading hard-wrapped at a wider line-gap than the app's own known-label vocabulary threshold previously covered (Operation CROSSWIND V3 fixture)", () => {
+    it("rejoins VEHICLES, LOCATION OF INTEREST, PASSPORT and PROMIS ID as single, correctly-spaced headings/labels instead of leaving each as separate fragments", async () => {
+      const result = await readPdfText(
+        readFileSync(HEADING_HARD_WRAP_WIDE_GAP_FIXTURE)
+      );
+      expect(result.paragraphs).toContain("VEHICLES");
+      expect(result.paragraphs).toContain("LOCATION OF INTEREST");
+      // Regression: these used to survive as their own stray heading-shaped
+      // fragments ("S", "OF", "INTEREST") once the fragmented join left
+      // them as standalone paragraphs.
+      expect(result.paragraphs).not.toContain("S");
+      expect(result.paragraphs).not.toContain("INTEREST");
+      expect(result.paragraphs).not.toContain("VEHICLE");
+      expect(result.paragraphs).not.toContain("LOCATION");
+
+      const rows = result.tables[0].rows;
+      expect(
+        rows.some(r => r[0] === "PASSPORT" && r[1].includes("Egyptian"))
+      ).toBe(true);
+    });
+
+    it("doesn't glue LOCATION straight onto OF with no space, even though LOCATION alone is packed right up to its column's own width", async () => {
+      const result = await readPdfText(
+        readFileSync(HEADING_HARD_WRAP_WIDE_GAP_FIXTURE)
+      );
+      expect(result.paragraphs).not.toContain("LOCATIONOF INTEREST");
+      expect(result.paragraphs).toContain("LOCATION OF INTEREST");
     });
   });
 });

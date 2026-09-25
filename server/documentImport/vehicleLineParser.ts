@@ -121,6 +121,7 @@ const VEHICLE_TYPE_WORDS: Record<string, string> = {
   wagon: "station sedan",
   hatch: "hatch",
   hatchback: "hatch",
+  van: "Van",
 };
 
 const YEAR_RE = /^(19|20)\d{2}$/;

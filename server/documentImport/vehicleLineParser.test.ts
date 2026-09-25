@@ -114,7 +114,8 @@ describe("findVehicleLines", () => {
       registration: "CW-1212",
       state: "NSW",
       make: "Toyota",
-      model: "HiAce van",
+      model: "HiAce",
+      vehicleType: "Van",
     });
   });
 
@@ -177,7 +178,8 @@ describe("findVehicleLines", () => {
       state: "WA",
       colour: "Silver",
       make: "Toyota",
-      model: "HiAce van",
+      model: "HiAce",
+      vehicleType: "Van",
     });
     expect(result[1]).toMatchObject({
       registration: "UNKNOWN",

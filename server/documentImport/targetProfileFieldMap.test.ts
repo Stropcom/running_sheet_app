@@ -1172,5 +1172,10 @@ describe("mapDocumentToTargetProfile — PDF documents", () => {
     expect(profile.vehicles.map(v => v.registration)).toEqual(
       expect.arrayContaining(["1CWA12", "1FNS89", "CW-1212"])
     );
+    // "van" is a recognised vehicle type (VEHICLE_TYPE_WORDS), so the
+    // HiAce's own body type splits out into its own field instead of
+    // staying stuck on the end of the model ("HiAce van").
+    const hiAce = profile.vehicles.find(v => v.registration === "CW-1212");
+    expect(hiAce).toMatchObject({ model: "HiAce", vehicleType: "Van" });
   });
 });

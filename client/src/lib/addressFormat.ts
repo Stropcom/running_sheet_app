@@ -191,6 +191,7 @@ export const VEHICLE_TYPE_OPTIONS = [
   "coupe",
   "station sedan",
   "hatch",
+  "Van",
 ] as const;
 
 /**

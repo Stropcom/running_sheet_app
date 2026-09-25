@@ -1177,5 +1177,14 @@ describe("mapDocumentToTargetProfile — PDF documents", () => {
     // staying stuck on the end of the model ("HiAce van").
     const hiAce = profile.vehicles.find(v => v.registration === "CW-1212");
     expect(hiAce).toMatchObject({ model: "HiAce", vehicleType: "Van" });
+
+    // Regression: "CW-1212 (NSW) 2019 white Toyota" / "HiAce van." is one
+    // vehicle description PDF-wrapped across two physical lines within its
+    // own paragraph. The stray-VEHICLES-line cleanup in parseAddressBlock
+    // only recognised the first half (the rego anchor sits there, not on
+    // "HiAce van." alone) and reported the second half as an address that
+    // "couldn't be read" — a false positive needing an officer's review
+    // for text that isn't an address at all.
+    expect(profile.needsReview).toEqual([]);
   });
 });

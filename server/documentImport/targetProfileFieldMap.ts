@@ -29,7 +29,11 @@ import type {
   DocumentReadResult,
   ExtractedDocumentImage,
 } from "./documentReadResult";
-import { isHeadingLine } from "@shared/textSections";
+import {
+  isHeadingLine,
+  VEHICLES_HEADING_RE,
+  LOCATION_HEADING_RE,
+} from "@shared/textSections";
 
 /** Labels this document format uses for fields the schema has no place for
  * today (see CLAUDE.md's Golden Rule discussion / the "Schema gap" decision
@@ -982,8 +986,6 @@ function extractLeadingDob(value: string): string {
 }
 
 const SUBJECT_HEADING_RE = /SUBJECT|TARGET|PERSON\s+OF\s+INTEREST/i;
-const VEHICLES_HEADING_RE = /^VEHICLES?\b/i;
-const LOCATION_HEADING_RE = /LOCATIONS?\s+OF\s+INTEREST|^ADDRESSES?\b/i;
 const IDENTITY_HEADER_RE = /^(PRIMARY\s+IDENTITY|IDENTITY|SUBJECT|NAME)$/i;
 
 /** A fourth identity shape, alongside a NAME/SUBJECT label:value row

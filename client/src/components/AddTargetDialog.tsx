@@ -244,6 +244,16 @@ export function AddTargetDialog({
     id: number;
     name: string;
   } | null>(() => initialOperation ?? null);
+  // Re-applies the page's operation context on every open, not just the
+  // first. This dialog mounts once, up-front, alongside its page, so the
+  // lazy useState above can capture initialOperation before the page's
+  // own operation query has resolved (still name: "") — leaving the
+  // field blank on the very first open. resetAndClose below already
+  // re-syncs it on close; this covers the initial open too.
+  useEffect(() => {
+    if (open) setOperation(initialOperation ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   // What this Target record identifies — defaults to Person, the only
   // option before this existed, so every existing flow (document import,
   // possible-duplicate merge, etc.) is unaffected unless an officer

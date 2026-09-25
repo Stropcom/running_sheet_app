@@ -32,3 +32,15 @@ export function isHeadingLine(line: string): boolean {
   if (/[.!?]$/.test(trimmed)) return false;
   return /[A-Z]/.test(trimmed);
 }
+
+/** Matches a document's own "VEHICLES" section heading — shared so the
+ * client's Background-text display (ImportedDocumentCard.tsx) can drop a
+ * Background section that's just the same VEHICLES content already shown
+ * in the structured Vehicles list above it, without duplicating this
+ * pattern out of sync with the server's own targetProfileFieldMap.ts. */
+export const VEHICLES_HEADING_RE = /^VEHICLES?\b/i;
+
+/** Matches a document's own "LOCATION OF INTEREST"/"ADDRESSES" section
+ * heading — same sharing reason as VEHICLES_HEADING_RE above, for the
+ * structured Addresses list. */
+export const LOCATION_HEADING_RE = /LOCATIONS?\s+OF\s+INTEREST|^ADDRESSES?\b/i;

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, ChevronDown } from "lucide-react";
+import { FileText, ChevronDown, Target, Home, Car, Users } from "lucide-react";
 import {
   formatIntelAddress,
   formatIntelVehicle,
@@ -9,6 +9,7 @@ import {
 } from "@/lib/addressFormat";
 import type { DocumentImportPrefill } from "@/components/ImportTargetDocumentDialog";
 import { groupNarrativeIntoSections } from "@/lib/textFormat";
+import { VEHICLES_HEADING_RE, LOCATION_HEADING_RE } from "@shared/textSections";
 import {
   diffDocumentSnapshots,
   countChanges,
@@ -169,6 +170,11 @@ export function ImportedDocumentCard({
       .map(a => composeAssociateName(a.identity, a.address.businessName).name)
       .filter(Boolean)
       .map(text => ({ text, status: "unchanged" as const }));
+  // A section whose heading is the document's own "VEHICLES" or "LOCATION
+  // OF INTEREST"/"ADDRESSES" label is the exact same content already shown
+  // above in the structured Vehicle(s)/Address(es) list — the raw document
+  // text just repeats it under its own original heading. Dropping it here
+  // avoids showing the officer the same vehicles/addresses twice.
   const backgroundSections: DiffSection[] = (
     diff?.backgroundSections ??
     groupNarrativeIntoSections(background).map(section => ({
@@ -178,7 +184,15 @@ export function ImportedDocumentCard({
         status: "unchanged" as const,
       })),
     }))
-  ).filter(s => s.paragraphs.length > 0);
+  ).filter(
+    s =>
+      s.paragraphs.length > 0 &&
+      !(
+        s.heading &&
+        (VEHICLES_HEADING_RE.test(s.heading) ||
+          LOCATION_HEADING_RE.test(s.heading))
+      )
+  );
 
   return (
     <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
@@ -230,15 +244,17 @@ export function ImportedDocumentCard({
             Shown exactly as parsed from the uploaded document — not the
             target's current live details, which may have been edited since.
           </p>
-          <div>
-            <p className="font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+          <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
+            <p className="font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+              <Target className="w-3 h-3" />
               Name
             </p>
             <p className="text-foreground">{name || "—"}</p>
           </div>
           {addressLines.length > 0 && (
-            <div>
-              <p className="font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+            <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3">
+              <p className="font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+                <Home className="w-3 h-3" />
                 Address{addressLines.length > 1 ? "es" : ""}
               </p>
               <div className="space-y-0.5">
@@ -255,8 +271,9 @@ export function ImportedDocumentCard({
             </div>
           )}
           {vehicleLines.length > 0 && (
-            <div>
-              <p className="font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+            <div className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3">
+              <p className="font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+                <Car className="w-3 h-3" />
                 Vehicle{vehicleLines.length > 1 ? "s" : ""}
               </p>
               <div className="space-y-0.5">
@@ -278,8 +295,9 @@ export function ImportedDocumentCard({
             </div>
           )}
           {associateLines.length > 0 && (
-            <div>
-              <p className="font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+            <div className="rounded-lg border border-l-4 border-violet-500/30 border-l-violet-500 bg-violet-500/5 p-3">
+              <p className="font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+                <Users className="w-3 h-3" />
                 Associates mentioned
               </p>
               <div className="flex flex-wrap gap-1.5">
@@ -288,7 +306,7 @@ export function ImportedDocumentCard({
                     key={i}
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${
                       line.status === "unchanged"
-                        ? "bg-muted text-foreground"
+                        ? "bg-background text-foreground"
                         : diffLineClasses(line.status)
                     }`}
                   >
@@ -305,17 +323,18 @@ export function ImportedDocumentCard({
             </div>
           )}
           {backgroundSections.length > 0 && (
-            <div>
-              <p className="font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+            <div className="rounded-lg border border-l-4 border-pink-500/30 border-l-pink-500 bg-pink-500/5 p-3">
+              <p className="font-bold text-pink-700 dark:text-pink-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+                <FileText className="w-3 h-3" />
                 Background
               </p>
               <div className="space-y-2">
                 {backgroundSections.map((section, si) => (
                   <div key={si}>
                     {section.heading && (
-                      <div className="flex items-center gap-1.5 bg-violet-500/10 border border-violet-500/20 rounded-t-md px-2 py-1">
-                        <span className="w-0.5 h-3 rounded-full bg-violet-500 shrink-0" />
-                        <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-400">
+                      <div className="flex items-center gap-1.5 bg-pink-500/10 border border-pink-500/20 rounded-t-md px-2 py-1">
+                        <span className="w-0.5 h-3 rounded-full bg-pink-500 shrink-0" />
+                        <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-pink-700 dark:text-pink-400">
                           {section.heading}
                         </span>
                       </div>
@@ -323,7 +342,7 @@ export function ImportedDocumentCard({
                     <div
                       className={`space-y-1.5 ${
                         section.heading
-                          ? "border border-t-0 border-violet-500/20 rounded-b-md p-2"
+                          ? "border border-t-0 border-pink-500/20 rounded-b-md p-2"
                           : ""
                       }`}
                     >

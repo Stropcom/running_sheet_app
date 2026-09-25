@@ -121,6 +121,24 @@ const PDF_WRAPPED_LIST_COLUMNS_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-pdf-wrapped-list-columns.pdf"
 );
+// A second, later Operation CROSSWIND training PDF (same fictional subject,
+// Fatima Noor EL-SAYED, as PDF_HYPHENATED_SURNAME_FIXTURE_PATH above — a
+// harder document from the same case) with three separate, explicitly-named
+// associates (Fatma Nour EL-SAYED, Noor Fatima SAYED, Youssef Karim
+// MANSOUR), each with their own address, and its own text warning "must not
+// be merged with the primary subject." The associates ARE already found and
+// correctly attributed via associateBlocks — the bug was that their same
+// three addresses ALSO leaked into the primary subject's OWN addresses list
+// (see pdfTextReader.test.ts's own fixture comment for the layout bug that
+// caused it: LOCATION OF INTEREST's heading got folded into the VEHICLES
+// column's sentence beside it, so the primary subject's real 4 addresses
+// were never found under their own label, and the last-resort whole-
+// document narrative scan picked up every address-shaped line instead,
+// associates' addresses included).
+const PDF_HEADING_SHARES_VALUE_ROW_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-heading-shares-value-row.pdf"
+);
 
 describe("mapDocumentToTargetProfile", () => {
   it("maps the real training document end-to-end", async () => {
@@ -1158,5 +1176,57 @@ describe("mapDocumentToTargetProfile — PDF documents", () => {
     );
 
     expect(result.needsReview).toEqual([]);
+  });
+
+  it("keeps three separate associates' own addresses out of the primary subject's addresses list, even though each is explicitly named and gets its own associateBlocks entry (the CROSSWIND address-leak bug)", async () => {
+    const result = await readPdfText(
+      readFileSync(PDF_HEADING_SHARES_VALUE_ROW_FIXTURE_PATH)
+    );
+    const profile = mapDocumentToTargetProfile(result);
+
+    expect(profile.name).toMatchObject({
+      firstNames: "Fatima Noor",
+      surname: "EL-SAYED",
+    });
+
+    // The primary subject's own 4 labelled addresses, and ONLY those.
+    expect(profile.addresses).toHaveLength(4);
+    expect(profile.addresses.map(a => a.raw)).toEqual(
+      expect.arrayContaining([
+        "12B Windermere Crescent, NEDLANDS WA 6009",
+        "12 Windermere Crescent, NEDLANDS WA 6009",
+        "4/101 St Georges Terrace, PERTH WA 6000",
+        "2/36 Leach Highway, KEWDALE WA 6105",
+      ])
+    );
+    // Regression: these three each belong to a DIFFERENT, explicitly named
+    // associate (see associateBlocks below) — the document's own text says
+    // outright these must not be merged with the primary subject.
+    expect(profile.addresses.map(a => a.raw)).not.toEqual(
+      expect.arrayContaining([
+        "14 Windermere Crescent, NEDLANDS WA 6009",
+        "7 Park Lane, SUBIACO WA 6008",
+        "91 Orrong Road, RIVERVALE WA 6103",
+      ])
+    );
+
+    // The three associates are still correctly found, each with their OWN
+    // address/vehicle intact.
+    const byName = (surname: string) =>
+      profile.associateBlocks.find(a => a.surname === surname);
+    expect(byName("EL-SAYED")?.address?.raw).toBe(
+      "14 Windermere Crescent, NEDLANDS WA 6009"
+    );
+    expect(byName("SAYED")?.address?.raw).toBe("7 Park Lane, SUBIACO WA 6008");
+    expect(byName("MANSOUR")?.address?.raw).toBe(
+      "91 Orrong Road, RIVERVALE WA 6103"
+    );
+
+    // The primary subject's own 3 vehicles, all still found even though
+    // two of them come after LOCATION OF INTEREST's heading in reading
+    // order (see pdfTextReader.test.ts's own fixture comment).
+    expect(profile.vehicles.map(v => v.registration)).toEqual(
+      expect.arrayContaining(["1CWA12", "1FNS89", "CW-1212"])
+    );
   });
 });

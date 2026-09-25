@@ -172,6 +172,24 @@ const ORPHANED_GRID_VALUE_FIXTURE = join(
   __dirname,
   "__fixtures__/target-profile-pdf-orphaned-grid-value.pdf"
 );
+// A second, later Operation CROSSWIND training PDF (same fictional subject,
+// Fatima Noor EL-SAYED, as targetProfileFieldMap.test.ts's own
+// PDF_HYPHENATED_SURNAME_FIXTURE_PATH — a harder document from the same
+// case, testing a different bug) whose VEHICLES and LOCATION OF INTEREST
+// columns start at different heights on the page — VEHICLES has
+// already printed its first entry before LOCATION OF INTEREST's own
+// 2-line-wrapped heading appears, sharing a row with the VEHICLES column's
+// SECOND entry instead of its first. clusterIntoCells already reconstructs
+// "LOCATION OF INTEREST" as a clean cell of its own on that row (it's the
+// VEHICLES cell alongside it that's still mid-value there, not a second
+// bare label) — the bug was one level up: the row-to-paragraph step folded
+// that bare-label cell straight into the same flowing sentence as the
+// vehicle cell beside it ("...sedan. LOCATION OF INTEREST"), so it was
+// never its own paragraph and the section heading vanished from view.
+const HEADING_SHARES_VALUE_ROW_FIXTURE = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-heading-shares-value-row.pdf"
+);
 
 describe("readPdfText", () => {
   it("reads colon-separated labelled lines as synthetic table rows", async () => {
@@ -504,6 +522,46 @@ describe("readPdfText", () => {
       expect(rows.some(r => r[0] === "VEHICLES" && /SLICK1/.test(r[1]))).toBe(
         false
       );
+    });
+  });
+
+  describe("a bare section-heading cell sharing a row with another column's own still-flowing value (Operation CROSSWIND fixture)", () => {
+    it("emits LOCATION OF INTEREST as its own heading paragraph instead of folding it into the VEHICLES cell's sentence beside it", async () => {
+      const result = await readPdfText(
+        readFileSync(HEADING_SHARES_VALUE_ROW_FIXTURE)
+      );
+      expect(result.paragraphs).toContain("LOCATION OF INTEREST");
+      const joined = result.paragraphs.join("\n");
+      expect(joined).not.toContain("sedan. LOCATION OF INTEREST");
+    });
+
+    it("still reads every vehicle in the VEHICLES column, including the two that come after LOCATION OF INTEREST's own heading in reading order", async () => {
+      const result = await readPdfText(
+        readFileSync(HEADING_SHARES_VALUE_ROW_FIXTURE)
+      );
+      const joined = result.paragraphs.join("\n");
+      expect(joined).toContain("1CWA12 (WA) 2023 white Lexus");
+      expect(joined).toContain(
+        "1FNS89 (WA) 2020 silver Mercedes Benz C300 sedan."
+      );
+      expect(joined).toContain("CW-1212 (NSW) 2019 white Toyota");
+    });
+
+    it("doesn't shred a genuine label:value header row (NAME/ROLE/COB) that also contains bare-label-shaped cells with their own value alongside them", async () => {
+      const result = await readPdfText(
+        readFileSync(HEADING_SHARES_VALUE_ROW_FIXTURE)
+      );
+      const rows = result.tables[0].rows;
+      expect(rows).toContainEqual(["NAME", "Fatima Noor EL-SAYED"]);
+      expect(rows).toContainEqual(["ROLE", "Business controller"]);
+      expect(rows).toContainEqual(["COB", "Egypt"]);
+      // Regression: an earlier version of this fix couldn't tell "a bare
+      // label with no value in THIS row" apart from "a bare label with a
+      // real paired value right beside it," and shredded NAME/ROLE/COB
+      // into three standalone heading paragraphs instead of the three
+      // table rows above.
+      expect(result.paragraphs).not.toContain("NAME");
+      expect(result.paragraphs).not.toContain("ROLE");
     });
   });
 });

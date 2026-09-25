@@ -211,18 +211,37 @@ function splitParagraphsIntoSections(paragraphs: string[]): ParagraphSection[] {
   // reporting them, see parseAddressBlock) each pick their own relevant
   // subset out of that shared pool correctly regardless. A heading found
   // AFTER real content has already started flowing always starts a fresh,
-  // single-section group as before.
+  // single-section group as before — UNLESS both this heading and the
+  // active group's own heading are VEHICLES/LOCATION OF INTEREST (the
+  // exact pairing above already names): a real training document
+  // (CROSSWIND) has these two columns start at different heights on the
+  // page (VEHICLES higher, its own first entry already a line of content
+  // before LOCATION OF INTEREST's heading even appears alongside the
+  // VEHICLES column's second entry), so they're never strictly back to
+  // back the way HARBOUR's are, yet it's the identical two-column shape —
+  // pdfTextReader.ts already had to prove LOCATION OF INTEREST was a bare
+  // label with no value of its own in ITS row (see its own "mixed row"
+  // comment) before ever emitting it as a heading paragraph here, so
+  // finding one while VEHICLES' group is still open is reliable evidence
+  // of the same column pairing, not a genuine new section starting late.
   let activeGroup: ParagraphSection[] = [];
   let groupHasContent = false;
+  const isPairedGridHeading = (heading: string) =>
+    VEHICLES_HEADING_RE.test(heading) || LOCATION_HEADING_RE.test(heading);
   for (const p of paragraphs) {
     if (isHeadingLine(p)) {
       const section: ParagraphSection = { heading: p.trim(), lines: [] };
       sections.push(section);
-      if (groupHasContent || activeGroup.length === 0) {
+      const staysInActiveGroup =
+        activeGroup.length > 0 &&
+        (!groupHasContent ||
+          (isPairedGridHeading(p) &&
+            activeGroup.some(s => isPairedGridHeading(s.heading))));
+      if (staysInActiveGroup) {
+        activeGroup.push(section);
+      } else {
         activeGroup = [section];
         groupHasContent = false;
-      } else {
-        activeGroup.push(section);
       }
     } else if (activeGroup.length > 0) {
       for (const s of activeGroup) s.lines.push(p);
@@ -1242,39 +1261,6 @@ export function mapDocumentToTargetProfile(
     .filter(Boolean)
     .join("\n\n");
 
-  // Last resort — neither a table cell nor a paragraph heading gave any
-  // vehicles/addresses at all, so this document doesn't even label these
-  // sections. Scan the narrative opportunistically rather than showing the
-  // officer nothing, one sentence of one paragraph at a time — NOT the
-  // whole joined freeText in one call, which would let findVehicleLines/
-  // findAddressLines slice all the way to the next anchor found anywhere
-  // later in an entirely unrelated later paragraph, swallowing everything
-  // in between into one garbled entry. Deduped since the same real vehicle
-  // or address is often mentioned again in narrative/activity text
-  // elsewhere in the document. Never runs when the labelled/headed paths
-  // above already found something, so a well-structured document never
-  // gets a second, redundant pass over its own already-correctly-parsed
-  // entries.
-  if (vehicles.length === 0 || addresses.length === 0) {
-    const narrativeParagraphs = [
-      ...freeTextFromTable.split("\n\n"),
-      ...result.paragraphs,
-    ].filter(Boolean);
-    const sentences = narrativeParagraphs.flatMap(splitIntoSentences);
-    if (vehicles.length === 0) {
-      vehicles = dedupeBy(
-        sentences.flatMap(findVehicleLines),
-        v => v.registration
-      );
-    }
-    if (addresses.length === 0) {
-      addresses = dedupeBy(
-        sentences.flatMap(findAddressLines).map(a => ({ ...a, label: "" })),
-        a => `${a.houseNo}|${a.streetName}|${a.suburb}`
-      );
-    }
-  }
-
   // Associates: three different physical shapes a document groups a name
   // with its own address/vehicle — a vertical block (name, then address,
   // then vehicle, each its own line), one dense paragraph with a dash
@@ -1292,6 +1278,11 @@ export function mapDocumentToTargetProfile(
   // findLeadingNameAssociates in particular has no way to know a
   // sentence's leading name is the document's own subject rather than
   // someone new.
+  //
+  // Computed before the "last resort" narrative scan below (moved up from
+  // its previous spot right before candidateEntities) so that scan can
+  // exclude an address/vehicle already attributed to one of these named
+  // associates — see its own comment for why.
   const associateBlocks = dedupeBy(
     [
       ...findAssociateTableRows(result.tables),
@@ -1316,6 +1307,73 @@ export function mapDocumentToTargetProfile(
   const excludedBusinessNames = associateBlocks
     .map(a => a.businessName)
     .filter(Boolean);
+
+  // Last resort — neither a table cell nor a paragraph heading gave any
+  // vehicles/addresses at all, so this document doesn't even label these
+  // sections. Scan the narrative opportunistically rather than showing the
+  // officer nothing, one sentence of one paragraph at a time — NOT the
+  // whole joined freeText in one call, which would let findVehicleLines/
+  // findAddressLines slice all the way to the next anchor found anywhere
+  // later in an entirely unrelated later paragraph, swallowing everything
+  // in between into one garbled entry. Deduped since the same real vehicle
+  // or address is often mentioned again in narrative/activity text
+  // elsewhere in the document. Never runs when the labelled/headed paths
+  // above already found something, so a well-structured document never
+  // gets a second, redundant pass over its own already-correctly-parsed
+  // entries.
+  //
+  // Excludes anything already attributed to a named associate above (a
+  // real training document — CROSSWIND — names three separate associates,
+  // each with their own address, right in the same paragraph this scan
+  // reads; associateBlocks already correctly attributes each address to
+  // its own associate, but with no exclusion here this scan re-picked up
+  // all three as if they were the PRIMARY subject's own addresses too,
+  // directly contradicting that document's own "must not be merged with
+  // the primary subject" warning). A sentence naming someone else is still
+  // fair game otherwise — "MCKENZIE met REID at 7 Seabrook Lane" is
+  // legitimately about both of them — this only excludes an address/
+  // vehicle already claimed as a SPECIFIC associate's own.
+  if (vehicles.length === 0 || addresses.length === 0) {
+    const narrativeParagraphs = [
+      ...freeTextFromTable.split("\n\n"),
+      ...result.paragraphs,
+    ].filter(Boolean);
+    const sentences = narrativeParagraphs.flatMap(splitIntoSentences);
+    const associateVehicleRegos = new Set(
+      associateBlocks
+        .map(a => a.vehicle?.registration)
+        .filter((r): r is string => !!r)
+    );
+    const associateAddressKeys = new Set(
+      associateBlocks
+        .map(a => a.address)
+        .filter((a): a is ParsedAddressLine => !!a)
+        .map(a => `${a.houseNo}|${a.streetName}|${a.suburb}`)
+    );
+    if (vehicles.length === 0) {
+      vehicles = dedupeBy(
+        sentences
+          .flatMap(findVehicleLines)
+          .filter(v => !associateVehicleRegos.has(v.registration)),
+        v => v.registration
+      );
+    }
+    if (addresses.length === 0) {
+      addresses = dedupeBy(
+        sentences
+          .flatMap(findAddressLines)
+          .map(a => ({ ...a, label: "" }))
+          .filter(
+            a =>
+              !associateAddressKeys.has(
+                `${a.houseNo}|${a.streetName}|${a.suburb}`
+              )
+          ),
+        a => `${a.houseNo}|${a.streetName}|${a.suburb}`
+      );
+    }
+  }
+
   // The same real person/business/email/phone is routinely named more than
   // once across a document's different sections (an entity register table,
   // a narrative paragraph, a communications table, a cross-reference list

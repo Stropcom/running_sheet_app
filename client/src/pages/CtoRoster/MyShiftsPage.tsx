@@ -65,7 +65,12 @@ export default function MyShiftsPage() {
 
   const { stats } = useMemo(() => {
     if (!shifts) return { stats: { onDuty: 0, rest: 0, leave: 0, onCall: 0, deployment: 0, training: 0, total: 0 } };
-    const sorted = [...shifts].sort((a, b) => a.shiftDate.localeCompare(b.shiftDate));
+    const todayStr = format(today, "yyyy-MM-dd");
+    // Rolling from today to the end of the roster year, not the whole
+    // year — a shift already worked shouldn't keep inflating today's count.
+    const sorted = [...shifts]
+      .filter(s => s.shiftDate >= todayStr)
+      .sort((a, b) => a.shiftDate.localeCompare(b.shiftDate));
     const stats = {
       onDuty:     sorted.filter(s => MY_SHIFTS_ON_DUTY_CODES.has(s.shiftCode)).length,
       // Plain "o" (weekend on-call) counts as both Rest and On-Call — it's

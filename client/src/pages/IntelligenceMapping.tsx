@@ -22,6 +22,7 @@ import {
   formatIntelVehicle,
   expandIntelVehicleToFullForm,
   ensureBracketCode,
+  expandStreetType,
 } from "@/lib/addressFormat";
 import {
   getCaretPixelPosition,
@@ -202,6 +203,26 @@ function useVisualViewportInset(): {
     };
   }, []);
   return state;
+}
+
+// RS Quick Entry's continuity chips (vehicle departing/walked in/walked
+// out) match a pending arrival/walk-in's own stored address against
+// wherever the popup is currently open, to decide whether that vehicle/
+// walk-in is "here". A pending arrival's address comes from the row text
+// as written (an officer typically abbreviates the street type, "4
+// Wheatcroft St"), while the popup's own current-location address comes
+// from Google's full formatted address via convertGoogleAddresses, which
+// never abbreviates ("4 Wheatcroft Street") — a real, reported bug: the
+// exact-string match silently failed and hid every continuity chip for an
+// address whose street type happened to differ only by abbreviation.
+// expandStreetType canonicalises both sides to the same full form before
+// comparing, same as any other "same real place, different spelling"
+// address comparison in this file.
+function addressesMatch(a: string, b: string): boolean {
+  return (
+    expandStreetType(a.trim()).toLowerCase() ===
+    expandStreetType(b.trim()).toLowerCase()
+  );
 }
 
 // Isolated from the main IntelligenceMapping component on purpose: the
@@ -5490,9 +5511,8 @@ export default function IntelligenceMapping() {
     }
 
     if (/\bdepart(?:ing|ed|s)\b/.test(normalized)) {
-      const arrivalsHere = (rsPendingArrivals ?? []).filter(
-        a =>
-          a.address.trim().toLowerCase() === rsQeShortAddr.trim().toLowerCase()
+      const arrivalsHere = (rsPendingArrivals ?? []).filter(a =>
+        addressesMatch(a.address, rsQeShortAddr)
       );
       const candidates = arrivalsHere.filter(a =>
         normalized.includes(a.rego.toLowerCase())
@@ -9752,9 +9772,7 @@ export default function IntelligenceMapping() {
                                   : (mapQeAddress.split(",")[0]?.trim() ??
                                     mapQeAddress);
                                 const arrivalsHere = rsPendingArrivals.filter(
-                                  a =>
-                                    a.address.trim().toLowerCase() ===
-                                    shortAddr.trim().toLowerCase()
+                                  a => addressesMatch(a.address, shortAddr)
                                 );
                                 if (arrivalsHere.length === 0) return null;
                                 return (
@@ -9869,10 +9887,8 @@ export default function IntelligenceMapping() {
                                   { rego: string; occupantDesc: string }
                                 >();
                                 (rsPendingArrivals ?? [])
-                                  .filter(
-                                    a =>
-                                      a.address.trim().toLowerCase() ===
-                                      shortAddr.trim().toLowerCase()
+                                  .filter(a =>
+                                    addressesMatch(a.address, shortAddr)
                                   )
                                   .forEach(a =>
                                     vehiclesHereByRego.set(a.rego, a)
@@ -9894,8 +9910,7 @@ export default function IntelligenceMapping() {
                                     extractArrivalAddress(rsInlineText);
                                   if (
                                     draftAddress &&
-                                    draftAddress.trim().toLowerCase() ===
-                                      shortAddr.trim().toLowerCase()
+                                    addressesMatch(draftAddress, shortAddr)
                                   ) {
                                     vehiclesHereByRego.set(
                                       draftArriveMatch.rego,
@@ -9990,15 +10005,11 @@ export default function IntelligenceMapping() {
                                   ? toTitleCase(bracketMatch[2])
                                   : (mapQeAddress.split(",")[0]?.trim() ??
                                     mapQeAddress);
-                                const walkInHere = rsPendingWalkIns.find(
-                                  w =>
-                                    w.location.trim().toLowerCase() ===
-                                    shortAddr.trim().toLowerCase()
+                                const walkInHere = rsPendingWalkIns.find(w =>
+                                  addressesMatch(w.location, shortAddr)
                                 );
-                                const regosHere = rsPendingArrivals.filter(
-                                  a =>
-                                    a.address.trim().toLowerCase() ===
-                                    shortAddr.trim().toLowerCase()
+                                const regosHere = rsPendingArrivals.filter(a =>
+                                  addressesMatch(a.address, shortAddr)
                                 );
                                 if (!walkInHere || regosHere.length === 0)
                                   return null;

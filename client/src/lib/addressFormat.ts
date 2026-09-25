@@ -199,7 +199,7 @@ export const VEHICLE_TYPE_OPTIONS = [
  * Only expands the LAST word if it matches a known abbreviation.
  * e.g. "Dover Rd" → "Dover Road", "Lakey St" → "Lakey Street"
  */
-function expandStreetType(streetName: string): string {
+export function expandStreetType(streetName: string): string {
   return streetName.replace(/\b([A-Za-z]+)$/, match => {
     const expanded = STREET_TYPE_MAP[match.toLowerCase()];
     return expanded ?? match;

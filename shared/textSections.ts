@@ -30,6 +30,16 @@ export function isHeadingLine(line: string): boolean {
   if (trimmed.includes(":")) return false;
   if (/[a-z]/.test(trimmed)) return false;
   if (/[.!?]$/.test(trimmed)) return false;
+  // A "LABEL value" line with no colon (a DOB written as "DOB 21/12/1989"
+  // rather than "DOB: 21/12/1989") has no lowercase letters either, so
+  // without this it reads as a heading under the ALL-CAPS rule below —
+  // wrongly splitting an Associates prose block right after this data
+  // line (found against a real training document, Operation CROSSWIND,
+  // whose Associates text restates a person's own DOB this way). Scoped to
+  // an actual date pattern rather than "any digit" — a real heading can
+  // legitimately carry a plain number ("SUMMARY - VERSION 3"), just never
+  // a date.
+  if (/\d{1,4}[/-]\d{1,2}[/-]\d{2,4}/.test(trimmed)) return false;
   return /[A-Z]/.test(trimmed);
 }
 

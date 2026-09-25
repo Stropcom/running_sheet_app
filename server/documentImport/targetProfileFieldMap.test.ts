@@ -118,6 +118,20 @@ const PDF_HEADING_SHARES_VALUE_ROW_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-pdf-heading-shares-value-row.pdf"
 );
+// A third Operation CROSSWIND training PDF (same fictional subject as
+// PDF_HYPHENATED_SURNAME_FIXTURE_PATH/PDF_HEADING_SHARES_VALUE_ROW_FIXTURE_PATH
+// above), whose header-table font hard-wraps "VEHICLES"/"LOCATION OF
+// INTEREST"/"PASSPORT"/"PROMIS ID" at a wider line-gap than either of
+// those two fixtures needed to cover (see pdfTextReader.test.ts's own
+// fixture comment). Its Associates prose also restates the subject's own
+// DOB as a bare "DOB 21/12/1989" line (no colon) — with no lowercase
+// letters and no sentence-ending punctuation, that used to satisfy
+// isHeadingLine's general ALL-CAPS heuristic and get misread as its own
+// section heading, right in the middle of the Associates narrative.
+const PDF_HEADING_HARD_WRAP_WIDE_GAP_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-heading-hard-wrap-wide-gap.pdf"
+);
 
 describe("mapDocumentToTargetProfile", () => {
   it("maps the real training document end-to-end", async () => {
@@ -1186,5 +1200,32 @@ describe("mapDocumentToTargetProfile — PDF documents", () => {
     // "couldn't be read" — a false positive needing an officer's review
     // for text that isn't an address at all.
     expect(profile.needsReview).toEqual([]);
+  });
+
+  it("doesn't split the Background text on a bare DOB restated without a colon, or on VEHICLES/LOCATION OF INTEREST hard-wrapped at a wider gap (Operation CROSSWIND V3 fixture)", async () => {
+    const read = await readPdfText(
+      readFileSync(PDF_HEADING_HARD_WRAP_WIDE_GAP_FIXTURE_PATH)
+    );
+    const profile = mapDocumentToTargetProfile(read);
+
+    expect(profile.vehicles.map(v => v.registration)).toEqual(
+      expect.arrayContaining(["1CWA12", "CW-1212", "1CWE25"])
+    );
+    expect(profile.addresses.map(a => a.raw)).toEqual(
+      expect.arrayContaining([
+        "Unit 8/22 Mounts Bay Road, CRAWLEY WA 6009",
+        "4/101 St Georges Terrace, PERTH WA 6000",
+      ])
+    );
+
+    // Regression: "DOB 21/12/1989" (no colon) used to be misread as its
+    // own section heading, which split the SUMMARY section's own
+    // Associates prose in two right after it — the DOB line must stay
+    // ordinary body text, still present in freeText, not treated as a
+    // heading that fragments the surrounding narrative.
+    expect(profile.freeText).toContain("DOB 21/12/1989");
+    expect(profile.freeText).toContain(
+      "New vehicle 1CWE25 (WA) 2024 black BMW X3 wagon was observed with EL-SAYED"
+    );
   });
 });

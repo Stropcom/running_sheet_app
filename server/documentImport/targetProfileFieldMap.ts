@@ -361,6 +361,7 @@ function parseAddressBlock(text: string): {
   const addresses: ParsedAddressEntry[] = [];
   const unparsed: UnparsedItem[] = [];
   let pendingLabel = "";
+  let prevLine = "";
   for (const line of lines) {
     const labelMatch = line.match(/^([A-Za-z][A-Za-z\s]{1,40}):\s*(.*)$/);
     if (labelMatch) {
@@ -369,6 +370,7 @@ function parseAddressBlock(text: string): {
       if (!rest) {
         // Label-only line — the address itself is on the line(s) after it.
         pendingLabel = label;
+        prevLine = line;
         continue;
       }
       // Label and address share one line — parse the remainder directly
@@ -380,12 +382,26 @@ function parseAddressBlock(text: string): {
         unparsed.push({ kind: "address", label, raw: rest });
       }
       pendingLabel = "";
+      prevLine = line;
       continue;
     }
     const parsed = parseAddressLine(line) ?? parseAddressLineLoose(line);
     if (parsed) {
       addresses.push({ ...parsed, label: pendingLabel });
-    } else if (findVehicleLines(line).length === 0) {
+    } else if (
+      findVehicleLines(line).length === 0 &&
+      // A stray VEHICLES line (see below) can itself wrap across two
+      // physical lines in the original document (a real training
+      // document — CROSSWIND — has "CW-1212 (NSW) 2019 white Toyota" /
+      // "HiAce van." as one PDF-wrapped vehicle description, preserved
+      // as-is by pdfTextReader.ts). Splitting on every "\n" above tears
+      // that back apart, so the rego anchor findVehicleLines needs sits
+      // on the OTHER half from "HiAce van." alone — check this line
+      // rejoined with the one immediately before it too, so a wrapped
+      // vehicle description's second half isn't reported as an address
+      // just because its own anchor lives on the first half instead.
+      findVehicleLines(`${prevLine} ${line}`).length === 0
+    ) {
       // A line that's actually vehicle-shaped (findVehicleLines
       // recognises a real rego anchor in it) was never meant as an
       // address in the first place — it only ended up here because two
@@ -399,6 +415,7 @@ function parseAddressBlock(text: string): {
       unparsed.push({ kind: "address", label: pendingLabel, raw: line });
     }
     pendingLabel = "";
+    prevLine = line;
   }
   return { addresses, unparsed };
 }

@@ -618,6 +618,43 @@ export function AddTargetDialog({
       address,
       vehicle
     );
+    // Safety net for the same byte-identical-photo case the dupMatch-gated
+    // effect above already tries to catch pre-emptively in the Photos
+    // review UI — that effect only fires once a fuzzy name/DOB match names
+    // a candidate target, and gets cancelled the moment the officer
+    // actually confirms a merge into that target (handleMergeInstead
+    // clears dupMatch as soon as the merge dialog opens, well before its
+    // own fetch-existing-photos-and-hash round trip can finish), so
+    // `imageChoices` can still be at its default "keep" for a genuine
+    // duplicate by the time this runs. Re-checked here, synchronously,
+    // against the REAL confirmed targetId every save path already has in
+    // hand — not a guess, so this can't race with anything. Only covers
+    // photos landing on the target itself (every call site's common,
+    // reported case), not ones linked to an associate.
+    let targetPhotoHashes: Set<string> | null = null;
+    const targetPhotoHashesReady = (async () => {
+      if (targetPhotoHashes) return targetPhotoHashes;
+      try {
+        const existingPhotos = await utils.attachment.byEntity.fetch({
+          category: "target",
+          targetId,
+        });
+        const hashes = await Promise.all(
+          (existingPhotos ?? []).map(async (p: any) => {
+            try {
+              const buf = await (await fetch(p.url)).arrayBuffer();
+              return await sha256Hex(buf);
+            } catch {
+              return null;
+            }
+          })
+        );
+        targetPhotoHashes = new Set(hashes.filter((h): h is string => !!h));
+      } catch {
+        targetPhotoHashes = new Set();
+      }
+      return targetPhotoHashes;
+    })();
     let failed = 0;
     for (const img of toSave) {
       try {
@@ -650,6 +687,17 @@ export function AddTargetDialog({
           category = "associate";
           linkedTargetId = undefined;
           entityLabel = linkTo.entityLabel;
+        }
+        // Skip the officer's own explicit override: if the pre-emptive
+        // check above already flagged this photo as a duplicate and they
+        // re-ticked it anyway, that's a deliberate choice to keep a second
+        // copy, not a gap to close.
+        if (category === "target" && !duplicateImageKeys.has(img.key)) {
+          const hashes = await targetPhotoHashesReady;
+          const ownHash = await sha256Hex(
+            base64ToArrayBuffer(img.dataBase64)
+          ).catch(() => null);
+          if (ownHash && hashes.has(ownHash)) continue;
         }
         const uploaded = await uploadImageMut.mutateAsync({
           operationId: opId,

@@ -1482,7 +1482,8 @@ export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
           // value and its LOCATION OF INTEREST value, corrupting the
           // latter with vehicle text parseAddressBlock can't read (and
           // reports as a confusing duplicate needsReview entry).
-          const cellTexts = unit.cells.map(c => columnText(c.items));
+          let cells = unit.cells;
+          const cellTexts = cells.map(c => columnText(c.items));
           if (
             cellTexts.length > 1 &&
             cellTexts.every(t =>
@@ -1494,18 +1495,57 @@ export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
             prevLineY = null;
             continue;
           }
-          text = unit.cells
+          rows = pairRowCells(cells);
+          // pairRowCells already handles a genuine label:value row (each
+          // label cell paired with its own adjacent value cell, however
+          // many pairs sit in the row — see NAME/ROLE/COB above), so only
+          // reached when it found NOTHING pairable. That happens for a
+          // MIXED row shape it isn't built for: one cell is still another
+          // column's value continuing down the page, and another cell is a
+          // bare label with NO value of its own in THIS particular row — a
+          // real training document (CROSSWIND) has "LOCATION OF INTEREST"
+          // (a bare 2-line-wrapped heading) sharing a row with the
+          // VEHICLES column's own wrapped text, because the heading's row
+          // happens to land next to the vehicle list's third line, not its
+          // first. Emit any such bare label(s) as their own heading
+          // paragraph — same as the all-labels case above — then keep
+          // flowing the REMAINING cell(s) afterwards instead of folding
+          // the heading's text into that flow — without this, "LOCATION OF
+          // INTEREST" silently disappears into the middle of a vehicle
+          // sentence (still space-joined, not glued, but never its own
+          // paragraph), so findParagraphSection can never find this
+          // section's heading at all and its real address content falls
+          // through to the much weaker whole-document narrative scan
+          // instead.
+          if (!rows) {
+            const bareLabelCells = cells.filter((_, idx) =>
+              LINE_LABELS.some(
+                l => l.toUpperCase() === cellTexts[idx].toUpperCase()
+              )
+            );
+            if (bareLabelCells.length > 0) {
+              flushParagraph();
+              for (const cell of bareLabelCells) {
+                paragraphs.push(canonicalLabel(columnText(cell.items)));
+              }
+              cells = cells.filter(c => !bareLabelCells.includes(c));
+              if (cells.length === 0) {
+                prevLineY = null;
+                continue;
+              }
+            }
+          }
+          text = cells
             .map(c => columnText(c.items))
             .filter(Boolean)
             .join(" ");
-          rows = pairRowCells(unit.cells);
           if (!rows) {
             const colonMatch = text.match(COLON_LABEL_RE);
             if (colonMatch) {
               rows = [[canonicalLabel(colonMatch[1]), colonMatch[2].trim()]];
             }
           }
-          y = unit.cells[0].y;
+          y = cells[0].y;
         } else {
           const read = readLine(unit.line.items);
           text = read.text;

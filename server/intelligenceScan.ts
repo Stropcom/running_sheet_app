@@ -2,14 +2,24 @@
 // folder, looking for shapes that suggest a parsing/classification slip
 // rather than a genuine person/vehicle/address/business — e.g. the UF1/
 // YC1/UCO1 placeholder-code bug (server/db.ts's extractEntitiesFromText
-// skip list), or a vehicle rego that picked up a stray comma from an
-// address bleeding into its bracket. Deliberately rule-based and narrow
-// (see CLAUDE.md's Golden Rule) — each rule below is something that was
-// either an actual reported bug, or the same failure shape as one. This
-// never runs automatically; it's triggered on demand from the admin's own
-// profile page and only ever notifies that one admin, so a flagged entity
-// gets a human look, not an automatic change.
+// skip list). Deliberately rule-based and narrow (see CLAUDE.md's Golden
+// Rule) — each rule below is something that was either an actual reported
+// bug, or the same failure shape as one. This never runs automatically;
+// it's triggered on demand from the admin's own profile page and only ever
+// notifies that one admin, so a flagged entity gets a human look, not an
+// automatic change.
+//
+// REMOVED: a "comma-in-short-form" rule used to flag any bracket short
+// form containing a comma, on the theory that a real bracket never
+// legitimately contains one. Real-world use disproved that: this team
+// routinely and deliberately writes "Street Name, SUBURB" and "Business
+// Name, Street, SUBURB" as their normal address/business format (e.g. "24
+// Bedford Street, EAST FREMANTLE", "Blend Cafe and Pizza Bar, 356 Marmion
+// Street, MELVILLE"), so the rule was flagging the team's own writing
+// convention as a bug on nearly every address/business entity, not the
+// rare genuine "bracket balloon" parsing slip it was meant for.
 import type { IntelligenceEntity } from "./db";
+import { findFuzzyMatches, DEFAULT_FUZZY_THRESHOLD } from "./fuzzyMatch";
 
 export interface ScanFinding {
   ruleId: string;
@@ -38,10 +48,29 @@ function vehicleShortFormLacksDigits(shortForm: string): boolean {
   return !/\d/.test(shortForm);
 }
 
+// Step 1 of the Local AI Roadmap: catch a mined person name that's probably
+// a typo of someone already on a formal Target/Associate card, rather than
+// requiring an exact-string match to ever connect the two. Deliberately
+// person-only for this first pass — vehicle/address registry entries don't
+// carry a reliable isTarget/isAssociate flag the way a target/associate's
+// own person entity does (see getAllIntelligenceEntities in db.ts), so
+// telling a genuine registry vehicle apart from a text-mined one needs more
+// plumbing than this rule does yet. A future pass can extend this once
+// that's worth doing. Uses findFuzzyMatches' own default threshold — tried
+// a stricter one first, but it excluded the single-letter-swap case
+// ("Jhon"/"John", a very common typo shape) since a swap costs 2 edits
+// under plain Levenshtein, not 1, so it scores lower than a same-size
+// single-character slip. The default catches that case correctly.
+const FUZZY_NAME_MATCH_THRESHOLD = DEFAULT_FUZZY_THRESHOLD;
+
 export function scanIntelligenceEntities(
   entities: IntelligenceEntity[]
 ): ScanFinding[] {
   const findings: ScanFinding[] = [];
+
+  const registryNames = entities
+    .filter(e => e.type === "person" && (e.isTarget || e.isAssociate))
+    .map(e => ({ id: e.shortForm, label: e.shortForm }));
 
   const addFinding = (
     entity: IntelligenceEntity,
@@ -75,6 +104,23 @@ export function scanIntelligenceEntities(
 
     const shortForm = entity.shortForm.trim();
 
+    if (entity.type === "person" && registryNames.length > 0) {
+      const matches = findFuzzyMatches(
+        shortForm,
+        registryNames,
+        FUZZY_NAME_MATCH_THRESHOLD
+      );
+      if (matches.length > 0) {
+        const best = matches[0];
+        addFinding(
+          entity,
+          "possible-typo-of-registry-name",
+          `"${shortForm}" is close to "${best.label}", who is already on a Target/Associate card (${Math.round(best.similarity * 100)}% match) — check whether this is a misspelling of them rather than a different person.`
+        );
+        continue;
+      }
+    }
+
     if (
       (entity.type === "person" ||
         entity.type === "vehicle" ||
@@ -85,25 +131,6 @@ export function scanIntelligenceEntities(
         entity,
         "placeholder-code-shape",
         `"${shortForm}" is shaped like a placeholder code (e.g. UM1/UF1/YC1/UCO1) but was recorded as a ${entity.type} entity — check whether it's a new placeholder code that needs adding to the skip list, or a genuine ${entity.type}.`
-      );
-      continue;
-    }
-
-    // A comma inside the bracket short form itself (not the surrounding
-    // sentence) — a real rego/name/business bracket never legitimately
-    // contains one; it's the signature of the "bracket balloon" bug class
-    // (an earlier clause's text bleeding into this entity's short form).
-    // Reported as happening "particularly with vehicles".
-    if (
-      shortForm.includes(",") &&
-      (entity.type === "vehicle" ||
-        entity.type === "person" ||
-        entity.type === "business")
-    ) {
-      addFinding(
-        entity,
-        "comma-in-short-form",
-        `"${shortForm}" has a comma inside the ${entity.type} short form — likely text from an adjacent clause bled into this entity's bracket rather than a genuine part of it.`
       );
       continue;
     }

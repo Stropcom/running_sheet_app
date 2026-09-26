@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "20d1689c-d771-4a27-88fb-ae244777ad0f",
-  "prevId": "42f4ca05-42ff-4d1f-a25b-ad64706ae05d",
+  "id": "dd1f10eb-0db6-4624-bd67-613fccec1a1b",
+  "prevId": "ef25e63b-9538-4c58-835c-c10e50be734b",
   "tables": {
     "associates": {
       "name": "associates",
@@ -3837,6 +3837,68 @@
       "uniqueConstraints": {},
       "checkConstraint": {}
     },
+    "scan_finding_dismissals": {
+      "name": "scan_finding_dismissals",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "ruleId": {
+          "name": "ruleId",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "findingKey": {
+          "name": "findingKey",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "dismissedByCIN": {
+          "name": "dismissedByCIN",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "dismissedAt": {
+          "name": "dismissedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(now())"
+        }
+      },
+      "indexes": {
+        "scan_finding_dismissals_rule_key_idx": {
+          "name": "scan_finding_dismissals_rule_key_idx",
+          "columns": [
+            "ruleId",
+            "findingKey"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "scan_finding_dismissals_id": {
+          "name": "scan_finding_dismissals_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
     "sheet_rows": {
       "name": "sheet_rows",
       "columns": {
@@ -5069,13 +5131,6 @@
         "sourceFileName": {
           "name": "sourceFileName",
           "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "sourceFileUrl": {
-          "name": "sourceFileUrl",
-          "type": "varchar(500)",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

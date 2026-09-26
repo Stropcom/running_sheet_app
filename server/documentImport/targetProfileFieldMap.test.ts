@@ -33,6 +33,27 @@ const IRONBARK_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-training-ironbark.docx"
 );
+// The same real training document as BLUEGUM_FIXTURE_PATH above, exported
+// as a PDF instead of a .docx — a genuinely different code path
+// (pdfTextReader.ts, not docxTableReader.ts) since a PDF has no native
+// table markup to walk. Its column-headed identity table ("PRIMARY
+// IDENTITY | OPERATIONAL DESCRIPTION | REFERENCE IDENTIFIERS") and its
+// relationship table ("ENTITY TYPE | CANONICAL ENTITY | RELATIONSHIP /
+// OCCURRENCE") both use column headers with no match anywhere in
+// pdfTextReader.ts's own LINE_LABELS vocabulary, so neither reconstructs
+// into a real table at all here (unlike the .docx version) — everything
+// flattens to plain paragraph text instead. That's what exposed two real
+// bugs: the subject's own name was never found (none of
+// findLabelledValue/findSubjectFromParagraphs/findIdentityColumnTableValue/
+// findInlineSubjectMention can read a name out of unstructured paragraph
+// text — see findRunningHeaderSubjectName's own comment for the fix), and
+// the identity cell's wrapped "Leila Mariam HASSAN" / "DOB 27 July 1991"
+// lines were glued into "HASSANDOB" with no separator by clusterIntoCells'
+// packed-width join heuristic (see startsWithKnownLabel's own comment).
+const PDF_BLUEGUM_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-training-bluegum.pdf"
+);
 const PDF_COLON_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-pdf-colon.pdf"
@@ -676,6 +697,41 @@ describe("mapDocumentToTargetProfile", () => {
       c => c.type === "phone" && c.value.includes("0491 570 121")
     );
     expect(phone?.value).toBe("Mobile 0491 570 121");
+  });
+
+  it("maps the PDF export of the same document, whose tables don't reconstruct at all (the BLUEGUM PDF bug)", async () => {
+    const buffer = readFileSync(PDF_BLUEGUM_FIXTURE_PATH);
+    const read = await readPdfText(buffer);
+
+    // Confirms the premise: unlike the .docx version, this PDF's tables
+    // genuinely don't reconstruct — everything comes through as flattened
+    // paragraph text instead, which is exactly what exposed both bugs
+    // below.
+    expect(read.tables).toEqual([]);
+
+    const result = mapDocumentToTargetProfile(read);
+
+    // Regression: with no table structure at all, none of the other name-
+    // finding paths (a NAME/SUBJECT row, a SUBJECT/TARGET heading
+    // paragraph, a column-headed identity table, an inline "Subject:"
+    // mention) can find anything — the subject's own name used to come
+    // back null entirely, exactly matching what the review screen actually
+    // showed a real officer. findRunningHeaderSubjectName's "<Name> | Page
+    // <n>" running-header fallback is what recovers it here.
+    expect(result.name).toMatchObject({
+      firstNames: "Leila Mariam",
+      surname: "HASSAN",
+      confident: true,
+    });
+
+    // Regression: the identity cell's wrapped "Leila Mariam HASSAN" / "DOB
+    // 27 July 1991" lines used to glue together with no separator at all
+    // ("HASSANDOB"), since both lines happened to pack right up to their
+    // column's own widest-ever width purely by coincidence — the same
+    // packed-width signal a genuine forced mid-word break produces.
+    const flattened = read.paragraphs.join("\n");
+    expect(flattened).not.toContain("HASSANDOB");
+    expect(flattened).toContain("Leila Mariam HASSAN DOB 27 July 1991");
   });
 
   // Regression: a sixth real training document (IRONBARK) has a genuine

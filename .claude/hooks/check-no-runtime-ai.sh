@@ -37,7 +37,16 @@ BANNED_PATTERNS=(
   "generativelanguage.googleapis.com"
   "api.openai.com"
   "api.anthropic.com"
-  "huggingface"
+  # NOT a bare "huggingface" — that would also match the npm package name
+  # @huggingface/transformers, the on-device-only successor to
+  # @xenova/transformers (same maintainer/codebase, moved under the HF org
+  # on npm; still runs fully locally, still gated by
+  # env.allowRemoteModels = false in every file that uses it). These two
+  # patterns target the actual runtime risk instead: their hosted
+  # inference API's SDK, and its host (which .claude/settings.json's
+  # WebFetch deny-list already blocks by this same exact host).
+  "@huggingface/inference"
+  "api-inference\.huggingface\.co"
   "cohere"
   "openrouter"
   "langchain"

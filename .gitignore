@@ -133,6 +133,11 @@ server/externalIntel/models/eng.traineddata
 /client/public/models/*/
 !/client/public/models/README.md
 
+# Local NER model (Step 2 of the Local AI Roadmap — see server/localNER.ts
+# and scripts/dev/ner-model-setup.md), same story as the voice model above:
+# an agency-controlled deployment step, not committed source.
+/server/models/
+
 # Playwright (see e2e/README.md) — run artifacts, not source
 /test-results/
 /playwright-report/

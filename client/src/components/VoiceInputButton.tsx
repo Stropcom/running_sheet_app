@@ -8,11 +8,27 @@
 import { useEffect, useRef, useState } from "react";
 import { Mic, Loader2, MicOff } from "lucide-react";
 import { toast } from "sonner";
-import {
-  transcribeVoiceClip,
-  getVoiceModelStatus,
-  applyShortcutsToTranscript,
-} from "@/lib/voiceTranscription";
+// Dynamic, not static — lib/voiceTranscription.ts statically imports
+// @huggingface/transformers, which in turn statically imports
+// onnxruntime-web's WebGPU backend (see that file's own header) — a real,
+// measured 26.86MB WASM file (6.7MB gzipped) that a static top-level
+// import here would bundle into every client's initial page load
+// regardless of whether the mic button ever runs. With
+// VOICE_INPUT_DISABLED below, it never does — a dynamic import() lets
+// Vite code-split this into its own chunk that's simply never fetched,
+// instead of shipping it to every officer's phone unconditionally. Keep
+// this dynamic even after re-enabling the feature, not just while it's
+// disabled — nothing about this module needs to load before the mic is
+// actually tapped.
+type VoiceTranscriptionModule = typeof import("@/lib/voiceTranscription");
+let voiceTranscriptionModulePromise: Promise<VoiceTranscriptionModule> | null =
+  null;
+function getVoiceTranscriptionModule(): Promise<VoiceTranscriptionModule> {
+  if (!voiceTranscriptionModulePromise) {
+    voiceTranscriptionModulePromise = import("@/lib/voiceTranscription");
+  }
+  return voiceTranscriptionModulePromise;
+}
 
 type VoiceState =
   | "checking"
@@ -31,6 +47,20 @@ type VoiceState =
 export const QE_HEADER_BUTTON_SIZE =
   "flex items-center gap-1.5 px-2.5 h-8 rounded-md text-[11px] md:text-xs font-semibold border transition-all active:scale-95";
 
+// Temporarily disabled — the underlying on-device engine
+// (lib/voiceTranscription.ts, via @huggingface/transformers) now needs
+// cross-origin-isolation headers (COOP/COEP) that this app doesn't set,
+// and adding them site-wide risks breaking the Google Maps JS API embed
+// elsewhere in the app (a real, previously-documented conflict — see
+// voiceTranscription.ts's header). Rather than ship a mic button that
+// silently fails, or add untested site-wide headers, this hides the
+// button entirely until that's resolved properly — which will likely
+// happen alongside CLAUDE.md's planned native (Capacitor) wrap for
+// wake-word activation anyway, not as a standalone web fix. Everything
+// below is otherwise untouched and ready to re-enable (just remove the
+// early return) once the COOP/COEP question is settled.
+const VOICE_INPUT_DISABLED = true;
+
 export function VoiceInputButton({
   onTranscript,
   shortcutMap,
@@ -48,6 +78,13 @@ export function VoiceInputButton({
   shortcutMap?: Record<string, string>;
   className?: string;
 }) {
+  if (VOICE_INPUT_DISABLED) return null;
+
+  // eslint-disable-next-line react-hooks/rules-of-hooks -- VOICE_INPUT_DISABLED
+  // is a module-level constant, not state, so every mounted instance of
+  // this component takes the same branch on every render — hook order
+  // never actually varies within one mount, only the early return above
+  // makes this unreachable for now.
   const [state, setState] = useState<VoiceState>("checking");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -56,9 +93,11 @@ export function VoiceInputButton({
 
   useEffect(() => {
     let cancelled = false;
-    getVoiceModelStatus().then(status => {
-      if (!cancelled) setState(status === "ready" ? "idle" : status);
-    });
+    getVoiceTranscriptionModule().then(({ getVoiceModelStatus }) =>
+      getVoiceModelStatus().then(status => {
+        if (!cancelled) setState(status === "ready" ? "idle" : status);
+      })
+    );
     return () => {
       cancelled = true;
     };
@@ -96,6 +135,8 @@ export function VoiceInputButton({
       chunksRef.current = [];
       setState("busy");
       try {
+        const { transcribeVoiceClip, applyShortcutsToTranscript } =
+          await getVoiceTranscriptionModule();
         const raw = await transcribeVoiceClip(blob);
         const text = shortcutMap
           ? applyShortcutsToTranscript(raw, shortcutMap)

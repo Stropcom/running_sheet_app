@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "74df1ecd-94c4-4d39-a1ef-4e21883e3710",
+  "id": "aa1ec05d-d141-4f96-9e58-f547842d6447",
   "prevId": "223a51d2-53ec-4910-8d2b-b22aafd0b81d",
   "tables": {
     "associates": {
@@ -379,7 +379,7 @@
         },
         "action": {
           "name": "action",
-          "type": "enum('row_created','row_updated','row_deleted','member_added','member_removed','certified','uncertified','sheet_created','sheet_updated','sheet_deleted','sheet_closed','sheet_reopened','sheet_moved','sheet_copied','user_login','user_logout','user_created','user_updated','user_deleted','user_archived','user_restored','operation_status_changed','password_changed','attachment_added','attachment_deleted','summary_completed','summary_reopened','smeac_briefing_posted','smeac_briefing_deleted','uco_guide_posted','uco_guide_deleted')",
+          "type": "enum('row_created','row_updated','row_deleted','member_added','member_removed','certified','uncertified','sheet_created','sheet_updated','sheet_deleted','sheet_closed','sheet_reopened','sheet_moved','sheet_copied','user_login','user_logout','user_created','user_updated','user_deleted','operation_status_changed','password_changed','attachment_added','attachment_deleted','summary_completed','summary_reopened','smeac_briefing_posted','smeac_briefing_deleted','uco_guide_posted','uco_guide_deleted')",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -3837,6 +3837,68 @@
       "uniqueConstraints": {},
       "checkConstraint": {}
     },
+    "scan_finding_dismissals": {
+      "name": "scan_finding_dismissals",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "ruleId": {
+          "name": "ruleId",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "findingKey": {
+          "name": "findingKey",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "dismissedByCIN": {
+          "name": "dismissedByCIN",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "dismissedAt": {
+          "name": "dismissedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(now())"
+        }
+      },
+      "indexes": {
+        "scan_finding_dismissals_rule_key_idx": {
+          "name": "scan_finding_dismissals_rule_key_idx",
+          "columns": [
+            "ruleId",
+            "findingKey"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "scan_finding_dismissals_id": {
+          "name": "scan_finding_dismissals_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
     "sheet_rows": {
       "name": "sheet_rows",
       "columns": {
@@ -5246,14 +5308,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "targetType": {
-          "name": "targetType",
-          "type": "enum('person','vehicle','location')",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'person'"
-        },
         "name": {
           "name": "name",
           "type": "varchar(255)",
@@ -6370,20 +6424,6 @@
           "notNull": true,
           "autoincrement": false,
           "default": "(now())"
-        },
-        "archivedAt": {
-          "name": "archivedAt",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "archivedByCIN": {
-          "name": "archivedByCIN",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
         }
       },
       "indexes": {},

@@ -203,6 +203,63 @@ describe("findVehicleLines", () => {
   });
 });
 
+describe("compound colours", () => {
+  // Regression: "1SEA310 ... dark blue Volvo XC60 station sedan" — "dark"
+  // wasn't in the single-word COLOURS list, so it fell through untouched
+  // and got read as the make instead ("blue Volvo XC60" collapsed into
+  // model), leaving colour blank and the whole thing flagged !confident.
+  // "dark" is dropped rather than kept as part of the colour — it's a
+  // shade/intensity word, not a colour itself (officer correction on a
+  // real training case).
+  it("reads 'dark blue' as colour 'Blue', not make='dark'", () => {
+    const result = parseVehicleLine(
+      "1SEA310 (WA) dark blue Volvo XC60 station sedan"
+    );
+    expect(result).toMatchObject({
+      colour: "Blue",
+      make: "Volvo",
+      model: "XC60",
+      vehicleType: "station sedan",
+      confident: true,
+    });
+  });
+
+  it("reads 'light grey' the same way, dropping 'light'", () => {
+    const result = parseVehicleLine("1ABC123 (WA) light grey Mazda 3 hatch");
+    expect(result).toMatchObject({
+      colour: "Grey",
+      make: "Mazda",
+      model: "3",
+      vehicleType: "hatch",
+    });
+  });
+
+  it("still reads a plain single-word colour correctly", () => {
+    const result = parseVehicleLine("1ABC123 (WA) blue Volvo XC60 wagon");
+    expect(result).toMatchObject({
+      colour: "Blue",
+      make: "Volvo",
+      model: "XC60",
+    });
+  });
+
+  // Regression: "burgundy" is a real colour, not in the original list —
+  // fell through untouched and got read as the make instead, leaving
+  // colour blank and the whole thing flagged !confident (found testing
+  // Step 3 of the Local AI Roadmap against a real document).
+  it("recognises 'burgundy' as a colour", () => {
+    const result = parseVehicleLine(
+      "1CDR891 (WA) burgundy Skoda Octavia hatch"
+    );
+    expect(result).toMatchObject({
+      colour: "Burgundy",
+      make: "Skoda",
+      model: "Octavia",
+      confident: true,
+    });
+  });
+});
+
 describe("parseVehicleLine", () => {
   it("parses just the first entry", () => {
     const result = parseVehicleLine(VEHICLES_CELL);

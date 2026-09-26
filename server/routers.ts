@@ -271,6 +271,10 @@ import {
   backfillGoogleAddressesInObservations,
   getOrphanedAttachments,
   purgeOrphanedAttachments,
+  getObservationTextForEntityScan,
+  getDismissedFindingKeys,
+  scanFindingKey,
+  dismissScanFinding,
   getRsMappingWaypoints,
   upsertRsMappingWaypoint,
   geocodeAddressList,
@@ -334,7 +338,10 @@ import {
   getUcoGuideAcknowledgements,
   getUcoGuideRosterPrefill,
 } from "./db";
-import { scanIntelligenceEntities } from "./intelligenceScan";
+import { scanIntelligenceEntities, type ScanFinding } from "./intelligenceScan";
+import { checkRunningSheet } from "./sheetCheck";
+import { scanForMissedPersonMentions } from "./missedEntityScan";
+import { getNerModelStatus } from "./localNER";
 
 import {
   makeRequest,
@@ -348,6 +355,16 @@ import { vaultEncrypt, vaultDecrypt } from "./wipcVault";
 import { readDocxTables } from "./documentImport/docxTableReader";
 import { readPdfText } from "./documentImport/pdfTextReader";
 import { mapDocumentToTargetProfile } from "./documentImport/targetProfileFieldMap";
+import {
+  getDocumentAIModelStatus,
+  suggestExtractedValue,
+  suggestVerifiedCorrection,
+} from "./documentImport/localDocumentAI";
+import {
+  verifyAISuggestion,
+  composeParsedValue,
+  type AIAssistOutcome,
+} from "./documentImport/documentAIVerify";
 import {
   createWipcAuditEntry,
   getWipcAuditLog,
@@ -1291,6 +1308,35 @@ export const appRouter = router({
           createdAt: Date.now(),
         });
         return { success: true, newSheetId };
+      }),
+
+    /** "Check Running Sheet" — an on-demand report any logged-in author can
+     * run against their own sheet, at any point (not just an admin-only
+     * whole-folder scan) — see sheetCheck.ts for the four rule-based
+     * categories this covers. Nothing here changes automatically; every
+     * finding is the author's to act on or dismiss. */
+    check: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        const allFindings = await checkRunningSheet(input.sheetId);
+        const dismissed = await getDismissedFindingKeys();
+        const findings = allFindings.filter(
+          f => !dismissed.has(`${f.ruleId}::${f.findingKey}`)
+        );
+        return { findings };
+      }),
+
+    /** Dismisses one "Check Running Sheet" finding — reuses the same
+     * (ruleId, findingKey) dismissal table the admin-only Intelligence
+     * Scan already uses (see intelligence.dismissScanFinding); a
+     * formatting/registry finding dismissed here is also dismissed there,
+     * since it's the same underlying rule, just viewed scoped to one
+     * sheet. */
+    dismissCheckFinding: protectedProcedure
+      .input(z.object({ ruleId: z.string(), findingKey: z.string() }))
+      .mutation(async ({ input, ctx }) => {
+        await dismissScanFinding(input.ruleId, input.findingKey, ctx.user.cin);
+        return { success: true };
       }),
   }),
 
@@ -3562,7 +3608,127 @@ export const appRouter = router({
                 : "Couldn't read this file as a Word document (.docx).",
             });
           }
-          return mapDocumentToTargetProfile(read);
+          const mapped = mapDocumentToTargetProfile(read);
+
+          // Local AI Roadmap Step 3 — additive only, never replaces what
+          // the rule-based mapper above already produced, and never shown
+          // unverified: every model reply is re-parsed through the same
+          // deterministic parsers the rest of this pipeline trusts before
+          // it's returned (documentAIVerify.ts's verifyAISuggestion) — "AI
+          // proposes, deterministic code disposes". One shared call budget
+          // (MAX_AI_CALLS) across both passes so a pathological document
+          // can't turn one upload into dozens of sequential model
+          // inference calls on a resource-constrained droplet — run one at
+          // a time, not in parallel, for the same reason. Tightened from
+          // the previous model's budget of 10 now that each call is
+          // against a meaningfully heavier model:
+          //   1. needsReview items — text the rules recognised as clearly
+          //      meant to be an address/vehicle but couldn't parse at all.
+          //      Extractive task — there's no existing reading to compare
+          //      against, so the outcome is only ever "declined" or
+          //      "suggested", never "confirmed".
+          //   2. Low-confidence pass — an address/vehicle the rules DID
+          //      parse but flagged !confident (see ParsedAddressLine /
+          //      ParsedVehicleLine's own doc comments) gets independently
+          //      re-checked too, since "the rules produced something" and
+          //      "the rules got it right" aren't the same guarantee — a
+          //      confident field is trusted as-is and never re-checked
+          //      here, keeping this to the genuinely shaky subset rather
+          //      than re-running the model over the whole document.
+          //      Verify-and-correct task — the model is told the rules'
+          //      own reading and asked to confirm or correct it, so this
+          //      pass alone can come back "confirmed" (AI independently
+          //      agrees with the rules).
+          const MAX_AI_CALLS = 8;
+          const aiModelStatus = await getDocumentAIModelStatus();
+          let aiCallsUsed = 0;
+
+          const aiSuggestions: Array<{
+            kind: "address" | "vehicle";
+            label: string;
+            raw: string;
+            outcome: AIAssistOutcome;
+          }> = [];
+          // Parallel to mapped.addresses/mapped.vehicles — "declined" at
+          // an index also covers "not checked" (confident, or the call
+          // budget ran out), since both mean the same thing to the review
+          // screen: nothing to show beyond the rules' own reading.
+          const addressAiOutcomes: AIAssistOutcome[] = [];
+          const vehicleAiOutcomes: AIAssistOutcome[] = [];
+
+          if (aiModelStatus === "ready") {
+            for (const item of mapped.needsReview) {
+              if (aiCallsUsed >= MAX_AI_CALLS) break;
+              aiCallsUsed++;
+              const raw = await suggestExtractedValue(
+                item.kind,
+                item.label,
+                item.raw
+              );
+              const outcome: AIAssistOutcome = raw
+                ? verifyAISuggestion(item.kind, raw, null)
+                : { status: "declined" };
+              aiSuggestions.push({
+                kind: item.kind,
+                label: item.label,
+                raw: item.raw,
+                outcome,
+              });
+            }
+            for (const a of mapped.addresses) {
+              if (a.confident || aiCallsUsed >= MAX_AI_CALLS) {
+                addressAiOutcomes.push({ status: "declined" });
+                continue;
+              }
+              aiCallsUsed++;
+              const currentValue = composeParsedValue("address", a);
+              const raw = await suggestVerifiedCorrection(
+                "address",
+                a.label,
+                a.raw,
+                currentValue
+              );
+              addressAiOutcomes.push(
+                raw
+                  ? verifyAISuggestion("address", raw, currentValue)
+                  : { status: "declined" }
+              );
+            }
+            for (const v of mapped.vehicles) {
+              if (v.confident || aiCallsUsed >= MAX_AI_CALLS) {
+                vehicleAiOutcomes.push({ status: "declined" });
+                continue;
+              }
+              aiCallsUsed++;
+              const currentValue = composeParsedValue("vehicle", v);
+              const raw = await suggestVerifiedCorrection(
+                "vehicle",
+                "",
+                v.raw,
+                currentValue
+              );
+              vehicleAiOutcomes.push(
+                raw
+                  ? verifyAISuggestion("vehicle", raw, currentValue)
+                  : { status: "declined" }
+              );
+            }
+          } else {
+            mapped.addresses.forEach(() =>
+              addressAiOutcomes.push({ status: "declined" })
+            );
+            mapped.vehicles.forEach(() =>
+              vehicleAiOutcomes.push({ status: "declined" })
+            );
+          }
+
+          return {
+            ...mapped,
+            aiModelStatus,
+            aiSuggestions,
+            addressAiOutcomes,
+            vehicleAiOutcomes,
+          };
         }),
     }),
   }),
@@ -3762,7 +3928,11 @@ export const appRouter = router({
      * its own. */
     runEntityScan: adminProcedure.mutation(async ({ ctx }) => {
       const entities = await getAllIntelligenceEntities();
-      const findings = scanIntelligenceEntities(entities);
+      const allFindings = scanIntelligenceEntities(entities);
+      const dismissed = await getDismissedFindingKeys();
+      const findings = allFindings.filter(
+        f => !dismissed.has(`${f.ruleId}::${scanFindingKey(f.shortForm)}`)
+      );
       if (findings.length > 0) {
         await createNotificationsForUsers([ctx.user.id], {
           title: `Intelligence scan: ${findings.length} possible issue${findings.length > 1 ? "s" : ""}`,
@@ -3776,6 +3946,65 @@ export const appRouter = router({
       }
       return { findings };
     }),
+
+    /** Step 2 of the Local AI Roadmap — on-device NER pass looking for a
+     * person mention the rule-based extractor missed entirely (not just a
+     * typo of one it already found — see intelligenceScan.ts for that
+     * case). Same on-demand, admin-only, notify-only-the-runner contract
+     * as runEntityScan above. Returns a clear status instead of a cryptic
+     * failure when the local model files haven't been deployed yet (see
+     * scripts/dev/ner-model-setup.md) — this is expected on any
+     * deployment that hasn't done that manual step, not an error. */
+    runMissedEntityScan: adminProcedure.mutation(async ({ ctx }) => {
+      const modelStatus = await getNerModelStatus();
+      if (modelStatus !== "ready") {
+        return { modelStatus, findings: [] as ScanFinding[] };
+      }
+
+      const [observations, entities] = await Promise.all([
+        getObservationTextForEntityScan(),
+        getAllIntelligenceEntities(),
+      ]);
+      const knownNames = entities
+        .filter(e => e.type === "person")
+        .map(e => ({ id: e.shortForm, label: e.shortForm }));
+
+      const allFindings = await scanForMissedPersonMentions(
+        observations,
+        knownNames
+      );
+      const dismissed = await getDismissedFindingKeys();
+      const findings = allFindings.filter(
+        f => !dismissed.has(`${f.ruleId}::${scanFindingKey(f.shortForm)}`)
+      );
+      if (findings.length > 0) {
+        await createNotificationsForUsers([ctx.user.id], {
+          title: `Missed-entity scan: ${findings.length} possible name${findings.length > 1 ? "s" : ""}`,
+          body: findings
+            .slice(0, 5)
+            .map(f => f.shortForm)
+            .join(" • "),
+          url: "/profile",
+          sourceModule: "missedEntityScan",
+        });
+      }
+      return { modelStatus, findings };
+    }),
+
+    /** Records "not this one" for a single scan finding (either rule) so
+     * it doesn't keep reappearing on every future scan run — same shape as
+     * the existing Face Match "not a match" dismissal, applied to Local AI
+     * Roadmap findings. Identity is (ruleId, normalised shortForm), not a
+     * database id, since a finding is recomputed fresh every scan, not a
+     * persisted row — see scanFindingKey in db.ts. */
+    dismissScanFinding: adminProcedure
+      .input(
+        z.object({ ruleId: z.string().min(1), shortForm: z.string().min(1) })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await dismissScanFinding(input.ruleId, input.shortForm, ctx.user.cin);
+        return { success: true };
+      }),
 
     /** Heat Map: location visit counts + coordinates for one Operation,
      * optionally narrowed to one Target, over a When window. */

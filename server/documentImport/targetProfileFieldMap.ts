@@ -1110,6 +1110,45 @@ function findInlineSubjectMention(
   return null;
 }
 
+/** A sixth identity shape: a "<Name> | Page <n>" running header/footer line
+ * repeated on every page of the document — seen in a real training document
+ * (BLUEGUM) formatted as a relationship-led "case note" rather than any of
+ * the shapes above, with no NAME/SUBJECT table row, no SUBJECT/TARGET
+ * heading paragraph, and no inline "Subject:" mention anywhere. That
+ * document's real identity/relationship tables are also genuine multi-
+ * column grids with non-standard column headers ("PRIMARY IDENTITY |
+ * OPERATIONAL DESCRIPTION | REFERENCE IDENTIFIERS"), which don't
+ * reconstruct into result.tables from a PDF at all (see pdfTextReader.ts's
+ * own module comment on that being out of scope) — so every other identity
+ * path above finds nothing and the subject's own name would otherwise never
+ * surface. The running header is still unambiguous: every page repeats
+ * "<the subject's own name> | Page <n>" verbatim. Tried last, since a
+ * page-footer mention is a much weaker signal than a real SUBJECT card — a
+ * document that has any of the other shapes should never fall through this
+ * far. */
+const RUNNING_HEADER_NAME_RE = /^(.+?)\s*\|\s*Page\s+\d+$/i;
+
+function findRunningHeaderSubjectName(
+  paragraphs: string[]
+): ParsedPersonName | null {
+  for (const paragraph of paragraphs) {
+    for (const line of paragraph.split("\n")) {
+      const m = line.trim().match(RUNNING_HEADER_NAME_RE);
+      if (!m) continue;
+      const person = matchWholeLinePersonName(m[1].trim());
+      if (person) {
+        return {
+          firstNames: person.firstNames,
+          surname: person.surname,
+          bornDate: "",
+          confident: !!(person.firstNames && person.surname),
+        };
+      }
+    }
+  }
+  return null;
+}
+
 /** Deduplicates a list of parsed vehicles/addresses by a caller-supplied
  * key — used only for the free-text last-resort scan below, where the same
  * real-world vehicle or address is often mentioned more than once across a
@@ -1200,6 +1239,9 @@ export function mapDocumentToTargetProfile(
   }
   if (!name) {
     name = findInlineSubjectMention(result.paragraphs);
+  }
+  if (!name) {
+    name = findRunningHeaderSubjectName(result.paragraphs);
   }
 
   let vehiclesValue = findLabelledValue(rows, "VEHICLES") ?? "";

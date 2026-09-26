@@ -73,6 +73,45 @@ import {
   type StructuredVehicleParts,
 } from "@/lib/addressFormat";
 
+// Mirrors server/documentImport/documentAIVerify.ts's AIAssistOutcome —
+// duplicated as a plain structural type rather than imported, same as the
+// rest of this dialog's result shape, since the client infers tRPC
+// payload shapes rather than importing server modules directly. Every
+// value here has already been through that module's deterministic
+// re-parse before it reached the client — "declined" covers both "the AI
+// had nothing" and "the AI's suggestion didn't verify", which read the
+// same to an officer either way (nothing to show).
+type AIAssistOutcome =
+  | { status: "declined" }
+  | { status: "confirmed"; value: string }
+  | { status: "suggested"; value: string };
+
+/** One line under a parsed field showing what the on-device AI made of
+ * the same text, when there's anything worth showing — silent for
+ * "declined". "confirmed" and "suggested" are deliberately distinct: the
+ * former means the AI's own independent read agrees with the rules
+ * (reassurance, not a prompt to act), the latter means it disagrees
+ * (worth a second look) — collapsing them into one flat "AI read this
+ * as..." line (the previous version of this dialog) loses exactly the
+ * distinction that makes the AI assist useful. */
+function AIAssistNote({ outcome }: { outcome: AIAssistOutcome | undefined }) {
+  if (!outcome || outcome.status === "declined") return null;
+  if (outcome.status === "confirmed") {
+    return (
+      <p className="text-xs text-emerald-700 dark:text-emerald-400 pl-2 border-l-2 border-emerald-500/40 flex items-center gap-1">
+        <Check className="h-3 w-3 shrink-0" />
+        AI independently reads this the same way.
+      </p>
+    );
+  }
+  return (
+    <p className="text-xs text-violet-700 dark:text-violet-400 pl-2 border-l-2 border-violet-500/40">
+      AI suggests: <span className="font-medium">{outcome.value}</span> —
+      compare against the original before using it.
+    </p>
+  );
+}
+
 // A photo extracted from the source document that the officer chose to
 // keep on this review screen — staged the same way associates are (see
 // StagedAssociate), actually saved (uploaded to the target's Images folder
@@ -795,29 +834,38 @@ export function ImportTargetDocumentDialog({
                   <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">
                     Addresses ({result.addresses.length})
                   </p>
-                  {result.addresses.map((a, i) => (
-                    <p key={i} className="text-sm">
-                      {a.label && (
-                        <span className="text-muted-foreground">
-                          {a.label}:{" "}
-                        </span>
-                      )}
-                      {[
-                        a.unitNo && `${a.unitNo}/`,
-                        a.houseNo,
-                        a.streetName,
-                        a.streetType,
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      , {a.suburb} {a.state}
-                      {!a.confident && (
-                        <Badge variant="outline" className="ml-1.5 text-[10px]">
-                          check street type
-                        </Badge>
-                      )}
-                    </p>
-                  ))}
+                  {result.addresses.map((a, i) => {
+                    const outcome = result.addressAiOutcomes?.[i];
+                    return (
+                      <div key={i} className="flex flex-col gap-0.5">
+                        <p className="text-sm">
+                          {a.label && (
+                            <span className="text-muted-foreground">
+                              {a.label}:{" "}
+                            </span>
+                          )}
+                          {[
+                            a.unitNo && `${a.unitNo}/`,
+                            a.houseNo,
+                            a.streetName,
+                            a.streetType,
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                          , {a.suburb} {a.state}
+                          {!a.confident && (
+                            <Badge
+                              variant="outline"
+                              className="ml-1.5 text-[10px]"
+                            >
+                              check street type
+                            </Badge>
+                          )}
+                        </p>
+                        <AIAssistNote outcome={outcome} />
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -826,18 +874,27 @@ export function ImportTargetDocumentDialog({
                   <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide">
                     Vehicles ({result.vehicles.length})
                   </p>
-                  {result.vehicles.map((v, i) => (
-                    <p key={i} className="text-sm">
-                      {v.registration} ({v.state}) — {v.colour} {v.make}{" "}
-                      {v.model}
-                      {v.vehicleType && ` ${v.vehicleType}`}
-                      {!v.confident && (
-                        <Badge variant="outline" className="ml-1.5 text-[10px]">
-                          check details
-                        </Badge>
-                      )}
-                    </p>
-                  ))}
+                  {result.vehicles.map((v, i) => {
+                    const outcome = result.vehicleAiOutcomes?.[i];
+                    return (
+                      <div key={i} className="flex flex-col gap-0.5">
+                        <p className="text-sm">
+                          {v.registration} ({v.state}) — {v.colour} {v.make}{" "}
+                          {v.model}
+                          {v.vehicleType && ` ${v.vehicleType}`}
+                          {!v.confident && (
+                            <Badge
+                              variant="outline"
+                              className="ml-1.5 text-[10px]"
+                            >
+                              check details
+                            </Badge>
+                          )}
+                        </p>
+                        <AIAssistNote outcome={outcome} />
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -984,18 +1041,30 @@ export function ImportTargetDocumentDialog({
                     original text dropped in — split it into the right fields
                     there rather than retyping it from the document.
                   </p>
-                  {result.needsReview.map((u, i) => (
-                    <p key={i} className="text-sm">
-                      <span className="text-muted-foreground">
-                        {u.kind === "address"
-                          ? u.label
-                            ? `${u.label}: `
-                            : "Address: "
-                          : "Vehicle: "}
-                      </span>
-                      <span className="italic">{u.raw}</span>
+                  {result.needsReview.map((u, i) => {
+                    const aiSuggestion = result.aiSuggestions?.[i];
+                    return (
+                      <div key={i} className="flex flex-col gap-0.5">
+                        <p className="text-sm">
+                          <span className="text-muted-foreground">
+                            {u.kind === "address"
+                              ? u.label
+                                ? `${u.label}: `
+                                : "Address: "
+                              : "Vehicle: "}
+                          </span>
+                          <span className="italic">{u.raw}</span>
+                        </p>
+                        <AIAssistNote outcome={aiSuggestion?.outcome} />
+                      </div>
+                    );
+                  })}
+                  {result.aiModelStatus === "missing" && (
+                    <p className="text-[11px] text-muted-foreground italic">
+                      (On-device AI assist isn't installed on this deployment
+                      yet — these are shown as read by the existing rules only.)
                     </p>
-                  ))}
+                  )}
                 </div>
               )}
 

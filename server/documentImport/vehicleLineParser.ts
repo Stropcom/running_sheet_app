@@ -58,6 +58,7 @@ const COLOURS = new Set([
   "gold",
   "brown",
   "maroon",
+  "burgundy",
   "orange",
   "purple",
   "tan",
@@ -68,14 +69,33 @@ const COLOURS = new Set([
   "pink",
   "bronze",
   "charcoal",
+  "teal",
+  "turquoise",
+  "ivory",
+  "lilac",
+  "olive",
+  "indigo",
 ]);
 
-// "dark grey", "light blue" — the modifier describes the colour but isn't
-// one itself; parseDescription drops it so the real colour word underneath
-// still gets recognised, rather than "dark"/"light" swallowing the colour
-// slot and pushing make/model out of place (e.g. "dark grey Toyota Prado"
-// parsing as colour="", make="dark", model="grey Toyota").
-const COLOUR_MODIFIERS = new Set(["dark", "light"]);
+// A shade/intensity word directly before a base colour ("dark blue",
+// "light grey", "metallic silver") isn't itself a colour — the officer's
+// own correction on a real training case: "dark"/"light" etc. get dropped
+// entirely rather than folded into the colour field, so "dark green"
+// composes as colour "Green", not "Dark Green". Originally found against
+// a real document ("1SEA310 ... dark blue Volvo XC60 station sedan"):
+// "dark" wasn't in COLOURS at all, so it fell through untouched and got
+// read as the *make* instead, pushing "blue Volvo XC60" into the model
+// field as one lump — recognising the pair at all was the fix; dropping
+// the modifier rather than keeping it is the refinement on top. Checked
+// as a two-word pair before the single-word case below.
+const COLOUR_MODIFIERS = new Set([
+  "dark",
+  "light",
+  "metallic",
+  "bright",
+  "pale",
+  "deep",
+]);
 
 // Mirrors client/src/lib/addressFormat.ts's VEHICLE_TYPE_OPTIONS values —
 // kept as a separate, server-owned copy for the same reason
@@ -187,13 +207,19 @@ function parseDescription(
     year = words.shift()!;
   }
 
-  if (words.length > 0 && COLOUR_MODIFIERS.has(words[0].toLowerCase())) {
-    words.shift();
-  }
+  const titleCase = (w: string) =>
+    w[0].toUpperCase() + w.slice(1).toLowerCase();
+
   let colour = "";
-  if (words.length > 0 && COLOURS.has(words[0].toLowerCase())) {
-    colour = words.shift()!;
-    colour = colour[0].toUpperCase() + colour.slice(1).toLowerCase();
+  if (
+    words.length > 1 &&
+    COLOUR_MODIFIERS.has(words[0].toLowerCase()) &&
+    COLOURS.has(words[1].toLowerCase())
+  ) {
+    words.shift(); // drop the modifier ("dark"/"light"/...) — not a colour
+    colour = titleCase(words.shift()!);
+  } else if (words.length > 0 && COLOURS.has(words[0].toLowerCase())) {
+    colour = titleCase(words.shift()!);
   }
 
   const { rest, vehicleType } = stripVehicleType(words);

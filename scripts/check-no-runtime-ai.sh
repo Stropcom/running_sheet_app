@@ -28,7 +28,12 @@ BANNED_PATTERNS=(
   "generativelanguage\.googleapis\.com"
   "api\.openai\.com"
   "api\.anthropic\.com"
-  "huggingface"
+  # NOT a bare "huggingface" — see the matching comment in
+  # .claude/hooks/check-no-runtime-ai.sh for why (would also match the
+  # on-device @huggingface/transformers package name). These two target
+  # the actual runtime risk: the hosted inference API's SDK and its host.
+  "@huggingface/inference"
+  "api-inference\.huggingface\.co"
   "cohere"
   "openrouter"
   "langchain"

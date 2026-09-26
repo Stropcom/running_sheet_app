@@ -140,6 +140,7 @@ import {
   UcoGuideBriefing,
   ucoGuideAcknowledgements,
   UcoGuideAcknowledgement,
+  scanFindingDismissals,
 } from "../drizzle/schema";
 import {
   findPossibleDuplicates,
@@ -8481,6 +8482,14 @@ export interface PersonTargetMatch {
   associateId?: number;
   name: string;
   tgtAlias: string | null;
+  /** The registry's own structured surname field (targets.surname /
+   * associates.surname) — the actual bracket code to suggest when there's
+   * no tgtAlias, since `name` is the full registered name with no bracket
+   * of its own to extract one from (see the real bug this fixed: the
+   * client used to fall back to bracketing the WHOLE name, e.g. "(Declan
+   * WESTBROOK)", instead of just the surname, "(WESTBROOK)"). Null for a
+   * business-name associate, which has no surname to fall back to. */
+  surname: string | null;
   score: number;
   reason: string;
 }
@@ -8580,6 +8589,7 @@ export async function checkPossibleTargetMatches(
       associateId: e.isAssociate ? (e.associateId ?? undefined) : undefined,
       name: e.shortForm,
       tgtAlias: e.tgtAlias ?? null,
+      surname: e.surname ?? null,
       score: best.score,
       reason: best.reason,
     });
@@ -10986,6 +10996,156 @@ export async function purgeOrphanedAttachments(): Promise<number> {
     await deleteRowAttachment(a.id);
   }
   return orphans.length;
+}
+
+export interface ObservationTextForScan {
+  rowId: number;
+  sheetId: number;
+  sheetTitle: string;
+  operationName: string;
+  observation: string;
+}
+
+/** Raw observation text for Step 2 of the Local AI Roadmap's
+ * missed-entity scan (see missedEntityScan.ts) — deliberately separate
+ * from getAllIntelligenceEntities, which returns already-*mined* entities,
+ * not the source text a second pass needs to re-scan for what the
+ * rule-based extractor may have missed entirely. Live operations only
+ * (isNull(deletedAt) on both tables) — same convention as every other
+ * live query in this file. */
+export async function getObservationTextForEntityScan(): Promise<
+  ObservationTextForScan[]
+> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const rows = await db
+    .select({
+      rowId: sheetRows.id,
+      sheetId: sheetRows.sheetId,
+      sheetTitle: runningSheets.title,
+      operationName: operations.name,
+      observation: sheetRows.observation,
+    })
+    .from(sheetRows)
+    .innerJoin(runningSheets, eq(sheetRows.sheetId, runningSheets.id))
+    .innerJoin(operations, eq(runningSheets.operationId, operations.id))
+    .where(
+      and(
+        isNull(runningSheets.deletedAt),
+        isNull(operations.deletedAt),
+        isNotNull(sheetRows.observation)
+      )
+    );
+
+  return rows.filter(
+    (r): r is ObservationTextForScan =>
+      !!r.observation && r.observation.trim().length > 0
+  );
+}
+
+export interface ObservationTextForSheet {
+  rowId: number;
+  timeMinutes: number | null;
+  observation: string;
+}
+
+/** Same idea as getObservationTextForEntityScan above, scoped to one sheet
+ * — backs sheetCheck.ts's "Check Running Sheet" spelling pass, which an
+ * author runs on demand against their own sheet rather than the whole
+ * folder. No deletedAt filtering needed here (unlike the whole-folder
+ * version): a sheet the caller can already fetch rows for is live by
+ * construction. */
+export async function getObservationTextForSheet(
+  sheetId: number
+): Promise<ObservationTextForSheet[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const rows = await db
+    .select({
+      rowId: sheetRows.id,
+      timeMinutes: sheetRows.timeMinutes,
+      observation: sheetRows.observation,
+    })
+    .from(sheetRows)
+    .where(eq(sheetRows.sheetId, sheetId));
+
+  return rows.filter(
+    (r): r is ObservationTextForSheet =>
+      !!r.observation && r.observation.trim().length > 0
+  );
+}
+
+/** The assigned target's registry surname for a sheet, if any — backs
+ * sheetCheck.ts's bare-person-typo check. The TGT themselves is never
+ * expected to appear in a "(BRACKET)" the way an associate/vehicle/
+ * address mined from prose would — their identity already comes from the
+ * target card, not the bracket convention — so a typo of their name can
+ * only ever be caught by comparing directly against this registry field,
+ * never against other bracket-mined entities. Returns null when the sheet
+ * has no assigned target, or the target has no surname recorded (legacy/
+ * free-text-only target cards). */
+export async function getSheetTargetSurname(
+  sheetId: number
+): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [sheet] = await db
+    .select({ targetId: runningSheets.targetId })
+    .from(runningSheets)
+    .where(eq(runningSheets.id, sheetId))
+    .limit(1);
+  if (!sheet?.targetId) return null;
+
+  const [target] = await db
+    .select({ surname: targets.surname })
+    .from(targets)
+    .where(eq(targets.id, sheet.targetId))
+    .limit(1);
+  return target?.surname?.trim() || null;
+}
+
+/** Normalises a finding's display name into the same identity key used to
+ * both dedupe it within one scan run and record/check its dismissal —
+ * trim + uppercase, same as fuzzyMatch.ts's own normalisation, so "Jhon
+ * Smith" dismissed once doesn't reappear re-cased on the next run. */
+export function scanFindingKey(shortForm: string): string {
+  return shortForm.trim().toUpperCase();
+}
+
+/** Every (ruleId, findingKey) an admin has dismissed — checked by
+ * runEntityScan/runMissedEntityScan before returning findings, so a
+ * dismissed one doesn't keep reappearing on every future scan. */
+export async function getDismissedFindingKeys(): Promise<Set<string>> {
+  const db = await getDb();
+  if (!db) return new Set();
+  const rows = await db
+    .select({
+      ruleId: scanFindingDismissals.ruleId,
+      findingKey: scanFindingDismissals.findingKey,
+    })
+    .from(scanFindingDismissals);
+  return new Set(rows.map(r => `${r.ruleId}::${r.findingKey}`));
+}
+
+/** Idempotent — dismissing an already-dismissed finding just refreshes who/
+ * when rather than erroring on the unique (ruleId, findingKey) index. */
+export async function dismissScanFinding(
+  ruleId: string,
+  shortForm: string,
+  dismissedByCIN: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const findingKey = scanFindingKey(shortForm);
+  await db
+    .insert(scanFindingDismissals)
+    .values({ ruleId, findingKey, dismissedByCIN })
+    .onDuplicateKeyUpdate({
+      set: { dismissedByCIN, dismissedAt: new Date() },
+    });
 }
 
 // ─── Intelligence Profile Queries ─────────────────────────────────────────────

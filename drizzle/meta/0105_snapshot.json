@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "ef25e63b-9538-4c58-835c-c10e50be734b",
-  "prevId": "aa1ec05d-d141-4f96-9e58-f547842d6447",
+  "id": "0e8b3083-31ec-4f99-87c5-1007ce2b44d7",
+  "prevId": "dd1f10eb-0db6-4624-bd67-613fccec1a1b",
   "tables": {
     "associates": {
       "name": "associates",
@@ -379,7 +379,7 @@
         },
         "action": {
           "name": "action",
-          "type": "enum('row_created','row_updated','row_deleted','member_added','member_removed','certified','uncertified','sheet_created','sheet_updated','sheet_deleted','sheet_closed','sheet_reopened','sheet_moved','sheet_copied','user_login','user_logout','user_created','user_updated','user_deleted','operation_status_changed','password_changed','attachment_added','attachment_deleted','summary_completed','summary_reopened','smeac_briefing_posted','smeac_briefing_deleted','uco_guide_posted','uco_guide_deleted')",
+          "type": "enum('row_created','row_updated','row_deleted','member_added','member_removed','certified','uncertified','sheet_created','sheet_updated','sheet_deleted','sheet_closed','sheet_reopened','sheet_moved','sheet_copied','user_login','user_logout','user_created','user_updated','user_deleted','user_archived','user_restored','operation_status_changed','password_changed','attachment_added','attachment_deleted','summary_completed','summary_reopened','smeac_briefing_posted','smeac_briefing_deleted','uco_guide_posted','uco_guide_deleted')",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -5135,6 +5135,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "sourceFileUrl": {
+          "name": "sourceFileUrl",
+          "type": "varchar(500)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "snapshotJson": {
           "name": "snapshotJson",
           "type": "text",
@@ -6325,7 +6332,7 @@
         },
         "role": {
           "name": "role",
-          "type": "enum('observer','member','admin')",
+          "type": "enum('observer','member','admin','investigator')",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
@@ -6432,6 +6439,27 @@
           "notNull": true,
           "autoincrement": false,
           "default": "(now())"
+        },
+        "archivedAt": {
+          "name": "archivedAt",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "archivedByCIN": {
+          "name": "archivedByCIN",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "investigatorOperationIds": {
+          "name": "investigatorOperationIds",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {},

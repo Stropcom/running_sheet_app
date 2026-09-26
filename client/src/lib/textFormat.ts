@@ -60,9 +60,21 @@ export interface NarrativeSection {
 // "Label: value" line (no sentence-ending punctuation at all, e.g.
 // "Mobile: 0491 570 151") has nothing to split on and passes through
 // unchanged.
+//
+// Regression: a bare single-letter initial ("Marcus L. CHANG") reads as a
+// sentence-ending period followed by a capitalised word just as readily as
+// a real sentence boundary does — a real training document (Operation
+// SWITCHBACK) uses exactly this shape as one of its own deliberately
+// similar-name variants, and it used to split into "Marcus L." + "CHANG
+// are known variants.", corrupting the sentence and — because that broken
+// shape doesn't match whatever the other version's own paragraphs contain
+// — showing a spurious diff on it too. The negative lookbehind below skips
+// the split whenever the period is immediately preceded by a single
+// uppercase letter of its own (a bare initial), which a genuine
+// sentence-ending word essentially never is.
 function splitIntoDisplaySentences(text: string): string[] {
   return text
-    .split(/(?<=[.!?]["'’”)\]]?)\s+/)
+    .split(/(?<=[.!?]["'’”)\]]?)(?<!\b[A-Z]\.)\s+/)
     .map(s => s.trim())
     .filter(Boolean);
 }

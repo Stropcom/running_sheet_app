@@ -370,8 +370,8 @@ export function ImportedDocumentCard({
             </div>
           )}
           {backgroundSections.length > 0 && (
-            <div className="rounded-lg border border-l-4 border-rose-400/30 border-l-rose-400 bg-rose-500/5 p-3">
-              <p className="font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+            <div className="rounded-lg border border-l-4 border-slate-500/30 border-l-slate-500 bg-slate-500/5 p-3">
+              <p className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide flex items-center gap-1.5 mb-1">
                 <FileText className="w-3 h-3" />
                 Background
               </p>
@@ -379,9 +379,9 @@ export function ImportedDocumentCard({
                 {backgroundSections.map((section, si) => (
                   <div key={si}>
                     {section.heading && (
-                      <div className="flex items-center gap-1.5 bg-rose-500/10 border border-rose-500/20 rounded-t-md px-2 py-1">
-                        <span className="w-0.5 h-3 rounded-full bg-rose-400 shrink-0" />
-                        <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                      <div className="flex items-center gap-1.5 bg-slate-500/10 border border-slate-500/20 rounded-t-md px-2 py-1">
+                        <span className="w-0.5 h-3 rounded-full bg-slate-500 shrink-0" />
+                        <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
                           {section.heading}
                         </span>
                       </div>
@@ -389,7 +389,7 @@ export function ImportedDocumentCard({
                     <div
                       className={`space-y-1.5 ${
                         section.heading
-                          ? "border border-t-0 border-rose-500/20 rounded-b-md p-2"
+                          ? "border border-t-0 border-slate-500/20 rounded-b-md p-2"
                           : ""
                       }`}
                     >

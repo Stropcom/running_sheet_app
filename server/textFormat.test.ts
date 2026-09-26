@@ -90,6 +90,40 @@ describe("groupNarrativeIntoSections", () => {
   it("returns an empty array for empty text", () => {
     expect(groupNarrativeIntoSections("")).toEqual([]);
   });
+
+  // Regression (Operation TIDELINE): a PDF's own text layout can glue a
+  // whole run of sentences that share one visual line/cell into a single
+  // space-joined paragraph with no line breaks at all — the same document
+  // re-exported as a .docx keeps each sentence as its own Word paragraph
+  // instead. Left unsplit, the two file formats' own paragraph shapes
+  // never lined up for the diff's exact-text match, so re-importing the
+  // "same" document in the other format showed nearly every line as
+  // "added" even though not one sentence had actually changed. Every
+  // sentence below must land as its own paragraph regardless of which
+  // format supplied it, keeping its own terminating punctuation.
+  it("splits a single paragraph containing several complete sentences into one paragraph per sentence", () => {
+    const text =
+      "Associates: Dominic Paul RUSSO 27 Garden Street, EAST PERTH WA 6004. 1DPR27 (WA) 2022 red Alfa Romeo Stelvio wagon. On 21 August 2026, Priya Elise NAIR attended the office.";
+    const sections = groupNarrativeIntoSections(text);
+    expect(sections).toEqual([
+      {
+        heading: null,
+        paragraphs: [
+          "Associates: Dominic Paul RUSSO 27 Garden Street, EAST PERTH WA 6004.",
+          "1DPR27 (WA) 2022 red Alfa Romeo Stelvio wagon.",
+          "On 21 August 2026, Priya Elise NAIR attended the office.",
+        ],
+      },
+    ]);
+  });
+
+  it("leaves a 'Label: value' line with no sentence-ending punctuation as a single paragraph", () => {
+    const text = "Mobile: 0491 570 151";
+    const sections = groupNarrativeIntoSections(text);
+    expect(sections).toEqual([
+      { heading: null, paragraphs: ["Mobile: 0491 570 151"] },
+    ]);
+  });
 });
 
 describe("reflowNarrativeText (unchanged behaviour, regression guard)", () => {

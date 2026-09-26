@@ -194,4 +194,34 @@ describe("diffDocumentSnapshots backgroundSections", () => {
     const diff = diffDocumentSnapshots(current, previous)!;
     expect(countChanges(diff)).toBe(1);
   });
+
+  // Regression (Operation TIDELINE): re-importing the exact same document
+  // as a .docx after it was first imported as a .pdf (or vice versa) used
+  // to show almost every Background line as "added" — not because the
+  // content had changed, but because a PDF's own text layout glues several
+  // sentences into one paragraph while a .docx keeps each sentence as its
+  // own paragraph, and the diff matched on exact paragraph text. See
+  // textFormat.test.ts's own sentence-splitting regression for the fix.
+  it("reads every sentence as unchanged when the same facts arrive glued into one PDF-style paragraph vs. one sentence per DOCX-style paragraph", () => {
+    const previous = prefill({
+      background: [
+        "SUMMARY",
+        "Associates: Dominic Paul RUSSO 27 Garden Street, EAST PERTH WA 6004. 1DPR27 (WA) 2022 red Alfa Romeo Stelvio wagon. On 21 August 2026, Priya Elise NAIR attended the office.",
+      ].join("\n\n"),
+    });
+    const current = prefill({
+      background: [
+        "Associates: Dominic Paul RUSSO 27 Garden Street, EAST PERTH WA 6004.",
+        "1DPR27 (WA) 2022 red Alfa Romeo Stelvio wagon.",
+        "On 21 August 2026, Priya Elise NAIR attended the office.",
+      ].join("\n\n"),
+    });
+
+    const diff = diffDocumentSnapshots(current, previous)!;
+    const statuses = diff.backgroundSections.flatMap(s =>
+      s.paragraphs.map(p => p.status)
+    );
+    expect(statuses).toEqual(["unchanged", "unchanged", "unchanged"]);
+    expect(countChanges(diff)).toBe(0);
+  });
 });

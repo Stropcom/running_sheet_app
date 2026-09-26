@@ -1395,37 +1395,60 @@ const TAB_OPTIONS: Array<{
 // it stays plain text, matching its own existing look.
 const ENTITY_TAB_COLORS: Record<
   "operations" | "targets" | "associates" | "vehicle" | "locations",
-  { icon: string; activeBg: string; activeText: string; bar: string }
+  {
+    icon: string;
+    activeBg: string;
+    activeText: string;
+    bar: string;
+    idleBorder: string;
+    idleBg: string;
+    activeBorder: string;
+  }
 > = {
   operations: {
     icon: "text-slate-500 dark:text-slate-400",
     activeBg: "bg-slate-500/10",
     activeText: "text-slate-900 dark:text-slate-100",
     bar: "bg-slate-500",
+    idleBorder: "border-slate-500/20",
+    idleBg: "bg-slate-500/5",
+    activeBorder: "border-slate-500/40",
   },
   targets: {
     icon: "text-sky-500",
     activeBg: "bg-sky-500/10",
     activeText: "text-sky-700 dark:text-sky-400",
     bar: "bg-sky-500",
+    idleBorder: "border-sky-500/20",
+    idleBg: "bg-sky-500/5",
+    activeBorder: "border-sky-500/40",
   },
   associates: {
     icon: "text-violet-500",
     activeBg: "bg-violet-500/10",
     activeText: "text-violet-700 dark:text-violet-400",
     bar: "bg-violet-500",
+    idleBorder: "border-violet-500/20",
+    idleBg: "bg-violet-500/5",
+    activeBorder: "border-violet-500/40",
   },
   vehicle: {
     icon: "text-amber-500",
     activeBg: "bg-amber-500/10",
     activeText: "text-amber-700 dark:text-amber-400",
     bar: "bg-amber-500",
+    idleBorder: "border-amber-500/20",
+    idleBg: "bg-amber-500/5",
+    activeBorder: "border-amber-500/40",
   },
   locations: {
     icon: "text-emerald-500",
     activeBg: "bg-emerald-500/10",
     activeText: "text-emerald-700 dark:text-emerald-400",
     bar: "bg-emerald-500",
+    idleBorder: "border-emerald-500/20",
+    idleBg: "bg-emerald-500/5",
+    activeBorder: "border-emerald-500/40",
   },
 };
 
@@ -1788,7 +1811,7 @@ export default function IntelligencePage() {
           </div>
         ) : (
           <div className="mb-5 space-y-3">
-            <div className="flex rounded-xl border border-border overflow-hidden bg-card divide-x divide-border">
+            <div className="grid grid-cols-5 gap-2">
               {ENTITY_TAB_OPTIONS.map(tab => {
                 const count = tabCounts[tab.value];
                 const isActive = activeTab === tab.value;
@@ -1800,8 +1823,10 @@ export default function IntelligencePage() {
                   <button
                     key={tab.value}
                     onClick={() => setActiveTab(tab.value)}
-                    className={`flex-1 flex flex-col items-center gap-1 py-3 px-2 transition-colors ${
-                      isActive ? colors.activeBg : "hover:bg-muted/40"
+                    className={`flex flex-col items-center gap-1 py-3 px-2 rounded-lg border transition-colors ${
+                      isActive
+                        ? `${colors.activeBorder} ${colors.activeBg}`
+                        : `${colors.idleBorder} ${colors.idleBg} hover:bg-muted/40`
                     }`}
                   >
                     <span className="flex items-center gap-1.5">

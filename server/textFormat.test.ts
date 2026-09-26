@@ -124,6 +124,27 @@ describe("groupNarrativeIntoSections", () => {
       { heading: null, paragraphs: ["Mobile: 0491 570 151"] },
     ]);
   });
+
+  // Regression (Operation SWITCHBACK): a bare single-letter initial
+  // ("Marcus L. CHANG") looks exactly like a sentence-ending period
+  // followed by a capitalised word — the sentence-splitting fix above
+  // used to cut it in half ("Marcus L." + "CHANG are known variants."),
+  // corrupting a real training document that deliberately uses this shape
+  // as one of its own near-identical name variants.
+  it("doesn't split a sentence at a bare single-letter initial", () => {
+    const text =
+      "Mark Lee CHANG and Marcus L. CHANG are known variants. Markus Leigh CHAN and Marcus Li CHEN are separate persons.";
+    const sections = groupNarrativeIntoSections(text);
+    expect(sections).toEqual([
+      {
+        heading: null,
+        paragraphs: [
+          "Mark Lee CHANG and Marcus L. CHANG are known variants.",
+          "Markus Leigh CHAN and Marcus Li CHEN are separate persons.",
+        ],
+      },
+    ]);
+  });
 });
 
 describe("reflowNarrativeText (unchanged behaviour, regression guard)", () => {

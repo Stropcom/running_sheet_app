@@ -3406,6 +3406,7 @@ export async function recordTargetDocumentImport(data: {
   uploadedByCIN: string | null;
   snapshotJson: string;
   sourceFileName?: string | null;
+  sourceFileUrl?: string | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -3415,6 +3416,7 @@ export async function recordTargetDocumentImport(data: {
     uploadedByCIN: data.uploadedByCIN,
     snapshotJson: data.snapshotJson,
     sourceFileName: data.sourceFileName || null,
+    sourceFileUrl: data.sourceFileUrl || null,
   });
 }
 
@@ -3436,6 +3438,7 @@ export async function listTargetDocumentImportsForOperation(
         uploadedByCIN: targetDocumentImports.uploadedByCIN,
         uploadedAt: targetDocumentImports.uploadedAt,
         sourceFileName: targetDocumentImports.sourceFileName,
+        sourceFileUrl: targetDocumentImports.sourceFileUrl,
         snapshotJson: targetDocumentImports.snapshotJson,
       })
       .from(targetDocumentImports)

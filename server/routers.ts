@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import { format } from "date-fns";
-import { storageGetBytes } from "./storage";
+import { storageGetBytes, storagePut } from "./storage";
 import { detectAndEmbedFaces, cosineSimilarity } from "./faceRecognition";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -3166,6 +3166,12 @@ export const appRouter = router({
             // targetDocumentImports in schema.ts.
             documentSnapshotJson: z.string().optional().nullable(),
             documentSourceFileName: z.string().optional().nullable(),
+            // The original uploaded file's raw bytes, so the officer can
+            // later re-view the actual PDF/DOCX (not just the parsed
+            // fields) from the Imported Documents panel — see storagePut
+            // below and targetDocumentImports.sourceFileUrl in schema.ts.
+            documentSourceFileBase64: z.string().optional().nullable(),
+            documentSourceFileMimeType: z.string().optional().nullable(),
             ...structuredTargetFieldsSchema,
           })
         )
@@ -3175,6 +3181,8 @@ export const appRouter = router({
             background,
             documentSnapshotJson,
             documentSourceFileName,
+            documentSourceFileBase64,
+            documentSourceFileMimeType,
             ...data
           } = input;
           const result = await createRegistryTarget({
@@ -3183,12 +3191,22 @@ export const appRouter = router({
           });
           await linkTargetToOperation(result.id, linkToOperationId, background);
           if (documentSnapshotJson) {
+            let sourceFileUrl: string | null = null;
+            if (documentSourceFileBase64) {
+              const put = await storagePut(
+                `target-documents/target-${result.id}/${Date.now()}-${documentSourceFileName || "document"}`,
+                Buffer.from(documentSourceFileBase64, "base64"),
+                documentSourceFileMimeType || "application/octet-stream"
+              );
+              sourceFileUrl = put.url;
+            }
             await recordTargetDocumentImport({
               targetId: result.id,
               operationId: linkToOperationId,
               uploadedByCIN: ctx.user.cin ?? null,
               snapshotJson: documentSnapshotJson,
               sourceFileName: documentSourceFileName,
+              sourceFileUrl,
             });
           }
           return result;
@@ -3225,6 +3243,8 @@ export const appRouter = router({
             // See target.registry.create's documentSnapshotJson.
             documentSnapshotJson: z.string().optional().nullable(),
             documentSourceFileName: z.string().optional().nullable(),
+            documentSourceFileBase64: z.string().optional().nullable(),
+            documentSourceFileMimeType: z.string().optional().nullable(),
             existingAssociateId: z.number(),
             ...structuredTargetFieldsSchema,
           })
@@ -3235,6 +3255,8 @@ export const appRouter = router({
             background,
             documentSnapshotJson,
             documentSourceFileName,
+            documentSourceFileBase64,
+            documentSourceFileMimeType,
             existingAssociateId,
             ...data
           } = input;
@@ -3244,12 +3266,22 @@ export const appRouter = router({
           );
           await linkTargetToOperation(result.id, linkToOperationId, background);
           if (documentSnapshotJson) {
+            let sourceFileUrl: string | null = null;
+            if (documentSourceFileBase64) {
+              const put = await storagePut(
+                `target-documents/target-${result.id}/${Date.now()}-${documentSourceFileName || "document"}`,
+                Buffer.from(documentSourceFileBase64, "base64"),
+                documentSourceFileMimeType || "application/octet-stream"
+              );
+              sourceFileUrl = put.url;
+            }
             await recordTargetDocumentImport({
               targetId: result.id,
               operationId: linkToOperationId,
               uploadedByCIN: ctx.user.cin ?? null,
               snapshotJson: documentSnapshotJson,
               sourceFileName: documentSourceFileName,
+              sourceFileUrl,
             });
           }
           return result;
@@ -3428,6 +3460,8 @@ export const appRouter = router({
             // See target.registry.create's documentSnapshotJson.
             documentSnapshotJson: z.string().optional().nullable(),
             documentSourceFileName: z.string().optional().nullable(),
+            documentSourceFileBase64: z.string().optional().nullable(),
+            documentSourceFileMimeType: z.string().optional().nullable(),
           })
         )
         .mutation(async ({ input, ctx }) => {
@@ -3445,12 +3479,22 @@ export const appRouter = router({
             input.background
           );
           if (input.documentSnapshotJson) {
+            let sourceFileUrl: string | null = null;
+            if (input.documentSourceFileBase64) {
+              const put = await storagePut(
+                `target-documents/target-${input.targetId}/${Date.now()}-${input.documentSourceFileName || "document"}`,
+                Buffer.from(input.documentSourceFileBase64, "base64"),
+                input.documentSourceFileMimeType || "application/octet-stream"
+              );
+              sourceFileUrl = put.url;
+            }
             await recordTargetDocumentImport({
               targetId: input.targetId,
               operationId: input.linkToOperationId,
               uploadedByCIN: ctx.user.cin ?? null,
               snapshotJson: input.documentSnapshotJson,
               sourceFileName: input.documentSourceFileName,
+              sourceFileUrl,
             });
           }
           return result;
@@ -3490,9 +3534,11 @@ export const appRouter = router({
        * proposed set of structured fields for the review screen (see
        * server/documentImport/) — deterministic table/text parsing only,
        * no AI/LLM call, per CLAUDE.md's Golden Rule. Nothing is persisted
-       * here and the document itself isn't stored; the officer reviews and
-       * confirms the parsed fields, then saves through the normal
-       * create/update mutations above. Which reader runs is decided by the
+       * here — the officer reviews and confirms the parsed fields, then
+       * saves through the normal create/update mutations above, which are
+       * what actually store the original file's bytes (see
+       * documentSourceFileBase64 on target.registry.create). Which reader
+       * runs is decided by the
        * uploaded file's own name — the client never asks the officer to
        * choose a document type. */
       parseDocument: protectedProcedure

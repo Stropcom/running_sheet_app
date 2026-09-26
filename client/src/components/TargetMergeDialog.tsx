@@ -106,6 +106,8 @@ interface Props {
    * AddTargetDialog's RegistryCreatePayload.documentSnapshotJson. */
   documentSnapshotJson: string | null;
   documentSourceFileName: string | null;
+  documentSourceFileBase64: string | null;
+  documentSourceFileMimeType: string | null;
 }
 
 function parseJsonArray<T>(json: string | null | undefined): T[] {
@@ -127,6 +129,8 @@ export function TargetMergeDialog({
   background,
   documentSnapshotJson,
   documentSourceFileName,
+  documentSourceFileBase64,
+  documentSourceFileMimeType,
 }: Props) {
   const mergeMutation = trpc.target.registry.mergeFieldDetails.useMutation();
   const [selections, setSelections] = useState<
@@ -226,6 +230,8 @@ export function TargetMergeDialog({
         background,
         documentSnapshotJson,
         documentSourceFileName,
+        documentSourceFileBase64,
+        documentSourceFileMimeType,
       });
       toast.success(`Merged into existing target "${existing.name}"`);
       onMerged(existing.id);

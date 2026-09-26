@@ -1,5 +1,15 @@
 import { useState } from "react";
-import { FileText, ChevronDown, Target, Home, Car, Users } from "lucide-react";
+import {
+  FileText,
+  ChevronDown,
+  Target,
+  Home,
+  Car,
+  Users,
+  FolderOpen,
+  Eye,
+} from "lucide-react";
+import { DocumentViewerModal } from "@/components/DocumentViewerModal";
 import {
   formatIntelAddress,
   formatIntelVehicle,
@@ -32,6 +42,11 @@ export interface DocumentImportRow {
   uploadedByCIN: string | null;
   uploadedAt: string | Date;
   sourceFileName: string | null;
+  /** Storage URL for the original uploaded file's bytes, if this import
+   * captured them (see server/routers.ts's target.registry.create) — lets
+   * the officer re-view the actual PDF/DOCX, not just its parsed fields.
+   * Null for imports made before this existed. */
+  sourceFileUrl?: string | null;
   snapshotJson: string;
 }
 
@@ -111,6 +126,7 @@ export function ImportedDocumentCard({
   // be greeted with a wall of imported-document text before they've even
   // looked at the rest of the profile.
   const [open, setOpen] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   let snapshot: DocumentImportPrefill | null = null;
   try {
@@ -244,6 +260,37 @@ export function ImportedDocumentCard({
             Shown exactly as parsed from the uploaded document — not the
             target's current live details, which may have been edited since.
           </p>
+          {row.sourceFileUrl && (
+            <div className="rounded-lg border border-l-4 border-slate-500/30 border-l-slate-500 bg-slate-500/5 p-3">
+              <p className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                <FolderOpen className="w-3 h-3" />
+                Original document
+              </p>
+              <div className="flex items-center gap-3">
+                <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-500/30 bg-card shrink-0">
+                  <FileText className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-semibold text-foreground truncate">
+                    {row.sourceFileName || "Document"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {/\.pdf$/i.test(row.sourceFileName || "")
+                      ? "PDF document"
+                      : "Word document"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewerOpen(true)}
+                  className="shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-slate-500/30 bg-card hover:bg-slate-500/10 transition-colors"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  View document
+                </button>
+              </div>
+            </div>
+          )}
           <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
             <p className="font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">
               <Target className="w-3 h-3" />
@@ -384,6 +431,13 @@ export function ImportedDocumentCard({
             </div>
           )}
         </div>
+      )}
+      {viewerOpen && row.sourceFileUrl && (
+        <DocumentViewerModal
+          url={row.sourceFileUrl}
+          fileName={row.sourceFileName || "Document"}
+          onClose={() => setViewerOpen(false)}
+        />
       )}
     </div>
   );

@@ -703,6 +703,11 @@ export const targetDocumentImports = mysqlTable("target_document_imports", {
   uploadedByCIN: varchar("uploadedByCIN", { length: 64 }),
   uploadedAt: timestamp("uploadedAt").defaultNow().notNull(),
   sourceFileName: varchar("sourceFileName", { length: 255 }),
+  // Storage URL for the original uploaded file's bytes (see storagePut in
+  // server/storage.ts), so the in-app document viewer can render the real
+  // PDF/DOCX rather than just the parsed snapshot. Null for imports made
+  // before this column existed.
+  sourceFileUrl: varchar("sourceFileUrl", { length: 500 }),
   snapshotJson: text("snapshotJson").notNull(),
 });
 

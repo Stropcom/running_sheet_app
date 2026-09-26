@@ -113,9 +113,15 @@ export interface DocumentImportPrefill {
   background: string;
   /** The uploaded file's own name — shown on the Operation/Target profile's
    * imported-document panels so an officer can tell which document a
-   * version came from. Not the file itself; the document is never stored,
-   * see the parseDocument procedure's comment. */
+   * version came from. */
   sourceFileName: string;
+  /** The uploaded file's raw bytes/mime type, carried through so the save
+   * mutation can store the original document (see storagePut in
+   * server/routers.ts's target.registry.create) for the in-app document
+   * viewer — not embedded in the JSON snapshot itself, see
+   * documentSnapshotForHistory in AddTargetDialog.tsx. */
+  sourceFileBase64: string;
+  sourceFileMimeType: string;
 }
 
 interface PossibleMatch {
@@ -197,6 +203,14 @@ export function ImportTargetDocumentDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState("");
+  // The uploaded file's raw bytes, kept alongside the parsed result so they
+  // can be threaded through to the save mutation once the officer confirms
+  // (see DocumentImportPrefill.sourceFileBase64) — parseMut itself only
+  // returns the parsed fields, not the original bytes.
+  const [sourceFile, setSourceFile] = useState<{
+    dataBase64: string;
+    mimeType: string;
+  } | null>(null);
   const parseMut = trpc.target.registry.parseDocument.useMutation();
   const utils = trpc.useUtils();
   const updateAssociateMut = trpc.associate.update.useMutation();
@@ -334,6 +348,7 @@ export function ImportTargetDocumentDialog({
     setAssociateChoices({});
     setImageChoices({});
     setImageLinkChoices({});
+    setSourceFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -351,6 +366,12 @@ export function ImportTargetDocumentDialog({
     }
     try {
       const dataBase64 = await readFileAsBase64(file);
+      const mimeType =
+        file.type ||
+        (/\.pdf$/i.test(file.name)
+          ? "application/pdf"
+          : "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      setSourceFile({ dataBase64, mimeType });
       await parseMut.mutateAsync({ fileName: file.name, dataBase64 });
     } catch (err: any) {
       setError(
@@ -646,6 +667,8 @@ export function ImportTargetDocumentDialog({
           }),
         background: result.freeText.trim(),
         sourceFileName: fileName,
+        sourceFileBase64: sourceFile?.dataBase64 ?? "",
+        sourceFileMimeType: sourceFile?.mimeType ?? "",
       });
       reset();
     } finally {

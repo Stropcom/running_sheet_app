@@ -104,6 +104,13 @@ export interface RegistryCreatePayload {
    * `background` above; see targetDocumentImports in schema.ts. */
   documentSnapshotJson: string | null;
   documentSourceFileName: string | null;
+  /** The original uploaded file's raw bytes/mime type — see storagePut in
+   * server/routers.ts's target.registry.create — so the officer can later
+   * re-view the actual document, not just its parsed fields. Null for a
+   * manually-added target, or when the officer's browser session lost the
+   * bytes (see ImportTargetDocumentDialog's sourceFile state). */
+  documentSourceFileBase64: string | null;
+  documentSourceFileMimeType: string | null;
   targetType: TargetType;
   name: string;
   tgt: string | null;
@@ -456,10 +463,17 @@ export function AddTargetDialog({
   // own durable copy as a real Attachment once saved (see
   // saveStagedImages), so storing the same base64 bytes a second time here
   // would just bloat that JSON column for no reason and duplicate the
-  // photo. Strip it before persisting the snapshot.
+  // photo. Same reasoning for the original document's own bytes — those go
+  // through storagePut and are referenced by sourceFileUrl (see buildPayload
+  // below), not embedded in this JSON column. Strip both before persisting
+  // the snapshot.
   const documentSnapshotForHistory = (
     prefill: DocumentImportPrefill
-  ): DocumentImportPrefill => ({ ...prefill, images: [] });
+  ): DocumentImportPrefill => ({
+    ...prefill,
+    images: [],
+    sourceFileBase64: "",
+  });
 
   const buildPayload = (): RegistryCreatePayload => {
     const { name, tgt } = computePrimaryIdentity(
@@ -477,6 +491,10 @@ export function AddTargetDialog({
         ? JSON.stringify(documentSnapshotForHistory(initialDocumentSnapshot))
         : null,
       documentSourceFileName: initialDocumentSnapshot?.sourceFileName || null,
+      documentSourceFileBase64:
+        initialDocumentSnapshot?.sourceFileBase64 || null,
+      documentSourceFileMimeType:
+        initialDocumentSnapshot?.sourceFileMimeType || null,
       targetType,
       name,
       tgt: tgt || null,
@@ -791,6 +809,9 @@ export function AddTargetDialog({
       ? JSON.stringify(documentSnapshotForHistory(initialDocumentSnapshot))
       : null,
     documentSourceFileName: initialDocumentSnapshot?.sourceFileName || null,
+    documentSourceFileBase64: initialDocumentSnapshot?.sourceFileBase64 || null,
+    documentSourceFileMimeType:
+      initialDocumentSnapshot?.sourceFileMimeType || null,
     // Only reachable via the person-duplicate-match flow, which is skipped
     // entirely for a Vehicle/Location target (see composedName below) — so
     // targetType is always "person" by the time this runs.
@@ -1670,6 +1691,12 @@ export function AddTargetDialog({
           }
           documentSourceFileName={
             initialDocumentSnapshot?.sourceFileName || null
+          }
+          documentSourceFileBase64={
+            initialDocumentSnapshot?.sourceFileBase64 || null
+          }
+          documentSourceFileMimeType={
+            initialDocumentSnapshot?.sourceFileMimeType || null
           }
           onMerged={async targetId => {
             // A real bug found in production: merging into an EXISTING

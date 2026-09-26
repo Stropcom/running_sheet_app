@@ -1,0 +1,1 @@
+ALTER TABLE `target_document_imports` ADD `sourceFileUrl` varchar(500);

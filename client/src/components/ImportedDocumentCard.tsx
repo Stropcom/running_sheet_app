@@ -287,15 +287,15 @@ export function ImportedDocumentCard({
                       : "Word document"}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setViewerOpen(true)}
-                  className="shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-slate-500/30 bg-card hover:bg-slate-500/10 transition-colors"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  View document
-                </button>
               </div>
+              <button
+                type="button"
+                onClick={() => setViewerOpen(true)}
+                className="mt-2.5 w-full inline-flex items-center justify-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-slate-500/30 bg-card hover:bg-slate-500/10 transition-colors"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                View document
+              </button>
             </div>
           )}
           <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">

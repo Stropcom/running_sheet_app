@@ -168,14 +168,43 @@ function DocxContent({ url }: { url: string }) {
     return <ViewerStatus text="Couldn't display this document." />;
 
   return (
-    <article
-      className="doc-viewer-page bg-white text-slate-900 rounded border border-border shadow-sm p-6 [&_p]:my-2 [&_p]:leading-relaxed [&_h1]:text-xl [&_h1]:font-bold [&_h1]:my-3 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:my-2.5 [&_h3]:text-base [&_h3]:font-bold [&_h3]:my-2 [&_table]:border-collapse [&_table]:w-full [&_td]:border [&_td]:border-slate-300 [&_td]:p-1.5 [&_th]:border [&_th]:border-slate-300 [&_th]:p-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
-      style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
-      // Deterministic, on-device conversion of the officer's own uploaded
-      // DOCX bytes (mammoth.convertToHtml above) — not user-authored HTML
-      // from an untrusted third party, and the same trust boundary as any
-      // other document content already shown elsewhere on this page.
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <>
+      {/* Target-profile source .docx files are built around a dense,
+          merged-cell table (NAME/DOB/ALIASES row-labels beside a photo,
+          several label+value columns per row, colspan'd section headings)
+          designed to look right only with the original file's own column
+          widths — which Word stores but mammoth.convertToHtml (deliberately
+          scoped to content, not layout) doesn't carry over. Left as browser-
+          default table-layout:auto, many now-width-less columns collapse to
+          near zero (an empty <td> used purely for visual alignment in Word
+          has no intrinsic width to size itself by) while whichever column
+          happens to hold the longest paragraph swallows the rest — the
+          "everything squeezed into one narrow column" look a real officer
+          reported. table-layout:fixed sidesteps that by dividing the table
+          evenly across its column count instead of trying to infer widths
+          from content — not pixel-identical to the original (that's what
+          the PDF path is for), but every field stays legible. */}
+      <style>{`
+        .doc-viewer-page table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+        .doc-viewer-page td, .doc-viewer-page th {
+          border: 1px solid #cbd5e1;
+          padding: 0.3rem 0.4rem;
+          vertical-align: top;
+          overflow-wrap: break-word;
+          font-size: 0.8rem;
+        }
+        .doc-viewer-page td:empty, .doc-viewer-page th:empty { border-color: transparent; }
+        .doc-viewer-page img { max-width: 100%; height: auto; display: block; }
+      `}</style>
+      <article
+        className="doc-viewer-page bg-white text-slate-900 rounded border border-border shadow-sm p-6 [&_p]:my-2 [&_p]:leading-relaxed [&_h1]:text-xl [&_h1]:font-bold [&_h1]:my-3 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:my-2.5 [&_h3]:text-base [&_h3]:font-bold [&_h3]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+        style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
+        // Deterministic, on-device conversion of the officer's own uploaded
+        // DOCX bytes (mammoth.convertToHtml above) — not user-authored HTML
+        // from an untrusted third party, and the same trust boundary as any
+        // other document content already shown elsewhere on this page.
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </>
   );
 }

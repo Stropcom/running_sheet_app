@@ -132,6 +132,22 @@ const PDF_HEADING_HARD_WRAP_WIDE_GAP_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-pdf-heading-hard-wrap-wide-gap.pdf"
 );
+// A real training PDF (Operation TIDELINE) that exposed a regression in an
+// earlier attempt at fixing the CROSSWIND V3 case above — see
+// pdfTextReader.test.ts's own fixture comment for the geometry. The
+// visible symptom here was every one of the primary subject's own
+// vehicles (and one of her addresses) showing up TWICE in the review
+// screen, one copy correct and the other with a trailing sentence glued
+// onto its model field: "SUMMARY" swallowed into the end of an unrelated
+// vehicle cell corrupted the paragraph flow badly enough that
+// splitParagraphsIntoSections' own paired-grid-heading grouping kept the
+// VEHICLES/LOCATION OF INTEREST sections "open" all the way through the
+// Associates narrative, so the whole-document narrative fallback scan
+// re-found the same vehicles/addresses a second time.
+const PDF_HEADING_NOT_SWALLOWED_BY_WIDE_JOIN_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-heading-not-swallowed-by-wide-join.pdf"
+);
 
 describe("mapDocumentToTargetProfile", () => {
   it("maps the real training document end-to-end", async () => {
@@ -1226,6 +1242,37 @@ describe("mapDocumentToTargetProfile — PDF documents", () => {
     expect(profile.freeText).toContain("DOB 21/12/1989");
     expect(profile.freeText).toContain(
       "New vehicle 1CWE25 (WA) 2024 black BMW X3 wagon was observed with EL-SAYED"
+    );
+  });
+
+  it("doesn't duplicate the primary subject's own vehicles/addresses when a heading right above them nearly gets swallowed into their cell (Operation TIDELINE fixture)", async () => {
+    const read = await readPdfText(
+      readFileSync(PDF_HEADING_NOT_SWALLOWED_BY_WIDE_JOIN_FIXTURE_PATH)
+    );
+    const profile = mapDocumentToTargetProfile(read);
+
+    // Regression: each of these used to appear TWICE — once correctly,
+    // once more via the whole-document narrative fallback scan, after
+    // "SUMMARY" got glued onto the end of the second vehicle's own cell
+    // and corrupted the paragraph flow downstream.
+    expect(profile.vehicles).toHaveLength(2);
+    expect(profile.vehicles.map(v => v.registration)).toEqual([
+      "1TLN902",
+      "1PEN22",
+    ]);
+    expect(profile.addresses).toHaveLength(2);
+    expect(profile.addresses.map(a => a.raw)).toEqual([
+      "41 Arbour Street, COMO WA 6152",
+      "3/116 Canning Highway, SOUTH PERTH WA 6151",
+    ]);
+
+    // Neither associate's own vehicle (1DPR27, 1AZK06) belongs to the
+    // primary subject's own list — they stay scoped to associateBlocks.
+    expect(
+      profile.vehicles.some(v => ["1DPR27", "1AZK06"].includes(v.registration))
+    ).toBe(false);
+    expect(profile.associateBlocks.map(a => a.surname)).toEqual(
+      expect.arrayContaining(["RUSSO", "KHAN"])
     );
   });
 });

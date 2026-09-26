@@ -171,14 +171,45 @@ const ROW_Y_TOLERANCE = 2;
  * separate stray lines. 1.4 covers this without reaching anywhere near
  * the 1.5x+ next-row gap.
  *
- * Regression (Operation CROSSWIND V3): a later revision of the same
- * document family's own header-table font renders that identical hard
- * wrap at a 1.56-1.57x gap instead — "VEHICLES" as "VEHICLE"/"S",
- * "LOCATION OF INTEREST" as "LOCATION"/"OF"/"INTEREST", "PASSPORT" and
- * "PROMIS ID" the same way — just outside 1.4 too. Raised to 1.6, still
- * comfortably short of the 1.5x+ next-row gap this document's own rows
- * actually use (~5x here). */
-const WRAP_CONTINUATION_MAX_GAP_RATIO = 1.6;
+ * Regression (Operation TIDELINE): an earlier attempt at fixing the
+ * CROSSWIND V3 case below simply raised this constant to 1.6 across the
+ * board — but a document's own ordinary next-line gap and its own
+ * genuinely-next-row gap aren't a fixed multiple apart page to page; in
+ * TIDELINE, a real standalone "SUMMARY" heading sits only 1.52x below the
+ * unrelated VEHICLES cell's own last line right above it, so the blanket
+ * 1.6 threshold wrongly swallowed SUMMARY into that vehicle's own cell
+ * instead of leaving it as its own heading paragraph. Reverted to 1.4;
+ * see WRAP_CONTINUATION_WIDE_GAP_RATIO below for how CROSSWIND V3's own
+ * wider hard-wrap is still covered without this collateral damage. */
+const WRAP_CONTINUATION_MAX_GAP_RATIO = 1.4;
+/** A second, wider gap allowance — used ONLY to keep joining segments that
+ * are already a confirmed, exact, in-progress match against one of the
+ * app's own known field/section labels (LINE_LABELS) — see
+ * isProperPrefixOfKnownLabel below. Never applied to ordinary content,
+ * which is why it's safe to set wider than
+ * WRAP_CONTINUATION_MAX_GAP_RATIO's own next-row headroom would otherwise
+ * allow: a chain that's already an exact partial match of "VEHICLES" or
+ * "LOCATION OF INTEREST" has nowhere else to go but that same label, so
+ * there's no unrelated-content case left to accidentally swallow. Covers
+ * CROSSWIND V3's 1.56-1.57x hard-wrap gap for "VEHICLE"/"S",
+ * "LOCATION"/"OF"/"INTEREST", "PASSPOR"/"T", "PROMIS"/"ID". */
+const WRAP_CONTINUATION_WIDE_GAP_RATIO = 1.6;
+const KNOWN_LABEL_COLLAPSED = LINE_LABELS.map(l =>
+  l.replace(/\s+/g, "").toUpperCase()
+);
+/** True when `text`, once whitespace is stripped, is itself a genuine
+ * (non-empty, not-yet-complete) prefix of one of the app's own known
+ * field/section labels — e.g. "VEHICLE" is a proper prefix of "VEHICLES",
+ * "LOCATIONOF" is a proper prefix of "LOCATIONOFINTEREST". Used to decide
+ * whether the wider gap allowance above is safe to apply for the NEXT
+ * segment in a chain — see its own comment. */
+function isProperPrefixOfKnownLabel(text: string): boolean {
+  const collapsed = text.replace(/\s+/g, "").toUpperCase();
+  if (!collapsed) return false;
+  return KNOWN_LABEL_COLLAPSED.some(
+    l => l.length > collapsed.length && l.startsWith(collapsed)
+  );
+}
 /** A line whose rendered width is at least this fraction of the widest
  * line ever seen starting at the same x is treated as having been packed
  * right up to its column's edge — see clusterIntoCells' own comment for
@@ -407,10 +438,19 @@ function clusterIntoCells(lines: Line[]): {
         if (current.length > 0) {
           const prev = segments[current[current.length - 1]];
           const gap = prev.y - segments[idx].y;
-          if (
-            gap <= 0 ||
-            gap > (prev.height || 10) * WRAP_CONTINUATION_MAX_GAP_RATIO
-          ) {
+          // The wider allowance only ever applies while `current` (the
+          // chain built so far) is itself still an exact, in-progress
+          // match against a known label — see
+          // WRAP_CONTINUATION_WIDE_GAP_RATIO's own comment for why that
+          // makes it safe against unrelated content sitting further down
+          // the same column.
+          const currentCollapsed = current
+            .map(i => columnText(segments[i].items))
+            .join("");
+          const ratio = isProperPrefixOfKnownLabel(currentCollapsed)
+            ? WRAP_CONTINUATION_WIDE_GAP_RATIO
+            : WRAP_CONTINUATION_MAX_GAP_RATIO;
+          if (gap <= 0 || gap > (prev.height || 10) * ratio) {
             chains.push(current);
             current = [];
           }
@@ -495,7 +535,14 @@ function clusterIntoCells(lines: Line[]): {
       const sj = segments[j];
       if (sj.width <= 0 || bucketKey(sj.x0) !== bucket) continue;
       const gap = lastY - sj.y;
-      if (gap <= 0 || gap > lastHeight * WRAP_CONTINUATION_MAX_GAP_RATIO) break;
+      // Same wider-allowance exception as the chain-eligibility pass above
+      // — only while what's been joined into this cell so far is itself
+      // still an in-progress match against a known label.
+      const joinedSoFar = columnText(items);
+      const gapRatio = isProperPrefixOfKnownLabel(joinedSoFar)
+        ? WRAP_CONTINUATION_WIDE_GAP_RATIO
+        : WRAP_CONTINUATION_MAX_GAP_RATIO;
+      if (gap <= 0 || gap > lastHeight * gapRatio) break;
       const max = colMaxWidth.get(bucket) ?? lastWidth;
       const widthPacked =
         lastWidth <= NARROW_JOIN_MAX_WIDTH &&

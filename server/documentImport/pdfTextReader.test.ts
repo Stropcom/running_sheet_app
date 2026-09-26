@@ -196,14 +196,36 @@ const HEADING_SHARES_VALUE_ROW_FIXTURE = join(
 // "LOCATION"/"OF"/"INTEREST", "PASSPORT" as "PASSPOR"/"T", "PROMIS ID" as
 // "PROMIS"/"ID") at a noticeably wider line-to-line gap (1.56-1.57x the
 // line's own height) than the ORCHARD/NIGHTJAR fixtures' 1.38x — just
-// outside the WRAP_CONTINUATION_MAX_GAP_RATIO threshold that already
-// covered those. "VEHICLES" and "PASSPORT"/"PROMIS ID" also have no row-
-// mate anywhere on the page (clusterIntoCells' usual eligibility signal),
-// unlike "LOCATION OF INTEREST" which coincidentally lands beside the
-// VEHICLES column's own wrapped lines.
+// outside WRAP_CONTINUATION_MAX_GAP_RATIO. Covered by
+// WRAP_CONTINUATION_WIDE_GAP_RATIO, applied only while the chain built so
+// far is itself an in-progress match against a known label (see
+// isProperPrefixOfKnownLabel) — see the TIDELINE fixture below for why a
+// blanket-wide threshold isn't safe here. "VEHICLES" and "PASSPORT"/
+// "PROMIS ID" also have no row-mate anywhere on the page (clusterIntoCells'
+// usual eligibility signal), unlike "LOCATION OF INTEREST" which
+// coincidentally lands beside the VEHICLES column's own wrapped lines.
 const HEADING_HARD_WRAP_WIDE_GAP_FIXTURE = join(
   __dirname,
   "__fixtures__/target-profile-pdf-heading-hard-wrap-wide-gap.pdf"
+);
+// A real training PDF (Operation TIDELINE) that exposed a regression in an
+// earlier attempt at fixing the CROSSWIND V3 case above: that fix simply
+// raised WRAP_CONTINUATION_MAX_GAP_RATIO itself to 1.6 — but here, a
+// genuine standalone "SUMMARY" heading sits only 1.52x below the
+// unrelated VEHICLES cell's own last line right above it (a different
+// vehicle's wrapped description, nothing to do with SUMMARY at all), so
+// the blanket-wide threshold wrongly swallowed "SUMMARY" into the end of
+// that vehicle cell instead of leaving it as its own heading paragraph —
+// corrupting the paragraph flow badly enough that the primary target's
+// VEHICLES/LOCATION OF INTEREST sections leaked associates' own vehicles/
+// addresses into them too. Fixed by only ever applying the wider gap
+// while what's been joined into the cell so far is itself a genuine,
+// in-progress match against a known label (WRAP_CONTINUATION_WIDE_GAP_RATIO's
+// own comment) — "1PEN22 (WA) 2018 silver Toyota Corolla sedan." is never
+// a prefix of anything, so it never qualifies for the wider allowance.
+const HEADING_NOT_SWALLOWED_BY_WIDE_JOIN_FIXTURE = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-heading-not-swallowed-by-wide-join.pdf"
 );
 
 describe("readPdfText", () => {
@@ -607,6 +629,30 @@ describe("readPdfText", () => {
       );
       expect(result.paragraphs).not.toContain("LOCATIONOF INTEREST");
       expect(result.paragraphs).toContain("LOCATION OF INTEREST");
+    });
+  });
+
+  describe("the wider gap allowance above doesn't swallow a genuine, unrelated heading sitting just past it (Operation TIDELINE fixture)", () => {
+    it("keeps SUMMARY as its own heading paragraph instead of gluing it onto the end of an unrelated vehicle cell right above it", async () => {
+      const result = await readPdfText(
+        readFileSync(HEADING_NOT_SWALLOWED_BY_WIDE_JOIN_FIXTURE)
+      );
+      expect(result.paragraphs).toContain("SUMMARY");
+      const joined = result.paragraphs.join("\n");
+      expect(joined).not.toContain("sedan. SUMMARY");
+      expect(joined).not.toContain("SUMMARY Office Address");
+    });
+
+    it("still reads both of the primary subject's own vehicles cleanly, with no trailing text glued onto either", async () => {
+      const result = await readPdfText(
+        readFileSync(HEADING_NOT_SWALLOWED_BY_WIDE_JOIN_FIXTURE)
+      );
+      expect(result.paragraphs).toContain(
+        "1TLN902 (WA) 2023 black Lexus NX350h wagon. Current Address: 41 Arbour Street, COMO WA 6152."
+      );
+      expect(result.paragraphs).toContain(
+        "1PEN22 (WA) 2018 silver Toyota Corolla sedan. Office Address: Suite 3/116 Canning Highway, SOUTH PERTH WA 6151."
+      );
     });
   });
 });

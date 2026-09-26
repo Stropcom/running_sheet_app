@@ -44,6 +44,29 @@ export interface NarrativeSection {
   paragraphs: string[];
 }
 
+// Splits an already-merged chunk into one entry per sentence, keeping each
+// sentence's own terminating punctuation. Needed because a "paragraph" in
+// the parsed background text isn't a reliable sentence boundary — it comes
+// from the SOURCE document's own line breaks, and those land in two very
+// different places depending on which file format the officer uploaded:
+// a .docx keeps each sentence as its own paragraph, but a PDF's own text
+// layout (pdfTextReader.ts) glues a whole run of sentences that share one
+// visual line/cell into a single space-joined paragraph with no line
+// breaks at all. Left unsplit, re-importing the "same" document as the
+// other file format showed nearly every line of the Background section as
+// "added" on the diff (see documentImportDiff.ts) even though not one
+// sentence had actually changed — the two formats' own paragraph shapes
+// just never lined up for the exact-text match diffing relies on. A plain
+// "Label: value" line (no sentence-ending punctuation at all, e.g.
+// "Mobile: 0491 570 151") has nothing to split on and passes through
+// unchanged.
+function splitIntoDisplaySentences(text: string): string[] {
+  return text
+    .split(/(?<=[.!?]["'’”)\]]?)\s+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
 /** Same fold-until-sentence-end reflow as reflowNarrativeText, but groups
  * the result under its own genuine section headings (see isHeadingLine)
  * instead of flattening everything into one undifferentiated run. Unlike
@@ -78,10 +101,14 @@ export function groupNarrativeIntoSections(text: string): NarrativeSection[] {
   }
   if (current) merged.push(current);
 
+  const bySentence = merged.flatMap(p =>
+    isHeadingLine(p) ? [p] : splitIntoDisplaySentences(p)
+  );
+
   const sections: NarrativeSection[] = [];
   let heading: string | null = null;
   let paragraphs: string[] = [];
-  for (const p of merged) {
+  for (const p of bySentence) {
     if (isHeadingLine(p)) {
       if (heading !== null || paragraphs.length > 0) {
         sections.push({ heading, paragraphs });

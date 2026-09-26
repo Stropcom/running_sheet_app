@@ -2,12 +2,65 @@
 
 Running log of production incidents, droplet issues, and operational
 decisions for the RunLog droplet (`ubuntu-s-1vcpu-1gb-35gb-intel-syd1` —
-hostname is stale, actual spec is 2GB RAM, upgraded from the original 1GB
-plan; DigitalOcean doesn't rename the hostname on resize).
+hostname is stale, actual spec as of 2026-09-26 is 2 vCPU / 4GB, resized at
+least twice from the original 1vCPU/1GB plan; DigitalOcean doesn't rename
+the hostname on resize).
 
 Newest entries at the top. Read this at the start of any session where the
 user mentions the droplet, an outage, high CPU/latency, or asks "did this
 happen before."
+
+---
+
+## 2026-09-26 — Switched droplet from `LocalAI` to `runlogtest`; deploy console dropped near the end but deploy had actually finished
+
+Before switching, `runlogtest` was 73 commits behind `LocalAI` (it had
+diverged early and only carried the in-app original-document-viewer
+feature on top of an old base) — merged `LocalAI` into `runlogtest`
+first (commit `d74550d`, v1.91.0) so the switch wouldn't roll production
+back to a stale base. That merge hit its own instance of the
+divergent-migration-authorship pattern from the 2026-09-23 entry below:
+both branches had independently generated a migration at idx 104 for
+unrelated changes. Resolved by keeping `LocalAI`'s `0104` as-is and
+regenerating `runlogtest`'s own change (the new
+`target_document_imports.sourceFileUrl` column) fresh against the merged
+schema, landing at `0105`.
+
+Ran the switch via the documented `deploy.sh`-style script (backup →
+`git checkout runlogtest && git pull --ff-only` → `pnpm install
+--frozen-lockfile` → `pnpm build` → `drizzle-kit migrate` → `pm2 restart`
+→ polling `curl` health check) from the DO web console in the foreground
+(not `nohup`'d) — the console dropped before the final `DEPLOY OK`/health
+check output printed, exactly the failure mode the "Run it detached"
+section further down already warns about. Reconnected and ran a read-only
+diagnostic pass rather than blindly re-running the script: `git
+branch --show-current` confirmed `runlogtest` at the right commit,
+`pm2 status` showed `online` with a fresh restart count, `SHOW COLUMNS`
+checks against all four schema changes introduced by migrations 102–105
+(`scan_finding_dismissals` table, `targets.targetType`, the
+`users.role`/`archivedAt`/`archivedByCIN`/`investigatorOperationIds`
+group, and `target_document_imports.sourceFileUrl`) all came back
+present, and `curl localhost:3000` returned `200`. Conclusion: the deploy
+had fully succeeded — the dropped console only cost the final echo, not
+any actual step.
+
+**The `drizzle/0102_strong_vindicator.sql` untracked file flagged in the
+2026-09-23 entry below is still present** — never got cleaned up as that
+entry suggested. Confirmed again this time that it's inert (content-
+identical to the now-git-tracked `0103_flat_mach_iv.sql`, and not
+referenced by `_journal.json` so `migrate` never touches it), but it's
+worth actually deleting next time someone's on the droplet
+(`rm drizzle/0102_strong_vindicator.sql`) purely so `git status
+--porcelain drizzle/` reads clean again per the 2026-08-06 entry's health
+check, rather than requiring this same "is this actually a problem"
+investigation every time.
+
+**Reinforces the 2026-09-23 takeaway**: a branch switch on the droplet is
+not just a deploy, it's a merge of two independently-evolved migration
+histories, and needs the same care as a code merge — check for
+migration-index collisions and verify the resulting schema directly
+(`SHOW COLUMNS`/`SHOW TABLES`) rather than assuming `drizzle-kit migrate`
+alone tells the whole story if a deploy run's outcome is ever unclear.
 
 ---
 

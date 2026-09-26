@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { format } from "date-fns";
 import { storageGetBytes, storagePut } from "./storage";
+import { convertDocxToPdf } from "./documentImport/docxToPdf";
 import { detectAndEmbedFaces, cosineSimilarity } from "./faceRecognition";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -557,6 +558,45 @@ const ucoGuideBriefingFieldsSchema = {
   commsFootAlternate: z.string().optional().nullable(),
   commsNotes: z.string().optional().nullable(),
 };
+
+// Stores a document-import's original file (any type) and, for a DOCX
+// upload specifically, a companion PDF rendered via LibreOffice so the
+// in-app viewer can show it pixel-for-pixel through the same pdf.js path
+// used for real PDF uploads (see DocumentViewerModal.tsx and
+// docxToPdf.ts's own comment) instead of mammoth.js's HTML approximation.
+// Shared by all three save paths that can carry a document snapshot
+// (target.registry.create, createLinkedFromAssociate, mergeFieldDetails)
+// so the conversion logic only lives in one place.
+async function storeTargetDocumentSourceFile(params: {
+  targetId: number;
+  fileName: string | null | undefined;
+  base64: string;
+  mimeType: string | null | undefined;
+}): Promise<{ sourceFileUrl: string; renderablePdfUrl: string | null }> {
+  const buffer = Buffer.from(params.base64, "base64");
+  const { url: sourceFileUrl } = await storagePut(
+    `target-documents/target-${params.targetId}/${Date.now()}-${params.fileName || "document"}`,
+    buffer,
+    params.mimeType || "application/octet-stream"
+  );
+  const isDocx =
+    params.mimeType ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    /\.docx$/i.test(params.fileName || "");
+  let renderablePdfUrl: string | null = null;
+  if (isDocx) {
+    const pdfBytes = await convertDocxToPdf(buffer);
+    if (pdfBytes) {
+      const put = await storagePut(
+        `target-documents/target-${params.targetId}/${Date.now()}-rendered.pdf`,
+        pdfBytes,
+        "application/pdf"
+      );
+      renderablePdfUrl = put.url;
+    }
+  }
+  return { sourceFileUrl, renderablePdfUrl };
+}
 
 // ─── App Router ───────────────────────────────────────────────────────────────
 
@@ -3238,13 +3278,16 @@ export const appRouter = router({
           await linkTargetToOperation(result.id, linkToOperationId, background);
           if (documentSnapshotJson) {
             let sourceFileUrl: string | null = null;
+            let renderablePdfUrl: string | null = null;
             if (documentSourceFileBase64) {
-              const put = await storagePut(
-                `target-documents/target-${result.id}/${Date.now()}-${documentSourceFileName || "document"}`,
-                Buffer.from(documentSourceFileBase64, "base64"),
-                documentSourceFileMimeType || "application/octet-stream"
-              );
-              sourceFileUrl = put.url;
+              const stored = await storeTargetDocumentSourceFile({
+                targetId: result.id,
+                fileName: documentSourceFileName,
+                base64: documentSourceFileBase64,
+                mimeType: documentSourceFileMimeType,
+              });
+              sourceFileUrl = stored.sourceFileUrl;
+              renderablePdfUrl = stored.renderablePdfUrl;
             }
             await recordTargetDocumentImport({
               targetId: result.id,
@@ -3253,6 +3296,7 @@ export const appRouter = router({
               snapshotJson: documentSnapshotJson,
               sourceFileName: documentSourceFileName,
               sourceFileUrl,
+              renderablePdfUrl,
             });
           }
           return result;
@@ -3313,13 +3357,16 @@ export const appRouter = router({
           await linkTargetToOperation(result.id, linkToOperationId, background);
           if (documentSnapshotJson) {
             let sourceFileUrl: string | null = null;
+            let renderablePdfUrl: string | null = null;
             if (documentSourceFileBase64) {
-              const put = await storagePut(
-                `target-documents/target-${result.id}/${Date.now()}-${documentSourceFileName || "document"}`,
-                Buffer.from(documentSourceFileBase64, "base64"),
-                documentSourceFileMimeType || "application/octet-stream"
-              );
-              sourceFileUrl = put.url;
+              const stored = await storeTargetDocumentSourceFile({
+                targetId: result.id,
+                fileName: documentSourceFileName,
+                base64: documentSourceFileBase64,
+                mimeType: documentSourceFileMimeType,
+              });
+              sourceFileUrl = stored.sourceFileUrl;
+              renderablePdfUrl = stored.renderablePdfUrl;
             }
             await recordTargetDocumentImport({
               targetId: result.id,
@@ -3328,6 +3375,7 @@ export const appRouter = router({
               snapshotJson: documentSnapshotJson,
               sourceFileName: documentSourceFileName,
               sourceFileUrl,
+              renderablePdfUrl,
             });
           }
           return result;
@@ -3526,13 +3574,16 @@ export const appRouter = router({
           );
           if (input.documentSnapshotJson) {
             let sourceFileUrl: string | null = null;
+            let renderablePdfUrl: string | null = null;
             if (input.documentSourceFileBase64) {
-              const put = await storagePut(
-                `target-documents/target-${input.targetId}/${Date.now()}-${input.documentSourceFileName || "document"}`,
-                Buffer.from(input.documentSourceFileBase64, "base64"),
-                input.documentSourceFileMimeType || "application/octet-stream"
-              );
-              sourceFileUrl = put.url;
+              const stored = await storeTargetDocumentSourceFile({
+                targetId: input.targetId,
+                fileName: input.documentSourceFileName,
+                base64: input.documentSourceFileBase64,
+                mimeType: input.documentSourceFileMimeType,
+              });
+              sourceFileUrl = stored.sourceFileUrl;
+              renderablePdfUrl = stored.renderablePdfUrl;
             }
             await recordTargetDocumentImport({
               targetId: input.targetId,
@@ -3541,6 +3592,7 @@ export const appRouter = router({
               snapshotJson: input.documentSnapshotJson,
               sourceFileName: input.documentSourceFileName,
               sourceFileUrl,
+              renderablePdfUrl,
             });
           }
           return result;

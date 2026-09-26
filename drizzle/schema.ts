@@ -708,6 +708,16 @@ export const targetDocumentImports = mysqlTable("target_document_imports", {
   // PDF/DOCX rather than just the parsed snapshot. Null for imports made
   // before this column existed.
   sourceFileUrl: varchar("sourceFileUrl", { length: 500 }),
+  // Storage URL for a PDF the viewer can render pixel-for-pixel via pdf.js
+  // — for a PDF upload this is left null (sourceFileUrl already IS a PDF,
+  // no reason to store the bytes twice); for a DOCX upload this is the
+  // server-side LibreOffice conversion of it (see
+  // server/documentImport/docxToPdf.ts), so the officer sees the DOCX's
+  // real layout instead of mammoth.js's HTML approximation. Null when the
+  // upload predates this column, or when conversion failed/LibreOffice
+  // wasn't available at upload time — the viewer falls back to the older
+  // mammoth-based renderer in that case.
+  renderablePdfUrl: varchar("renderablePdfUrl", { length: 500 }),
   snapshotJson: text("snapshotJson").notNull(),
 });
 

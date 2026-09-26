@@ -3,26 +3,36 @@ import { createPortal } from "react-dom";
 import { FileText, X } from "lucide-react";
 
 // In-app viewer for the original PDF/DOCX a target profile was imported
-// from (see targetDocumentImports.sourceFileUrl in schema.ts) — opened from
-// the "Original document" box on ImportedDocumentCard. Deliberately never
-// downloads or shares the file (that's downloadFile.ts's job for Court
-// exports); this only ever displays it inside the app, matching the
-// approved "Original Document Viewer" mockup. Rendering is fully
-// client-side and deterministic — pdf.js draws the PDF's real pages onto a
-// canvas, mammoth.js converts the DOCX's real content to HTML — no server
-// round trip beyond fetching the stored bytes, no AI/LLM call anywhere in
-// the path (see CLAUDE.md's Golden Rule).
+// from (see targetDocumentImports.sourceFileUrl/renderablePdfUrl in
+// schema.ts) — opened from the "Original document" box on
+// ImportedDocumentCard. Deliberately never downloads or shares the file
+// (that's downloadFile.ts's job for Court exports); this only ever
+// displays it inside the app, matching the approved "Original Document
+// Viewer" mockup.
+//
+// `mode: "pdf"` renders `url` pixel-for-pixel via pdf.js — used both for a
+// real PDF upload's own storage URL, and (for a DOCX upload) the server-
+// side LibreOffice-converted PDF companion (see
+// server/documentImport/docxToPdf.ts and routers.ts's
+// storeTargetDocumentSourceFile), which reproduces the DOCX's real layout
+// — column widths, cell shading — exactly, unlike the mammoth.js HTML
+// approximation `mode: "docx-approx"` falls back to for a row that
+// predates the PDF-conversion column, or whose conversion failed at
+// upload time (LibreOffice unavailable, corrupt file) — best-effort
+// rather than showing nothing. `originalFileName` is always the true
+// uploaded file's own name/extension, shown in the header regardless of
+// which mode actually renders `url`.
 export function DocumentViewerModal({
   url,
-  fileName,
+  originalFileName,
+  mode,
   onClose,
 }: {
   url: string;
-  fileName: string;
+  originalFileName: string;
+  mode: "pdf" | "docx-approx";
   onClose: () => void;
 }) {
-  const isPdf = /\.pdf$/i.test(fileName);
-
   useEffect(() => {
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -56,10 +66,12 @@ export function DocumentViewerModal({
             </span>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-foreground truncate">
-                {fileName}
+                {originalFileName}
               </p>
               <p className="text-[11px] text-muted-foreground">
-                {isPdf ? "PDF document" : "Word document"}
+                {/\.pdf$/i.test(originalFileName)
+                  ? "PDF document"
+                  : "Word document"}
               </p>
             </div>
           </div>
@@ -72,7 +84,7 @@ export function DocumentViewerModal({
           </button>
         </div>
         <div className="flex-1 overflow-y-auto bg-muted/30 p-3 sm:p-5">
-          {isPdf ? <PdfPages url={url} /> : <DocxContent url={url} />}
+          {mode === "pdf" ? <PdfPages url={url} /> : <DocxContent url={url} />}
         </div>
       </div>
     </div>,

@@ -3408,6 +3408,7 @@ export async function recordTargetDocumentImport(data: {
   snapshotJson: string;
   sourceFileName?: string | null;
   sourceFileUrl?: string | null;
+  renderablePdfUrl?: string | null;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -3418,6 +3419,7 @@ export async function recordTargetDocumentImport(data: {
     snapshotJson: data.snapshotJson,
     sourceFileName: data.sourceFileName || null,
     sourceFileUrl: data.sourceFileUrl || null,
+    renderablePdfUrl: data.renderablePdfUrl || null,
   });
 }
 
@@ -3440,6 +3442,7 @@ export async function listTargetDocumentImportsForOperation(
         uploadedAt: targetDocumentImports.uploadedAt,
         sourceFileName: targetDocumentImports.sourceFileName,
         sourceFileUrl: targetDocumentImports.sourceFileUrl,
+        renderablePdfUrl: targetDocumentImports.renderablePdfUrl,
         snapshotJson: targetDocumentImports.snapshotJson,
       })
       .from(targetDocumentImports)

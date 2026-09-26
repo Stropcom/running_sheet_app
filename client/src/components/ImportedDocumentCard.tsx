@@ -47,6 +47,13 @@ export interface DocumentImportRow {
    * the officer re-view the actual PDF/DOCX, not just its parsed fields.
    * Null for imports made before this existed. */
   sourceFileUrl?: string | null;
+  /** Storage URL for a PDF rendering of a DOCX upload (see
+   * server/documentImport/docxToPdf.ts) — lets the viewer show the DOCX
+   * pixel-for-pixel via pdf.js instead of mammoth.js's HTML approximation.
+   * Null for a PDF upload (sourceFileUrl already IS a PDF), for an import
+   * made before this column existed, or when conversion failed at upload
+   * time. */
+  renderablePdfUrl?: string | null;
   snapshotJson: string;
 }
 
@@ -432,13 +439,28 @@ export function ImportedDocumentCard({
           )}
         </div>
       )}
-      {viewerOpen && row.sourceFileUrl && (
-        <DocumentViewerModal
-          url={row.sourceFileUrl}
-          fileName={row.sourceFileName || "Document"}
-          onClose={() => setViewerOpen(false)}
-        />
-      )}
+      {viewerOpen &&
+        (() => {
+          // A DOCX upload with a successful LibreOffice conversion (see
+          // server/documentImport/docxToPdf.ts) renders via the
+          // pixel-accurate PDF path; a PDF upload already IS one. Only a
+          // DOCX upload that predates renderablePdfUrl, or whose
+          // conversion failed at upload time, falls back to the older
+          // mammoth-based approximation.
+          const isSourcePdf = /\.pdf$/i.test(row.sourceFileName || "");
+          const url = row.renderablePdfUrl || row.sourceFileUrl;
+          if (!url) return null;
+          const mode: "pdf" | "docx-approx" =
+            row.renderablePdfUrl || isSourcePdf ? "pdf" : "docx-approx";
+          return (
+            <DocumentViewerModal
+              url={url}
+              originalFileName={row.sourceFileName || "Document"}
+              mode={mode}
+              onClose={() => setViewerOpen(false)}
+            />
+          );
+        })()}
     </div>
   );
 }

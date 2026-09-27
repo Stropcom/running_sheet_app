@@ -1586,91 +1586,29 @@ export async function linkAttachmentToEntity(data: {
 // The link only starts mattering later, when the map checks whether a given
 // pin has any linked photos (see attachment.byEntity / getAttachmentsForEntity).
 
-const RAW_ADDRESS_STREET_TYPES =
-  "st|street|rd|road|ave|avenue|dr|drive|way|ct|court|pl|place|cl|close|cres|crescent|blvd|boulevard|hwy|highway|fwy|freeway|ln|lane|tce|terrace|pde|parade|cct|circuit|gr|grove|rise|loop|link|walk|track|row|mews|quay|esplanade|promenade";
-// House number + street name ending in a recognised street type word (e.g.
-// "4 Glyde Street"), with no bracket required — same street-type vocabulary
-// extractEntitiesFromText's own (bracket-anchored) address classifier uses,
-// applied directly against the raw prose for the rarer unbracketed case.
-// Deliberately stops at the street type word rather than also trying to
-// capture a trailing suburb/state — an optional trailing group here is
-// lazy by construction (nothing after it is required), so it matches as
-// little as possible instead of reaching for the real suburb text.
-const RAW_ADDRESS_PATTERN = new RegExp(
-  `\\b\\d{1,5}[A-Za-z]?\\s+[A-Za-z][\\w'-]*(?:\\s+[A-Za-z][\\w'-]*){0,4}\\s+(?:${RAW_ADDRESS_STREET_TYPES})\\b`,
-  "gi"
-);
-
-// A raw match sitting right before its own bracket in the same sentence
-// (e.g. "...44 Smith Street, Palmyra WA (44 SMITH ST)...") is the
-// fullDescription extractEntitiesFromText already turned into a properly
-// keyed address above — counting it again here under the raw prose text
-// itself would link the same photo twice, under two different-looking
-// keys for what's really one address.
-function isFollowedByOwnBracket(text: string, matchEnd: number): boolean {
-  const lookahead = text.slice(matchEnd, matchEnd + 60);
-  const sentenceEnd = lookahead.search(/[.!?]/);
-  const window =
-    sentenceEnd === -1 ? lookahead : lookahead.slice(0, sentenceEnd);
-  return window.includes("(");
-}
-
-// A raw match can also land INSIDE a bracket's own content — an address
-// entity's shortForm (e.g. "4 GLYDE ST") looks exactly like the shape
-// RAW_ADDRESS_PATTERN searches for, so without this check the bracketed
-// pass's own bracket text gets picked up a second time as a "new" raw
-// address. Spans are (start, end) character ranges of every "(...)" in
-// the text.
-function findBracketSpans(text: string): Array<[number, number]> {
-  const spans: Array<[number, number]> = [];
-  const re = /\([^()]*\)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    spans.push([m.index, m.index + m[0].length]);
-  }
-  return spans;
-}
-function isInsideAnyBracket(
-  spans: Array<[number, number]>,
-  index: number
-): boolean {
-  return spans.some(([start, end]) => index >= start && index < end);
-}
-
-// Returns display address strings found in an observation — from a bracket
-// ("...(4 GLYDE ST)", via the exact same classifier/display-formatting
-// extractEntitiesFromText uses elsewhere, so the key this produces always
-// matches what the map/Intelligence Folder key the same bracket as) or,
-// less often, a plain address written out with no bracket at all.
+// Only ever the FIRST address entity found in the row, not every address-
+// shaped string in it. Two reasons: (1) the map only ever shows a pin for
+// an address that has a bracket somewhere in the sheet — a purely
+// unbracketed mention can never have a pin to attach an Images button to,
+// so detecting one would just create a link nothing could ever surface;
+// (2) a row very often restates the same real-world address more than
+// once in different wording (the full street name early on, a shorter
+// bracketed reference later) — extractEntitiesFromText correctly treats
+// each distinct wording as its own entity, but that's one photo taken at
+// one place, so linking every wording it finds created two (or more)
+// separate-looking "locations" on the map for what an officer would call
+// one address. Taking just the first keeps this predictable: one photo,
+// at most one auto-link, always under the exact label the corresponding
+// map pin already uses (entity.shortForm — see registerOccurrence's own
+// key, which this must match for the Images button to ever find it).
 export function findAddressesForAutoLink(
   observation: string | null | undefined
 ): string[] {
   if (!observation) return [];
-  const found = new Map<string, string>(); // normalized key -> display text
-
-  for (const entity of extractEntitiesFromText(observation)) {
-    if (entity.type !== "address") continue;
-    const key = normalizeEntityLabel(entity.shortForm);
-    if (key) found.set(key, entity.shortForm);
-  }
-
-  // Unbracketed prose addresses only — skipped wherever the match is inside
-  // a bracket's own content, or immediately followed by one in the same
-  // sentence, since either way that's already covered above.
-  const bracketSpans = findBracketSpans(observation);
-  RAW_ADDRESS_PATTERN.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = RAW_ADDRESS_PATTERN.exec(observation)) !== null) {
-    if (isInsideAnyBracket(bracketSpans, match.index)) continue;
-    if (isFollowedByOwnBracket(observation, match.index + match[0].length))
-      continue;
-    const raw = match[0].trim().replace(/\s+/g, " ");
-    const key = normalizeEntityLabel(raw);
-    if (!key || found.has(key)) continue;
-    found.set(key, raw);
-  }
-
-  return Array.from(found.values());
+  const first = extractEntitiesFromText(observation).find(
+    e => e.type === "address"
+  );
+  return first ? [first.shortForm] : [];
 }
 
 export async function autoLinkAttachmentToRowAddresses(

@@ -45,6 +45,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
 import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
+import { StreetViewPip } from "@/components/StreetViewPip";
 import { UcoGuideMapOverlay } from "@/components/UcoGuideMapOverlay";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
 import { OperationProfileContent } from "@/components/OperationProfileContent";
@@ -1014,7 +1015,7 @@ function buildInfoWindowContent(
       const lng = loc.lng;
       const navBtns = [
         `<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="${btnBase}background:#00bcd4;color:#fff;">Waze</a>`,
-        `<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="${btnBase}background:#4285f4;color:#fff;">Street View</a>`,
+        `<button onclick="window.__mapOpenStreetView(${lat},${lng},'${safeLabel}')" style="${btnBase}background:#4285f4;color:#fff;border:none;">Street View</button>`,
       ];
       sections.push(
         `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${navBtns.join("")}</div>`
@@ -1079,7 +1080,7 @@ function buildInfoWindowContent(
       const lng = loc.lng;
       const navBtns = [
         `<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="${btnBase}background:#00bcd4;color:#fff;">Waze</a>`,
-        `<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="${btnBase}background:#4285f4;color:#fff;">Street View</a>`,
+        `<button onclick="window.__mapOpenStreetView(${lat},${lng},'${safeLabel}')" style="${btnBase}background:#4285f4;color:#fff;border:none;">Street View</button>`,
       ];
       sections.push(
         `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${navBtns.join("")}</div>`
@@ -1866,6 +1867,12 @@ export default function IntelligenceMapping() {
     lng: number;
     address: string;
     intelLoc?: IntelMapLocation;
+  } | null>(null);
+  // Street View picture-in-picture panel, opened from a marker popup
+  const [streetViewPip, setStreetViewPip] = useState<{
+    lat: number;
+    lng: number;
+    label: string;
   } | null>(null);
   // RS Quick Entry from map: shown when user picks "RS Quick Entry" from the action chooser
   const [mapQeOpen, setMapQeOpen] = useState(false);
@@ -4330,6 +4337,10 @@ export default function IntelligenceMapping() {
             // ── Action buttons: symmetric grid layout ─────────────────────────────
             const btnBase =
               "font-size:12px;font-weight:600;padding:7px 0;border-radius:6px;cursor:pointer;text-align:center;text-decoration:none;display:block;width:100%;box-sizing:border-box;";
+            const safeLabel = (cm.label ?? "Custom marker").replace(
+              /'/g,
+              "\\'"
+            );
             const sections: string[] = [];
 
             // Row 0: RS Quick Entry — always at top, full width
@@ -4340,7 +4351,7 @@ export default function IntelligenceMapping() {
             // Row 2: Navigation — Waze | Street View (2 columns)
             const navBtns = [
               `<a href="https://waze.com/ul?ll=${lat},${lng}&navigate=yes" target="_blank" style="${btnBase}background:#00bcd4;color:#fff;">Waze</a>`,
-              `<a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank" style="${btnBase}background:#4285f4;color:#fff;">Street View</a>`,
+              `<button onclick="window.__mapOpenStreetView(${lat},${lng},'${safeLabel}')" style="${btnBase}background:#4285f4;color:#fff;border:none;">Street View</button>`,
             ];
             sections.push(
               `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${navBtns.join("")}</div>`
@@ -5127,6 +5138,21 @@ export default function IntelligenceMapping() {
       delete (window as any).__intelRsQuickEntry;
     };
   }, [setMapQeAddress, setMapQeOpen]);
+
+  // Open Street View picture-in-picture from a marker popup's Street View button
+  useEffect(() => {
+    (window as any).__mapOpenStreetView = (
+      lat: number,
+      lng: number,
+      label: string
+    ) => {
+      infoWindowRef.current?.close();
+      setStreetViewPip({ lat, lng, label });
+    };
+    return () => {
+      delete (window as any).__mapOpenStreetView;
+    };
+  }, []);
 
   // Open edit dialog for intel pin (icon/colour/rotation only)
   useEffect(() => {
@@ -6366,6 +6392,15 @@ export default function IntelligenceMapping() {
               </div>
             </div>
           </div>
+
+          {streetViewPip && (
+            <StreetViewPip
+              lat={streetViewPip.lat}
+              lng={streetViewPip.lng}
+              label={streetViewPip.label}
+              onClose={() => setStreetViewPip(null)}
+            />
+          )}
 
           {/* RS Actions pane is now opened via the header folder-expander icon
             (DashboardLayout's rightPaneToggle prop) instead of a draggable

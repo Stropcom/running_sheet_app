@@ -1,10 +1,16 @@
-
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { StreetViewPip } from "@/components/StreetViewPip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
@@ -62,11 +68,15 @@ function formatTime(t: string | null): string {
   return t;
 }
 
-function buildNumberPin(index: number, isFirst: boolean, isLast: boolean): HTMLElement {
+function buildNumberPin(
+  index: number,
+  isFirst: boolean,
+  isLast: boolean
+): HTMLElement {
   const el = document.createElement("div");
   let bg = "#6366f1"; // indigo default
   if (isFirst) bg = "#16a34a"; // green = start
-  if (isLast) bg = "#dc2626";  // red = end
+  if (isLast) bg = "#dc2626"; // red = end
   el.style.cssText = `
     width:28px;height:28px;border-radius:50%;
     background:${bg};color:#fff;
@@ -113,13 +123,27 @@ export default function RSMapping() {
 
   // Move-marker state
   const [movingRowId, setMovingRowId] = useState<number | null>(null);
-  const [pendingMove, setPendingMove] = useState<{ lat: number; lng: number; address: string } | null>(null);
-  const movingMarkerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+  const [pendingMove, setPendingMove] = useState<{
+    lat: number;
+    lng: number;
+    address: string;
+  } | null>(null);
+  const movingMarkerRef =
+    useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
   const movingOrigPosRef = useRef<{ lat: number; lng: number } | null>(null);
 
   // Comment dialog state
-  const [commentDialog, setCommentDialog] = useState<{ rowId: number; sheetId: number; existing: string } | null>(null);
+  const [commentDialog, setCommentDialog] = useState<{
+    rowId: number;
+    sheetId: number;
+    existing: string;
+  } | null>(null);
   const [commentText, setCommentText] = useState("");
+  const [streetViewPip, setStreetViewPip] = useState<{
+    lat: number;
+    lng: number;
+    label: string;
+  } | null>(null);
   const [commentSaving, setCommentSaving] = useState(false);
 
   // Loading state
@@ -129,14 +153,19 @@ export default function RSMapping() {
 
   // ── Queries ──────────────────────────────────────────────────────────────────
 
-  const { data: operations, isLoading: opsLoading } = trpc.operation.list.useQuery();
+  const { data: operations, isLoading: opsLoading } =
+    trpc.operation.list.useQuery();
 
   const { data: sheetsData } = trpc.sheet.listByOperation.useQuery(
     { operationId: selectedOpId! },
     { enabled: selectedOpId !== null }
   );
 
-  const { data: waypoints, isLoading: wpLoading, refetch: refetchWaypoints } = trpc.rsMapping.getWaypoints.useQuery(
+  const {
+    data: waypoints,
+    isLoading: wpLoading,
+    refetch: refetchWaypoints,
+  } = trpc.rsMapping.getWaypoints.useQuery(
     { sheetId: selectedSheetId! },
     { enabled: selectedSheetId !== null }
   );
@@ -144,8 +173,12 @@ export default function RSMapping() {
   // ── Mutations ─────────────────────────────────────────────────────────────────
 
   const upsertWaypoint = trpc.rsMapping.upsertWaypoint.useMutation({
-    onSuccess: () => { void refetchWaypoints(); },
-    onError: (e) => { toast.error(e.message); },
+    onSuccess: () => {
+      void refetchWaypoints();
+    },
+    onError: e => {
+      toast.error(e.message);
+    },
   });
 
   // ── Map init ─────────────────────────────────────────────────────────────────
@@ -162,7 +195,9 @@ export default function RSMapping() {
   const clearMap = useCallback(() => {
     geocodeGenRef.current += 1; // invalidate any in-flight/stale geocode continuations
     if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
-    markersRef.current.forEach((m) => { m.map = null; });
+    markersRef.current.forEach(m => {
+      m.map = null;
+    });
     markersRef.current = [];
     placedWaypointsRef.current = [];
     polylineRef.current?.setMap(null);
@@ -175,7 +210,10 @@ export default function RSMapping() {
 
   const updatePolyline = useCallback(() => {
     if (!mapRef.current) return;
-    const path = placedWaypointsRef.current.map((w) => ({ lat: w.lat, lng: w.lng }));
+    const path = placedWaypointsRef.current.map(w => ({
+      lat: w.lat,
+      lng: w.lng,
+    }));
     if (polylineRef.current) {
       polylineRef.current.setPath(path);
     } else {
@@ -211,6 +249,7 @@ export default function RSMapping() {
 
     const lat = wp.lat;
     const lng = wp.lng;
+    const safeLabel = (wp.address ?? "").replace(/'/g, "\\'");
 
     const html = `
       <div style="font-family:system-ui,sans-serif;min-width:220px;max-width:290px;padding:4px 0;">
@@ -232,7 +271,7 @@ export default function RSMapping() {
           </button>
         </div>
         <div style="margin-top:6px;">
-          <button onclick="window.__rsmAddComment(${wp.rowId},${sheetId},'${encodeURIComponent(wp.comment ?? '')}')"
+          <button onclick="window.__rsmAddComment(${wp.rowId},${sheetId},'${encodeURIComponent(wp.comment ?? "")}')"
              style="display:flex;align-items:center;justify-content:center;gap:4px;padding:7px 10px;background:#7c3aed;color:#fff;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;width:100%;">
             💬 Add Comment
           </button>
@@ -242,10 +281,10 @@ export default function RSMapping() {
              style="display:flex;align-items:center;justify-content:center;gap:4px;padding:7px 10px;background:#00bcd4;color:#fff;border-radius:6px;text-decoration:none;font-size:12px;font-weight:600;">
             Waze
           </a>
-          <a href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lng}" target="_blank"
-             style="display:flex;align-items:center;justify-content:center;gap:4px;padding:7px 10px;background:#4285f4;color:#fff;border-radius:6px;text-decoration:none;font-size:12px;font-weight:600;">
+          <button onclick="window.__rsmOpenStreetView(${lat},${lng},'${safeLabel}')"
+             style="display:flex;align-items:center;justify-content:center;gap:4px;padding:7px 10px;background:#4285f4;color:#fff;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;width:100%;">
             Street View
-          </a>
+          </button>
         </div>
       </div>
     `;
@@ -270,8 +309,15 @@ export default function RSMapping() {
   function groupNearbyMarkers() {
     if (!mapRef.current) return;
     const wps = placedWaypointsRef.current;
-    console.log('[RSMapping] groupNearbyMarkers called, wps count:', wps.length);
-    wps.forEach((w) => console.log(`  wp#${w.index} addr="${w.address}" lat=${w.lat.toFixed(6)} lng=${w.lng.toFixed(6)}`));
+    console.log(
+      "[RSMapping] groupNearbyMarkers called, wps count:",
+      wps.length
+    );
+    wps.forEach(w =>
+      console.log(
+        `  wp#${w.index} addr="${w.address}" lat=${w.lat.toFixed(6)} lng=${w.lng.toFixed(6)}`
+      )
+    );
     if (wps.length === 0) return;
 
     // Group by same normalised address OR within ~100m (0.0009°)
@@ -290,7 +336,8 @@ export default function RSMapping() {
       const group: number[] = [i];
       for (let j = i + 1; j < wps.length; j++) {
         if (visited.has(j)) continue;
-        const sameAddr = normI.length > 0 && normalise(wps[j].address) === normI;
+        const sameAddr =
+          normI.length > 0 && normalise(wps[j].address) === normI;
         const dlat = Math.abs(wps[j].lat - wps[i].lat);
         const dlng = Math.abs(wps[j].lng - wps[i].lng);
         const nearby = dlat < THRESHOLD && dlng < THRESHOLD;
@@ -299,20 +346,25 @@ export default function RSMapping() {
         }
       }
 
-      group.forEach((idx) => visited.add(idx));
+      group.forEach(idx => visited.add(idx));
 
-      console.log('[RSMapping] group found:', group.map((idx) => `wp#${wps[idx].index}`).join(', '));
+      console.log(
+        "[RSMapping] group found:",
+        group.map(idx => `wp#${wps[idx].index}`).join(", ")
+      );
       if (group.length < 2) continue; // nothing to merge
 
       // Sort group by waypoint index (sequence order)
       group.sort((a, b) => wps[a].index - wps[b].index);
 
       // Compute centroid
-      const centLat = group.reduce((s, idx) => s + wps[idx].lat, 0) / group.length;
-      const centLng = group.reduce((s, idx) => s + wps[idx].lng, 0) / group.length;
+      const centLat =
+        group.reduce((s, idx) => s + wps[idx].lat, 0) / group.length;
+      const centLng =
+        group.reduce((s, idx) => s + wps[idx].lng, 0) / group.length;
 
       // Remove individual markers from the map
-      group.forEach((idx) => {
+      group.forEach(idx => {
         wps[idx].marker.map = null;
         // Remove from markersRef
         const mi = markersRef.current.indexOf(wps[idx].marker);
@@ -344,7 +396,8 @@ export default function RSMapping() {
         // Connector line between circles
         if (pillIdx > 0) {
           const connector = document.createElement("div");
-          connector.style.cssText = "width:6px;height:3px;background:#d1d5db;flex-shrink:0;";
+          connector.style.cssText =
+            "width:6px;height:3px;background:#d1d5db;flex-shrink:0;";
           pill.appendChild(connector);
         }
 
@@ -365,7 +418,7 @@ export default function RSMapping() {
           "flex-shrink:0",
         ].join(";");
         circle.textContent = String(wp.index);
-        circle.addEventListener("click", (e) => {
+        circle.addEventListener("click", e => {
           e.stopPropagation();
           openPopup(wp, sheetId);
         });
@@ -378,11 +431,11 @@ export default function RSMapping() {
         position: { lat: centLat, lng: centLng },
         content: pill,
         gmpDraggable: false,
-        title: group.map((idx) => wps[idx].address).join(" / "),
+        title: group.map(idx => wps[idx].address).join(" / "),
       });
 
       // Update each wp's marker reference so Move still works
-      group.forEach((idx) => {
+      group.forEach(idx => {
         wps[idx].marker = groupMarker;
         wps[idx].lat = centLat;
         wps[idx].lng = centLng;
@@ -415,7 +468,9 @@ export default function RSMapping() {
       // Fit bounds
       if (mapRef.current && placedWaypointsRef.current.length > 0) {
         const bounds = new google.maps.LatLngBounds();
-        placedWaypointsRef.current.forEach((w) => bounds.extend({ lat: w.lat, lng: w.lng }));
+        placedWaypointsRef.current.forEach(w =>
+          bounds.extend({ lat: w.lat, lng: w.lng })
+        );
         mapRef.current.fitBounds(bounds, 60);
       }
       return;
@@ -437,16 +492,19 @@ export default function RSMapping() {
       return;
     }
 
-    geocoderRef.current.geocode({ address: addressQuery }, (results, status) => {
-      // The Geocoder API has no cancellation — this callback can resolve
-      // after a newer run has already reset the queue/index refs. Bail if so.
-      if (geocodeGenRef.current !== myGen) return;
-      if (status === "OK" && results && results[0]) {
-        const pos = results[0].geometry.location;
-        placeWaypointMarker(row, pos.lat(), pos.lng());
+    geocoderRef.current.geocode(
+      { address: addressQuery },
+      (results, status) => {
+        // The Geocoder API has no cancellation — this callback can resolve
+        // after a newer run has already reset the queue/index refs. Bail if so.
+        if (geocodeGenRef.current !== myGen) return;
+        if (status === "OK" && results && results[0]) {
+          const pos = results[0].geometry.location;
+          placeWaypointMarker(row, pos.lat(), pos.lng());
+        }
+        scheduleNext(GEOCODE_DELAY_MS);
       }
-      scheduleNext(GEOCODE_DELAY_MS);
-    });
+    );
   };
 
   // Keep the ref pointing at the latest impl on every render (cheap)
@@ -499,7 +557,7 @@ export default function RSMapping() {
     if (!mapReady || !waypoints || !selectedSheetId) return;
     clearMap();
 
-    const queue = (waypoints as WaypointRow[]).filter((w) => w.address);
+    const queue = (waypoints as WaypointRow[]).filter(w => w.address);
     if (queue.length === 0) {
       setGeocoding(false);
       return;
@@ -509,7 +567,7 @@ export default function RSMapping() {
     geocodeIndexRef.current = 0;
     setGeocoding(true);
     geocodeNext();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, waypoints, selectedSheetId]);
 
   // ── Global handlers for info window buttons ───────────────────────────────────
@@ -517,7 +575,7 @@ export default function RSMapping() {
   useEffect(() => {
     (window as any).__rsmStartMove = (rowId: number) => {
       infoWindowRef.current?.close();
-      const wp = placedWaypointsRef.current.find((w) => w.rowId === rowId);
+      const wp = placedWaypointsRef.current.find(w => w.rowId === rowId);
       if (!wp || !mapRef.current) return;
 
       movingOrigPosRef.current = { lat: wp.lat, lng: wp.lng };
@@ -530,23 +588,43 @@ export default function RSMapping() {
         const lat = e.latLng!.lat();
         const lng = e.latLng!.lng();
         // Reverse geocode
-        geocoderRef.current?.geocode({ location: { lat, lng } }, (results, status) => {
-          const addr = (status === "OK" && results?.[0]) ? results[0].formatted_address : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-          setPendingMove({ lat, lng, address: addr });
-        });
+        geocoderRef.current?.geocode(
+          { location: { lat, lng } },
+          (results, status) => {
+            const addr =
+              status === "OK" && results?.[0]
+                ? results[0].formatted_address
+                : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+            setPendingMove({ lat, lng, address: addr });
+          }
+        );
       });
     };
 
-    (window as any).__rsmAddComment = (rowId: number, sheetId: number, encodedComment: string) => {
+    (window as any).__rsmAddComment = (
+      rowId: number,
+      sheetId: number,
+      encodedComment: string
+    ) => {
       infoWindowRef.current?.close();
       const existing = decodeURIComponent(encodedComment);
       setCommentDialog({ rowId, sheetId, existing });
       setCommentText(existing);
     };
 
+    (window as any).__rsmOpenStreetView = (
+      lat: number,
+      lng: number,
+      label: string
+    ) => {
+      infoWindowRef.current?.close();
+      setStreetViewPip({ lat, lng, label });
+    };
+
     return () => {
       delete (window as any).__rsmStartMove;
       delete (window as any).__rsmAddComment;
+      delete (window as any).__rsmOpenStreetView;
     };
   }, []);
 
@@ -554,11 +632,17 @@ export default function RSMapping() {
 
   const acceptMove = useCallback(() => {
     if (!pendingMove || !movingRowId || !selectedSheetId) return;
-    const wp = placedWaypointsRef.current.find((w) => w.rowId === movingRowId);
+    const wp = placedWaypointsRef.current.find(w => w.rowId === movingRowId);
     if (!wp) return;
 
     upsertWaypoint.mutate(
-      { sheetId: selectedSheetId, rowId: movingRowId, lat: pendingMove.lat, lng: pendingMove.lng, comment: wp.comment },
+      {
+        sheetId: selectedSheetId,
+        rowId: movingRowId,
+        lat: pendingMove.lat,
+        lng: pendingMove.lng,
+        comment: wp.comment,
+      },
       {
         onSuccess: () => {
           // Update in-memory
@@ -574,11 +658,17 @@ export default function RSMapping() {
         },
       }
     );
-  }, [pendingMove, movingRowId, selectedSheetId, upsertWaypoint, updatePolyline]);
+  }, [
+    pendingMove,
+    movingRowId,
+    selectedSheetId,
+    upsertWaypoint,
+    updatePolyline,
+  ]);
 
   const cancelMove = useCallback(() => {
     if (!movingRowId) return;
-    const wp = placedWaypointsRef.current.find((w) => w.rowId === movingRowId);
+    const wp = placedWaypointsRef.current.find(w => w.rowId === movingRowId);
     if (wp && movingOrigPosRef.current) {
       wp.marker.position = movingOrigPosRef.current;
       wp.marker.gmpDraggable = false;
@@ -593,7 +683,9 @@ export default function RSMapping() {
   const saveComment = useCallback(() => {
     if (!commentDialog) return;
     setCommentSaving(true);
-    const wp = placedWaypointsRef.current.find((w) => w.rowId === commentDialog.rowId);
+    const wp = placedWaypointsRef.current.find(
+      w => w.rowId === commentDialog.rowId
+    );
     upsertWaypoint.mutate(
       {
         sheetId: commentDialog.sheetId,
@@ -609,14 +701,17 @@ export default function RSMapping() {
           setCommentSaving(false);
           setCommentDialog(null);
         },
-        onError: () => { setCommentSaving(false); },
+        onError: () => {
+          setCommentSaving(false);
+        },
       }
     );
   }, [commentDialog, commentText, upsertWaypoint]);
 
   // ── Derived ───────────────────────────────────────────────────────────────────
 
-  const activeSheets = (sheetsData as any[] | undefined)?.filter((s: any) => !s.deletedAt) ?? [];
+  const activeSheets =
+    (sheetsData as any[] | undefined)?.filter((s: any) => !s.deletedAt) ?? [];
   const selectedSheet = activeSheets.find((s: any) => s.id === selectedSheetId);
 
   // ── Render ────────────────────────────────────────────────────────────────────
@@ -628,7 +723,6 @@ export default function RSMapping() {
           the map's fixed chrome out of view. fillViewport gives the shell a
           definite height for this to fill. */}
       <div className="flex flex-col h-full overflow-hidden bg-background">
-
         {/* ── Header ─────────────────────────────────────────────────────────── */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card shrink-0">
           <button
@@ -642,7 +736,9 @@ export default function RSMapping() {
             <h1 className="text-base font-semibold">Intelligence Mapping</h1>
           </div>
           {selectedSheet && (
-            <span className="text-xs text-muted-foreground truncate max-w-[200px]">{selectedSheet.title}</span>
+            <span className="text-xs text-muted-foreground truncate max-w-[200px]">
+              {selectedSheet.title}
+            </span>
           )}
           {geocoding && (
             <div className="flex items-center gap-1.5 ml-auto text-xs text-muted-foreground">
@@ -656,7 +752,7 @@ export default function RSMapping() {
         <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-muted/30 shrink-0 flex-wrap">
           <Select
             value={selectedOpId !== null ? String(selectedOpId) : ""}
-            onValueChange={(val) => {
+            onValueChange={val => {
               setSelectedOpId(Number(val));
               setSelectedSheetId(null);
               clearMap();
@@ -666,9 +762,19 @@ export default function RSMapping() {
               <SelectValue placeholder="1. Choose operation…" />
             </SelectTrigger>
             <SelectContent>
-              {opsLoading && <SelectItem value="__loading" disabled>Loading…</SelectItem>}
+              {opsLoading && (
+                <SelectItem value="__loading" disabled>
+                  Loading…
+                </SelectItem>
+              )}
               {(operations as any[] | undefined)?.map((op: any) => (
-                <SelectItem key={op.id} value={String(op.id)} className="text-xs">{op.name}</SelectItem>
+                <SelectItem
+                  key={op.id}
+                  value={String(op.id)}
+                  className="text-xs"
+                >
+                  {op.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -676,7 +782,7 @@ export default function RSMapping() {
           {selectedOpId !== null && (
             <Select
               value={selectedSheetId !== null ? String(selectedSheetId) : ""}
-              onValueChange={(val) => {
+              onValueChange={val => {
                 setSelectedSheetId(Number(val));
               }}
             >
@@ -685,7 +791,11 @@ export default function RSMapping() {
               </SelectTrigger>
               <SelectContent>
                 {activeSheets.map((s: any) => (
-                  <SelectItem key={s.id} value={String(s.id)} className="text-xs">
+                  <SelectItem
+                    key={s.id}
+                    value={String(s.id)}
+                    className="text-xs"
+                  >
                     {s.title || `Sheet #${s.id}`}
                   </SelectItem>
                 ))}
@@ -707,7 +817,9 @@ export default function RSMapping() {
             <Navigation2 className="h-4 w-4 shrink-0" />
             {pendingMove ? (
               <>
-                <span className="flex-1 truncate">Move to: {pendingMove.address}?</span>
+                <span className="flex-1 truncate">
+                  Move to: {pendingMove.address}?
+                </span>
                 <button
                   onClick={acceptMove}
                   className="flex items-center gap-1 px-3 py-1 bg-white text-sky-700 rounded-md text-xs font-bold hover:bg-sky-50 transition-colors"
@@ -744,12 +856,25 @@ export default function RSMapping() {
             onMapReady={handleMapReady}
           />
 
+          {streetViewPip && (
+            <StreetViewPip
+              lat={streetViewPip.lat}
+              lng={streetViewPip.lng}
+              label={streetViewPip.label}
+              onClose={() => setStreetViewPip(null)}
+            />
+          )}
+
           {/* Empty state overlay */}
           {!selectedSheetId && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/60 backdrop-blur-sm pointer-events-none">
               <ClipboardList className="h-12 w-12 text-muted-foreground/40 mb-3" />
-              <p className="text-sm font-medium text-muted-foreground">Select an operation and running sheet</p>
-              <p className="text-xs text-muted-foreground/70 mt-1">The target's route will be plotted automatically</p>
+              <p className="text-sm font-medium text-muted-foreground">
+                Select an operation and running sheet
+              </p>
+              <p className="text-xs text-muted-foreground/70 mt-1">
+                The target's route will be plotted automatically
+              </p>
             </div>
           )}
 
@@ -764,13 +889,21 @@ export default function RSMapping() {
           )}
 
           {/* No-waypoints notice */}
-          {!wpLoading && selectedSheetId && !geocoding && waypointCount === 0 && (waypoints as any[])?.length === 0 && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/60 backdrop-blur-sm pointer-events-none">
-              <MapPin className="h-10 w-10 text-muted-foreground/40 mb-3" />
-              <p className="text-sm font-medium text-muted-foreground">No location entries found</p>
-              <p className="text-xs text-muted-foreground/70 mt-1">Observations with bracketed addresses will appear here</p>
-            </div>
-          )}
+          {!wpLoading &&
+            selectedSheetId &&
+            !geocoding &&
+            waypointCount === 0 &&
+            (waypoints as any[])?.length === 0 && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/60 backdrop-blur-sm pointer-events-none">
+                <MapPin className="h-10 w-10 text-muted-foreground/40 mb-3" />
+                <p className="text-sm font-medium text-muted-foreground">
+                  No location entries found
+                </p>
+                <p className="text-xs text-muted-foreground/70 mt-1">
+                  Observations with bracketed addresses will appear here
+                </p>
+              </div>
+            )}
 
           {/* Legend */}
           {waypointCount > 0 && !geocoding && (
@@ -805,7 +938,7 @@ export default function RSMapping() {
               </div>
               <Textarea
                 value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
+                onChange={e => setCommentText(e.target.value)}
                 placeholder="Enter a comment for this waypoint…"
                 className="min-h-[100px] text-sm mb-4"
                 autoFocus
@@ -825,7 +958,11 @@ export default function RSMapping() {
                   disabled={commentSaving}
                   className="bg-violet-600 hover:bg-violet-700 text-white"
                 >
-                  {commentSaving ? <Spinner className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5 mr-1" />}
+                  {commentSaving ? (
+                    <Spinner className="h-3.5 w-3.5" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5 mr-1" />
+                  )}
                   Save
                 </Button>
               </div>

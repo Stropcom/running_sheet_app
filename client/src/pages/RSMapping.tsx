@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
 import { StreetViewPip } from "@/components/StreetViewPip";
+import { ImagesPip } from "@/components/ImagesPip";
 import {
   Select,
   SelectContent,
@@ -66,6 +67,13 @@ const GEOCODE_DELAY_MS = 220; // stay under 50 req/s quota
 function formatTime(t: string | null): string {
   if (!t) return "—";
   return t;
+}
+
+// Mirrors server/db.ts's normalizeEntityLabel exactly — needed here to check
+// a waypoint's address against the set of addresses that already have linked
+// photos (attachment_entity_links.entityKey is normalized the same way).
+function normalizeEntityLabelClient(label: string): string {
+  return label.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 function buildNumberPin(
@@ -144,6 +152,7 @@ export default function RSMapping() {
     lng: number;
     label: string;
   } | null>(null);
+  const [imagesPip, setImagesPip] = useState<{ label: string } | null>(null);
   const [commentSaving, setCommentSaving] = useState(false);
 
   // Loading state
@@ -206,6 +215,21 @@ export default function RSMapping() {
     setWaypointCount(0);
   }, []);
 
+  // Which addresses have at least one linked photo (silently auto-linked at
+  // upload time — see server/attachmentUpload.ts) — drives the popup's
+  // Images button, only shown when this is true for that waypoint's address.
+  const { data: entityLinkCounts } =
+    trpc.attachment.entityLinkCounts.useQuery();
+  const photoKeysRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const keys = new Set<string>();
+    for (const c of (entityLinkCounts as any[] | undefined) ?? []) {
+      if (c.category === "location" && c.count > 0 && c.entityKey)
+        keys.add(c.entityKey);
+    }
+    photoKeysRef.current = keys;
+  }, [entityLinkCounts]);
+
   // ── Polyline update (straight-line fallback) ─────────────────────────────────
 
   const updatePolyline = useCallback(() => {
@@ -250,6 +274,17 @@ export default function RSMapping() {
     const lat = wp.lat;
     const lng = wp.lng;
     const safeLabel = (wp.address ?? "").replace(/'/g, "\\'");
+    const hasPhotos =
+      !!wp.address &&
+      photoKeysRef.current.has(normalizeEntityLabelClient(wp.address));
+    const imagesHtml = hasPhotos
+      ? `<div style="margin-top:6px;">
+          <button onclick="window.__rsmOpenImagesPip('${safeLabel}')"
+             style="display:flex;align-items:center;justify-content:center;gap:4px;padding:7px 10px;background:#10b981;color:#fff;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;width:100%;">
+            Images
+          </button>
+        </div>`
+      : "";
 
     const html = `
       <div style="font-family:system-ui,sans-serif;min-width:220px;max-width:290px;padding:4px 0;">
@@ -270,6 +305,7 @@ export default function RSMapping() {
             📍 Move
           </button>
         </div>
+        ${imagesHtml}
         <div style="margin-top:6px;">
           <button onclick="window.__rsmAddComment(${wp.rowId},${sheetId},'${encodeURIComponent(wp.comment ?? "")}')"
              style="display:flex;align-items:center;justify-content:center;gap:4px;padding:7px 10px;background:#7c3aed;color:#fff;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;width:100%;">
@@ -621,10 +657,16 @@ export default function RSMapping() {
       setStreetViewPip({ lat, lng, label });
     };
 
+    (window as any).__rsmOpenImagesPip = (label: string) => {
+      infoWindowRef.current?.close();
+      setImagesPip({ label });
+    };
+
     return () => {
       delete (window as any).__rsmStartMove;
       delete (window as any).__rsmAddComment;
       delete (window as any).__rsmOpenStreetView;
+      delete (window as any).__rsmOpenImagesPip;
     };
   }, []);
 
@@ -862,6 +904,13 @@ export default function RSMapping() {
               lng={streetViewPip.lng}
               label={streetViewPip.label}
               onClose={() => setStreetViewPip(null)}
+            />
+          )}
+
+          {imagesPip && (
+            <ImagesPip
+              label={imagesPip.label}
+              onClose={() => setImagesPip(null)}
             />
           )}
 

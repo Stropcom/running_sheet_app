@@ -4,6 +4,7 @@ import heicConvert from "heic-convert";
 import { sdk } from "./_core/sdk";
 import { storagePut } from "./storage";
 import {
+  autoLinkAttachmentToRowAddresses,
   createAuditLog,
   createRowAttachment,
   getRowById,
@@ -142,6 +143,16 @@ export async function processAttachmentUpload(params: {
     createdAt: Date.now(),
   });
 
+  // Best-effort, silent — a photo taken at an address named in this row's
+  // own observation gets linked to that "location" entity automatically
+  // (see CLAUDE.md/the map's Images popup button), but that's a background
+  // convenience, not part of what makes the upload itself succeed.
+  try {
+    await autoLinkAttachmentToRowAddresses(id, row.observation);
+  } catch (err) {
+    console.error("[attachmentUpload] auto-link to row address failed:", err);
+  }
+
   return { id, url };
 }
 
@@ -159,8 +170,9 @@ export async function processManualAttachmentUpload(params: {
   userId: number;
   userCIN?: string;
 }): Promise<{ id: number; url: string }> {
+  let row: Awaited<ReturnType<typeof getRowById>> = undefined;
   if (params.rowId != null) {
-    const row = await getRowById(params.rowId);
+    row = await getRowById(params.rowId);
     if (!row)
       throw new AttachmentUploadError(404, "Running sheet row not found.");
     // Same rule as processAttachmentUpload -- a manual upload tagged to a
@@ -208,6 +220,14 @@ export async function processManualAttachmentUpload(params: {
     details: `Photo manually uploaded to operation`,
     createdAt: Date.now(),
   });
+
+  if (row) {
+    try {
+      await autoLinkAttachmentToRowAddresses(id, row.observation);
+    } catch (err) {
+      console.error("[attachmentUpload] auto-link to row address failed:", err);
+    }
+  }
 
   return { id, url };
 }

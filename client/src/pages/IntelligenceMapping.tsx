@@ -46,6 +46,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
 import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
 import { StreetViewPip } from "@/components/StreetViewPip";
+import { ImagesPip } from "@/components/ImagesPip";
 import { UcoGuideMapOverlay } from "@/components/UcoGuideMapOverlay";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
 import { OperationProfileContent } from "@/components/OperationProfileContent";
@@ -874,13 +875,21 @@ function popupPersonLines(persons: string[], fontSize: string): string {
     .join("");
 }
 
+// Mirrors server/db.ts's normalizeEntityLabel exactly — the map needs the
+// same key the server computed for attachment_entity_links.entityKey to
+// check whether a given address/label has any linked photos.
+function normalizeEntityLabelClient(label: string): string {
+  return label.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
 function buildInfoWindowContent(
   loc: IntelMapLocation,
   override?: {
     markerIcon?: string | null;
     markerColour?: string | null;
     rotation?: number | null;
-  }
+  },
+  hasPhotos = false
 ): string {
   const isTarget = loc.type === "target_address";
   const isAdditionalTargetAddress =
@@ -1009,6 +1018,14 @@ function buildInfoWindowContent(
       `<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${safeLabel}')" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`
     );
 
+    // Row 1: Images — only when this address already has linked photos
+    // (silently auto-linked at upload time, never a separate tagging step).
+    if (hasPhotos) {
+      sections.push(
+        `<div style="margin-top:5px;"><button onclick="window.__mapOpenImagesPip('${safeLabel}')" style="${btnBase}background:#10b981;color:#fff;border:none;font-size:13px;padding:9px 0;">Images</button></div>`
+      );
+    }
+
     // Row 2: Waze | Street View
     if (loc.lat != null && loc.lng != null) {
       const lat = loc.lat;
@@ -1073,6 +1090,14 @@ function buildInfoWindowContent(
     sections.push(
       `<div style="margin-top:5px;"><button onclick="window.__intelRsQuickEntry('${safeLabel}')" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`
     );
+
+    // Row 1: Images — only when this address already has linked photos
+    // (silently auto-linked at upload time, never a separate tagging step).
+    if (hasPhotos) {
+      sections.push(
+        `<div style="margin-top:5px;"><button onclick="window.__mapOpenImagesPip('${safeLabel}')" style="${btnBase}background:#10b981;color:#fff;border:none;font-size:13px;padding:9px 0;">Images</button></div>`
+      );
+    }
 
     // Row 2: Waze | Street View
     if (loc.lat != null && loc.lng != null) {
@@ -1874,6 +1899,9 @@ export default function IntelligenceMapping() {
     lng: number;
     label: string;
   } | null>(null);
+  // Photos picture-in-picture panel, opened from a marker popup's Images
+  // button (only shown when that address already has linked photos).
+  const [imagesPip, setImagesPip] = useState<{ label: string } | null>(null);
   // RS Quick Entry from map: shown when user picks "RS Quick Entry" from the action chooser
   const [mapQeOpen, setMapQeOpen] = useState(false);
   const [mapQeTimeOverride, setMapQeTimeOverride] = useState<string | null>(
@@ -2552,6 +2580,23 @@ export default function IntelligenceMapping() {
     }
     pinOverridesRef.current = map;
   }, [pinOverrides]);
+
+  // Which addresses have at least one linked photo (see the auto-link at
+  // upload time in server/attachmentUpload.ts) — drives the marker's photo
+  // badge and the popup's "Images" button, both of which are conditional on
+  // this rather than always shown. entityLinkCounts already covers every
+  // category/entity in one cheap query, so this just filters it down.
+  const { data: entityLinkCounts } =
+    trpc.attachment.entityLinkCounts.useQuery();
+  const photoKeysRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const keys = new Set<string>();
+    for (const c of (entityLinkCounts as any[] | undefined) ?? []) {
+      if (c.category === "location" && c.count > 0 && c.entityKey)
+        keys.add(c.entityKey);
+    }
+    photoKeysRef.current = keys;
+  }, [entityLinkCounts]);
   const savePinOverrideMut = trpc.intelligence.savePinOverride.useMutation({
     onMutate: async () => {
       await utils.intelligence.getPinOverrides.cancel();
@@ -3085,6 +3130,26 @@ export default function IntelligenceMapping() {
       badge.textContent = String(count);
       el.appendChild(badge);
     }
+
+    // Small camera badge — bottom-right, opposite the count badge — when
+    // this address already has photos linked (see photoKeysRef). Purely
+    // informational at a glance; the popup's own Images button is what
+    // actually opens them.
+    if (photoKeysRef.current.has(normalizeEntityLabelClient(loc.label))) {
+      const photoBadge = document.createElement("div");
+      photoBadge.style.cssText = `
+        position:absolute;bottom:-4px;right:-4px;
+        background:#10b981;
+        width:16px;height:16px;
+        border-radius:50%;
+        display:flex;align-items:center;justify-content:center;
+        border:1.5px solid #fff;
+        box-shadow:0 1px 3px rgba(0,0,0,0.3);
+      `;
+      photoBadge.innerHTML =
+        '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.2"/><path d="M8 6l1.5-2.3h5L16 6"/></svg>';
+      el.appendChild(photoBadge);
+    }
     return el;
   }, []);
 
@@ -3415,7 +3480,8 @@ export default function IntelligenceMapping() {
         infoWindowRef.current.setContent(
           buildInfoWindowContent(
             fullEnriched,
-            pinOverridesRef.current.get(loc.label)
+            pinOverridesRef.current.get(loc.label),
+            photoKeysRef.current.has(normalizeEntityLabelClient(loc.label))
           )
         );
         infoWindowRef.current.setPosition({
@@ -4142,12 +4208,39 @@ export default function IntelligenceMapping() {
         const wrapper = document.createElement("div");
         wrapper.style.cssText =
           "display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;";
+        // A separate relatively-positioned box just for the icon, not the
+        // whole (icon + label pill) wrapper — so the photo badge below
+        // anchors to the icon's own corner regardless of whether a label
+        // pill is stacked underneath it.
+        const iconBox = document.createElement("div");
+        iconBox.style.cssText = "position:relative;display:inline-flex;";
         const img = document.createElement("img");
         img.src = dataUrl;
         img.style.cssText = `width:40px;height:40px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation}deg);`;
-        wrapper.appendChild(img);
+        iconBox.appendChild(img);
         // Store direct img ref for live rotation
         customMarkerImgRefs.current.set(outerCm.id, img);
+        // Camera badge — same "has linked photos" check as the intel pin
+        // badge (see photoKeysRef), purely informational at a glance.
+        if (
+          outerCm.label &&
+          photoKeysRef.current.has(normalizeEntityLabelClient(outerCm.label))
+        ) {
+          const photoBadge = document.createElement("div");
+          photoBadge.style.cssText = `
+            position:absolute;bottom:-4px;right:-4px;
+            background:#10b981;
+            width:16px;height:16px;
+            border-radius:50%;
+            display:flex;align-items:center;justify-content:center;
+            border:1.5px solid #fff;
+            box-shadow:0 1px 3px rgba(0,0,0,0.3);
+          `;
+          photoBadge.innerHTML =
+            '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.2"/><path d="M8 6l1.5-2.3h5L16 6"/></svg>';
+          iconBox.appendChild(photoBadge);
+        }
+        wrapper.appendChild(iconBox);
         if (labelText) {
           wrapper.appendChild(
             createLabelPillElement(labelText, fillColor, "none")
@@ -4347,6 +4440,17 @@ export default function IntelligenceMapping() {
             sections.push(
               `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;"><button onclick="window.__cmRsQuickEntry(${cm.id})" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`
             );
+
+            // Row 1: Images — only when this marker's label already has
+            // linked photos (silently auto-linked at upload time).
+            if (
+              cm.label &&
+              photoKeysRef.current.has(normalizeEntityLabelClient(cm.label))
+            ) {
+              sections.push(
+                `<div style="margin-top:5px;"><button onclick="window.__mapOpenImagesPip('${safeLabel}')" style="${btnBase}background:#10b981;color:#fff;border:none;font-size:13px;padding:9px 0;">Images</button></div>`
+              );
+            }
 
             // Row 2: Navigation — Waze | Street View (2 columns)
             const navBtns = [
@@ -5151,6 +5255,17 @@ export default function IntelligenceMapping() {
     };
     return () => {
       delete (window as any).__mapOpenStreetView;
+    };
+  }, []);
+
+  // Open the photos picture-in-picture from a marker popup's Images button
+  useEffect(() => {
+    (window as any).__mapOpenImagesPip = (label: string) => {
+      infoWindowRef.current?.close();
+      setImagesPip({ label });
+    };
+    return () => {
+      delete (window as any).__mapOpenImagesPip;
     };
   }, []);
 
@@ -6399,6 +6514,13 @@ export default function IntelligenceMapping() {
               lng={streetViewPip.lng}
               label={streetViewPip.label}
               onClose={() => setStreetViewPip(null)}
+            />
+          )}
+
+          {imagesPip && (
+            <ImagesPip
+              label={imagesPip.label}
+              onClose={() => setImagesPip(null)}
             />
           )}
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { Maximize2, X } from "lucide-react";
 
 const MIN_WIDTH = 220;
 const MIN_HEIGHT = 160;
@@ -253,24 +253,15 @@ export function StreetViewPip({
         against it — Google renders a "Report a problem" / copyright
         strip there that it keeps clickable on top of anything else in
         the panorama, so a handle placed right at bottom-0/right-0 never
-        receives its own pointerdown. */}
+        receives its own pointerdown. Given a visible chip (not just a
+        cursor change) plus a larger hit area so it reads as grabbable
+        rather than blending into the video feed underneath it. */}
       <div
         ref={resizeHandleRef}
-        className="absolute right-0.5 bottom-5 z-10 w-5 h-5 cursor-nwse-resize touch-none flex items-end justify-end"
+        className="absolute right-1 bottom-6 z-10 w-8 h-8 cursor-nwse-resize touch-none flex items-center justify-center rounded-md border border-border bg-card/90 backdrop-blur-sm shadow-md text-muted-foreground hover:text-foreground hover:bg-accent/20 transition-colors"
         aria-label="Resize Street View panel"
       >
-        <svg
-          width="9"
-          height="9"
-          viewBox="0 0 8 8"
-          className="text-muted-foreground/70 drop-shadow-[0_0_2px_rgba(0,0,0,0.5)]"
-        >
-          <path
-            d="M7 1 1 7M7 4.5 4.5 7M7 7.8 7.8 7"
-            stroke="currentColor"
-            strokeWidth="1.25"
-          />
-        </svg>
+        <Maximize2 className="w-3.5 h-3.5" />
       </div>
     </div>
   );

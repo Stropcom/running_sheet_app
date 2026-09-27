@@ -143,15 +143,15 @@ export async function processAttachmentUpload(params: {
     createdAt: Date.now(),
   });
 
-  // Best-effort, silent — a photo taken at an address named in this row's
-  // own observation gets linked to that "location" entity automatically
-  // (see CLAUDE.md/the map's Images popup button), but that's a background
-  // convenience, not part of what makes the upload itself succeed.
-  try {
-    await autoLinkAttachmentToRowAddresses(id, row.observation);
-  } catch (err) {
+  // Best-effort, silent — a photo taken at an address named in this row
+  // (or an earlier row of the same sheet, via the same resolution the map
+  // uses) gets linked to that "location" entity automatically (see the
+  // map's Images popup button). Not awaited — it resolves the whole
+  // sheet's entities to find the right one, which shouldn't hold up the
+  // upload response for what's a background convenience either way.
+  autoLinkAttachmentToRowAddresses(id, row.id).catch(err => {
     console.error("[attachmentUpload] auto-link to row address failed:", err);
-  }
+  });
 
   return { id, url };
 }
@@ -222,11 +222,9 @@ export async function processManualAttachmentUpload(params: {
   });
 
   if (row) {
-    try {
-      await autoLinkAttachmentToRowAddresses(id, row.observation);
-    } catch (err) {
+    autoLinkAttachmentToRowAddresses(id, row.id).catch(err => {
       console.error("[attachmentUpload] auto-link to row address failed:", err);
-    }
+    });
   }
 
   return { id, url };

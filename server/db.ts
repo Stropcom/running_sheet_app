@@ -1585,44 +1585,43 @@ export async function linkAttachmentToEntity(data: {
 // row's address — no separate officer action, no visible UI of its own.
 // The link only starts mattering later, when the map checks whether a given
 // pin has any linked photos (see attachment.byEntity / getAttachmentsForEntity).
-
-// Only ever the FIRST address entity found in the row, not every address-
-// shaped string in it. Two reasons: (1) the map only ever shows a pin for
-// an address that has a bracket somewhere in the sheet — a purely
-// unbracketed mention can never have a pin to attach an Images button to,
-// so detecting one would just create a link nothing could ever surface;
-// (2) a row very often restates the same real-world address more than
-// once in different wording (the full street name early on, a shorter
-// bracketed reference later) — extractEntitiesFromText correctly treats
-// each distinct wording as its own entity, but that's one photo taken at
-// one place, so linking every wording it finds created two (or more)
-// separate-looking "locations" on the map for what an officer would call
-// one address. Taking just the first keeps this predictable: one photo,
-// at most one auto-link, always under the exact label the corresponding
-// map pin already uses (entity.shortForm — see registerOccurrence's own
-// key, which this must match for the Images button to ever find it).
-export function findAddressesForAutoLink(
-  observation: string | null | undefined
-): string[] {
-  if (!observation) return [];
-  const first = extractEntitiesFromText(observation).find(
-    e => e.type === "address"
+//
+// Resolved via getAllIntelligenceEntities — the same function the map and
+// Intelligence Folder already use — rather than re-deriving a key from just
+// this row's own text. A row very often only mentions an address's raw
+// short form, with the full bracketed introduction sitting in an earlier
+// row of the same sheet ("arrived at 92 Waterloo Street, TUART HILL WA (92
+// Waterloo Street)..." in one row, then a photo taken several rows later on
+// a row that only says "92 Waterloo Street" with no bracket of its own).
+// getAllIntelligenceEntities already resolves that bare mention back to the
+// one canonical entity the earlier bracket established (its own "Pass B"
+// dictionary matching) — reusing that real resolution, instead of scanning
+// this row's text in isolation, is what guarantees the link lands under the
+// exact key the map pin already uses, and that a photo two rows away from
+// its address's only bracket still finds it.
+async function findCanonicalLocationForRow(
+  rowId: number
+): Promise<string | null> {
+  const entities = await getAllIntelligenceEntities();
+  const entity = entities.find(
+    e =>
+      (e.type === "address" || e.type === "business") &&
+      e.occurrences.some(o => o.rowId === rowId)
   );
-  return first ? [first.shortForm] : [];
+  return entity ? entity.shortForm : null;
 }
 
 export async function autoLinkAttachmentToRowAddresses(
   attachmentId: number,
-  observation: string | null | undefined
+  rowId: number
 ): Promise<void> {
-  const addresses = findAddressesForAutoLink(observation);
-  for (const entityLabel of addresses) {
-    await linkAttachmentToEntity({
-      attachmentId,
-      category: "location",
-      entityLabel,
-    });
-  }
+  const entityLabel = await findCanonicalLocationForRow(rowId);
+  if (!entityLabel) return;
+  await linkAttachmentToEntity({
+    attachmentId,
+    category: "location",
+    entityLabel,
+  });
 }
 
 export async function unlinkAttachmentFromEntity(linkId: number) {

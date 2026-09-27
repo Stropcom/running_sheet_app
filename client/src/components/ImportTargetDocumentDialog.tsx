@@ -1109,7 +1109,7 @@ export function ImportTargetDocumentDialog({
                           <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <Badge
                               variant="outline"
-                              className={`gap-1 font-normal text-[10px] ${colours.badge}`}
+                              className={`gap-1 font-normal text-[10px] w-full max-w-full justify-start text-left whitespace-normal break-words items-start py-1 [&>svg]:mt-0.5 [&>svg]:shrink-0 ${colours.badge}`}
                             >
                               <Link2 className="w-3 h-3" />
                               Matches existing {match.type}: {match.name}

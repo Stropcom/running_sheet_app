@@ -271,6 +271,15 @@ export const rowAttachments = mysqlTable("row_attachments", {
   // Soft-delete — goes to the Recycle Bin for 7 days before purge
   deletedAt: bigint("deletedAt", { mode: "number" }),
   deletedByCIN: varchar("deletedByCIN", { length: 64 }),
+  // Number of faces RetinaFace detected in this photo at upload time — null
+  // until that background pass completes (or if it never ran, e.g. photos
+  // uploaded before this column existed). Drives the Governance "Imagery"
+  // check: a photo with faceCount > 0 needs a person-category link
+  // (target/associate/unidentified_person), not just any link — see
+  // requiresPersonLink in Governance.tsx. Never treat null as "0 faces";
+  // it means "unknown", and the governance check falls back to its old
+  // any-link behaviour rather than blocking on an absent value.
+  faceCount: int("faceCount"),
 });
 
 export type RowAttachment = typeof rowAttachments.$inferSelect;

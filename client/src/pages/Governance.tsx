@@ -22,6 +22,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -485,12 +486,16 @@ export default function GovernancePage() {
       { attachmentCount: number; linkedCount: number }
     >();
     for (const row of rows) {
-      const atts = (row.attachments ?? []) as Array<{ linkedCount?: number }>;
+      const atts = (row.attachments ?? []) as Array<{
+        linkedCount?: number;
+        linkedCategories?: string[];
+        faceCount?: number | null;
+      }>;
       if (atts.length === 0) continue;
       const rowCins = (row.members ?? []).map(
         (m: { memberName: string }) => m.memberName
       );
-      const linkedCount = atts.filter(a => (a.linkedCount ?? 0) > 0).length;
+      const linkedCount = atts.filter(isAttachmentProperlyLinked).length;
       for (const cin of rowCins) {
         const key = cin + "||" + (row.time ?? "");
         const stat = map.get(key) ?? { attachmentCount: 0, linkedCount: 0 };
@@ -513,7 +518,11 @@ export default function GovernancePage() {
       { attachmentCount: number; linkedCount: number }
     >();
     for (const row of rows) {
-      const atts = (row.attachments ?? []) as Array<{ linkedCount?: number }>;
+      const atts = (row.attachments ?? []) as Array<{
+        linkedCount?: number;
+        linkedCategories?: string[];
+        faceCount?: number | null;
+      }>;
       if (atts.length === 0) continue;
       const rowCins = (row.members ?? []).map(
         (m: { memberName: string }) => m.memberName
@@ -521,7 +530,7 @@ export default function GovernancePage() {
       for (const cin of rowCins) {
         const stat = map.get(cin) ?? { attachmentCount: 0, linkedCount: 0 };
         stat.attachmentCount += atts.length;
-        stat.linkedCount += atts.filter(a => (a.linkedCount ?? 0) > 0).length;
+        stat.linkedCount += atts.filter(isAttachmentProperlyLinked).length;
         map.set(cin, stat);
       }
     }

@@ -17,6 +17,7 @@ import { createPool as createPromisePool } from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt, fingerprintVaultKey } from "./wipcVault";
 import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
+import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 import {
   formatIntelAddress,
   formatIntelVehicle,
@@ -1261,6 +1262,21 @@ export async function createRowAttachment(data: InsertRowAttachment) {
   if (!db) throw new Error("Database not available");
   const [result] = await db.insert(rowAttachments).values(data);
   return result.insertId as number;
+}
+
+// Set once, shortly after upload, by the background face-detection pass —
+// see runFaceDetectionForAttachment in attachmentUpload.ts. Drives the
+// Governance "Imagery" check's person-link requirement (Governance.tsx).
+export async function setAttachmentFaceCount(
+  id: number,
+  faceCount: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(rowAttachments)
+    .set({ faceCount })
+    .where(eq(rowAttachments.id, id));
 }
 
 // linkedCount = number of Intelligence entity links on each attachment — used
@@ -9441,7 +9457,7 @@ export async function getUnlinkedImagesTodoForCin(cin: string): Promise<
     if (attachments.length === 0) continue;
     const withLinkCounts = await attachLinkedCounts(db, attachments);
     const unlinkedCount = withLinkCounts.filter(
-      a => a.linkedCount === 0
+      a => !isAttachmentProperlyLinked(a)
     ).length;
     if (unlinkedCount === 0) continue;
 

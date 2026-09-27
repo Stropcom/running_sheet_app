@@ -3,13 +3,30 @@ import express from "express";
 import heicConvert from "heic-convert";
 import { sdk } from "./_core/sdk";
 import { storagePut } from "./storage";
+import { detectAndEmbedFaces } from "./faceRecognition";
 import {
   autoLinkAttachmentToRowAddresses,
   createAuditLog,
   createRowAttachment,
   getRowById,
   getRunningSheetById,
+  setAttachmentFaceCount,
 } from "./db";
+
+// Best-effort, silent, fully on-device (RetinaFace — no network call, see
+// server/faceRecognition/detect.ts) — counts faces so the Governance
+// "Imagery" check can require a photo containing a person to actually be
+// linked to one (see requiresPersonLink in Governance.tsx), instead of
+// accepting any link at all, including the address auto-link above. Not
+// awaited by callers: face detection is real inference, not a cheap regex,
+// and shouldn't hold up the upload response.
+async function runFaceDetectionForAttachment(
+  attachmentId: number,
+  buffer: Buffer
+): Promise<void> {
+  const faces = await detectAndEmbedFaces(buffer);
+  await setAttachmentFaceCount(attachmentId, faces.length);
+}
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const EXT_TO_MIME: Record<string, string> = {
@@ -152,6 +169,9 @@ export async function processAttachmentUpload(params: {
   autoLinkAttachmentToRowAddresses(id, row.id).catch(err => {
     console.error("[attachmentUpload] auto-link to row address failed:", err);
   });
+  runFaceDetectionForAttachment(id, buffer).catch(err => {
+    console.error("[attachmentUpload] face detection failed:", err);
+  });
 
   return { id, url };
 }
@@ -226,6 +246,9 @@ export async function processManualAttachmentUpload(params: {
       console.error("[attachmentUpload] auto-link to row address failed:", err);
     });
   }
+  runFaceDetectionForAttachment(id, buffer).catch(err => {
+    console.error("[attachmentUpload] face detection failed:", err);
+  });
 
   return { id, url };
 }

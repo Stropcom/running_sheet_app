@@ -58,7 +58,11 @@ export function StreetViewPip({
       motionTrackingControl: false,
       linksControl: true,
       panControl: false,
-      zoomControl: true,
+      // Off, not just repositioned — Street View's default zoom control
+      // sits in the bottom-right corner, the same spot our own resize
+      // handle needs (see the handle's placement below for why that
+      // corner is otherwise unusable).
+      zoomControl: false,
     });
     panoramaRef.current = panorama;
     const listener = panorama.addListener("status_changed", () => {
@@ -245,21 +249,26 @@ export function StreetViewPip({
         )}
       </div>
 
+      {/* Sits above Street View's own bottom-right corner, not flush
+        against it — Google renders a "Report a problem" / copyright
+        strip there that it keeps clickable on top of anything else in
+        the panorama, so a handle placed right at bottom-0/right-0 never
+        receives its own pointerdown. */}
       <div
         ref={resizeHandleRef}
-        className="absolute right-0 bottom-0 w-4 h-4 cursor-nwse-resize touch-none"
+        className="absolute right-0.5 bottom-5 z-10 w-5 h-5 cursor-nwse-resize touch-none flex items-end justify-end"
         aria-label="Resize Street View panel"
       >
         <svg
-          width="8"
-          height="8"
+          width="9"
+          height="9"
           viewBox="0 0 8 8"
-          className="absolute right-1 bottom-1 text-muted-foreground/60"
+          className="text-muted-foreground/70 drop-shadow-[0_0_2px_rgba(0,0,0,0.5)]"
         >
           <path
             d="M7 1 1 7M7 4.5 4.5 7M7 7.8 7.8 7"
             stroke="currentColor"
-            strokeWidth="1"
+            strokeWidth="1.25"
           />
         </svg>
       </div>

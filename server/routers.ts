@@ -1948,6 +1948,41 @@ export const appRouter = router({
         }
       }),
 
+    // Called once, right after a photo finishes uploading, to offer an
+    // immediate shortcut before the officer opens the manual Link dialog at
+    // all. Deliberately narrow in scope: only a photo with EXACTLY one
+    // detected face gets a suggestion — a multi-face photo falls straight
+    // through to today's unchanged manual flow (FaceSelectPicker's
+    // multi-select), since auto-suggesting several faces at once from one
+    // upload is a bigger UX problem this doesn't attempt to solve. No link
+    // or embedding is written here — same "detect only" contract as
+    // detectFaces above — so declining the suggestion (or a photo with 0 or
+    // 2+ faces) leaves the photo exactly as unlinked as it is today.
+    previewFaceMatch: protectedProcedure
+      .input(z.object({ attachmentId: z.number() }))
+      .query(async ({ input }) => {
+        const attachment = await getAttachmentById(input.attachmentId);
+        if (!attachment)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Attachment not found.",
+          });
+        try {
+          const buffer = await storageGetBytes(attachment.key);
+          const faces = await detectAndEmbedFaces(buffer);
+          if (faces.length !== 1)
+            return { faceCount: faces.length, suggestion: null };
+          const candidates = await findSimilarFaces(faces[0].embedding, -1);
+          return { faceCount: 1, suggestion: candidates[0] ?? null };
+        } catch (err) {
+          console.error("Face detection failed:", err);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Face detection failed.",
+          });
+        }
+      }),
+
     // Manual "Compare Faces" tool — an officer picks one face from each of
     // 2+ photos (any operation) and gets a pairwise similarity score back.
     // Unlike confirmUnidentifiedPersonFaces/confirmEntityFace, this never
@@ -2150,6 +2185,70 @@ export const appRouter = router({
         });
         const matches = await findSimilarFaces(face.embedding, linkId);
         return { linkId, matches };
+      }),
+
+    // Officer confirmed the immediate upload-time suggestion from
+    // previewFaceMatch above ("possible match: Bob Smith — Target"). Unlike
+    // confirmEntityFace/confirmUnidentifiedPersonFaces, no placeholder link
+    // is created first — this attachment joins the matched entity's identity
+    // directly in one step, via the exact same linkAttachmentToEntity call
+    // the manual flow uses, just pre-filled with the suggested category/
+    // target/label instead of an officer picking them from the dialog.
+    confirmSuggestedFaceMatch: protectedProcedure
+      .input(
+        z.object({ attachmentId: z.number(), matchedEntityLinkId: z.number() })
+      )
+      .mutation(async ({ input }) => {
+        const attachment = await getAttachmentById(input.attachmentId);
+        if (!attachment)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Attachment not found.",
+          });
+        await guardAttachmentRowUnlocked(input.attachmentId);
+        const matchedLink = await getEntityLinkById(input.matchedEntityLinkId);
+        if (!matchedLink)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Suggested match no longer exists.",
+          });
+        let faces;
+        try {
+          const buffer = await storageGetBytes(attachment.key);
+          faces = await detectAndEmbedFaces(buffer);
+        } catch (err) {
+          console.error("Face detection failed:", err);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Face detection failed.",
+          });
+        }
+        const face = faces[0];
+        if (!face)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "No face found on this photo — try linking manually.",
+          });
+
+        const linkId = await linkAttachmentToEntity({
+          attachmentId: input.attachmentId,
+          category: matchedLink.category,
+          targetId: matchedLink.targetId ?? undefined,
+          entityLabel: matchedLink.entityLabel,
+        });
+        await createPersonDetection({
+          attachmentId: input.attachmentId,
+          entityLinkId: linkId,
+          bbox: face.bbox,
+          landmarks: face.landmarks,
+          embedding: face.embedding,
+          detectionConfidence: face.confidence,
+        });
+        return {
+          linkId,
+          category: matchedLink.category,
+          entityLabel: matchedLink.entityLabel,
+        };
       }),
 
     // Officer accepted a suggested possible-match — whichever side is the

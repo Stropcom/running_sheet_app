@@ -16,6 +16,10 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
+import {
+  SuggestedFaceMatchDialog,
+  type FaceMatchSuggestion,
+} from "@/components/SuggestedFaceMatchDialog";
 import { AttachmentLinkBadge } from "@/components/AttachmentLinkBadge";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { DeletePhotoButton } from "@/components/DeletePhotoButton";
@@ -1321,7 +1325,7 @@ function ObservationAttachments({
     blob: Blob,
     mimeType: string,
     fileName: string
-  ) => void;
+  ) => Promise<{ id: number; url: string }>;
   onDelete: (id: number) => void;
   uploading: boolean;
   deletePending?: boolean;
@@ -1332,7 +1336,45 @@ function ObservationAttachments({
   const [linking, setLinking] = useState<{ id: number; url: string } | null>(
     null
   );
+  // Set right after a photo finishes uploading, so previewFaceMatch (below)
+  // has something to check. Cleared as soon as that check comes back —
+  // whether or not it actually found a suggestion — since it's a one-shot
+  // "just uploaded" check, not a standing subscription for this photo.
+  const [suggestCheck, setSuggestCheck] = useState<{
+    id: number;
+    url: string;
+  } | null>(null);
+  const [suggestion, setSuggestion] = useState<{
+    id: number;
+    url: string;
+    match: FaceMatchSuggestion;
+  } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Deliberately narrow: only offers a suggestion for a photo with exactly
+  // one detected face (see previewFaceMatch's own comment) — a photo with 0
+  // or 2+ faces is left completely untouched, same as before this feature
+  // existed, and the officer uses the normal Link badge whenever they want.
+  const { data: facePreview, isFetched: facePreviewFetched } =
+    trpc.attachment.previewFaceMatch.useQuery(
+      { attachmentId: suggestCheck?.id ?? 0 },
+      { enabled: suggestCheck !== null, retry: false }
+    );
+
+  // useQuery in this app's React Query version has no onSuccess/onSettled
+  // callback (removed in v5) — react to the result landing instead.
+  useEffect(() => {
+    if (!suggestCheck || !facePreviewFetched) return;
+    if (facePreview?.suggestion) {
+      setSuggestion({
+        id: suggestCheck.id,
+        url: suggestCheck.url,
+        match: facePreview.suggestion,
+      });
+    }
+    setSuggestCheck(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facePreviewFetched, facePreview]);
 
   if (!IMAGERY_PHRASE_PATTERN.test(row.observation ?? "")) return null;
 
@@ -1364,7 +1406,8 @@ function ObservationAttachments({
         reader.onload = () => setPreview(reader.result as string);
         reader.readAsDataURL(blob);
       }
-      onUpload(row.id, blob, mimeType, fileName);
+      const uploaded = await onUpload(row.id, blob, mimeType, fileName);
+      if (uploaded) setSuggestCheck(uploaded);
     } catch {
       toast.error(
         "Couldn't process that photo — try again, or use a different photo."
@@ -1459,6 +1502,15 @@ function ObservationAttachments({
             if (!open) setLinking(null);
           }}
           currentOperationId={operationId}
+        />
+      )}
+
+      {suggestion && (
+        <SuggestedFaceMatchDialog
+          attachmentId={suggestion.id}
+          photoUrl={suggestion.url}
+          suggestion={suggestion.match}
+          onDone={() => setSuggestion(null)}
         />
       )}
     </div>
@@ -5545,7 +5597,7 @@ export default function SheetDetail({
                                 row={row}
                                 canEdit={canEdit && !row.isLocked}
                                 onUpload={(rowId, blob, mimeType, fileName) =>
-                                  uploadAttachment.mutate({
+                                  uploadAttachment.mutateAsync({
                                     rowId,
                                     blob,
                                     mimeType,

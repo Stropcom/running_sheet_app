@@ -2124,7 +2124,7 @@ export default function OperationDetail() {
           navigate(`/operation/${operationId}?${sp.toString()}`);
         }}
       >
-        <div className="p-6 lg:p-8 max-w-4xl mx-auto">
+        <div className="p-6 lg:p-8">
           {/* Breadcrumb */}
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
             <button
@@ -2302,7 +2302,7 @@ export default function OperationDetail() {
           phone with a long card title). A plain block-level div doesn't
           have that flex quirk. */}
         <TabsContent value="sheets">
-          <div className="px-6 lg:px-8 pb-6 lg:pb-8 max-w-4xl mx-auto">
+          <div className="px-6 lg:px-8 pb-6 lg:pb-8">
             {isLoading ? (
               <div className="flex flex-col gap-3">
                 {[1, 2, 3].map(i => (
@@ -2476,7 +2476,7 @@ export default function OperationDetail() {
 
         {/* ── Deployment Summaries tab ── */}
         <TabsContent value="rollup">
-          <div className="px-6 lg:px-8 pb-6 lg:pb-8 max-w-4xl mx-auto">
+          <div className="px-6 lg:px-8 pb-6 lg:pb-8">
             <DeploymentRollupPanel
               operationId={operationId}
               targets={operationTargets}
@@ -2487,21 +2487,18 @@ export default function OperationDetail() {
         {/* ── Operation Profile tab — the same Operation Profile page
               ("Full Profile" from the Intelligence folder) mounted inline,
               so an officer doesn't have to leave this page to see it. No
-              px/max-w wrapper here (unlike the other three tabs) — this
-              tab was reading noticeably narrower/more cramped than the
-              same content viewed from the Intelligence folder, because it
-              used to sit inside this page's own max-w-4xl "page shell" ON
-              TOP OF OperationProfileContent's own max-w-3xl, double-
-              padding it. OperationProfileContent's own internal width/
-              padding is now the only constraint, matching the Intelligence
-              folder rendering exactly. */}
+              wrapper div here — OperationProfileContent carries its own
+              px-6/lg:px-8 padding, matching the header above and the other
+              three tabs' own wrapper now that none of them cap width with
+              a max-w-*, so the whole page (header, tab bar, and every
+              tab's content) reads as one consistent full-width surface. */}
         <TabsContent value="profile">
           <OperationProfileContent operationId={operationId} />
         </TabsContent>
 
         {/* ── Add Target tab ── */}
         <TabsContent value="target">
-          <div className="px-6 lg:px-8 pb-6 lg:pb-8 max-w-4xl mx-auto">
+          <div className="px-6 lg:px-8 pb-6 lg:pb-8">
             <TargetPanel
               operationId={operationId}
               operationName={operation?.name ?? ""}

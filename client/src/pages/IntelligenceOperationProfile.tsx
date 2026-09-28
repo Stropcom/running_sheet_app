@@ -9,7 +9,7 @@ export default function IntelligenceOperationProfile() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-3xl mx-auto px-4 pt-6">
+      <div className="px-6 lg:px-8 pt-6">
         <button
           onClick={() => window.history.back()}
           className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-1"

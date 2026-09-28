@@ -2115,120 +2115,120 @@ export default function OperationDetail() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 lg:p-8 max-w-4xl mx-auto">
-        {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
-          <button
-            onClick={() => navigate("/")}
-            className="flex items-center gap-1.5 hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Operations
-          </button>
-          <ChevronRight className="w-3.5 h-3.5" />
-          <span className="text-foreground font-medium truncate">
-            {opLoading ? "Loading…" : (operation?.name ?? "Operation")}
-          </span>
-        </div>
+      <Tabs
+        value={activeTab}
+        onValueChange={v => {
+          const sp = new URLSearchParams(window.location.search);
+          sp.set("tab", v);
+          if (v !== "target") sp.delete("targetId");
+          navigate(`/operation/${operationId}?${sp.toString()}`);
+        }}
+      >
+        <div className="p-6 lg:p-8 max-w-4xl mx-auto">
+          {/* Breadcrumb */}
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+            <button
+              onClick={() => navigate("/")}
+              className="flex items-center gap-1.5 hover:text-foreground transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Operations
+            </button>
+            <ChevronRight className="w-3.5 h-3.5" />
+            <span className="text-foreground font-medium truncate">
+              {opLoading ? "Loading…" : (operation?.name ?? "Operation")}
+            </span>
+          </div>
 
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 mb-6">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="p-2.5 rounded-lg bg-blue-700/10 border border-blue-700/20">
-                <FolderOpen className="w-5 h-5 text-blue-700" />
-              </div>
-              <h1 className="text-2xl font-semibold text-foreground">
-                {opLoading ? (
-                  <Skeleton className="h-7 w-48" />
-                ) : (
-                  (operation?.name ?? "Operation")
+          {/* Header */}
+          <div className="flex items-start justify-between gap-3 mb-6">
+            <div className="min-w-0">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2.5 rounded-lg bg-blue-700/10 border border-blue-700/20">
+                  <FolderOpen className="w-5 h-5 text-blue-700" />
+                </div>
+                <h1 className="text-2xl font-semibold text-foreground">
+                  {opLoading ? (
+                    <Skeleton className="h-7 w-48" />
+                  ) : (
+                    (operation?.name ?? "Operation")
+                  )}
+                </h1>
+                {!opLoading && operation && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="w-7 h-7 text-muted-foreground hover:text-foreground"
+                    onClick={() => setEditOpen(true)}
+                    title="Edit operation details"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
                 )}
-              </h1>
+              </div>
+              {/* Operation metadata */}
               {!opLoading && operation && (
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-1 ml-11">
+                  {operation.promisNumber && (
+                    <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                      <Hash className="w-3.5 h-3.5" />
+                      PROMIS:{" "}
+                      <span className="text-foreground font-medium ml-0.5">
+                        {operation.promisNumber}
+                      </span>
+                    </span>
+                  )}
+                  {operation.imsNumber && (
+                    <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                      <Hash className="w-3.5 h-3.5" />
+                      IMS:{" "}
+                      <span className="text-foreground font-medium ml-0.5">
+                        {operation.imsNumber}
+                      </span>
+                    </span>
+                  )}
+                  {operation.investigationUnit && (
+                    <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                      <Building2 className="w-3.5 h-3.5" />
+                      <span className="text-foreground font-medium">
+                        {operation.investigationUnit}
+                      </span>
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="shrink-0">
+              {activeTab === "sheets" && (
                 <Button
-                  size="icon"
-                  variant="ghost"
-                  className="w-7 h-7 text-muted-foreground hover:text-foreground"
-                  onClick={() => setEditOpen(true)}
-                  title="Edit operation details"
+                  size="sm"
+                  className="gap-1.5 justify-center"
+                  onClick={() => setCreateOpen(true)}
                 >
-                  <Pencil className="w-3.5 h-3.5" />
+                  <Plus className="w-3.5 h-3.5" />
+                  Add
+                  <span className="hidden sm:inline">&nbsp;Running Sheet</span>
+                </Button>
+              )}
+              {activeTab === "rollup" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 justify-center"
+                  onClick={() => setExportOpen(true)}
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  Export
                 </Button>
               )}
             </div>
-            {/* Operation metadata */}
-            {!opLoading && operation && (
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 ml-11">
-                {operation.promisNumber && (
-                  <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Hash className="w-3.5 h-3.5" />
-                    PROMIS:{" "}
-                    <span className="text-foreground font-medium ml-0.5">
-                      {operation.promisNumber}
-                    </span>
-                  </span>
-                )}
-                {operation.imsNumber && (
-                  <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Hash className="w-3.5 h-3.5" />
-                    IMS:{" "}
-                    <span className="text-foreground font-medium ml-0.5">
-                      {operation.imsNumber}
-                    </span>
-                  </span>
-                )}
-                {operation.investigationUnit && (
-                  <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Building2 className="w-3.5 h-3.5" />
-                    <span className="text-foreground font-medium">
-                      {operation.investigationUnit}
-                    </span>
-                  </span>
-                )}
-              </div>
-            )}
           </div>
-          <div className="shrink-0">
-            {activeTab === "sheets" && (
-              <Button
-                size="sm"
-                className="gap-1.5 justify-center"
-                onClick={() => setCreateOpen(true)}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add<span className="hidden sm:inline">&nbsp;Running Sheet</span>
-              </Button>
-            )}
-            {activeTab === "rollup" && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 justify-center"
-                onClick={() => setExportOpen(true)}
-              >
-                <FileDown className="w-3.5 h-3.5" />
-                Export
-              </Button>
-            )}
-          </div>
-        </div>
 
-        {/* Main tabs: Running Sheets | Deployment Summaries */}
-        <Tabs
-          value={activeTab}
-          onValueChange={v => {
-            const sp = new URLSearchParams(window.location.search);
-            sp.set("tab", v);
-            if (v !== "target") sp.delete("targetId");
-            navigate(`/operation/${operationId}?${sp.toString()}`);
-          }}
-          className="mt-2"
-        >
+          {/* Main tabs: Running Sheets | Deployment Summaries */}
           {/* flex-wrap so the "Back to Running Sheet" button below drops to
-              its own line on a narrow screen rather than squeezing the tabs
-              off one row. */}
-          <div className="flex flex-wrap items-center gap-2 mb-4">
+            its own line on a narrow screen rather than squeezing the tabs
+            off one row. */}
+          <div className="flex flex-wrap items-center gap-2 mt-2">
             {/* grid-cols-3 (not the default flex-1) so all three triggers
                 stay exactly the same width as each other at every screen
                 size, not just on mobile — equal-width, symmetrical tabs is
@@ -2283,121 +2283,82 @@ export default function OperationDetail() {
               </button>
             )}
           </div>
+        </div>
+        {/* end header wrapper — the outer max-w-4xl "page shell" padding
+        applies to the breadcrumb/header/TabsList above but deliberately
+        NOT to the tab content below, since the Profile tab needs to be
+        full-width (see the "profile" TabsContent's own comment). The
+        other three tabs get an equivalent px/pb wrapper directly on their
+        own TabsContent instead, so they keep the exact same look as
+        before this split. */}
 
-          {/* ── Running Sheets tab ── */}
-          <TabsContent value="sheets">
-            {isLoading ? (
-              <div className="flex flex-col gap-3">
-                {[1, 2, 3].map(i => (
-                  <Skeleton key={i} className="h-20 rounded-xl" />
-                ))}
+        {/* ── Running Sheets tab ── */}
+        <TabsContent
+          value="sheets"
+          className="px-6 lg:px-8 pb-6 lg:pb-8 max-w-4xl mx-auto"
+        >
+          {isLoading ? (
+            <div className="flex flex-col gap-3">
+              {[1, 2, 3].map(i => (
+                <Skeleton key={i} className="h-20 rounded-xl" />
+              ))}
+            </div>
+          ) : !sheets || sheets.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="p-4 rounded-2xl bg-muted/40 mb-4">
+                <FileText className="w-8 h-8 text-muted-foreground" />
               </div>
-            ) : !sheets || sheets.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="p-4 rounded-2xl bg-muted/40 mb-4">
-                  <FileText className="w-8 h-8 text-muted-foreground" />
-                </div>
-                <p className="text-foreground font-medium mb-1">
-                  No running sheets yet
-                </p>
-                <p className="text-muted-foreground text-sm mb-4">
-                  Create the first running sheet for this operation
-                </p>
-                <Button
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => setCreateOpen(true)}
-                >
-                  <Plus className="w-4 h-4" />
-                  New Running Sheet
-                </Button>
-              </div>
-            ) : (
-              (() => {
-                const filteredSheets = sheets.filter(sheet => {
-                  if (!sheetSearch.trim()) return true;
-                  const q = sheetSearch.trim().toLowerCase();
-                  if (sheet.title.toLowerCase().includes(q)) return true;
-                  const cins: CinEntry[] = (() => {
-                    try {
-                      return sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
-                    } catch {
-                      return [];
-                    }
-                  })();
-                  if (cins.some(c => c.cin.toLowerCase().includes(q)))
-                    return true;
-                  const tgt = operationTargets?.find(
-                    t =>
-                      t.id === (sheet as { targetId?: number | null }).targetId
-                  );
-                  if (tgt && tgt.name.toLowerCase().includes(q)) return true;
-                  return false;
-                });
-                return (
-                  <div className="flex flex-col gap-2">
-                    {/* Search bar */}
-                    <div className="relative mb-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-                      <Input
-                        placeholder="Search by title, CIN or target…"
-                        value={sheetSearch}
-                        onChange={e => setSheetSearch(e.target.value)}
-                        className="pl-8 h-9 text-sm"
-                      />
-                    </div>
-                    {viewMode === "tile" ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {filteredSheets.map(sheet => {
-                          const parsedCins: CinEntry[] = (() => {
-                            try {
-                              const raw: CinEntry[] = sheet.sheetCins
-                                ? JSON.parse(sheet.sheetCins)
-                                : [];
-                              return [...raw].sort((a, b) => {
-                                if (a.isTeamLeader && !b.isTeamLeader)
-                                  return -1;
-                                if (!a.isTeamLeader && b.isTeamLeader) return 1;
-                                const aNum = parseInt(a.cin, 10);
-                                const bNum = parseInt(b.cin, 10);
-                                if (!isNaN(aNum) && !isNaN(bNum))
-                                  return aNum - bNum;
-                                return a.cin.localeCompare(b.cin);
-                              });
-                            } catch {
-                              return [];
-                            }
-                          })();
-                          const cinNames = parsedCins.map(c => c.cin);
-                          const assignedTarget = operationTargets?.find(
-                            t =>
-                              t.id ===
-                              (sheet as { targetId?: number | null }).targetId
-                          );
-                          return (
-                            <SheetTileCard
-                              key={sheet.id}
-                              sheet={sheet}
-                              cinNames={cinNames}
-                              cinEntries={parsedCins}
-                              targetName={assignedTarget?.name}
-                              isAdmin={
-                                user?.role === "admin" ||
-                                user?.role === "member"
-                              }
-                              onNavigate={() => navigate(`/sheet/${sheet.id}`)}
-                              onCopyMove={() =>
-                                setCopyMoveSheet({
-                                  id: sheet.id,
-                                  title: sheet.title,
-                                })
-                              }
-                            />
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      filteredSheets.map(sheet => {
+              <p className="text-foreground font-medium mb-1">
+                No running sheets yet
+              </p>
+              <p className="text-muted-foreground text-sm mb-4">
+                Create the first running sheet for this operation
+              </p>
+              <Button
+                size="sm"
+                className="gap-2"
+                onClick={() => setCreateOpen(true)}
+              >
+                <Plus className="w-4 h-4" />
+                New Running Sheet
+              </Button>
+            </div>
+          ) : (
+            (() => {
+              const filteredSheets = sheets.filter(sheet => {
+                if (!sheetSearch.trim()) return true;
+                const q = sheetSearch.trim().toLowerCase();
+                if (sheet.title.toLowerCase().includes(q)) return true;
+                const cins: CinEntry[] = (() => {
+                  try {
+                    return sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+                  } catch {
+                    return [];
+                  }
+                })();
+                if (cins.some(c => c.cin.toLowerCase().includes(q)))
+                  return true;
+                const tgt = operationTargets?.find(
+                  t => t.id === (sheet as { targetId?: number | null }).targetId
+                );
+                if (tgt && tgt.name.toLowerCase().includes(q)) return true;
+                return false;
+              });
+              return (
+                <div className="flex flex-col gap-2">
+                  {/* Search bar */}
+                  <div className="relative mb-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                    <Input
+                      placeholder="Search by title, CIN or target…"
+                      value={sheetSearch}
+                      onChange={e => setSheetSearch(e.target.value)}
+                      className="pl-8 h-9 text-sm"
+                    />
+                  </div>
+                  {viewMode === "tile" ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {filteredSheets.map(sheet => {
                         const parsedCins: CinEntry[] = (() => {
                           try {
                             const raw: CinEntry[] = sheet.sheetCins
@@ -2423,17 +2384,16 @@ export default function OperationDetail() {
                             (sheet as { targetId?: number | null }).targetId
                         );
                         return (
-                          <SheetCard
+                          <SheetTileCard
                             key={sheet.id}
                             sheet={sheet}
                             cinNames={cinNames}
                             cinEntries={parsedCins}
+                            targetName={assignedTarget?.name}
                             isAdmin={
                               user?.role === "admin" || user?.role === "member"
                             }
-                            targetName={assignedTarget?.name ?? null}
                             onNavigate={() => navigate(`/sheet/${sheet.id}`)}
-                            onDelete={() => setDeleteId(sheet.id)}
                             onCopyMove={() =>
                               setCopyMoveSheet({
                                 id: sheet.id,
@@ -2442,46 +2402,107 @@ export default function OperationDetail() {
                             }
                           />
                         );
-                      })
-                    )}
-                  </div>
-                );
-              })()
-            )}
+                      })}
+                    </div>
+                  ) : (
+                    filteredSheets.map(sheet => {
+                      const parsedCins: CinEntry[] = (() => {
+                        try {
+                          const raw: CinEntry[] = sheet.sheetCins
+                            ? JSON.parse(sheet.sheetCins)
+                            : [];
+                          return [...raw].sort((a, b) => {
+                            if (a.isTeamLeader && !b.isTeamLeader) return -1;
+                            if (!a.isTeamLeader && b.isTeamLeader) return 1;
+                            const aNum = parseInt(a.cin, 10);
+                            const bNum = parseInt(b.cin, 10);
+                            if (!isNaN(aNum) && !isNaN(bNum))
+                              return aNum - bNum;
+                            return a.cin.localeCompare(b.cin);
+                          });
+                        } catch {
+                          return [];
+                        }
+                      })();
+                      const cinNames = parsedCins.map(c => c.cin);
+                      const assignedTarget = operationTargets?.find(
+                        t =>
+                          t.id ===
+                          (sheet as { targetId?: number | null }).targetId
+                      );
+                      return (
+                        <SheetCard
+                          key={sheet.id}
+                          sheet={sheet}
+                          cinNames={cinNames}
+                          cinEntries={parsedCins}
+                          isAdmin={
+                            user?.role === "admin" || user?.role === "member"
+                          }
+                          targetName={assignedTarget?.name ?? null}
+                          onNavigate={() => navigate(`/sheet/${sheet.id}`)}
+                          onDelete={() => setDeleteId(sheet.id)}
+                          onCopyMove={() =>
+                            setCopyMoveSheet({
+                              id: sheet.id,
+                              title: sheet.title,
+                            })
+                          }
+                        />
+                      );
+                    })
+                  )}
+                </div>
+              );
+            })()
+          )}
 
-            {sheets && sheets.length > 0 && (
-              <p className="text-xs text-muted-foreground mt-3 text-right">
-                {sheets.length} running sheet{sheets.length !== 1 ? "s" : ""}
-              </p>
-            )}
-          </TabsContent>
+          {sheets && sheets.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-3 text-right">
+              {sheets.length} running sheet{sheets.length !== 1 ? "s" : ""}
+            </p>
+          )}
+        </TabsContent>
 
-          {/* ── Deployment Summaries tab ── */}
-          <TabsContent value="rollup">
-            <DeploymentRollupPanel
-              operationId={operationId}
-              targets={operationTargets}
-            />
-          </TabsContent>
+        {/* ── Deployment Summaries tab ── */}
+        <TabsContent
+          value="rollup"
+          className="px-6 lg:px-8 pb-6 lg:pb-8 max-w-4xl mx-auto"
+        >
+          <DeploymentRollupPanel
+            operationId={operationId}
+            targets={operationTargets}
+          />
+        </TabsContent>
 
-          {/* ── Operation Profile tab — the same Operation Profile page
+        {/* ── Operation Profile tab — the same Operation Profile page
               ("Full Profile" from the Intelligence folder) mounted inline,
-              so an officer doesn't have to leave this page to see it. */}
-          <TabsContent value="profile">
-            <OperationProfileContent operationId={operationId} />
-          </TabsContent>
+              so an officer doesn't have to leave this page to see it. No
+              px/max-w wrapper here (unlike the other three tabs) — this
+              tab was reading noticeably narrower/more cramped than the
+              same content viewed from the Intelligence folder, because it
+              used to sit inside this page's own max-w-4xl "page shell" ON
+              TOP OF OperationProfileContent's own max-w-3xl, double-
+              padding it. OperationProfileContent's own internal width/
+              padding is now the only constraint, matching the Intelligence
+              folder rendering exactly. */}
+        <TabsContent value="profile">
+          <OperationProfileContent operationId={operationId} />
+        </TabsContent>
 
-          {/* ── Add Target tab ── */}
-          <TabsContent value="target">
-            <TargetPanel
-              operationId={operationId}
-              operationName={operation?.name ?? ""}
-              autoExpandId={autoExpandTargetId}
-              fromSheetId={fromSheetId}
-            />
-          </TabsContent>
-        </Tabs>
-      </div>
+        {/* ── Add Target tab ── */}
+        <TabsContent
+          value="target"
+          className="px-6 lg:px-8 pb-6 lg:pb-8 max-w-4xl mx-auto"
+        >
+          <TargetPanel
+            operationId={operationId}
+            operationName={operation?.name ?? ""}
+            autoExpandId={autoExpandTargetId}
+            fromSheetId={fromSheetId}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Edit Operation Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>

@@ -47,6 +47,7 @@ import { MapView } from "@/components/Map";
 import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
 import { StreetViewPip } from "@/components/StreetViewPip";
 import { ImagesPip } from "@/components/ImagesPip";
+import { StreetHeadingBar } from "@/components/StreetHeadingBar";
 import { UcoGuideMapOverlay } from "@/components/UcoGuideMapOverlay";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
 import { OperationProfileContent } from "@/components/OperationProfileContent";
@@ -134,6 +135,7 @@ import {
   Square,
   PieChart,
   Route,
+  Compass,
 } from "lucide-react";
 
 // Phone/tablet (touch, no physical keyboard) vs laptop/desktop (mouse +
@@ -1502,6 +1504,20 @@ export default function IntelligenceMapping() {
     }
     return false;
   });
+  // Bottom-of-screen bar showing the officer's own current street + heading
+  // (see StreetHeadingBar) — a display preference like mapDarkMode, not tied
+  // to GPS sharing itself, so it follows the same local-only persistence.
+  const [showStreetHeadingBar, setShowStreetHeadingBar] = useState<boolean>(
+    () => {
+      try {
+        const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+        if (s) return JSON.parse(s).showStreetHeadingBar ?? false;
+      } catch {
+        /* ignore */
+      }
+      return false;
+    }
+  );
   // 3D (tilt) view — only available under vector rendering. Kept in sync
   // with the map's actual tilt via a "tilt_changed" listener (see
   // handleMapReady) so the button reflects reality even if a gesture
@@ -2312,6 +2328,7 @@ export default function IntelligenceMapping() {
           mapDarkMode,
           panelWidthNormal,
           panelWidthProfile,
+          showStreetHeadingBar,
         })
       );
     } catch {
@@ -2330,6 +2347,7 @@ export default function IntelligenceMapping() {
     mapDarkMode,
     panelWidthNormal,
     panelWidthProfile,
+    showStreetHeadingBar,
   ]);
 
   // Save map center/zoom to localStorage whenever the map stops moving (idle event)
@@ -2943,6 +2961,18 @@ export default function IntelligenceMapping() {
   useEffect(() => {
     ownUserIdRef.current = user?.id;
   }, [user?.id]);
+
+  // This device's own entry in the live-users list — same data driving the
+  // rotating arrow on the caller's own pin, reused here for the Street &
+  // Heading bar (see StreetHeadingBar) instead of rotating a marker.
+  const ownLiveEntry = useMemo(() => {
+    if (!liveUsers) return null;
+    return (
+      (liveUsers as LiveUser[]).find(
+        u => u.userId === user?.id && u.deviceId === deviceIdRef.current
+      ) ?? null
+    );
+  }, [liveUsers, user?.id]);
 
   const startWatching = useCallback(() => {
     if (!navigator.geolocation) {
@@ -6524,6 +6554,14 @@ export default function IntelligenceMapping() {
             />
           )}
 
+          {showStreetHeadingBar && ownLiveEntry && (
+            <StreetHeadingBar
+              lat={ownLiveEntry.lat}
+              lng={ownLiveEntry.lng}
+              heading={ownLiveEntry.heading}
+            />
+          )}
+
           {/* RS Actions pane is now opened via the header folder-expander icon
             (DashboardLayout's rightPaneToggle prop) instead of a draggable
             side tab — see the DashboardLayout invocation below. */}
@@ -7422,6 +7460,49 @@ export default function IntelligenceMapping() {
                 </div>
               )}
               {/* end TEAMS */}
+
+              {/* ── STREET & HEADING — own section, same on/off pattern as
+                Location's "Show & Share" above: a deliberate toggle with
+                its own heading rather than a switch buried elsewhere. ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Street &amp; Heading
+                </span>
+                <button
+                  onClick={() => setShowStreetHeadingBar(!showStreetHeadingBar)}
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+                    showStreetHeadingBar
+                      ? "border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20"
+                      : "border-border bg-card hover:bg-accent/40"
+                  }`}
+                  aria-pressed={showStreetHeadingBar}
+                >
+                  <Compass
+                    className={`h-3.5 w-3.5 flex-shrink-0 ${
+                      showStreetHeadingBar
+                        ? "text-sky-500"
+                        : "text-muted-foreground"
+                    }`}
+                  />
+                  <span
+                    className={`text-xs font-semibold truncate flex-1 text-left ${
+                      showStreetHeadingBar ? "text-sky-500" : "text-foreground"
+                    }`}
+                  >
+                    Current Street &amp; Direction
+                  </span>
+                  <span
+                    className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                      showStreetHeadingBar
+                        ? "text-sky-500"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {showStreetHeadingBar ? "On" : "Off"}
+                  </span>
+                </button>
+              </div>
+              {/* end Street & Heading */}
             </div>
           )}
           {/* end Pane Body */}

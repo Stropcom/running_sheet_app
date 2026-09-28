@@ -2293,72 +2293,128 @@ export default function OperationDetail() {
         before this split. */}
 
         {/* ── Running Sheets tab ── */}
-        <TabsContent
-          value="sheets"
-          className="px-6 lg:px-8 pb-6 lg:pb-8 max-w-4xl mx-auto"
-        >
-          {isLoading ? (
-            <div className="flex flex-col gap-3">
-              {[1, 2, 3].map(i => (
-                <Skeleton key={i} className="h-20 rounded-xl" />
-              ))}
-            </div>
-          ) : !sheets || sheets.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-center">
-              <div className="p-4 rounded-2xl bg-muted/40 mb-4">
-                <FileText className="w-8 h-8 text-muted-foreground" />
+        {/* The width/padding classes go on this inner div, not on
+          TabsContent itself — TabsContent is a flex item (shadcn's own
+          "flex-1" default, inside the Tabs root's "flex flex-col"), and a
+          flex item's default min-width:auto refuses to shrink below its
+          content's natural width, which fought the max-w-4xl constraint
+          here (too-narrow centering on desktop, horizontal overflow on
+          phone with a long card title). A plain block-level div doesn't
+          have that flex quirk. */}
+        <TabsContent value="sheets">
+          <div className="px-6 lg:px-8 pb-6 lg:pb-8 max-w-4xl mx-auto">
+            {isLoading ? (
+              <div className="flex flex-col gap-3">
+                {[1, 2, 3].map(i => (
+                  <Skeleton key={i} className="h-20 rounded-xl" />
+                ))}
               </div>
-              <p className="text-foreground font-medium mb-1">
-                No running sheets yet
-              </p>
-              <p className="text-muted-foreground text-sm mb-4">
-                Create the first running sheet for this operation
-              </p>
-              <Button
-                size="sm"
-                className="gap-2"
-                onClick={() => setCreateOpen(true)}
-              >
-                <Plus className="w-4 h-4" />
-                New Running Sheet
-              </Button>
-            </div>
-          ) : (
-            (() => {
-              const filteredSheets = sheets.filter(sheet => {
-                if (!sheetSearch.trim()) return true;
-                const q = sheetSearch.trim().toLowerCase();
-                if (sheet.title.toLowerCase().includes(q)) return true;
-                const cins: CinEntry[] = (() => {
-                  try {
-                    return sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
-                  } catch {
-                    return [];
-                  }
-                })();
-                if (cins.some(c => c.cin.toLowerCase().includes(q)))
-                  return true;
-                const tgt = operationTargets?.find(
-                  t => t.id === (sheet as { targetId?: number | null }).targetId
-                );
-                if (tgt && tgt.name.toLowerCase().includes(q)) return true;
-                return false;
-              });
-              return (
-                <div className="flex flex-col gap-2">
-                  {/* Search bar */}
-                  <div className="relative mb-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-                    <Input
-                      placeholder="Search by title, CIN or target…"
-                      value={sheetSearch}
-                      onChange={e => setSheetSearch(e.target.value)}
-                      className="pl-8 h-9 text-sm"
-                    />
-                  </div>
-                  {viewMode === "tile" ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {filteredSheets.map(sheet => {
+            ) : !sheets || sheets.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="p-4 rounded-2xl bg-muted/40 mb-4">
+                  <FileText className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <p className="text-foreground font-medium mb-1">
+                  No running sheets yet
+                </p>
+                <p className="text-muted-foreground text-sm mb-4">
+                  Create the first running sheet for this operation
+                </p>
+                <Button
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => setCreateOpen(true)}
+                >
+                  <Plus className="w-4 h-4" />
+                  New Running Sheet
+                </Button>
+              </div>
+            ) : (
+              (() => {
+                const filteredSheets = sheets.filter(sheet => {
+                  if (!sheetSearch.trim()) return true;
+                  const q = sheetSearch.trim().toLowerCase();
+                  if (sheet.title.toLowerCase().includes(q)) return true;
+                  const cins: CinEntry[] = (() => {
+                    try {
+                      return sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+                    } catch {
+                      return [];
+                    }
+                  })();
+                  if (cins.some(c => c.cin.toLowerCase().includes(q)))
+                    return true;
+                  const tgt = operationTargets?.find(
+                    t =>
+                      t.id === (sheet as { targetId?: number | null }).targetId
+                  );
+                  if (tgt && tgt.name.toLowerCase().includes(q)) return true;
+                  return false;
+                });
+                return (
+                  <div className="flex flex-col gap-2">
+                    {/* Search bar */}
+                    <div className="relative mb-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                      <Input
+                        placeholder="Search by title, CIN or target…"
+                        value={sheetSearch}
+                        onChange={e => setSheetSearch(e.target.value)}
+                        className="pl-8 h-9 text-sm"
+                      />
+                    </div>
+                    {viewMode === "tile" ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {filteredSheets.map(sheet => {
+                          const parsedCins: CinEntry[] = (() => {
+                            try {
+                              const raw: CinEntry[] = sheet.sheetCins
+                                ? JSON.parse(sheet.sheetCins)
+                                : [];
+                              return [...raw].sort((a, b) => {
+                                if (a.isTeamLeader && !b.isTeamLeader)
+                                  return -1;
+                                if (!a.isTeamLeader && b.isTeamLeader) return 1;
+                                const aNum = parseInt(a.cin, 10);
+                                const bNum = parseInt(b.cin, 10);
+                                if (!isNaN(aNum) && !isNaN(bNum))
+                                  return aNum - bNum;
+                                return a.cin.localeCompare(b.cin);
+                              });
+                            } catch {
+                              return [];
+                            }
+                          })();
+                          const cinNames = parsedCins.map(c => c.cin);
+                          const assignedTarget = operationTargets?.find(
+                            t =>
+                              t.id ===
+                              (sheet as { targetId?: number | null }).targetId
+                          );
+                          return (
+                            <SheetTileCard
+                              key={sheet.id}
+                              sheet={sheet}
+                              cinNames={cinNames}
+                              cinEntries={parsedCins}
+                              targetName={assignedTarget?.name}
+                              isAdmin={
+                                user?.role === "admin" ||
+                                user?.role === "member"
+                              }
+                              onNavigate={() => navigate(`/sheet/${sheet.id}`)}
+                              onCopyMove={() =>
+                                setCopyMoveSheet({
+                                  id: sheet.id,
+                                  title: sheet.title,
+                                })
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      filteredSheets.map(sheet => {
                         const parsedCins: CinEntry[] = (() => {
                           try {
                             const raw: CinEntry[] = sheet.sheetCins
@@ -2384,16 +2440,17 @@ export default function OperationDetail() {
                             (sheet as { targetId?: number | null }).targetId
                         );
                         return (
-                          <SheetTileCard
+                          <SheetCard
                             key={sheet.id}
                             sheet={sheet}
                             cinNames={cinNames}
                             cinEntries={parsedCins}
-                            targetName={assignedTarget?.name}
                             isAdmin={
                               user?.role === "admin" || user?.role === "member"
                             }
+                            targetName={assignedTarget?.name ?? null}
                             onNavigate={() => navigate(`/sheet/${sheet.id}`)}
+                            onDelete={() => setDeleteId(sheet.id)}
                             onCopyMove={() =>
                               setCopyMoveSheet({
                                 id: sheet.id,
@@ -2402,77 +2459,29 @@ export default function OperationDetail() {
                             }
                           />
                         );
-                      })}
-                    </div>
-                  ) : (
-                    filteredSheets.map(sheet => {
-                      const parsedCins: CinEntry[] = (() => {
-                        try {
-                          const raw: CinEntry[] = sheet.sheetCins
-                            ? JSON.parse(sheet.sheetCins)
-                            : [];
-                          return [...raw].sort((a, b) => {
-                            if (a.isTeamLeader && !b.isTeamLeader) return -1;
-                            if (!a.isTeamLeader && b.isTeamLeader) return 1;
-                            const aNum = parseInt(a.cin, 10);
-                            const bNum = parseInt(b.cin, 10);
-                            if (!isNaN(aNum) && !isNaN(bNum))
-                              return aNum - bNum;
-                            return a.cin.localeCompare(b.cin);
-                          });
-                        } catch {
-                          return [];
-                        }
-                      })();
-                      const cinNames = parsedCins.map(c => c.cin);
-                      const assignedTarget = operationTargets?.find(
-                        t =>
-                          t.id ===
-                          (sheet as { targetId?: number | null }).targetId
-                      );
-                      return (
-                        <SheetCard
-                          key={sheet.id}
-                          sheet={sheet}
-                          cinNames={cinNames}
-                          cinEntries={parsedCins}
-                          isAdmin={
-                            user?.role === "admin" || user?.role === "member"
-                          }
-                          targetName={assignedTarget?.name ?? null}
-                          onNavigate={() => navigate(`/sheet/${sheet.id}`)}
-                          onDelete={() => setDeleteId(sheet.id)}
-                          onCopyMove={() =>
-                            setCopyMoveSheet({
-                              id: sheet.id,
-                              title: sheet.title,
-                            })
-                          }
-                        />
-                      );
-                    })
-                  )}
-                </div>
-              );
-            })()
-          )}
+                      })
+                    )}
+                  </div>
+                );
+              })()
+            )}
 
-          {sheets && sheets.length > 0 && (
-            <p className="text-xs text-muted-foreground mt-3 text-right">
-              {sheets.length} running sheet{sheets.length !== 1 ? "s" : ""}
-            </p>
-          )}
+            {sheets && sheets.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-3 text-right">
+                {sheets.length} running sheet{sheets.length !== 1 ? "s" : ""}
+              </p>
+            )}
+          </div>
         </TabsContent>
 
         {/* ── Deployment Summaries tab ── */}
-        <TabsContent
-          value="rollup"
-          className="px-6 lg:px-8 pb-6 lg:pb-8 max-w-4xl mx-auto"
-        >
-          <DeploymentRollupPanel
-            operationId={operationId}
-            targets={operationTargets}
-          />
+        <TabsContent value="rollup">
+          <div className="px-6 lg:px-8 pb-6 lg:pb-8 max-w-4xl mx-auto">
+            <DeploymentRollupPanel
+              operationId={operationId}
+              targets={operationTargets}
+            />
+          </div>
         </TabsContent>
 
         {/* ── Operation Profile tab — the same Operation Profile page
@@ -2491,16 +2500,15 @@ export default function OperationDetail() {
         </TabsContent>
 
         {/* ── Add Target tab ── */}
-        <TabsContent
-          value="target"
-          className="px-6 lg:px-8 pb-6 lg:pb-8 max-w-4xl mx-auto"
-        >
-          <TargetPanel
-            operationId={operationId}
-            operationName={operation?.name ?? ""}
-            autoExpandId={autoExpandTargetId}
-            fromSheetId={fromSheetId}
-          />
+        <TabsContent value="target">
+          <div className="px-6 lg:px-8 pb-6 lg:pb-8 max-w-4xl mx-auto">
+            <TargetPanel
+              operationId={operationId}
+              operationName={operation?.name ?? ""}
+              autoExpandId={autoExpandTargetId}
+              fromSheetId={fromSheetId}
+            />
+          </div>
         </TabsContent>
       </Tabs>
 

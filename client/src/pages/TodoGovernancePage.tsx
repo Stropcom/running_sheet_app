@@ -21,31 +21,40 @@ export default function TodoGovernancePage() {
   const [, navigate] = useLocation();
   const { viewMode } = useViewMode();
 
-  const { data: govTodo, isLoading } = trpc.sheet.governanceTodo.useQuery(undefined, {
-    enabled: isAuthenticated,
-    refetchOnWindowFocus: true,
-    staleTime: 15_000,
-  });
+  const { data: govTodo, isLoading } = trpc.sheet.governanceTodo.useQuery(
+    undefined,
+    {
+      enabled: isAuthenticated,
+      refetchOnWindowFocus: true,
+      staleTime: 15_000,
+    }
+  );
 
   if (!isAuthenticated) return null;
 
   // Show all items with outstanding tasks — regardless of allSigned status.
   // allSigned only controls which tasks are actionable, not whether the item appears.
-  const outstanding = govTodo?.filter((g) => g.outstanding.length > 0) ?? [];
+  const outstanding = govTodo?.filter(g => g.outstanding.length > 0) ?? [];
   const count = outstanding.length;
 
   // Group by operation
-  const govByOp: Record<number, { operationName: string; items: typeof outstanding }> = {};
+  const govByOp: Record<
+    number,
+    { operationName: string; items: typeof outstanding }
+  > = {};
   for (const item of outstanding) {
     if (!govByOp[item.operationId]) {
-      govByOp[item.operationId] = { operationName: item.operationName, items: [] };
+      govByOp[item.operationId] = {
+        operationName: item.operationName,
+        items: [],
+      };
     }
     govByOp[item.operationId].items.push(item);
   }
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto px-4 py-8">
+      <div className="px-4 py-8">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <div className="p-2.5 rounded-lg bg-blue-400/10 border border-blue-400/20">
@@ -70,7 +79,7 @@ export default function TodoGovernancePage() {
         {/* Loading */}
         {isLoading && (
           <div className="flex flex-col gap-3">
-            {[1, 2, 3].map((i) => (
+            {[1, 2, 3].map(i => (
               <Skeleton key={i} className="h-20 rounded-xl" />
             ))}
           </div>
@@ -82,7 +91,9 @@ export default function TodoGovernancePage() {
             <div className="p-4 rounded-full bg-emerald-500/10 border border-emerald-500/20">
               <CheckCircle2 className="w-8 h-8 text-emerald-400" />
             </div>
-            <p className="text-base font-semibold text-foreground">All governance tasks complete!</p>
+            <p className="text-base font-semibold text-foreground">
+              All governance tasks complete!
+            </p>
             <p className="text-sm text-muted-foreground">
               No outstanding governance tasks for your CIN.
             </p>
@@ -103,27 +114,34 @@ export default function TodoGovernancePage() {
                     <FileText className="w-5 h-5 text-blue-400" />
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${
-                      item.role === "teamLeader"
-                        ? "bg-violet-500/15 text-violet-400 border border-violet-500/25"
-                        : "bg-sky-500/15 text-sky-400 border border-sky-500/25"
-                    }`}>
+                    <span
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${
+                        item.role === "teamLeader"
+                          ? "bg-violet-500/15 text-violet-400 border border-violet-500/25"
+                          : "bg-sky-500/15 text-sky-400 border border-sky-500/25"
+                      }`}
+                    >
                       {item.role === "teamLeader" ? "TL" : "Author"}
                     </span>
-                    {item.role === "teamLeader" && item.govPercent !== undefined && (
-                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
-                        item.govPercent >= 100
-                          ? "bg-emerald-500/20 text-emerald-300"
-                          : item.govPercent >= 50
-                            ? "bg-sky-500/20 text-sky-300"
-                            : "bg-slate-500/20 text-slate-400"
-                      }`}>
-                        {item.govPercent}%
-                      </span>
-                    )}
+                    {item.role === "teamLeader" &&
+                      item.govPercent !== undefined && (
+                        <span
+                          className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
+                            item.govPercent >= 100
+                              ? "bg-emerald-500/20 text-emerald-300"
+                              : item.govPercent >= 50
+                                ? "bg-sky-500/20 text-sky-300"
+                                : "bg-slate-500/20 text-slate-400"
+                          }`}
+                        >
+                          {item.govPercent}%
+                        </span>
+                      )}
                   </div>
                 </div>
-                <p className="font-semibold text-foreground leading-tight line-clamp-2">{item.sheetTitle}</p>
+                <p className="font-semibold text-foreground leading-tight line-clamp-2">
+                  {item.sheetTitle}
+                </p>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Building2 className="w-3 h-3 shrink-0" />
                   <span className="truncate">{item.operationName}</span>
@@ -131,26 +149,46 @@ export default function TodoGovernancePage() {
                 <div className="flex flex-col gap-0.5 mt-auto">
                   {item.outstanding.slice(0, 3).map((task, ti) => {
                     const isReadyToClose = task === "Ready to close";
-                    const isReadyLabel = isReadyToClose && item.govPercent === 100;
-                    const isNotReadyLabel = isReadyToClose && (item.govPercent ?? 0) < 100;
-                    const displayTask = isNotReadyLabel ? "Not ready to close" : task;
+                    const isReadyLabel =
+                      isReadyToClose && item.govPercent === 100;
+                    const isNotReadyLabel =
+                      isReadyToClose && (item.govPercent ?? 0) < 100;
+                    const displayTask = isNotReadyLabel
+                      ? "Not ready to close"
+                      : task;
                     return (
-                      <span key={ti} className={`flex items-center gap-1 text-xs ${
-                        isReadyLabel ? "text-emerald-400 font-medium" :
-                        isNotReadyLabel ? "text-rose-400 font-medium" :
-                        task === "Sheet not fully certified" ? "text-cyan-500" : "text-rose-400"
-                      }`}>
-                        {isReadyLabel ? <LockOpen className="w-3 h-3 shrink-0" /> :
-                         isNotReadyLabel ? <AlertTriangle className="w-3 h-3 shrink-0" /> :
-                         task === "Sheet not fully certified" ? <Lock className="w-3 h-3 shrink-0" /> :
-                         <AlertTriangle className="w-3 h-3 shrink-0" />}
+                      <span
+                        key={ti}
+                        className={`flex items-center gap-1 text-xs ${
+                          isReadyLabel
+                            ? "text-emerald-400 font-medium"
+                            : isNotReadyLabel
+                              ? "text-rose-400 font-medium"
+                              : task === "Sheet not fully certified"
+                                ? "text-cyan-500"
+                                : "text-rose-400"
+                        }`}
+                      >
+                        {isReadyLabel ? (
+                          <LockOpen className="w-3 h-3 shrink-0" />
+                        ) : isNotReadyLabel ? (
+                          <AlertTriangle className="w-3 h-3 shrink-0" />
+                        ) : task === "Sheet not fully certified" ? (
+                          <Lock className="w-3 h-3 shrink-0" />
+                        ) : (
+                          <AlertTriangle className="w-3 h-3 shrink-0" />
+                        )}
                         {displayTask}
                         {isReadyToClose && item.govPercent !== undefined && (
-                          <span className={`ml-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
-                            item.govPercent >= 100 ? "bg-emerald-500/20 text-emerald-300" :
-                            item.govPercent >= 50 ? "bg-sky-500/20 text-sky-300" :
-                            "bg-slate-500/20 text-slate-400"
-                          }`}>
+                          <span
+                            className={`ml-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
+                              item.govPercent >= 100
+                                ? "bg-emerald-500/20 text-emerald-300"
+                                : item.govPercent >= 50
+                                  ? "bg-sky-500/20 text-sky-300"
+                                  : "bg-slate-500/20 text-slate-400"
+                            }`}
+                          >
                             {item.govPercent}%
                           </span>
                         )}
@@ -165,7 +203,10 @@ export default function TodoGovernancePage() {
         {!isLoading && count > 0 && viewMode === "folder" && (
           <div className="space-y-3">
             {Object.entries(govByOp).map(([opId, group]) => (
-              <div key={opId} className="rounded-xl border border-border/50 overflow-hidden bg-card">
+              <div
+                key={opId}
+                className="rounded-xl border border-border/50 overflow-hidden bg-card"
+              >
                 <div className="flex items-center gap-2 px-4 py-2 bg-muted/20 border-b border-border/20">
                   <Building2 className="w-3 h-3 text-blue-400 shrink-0" />
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -198,46 +239,51 @@ export default function TodoGovernancePage() {
                       <div className="mt-0 flex flex-col gap-0.5">
                         {item.outstanding.map((task, ti) => {
                           const isReadyToClose = task === "Ready to close";
-                          const isReadyLabel = isReadyToClose && item.govPercent === 100;
-                          const isNotReadyLabel = isReadyToClose && (item.govPercent ?? 0) < 100;
-                          const displayTask = isNotReadyLabel ? "Not ready to close" : task;
+                          const isReadyLabel =
+                            isReadyToClose && item.govPercent === 100;
+                          const isNotReadyLabel =
+                            isReadyToClose && (item.govPercent ?? 0) < 100;
+                          const displayTask = isNotReadyLabel
+                            ? "Not ready to close"
+                            : task;
                           return (
-                          <span
-                            key={ti}
-                            className={`flex items-center gap-1.5 text-xs ${
-                              isReadyLabel
-                                ? "text-emerald-400 font-medium"
-                                : isNotReadyLabel
-                                  ? "text-rose-400 font-medium"
-                                  : task === "Sheet not fully certified"
-                                    ? "text-cyan-500"
-                                    : "text-rose-400"
-                            }`}
-                          >
-                            {isReadyLabel ? (
-                              <LockOpen className="w-3 h-3 shrink-0" />
-                            ) : isNotReadyLabel ? (
-                              <AlertTriangle className="w-3 h-3 shrink-0" />
-                            ) : task === "Sheet not fully certified" ? (
-                              <Lock className="w-3 h-3 shrink-0" />
-                            ) : (
-                              <AlertTriangle className="w-3 h-3 shrink-0" />
-                            )}
-                            {displayTask}
-                            {isReadyToClose && item.govPercent !== undefined && (
-                              <span
-                                className={`ml-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
-                                  item.govPercent >= 100
-                                    ? "bg-emerald-500/20 text-emerald-300"
-                                    : item.govPercent >= 50
-                                      ? "bg-sky-500/20 text-sky-300"
-                                      : "bg-slate-500/20 text-slate-400"
-                                }`}
-                              >
-                                {item.govPercent}%
-                              </span>
-                            )}
-                          </span>
+                            <span
+                              key={ti}
+                              className={`flex items-center gap-1.5 text-xs ${
+                                isReadyLabel
+                                  ? "text-emerald-400 font-medium"
+                                  : isNotReadyLabel
+                                    ? "text-rose-400 font-medium"
+                                    : task === "Sheet not fully certified"
+                                      ? "text-cyan-500"
+                                      : "text-rose-400"
+                              }`}
+                            >
+                              {isReadyLabel ? (
+                                <LockOpen className="w-3 h-3 shrink-0" />
+                              ) : isNotReadyLabel ? (
+                                <AlertTriangle className="w-3 h-3 shrink-0" />
+                              ) : task === "Sheet not fully certified" ? (
+                                <Lock className="w-3 h-3 shrink-0" />
+                              ) : (
+                                <AlertTriangle className="w-3 h-3 shrink-0" />
+                              )}
+                              {displayTask}
+                              {isReadyToClose &&
+                                item.govPercent !== undefined && (
+                                  <span
+                                    className={`ml-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none ${
+                                      item.govPercent >= 100
+                                        ? "bg-emerald-500/20 text-emerald-300"
+                                        : item.govPercent >= 50
+                                          ? "bg-sky-500/20 text-sky-300"
+                                          : "bg-slate-500/20 text-slate-400"
+                                    }`}
+                                  >
+                                    {item.govPercent}%
+                                  </span>
+                                )}
+                            </span>
                           );
                         })}
                       </div>

@@ -20,28 +20,37 @@ export default function TodoPage() {
   const [, navigate] = useLocation();
   const { viewMode } = useViewMode();
 
-  const { data: certify, isLoading } = trpc.sheet.outstandingForMe.useQuery(undefined, {
-    enabled: isAuthenticated,
-    refetchOnWindowFocus: true,
-    staleTime: 15_000,
-  });
+  const { data: certify, isLoading } = trpc.sheet.outstandingForMe.useQuery(
+    undefined,
+    {
+      enabled: isAuthenticated,
+      refetchOnWindowFocus: true,
+      staleTime: 15_000,
+    }
+  );
 
   if (!isAuthenticated) return null;
 
   const count = certify?.length ?? 0;
 
   // Group by operation
-  const certByOp: Record<number, { operationName: string; sheets: NonNullable<typeof certify> }> = {};
+  const certByOp: Record<
+    number,
+    { operationName: string; sheets: NonNullable<typeof certify> }
+  > = {};
   for (const item of certify ?? []) {
     if (!certByOp[item.operationId]) {
-      certByOp[item.operationId] = { operationName: item.operationName, sheets: [] };
+      certByOp[item.operationId] = {
+        operationName: item.operationName,
+        sheets: [],
+      };
     }
     certByOp[item.operationId].sheets.push(item);
   }
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto px-4 py-8">
+      <div className="px-4 py-8">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20">
@@ -66,7 +75,7 @@ export default function TodoPage() {
         {/* Loading */}
         {isLoading && (
           <div className="flex flex-col gap-3">
-            {[1, 2, 3].map((i) => (
+            {[1, 2, 3].map(i => (
               <Skeleton key={i} className="h-20 rounded-xl" />
             ))}
           </div>
@@ -78,7 +87,9 @@ export default function TodoPage() {
             <div className="p-4 rounded-full bg-emerald-500/10 border border-emerald-500/20">
               <CheckCircle2 className="w-8 h-8 text-emerald-400" />
             </div>
-            <p className="text-base font-semibold text-foreground">All certified!</p>
+            <p className="text-base font-semibold text-foreground">
+              All certified!
+            </p>
             <p className="text-sm text-muted-foreground">
               No outstanding certifications for your CIN.
             </p>
@@ -86,10 +97,11 @@ export default function TodoPage() {
         )}
 
         {/* List */}
-        {!isLoading && count > 0 && (
-          viewMode === "tile" ? (
+        {!isLoading &&
+          count > 0 &&
+          (viewMode === "tile" ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {(certify ?? []).map((item) => (
+              {(certify ?? []).map(item => (
                 <div
                   key={item.sheetId}
                   onClick={() => navigate(`/sheet/${item.sheetId}`)}
@@ -103,14 +115,18 @@ export default function TodoPage() {
                       {item.uncertifiedRowCount} to certify
                     </span>
                   </div>
-                  <p className="font-semibold text-foreground leading-tight line-clamp-2">{item.sheetTitle}</p>
+                  <p className="font-semibold text-foreground leading-tight line-clamp-2">
+                    {item.sheetTitle}
+                  </p>
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">
                     <Building2 className="w-3 h-3 shrink-0" />
                     <span className="truncate">{item.operationName}</span>
                   </div>
                   <div className="flex items-center gap-1 mt-auto text-xs text-muted-foreground">
                     <Calendar className="w-3 h-3" />
-                    <span>{format(new Date(item.createdAt), "d MMM yyyy")}</span>
+                    <span>
+                      {format(new Date(item.createdAt), "d MMM yyyy")}
+                    </span>
                   </div>
                 </div>
               ))}
@@ -118,14 +134,17 @@ export default function TodoPage() {
           ) : (
             <div className="space-y-3">
               {Object.entries(certByOp).map(([opId, group]) => (
-                <div key={opId} className="rounded-xl border border-border/50 overflow-hidden bg-card">
+                <div
+                  key={opId}
+                  className="rounded-xl border border-border/50 overflow-hidden bg-card"
+                >
                   <div className="flex items-center gap-2 px-4 py-2 bg-muted/20 border-b border-border/20">
                     <Building2 className="w-3 h-3 text-red-400 shrink-0" />
                     <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       {group.operationName}
                     </span>
                   </div>
-                  {group.sheets.map((item) => (
+                  {group.sheets.map(item => (
                     <div
                       key={item.sheetId}
                       className="group flex items-center gap-4 px-4 py-3 hover:bg-red-500/5 transition-colors cursor-pointer border-b border-border/20 last:border-0"
@@ -140,7 +159,9 @@ export default function TodoPage() {
                         </span>
                         <div className="flex items-center gap-3 mt-0.5">
                           <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border border-red-500/40 bg-red-500/10 text-red-400 font-medium">
-                            {item.uncertifiedRowCount} row{item.uncertifiedRowCount !== 1 ? "s" : ""} to certify
+                            {item.uncertifiedRowCount} row
+                            {item.uncertifiedRowCount !== 1 ? "s" : ""} to
+                            certify
                           </span>
                           <span className="flex items-center gap-1 text-xs text-muted-foreground">
                             <Calendar className="w-3 h-3" />
@@ -154,8 +175,7 @@ export default function TodoPage() {
                 </div>
               ))}
             </div>
-          )
-        )}
+          ))}
       </div>
     </DashboardLayout>
   );

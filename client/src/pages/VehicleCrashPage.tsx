@@ -1344,7 +1344,7 @@ export default function VehicleCrashPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-6 max-w-3xl mx-auto w-full">
+      <div className="flex flex-col gap-6 p-6 w-full">
         <div className="flex items-center gap-3">
           <Car className="h-5 w-5 text-slate-400" />
           <div>

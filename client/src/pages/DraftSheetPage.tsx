@@ -71,7 +71,11 @@ export default function DraftSheetPage() {
       localId: generateLocalId(),
       sheetLocalId: localId,
       rowNumber: rows.length + 1,
-      time: new Date().toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit", hour12: true }),
+      time: new Date().toLocaleTimeString("en-AU", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      }),
       observation: "",
       members: [],
       createdAt: Date.now(),
@@ -91,7 +95,7 @@ export default function DraftSheetPage() {
       },
     });
     await refreshDraftCounts();
-    setRows((prev) => [...prev, newRow]);
+    setRows(prev => [...prev, newRow]);
     setEditingRowId(newRow.localId);
     setRowTime(newRow.time ?? "");
     setRowObs("");
@@ -102,7 +106,7 @@ export default function DraftSheetPage() {
   const handleSaveRow = async (rowLocalId: string) => {
     const members = rowCins
       .split(/[,\s]+/)
-      .map((c) => c.trim().toUpperCase())
+      .map(c => c.trim().toUpperCase())
       .filter(Boolean);
 
     await updateDraftRow(rowLocalId, {
@@ -115,10 +119,15 @@ export default function DraftSheetPage() {
       localId: rowLocalId,
       payload: { time: rowTime || undefined, observation: rowObs || undefined },
     });
-    setRows((prev) =>
-      prev.map((r) =>
+    setRows(prev =>
+      prev.map(r =>
         r.localId === rowLocalId
-          ? { ...r, time: rowTime || undefined, observation: rowObs || undefined, members }
+          ? {
+              ...r,
+              time: rowTime || undefined,
+              observation: rowObs || undefined,
+              members,
+            }
           : r
       )
     );
@@ -131,7 +140,7 @@ export default function DraftSheetPage() {
     await deleteDraftRow(rowLocalId);
     await enqueueSyncAction({ type: "deleteRow", localId: rowLocalId });
     await refreshDraftCounts();
-    setRows((prev) => prev.filter((r) => r.localId !== rowLocalId));
+    setRows(prev => prev.filter(r => r.localId !== rowLocalId));
     if (editingRowId === rowLocalId) setEditingRowId(null);
     toast.success("Row removed");
   };
@@ -148,7 +157,7 @@ export default function DraftSheetPage() {
   const handleTitleBlur = async (newTitle: string) => {
     if (!localId || !newTitle.trim()) return;
     await updateDraftSheet(localId, { title: newTitle.trim() });
-    setSheet((prev) => (prev ? { ...prev, title: newTitle.trim() } : prev));
+    setSheet(prev => (prev ? { ...prev, title: newTitle.trim() } : prev));
   };
 
   if (loading) {
@@ -171,7 +180,7 @@ export default function DraftSheetPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-4 p-4">
+    <div className="space-y-4 p-4">
       {/* Header */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate("/draft")}>
@@ -181,7 +190,7 @@ export default function DraftSheetPage() {
           <Input
             defaultValue={sheet.title}
             className="text-lg font-semibold"
-            onBlur={(e) => handleTitleBlur(e.target.value)}
+            onBlur={e => handleTitleBlur(e.target.value)}
           />
         </div>
         <DraftBadge />
@@ -191,12 +200,15 @@ export default function DraftSheetPage() {
       <div className="rounded-lg border bg-amber-50/50 p-3 text-sm text-muted-foreground dark:bg-amber-900/10">
         <p>
           <strong>Team:</strong>{" "}
-          {sheet.sheetCins.length > 0
-            ? sheet.sheetCins.map((c) => c.cin).join(", ")
-            : <span className="italic">No team members added</span>}
+          {sheet.sheetCins.length > 0 ? (
+            sheet.sheetCins.map(c => c.cin).join(", ")
+          ) : (
+            <span className="italic">No team members added</span>
+          )}
         </p>
         <p className="mt-1 text-xs">
-          Created offline · {new Date(sheet.createdAt).toLocaleString()} · Will sync when online
+          Created offline · {new Date(sheet.createdAt).toLocaleString()} · Will
+          sync when online
         </p>
       </div>
 
@@ -208,7 +220,7 @@ export default function DraftSheetPage() {
           </div>
         )}
 
-        {rows.map((row) => (
+        {rows.map(row => (
           <div
             key={row.localId}
             className="rounded-lg border bg-card shadow-sm"
@@ -221,26 +233,30 @@ export default function DraftSheetPage() {
                   <Input
                     placeholder="Time (e.g. 07:34 AM)"
                     value={rowTime}
-                    onChange={(e) => setRowTime(e.target.value)}
+                    onChange={e => setRowTime(e.target.value)}
                     className="w-40"
                   />
                   <span className="text-xs text-muted-foreground">CINs:</span>
                   <Input
                     placeholder="e.g. 459, 503"
                     value={rowCins}
-                    onChange={(e) => setRowCins(e.target.value)}
+                    onChange={e => setRowCins(e.target.value)}
                     className="flex-1"
                   />
                 </div>
                 <Textarea
                   placeholder="Observation…"
                   value={rowObs}
-                  onChange={(e) => setRowObs(e.target.value)}
+                  onChange={e => setRowObs(e.target.value)}
                   rows={3}
                   className="resize-none"
                 />
                 <div className="flex justify-end gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setEditingRowId(null)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditingRowId(null)}
+                  >
                     Cancel
                   </Button>
                   <Button size="sm" onClick={() => handleSaveRow(row.localId)}>
@@ -262,12 +278,18 @@ export default function DraftSheetPage() {
                   {row.observation ? (
                     <p className="whitespace-pre-wrap">{row.observation}</p>
                   ) : (
-                    <p className="italic text-muted-foreground">Tap to add observation…</p>
+                    <p className="italic text-muted-foreground">
+                      Tap to add observation…
+                    </p>
                   )}
                   {row.members.length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
-                      {row.members.map((cin) => (
-                        <Badge key={cin} variant="secondary" className="text-xs">
+                      {row.members.map(cin => (
+                        <Badge
+                          key={cin}
+                          variant="secondary"
+                          className="text-xs"
+                        >
                           {cin}
                         </Badge>
                       ))}
@@ -278,7 +300,7 @@ export default function DraftSheetPage() {
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 shrink-0 text-destructive hover:bg-destructive/10"
-                  onClick={(e) => {
+                  onClick={e => {
                     e.stopPropagation();
                     handleDeleteRow(row.localId);
                   }}

@@ -358,7 +358,7 @@ export default function SmeacBriefingListPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-3xl mx-auto p-4 md:p-6 space-y-4">
+      <div className="p-4 md:p-6 space-y-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">

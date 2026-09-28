@@ -722,7 +722,7 @@ export default function WeeklyActivityReportPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col gap-6 p-6 max-w-5xl mx-auto w-full">
+      <div className="flex flex-col gap-6 p-6 w-full">
         {/* Header */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">

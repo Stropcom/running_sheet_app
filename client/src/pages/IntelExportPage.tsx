@@ -318,7 +318,7 @@ export default function IntelExportPage() {
   if (user?.role !== "admin") {
     return (
       <DashboardLayout>
-        <div className="max-w-3xl mx-auto py-8 px-4 flex flex-col gap-6">
+        <div className="py-8 px-4 flex flex-col gap-6">
           {header}
           <div className="rounded-lg border border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground text-center">
             Intel Export is admin-only — this data is meant to leave the
@@ -331,7 +331,7 @@ export default function IntelExportPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-3xl mx-auto py-8 px-4 flex flex-col gap-8">
+      <div className="py-8 px-4 flex flex-col gap-8">
         {header}
 
         <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">

@@ -312,7 +312,7 @@ export default function WitnessListPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-3xl mx-auto py-8 px-4 flex flex-col gap-8">
+      <div className="py-8 px-4 flex flex-col gap-8">
         {/* Page header */}
         <div className="flex items-center gap-3">
           <Button

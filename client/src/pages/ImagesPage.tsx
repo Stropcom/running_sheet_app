@@ -87,7 +87,7 @@ function OperationFolderList({
   }, [photoCounts]);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
+    <div className="px-4 py-8">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
         <div className="flex items-center gap-3 flex-1">
           <div className="p-2.5 rounded-lg bg-pink-500/10 border border-pink-500/20 shrink-0">
@@ -287,7 +287,7 @@ export function SheetFolderList({
   }, [attachments]);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8">
+    <div className="px-4 py-8">
       <div className="flex items-center gap-3 mb-4">
         {!hideBackButton && (
           <Button variant="ghost" size="icon" onClick={onBack}>
@@ -526,7 +526,7 @@ export function SheetGallery({
   });
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="px-4 py-8">
       <div className="flex items-center gap-3 mb-6">
         {!hideBackButton && (
           <Button variant="ghost" size="icon" onClick={onBack}>

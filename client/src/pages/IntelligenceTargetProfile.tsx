@@ -9,7 +9,7 @@ export default function IntelligenceTargetProfile() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-3xl mx-auto px-4 pt-6">
+      <div className="px-4 pt-6">
         {/* Back button — goes to previous page in history */}
         <button
           onClick={() => window.history.back()}

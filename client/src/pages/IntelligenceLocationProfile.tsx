@@ -196,7 +196,7 @@ export default function IntelligenceLocationProfile() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-3xl mx-auto px-4 py-6">
+      <div className="px-4 py-6">
         <button
           onClick={() => window.history.back()}
           className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-5"

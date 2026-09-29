@@ -325,6 +325,8 @@ import {
   listSmeacBriefings,
   postSmeacBriefing,
   softDeleteSmeacBriefing,
+  reinstateSmeacBriefing,
+  deleteSmeacBriefing,
   acknowledgeSmeacBriefing,
   getSmeacAcknowledgementForUser,
   getSmeacAcknowledgements,
@@ -337,6 +339,8 @@ import {
   postUcoGuideBriefing,
   setUcoGuideLevel,
   softDeleteUcoGuideBriefing,
+  reinstateUcoGuideBriefing,
+  deleteUcoGuideBriefing,
   acknowledgeUcoGuideBriefing,
   getUcoGuideAcknowledgementForUser,
   getUcoGuideAcknowledgements,
@@ -6205,6 +6209,8 @@ export const appRouter = router({
             "target",
             "map_marker",
             "attachment",
+            "smeac_briefing",
+            "uco_guide",
           ]),
           id: z.number(),
         })
@@ -6216,6 +6222,10 @@ export const appRouter = router({
           await reinstateCustomMarker(input.id);
         else if (input.type === "attachment")
           await reinstateAttachment(input.id);
+        else if (input.type === "smeac_briefing")
+          await reinstateSmeacBriefing(input.id);
+        else if (input.type === "uco_guide")
+          await reinstateUcoGuideBriefing(input.id);
         else await reinstateTarget(input.id);
         return { success: true };
       }),
@@ -6228,6 +6238,8 @@ export const appRouter = router({
             "target",
             "map_marker",
             "attachment",
+            "smeac_briefing",
+            "uco_guide",
           ]),
           id: z.number(),
         })
@@ -6259,6 +6271,10 @@ export const appRouter = router({
           await hardDeleteCustomMarker(input.id);
         } else if (input.type === "attachment") {
           await deleteRowAttachment(input.id);
+        } else if (input.type === "smeac_briefing") {
+          await deleteSmeacBriefing(input.id);
+        } else if (input.type === "uco_guide") {
+          await deleteUcoGuideBriefing(input.id);
         } else {
           await deleteTarget(input.id);
         }

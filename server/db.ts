@@ -10925,7 +10925,14 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type RecycleBinItem = {
   id: number;
-  type: "operation" | "sheet" | "target" | "map_marker" | "attachment";
+  type:
+    | "operation"
+    | "sheet"
+    | "target"
+    | "map_marker"
+    | "attachment"
+    | "smeac_briefing"
+    | "uco_guide";
   label: string;
   sublabel?: string;
   deletedAt: number;
@@ -11013,6 +11020,70 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
       deletedAt: t.deletedAt!,
       deletedByCIN: t.deletedByCIN ?? null,
       expiresAt: t.deletedAt! + SEVEN_DAYS_MS,
+    });
+  }
+
+  // Deleted SMEAC briefings
+  const deletedSmeac = await db
+    .select({
+      id: smeacBriefings.id,
+      situation: smeacBriefings.situation,
+      operationId: smeacBriefings.operationId,
+      operationName: operations.name,
+      deletedAt: smeacBriefings.deletedAt,
+      deletedByCIN: smeacBriefings.deletedByCIN,
+    })
+    .from(smeacBriefings)
+    .leftJoin(operations, eq(smeacBriefings.operationId, operations.id))
+    .where(
+      and(
+        isNotNull(smeacBriefings.deletedAt),
+        sql`${smeacBriefings.deletedAt} > ${cutoff}`
+      )
+    );
+  for (const b of deletedSmeac) {
+    items.push({
+      id: b.id,
+      type: "smeac_briefing",
+      label: `SMEAC — ${b.operationName ?? `Operation #${b.operationId}`}`,
+      sublabel: b.situation?.trim() || undefined,
+      deletedAt: b.deletedAt!,
+      deletedByCIN: b.deletedByCIN ?? null,
+      expiresAt: b.deletedAt! + SEVEN_DAYS_MS,
+      operationId: b.operationId,
+      operationName: b.operationName,
+    });
+  }
+
+  // Deleted UCO Surveillance Deployment Guides
+  const deletedUcoGuides = await db
+    .select({
+      id: ucoGuideBriefings.id,
+      opObjective: ucoGuideBriefings.opObjective,
+      operationId: ucoGuideBriefings.operationId,
+      operationName: operations.name,
+      deletedAt: ucoGuideBriefings.deletedAt,
+      deletedByCIN: ucoGuideBriefings.deletedByCIN,
+    })
+    .from(ucoGuideBriefings)
+    .leftJoin(operations, eq(ucoGuideBriefings.operationId, operations.id))
+    .where(
+      and(
+        isNotNull(ucoGuideBriefings.deletedAt),
+        sql`${ucoGuideBriefings.deletedAt} > ${cutoff}`
+      )
+    );
+  for (const g of deletedUcoGuides) {
+    items.push({
+      id: g.id,
+      type: "uco_guide",
+      label: `UCO Guide — ${g.operationName ?? `Operation #${g.operationId}`}`,
+      sublabel: g.opObjective?.trim() || undefined,
+      deletedAt: g.deletedAt!,
+      deletedByCIN: g.deletedByCIN ?? null,
+      expiresAt: g.deletedAt! + SEVEN_DAYS_MS,
+      operationId: g.operationId,
+      operationName: g.operationName,
     });
   }
 
@@ -11149,6 +11220,32 @@ export async function purgeExpiredRecycleBinItems() {
     );
   for (const t of expiredTargets) {
     await deleteTarget(t.id);
+  }
+  // Permanently delete expired SMEAC briefings
+  const expiredSmeac = await db
+    .select({ id: smeacBriefings.id })
+    .from(smeacBriefings)
+    .where(
+      and(
+        isNotNull(smeacBriefings.deletedAt),
+        sql`${smeacBriefings.deletedAt} <= ${cutoff}`
+      )
+    );
+  for (const b of expiredSmeac) {
+    await deleteSmeacBriefing(b.id);
+  }
+  // Permanently delete expired UCO Surveillance Deployment Guides
+  const expiredUcoGuides = await db
+    .select({ id: ucoGuideBriefings.id })
+    .from(ucoGuideBriefings)
+    .where(
+      and(
+        isNotNull(ucoGuideBriefings.deletedAt),
+        sql`${ucoGuideBriefings.deletedAt} <= ${cutoff}`
+      )
+    );
+  for (const g of expiredUcoGuides) {
+    await deleteUcoGuideBriefing(g.id);
   }
   // Permanently delete expired photo attachments
   const expiredAttachments = await db
@@ -15720,6 +15817,31 @@ export async function softDeleteSmeacBriefing(id: number, cin: string) {
     .where(eq(smeacBriefings.id, id));
 }
 
+// ── Recycle Bin support — see getRecycleBinItems()/purgeExpiredRecycleBinItems() ──
+export async function reinstateSmeacBriefing(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .update(smeacBriefings)
+    .set({ deletedAt: null, deletedByCIN: null })
+    .where(eq(smeacBriefings.id, id));
+}
+
+// Hard delete — used once a soft-deleted briefing's 7-day recycle bin grace
+// period expires, or an admin permanently deletes it directly from the bin.
+// Acknowledgements have no meaning without their briefing (no FK constraint
+// to enforce this at the DB level, since none of this schema's tables
+// declare .references() — see the acknowledgements table definitions), so
+// they're cleaned up here rather than left behind as orphaned rows.
+export async function deleteSmeacBriefing(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .delete(smeacAcknowledgements)
+    .where(eq(smeacAcknowledgements.briefingId, id));
+  await db.delete(smeacBriefings).where(eq(smeacBriefings.id, id));
+}
+
 /**
  * Explicit, audited "I have seen this" — deliberately not the same thing as
  * opening the notification. Scoped to a revision: an edit + re-post is a
@@ -16070,6 +16192,27 @@ export async function softDeleteUcoGuideBriefing(id: number, cin: string) {
     .update(ucoGuideBriefings)
     .set({ deletedAt: Date.now(), deletedByCIN: cin })
     .where(eq(ucoGuideBriefings.id, id));
+}
+
+// ── Recycle Bin support — see getRecycleBinItems()/purgeExpiredRecycleBinItems() ──
+export async function reinstateUcoGuideBriefing(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .update(ucoGuideBriefings)
+    .set({ deletedAt: null, deletedByCIN: null })
+    .where(eq(ucoGuideBriefings.id, id));
+}
+
+// Hard delete — see deleteSmeacBriefing's matching comment above for why
+// acknowledgements are cleaned up here too.
+export async function deleteUcoGuideBriefing(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .delete(ucoGuideAcknowledgements)
+    .where(eq(ucoGuideAcknowledgements.briefingId, id));
+  await db.delete(ucoGuideBriefings).where(eq(ucoGuideBriefings.id, id));
 }
 
 export async function acknowledgeUcoGuideBriefing(

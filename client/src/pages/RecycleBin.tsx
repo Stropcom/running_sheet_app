@@ -24,13 +24,22 @@ import {
   Calendar,
   Camera,
   AlertTriangle,
+  ShieldAlert,
+  Eye,
 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useViewMode } from "@/contexts/ViewModeContext";
 
 type RecycleBinItem = {
   id: number;
-  type: "operation" | "sheet" | "target" | "map_marker" | "attachment";
+  type:
+    | "operation"
+    | "sheet"
+    | "target"
+    | "map_marker"
+    | "attachment"
+    | "smeac_briefing"
+    | "uco_guide";
   label: string;
   sublabel?: string;
   deletedAt: number;
@@ -46,6 +55,9 @@ function typeIcon(type: RecycleBinItem["type"]) {
     return <MapPin className="w-5 h-5 text-orange-500" />;
   if (type === "attachment")
     return <Camera className="w-5 h-5 text-pink-500" />;
+  if (type === "smeac_briefing")
+    return <ShieldAlert className="w-5 h-5 text-amber-500" />;
+  if (type === "uco_guide") return <Eye className="w-5 h-5 text-indigo-500" />;
   return <User className="w-5 h-5 text-purple-500" />;
 }
 
@@ -54,6 +66,8 @@ function typeLabel(type: RecycleBinItem["type"]) {
   if (type === "sheet") return "Running Sheet";
   if (type === "map_marker") return "Map Marker";
   if (type === "attachment") return "Photo";
+  if (type === "smeac_briefing") return "SMEAC Briefing";
+  if (type === "uco_guide") return "UCO Guide";
   return "Target";
 }
 
@@ -63,6 +77,10 @@ function typeBadgeClass(type: RecycleBinItem["type"]) {
   if (type === "map_marker")
     return "bg-orange-100 text-orange-700 border-orange-200";
   if (type === "attachment") return "bg-pink-100 text-pink-700 border-pink-200";
+  if (type === "smeac_briefing")
+    return "bg-amber-100 text-amber-700 border-amber-200";
+  if (type === "uco_guide")
+    return "bg-indigo-100 text-indigo-700 border-indigo-200";
   return "bg-purple-100 text-purple-700 border-purple-200";
 }
 
@@ -100,6 +118,9 @@ export default function RecycleBin() {
       if (variables.type === "operation") utils.operation.list.invalidate();
       if (variables.type === "sheet") utils.sheet.list.invalidate();
       if (variables.type === "target") utils.target.registry.list.invalidate();
+      if (variables.type === "smeac_briefing")
+        utils.smeacBriefing.list.invalidate();
+      if (variables.type === "uco_guide") utils.ucoGuide.list.invalidate();
     },
     onError: err => {
       toast.error(err.message ?? "Failed to reinstate item.");
@@ -230,8 +251,8 @@ export default function RecycleBin() {
             <Trash2 className="w-12 h-12 opacity-20" />
             <p className="text-lg font-medium">Recycle Bin is empty</p>
             <p className="text-sm">
-              Deleted operations, running sheets, targets, and map markers will
-              appear here.
+              Deleted operations, running sheets, targets, map markers, and
+              SMEAC/UCO guide briefings will appear here.
             </p>
           </div>
         )}

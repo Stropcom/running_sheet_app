@@ -417,11 +417,25 @@ export function SheetFolderList({
                         </p>
                       </div>
                     </div>
+                    {/* A row-sourced photo's links (especially its CIN/
+                        "member" link) stay in sync with that row's actual
+                        membership via server/db.ts's reconcileRowPhotoMemberLinks/
+                        unlinkRowPhotosFromCin, which only fire off row-
+                        membership changes — editing the link here instead
+                        would silently drift out of sync with the row, so
+                        this only opens the link editor for a manually-
+                        uploaded photo with no row of its own. */}
                     <LinkedEntityPills
                       entities={a.linkedEntities}
                       faceCount={a.faceCount}
                       hasRow={a.rowId != null}
-                      onClick={() => setLinking({ id: a.id, url: a.url })}
+                      onClick={() =>
+                        a.rowId != null
+                          ? toast.info(
+                              "This photo's links come from its running sheet row — open that row to change them."
+                            )
+                          : setLinking({ id: a.id, url: a.url })
+                      }
                       showProfileLinks
                     />
                   </div>
@@ -505,9 +519,6 @@ export function SheetGallery({
   const [lightbox, setLightbox] = useState<{ id: number; url: string } | null>(
     null
   );
-  const [linking, setLinking] = useState<{ id: number; url: string } | null>(
-    null
-  );
   const { data: sheet } = trpc.sheet.get.useQuery({ id: sheetId });
   const { data: attachments, isLoading } = trpc.attachment.listBySheet.useQuery(
     { sheetId }
@@ -581,11 +592,20 @@ export function SheetGallery({
                   </p>
                 </div>
               </div>
+              {/* Every photo in a running sheet's own gallery has a row (see
+                  getAttachmentsBySheetId's inner join) — its links always
+                  stay in sync with that row's membership (see the matching
+                  note in SheetFolderList above), so this always points back
+                  to the row rather than ever opening a link editor here. */}
               <LinkedEntityPills
                 entities={a.linkedEntities}
                 faceCount={a.faceCount}
                 hasRow={a.rowId != null}
-                onClick={() => setLinking({ id: a.id, url: a.url })}
+                onClick={() =>
+                  toast.info(
+                    "This photo's links come from its running sheet row — open that row to change them."
+                  )
+                }
                 showProfileLinks
               />
             </div>
@@ -625,18 +645,6 @@ export function SheetGallery({
             />
           </div>
         </div>
-      )}
-
-      {linking !== null && (
-        <LinkAttachmentDialog
-          attachmentId={linking.id}
-          photoUrl={linking.url}
-          open={linking !== null}
-          onOpenChange={open => {
-            if (!open) setLinking(null);
-          }}
-          currentOperationId={operationId}
-        />
       )}
     </div>
   );

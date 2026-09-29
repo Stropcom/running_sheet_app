@@ -435,7 +435,7 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6">
+    <div className="px-4 py-6">
       {isLoading && (
         <div className="space-y-3">
           {[...Array(5)].map((_, i) => (

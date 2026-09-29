@@ -899,7 +899,7 @@ export default function OperationManagerPage() {
         <div className="min-h-screen bg-background text-foreground">
           {/* Header */}
           <div className="border-b border-border bg-card">
-            <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div className="px-4 py-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Button
                   variant="ghost"
@@ -927,7 +927,7 @@ export default function OperationManagerPage() {
           </div>
 
           {/* Week list */}
-          <div className="max-w-4xl mx-auto px-4 py-6">
+          <div className="px-4 py-6">
             {allWeeksQuery.isLoading ? (
               <div className="flex items-center justify-center h-40 text-muted-foreground">
                 Loading…
@@ -1139,7 +1139,7 @@ export default function OperationManagerPage() {
               printColorAdjust: "exact",
             }}
           >
-            <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
+            <div className="px-6 py-3 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <h1 className="text-xl font-extrabold text-white tracking-tight">
                   CTO Weekly Tasking
@@ -1165,7 +1165,7 @@ export default function OperationManagerPage() {
               </p>
             </div>
           ) : (
-            <div className="p-4 space-y-4 max-w-6xl mx-auto print:p-0 print-scale">
+            <div className="p-4 space-y-4 print:p-0 print-scale">
               <FullViewOnCall
                 onCallEntries={onCallEntries}
                 contacts={contacts}
@@ -1208,7 +1208,7 @@ export default function OperationManagerPage() {
           }
         />
 
-        <div className="p-4 max-w-5xl mx-auto">
+        <div className="p-4">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="mb-4 w-full grid grid-cols-4">
               <TabsTrigger value="oncall">On-Call</TabsTrigger>

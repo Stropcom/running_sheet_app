@@ -1765,7 +1765,7 @@ export default function IntelligencePage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 max-w-5xl mx-auto">
+      <div className="p-6">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <div className="p-2.5 rounded-lg bg-violet-400/10 border border-violet-400/20">

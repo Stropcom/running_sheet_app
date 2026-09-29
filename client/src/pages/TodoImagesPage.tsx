@@ -18,28 +18,37 @@ export default function TodoImagesPage() {
   const [, navigate] = useLocation();
   const { viewMode } = useViewMode();
 
-  const { data: unlinked, isLoading } = trpc.sheet.unlinkedImagesTodo.useQuery(undefined, {
-    enabled: isAuthenticated,
-    refetchOnWindowFocus: true,
-    staleTime: 15_000,
-  });
+  const { data: unlinked, isLoading } = trpc.sheet.unlinkedImagesTodo.useQuery(
+    undefined,
+    {
+      enabled: isAuthenticated,
+      refetchOnWindowFocus: true,
+      staleTime: 15_000,
+    }
+  );
 
   if (!isAuthenticated) return null;
 
   const count = unlinked?.length ?? 0;
 
   // Group by operation
-  const unlinkedByOp: Record<number, { operationName: string; sheets: NonNullable<typeof unlinked> }> = {};
+  const unlinkedByOp: Record<
+    number,
+    { operationName: string; sheets: NonNullable<typeof unlinked> }
+  > = {};
   for (const item of unlinked ?? []) {
     if (!unlinkedByOp[item.operationId]) {
-      unlinkedByOp[item.operationId] = { operationName: item.operationName, sheets: [] };
+      unlinkedByOp[item.operationId] = {
+        operationName: item.operationName,
+        sheets: [],
+      };
     }
     unlinkedByOp[item.operationId].sheets.push(item);
   }
 
   return (
     <DashboardLayout>
-      <div className="max-w-2xl mx-auto px-4 py-8">
+      <div className="px-4 py-8">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30">
@@ -64,7 +73,7 @@ export default function TodoImagesPage() {
         {/* Loading */}
         {isLoading && (
           <div className="flex flex-col gap-3">
-            {[1, 2, 3].map((i) => (
+            {[1, 2, 3].map(i => (
               <Skeleton key={i} className="h-20 rounded-xl" />
             ))}
           </div>
@@ -76,7 +85,9 @@ export default function TodoImagesPage() {
             <div className="p-4 rounded-full bg-emerald-500/10 border border-emerald-500/20">
               <CheckCircle2 className="w-8 h-8 text-emerald-400" />
             </div>
-            <p className="text-base font-semibold text-foreground">All images linked!</p>
+            <p className="text-base font-semibold text-foreground">
+              All images linked!
+            </p>
             <p className="text-sm text-muted-foreground">
               No unlinked photos on running sheets you authored.
             </p>
@@ -84,13 +95,16 @@ export default function TodoImagesPage() {
         )}
 
         {/* List */}
-        {!isLoading && count > 0 && (
-          viewMode === "tile" ? (
+        {!isLoading &&
+          count > 0 &&
+          (viewMode === "tile" ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {(unlinked ?? []).map((item) => (
+              {(unlinked ?? []).map(item => (
                 <div
                   key={item.sheetId}
-                  onClick={() => navigate(`/images/${item.operationId}/${item.sheetId}`)}
+                  onClick={() =>
+                    navigate(`/images/${item.operationId}/${item.sheetId}`)
+                  }
                   className="group flex flex-col gap-3 p-5 rounded-xl border border-amber-500/30 bg-card hover:bg-amber-500/5 hover:border-amber-500/50 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -101,7 +115,9 @@ export default function TodoImagesPage() {
                       {item.unlinkedCount} unlinked
                     </span>
                   </div>
-                  <p className="font-semibold text-foreground leading-tight line-clamp-2">{item.sheetTitle}</p>
+                  <p className="font-semibold text-foreground leading-tight line-clamp-2">
+                    {item.sheetTitle}
+                  </p>
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">
                     <Building2 className="w-3 h-3 shrink-0" />
                     <span className="truncate">{item.operationName}</span>
@@ -119,11 +135,13 @@ export default function TodoImagesPage() {
                       {group.operationName}
                     </span>
                   </div>
-                  {group.sheets.map((item) => (
+                  {group.sheets.map(item => (
                     <div
                       key={item.sheetId}
                       className="group flex items-center gap-4 px-4 py-3 hover:bg-amber-500/5 transition-colors cursor-pointer border-b border-border/20 last:border-0"
-                      onClick={() => navigate(`/images/${item.operationId}/${item.sheetId}`)}
+                      onClick={() =>
+                        navigate(`/images/${item.operationId}/${item.sheetId}`)
+                      }
                     >
                       <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 shrink-0">
                         <FileText className="w-4 h-4 text-amber-400" />
@@ -134,7 +152,8 @@ export default function TodoImagesPage() {
                         </span>
                         <div className="flex items-center gap-3 mt-0.5">
                           <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-400 font-medium">
-                            {item.unlinkedCount} photo{item.unlinkedCount !== 1 ? "s" : ""} not linked
+                            {item.unlinkedCount} photo
+                            {item.unlinkedCount !== 1 ? "s" : ""} not linked
                           </span>
                         </div>
                       </div>
@@ -144,8 +163,7 @@ export default function TodoImagesPage() {
                 </div>
               ))}
             </div>
-          )
-        )}
+          ))}
       </div>
     </DashboardLayout>
   );

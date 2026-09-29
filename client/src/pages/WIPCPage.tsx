@@ -593,7 +593,7 @@ export default function WIPCPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-3xl mx-auto px-4 py-8 flex flex-col gap-8">
+      <div className="px-4 py-8 flex flex-col gap-8">
         {/* Page header */}
         <div className="flex items-start gap-3">
           <ShieldCheck className="w-7 h-7 text-primary shrink-0 mt-0.5" />

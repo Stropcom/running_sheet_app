@@ -2284,23 +2284,21 @@ export default function OperationDetail() {
             )}
           </div>
         </div>
-        {/* end header wrapper — the outer max-w-4xl "page shell" padding
-        applies to the breadcrumb/header/TabsList above but deliberately
-        NOT to the tab content below, since the Profile tab needs to be
-        full-width (see the "profile" TabsContent's own comment). The
-        other three tabs get an equivalent px/pb wrapper directly on their
-        own TabsContent instead, so they keep the exact same look as
-        before this split. */}
+        {/* end header wrapper — none of this page's tabs cap width with a
+        max-w-* anymore, so the header above and every tab's content below
+        read as one consistent full-width surface. */}
 
         {/* ── Running Sheets tab ── */}
-        {/* The width/padding classes go on this inner div, not on
-          TabsContent itself — TabsContent is a flex item (shadcn's own
-          "flex-1" default, inside the Tabs root's "flex flex-col"), and a
-          flex item's default min-width:auto refuses to shrink below its
-          content's natural width, which fought the max-w-4xl constraint
-          here (too-narrow centering on desktop, horizontal overflow on
-          phone with a long card title). A plain block-level div doesn't
-          have that flex quirk. */}
+        {/* The padding classes go on this inner div, not on TabsContent
+          itself — TabsContent is a flex item (shadcn's own "flex-1"
+          default, inside the Tabs root's "flex flex-col"), and a flex
+          item's default min-width:auto refuses to shrink below its
+          content's natural width, which previously fought a max-w-4xl
+          constraint placed directly on TabsContent (too-narrow centering
+          on desktop, horizontal overflow on phone with a long card
+          title). A plain block-level div doesn't have that flex quirk —
+          kept even though there's no width cap left to protect, since
+          TabsContent still can't safely carry className directly. */}
         <TabsContent value="sheets">
           <div className="px-6 lg:px-8 pb-6 lg:pb-8">
             {isLoading ? (

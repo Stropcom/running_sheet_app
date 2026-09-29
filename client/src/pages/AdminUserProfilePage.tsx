@@ -155,7 +155,7 @@ export default function AdminUserProfilePage() {
   if (isLoading || !profile) {
     return (
       <DashboardLayout>
-        <div className="p-6 max-w-2xl mx-auto flex items-center justify-center min-h-[40vh]">
+        <div className="p-6 flex items-center justify-center min-h-[40vh]">
           <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
         </div>
       </DashboardLayout>
@@ -167,7 +167,7 @@ export default function AdminUserProfilePage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 max-w-2xl mx-auto flex flex-col gap-6">
+      <div className="p-6 flex flex-col gap-6">
         {/* Header */}
         <div className="flex items-center gap-3">
           <Button

@@ -589,7 +589,7 @@ export default function GovernancePage() {
   if (isLoading) {
     return (
       <DashboardLayout>
-        <div className="p-6 max-w-3xl mx-auto space-y-3">
+        <div className="p-6 space-y-3">
           {[...Array(6)].map((_, i) => (
             <Skeleton key={i} className="h-12 w-full rounded-xl" />
           ))}
@@ -600,7 +600,7 @@ export default function GovernancePage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 max-w-3xl mx-auto">
+      <div className="p-6">
         {/* Back nav */}
         <button
           onClick={() => window.history.back()}

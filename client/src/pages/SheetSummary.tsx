@@ -1156,7 +1156,7 @@ export default function SheetSummaryPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-3xl mx-auto px-4 py-6">
+      <div className="px-4 py-6">
         <button
           onClick={() => navigate(`/sheet/${sheetId}`, { replace: true })}
           className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-5"

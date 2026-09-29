@@ -1,4 +1,13 @@
-import { Target, Car, User, MapPin, HelpCircle, IdCard } from "lucide-react";
+import {
+  Target,
+  Car,
+  User,
+  MapPin,
+  HelpCircle,
+  IdCard,
+  FolderSearch,
+} from "lucide-react";
+import { Link } from "wouter";
 
 const CATEGORY_ICON: Record<string, typeof Target> = {
   target: Target,
@@ -39,6 +48,59 @@ function categoryRank(category: string): number {
   if (PERSON_CATEGORIES.has(category)) return 0;
   if (category === "member") return 2;
   return 1;
+}
+
+// A target/associate's composed name always ends "... (SURNAME)" — see
+// composeTargetName in lib/addressFormat.ts, which is what entityLabel is
+// set from at link time. Pulling it back out here means the Profile pill
+// doesn't need a second field just for display, and naturally has nothing
+// to show for a business-name-only associate (no parenthetical), where a
+// surname wouldn't mean anything anyway.
+function extractSurname(label: string): string | null {
+  const m = label.match(/\(([^()]+)\)\s*$/);
+  return m ? m[1].trim() : null;
+}
+
+// Purple "Profile SURNAME" pill — links straight to that person's
+// Intelligence page profile. Deliberately a separate colour from the green
+// linked pills above it (this is navigation, not link status) and only
+// rendered for target/associate categories, which are the only two with an
+// actual Intelligence profile page (vehicle/location/unidentified_person
+// aren't "a person's profile"). A target links by id (the only category
+// with a real foreign key — see attachLinkedCounts in server/db.ts); an
+// associate has no id here, so it links by its exact name text instead,
+// same as every other associate-profile link in the app.
+function ProfilePillRow({
+  category,
+  label,
+  targetId,
+}: {
+  category: string;
+  label: string;
+  targetId: number | null;
+}) {
+  const surname = extractSurname(label);
+  if (!surname) return null;
+  const href =
+    category === "target"
+      ? targetId != null
+        ? `/intelligence/target/${targetId}`
+        : null
+      : category === "associate"
+        ? `/intelligence/associate/${encodeURIComponent(label)}`
+        : null;
+  if (!href) return null;
+  return (
+    <Link
+      href={href}
+      onClick={e => e.stopPropagation()}
+      title={`Open ${surname}'s Intelligence profile`}
+      className="flex items-center gap-1 w-full px-2 py-0.5 rounded-full text-white text-[9px] font-medium bg-violet-600/90 hover:bg-violet-600 transition-colors"
+    >
+      <FolderSearch className="h-2.5 w-2.5 shrink-0" />
+      <span className="truncate">Profile {surname}</span>
+    </Link>
+  );
 }
 
 function PillRow({
@@ -89,8 +151,13 @@ export function LinkedEntityPills({
   faceCount,
   hasRow,
   onClick,
+  showProfileLinks,
 }: {
-  entities?: Array<{ category: string; label: string }>;
+  entities?: Array<{
+    category: string;
+    label: string;
+    targetId?: number | null;
+  }>;
   /** This photo's own detected-face count (row_attachments.faceCount) — a
    * face detected but no person-category link yet shows the "needs person"
    * placeholder. Null/undefined is treated as "unknown, don't flag". */
@@ -101,6 +168,11 @@ export function LinkedEntityPills({
    * so this is skipped for those. */
   hasRow?: boolean;
   onClick?: () => void;
+  /** Adds a purple "Profile SURNAME" pill below everything else, per linked
+   * target/associate, that navigates to their Intelligence page profile —
+   * only the Images folder wants this (see ImagesPage.tsx); every other
+   * caller of this component omits it. */
+  showProfileLinks?: boolean;
 }) {
   const list = entities ?? [];
   const needsPerson =
@@ -135,6 +207,17 @@ export function LinkedEntityPills({
       {needsMember && (
         <PillRow Icon={IdCard} label="Needs CIN link" tone="needed" />
       )}
+      {showProfileLinks &&
+        sorted
+          .filter(e => e.category === "target" || e.category === "associate")
+          .map((e, idx) => (
+            <ProfilePillRow
+              key={`profile-${e.category}-${e.label}-${idx}`}
+              category={e.category}
+              label={e.label}
+              targetId={e.targetId ?? null}
+            />
+          ))}
     </div>
   );
 }

@@ -422,6 +422,7 @@ export function SheetFolderList({
                       faceCount={a.faceCount}
                       hasRow={a.rowId != null}
                       onClick={() => setLinking({ id: a.id, url: a.url })}
+                      showProfileLinks
                     />
                   </div>
                 ))}
@@ -585,6 +586,7 @@ export function SheetGallery({
                 faceCount={a.faceCount}
                 hasRow={a.rowId != null}
                 onClick={() => setLinking({ id: a.id, url: a.url })}
+                showProfileLinks
               />
             </div>
           ))}

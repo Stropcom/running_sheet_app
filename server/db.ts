@@ -1297,7 +1297,11 @@ async function attachLinkedCounts<T extends { id: number }>(
   (T & {
     linkedCount: number;
     linkedCategories: string[];
-    linkedEntities: Array<{ category: string; label: string }>;
+    linkedEntities: Array<{
+      category: string;
+      label: string;
+      targetId: number | null;
+    }>;
   })[]
 > {
   if (rows.length === 0) return [];
@@ -1316,6 +1320,13 @@ async function attachLinkedCounts<T extends { id: number }>(
         attachmentId: attachmentEntityLinks.attachmentId,
         category: attachmentEntityLinks.category,
         entityLabel: attachmentEntityLinks.entityLabel,
+        // Only set when category = "target" — the only category linked by a
+        // real foreign key rather than normalized label text (see
+        // attachmentEntityLinks in drizzle/schema.ts). Threaded through so
+        // the client can link straight to /intelligence/target/:id without
+        // a second lookup — an associate instead links by its (already
+        // known) name via /intelligence/associate/:label.
+        targetId: attachmentEntityLinks.targetId,
       })
       .from(attachmentEntityLinks)
       .where(inArray(attachmentEntityLinks.attachmentId, attachmentIds)),
@@ -1326,14 +1337,18 @@ async function attachLinkedCounts<T extends { id: number }>(
   const categoryMap = new Map<number, string[]>();
   const entityMap = new Map<
     number,
-    Array<{ category: string; label: string }>
+    Array<{ category: string; label: string; targetId: number | null }>
   >();
   for (const l of linkRows) {
     const cats = categoryMap.get(l.attachmentId) ?? [];
     if (!cats.includes(l.category)) cats.push(l.category);
     categoryMap.set(l.attachmentId, cats);
     const ents = entityMap.get(l.attachmentId) ?? [];
-    ents.push({ category: l.category, label: l.entityLabel });
+    ents.push({
+      category: l.category,
+      label: l.entityLabel,
+      targetId: l.targetId ?? null,
+    });
     entityMap.set(l.attachmentId, ents);
   }
   return rows.map(r => ({

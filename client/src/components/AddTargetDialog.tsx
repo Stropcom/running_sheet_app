@@ -225,6 +225,38 @@ async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
     .join("");
 }
 
+// Reads an officer-picked file into the same shape as a document-import
+// StagedImage (see ImportTargetDocumentDialog.tsx) so a manually uploaded
+// target/associate photo can flow through the exact same saveStagedImages
+// pipeline — upload, on-device face detection, then auto-link — once the
+// target actually has a real id.
+function readImageFile(file: File): Promise<{
+  dataBase64: string;
+  mimeType: string;
+  width: number;
+  height: number;
+}> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const dataBase64 = dataUrl.split(",")[1] ?? "";
+      const img = new Image();
+      img.onload = () =>
+        resolve({
+          dataBase64,
+          mimeType: file.type || "image/jpeg",
+          width: img.naturalWidth,
+          height: img.naturalHeight,
+        });
+      img.onerror = () => reject(new Error("Could not read that image."));
+      img.src = dataUrl;
+    };
+    reader.onerror = () => reject(new Error("Could not read that file."));
+    reader.readAsDataURL(file);
+  });
+}
+
 export function AddTargetDialog({
   open,
   onClose,
@@ -413,6 +445,47 @@ export function AddTargetDialog({
   const [checkingImageDuplicates, setCheckingImageDuplicates] = useState(false);
   const [imageChoices, setImageChoices] = useState<Record<string, boolean>>({});
 
+  // Photos the officer picks directly in this dialog (Upload Image button
+  // under Person Identity / an associate's identity fields) — staged the
+  // same way as a document-import photo (see StagedImage), just added here
+  // instead of arriving via `initialImages`. A single hidden file input is
+  // shared by every "Upload Image" button; which person it's for is
+  // recorded in manualImageTarget when that button is clicked, just before
+  // the input is opened.
+  const [manualImages, setManualImages] = useState<StagedImage[]>([]);
+  const [manualImageTarget, setManualImageTarget] = useState<
+    StagedImage["linkTo"] | null
+  >(null);
+  const manualImageInputRef = useRef<HTMLInputElement>(null);
+
+  const triggerManualImageUpload = (linkTo: StagedImage["linkTo"]) => {
+    setManualImageTarget(linkTo);
+    manualImageInputRef.current?.click();
+  };
+
+  const handleManualImageSelected = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    const linkTo = manualImageTarget;
+    setManualImageTarget(null);
+    if (!file || !linkTo) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file.");
+      return;
+    }
+    try {
+      const { dataBase64, mimeType, width, height } = await readImageFile(file);
+      setManualImages(v => [
+        ...v,
+        { key: makeExtraId(), dataBase64, mimeType, width, height, linkTo },
+      ]);
+    } catch {
+      toast.error("Could not read that image.");
+    }
+  };
+
   useEffect(() => {
     const candidateTargetId = dupMatch?.id;
     const staged = initialImages ?? [];
@@ -480,6 +553,8 @@ export function AddTargetDialog({
     setExtraAddresses([]);
     setExtraVehicles([]);
     setAssociates([]);
+    setManualImages([]);
+    setManualImageTarget(null);
     setDupMatch(null);
     setDupMatchFromSave(false);
     setDupCheckedForName("");
@@ -661,9 +736,10 @@ export function AddTargetDialog({
     targetId: number,
     associateIdByKey: Record<string, number> = {}
   ) => {
-    const toSave = (initialImages ?? []).filter(
-      img => imageChoices[img.key] ?? true
-    );
+    const toSave = [
+      ...(initialImages ?? []).filter(img => imageChoices[img.key] ?? true),
+      ...manualImages,
+    ];
     if (toSave.length === 0) return;
     const opId = operation?.id;
     if (!opId) return; // OperationPicker is required before any save path reaches here
@@ -1383,6 +1459,63 @@ export function AddTargetDialog({
     </>
   );
 
+  // Upload Image control shared by Person Identity and each associate's
+  // identity box — stages the picked file into manualImages (linked by
+  // "target" or that associate's staged key) and shows what's staged so
+  // far, with a remove option before save. The actual upload + auto-link
+  // happens in saveStagedImages once the target/associate has a real id.
+  function manualImageUploadSection(
+    linkTo: StagedImage["linkTo"],
+    accentBorderClass: string
+  ) {
+    const matches = (img: StagedImage) =>
+      linkTo.type === "target"
+        ? img.linkTo.type === "target"
+        : img.linkTo.type === "associate" &&
+          linkTo.type === "associate" &&
+          img.linkTo.associateKey === linkTo.associateKey;
+    const staged = manualImages.filter(matches);
+    return (
+      <div className="flex flex-col gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="gap-1.5 self-start"
+          onClick={() => triggerManualImageUpload(linkTo)}
+        >
+          <ImageIcon className="w-3.5 h-3.5" /> Upload Image
+        </Button>
+        {staged.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {staged.map(img => (
+              <div
+                key={img.key}
+                className={`relative rounded-md overflow-hidden border-2 ${accentBorderClass}`}
+              >
+                <img
+                  src={`data:${img.mimeType};base64,${img.dataBase64}`}
+                  alt="Uploaded"
+                  className="w-16 h-16 object-cover block"
+                />
+                <button
+                  type="button"
+                  title="Remove this photo"
+                  onClick={() =>
+                    setManualImages(v => v.filter(i => i.key !== img.key))
+                  }
+                  className="absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-black/60 text-white flex items-center justify-center"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       <Dialog
@@ -1395,6 +1528,13 @@ export function AddTargetDialog({
           <DialogHeader>
             <DialogTitle>Add Target to Registry</DialogTitle>
           </DialogHeader>
+          <input
+            ref={manualImageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleManualImageSelected}
+          />
           <div className="flex flex-col gap-3 py-2">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -1469,6 +1609,12 @@ export function AddTargetDialog({
                   onChange={setIdentity}
                   onSurnameBlur={checkNameOnBlur}
                 />
+                <div className="mt-3 pt-3 border-t border-sky-500/20">
+                  {manualImageUploadSection(
+                    { type: "target" },
+                    "border-sky-500"
+                  )}
+                </div>
               </div>
             )}
 
@@ -1509,9 +1655,18 @@ export function AddTargetDialog({
                       size="icon"
                       variant="ghost"
                       className="h-6 w-6 text-destructive hover:text-destructive"
-                      onClick={() =>
-                        setAssociates(v => v.filter((_, idx) => idx !== i))
-                      }
+                      onClick={() => {
+                        setAssociates(v => v.filter((_, idx) => idx !== i));
+                        setManualImages(v =>
+                          v.filter(
+                            img =>
+                              !(
+                                img.linkTo.type === "associate" &&
+                                img.linkTo.associateKey === assoc.key
+                              )
+                          )
+                        );
+                      }}
                     >
                       <X className="w-3 h-3" />
                     </Button>
@@ -1526,6 +1681,10 @@ export function AddTargetDialog({
                       )
                     }
                   />
+                  {manualImageUploadSection(
+                    { type: "associate", associateKey: assoc.key },
+                    "border-violet-500"
+                  )}
                   <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
                     <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
                       <Home className="w-3 h-3" /> Home Address

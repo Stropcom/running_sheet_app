@@ -28,6 +28,10 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FaceSelectPicker } from "@/components/FaceSelectPicker";
+import {
+  FaceMatchReviewQueue,
+  type FaceReviewItem,
+} from "@/components/FaceMatchReviewQueue";
 
 type Category =
   | "target"
@@ -161,6 +165,21 @@ export function UploadImageDialog({
     | null
   >(null);
 
+  // Set right after any manual upload succeeds — this photo may not have
+  // an entity category picked at all, but the instant match-check runs
+  // regardless (same as the running sheet's row uploads; manual uploads
+  // never had this check before). Cleared once every face with a
+  // suggestion has been reviewed, at which point proceedAfterReview picks
+  // up whatever the normal post-upload flow was going to do anyway.
+  const [reviewQueue, setReviewQueue] = useState<{
+    id: number;
+    url: string;
+    allFaces: Array<{ index: number; bbox: [number, number, number, number] }>;
+    queue: FaceReviewItem[];
+  } | null>(null);
+  const confirmSuggestedMatch =
+    trpc.attachment.confirmSuggestedFaceMatch.useMutation();
+
   const knownEntitySelected =
     entityTab && entityTab !== "unidentified_person" && !!selectedEntity;
 
@@ -243,6 +262,7 @@ export function UploadImageDialog({
     setSheetId(null);
     setRowId(null);
     setFaceSelectState(null);
+    setReviewQueue(null);
   };
 
   const uploadManual = trpc.attachment.uploadManual.useMutation();
@@ -285,6 +305,75 @@ export function UploadImageDialog({
     !uploadManual.isPending &&
     !linkToEntity.isPending;
 
+  // The normal post-upload flow — unchanged from before the auto-check
+  // existed, just pulled out into its own function so it can run either
+  // right after upload (nothing matched) or after the officer finishes
+  // reviewing the match queue (something did).
+  const proceedAfterUpload = (result: { id: number; url: string }) => {
+    if (operationId == null) return;
+    if (entityTab === "unidentified_person") {
+      // The upload itself is done — hand off to the face-select step so
+      // the officer can tap which detected face(s) are the unidentified
+      // person(s) rather than tagging the whole photo blindly.
+      utils.attachment.listByOperation.invalidate({ operationId });
+      if (sheetId != null) utils.attachment.listBySheet.invalidate({ sheetId });
+      if (rowId != null)
+        utils.row.list.invalidate({ sheetId: sheetId ?? undefined });
+      setFaceSelectState({
+        id: result.id,
+        url: result.url,
+        mode: "unidentified",
+      });
+      return;
+    } else if (
+      (entityTab === "target" || entityTab === "associate") &&
+      selectedEntity
+    ) {
+      // Same hand-off, but the officer already knows the identity — the
+      // face-select step just needs to know which face in the photo is
+      // that person, so its embedding can feed future match suggestions.
+      utils.attachment.listByOperation.invalidate({ operationId });
+      if (sheetId != null) utils.attachment.listBySheet.invalidate({ sheetId });
+      if (rowId != null)
+        utils.row.list.invalidate({ sheetId: sheetId ?? undefined });
+      setFaceSelectState({
+        id: result.id,
+        url: result.url,
+        mode: "entity",
+        category: entityTab,
+        targetId: selectedEntity.targetId,
+        entityLabel: selectedEntity.entityLabel ?? "",
+      });
+      return;
+    } else if (entityTab && selectedEntity) {
+      linkToEntity.mutate(
+        {
+          attachmentId: result.id,
+          category: entityTab,
+          targetId: selectedEntity.targetId,
+          entityLabel: selectedEntity.entityLabel ?? "",
+        },
+        {
+          onSuccess: () => finishUpload(),
+          onError: err => toast.error(err.message),
+        }
+      );
+      return;
+    }
+    finishUpload();
+
+    function finishUpload() {
+      if (operationId == null) return;
+      utils.attachment.listByOperation.invalidate({ operationId });
+      if (sheetId != null) utils.attachment.listBySheet.invalidate({ sheetId });
+      if (rowId != null)
+        utils.row.list.invalidate({ sheetId: sheetId ?? undefined });
+      toast.success("Photo uploaded");
+      onOpenChange(false);
+      reset();
+    }
+  };
+
   const handleSubmit = async () => {
     if (!file || operationId == null) return;
     const dataBase64: string = await new Promise((resolve, reject) => {
@@ -304,58 +393,35 @@ export function UploadImageDialog({
         fileName: file.fileName,
       });
 
-      if (entityTab === "unidentified_person") {
-        // The upload itself is done — hand off to the face-select step so
-        // the officer can tap which detected face(s) are the unidentified
-        // person(s) rather than tagging the whole photo blindly.
-        utils.attachment.listByOperation.invalidate({ operationId });
-        if (sheetId != null)
-          utils.attachment.listBySheet.invalidate({ sheetId });
-        if (rowId != null)
-          utils.row.list.invalidate({ sheetId: sheetId ?? undefined });
-        setFaceSelectState({
-          id: result.id,
-          url: result.url,
-          mode: "unidentified",
-        });
-        return;
-      } else if (
-        (entityTab === "target" || entityTab === "associate") &&
-        selectedEntity
-      ) {
-        // Same hand-off, but the officer already knows the identity — the
-        // face-select step just needs to know which face in the photo is
-        // that person, so its embedding can feed future match suggestions.
-        utils.attachment.listByOperation.invalidate({ operationId });
-        if (sheetId != null)
-          utils.attachment.listBySheet.invalidate({ sheetId });
-        if (rowId != null)
-          utils.row.list.invalidate({ sheetId: sheetId ?? undefined });
-        setFaceSelectState({
-          id: result.id,
-          url: result.url,
-          mode: "entity",
-          category: entityTab,
-          targetId: selectedEntity.targetId,
-          entityLabel: selectedEntity.entityLabel ?? "",
-        });
-        return;
-      } else if (entityTab && selectedEntity) {
-        await linkToEntity.mutateAsync({
+      // Same instant per-face match check every other upload path gets,
+      // regardless of whether an entity category was picked above — manual
+      // uploads never had this before. Best-effort: if the check itself
+      // fails, just fall through to the normal flow rather than blocking
+      // the upload the officer already completed.
+      try {
+        const preview = await utils.attachment.previewFaceMatches.fetch({
           attachmentId: result.id,
-          category: entityTab,
-          targetId: selectedEntity.targetId,
-          entityLabel: selectedEntity.entityLabel ?? "",
         });
+        const matched = preview.faces.filter(
+          (f): f is FaceReviewItem => f.suggestion !== null
+        );
+        if (matched.length > 0) {
+          setReviewQueue({
+            id: result.id,
+            url: result.url,
+            allFaces: preview.faces.map(f => ({
+              index: f.index,
+              bbox: f.bbox,
+            })),
+            queue: matched,
+          });
+          return;
+        }
+      } catch {
+        // fall through
       }
 
-      utils.attachment.listByOperation.invalidate({ operationId });
-      if (sheetId != null) utils.attachment.listBySheet.invalidate({ sheetId });
-      if (rowId != null)
-        utils.row.list.invalidate({ sheetId: sheetId ?? undefined });
-      toast.success("Photo uploaded");
-      onOpenChange(false);
-      reset();
+      proceedAfterUpload(result);
     } catch (err: any) {
       toast.error(err?.message ?? "Upload failed.");
     }
@@ -372,15 +438,46 @@ export function UploadImageDialog({
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {faceSelectState?.mode === "unidentified"
-              ? "Tag Unidentified Person"
-              : faceSelectState?.mode === "entity"
-                ? "Confirm face"
-                : "Upload photo"}
+            {reviewQueue
+              ? "Possible match found"
+              : faceSelectState?.mode === "unidentified"
+                ? "Tag Unidentified Person"
+                : faceSelectState?.mode === "entity"
+                  ? "Confirm face"
+                  : "Upload photo"}
           </DialogTitle>
         </DialogHeader>
 
-        {faceSelectState?.mode === "unidentified" ? (
+        {reviewQueue ? (
+          <FaceMatchReviewQueue
+            photoUrl={reviewQueue.url}
+            allFaces={reviewQueue.allFaces}
+            queue={reviewQueue.queue}
+            onConfirm={async item => {
+              try {
+                await confirmSuggestedMatch.mutateAsync({
+                  attachmentId: reviewQueue.id,
+                  matchedEntityLinkId: item.suggestion.entityLinkId,
+                  faceIndex: item.index,
+                });
+                toast.success(`Linked to ${item.suggestion.entityLabel}`);
+                utils.attachment.linksFor.invalidate({
+                  attachmentId: reviewQueue.id,
+                });
+                utils.attachment.entityLinkCounts.invalidate();
+              } catch (e: any) {
+                toast.error(e?.message ?? "Couldn't link that face.");
+                throw e;
+              }
+            }}
+            onSkip={() => {}}
+            onDone={() => {
+              const finished = { id: reviewQueue.id, url: reviewQueue.url };
+              setReviewQueue(null);
+              proceedAfterUpload(finished);
+            }}
+          />
+        ) : faceSelectState?.mode === "unidentified" ? (
           <FaceSelectPicker
             attachmentId={faceSelectState.id}
             photoUrl={faceSelectState.url}

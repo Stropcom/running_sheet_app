@@ -462,6 +462,45 @@ async function guardAttachmentRowUnlocked(attachmentId: number) {
   }
 }
 
+// Shared by previewFaceMatches/previewFaceMatchesFromBytes below — detects
+// every face in a photo and, for each one, checks it against every other
+// confirmed face on file (same findSimilarFaces/FACE_MATCH_THRESHOLD used
+// everywhere else). Returns EVERY detected face (suggestion null when
+// nothing matched it) so a caller that needs to draw a box over every face
+// in the photo — not just the ones with a hit — has what it needs; a
+// caller that only cares about matches filters for suggestion !== null
+// itself. A photo with no matches at all still comes back with entries,
+// just all suggestion: null, so the client shows nothing — same "shortcut,
+// never required" contract as before this covered more than one face.
+// Pure detect-and-compare: nothing is written to the database.
+async function detectFacesWithMatches(buffer: Buffer): Promise<
+  Array<{
+    index: number;
+    bbox: [number, number, number, number];
+    confidence: number;
+    suggestion: FaceMatchCandidate | null;
+  }>
+> {
+  const faces = await detectAndEmbedFaces(buffer);
+  const results: Array<{
+    index: number;
+    bbox: [number, number, number, number];
+    confidence: number;
+    suggestion: FaceMatchCandidate | null;
+  }> = [];
+  for (let index = 0; index < faces.length; index++) {
+    const face = faces[index];
+    const candidates = await findSimilarFaces(face.embedding, -1);
+    results.push({
+      index,
+      bbox: face.bbox,
+      confidence: face.confidence,
+      suggestion: candidates[0] ?? null,
+    });
+  }
+  return results;
+}
+
 // Structured input fields shared by target.create/update and
 // target.registry.create/update (and the associate.* router) — the raw
 // controlled parts a Target/Associate's name/tgt, hbf/hb, v1f/v1 are
@@ -1960,15 +1999,16 @@ export const appRouter = router({
 
     // Called once, right after a photo finishes uploading, to offer an
     // immediate shortcut before the officer opens the manual Link dialog at
-    // all. Deliberately narrow in scope: only a photo with EXACTLY one
-    // detected face gets a suggestion — a multi-face photo falls straight
-    // through to today's unchanged manual flow (FaceSelectPicker's
-    // multi-select), since auto-suggesting several faces at once from one
-    // upload is a bigger UX problem this doesn't attempt to solve. No link
-    // or embedding is written here — same "detect only" contract as
-    // detectFaces above — so declining the suggestion (or a photo with 0 or
-    // 2+ faces) leaves the photo exactly as unlinked as it is today.
-    previewFaceMatch: protectedProcedure
+    // all — every detected face comes back (so a caller can draw a box
+    // over each one for context), each with suggestion set only when it
+    // actually matches someone already on file. A photo where nothing
+    // matches (0 faces, or none of them hit FACE_MATCH_THRESHOLD) leaves
+    // every suggestion null and the client shows nothing, same "shortcut,
+    // never required" behaviour as before this covered more than one
+    // face — the manual Link dialog (FaceSelectPicker) remains the
+    // fallback for anything this doesn't suggest. No link or embedding is
+    // written here — same "detect only" contract as detectFaces above.
+    previewFaceMatches: protectedProcedure
       .input(z.object({ attachmentId: z.number() }))
       .query(async ({ input }) => {
         const attachment = await getAttachmentById(input.attachmentId);
@@ -1979,11 +2019,30 @@ export const appRouter = router({
           });
         try {
           const buffer = await storageGetBytes(attachment.key);
-          const faces = await detectAndEmbedFaces(buffer);
-          if (faces.length !== 1)
-            return { faceCount: faces.length, suggestion: null };
-          const candidates = await findSimilarFaces(faces[0].embedding, -1);
-          return { faceCount: 1, suggestion: candidates[0] ?? null };
+          const faces = await detectFacesWithMatches(buffer);
+          return { faces };
+        } catch (err) {
+          console.error("Face detection failed:", err);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Face detection failed.",
+          });
+        }
+      }),
+
+    // Same check as previewFaceMatches above, but for a photo that hasn't
+    // been uploaded to storage yet — used by the Target/Associate "Add"
+    // forms, which stage a picked photo as raw bytes client-side and only
+    // actually upload it once the target/associate itself is saved (so a
+    // cancelled Add doesn't leave an orphaned attachment). Still pure
+    // detect-and-compare, nothing written to the database.
+    previewFaceMatchesFromBytes: protectedProcedure
+      .input(z.object({ dataBase64: z.string(), mimeType: z.string() }))
+      .mutation(async ({ input }) => {
+        try {
+          const buffer = Buffer.from(input.dataBase64, "base64");
+          const faces = await detectFacesWithMatches(buffer);
+          return { faces };
         } catch (err) {
           console.error("Face detection failed:", err);
           throw new TRPCError({
@@ -2197,16 +2256,24 @@ export const appRouter = router({
         return { linkId, matches };
       }),
 
-    // Officer confirmed the immediate upload-time suggestion from
-    // previewFaceMatch above ("possible match: Bob Smith — Target"). Unlike
+    // Officer confirmed an upload-time suggestion from previewFaceMatches
+    // above ("possible match: Bob Smith — Target"). Unlike
     // confirmEntityFace/confirmUnidentifiedPersonFaces, no placeholder link
     // is created first — this attachment joins the matched entity's identity
     // directly in one step, via the exact same linkAttachmentToEntity call
     // the manual flow uses, just pre-filled with the suggested category/
     // target/label instead of an officer picking them from the dialog.
+    // faceIndex picks which detected face this confirmation is for — a
+    // multi-face photo can run this once per face, each against a
+    // different matchedEntityLinkId; defaults to 0 for the original
+    // single-face call sites.
     confirmSuggestedFaceMatch: protectedProcedure
       .input(
-        z.object({ attachmentId: z.number(), matchedEntityLinkId: z.number() })
+        z.object({
+          attachmentId: z.number(),
+          matchedEntityLinkId: z.number(),
+          faceIndex: z.number().default(0),
+        })
       )
       .mutation(async ({ input }) => {
         const attachment = await getAttachmentById(input.attachmentId);
@@ -2233,7 +2300,7 @@ export const appRouter = router({
             message: "Face detection failed.",
           });
         }
-        const face = faces[0];
+        const face = faces[input.faceIndex];
         if (!face)
           throw new TRPCError({
             code: "BAD_REQUEST",

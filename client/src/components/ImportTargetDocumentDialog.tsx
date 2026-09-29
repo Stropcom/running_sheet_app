@@ -137,6 +137,13 @@ export interface StagedImage {
     | { type: "target" }
     | { type: "associate"; associateKey: string }
     | { type: "existingAssociate"; associateId: number; entityLabel: string };
+  /** Set only for a photo picked through the file input (not one bulk-
+   * extracted from an imported document) — the immediate per-photo face
+   * review that already ran at pick time (see StagedPhotoFaceReview.tsx),
+   * so saveStagedImages can link the right face straight away instead of
+   * re-running detection and falling back to the old "exactly one face"
+   * shortcut. */
+  faceReview?: import("./StagedPhotoFaceReview").StagedFaceResult;
 }
 
 export interface DocumentImportPrefill {

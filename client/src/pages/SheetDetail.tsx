@@ -200,8 +200,10 @@ type SheetRow = {
   attachments: RowAttachment[];
 };
 
-// Same phrase list boldImageryKeywords() highlights — used to decide whether
-// to show the "attach photo" affordance on an observation cell.
+// Same phrase list stripImageryPhraseForExport() drops from the exported
+// text — used here to decide whether to show the "attach photo" affordance
+// on an observation cell (kept live for that and for the Governance imagery
+// check; only the export drops the phrase itself).
 const IMAGERY_PHRASE_PATTERN =
   /(PHOTOGRAPHS TAKEN|PHOTOGRAPH\/S TAKEN|PHOTOGRAPH TAKEN|VIDEO FOOTAGE TAKEN|VIDEO TAKEN|PHOTOS TAKEN|PHOTO TAKEN)/i;
 
@@ -223,7 +225,11 @@ type ExportRow = {
     certifiedAt: number;
     isActive: boolean;
   }[];
-  attachments: { id: number; url: string }[];
+  attachments: {
+    id: number;
+    url: string;
+    linkedEntities?: Array<{ category: string; label: string }>;
+  }[];
 };
 
 // Renders attached photos as inline <img> tags at ~1/3 cell width, matching
@@ -234,15 +240,40 @@ type ExportRow = {
 // avoids this with its own "items-end" on the equivalent live container;
 // matching that here so a photo prints/exports at its natural aspect ratio,
 // same as it already appears on the running sheet itself.
-function attachmentImagesHtml(attachments: { url: string }[]): string {
+//
+// Each photo gets its linked CIN ("member" category link — see
+// LinkAttachmentDialog's CIN section / autoLinkAttachmentToRowMemberIfSingle
+// in db.ts) printed underneath as a small green pill, same colour as the
+// live app's LinkedEntityPills, so the exported page still shows who the
+// photo is attributed to — particularly useful when several CINs are on the
+// one row. A photo not yet linked to a CIN prints with no pill at all.
+function attachmentImagesHtml(
+  attachments: {
+    url: string;
+    linkedEntities?: Array<{ category: string; label: string }>;
+  }[]
+): string {
   if (attachments.length === 0) return "";
   return (
-    `<div style="margin-top:6px;display:flex;flex-wrap:wrap;align-items:flex-end;gap:6px">` +
+    `<div style="margin-top:6px;display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px">` +
     attachments
-      .map(
-        a =>
-          `<img src="${a.url}" style="width:33%;max-width:160px;border:1px solid #ccc;border-radius:4px" />`
-      )
+      .map(a => {
+        const cins = (a.linkedEntities ?? [])
+          .filter(e => e.category === "member")
+          .map(e => e.label);
+        const pillsHtml = cins
+          .map(
+            cin =>
+              `<span style="display:inline-block;margin-top:2px;padding:1px 6px;border-radius:9999px;background:#059669;color:#fff;font-size:8px;font-weight:600;">${cin}</span>`
+          )
+          .join("");
+        return (
+          `<div style="width:33%;max-width:160px;display:flex;flex-direction:column;align-items:flex-start;gap:1px">` +
+          `<img src="${a.url}" style="width:100%;border:1px solid #ccc;border-radius:4px" />` +
+          pillsHtml +
+          `</div>`
+        );
+      })
       .join("") +
     `</div>`
   );
@@ -423,11 +454,24 @@ function exportToPDF(
       ? uniqueImageryEntries.map(e => `${e.cin} (${e.time})`).join(", ")
       : "Nil";
 
-  // ── Bold imagery keywords in observation text ────────────────────────────────
-  function boldImageryKeywords(text: string): string {
+  // ── Drop imagery-keyword phrases from the exported observation text ──────────
+  // "PHOTOGRAPH/S TAKEN" (and its variants) is needed live — it drives the
+  // photo-upload affordance and the Governance imagery check (see
+  // IMAGERY_PHRASE_PATTERN above) — but is redundant once printed: the
+  // photo(s) and their CIN pill(s) (see attachmentImagesHtml) already say
+  // everything the phrase would. Only the phrase text is removed here; any
+  // <br/> line breaks around it (already present from the observation's own
+  // \n -> <br/> conversion at each call site below) are left as-is, then
+  // collapsed/trimmed afterwards so removing the phrase's own line doesn't
+  // leave a stray run of blank lines or trailing space before the photos.
+  function stripImageryPhraseForExport(text: string): string {
     const pattern =
-      /(PHOTOGRAPHS TAKEN|PHOTOGRAPH\/S TAKEN|PHOTOGRAPH TAKEN|VIDEO FOOTAGE TAKEN|VIDEO TAKEN|PHOTOS TAKEN|PHOTO TAKEN)/gi;
-    return text.replace(pattern, "<strong>$1</strong>");
+      /(PHOTOGRAPHS TAKEN|PHOTOGRAPH\/S TAKEN|PHOTOGRAPH TAKEN|VIDEO FOOTAGE TAKEN|VIDEO TAKEN|PHOTOS TAKEN|PHOTO TAKEN)\.?/gi;
+    return text
+      .replace(pattern, "")
+      .replace(/(<br\/>\s*){3,}/g, "<br/><br/>")
+      .replace(/(<br\/>\s*)+$/g, "")
+      .trim();
   }
 
   // ── Page headers ────────────────────────────────────────────────────────────
@@ -548,7 +592,9 @@ function exportToPDF(
       const rowBg = row.isLocked ? lockedBg : "transparent";
       if (row.members.length === 0) {
         const obsHtml =
-          boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>")) +
+          stripImageryPhraseForExport(
+            (row.observation ?? "").replace(/\n/g, "<br/>")
+          ) +
           attachmentImagesHtml(row.attachments) +
           OBS_TRAILING_SPACE;
         parts.push(`<tr style="background:${rowBg}">
@@ -570,7 +616,9 @@ function exportToPDF(
         )
       ) {
         const obsHtml =
-          boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>")) +
+          stripImageryPhraseForExport(
+            (row.observation ?? "").replace(/\n/g, "<br/>")
+          ) +
           attachmentImagesHtml(row.attachments) +
           OBS_TRAILING_SPACE;
         parts.push(`<tr style="background:${rowBg}">
@@ -593,7 +641,7 @@ function exportToPDF(
             ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
             : "";
           const obsTd = isFirst
-            ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${boldImageryKeywords((row.observation ?? "").replace(/\n/g, "<br/>"))}${attachmentImagesHtml(row.attachments)}${OBS_TRAILING_SPACE}</td>`
+            ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${stripImageryPhraseForExport((row.observation ?? "").replace(/\n/g, "<br/>"))}${attachmentImagesHtml(row.attachments)}${OBS_TRAILING_SPACE}</td>`
             : "";
           const isLast = idx === row.members.length - 1;
           const memberBb = isLast ? bb : "border-bottom:none";

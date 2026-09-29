@@ -221,6 +221,9 @@ export function buildSmeacPdfHtml(data: SmeacExportData) {
     : "";
 
   // E — EXECUTION
+  const mapSnapshotHtml = data.mapSnapshotUrl
+    ? `<div style="margin-bottom:8px;page-break-inside:avoid"><p style="font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:5px">Map snapshot</p><img src="${esc(data.mapSnapshotUrl)}" style="display:block;max-width:100%;border-radius:6px;border:1px solid ${GREY_BORDER}" /></div>`
+    : "";
   const objectivesHtml = data.objectives.length
     ? `<div style="margin-bottom:8px"><p style="font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:5px">Objectives</p><ol style="margin:0;padding-left:16px;font-size:11px;color:${GREY_TEXT}">${data.objectives.map(o => `<li style="margin-bottom:3px">${esc(o)}</li>`).join("")}</ol></div>`
     : "";
@@ -243,16 +246,13 @@ export function buildSmeacPdfHtml(data: SmeacExportData) {
         )
         .join("")}</div>`
     : "";
-  const mapSnapshotHtml = data.mapSnapshotUrl
-    ? `<div style="margin-top:8px;page-break-inside:avoid"><p style="font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:5px">Map snapshot</p><img src="${esc(data.mapSnapshotUrl)}" style="display:block;max-width:100%;border-radius:6px;border:1px solid ${GREY_BORDER}" /></div>`
-    : "";
   const executionBody =
+    mapSnapshotHtml +
     field("Overall plan", data.overallPlan) +
     field("Actions on", data.actionsOn) +
     field("Situation change", data.situationChange) +
     objectivesHtml +
-    teamSlotsHtml +
-    mapSnapshotHtml;
+    teamSlotsHtml;
   const executionSection = executionBody
     ? `<div class="section"><div class="section-title">E — Execution</div>${executionBody}</div>`
     : "";

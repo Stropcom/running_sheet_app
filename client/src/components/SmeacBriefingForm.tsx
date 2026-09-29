@@ -789,6 +789,53 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
       <div className="p-4 rounded-xl bg-card border border-border space-y-4">
         <SmeacLabel letter="E" label="Execution" />
 
+        <div>
+          <label className="text-xs font-semibold block mb-2">
+            Map snapshot
+          </label>
+          <div className="rounded-lg border border-dashed border-border bg-muted/20 p-3">
+            {mapSnapshotUrl ? (
+              <div className="flex flex-col gap-2">
+                <img
+                  src={mapSnapshotUrl}
+                  alt="Map snapshot"
+                  className="w-full rounded-md border border-border"
+                />
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span>
+                    {mapSnapshotSource === "capture"
+                      ? "Captured from the live map"
+                      : "Uploaded screenshot"}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setMapSnapshotUrl(null);
+                      setMapSnapshotSource(null);
+                    }}
+                    className="font-semibold underline hover:text-destructive"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2 text-center py-4">
+                <p className="text-xs text-muted-foreground max-w-xs">
+                  No map attached yet. Insert the marked-up area so the team
+                  sees it right in the briefing.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setSnapshotDialogOpen(true)}
+                >
+                  Insert Map Snapshot
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+
         <Field label="Overall plan" compact>
           <Textarea
             value={overallPlan}
@@ -949,53 +996,6 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
           >
             <Plus className="h-3 w-3" /> Add team member
           </button>
-        </div>
-
-        <div>
-          <label className="text-xs font-semibold block mb-2">
-            Map snapshot
-          </label>
-          <div className="rounded-lg border border-dashed border-border bg-muted/20 p-3">
-            {mapSnapshotUrl ? (
-              <div className="flex flex-col gap-2">
-                <img
-                  src={mapSnapshotUrl}
-                  alt="Map snapshot"
-                  className="w-full rounded-md border border-border"
-                />
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>
-                    {mapSnapshotSource === "capture"
-                      ? "Captured from the live map"
-                      : "Uploaded screenshot"}
-                  </span>
-                  <button
-                    onClick={() => {
-                      setMapSnapshotUrl(null);
-                      setMapSnapshotSource(null);
-                    }}
-                    className="font-semibold underline hover:text-destructive"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-2 text-center py-4">
-                <p className="text-xs text-muted-foreground max-w-xs">
-                  No map attached yet. Insert the marked-up area so the team
-                  sees it right in the briefing.
-                </p>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => setSnapshotDialogOpen(true)}
-                >
-                  Insert Map Snapshot
-                </Button>
-              </div>
-            )}
-          </div>
         </div>
       </div>
 

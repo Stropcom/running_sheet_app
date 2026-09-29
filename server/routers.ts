@@ -2331,17 +2331,41 @@ export const appRouter = router({
             details: `CIN ${cinUpper} added to row`,
             createdAt: Date.now(),
           });
-          // Best-effort, silent — if the row now has exactly one real CIN,
-          // link it to any of the row's existing photos that don't already
-          // have a CIN link (e.g. a photo uploaded before any CIN was on
-          // the row). See its own comment in db.ts for what this does and
-          // doesn't touch.
-          reconcileRowPhotoMemberLinks(input.rowId).catch(err => {
-            console.error(
-              "[member.add] reconcileRowPhotoMemberLinks failed:",
-              err
+          const existingRealCins = existingMembers
+            .map(m => m.memberName)
+            .filter(name => name !== "__SPACE__");
+          if (existingRealCins.length === 1) {
+            // Row is going from exactly one real CIN to two — whatever
+            // "member" link its photos have was only ever an unconfirmed
+            // guess (auto-linked because there was nothing else it could be
+            // at the time — see autoLinkAttachmentToRowMemberIfSingle/
+            // reconcileRowPhotoMemberLinks in db.ts), not something an
+            // officer actually chose. Now that it's genuinely ambiguous
+            // which of the two CINs the photo belongs to, that guess
+            // shouldn't silently keep counting as "linked" — unlink it so
+            // the amber "Needs CIN link" placeholder reappears and the
+            // officer picks via LinkAttachmentDialog's CIN section, same as
+            // any other 2+-member row.
+            unlinkRowPhotosFromCin(input.rowId, existingRealCins[0]).catch(
+              err => {
+                console.error(
+                  "[member.add] unlinkRowPhotosFromCin failed:",
+                  err
+                );
+              }
             );
-          });
+          } else {
+            // Row was at 0 real CINs (now 1) or already 2+ (still 2+) —
+            // either way, reconcile is the right call: it only actually
+            // links anything when the row ends up at exactly one CIN, and
+            // no-ops otherwise. See its own comment in db.ts.
+            reconcileRowPhotoMemberLinks(input.rowId).catch(err => {
+              console.error(
+                "[member.add] reconcileRowPhotoMemberLinks failed:",
+                err
+              );
+            });
+          }
         }
         return { id };
       }),

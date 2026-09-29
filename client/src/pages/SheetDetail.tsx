@@ -253,12 +253,12 @@ function attachmentImagesHtml(
   }[]
 ): string {
   if (attachments.length === 0) return "";
-  // A blank line before the photos, not just a small margin — the same gap
-  // as a blank line between two paragraphs of observation text, so the
-  // photos read as a clearly separate block rather than crowding the last
-  // line of text.
+  // A full blank line before the photos, not just a small margin — matches
+  // OBS_TRAILING_SPACE's own "<br/><br/>" convention for a blank line
+  // elsewhere in this export: a single <br/> only starts a new line, it
+  // takes a second one to actually leave that line empty before the photos.
   return (
-    `<br/><div style="margin-top:2px;display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px">` +
+    `<br/><br/><div style="margin-top:2px;display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px">` +
     attachments
       .map(a => {
         const cins = (a.linkedEntities ?? [])

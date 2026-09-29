@@ -1,21 +1,32 @@
 /**
- * "Insert Map Snapshot" flow for a SMEAC briefing — two ways to bring a
+ * "Insert Map Snapshot" flow for a SMEAC briefing — three ways to bring a
  * marked-up section of the map into the document:
+ *   - Paste a screenshot straight from the clipboard (Ctrl+V / Cmd+V) —
+ *     the fast path. The officer snips the map with their OS's own
+ *     region-select screenshot tool (Win+Shift+S, Cmd+Shift+4, etc.),
+ *     which can grab a region from any window on screen, then pastes it
+ *     here — no browser tab-picker involved at all. Goes straight into
+ *     the same crop tool as the capture path below, since the OS snip
+ *     may still be looser than the exact area wanted.
  *   - Upload a screenshot the officer already took (their own OS/device
  *     screenshot) — most reliable, works on every device, inserted as-is.
  *   - Capture the live map via the browser's own screen-capture API
  *     (getDisplayMedia) — an exact pixel match of whatever's on screen
  *     (custom icons, shapes, labels and all), then cropped down to just
  *     the relevant area before it's attached. Desktop/laptop browsers
- *     only — most phones and some tablets don't support getDisplayMedia,
- *     so "Upload" is the fallback that always works.
+ *     only — most phones and some tablets don't support getDisplayMedia.
+ *     Requires picking the right tab/window in the browser's own share
+ *     picker (see the "capture-intro" step below), which paste avoids
+ *     entirely — kept as an option for anyone who prefers it, but paste
+ *     is the easier path for most officers now.
  *
  * DOM-to-canvas screenshotting (html2canvas) was tried for the map
  * elsewhere in this app and abandoned — Google Maps' tiles are
  * cross-origin, so the browser refuses to let JS read their pixels via
- * canvas (see todo.md). getDisplayMedia sidesteps that entirely: it
- * captures real screen pixels through the browser's own screen-sharing
- * permission, not a DOM read, so it isn't subject to that restriction.
+ * canvas (see todo.md). getDisplayMedia and clipboard paste both
+ * sidestep that entirely: they read real screen/clipboard pixels through
+ * a browser permission or the OS clipboard, not a DOM read, so neither
+ * is subject to that restriction.
  */
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -29,7 +40,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Upload, MonitorUp, Loader2 } from "lucide-react";
+import { Upload, MonitorUp, Loader2, ClipboardPaste } from "lucide-react";
 
 // Matches imageCompress.ts's ATTACHMENT_MAX_DIMENSION — a captured frame
 // can be very large (a 4K or Retina display), so the cropped result is
@@ -122,6 +133,10 @@ export function MapSnapshotDialog({
     w: 1,
     h: 1,
   });
+  // Which "source" label the crop-tool result should upload as — the crop
+  // step is shared by both the getDisplayMedia capture and a pasted
+  // screenshot, so this is set right before entering that view.
+  const [cropSource, setCropSource] = useState<"upload" | "capture">("capture");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<DragState | null>(null);
@@ -133,9 +148,58 @@ export function MapSnapshotDialog({
       setView("choice");
       setCaptureCanvas(null);
       setCropRect({ x: 0, y: 0, w: 1, h: 1 });
+      setCropSource("capture");
       setBusy(false);
     }
   }, [open]);
+
+  const handlePastedImage = async (file: Blob) => {
+    try {
+      const bitmap = await createImageBitmap(file);
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        toast.error("Couldn't read that image — try again.");
+        return;
+      }
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      setCaptureCanvas(canvas);
+      setCropRect({ x: 0, y: 0, w: 1, h: 1 });
+      setCropSource("upload");
+      setView("cropping");
+    } catch {
+      toast.error("Couldn't read that image — try again.");
+    }
+  };
+
+  // Clipboard paste — the fast path (see the doc comment above). Only
+  // listens on the choice screen; once the officer has moved into a
+  // specific flow, Ctrl+V shouldn't do anything unexpected.
+  useEffect(() => {
+    if (!open || view !== "choice") return;
+    const handler = (e: ClipboardEvent) => {
+      if (busy) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            void handlePastedImage(file);
+          }
+          return;
+        }
+      }
+    };
+    window.addEventListener("paste", handler);
+    return () => window.removeEventListener("paste", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, view, busy]);
 
   // This form's own tab never has the map on it — the whole SPA shares one
   // static <title> (see index.html), so an officer's second tab of this
@@ -229,6 +293,7 @@ export function MapSnapshotDialog({
       ctx.drawImage(video, 0, 0);
       setCaptureCanvas(canvas);
       setCropRect({ x: 0, y: 0, w: 1, h: 1 });
+      setCropSource("capture");
       setView("cropping");
     } finally {
       stream.getTracks().forEach(t => t.stop());
@@ -319,7 +384,7 @@ export function MapSnapshotDialog({
       toast.error("Couldn't process that capture — try again.");
       return;
     }
-    await uploadBlob(blob, "image/jpeg", "capture");
+    await uploadBlob(blob, "image/jpeg", cropSource);
   };
 
   return (
@@ -340,6 +405,29 @@ export function MapSnapshotDialog({
             <p className="text-xs text-muted-foreground -mt-1 mb-1">
               Choose how to bring the marked-up area into this briefing.
             </p>
+            <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 py-3 px-3 text-xs text-muted-foreground text-center">
+              <ClipboardPaste className="h-4 w-4 shrink-0" />
+              <span>
+                Fastest: snip the map with{" "}
+                <kbd className="px-1 py-0.5 rounded border border-border bg-muted font-mono text-[10px] whitespace-nowrap">
+                  Win+Shift+S
+                </kbd>{" "}
+                (
+                <kbd className="px-1 py-0.5 rounded border border-border bg-muted font-mono text-[10px] whitespace-nowrap">
+                  Cmd+Shift+4
+                </kbd>{" "}
+                on Mac), then paste it here with{" "}
+                <kbd className="px-1 py-0.5 rounded border border-border bg-muted font-mono text-[10px] whitespace-nowrap">
+                  Ctrl+V
+                </kbd>
+                .
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground py-0.5">
+              <div className="h-px flex-1 bg-border" />
+              or
+              <div className="h-px flex-1 bg-border" />
+            </div>
             <input
               ref={fileInputRef}
               type="file"

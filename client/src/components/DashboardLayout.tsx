@@ -1468,7 +1468,21 @@ export default function DashboardLayout({
   }, [sidebarWidth]);
 
   /**
-   * Hard lock against document scrolling for `fillViewport` pages.
+   * Hard lock against document scrolling, on every page.
+   *
+   * The app shell (header + sidebar + main content) used to have no height
+   * ceiling of its own, so on any page whose content was taller than the
+   * viewport the *document* scrolled — carrying the header and the sidebar
+   * off-screen with it, since neither is fixed/sticky relative to the page.
+   * Locking html/body/#root to exactly the viewport height means there's
+   * nothing for the document to scroll; the header and sidebar are simply
+   * never part of anything that moves, and `<main>` (see the `app-canvas`
+   * element below) becomes its own scroll container instead — sized by the
+   * same flex-column + min-h-0 chain `fillViewport` pages already relied on,
+   * just applied unconditionally now instead of opt-in. `fillViewport` pages
+   * (the map) still additionally set `overflow-hidden` on `<main>` itself,
+   * since those are a fixed canvas the user pans/zooms rather than a
+   * document with its own scrollbar.
    *
    * CSS viewport units alone are not enough here: on iOS Safari `100svh`/`100vh`
    * are measured against the browser's chrome state and don't necessarily match
@@ -1481,14 +1495,12 @@ export default function DashboardLayout({
    *
    * The `app-no-scroll` class then pins html/body/#root to that height with
    * overflow hidden and `overscroll-behavior: none`, so there is nothing to
-   * scroll and no iOS rubber-band bounce. Both are torn down on unmount so
-   * ordinary scrolling pages are completely unaffected.
+   * scroll and no iOS rubber-band bounce.
    *
    * useLayoutEffect (not useEffect) so the height is set before first paint —
-   * otherwise the map flashes at the wrong size on entry.
+   * otherwise the page flashes at the wrong size on entry.
    */
   useLayoutEffect(() => {
-    if (!fillViewport) return;
     const root = document.documentElement;
     const setVh = () => {
       const vv = window.visualViewport;
@@ -1511,7 +1523,7 @@ export default function DashboardLayout({
       document.body.classList.remove("app-no-scroll");
       root.style.removeProperty("--app-vh");
     };
-  }, [fillViewport]);
+  }, []);
 
   // A forced password change locks the user out of every other page until
   // they set a real password — enforced server-side too, this is just the
@@ -1574,14 +1586,21 @@ export default function DashboardLayout({
           "--sidebar-width": `${sidebarWidth}px`,
           // --app-vh is the real visible height measured in JS (see the
           // useLayoutEffect above); the svh fallback only covers the instant
-          // before that first measurement lands.
-          ...(fillViewport ? { height: "var(--app-vh, 100svh)" } : {}),
+          // before that first measurement lands. Applied on every page (not
+          // just fillViewport) — without a hard height ceiling here, this
+          // wrapper's default min-h-svh lets it grow with content instead of
+          // handing the overflow down to <main> to scroll, which is exactly
+          // the "whole page scrolls" bug this shell now exists to prevent.
+          height: "var(--app-vh, 100svh)",
         } as CSSProperties
       }
       // flex-col: the shell's default is a row (folder menu beside the page).
       // The app banner has to span the full width above both, so the wrapper
       // stacks banner-then-row instead, and the row itself is a nested flex.
-      className={`flex-col ${fillViewport ? "min-h-0 overflow-hidden" : ""}`}
+      // min-h-0 overflow-hidden: lets the column shrink to the height above
+      // instead of growing past it, and stops it becoming a second scroll
+      // container of its own — <main class="app-canvas"> is the only one.
+      className="flex-col min-h-0 overflow-hidden"
     >
       <DashboardLayoutContent
         setSidebarWidth={setSidebarWidth}
@@ -2431,9 +2450,7 @@ function DashboardLayoutContent({
           )}
         </div>
 
-        <SidebarInset
-          className={fillViewport ? "min-h-0 overflow-hidden" : undefined}
-        >
+        <SidebarInset className="min-h-0 overflow-hidden">
           {/* Section colour accent bar */}
           <SectionAccentBar />
           {isMobile && (
@@ -2509,13 +2526,23 @@ function DashboardLayoutContent({
             top/bottom overlays. flex-1 alone already fills the remaining
             space for short pages; min-h-0 just lets it shrink correctly
             instead of forcing more height than is actually available. */}
-          {/* app-canvas: the page ground. Carries the soft background wash (see
-            index.css) — it has to live here rather than on <body>, because this
-            element's bg-background/90 and SidebarInset's bg-background would
-            paint straight over anything set further up. */}
+          {/* app-canvas: the page ground and the app's one scroll container.
+            The document itself never scrolls (see the useLayoutEffect above)
+            so the header and sidebar never move — this element is what
+            scrolls instead, for every ordinary page. It also carries the
+            soft background wash (see index.css); that has to live here
+            rather than on <body>, because this element's bg-background/90
+            and SidebarInset's bg-background would paint straight over
+            anything set further up. `fillViewport` pages (the map) are a
+            fixed canvas the user pans/zooms rather than scrolls, so they get
+            overflow-hidden instead and opt out of the wash entirely
+            (app-canvas-fill, see index.css) since it would only ever flash
+            while tiles load on a full-bleed surface. */}
           <main
             className={`app-canvas flex-1 min-h-0 bg-background/90 ${
-              fillViewport ? "overflow-hidden" : ""
+              fillViewport
+                ? "app-canvas-fill overflow-hidden"
+                : "overflow-y-auto"
             }`}
           >
             <PullToRefresh disabled={location === "/intelligence/mapping"}>

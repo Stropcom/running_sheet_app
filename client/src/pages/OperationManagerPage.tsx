@@ -896,7 +896,7 @@ export default function OperationManagerPage() {
     const allWeeks = allWeeksQuery.data ?? [];
     return (
       <DashboardLayout>
-        <div className="min-h-screen bg-background text-foreground">
+        <div className="min-h-full bg-background text-foreground">
           {/* Header */}
           <div className="border-b border-border bg-card">
             <div className="px-4 py-3 flex items-center justify-between">
@@ -1070,7 +1070,7 @@ export default function OperationManagerPage() {
   if (viewMode === "view") {
     return (
       <DashboardLayout>
-        <div className="min-h-screen bg-background text-foreground">
+        <div className="min-h-full bg-background text-foreground">
           <div className="no-print">
             <PageHeader
               weekStart={weekStart}
@@ -1190,7 +1190,7 @@ export default function OperationManagerPage() {
   // ─────────────────────────────────────────────────────────────────────────────
   return (
     <DashboardLayout>
-      <div className="min-h-screen bg-background text-foreground">
+      <div className="min-h-full bg-background text-foreground">
         <PageHeader
           weekStart={weekStart}
           onPrev={() => setWeekStart(ws => addWeeks(ws, -1))}

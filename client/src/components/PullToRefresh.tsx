@@ -80,12 +80,18 @@ export function PullToRefresh({ children, disabled }: Props) {
     const el = containerRef.current;
     if (!el) return;
 
+    // The app's own scroll container is <main class="app-canvas"> (see
+    // DashboardLayout.tsx) — the document itself never scrolls, so
+    // window.scrollY is always 0 and can't tell us whether the page is
+    // actually scrolled to its top. el's parent is that <main> element.
+    const getScrollTop = () => el.parentElement?.scrollTop ?? 0;
+
     const onTouchStart = (e: TouchEvent) => {
       if (refreshing || e.touches.length !== 1) {
         startYRef.current = null;
         return;
       }
-      if (window.scrollY > 0) {
+      if (getScrollTop() > 0) {
         startYRef.current = null;
         return;
       }
@@ -96,7 +102,7 @@ export function PullToRefresh({ children, disabled }: Props) {
     const onTouchMove = (e: TouchEvent) => {
       if (startYRef.current === null || refreshing) return;
       const delta = e.touches[0].clientY - startYRef.current;
-      if (delta <= 0 || window.scrollY > 0) {
+      if (delta <= 0 || getScrollTop() > 0) {
         if (draggingRef.current) {
           draggingRef.current = false;
           setPullDistance(0);

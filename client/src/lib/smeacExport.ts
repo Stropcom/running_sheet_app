@@ -177,9 +177,17 @@ export function buildSmeacPdfHtml(data: SmeacExportData) {
           .join("")}</div>`
       : "";
 
+  // white-space:pre-wrap — these values come from a <textarea> in the form
+  // (see SmeacBriefingForm.tsx), so an officer's paragraph breaks and blank
+  // lines are real \n characters in the string. esc() only escapes &/</>,
+  // it doesn't touch those — without pre-wrap, HTML's default whitespace
+  // collapsing flattens every line into one run-on paragraph on export.
+  // SmeacMapOverlay.tsx's read view had the exact same bug for the same
+  // reason (a plain <p>, no whitespace-pre-wrap class) — fixed alongside
+  // this.
   const field = (label: string, value: string | null | undefined) =>
     value
-      ? `<div style="margin-bottom:8px"><p style="font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:3px">${esc(label)}</p><p style="font-size:11px;color:${GREY_TEXT}">${esc(value)}</p></div>`
+      ? `<div style="margin-bottom:8px"><p style="font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:3px">${esc(label)}</p><p style="font-size:11px;color:${GREY_TEXT};white-space:pre-wrap">${esc(value)}</p></div>`
       : "";
 
   // TARGET
@@ -217,7 +225,7 @@ export function buildSmeacPdfHtml(data: SmeacExportData) {
 
   // M — MISSION
   const missionSection = data.mission
-    ? `<div class="section"><div class="section-title">M — Mission</div><p style="font-size:11px;color:${GREY_TEXT}">${esc(data.mission)}</p></div>`
+    ? `<div class="section"><div class="section-title">M — Mission</div><p style="font-size:11px;color:${GREY_TEXT};white-space:pre-wrap">${esc(data.mission)}</p></div>`
     : "";
 
   // E — EXECUTION

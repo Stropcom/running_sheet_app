@@ -180,7 +180,9 @@ export function SmeacMapOverlay({
                     <p className="text-[11px] font-semibold text-muted-foreground mb-1">
                       Background / intelligence
                     </p>
-                    <p className="text-sm">{briefing.backgroundIntel}</p>
+                    <p className="text-sm whitespace-pre-wrap">
+                      {briefing.backgroundIntel}
+                    </p>
                   </div>
                 )}
                 {briefing.knownRisks && (
@@ -188,7 +190,9 @@ export function SmeacMapOverlay({
                     <p className="text-[11px] font-semibold text-muted-foreground mb-1">
                       Known risks or threats
                     </p>
-                    <p className="text-sm">{briefing.knownRisks}</p>
+                    <p className="text-sm whitespace-pre-wrap">
+                      {briefing.knownRisks}
+                    </p>
                   </div>
                 )}
                 {briefing.otherAgencies.length > 0 && (
@@ -215,7 +219,9 @@ export function SmeacMapOverlay({
             {briefing.mission && (
               <div className="space-y-1.5">
                 <SmeacLabel letter="M" label="Mission" />
-                <p className="text-sm">{briefing.mission}</p>
+                <p className="text-sm whitespace-pre-wrap">
+                  {briefing.mission}
+                </p>
               </div>
             )}
 
@@ -245,7 +251,9 @@ export function SmeacMapOverlay({
                     <p className="text-[11px] font-semibold text-muted-foreground mb-1">
                       Overall plan
                     </p>
-                    <p className="text-sm">{briefing.overallPlan}</p>
+                    <p className="text-sm whitespace-pre-wrap">
+                      {briefing.overallPlan}
+                    </p>
                   </div>
                 )}
                 {briefing.actionsOn && (
@@ -253,7 +261,9 @@ export function SmeacMapOverlay({
                     <p className="text-[11px] font-semibold text-muted-foreground mb-1">
                       Actions on
                     </p>
-                    <p className="text-sm">{briefing.actionsOn}</p>
+                    <p className="text-sm whitespace-pre-wrap">
+                      {briefing.actionsOn}
+                    </p>
                   </div>
                 )}
                 {briefing.situationChange && (
@@ -261,7 +271,9 @@ export function SmeacMapOverlay({
                     <p className="text-[11px] font-semibold text-muted-foreground mb-1">
                       Situation change
                     </p>
-                    <p className="text-sm">{briefing.situationChange}</p>
+                    <p className="text-sm whitespace-pre-wrap">
+                      {briefing.situationChange}
+                    </p>
                   </div>
                 )}
                 {briefing.objectives.length > 0 && (
@@ -437,7 +449,9 @@ export function SmeacMapOverlay({
                     <p className="text-[11px] font-semibold text-muted-foreground mb-1">
                       Reporting procedures
                     </p>
-                    <p className="text-sm">{briefing.reportingProcedures}</p>
+                    <p className="text-sm whitespace-pre-wrap">
+                      {briefing.reportingProcedures}
+                    </p>
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">

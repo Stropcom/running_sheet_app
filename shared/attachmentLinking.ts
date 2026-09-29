@@ -22,31 +22,31 @@ export const PERSON_LINK_CATEGORIES = new Set([
   "unidentified_person",
 ]);
 
-// A photo on a row with at least one member needs a link attributing it to
-// which of that row's CINs it belongs to — same idea as the person-link
-// requirement above, just about who was there rather than who/what is in
-// the photo. A single-member row gets this auto-linked at upload (see
-// server/db.ts's autoLinkAttachmentToRowMemberIfSingle); a multi-member row
-// needs the officer to pick via LinkAttachmentDialog's own CIN section.
+// A photo attached to a running sheet row needs a link attributing it to
+// which CIN it belongs to — same idea as the person-link requirement above,
+// just about who was there rather than who/what is in the photo. Required
+// whenever the photo has a row at all (rowId set), regardless of how many
+// members are currently on that row: a row with exactly one member gets
+// this auto-linked at upload (see server/db.ts's
+// autoLinkAttachmentToRowMemberIfSingle) or as soon as it reaches exactly
+// one member (reconcileRowPhotoMemberLinks); a row with 0 or 2+ members
+// stays flagged until the officer picks via LinkAttachmentDialog's own CIN
+// section (or another member is added, bringing it down to exactly one). A
+// manually-uploaded photo with no row at all (rowId null) has no CIN to
+// attribute it to, so this never applies to those.
 export const CIN_LINK_CATEGORY = "member";
 
-export function isAttachmentProperlyLinked(
-  a: {
-    linkedCount?: number;
-    linkedCategories?: string[];
-    faceCount?: number | null;
-  },
-  /** How many real (non-spacer) CINs are on this photo's row — 0 or
-   * undefined for a manually-uploaded photo with no row, or a row with no
-   * members yet, both of which have nothing to attribute a CIN link to. */
-  rowMemberCount?: number
-): boolean {
+export function isAttachmentProperlyLinked(a: {
+  linkedCount?: number;
+  linkedCategories?: string[];
+  faceCount?: number | null;
+  rowId?: number | null;
+}): boolean {
   if ((a.linkedCount ?? 0) === 0) return false;
   const categories = a.linkedCategories ?? [];
   const hasFace = (a.faceCount ?? 0) > 0;
   if (hasFace && !categories.some(c => PERSON_LINK_CATEGORIES.has(c)))
     return false;
-  if ((rowMemberCount ?? 0) > 0 && !categories.includes(CIN_LINK_CATEGORY))
-    return false;
+  if (a.rowId != null && !categories.includes(CIN_LINK_CATEGORY)) return false;
   return true;
 }

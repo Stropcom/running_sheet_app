@@ -1503,7 +1503,7 @@ function ObservationAttachments({
           <LinkedEntityPills
             entities={a.linkedEntities}
             faceCount={a.faceCount}
-            rowMemberCount={rowCins.length}
+            hasRow
             onClick={() => setLinking({ id: a.id, url: a.url })}
           />
         </div>

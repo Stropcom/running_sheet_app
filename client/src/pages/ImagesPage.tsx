@@ -420,7 +420,7 @@ export function SheetFolderList({
                     <LinkedEntityPills
                       entities={a.linkedEntities}
                       faceCount={a.faceCount}
-                      rowMemberCount={a.memberCINs?.length}
+                      hasRow={a.rowId != null}
                       onClick={() => setLinking({ id: a.id, url: a.url })}
                     />
                   </div>
@@ -583,7 +583,7 @@ export function SheetGallery({
               <LinkedEntityPills
                 entities={a.linkedEntities}
                 faceCount={a.faceCount}
-                rowMemberCount={a.memberCINs?.length}
+                hasRow={a.rowId != null}
                 onClick={() => setLinking({ id: a.id, url: a.url })}
               />
             </div>

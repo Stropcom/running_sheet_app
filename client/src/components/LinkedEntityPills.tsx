@@ -72,12 +72,14 @@ function PillRow({
  *
  * Also renders an amber "not yet linked" placeholder pill for any link this
  * photo still needs but doesn't have — a person link (top slot) when
- * faceCount says a face was detected, a CIN/member link (bottom slot) when
- * rowMemberCount says the row has members to attribute it to — so a photo
- * that's short exactly one required link stays visibly flagged in the same
- * place its real pill would go, instead of a separate top-left icon
- * (replaces the old AttachmentLinkBadge). Renders nothing only when there's
- * genuinely nothing to show: no links AND nothing outstanding.
+ * faceCount says a face was detected, a CIN/member link (bottom slot)
+ * whenever hasRow says this photo belongs to a running sheet row at all
+ * (regardless of how many members are currently on that row — a row with
+ * zero members still owes a CIN link just as much as one with several) —
+ * so a photo that's short exactly one required link stays visibly flagged
+ * in the same place its real pill would go, instead of a separate top-left
+ * icon (replaces the old AttachmentLinkBadge). Renders nothing only when
+ * there's genuinely nothing to show: no links AND nothing outstanding.
  *
  * When onClick is given, the whole pill area (including any amber
  * placeholder) opens the Link photo to entity panel.
@@ -85,7 +87,7 @@ function PillRow({
 export function LinkedEntityPills({
   entities,
   faceCount,
-  rowMemberCount,
+  hasRow,
   onClick,
 }: {
   entities?: Array<{ category: string; label: string }>;
@@ -93,16 +95,17 @@ export function LinkedEntityPills({
    * face detected but no person-category link yet shows the "needs person"
    * placeholder. Null/undefined is treated as "unknown, don't flag". */
   faceCount?: number | null;
-  /** How many real CINs are on this photo's row — > 0 with no "member"
-   * category link yet shows the "needs CIN" placeholder. */
-  rowMemberCount?: number;
+  /** Does this photo belong to a running sheet row (rowId set)? If so, with
+   * no "member" category link yet, shows the "needs CIN" placeholder — a
+   * manually-uploaded photo with no row has nothing to attribute a CIN to,
+   * so this is skipped for those. */
+  hasRow?: boolean;
   onClick?: () => void;
 }) {
   const list = entities ?? [];
   const needsPerson =
     (faceCount ?? 0) > 0 && !list.some(e => PERSON_CATEGORIES.has(e.category));
-  const needsMember =
-    (rowMemberCount ?? 0) > 0 && !list.some(e => e.category === "member");
+  const needsMember = !!hasRow && !list.some(e => e.category === "member");
 
   if (list.length === 0 && !needsPerson && !needsMember) return null;
 

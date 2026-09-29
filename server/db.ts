@@ -9545,7 +9545,7 @@ export async function getUnlinkedImagesTodoForCin(cin: string): Promise<
     if (attachments.length === 0) continue;
     const withLinkCounts = await attachLinkedCounts(db, attachments);
     const unlinkedCount = withLinkCounts.filter(
-      a => !isAttachmentProperlyLinked(a, a.memberCINs.length)
+      a => !isAttachmentProperlyLinked(a)
     ).length;
     if (unlinkedCount === 0) continue;
 

@@ -4864,21 +4864,28 @@ export default function IntelligenceMapping() {
       // ── Label pill — floats the shape's note beside its primary point
       // (previously only visible after tapping the shape to edit it), so an
       // officer glancing at the map sees what a shape is for without
-      // opening it. Anchor is each shape's own "first point": the center
-      // for a circle/sector (its only point), the geometric midpoint of
-      // its stored corners for a rectangle (equal to the point it was
-      // originally tapped at, since it's built from symmetric offsets —
-      // see beginCreateShape), and the first vertex placed for a line.
+      // opening it. A circle/rectangle anchors its label just outside its
+      // own bottom edge, centred — clear of the fill entirely, unlike
+      // sitting on the center point where it used to compete with whatever
+      // was drawn under it. Sector and line keep the original "beside the
+      // first point" placement (center for a sector, first vertex for a
+      // line) — a sector's own "bottom" isn't a fixed edge the way a
+      // circle's or rectangle's is, so there's no equivalent single spot to
+      // move it to.
       const labelText = (s.label ?? "").trim();
+      const labelIsBottomCentered =
+        s.shapeType === "circle" || s.shapeType === "rectangle";
       const labelAnchor: { lat: number; lng: number } | null =
-        s.shapeType === "circle" || s.shapeType === "sector"
-          ? { lat: s.centerLat, lng: s.centerLng }
-          : s.shapeType === "rectangle"
-            ? {
-                lat: (s.neLat + s.swLat) / 2,
-                lng: (s.neLng + s.swLng) / 2,
-              }
-            : ((s.points ?? [])[0] ?? null);
+        s.shapeType === "circle"
+          ? { lat: s.centerLat - s.radiusMeters / 111_320, lng: s.centerLng }
+          : s.shapeType === "sector"
+            ? { lat: s.centerLat, lng: s.centerLng }
+            : s.shapeType === "rectangle"
+              ? { lat: s.swLat, lng: (s.neLng + s.swLng) / 2 }
+              : ((s.points ?? [])[0] ?? null);
+      const labelTransform = labelIsBottomCentered
+        ? "translate(-50%, 12px)"
+        : "translate(12px, -50%)";
       const existingLabel = shapeLabelsRef.current.get(s.id);
       if (!labelText || !labelAnchor) {
         if (existingLabel) {
@@ -4887,18 +4894,21 @@ export default function IntelligenceMapping() {
         }
       } else if (existingLabel) {
         existingLabel.position = labelAnchor;
-        existingLabel.content = createLabelPillElement(labelText, fillColor);
+        existingLabel.content = createLabelPillElement(
+          labelText,
+          fillColor,
+          labelTransform
+        );
       } else {
         const labelMarker = new DivIconOverlay({
           map,
           position: labelAnchor,
-          content: createLabelPillElement(labelText, fillColor),
+          content: createLabelPillElement(labelText, fillColor, labelTransform),
           zIndex: 500,
           // "none" — createLabelPillElement already sets its own offset
-          // transform ("translate(12px, -50%)") directly on the content
-          // element to nudge the pill beside the shape's anchor point;
-          // DivIconOverlay must not also apply a centering transform on
-          // top of that.
+          // transform directly on the content element to nudge the pill
+          // beside/below the shape's anchor point; DivIconOverlay must not
+          // also apply a centering transform on top of that.
           anchor: "none",
         });
         labelMarker.addListener("click", openEdit);

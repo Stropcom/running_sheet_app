@@ -93,13 +93,17 @@ export function ImagesPip({
     const container = panel.parentElement;
     if (!container) return;
 
+    // Top-left, just below the map's own search bar + centre-on-me/follow
+    // button row (those sit at top:10px/60px, left:10px — see
+    // IntelligenceMapping.tsx) — clamp is only a safety bound for a
+    // container too small to fit the panel there at all.
     const placeDefault = () => {
       const cw = container.clientWidth;
       const ch = container.clientHeight;
       const w = panel.offsetWidth;
       const h = panel.offsetHeight;
-      panel.style.left = `${clamp(cw * 0.56, 8, Math.max(8, cw - w - 8))}px`;
-      panel.style.top = `${clamp(ch * 0.3, 8, Math.max(8, ch - h - 8))}px`;
+      panel.style.left = `${clamp(10, 8, Math.max(8, cw - w - 8))}px`;
+      panel.style.top = `${clamp(110, 8, Math.max(8, ch - h - 8))}px`;
     };
     placeDefault();
 

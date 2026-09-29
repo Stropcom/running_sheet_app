@@ -230,7 +230,7 @@ async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
 // target/associate photo can flow through the exact same saveStagedImages
 // pipeline — upload, on-device face detection, then auto-link — once the
 // target actually has a real id.
-function readImageFile(file: File): Promise<{
+export function readImageFile(file: File): Promise<{
   dataBase64: string;
   mimeType: string;
   width: number;

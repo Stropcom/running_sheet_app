@@ -50,6 +50,7 @@ import {
   FileText,
   User,
   MapPin,
+  Image as ImageIcon,
 } from "lucide-react";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { cn } from "@/lib/utils";
@@ -70,6 +71,7 @@ import {
 import {
   AddTargetDialog,
   computePrimaryIdentity,
+  readImageFile,
   type RegistryCreatePayload,
 } from "@/components/AddTargetDialog";
 import {
@@ -1065,7 +1067,10 @@ function TargetCard({
               <Plus className="w-3.5 h-3.5" /> Add Vehicle
             </Button>
 
-            <AssociatesSection targetId={target.id} />
+            <AssociatesSection
+              targetId={target.id}
+              operationId={target.linkedOperations[0]?.operationId ?? null}
+            />
 
             {/* ── Depart / Arrive ── */}
             {(
@@ -1183,10 +1188,12 @@ type AssociateRecord = {
 function AssociateCard({
   targetId,
   associate,
+  operationId,
   onCreated,
 }: {
   targetId: number;
   associate: AssociateRecord | null; // null = new, unsaved
+  operationId: number | null;
   onCreated?: () => void;
 }) {
   const utils = trpc.useUtils();
@@ -1237,6 +1244,119 @@ function AssociateCard({
   );
   const [dirty, setDirty] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Upload Image (Person Identity's counterpart for an associate, see
+  // AddTargetDialog.tsx). A new, unsaved associate has no id/entityLabel
+  // yet, so a picked photo is staged here and only actually uploaded +
+  // auto-linked once the create mutation below succeeds and a real name
+  // exists to link against — same "wait for it to exist" reasoning as
+  // AddTargetDialog's saveStagedImages. An already-saved associate has a
+  // stable name already, so its photo uploads and links immediately.
+  const [manualImages, setManualImages] = useState<
+    { key: string; dataBase64: string; mimeType: string }[]
+  >([]);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const manualImageInputRef = useRef<HTMLInputElement>(null);
+  const uploadImageMut = trpc.attachment.uploadManual.useMutation();
+  const confirmEntityFaceMut = trpc.attachment.confirmEntityFace.useMutation();
+  const linkToEntityMut = trpc.attachment.linkToEntity.useMutation();
+
+  const uploadAndLinkPhoto = async (
+    img: { dataBase64: string; mimeType: string },
+    entityLabel: string
+  ) => {
+    if (!operationId) return;
+    const uploaded = await uploadImageMut.mutateAsync({
+      operationId,
+      dataBase64: img.dataBase64,
+      mimeType: img.mimeType,
+      fileName: `associate-photo-${Date.now()}.png`,
+    });
+    let faces: { index: number }[] = [];
+    try {
+      faces = await utils.attachment.detectFaces.fetch({
+        attachmentId: uploaded.id,
+      });
+    } catch {
+      faces = [];
+    }
+    if (faces.length === 1) {
+      await confirmEntityFaceMut.mutateAsync({
+        attachmentId: uploaded.id,
+        faceIndex: faces[0].index,
+        category: "associate",
+        entityLabel,
+      });
+    } else {
+      await linkToEntityMut.mutateAsync({
+        attachmentId: uploaded.id,
+        category: "associate",
+        entityLabel,
+      });
+    }
+  };
+
+  // Runs once a new associate has actually been created (see createMut/
+  // createLinkedMut onSuccess below) — uploads and links every photo
+  // staged while the officer was still filling in the form.
+  const savePendingPhotos = async (entityLabel: string) => {
+    if (manualImages.length === 0) return;
+    let failed = 0;
+    for (const img of manualImages) {
+      try {
+        await uploadAndLinkPhoto(img, entityLabel);
+      } catch {
+        failed++;
+      }
+    }
+    if (failed > 0) {
+      toast.error(
+        `Associate saved, but ${failed} photo${failed > 1 ? "s" : ""} failed to save — add ${failed > 1 ? "them" : "it"} from the target's Images folder.`
+      );
+    }
+  };
+
+  const handleImageSelected = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file.");
+      return;
+    }
+    if (!operationId) {
+      toast.error(
+        "This target isn't linked to an operation yet — add photos from the target's Images folder instead."
+      );
+      return;
+    }
+    let img: { dataBase64: string; mimeType: string };
+    try {
+      img = await readImageFile(file);
+    } catch {
+      toast.error("Could not read that image.");
+      return;
+    }
+    if (isNew) {
+      setManualImages(v => [...v, { key: makeExtraId(), ...img }]);
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      await uploadAndLinkPhoto(img, associate!.name);
+      utils.attachment.byEntity.invalidate({
+        category: "associate",
+        entityLabel: associate!.name,
+      });
+      toast.success("Photo added and linked.");
+    } catch {
+      toast.error("Failed to upload that photo.");
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   // Same locked/at-a-glance look as the Target's own panels, but simpler:
   // just Edit + Remove, no "Add new" — associates have no
@@ -1415,7 +1535,10 @@ function AssociateCard({
   };
 
   const createNow = (payload: ReturnType<typeof buildPayload>) => {
-    createMut.mutate({ targetId, ...payload });
+    createMut.mutate(
+      { targetId, ...payload },
+      { onSuccess: () => savePendingPhotos(payload.name) }
+    );
   };
 
   const warnPayload = useRef<ReturnType<typeof buildPayload> | null>(null);
@@ -1484,34 +1607,37 @@ function AssociateCard({
         toast.error("Couldn't load the matched target.");
         return;
       }
-      createLinkedMut.mutate({
-        targetId,
-        name: target.name,
-        tgt: target.tgt,
-        hbf: target.hbf,
-        hb: target.hb,
-        v1f: target.v1f,
-        v1: target.v1,
-        extraAddresses: target.extraAddresses ?? "[]",
-        extraVehicles: target.extraVehicles ?? "[]",
-        firstNames: target.firstNames,
-        surname: target.surname,
-        bornDate: target.bornDate,
-        addrUnitNo: target.addrUnitNo,
-        addrHouseNo: target.addrHouseNo,
-        addrStreetName: target.addrStreetName,
-        addrStreetType: target.addrStreetType,
-        addrSuburb: target.addrSuburb,
-        addrState: target.addrState,
-        addrBusinessName: target.addrBusinessName,
-        vehRegistration: target.vehRegistration,
-        vehState: target.vehState,
-        vehColour: target.vehColour,
-        vehMake: target.vehMake,
-        vehModel: target.vehModel,
-        vehType: target.vehType,
-        existingTargetId: target.id,
-      });
+      createLinkedMut.mutate(
+        {
+          targetId,
+          name: target.name,
+          tgt: target.tgt,
+          hbf: target.hbf,
+          hb: target.hb,
+          v1f: target.v1f,
+          v1: target.v1,
+          extraAddresses: target.extraAddresses ?? "[]",
+          extraVehicles: target.extraVehicles ?? "[]",
+          firstNames: target.firstNames,
+          surname: target.surname,
+          bornDate: target.bornDate,
+          addrUnitNo: target.addrUnitNo,
+          addrHouseNo: target.addrHouseNo,
+          addrStreetName: target.addrStreetName,
+          addrStreetType: target.addrStreetType,
+          addrSuburb: target.addrSuburb,
+          addrState: target.addrState,
+          addrBusinessName: target.addrBusinessName,
+          vehRegistration: target.vehRegistration,
+          vehState: target.vehState,
+          vehColour: target.vehColour,
+          vehMake: target.vehMake,
+          vehModel: target.vehModel,
+          vehType: target.vehType,
+          existingTargetId: target.id,
+        },
+        { onSuccess: () => savePendingPhotos(target.name) }
+      );
       setWarnQueue([]);
       setWarnIndex(0);
     } catch (err: any) {
@@ -1592,6 +1718,53 @@ function AssociateCard({
             value={identity}
             onChange={v => mark(() => setIdentity(v))}
           />
+
+          <div className="flex flex-col gap-2">
+            <input
+              ref={manualImageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageSelected}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="gap-1.5 self-start"
+              disabled={uploadingPhoto}
+              onClick={() => manualImageInputRef.current?.click()}
+            >
+              <ImageIcon className="w-3.5 h-3.5" />
+              {uploadingPhoto ? "Uploading…" : "Upload Image"}
+            </Button>
+            {manualImages.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {manualImages.map(img => (
+                  <div
+                    key={img.key}
+                    className="relative rounded-md overflow-hidden border-2 border-violet-500"
+                  >
+                    <img
+                      src={`data:${img.mimeType};base64,${img.dataBase64}`}
+                      alt="Uploaded"
+                      className="w-16 h-16 object-cover block"
+                    />
+                    <button
+                      type="button"
+                      title="Remove this photo"
+                      onClick={() =>
+                        setManualImages(v => v.filter(i => i.key !== img.key))
+                      }
+                      className="absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-black/60 text-white flex items-center justify-center"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
             <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
@@ -1869,7 +2042,17 @@ function AssociateCard({
   );
 }
 
-function AssociatesSection({ targetId }: { targetId: number }) {
+function AssociatesSection({
+  targetId,
+  operationId,
+}: {
+  targetId: number;
+  /** Used to upload a photo staged from the Upload Image button (see
+   * AssociateCard) — a target can be linked to several operations, so this
+   * is just the first one; attachment.uploadManual needs some operation to
+   * file the upload under, and which one doesn't otherwise matter here. */
+  operationId: number | null;
+}) {
   const { data: assocList } = trpc.associate.listForTarget.useQuery({
     targetId,
   });
@@ -1881,12 +2064,18 @@ function AssociatesSection({ targetId }: { targetId: number }) {
         <Users className="w-3.5 h-3.5" /> Associates
       </p>
       {(assocList ?? []).map(a => (
-        <AssociateCard key={a.id} targetId={targetId} associate={a} />
+        <AssociateCard
+          key={a.id}
+          targetId={targetId}
+          associate={a}
+          operationId={operationId}
+        />
       ))}
       {addingNew && (
         <AssociateCard
           targetId={targetId}
           associate={null}
+          operationId={operationId}
           onCreated={() => setAddingNew(false)}
         />
       )}

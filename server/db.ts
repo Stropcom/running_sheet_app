@@ -1670,16 +1670,16 @@ export async function autoLinkAttachmentToRowMemberIfSingle(
   });
 }
 
-// Called whenever a row's member list changes (added, removed — a "changed"
-// CIN is really a remove + add of two different mutations, both call this)
-// — retroactively applies the same single-CIN rule above to every one of
-// the row's EXISTING photos, not just a freshly-uploaded one. Only fills in
-// photos that have no "member" link at all yet; never touches or removes an
-// existing member link (auto-created earlier, or an officer's own manual
-// pick on a multi-CIN row) even if the row's members have since changed —
-// silently swapping/removing a link an officer may have deliberately picked
-// would be a worse failure mode than occasionally leaving a stale one for
-// them to notice and fix via LinkAttachmentDialog.
+// Called whenever a row's member list changes (added or removed — see
+// unlinkRowPhotosFromCin below for the removed-CIN side of that) —
+// retroactively applies the same single-CIN rule above to every one of the
+// row's EXISTING photos, not just a freshly-uploaded one: if the row now has
+// exactly one real CIN, links it to any photo that doesn't already have a
+// "member" link (e.g. a photo uploaded before any CIN was on the row, or
+// one just unlinked by unlinkRowPhotosFromCin). Never touches a photo that
+// already has a different member link — that would mean 2+ members are (or
+// were) on the row and an officer picked one specifically, which this
+// leaves alone.
 export async function reconcileRowPhotoMemberLinks(
   rowId: number
 ): Promise<void> {
@@ -1695,6 +1695,37 @@ export async function reconcileRowPhotoMemberLinks(
       });
     }
   }
+}
+
+// Called when a specific CIN is removed from a row's member list (member.
+// remove, before this the row may have had that CIN auto-linked to one or
+// more of its photos — see reconcileRowPhotoMemberLinks/
+// autoLinkAttachmentToRowMemberIfSingle) — unlinks any of the row's photos
+// from exactly that CIN, since the link is no longer valid: the CIN it
+// named isn't on the row any more. The amber "Needs CIN link" placeholder
+// (LinkedEntityPills) then reappears on that photo, and if the row still
+// has exactly one other real CIN, reconcileRowPhotoMemberLinks (called
+// right after this, same mutation) picks it up automatically. Only removes
+// links matching the removed CIN specifically — a different member's link
+// on the same photo is untouched.
+export async function unlinkRowPhotosFromCin(
+  rowId: number,
+  cin: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const attachments = await getAttachmentsByRowIds([rowId]);
+  if (attachments.length === 0) return;
+  const attachmentIds = attachments.map(a => a.id);
+  await db
+    .delete(attachmentEntityLinks)
+    .where(
+      and(
+        inArray(attachmentEntityLinks.attachmentId, attachmentIds),
+        eq(attachmentEntityLinks.category, "member"),
+        eq(attachmentEntityLinks.entityKey, normalizeEntityLabel(cin))
+      )
+    );
 }
 
 export async function unlinkAttachmentFromEntity(linkId: number) {

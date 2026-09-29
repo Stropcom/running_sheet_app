@@ -296,6 +296,7 @@ import {
   reinstateAttachment,
   linkAttachmentToEntity,
   reconcileRowPhotoMemberLinks,
+  unlinkRowPhotosFromCin,
   unlinkAttachmentFromEntity,
   getEntityLinkById,
   getAttachmentRowSheetInfo,
@@ -2367,6 +2368,11 @@ export const appRouter = router({
         await guardActiveSheet(row.sheetId);
         if (row.isLocked)
           throw new TRPCError({ code: "FORBIDDEN", message: "Row is locked." });
+        // Captured before the delete below — needed to unlink any photo
+        // that was linked to this specific CIN (see unlinkRowPhotosFromCin).
+        const removedMember = (await getMembersByRowIds([input.rowId])).find(
+          m => m.id === input.id
+        );
         await removeRowMember(input.id);
         await createAuditLog({
           sheetId: row.sheetId,
@@ -2379,14 +2385,20 @@ export const appRouter = router({
           details: `CIN removed from row`,
           createdAt: Date.now(),
         });
-        // Removing a member can also bring the row down to exactly one real
-        // CIN — same reconciliation as member.add above.
-        reconcileRowPhotoMemberLinks(input.rowId).catch(err => {
-          console.error(
-            "[member.remove] reconcileRowPhotoMemberLinks failed:",
-            err
-          );
-        });
+        if (removedMember && removedMember.memberName !== "__SPACE__") {
+          // A photo linked to this CIN no longer has a valid link (the CIN
+          // it named isn't on the row any more) — unlink it, then re-run
+          // the same single-CIN auto-link the add path uses, in case the
+          // row now has exactly one other real CIN left.
+          unlinkRowPhotosFromCin(input.rowId, removedMember.memberName)
+            .then(() => reconcileRowPhotoMemberLinks(input.rowId))
+            .catch(err => {
+              console.error(
+                "[member.remove] unlink/reconcile row photo member links failed:",
+                err
+              );
+            });
+        }
         return { success: true };
       }),
   }),

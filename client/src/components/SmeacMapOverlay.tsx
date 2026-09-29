@@ -224,7 +224,8 @@ export function SmeacMapOverlay({
               briefing.actionsOn ||
               briefing.situationChange ||
               briefing.objectives.length > 0 ||
-              briefing.teamSlots.length > 0) && (
+              briefing.teamSlots.length > 0 ||
+              briefing.mapSnapshotUrl) && (
               <div className="space-y-3">
                 <SmeacLabel letter="E" label="Execution" />
                 {briefing.overallPlan && (
@@ -323,6 +324,18 @@ export function SmeacMapOverlay({
                         );
                       })}
                     </div>
+                  </div>
+                )}
+                {briefing.mapSnapshotUrl && (
+                  <div>
+                    <p className="text-[11px] font-semibold text-muted-foreground mb-1.5">
+                      Map snapshot
+                    </p>
+                    <img
+                      src={briefing.mapSnapshotUrl}
+                      alt="Map snapshot"
+                      className="w-full rounded-lg border border-border"
+                    />
                   </div>
                 )}
               </div>

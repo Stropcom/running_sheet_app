@@ -10,7 +10,13 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { getLastActiveContext } from "@/lib/lastActiveContext";
+import {
+  buildSmeacPdfHtml,
+  mapBriefingToExportData,
+  openSmeacPdfExport,
+} from "@/lib/smeacExport";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -49,6 +55,7 @@ import {
   Users,
   Radio,
   ArrowLeft,
+  FileDown,
 } from "lucide-react";
 
 interface TeamSlot {
@@ -87,12 +94,25 @@ const COVERT_ID_OPTIONS = ["Hat", "Beanie", "Gaiter/snood", "Jacket"];
 export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
+  const { user } = useAuth();
 
   const isEdit = briefingId != null;
   const existing = trpc.smeacBriefing.getById.useQuery(
     { id: briefingId! },
     { enabled: isEdit }
   );
+
+  const handleExport = () => {
+    if (!existing.data) return;
+    const html = buildSmeacPdfHtml(
+      mapBriefingToExportData(existing.data, user?.cin ?? "UNKNOWN")
+    );
+    if (!openSmeacPdfExport(html)) {
+      toast.error(
+        "Couldn't open a new tab — check your browser's popup blocker."
+      );
+    }
+  };
 
   const { data: operations } = trpc.operation.list.useQuery();
   const [operationId, setOperationId] = useState<number | null>(null);
@@ -444,6 +464,18 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
             <span className="text-[10px] font-mono font-medium text-muted-foreground border border-border rounded px-1.5 py-0.5">
               Rev {existing.data.revision}
             </span>
+          )}
+          {isEdit && existing.data && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="ml-auto gap-1.5"
+              onClick={handleExport}
+            >
+              <FileDown className="h-3.5 w-3.5" />
+              Export
+            </Button>
           )}
         </div>
       </div>

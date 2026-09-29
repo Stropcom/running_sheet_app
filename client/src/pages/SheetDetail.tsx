@@ -253,8 +253,12 @@ function attachmentImagesHtml(
   }[]
 ): string {
   if (attachments.length === 0) return "";
+  // A blank line before the photos, not just a small margin — the same gap
+  // as a blank line between two paragraphs of observation text, so the
+  // photos read as a clearly separate block rather than crowding the last
+  // line of text.
   return (
-    `<div style="margin-top:6px;display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px">` +
+    `<br/><div style="margin-top:2px;display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px">` +
     attachments
       .map(a => {
         const cins = (a.linkedEntities ?? [])
@@ -636,11 +640,18 @@ function exportToPDF(
             : row.certifications.find(c => c.memberId === m.id && c.isActive);
           const isFirst = idx === 0;
           const rowspan = row.members.length;
+          // vertical-align:top on every cell in this rowspan group — without
+          // it, a tall observation cell (a photo makes it much taller than
+          // its member <tr>s' own natural height) forces the browser to
+          // stretch the sibling member rows to match, and each CIN pill
+          // then centres within its own now-oversized row instead of
+          // stacking tightly with the others, spreading them out down the
+          // photo's height instead of reading the same as any other row.
           const timeTd = isFirst
-            ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap" rowspan="${rowspan}">${row.time ?? ""}</td>`
+            ? `<td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap;vertical-align:top" rowspan="${rowspan}">${row.time ?? ""}</td>`
             : "";
           const obsTd = isFirst
-            ? `<td style="padding:6px 6px 8px;${bb};${cb}" rowspan="${rowspan}">${stripImageryPhraseForExport((row.observation ?? "").replace(/\n/g, "<br/>"))}${attachmentImagesHtml(row.attachments)}${OBS_TRAILING_SPACE}</td>`
+            ? `<td style="padding:6px 6px 8px;${bb};${cb};vertical-align:top" rowspan="${rowspan}">${stripImageryPhraseForExport((row.observation ?? "").replace(/\n/g, "<br/>"))}${attachmentImagesHtml(row.attachments)}${OBS_TRAILING_SPACE}</td>`
             : "";
           const isLast = idx === row.members.length - 1;
           const memberBb = isLast ? bb : "border-bottom:none";
@@ -649,7 +660,7 @@ function exportToPDF(
           if (isSpacer) {
             return `<tr style="background:${rowBg}">
             ${timeTd}${obsTd}
-            <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">&nbsp;</td>
+            <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px;vertical-align:top">&nbsp;</td>
           </tr>`;
           }
           const certifierCIN = cert
@@ -662,7 +673,7 @@ function exportToPDF(
             : `<span class="pill pill-pending">${m.memberName}</span>`;
           return `<tr style="background:${rowBg}">
           ${timeTd}${obsTd}
-          <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px">${cinCertCell}</td>
+          <td style="padding:${pt} 6px ${pb} 6px;${memberBb};font-size:11px;vertical-align:top">${cinCertCell}</td>
         </tr>`;
         })
         .join("");

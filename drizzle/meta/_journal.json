@@ -771,6 +771,13 @@
       "when": 1790750000000,
       "tag": "0109_bright_ricochet",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "5",
+      "when": 1790800000000,
+      "tag": "0110_map_snapshot",
+      "breakpoints": true
     }
   ]
 }

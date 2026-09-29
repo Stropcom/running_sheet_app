@@ -15502,6 +15502,8 @@ export interface UpsertSmeacBriefingInput {
   locationOfTeamLeader?: string | null;
   reportingProcedures?: string | null;
   teamSlots?: SmeacTeamSlot[];
+  mapSnapshotUrl?: string | null;
+  mapSnapshotSource?: string | null;
 }
 
 export async function createSmeacBriefingDraft(
@@ -15538,6 +15540,8 @@ export async function createSmeacBriefingDraft(
     locationOfTeamLeader: data.locationOfTeamLeader ?? null,
     reportingProcedures: data.reportingProcedures ?? null,
     teamSlots: JSON.stringify(data.teamSlots ?? []),
+    mapSnapshotUrl: data.mapSnapshotUrl ?? null,
+    mapSnapshotSource: data.mapSnapshotSource ?? null,
     status: "draft",
     createdBy,
   });
@@ -15585,6 +15589,8 @@ export async function updateSmeacBriefing(
       locationOfTeamLeader: data.locationOfTeamLeader ?? null,
       reportingProcedures: data.reportingProcedures ?? null,
       teamSlots: JSON.stringify(data.teamSlots ?? []),
+      mapSnapshotUrl: data.mapSnapshotUrl ?? null,
+      mapSnapshotSource: data.mapSnapshotSource ?? null,
       revision: sql`${smeacBriefings.revision} + 1`,
     })
     .where(eq(smeacBriefings.id, id));

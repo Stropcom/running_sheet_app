@@ -34,6 +34,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { INTEL_CHIP_CLASSES } from "@/components/IntelEntityChip";
 import { SmeacLabel } from "@/components/SmeacLabel";
+import { MapSnapshotDialog } from "@/components/MapSnapshotDialog";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { formatIntelVehicle, formatIntelAddress } from "@/lib/addressFormat";
 import {
@@ -147,6 +148,15 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
 
   const [teamSlots, setTeamSlots] = useState<TeamSlot[]>([]);
 
+  // Map snapshot — see MapSnapshotDialog.tsx. The url is all that's saved
+  // (rides into buildPayload() like every other field); source is only
+  // for the caption under the thumbnail.
+  const [mapSnapshotUrl, setMapSnapshotUrl] = useState<string | null>(null);
+  const [mapSnapshotSource, setMapSnapshotSource] = useState<
+    "upload" | "capture" | null
+  >(null);
+  const [snapshotDialogOpen, setSnapshotDialogOpen] = useState(false);
+
   const usersQuery = trpc.opManager.listUsers.useQuery();
   const [notifyDialogOpen, setNotifyDialogOpen] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(
@@ -189,6 +199,10 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
       setLocationOfTeamLeader(b.locationOfTeamLeader ?? "");
       setReportingProcedures(b.reportingProcedures ?? "");
       setTeamSlots(b.teamSlots.length > 0 ? b.teamSlots : []);
+      setMapSnapshotUrl(b.mapSnapshotUrl ?? null);
+      setMapSnapshotSource(
+        (b.mapSnapshotSource as "upload" | "capture" | null) ?? null
+      );
       initializedRef.current = true;
     } else {
       const ctx = getLastActiveContext();
@@ -297,6 +311,8 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
     locationOfTeamLeader: locationOfTeamLeader.trim() || null,
     reportingProcedures: reportingProcedures.trim() || null,
     teamSlots,
+    mapSnapshotUrl,
+    mapSnapshotSource,
   });
 
   const [saving, setSaving] = useState(false);
@@ -902,6 +918,53 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
             <Plus className="h-3 w-3" /> Add team member
           </button>
         </div>
+
+        <div>
+          <label className="text-xs font-semibold block mb-2">
+            Map snapshot
+          </label>
+          <div className="rounded-lg border border-dashed border-border bg-muted/20 p-3">
+            {mapSnapshotUrl ? (
+              <div className="flex flex-col gap-2">
+                <img
+                  src={mapSnapshotUrl}
+                  alt="Map snapshot"
+                  className="w-full rounded-md border border-border"
+                />
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span>
+                    {mapSnapshotSource === "capture"
+                      ? "Captured from the live map"
+                      : "Uploaded screenshot"}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setMapSnapshotUrl(null);
+                      setMapSnapshotSource(null);
+                    }}
+                    className="font-semibold underline hover:text-destructive"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2 text-center py-4">
+                <p className="text-xs text-muted-foreground max-w-xs">
+                  No map attached yet. Insert the marked-up area so the team
+                  sees it right in the briefing.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setSnapshotDialogOpen(true)}
+                >
+                  Insert Map Snapshot
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* ADMINISTRATION & LOGISTICS */}
@@ -1232,6 +1295,15 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <MapSnapshotDialog
+        open={snapshotDialogOpen}
+        onOpenChange={setSnapshotDialogOpen}
+        onInsert={({ url, source }) => {
+          setMapSnapshotUrl(url);
+          setMapSnapshotSource(source);
+        }}
+      />
     </div>
   );
 }

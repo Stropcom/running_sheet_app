@@ -521,6 +521,8 @@ const smeacBriefingFieldsSchema = {
   locationOfTeamLeader: z.string().optional().nullable(),
   reportingProcedures: z.string().optional().nullable(),
   teamSlots: z.array(smeacTeamSlotSchema).optional(),
+  mapSnapshotUrl: z.string().optional().nullable(),
+  mapSnapshotSource: z.string().optional().nullable(),
 };
 
 const ucoGuideBriefingFieldsSchema = {
@@ -2735,6 +2737,28 @@ export const appRouter = router({
         const { id, ...data } = input;
         await updateSmeacBriefing(id, data);
         return { ok: true };
+      }),
+
+    // Uploads a map snapshot's image bytes and returns its URL — kept
+    // separate from create/update since a brand-new briefing has no id yet
+    // (see SmeacBriefingForm.tsx), and this doesn't need one either; the
+    // returned url just rides into create/update like any other field once
+    // the officer saves.
+    uploadMapSnapshot: adminProcedure
+      .input(
+        z.object({
+          dataBase64: z.string().min(1),
+          mimeType: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const buffer = Buffer.from(input.dataBase64, "base64");
+        const { url } = await storagePut(
+          `smeac-briefings/snapshots/${Date.now()}-map-snapshot.jpg`,
+          buffer,
+          input.mimeType || "image/jpeg"
+        );
+        return { url };
       }),
 
     getById: protectedProcedure

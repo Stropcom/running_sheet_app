@@ -1898,6 +1898,14 @@ export const smeacBriefings = mysqlTable("smeac_briefings", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 
+  // Map snapshot inserted into the briefing — either an officer's uploaded
+  // screenshot, or a getDisplayMedia() capture of the live map cropped down
+  // client-side before upload (see MapSnapshotDialog.tsx). Null means no
+  // snapshot attached.
+  mapSnapshotUrl: varchar("mapSnapshotUrl", { length: 500 }),
+  // "upload" | "capture" — which insertion path produced it.
+  mapSnapshotSource: varchar("mapSnapshotSource", { length: 32 }),
+
   // Soft-delete
   deletedAt: bigint("deletedAt", { mode: "number" }),
   deletedByCIN: varchar("deletedByCIN", { length: 64 }),

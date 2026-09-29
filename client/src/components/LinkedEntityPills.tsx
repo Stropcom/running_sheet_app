@@ -140,8 +140,12 @@ function PillRow({
  * zero members still owes a CIN link just as much as one with several) —
  * so a photo that's short exactly one required link stays visibly flagged
  * in the same place its real pill would go, instead of a separate top-left
- * icon (replaces the old AttachmentLinkBadge). Renders nothing only when
- * there's genuinely nothing to show: no links AND nothing outstanding.
+ * icon (replaces the old AttachmentLinkBadge). With no links and nothing
+ * outstanding, renders nothing for a read-only caller (no onClick given —
+ * e.g. the Weekly Activity report) but an explicit "Not linked" placeholder
+ * for an editable one, so a fully-unlinked manually-uploaded photo — no
+ * face detected, no row to owe a CIN link — still has something to click;
+ * returning nothing there left no way back into the link editor at all.
  *
  * When onClick is given, the whole pill area (including any amber
  * placeholder) opens the Link photo to entity panel.
@@ -179,7 +183,34 @@ export function LinkedEntityPills({
     (faceCount ?? 0) > 0 && !list.some(e => PERSON_CATEGORIES.has(e.category));
   const needsMember = !!hasRow && !list.some(e => e.category === "member");
 
-  if (list.length === 0 && !needsPerson && !needsMember) return null;
+  // Nothing linked, nothing outstanding (no face detected, no row to owe a
+  // CIN link) — a manually-uploaded photo lands here exactly when it was
+  // never linked to anything at upload. Previously this returned null
+  // outright, which left the photo with no pill at all — and therefore no
+  // click target, since the whole point of onClick here is "click a pill to
+  // open the link editor". A photo could end up permanently unlinkable with
+  // no way back in. When the caller supports editing (onClick given), show
+  // an explicit "not linked" placeholder instead so there's always
+  // something to click; read-only callers (no onClick, e.g. the Weekly
+  // Activity report) still render nothing, same as before.
+  if (list.length === 0 && !needsPerson && !needsMember) {
+    if (!onClick) return null;
+    return (
+      <div
+        onClick={onClick}
+        role="button"
+        tabIndex={0}
+        title="Link this photo to an entity"
+        className="flex flex-col gap-1 px-1.5 py-1 bg-muted/40 cursor-pointer hover:bg-muted/70 transition-colors"
+      >
+        <PillRow
+          Icon={HelpCircle}
+          label="Not linked — tap to link"
+          tone="needed"
+        />
+      </div>
+    );
+  }
 
   const sorted = [...list].sort(
     (a, b) => categoryRank(a.category) - categoryRank(b.category)

@@ -2558,25 +2558,71 @@ export async function createAuditLog(data: InsertAuditLog) {
   await db.insert(auditLogs).values(data);
 }
 
+// Stitches each log's own rowId (already stored on every row/certification
+// event, see createAuditLog's callers) to that row's own time + a short
+// observation excerpt, so "Certified by CIN 459" reads as "Certified by CIN
+// 459 — row at 09:46 AM: Surveillance commenced..." instead of a bare
+// action with no way to tell which running-sheet entry it refers to.
+// Batched into one query for however many distinct rowIds the page's whole
+// log list touches, rather than one query per log entry.
+const ROW_EXCERPT_LENGTH = 80;
+async function attachRowSummaries<T extends { rowId: number | null }>(
+  logs: T[]
+): Promise<(T & { rowTime: string | null; rowObservation: string | null })[]> {
+  const rowIds = Array.from(
+    new Set(logs.map(l => l.rowId).filter((id): id is number => id != null))
+  );
+  if (rowIds.length === 0) {
+    return logs.map(l => ({ ...l, rowTime: null, rowObservation: null }));
+  }
+  const db = await getDb();
+  if (!db)
+    return logs.map(l => ({ ...l, rowTime: null, rowObservation: null }));
+  const rows = await db
+    .select({
+      id: sheetRows.id,
+      time: sheetRows.time,
+      observation: sheetRows.observation,
+    })
+    .from(sheetRows)
+    .where(inArray(sheetRows.id, rowIds));
+  const rowById = new Map(rows.map(r => [r.id, r]));
+  return logs.map(l => {
+    const row = l.rowId != null ? rowById.get(l.rowId) : undefined;
+    const observation = row?.observation?.trim() || null;
+    return {
+      ...l,
+      rowTime: row?.time ?? null,
+      rowObservation: observation
+        ? observation.length > ROW_EXCERPT_LENGTH
+          ? observation.slice(0, ROW_EXCERPT_LENGTH) + "…"
+          : observation
+        : null,
+    };
+  });
+}
+
 export async function getAuditLogsBySheet(sheetId: number, limit = 200) {
   const db = await getDb();
   if (!db) return [];
-  return db
+  const logs = await db
     .select()
     .from(auditLogs)
     .where(eq(auditLogs.sheetId, sheetId))
     .orderBy(desc(auditLogs.createdAt))
     .limit(limit);
+  return attachRowSummaries(logs);
 }
 
 export async function getAllAuditLogs(limit = 500) {
   const db = await getDb();
   if (!db) return [];
-  return db
+  const logs = await db
     .select()
     .from(auditLogs)
     .orderBy(desc(auditLogs.createdAt))
     .limit(limit);
+  return attachRowSummaries(logs);
 }
 
 // ─── Targets ─────────────────────────────────────────────────────────────────

@@ -133,7 +133,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
-import { useLocation, useParams } from "wouter";
+import { useLocation, useParams, useSearch } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { WifiOff, RefreshCw, ChevronDown } from "lucide-react";
@@ -2584,6 +2584,35 @@ export default function SheetDetail({
       refetchInterval: isOnline ? 10000 : false,
     }
   );
+
+  // Jumped here from the Audit Log's "Row" column (?highlightRow=<id>) —
+  // scroll to and briefly highlight that row, same scroll+highlight
+  // handleJumpToCheckRow already does for a "Check Running Sheet" finding,
+  // just triggered by a URL param instead of an in-page dialog callback.
+  // Waits for `rows` to actually be loaded (the <tr> won't exist in the DOM
+  // before then), then strips the param via replace so refreshing the page
+  // doesn't re-trigger it and the URL doesn't keep it around.
+  const search = useSearch();
+  useEffect(() => {
+    if (!rows || rowsLoading) return;
+    const raw = new URLSearchParams(search).get("highlightRow");
+    const highlightRowId = raw ? parseInt(raw, 10) : NaN;
+    if (!Number.isFinite(highlightRowId)) return;
+    const timer = window.setTimeout(() => {
+      const el = document.getElementById(`sheet-row-${highlightRowId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("row-check-highlight");
+        window.setTimeout(
+          () => el.classList.remove("row-check-highlight"),
+          2000
+        );
+      }
+      navigate(`/sheet/${sheetId}`, { replace: true });
+    }, 150);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, rowsLoading, search]);
 
   const { data: entityChips } = trpc.row.entityChips.useQuery(
     { sheetId },

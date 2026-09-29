@@ -1,3 +1,4 @@
+import { useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
@@ -71,6 +72,9 @@ const ACTION_CONFIG: Record<
 type AuditLog = {
   id: number;
   sheetId: number | null;
+  rowId: number | null;
+  rowTime: string | null;
+  rowObservation: string | null;
   userId: number;
   userName: string;
   userCIN?: string | null;
@@ -103,6 +107,10 @@ function exportAuditToPDF(sheetTitle: string, logs: AuditLog[]) {
       const colorKey = config?.color?.replace("text-", "") ?? "";
       const hexColor = colorMap[colorKey] ?? "#94a3b8";
 
+      const rowLabel = log.rowTime
+        ? `${log.rowTime}${log.rowObservation ? ` — ${log.rowObservation}` : ""}`
+        : "—";
+
       return `<tr>
       <td style="padding:5px 8px;${borderBottom};${colBorder};font-family:monospace;font-size:11px;color:#94a3b8">
         ${format(new Date(log.createdAt), "yyyy-MM-dd HH:mm:ss")}
@@ -112,6 +120,9 @@ function exportAuditToPDF(sheetTitle: string, logs: AuditLog[]) {
       </td>
       <td style="padding:5px 8px;${borderBottom};${colBorder};font-family:monospace;font-size:12px">
         ${(log as any).userCIN ?? log.userName}
+      </td>
+      <td style="padding:5px 8px;${borderBottom};${colBorder};font-size:12px;color:#94a3b8">
+        ${rowLabel}
       </td>
       <td style="padding:5px 8px;${borderBottom};color:#94a3b8;font-size:12px">
         ${log.details ?? "—"}
@@ -139,6 +150,7 @@ function exportAuditToPDF(sheetTitle: string, logs: AuditLog[]) {
       <th style="width:160px">Timestamp</th>
       <th style="width:140px">Action</th>
       <th style="width:140px">CIN</th>
+      <th style="width:220px">Row</th>
       <th>Details</th>
     </tr></thead>
     <tbody>${tableRows}</tbody>
@@ -161,6 +173,7 @@ function exportAuditToPDF(sheetTitle: string, logs: AuditLog[]) {
 
 export default function AuditLogPage() {
   const { isAuthenticated } = useAuth();
+  const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [selectedSheetId, setSelectedSheetId] = useState<string>("all");
 
@@ -205,7 +218,8 @@ export default function AuditLogPage() {
     return (
       ((log as any).userCIN ?? log.userName).toLowerCase().includes(q) ||
       log.action.toLowerCase().includes(q) ||
-      (log.details ?? "").toLowerCase().includes(q)
+      (log.details ?? "").toLowerCase().includes(q) ||
+      (log.rowObservation ?? "").toLowerCase().includes(q)
     );
   });
 
@@ -215,6 +229,16 @@ export default function AuditLogPage() {
     if (!filtered || filtered.length === 0) return;
     const title = selectedSheet?.title ?? "All Sheets";
     exportAuditToPDF(title, filtered);
+  };
+
+  // Jumps to the actual running-sheet row this log entry is about, scrolled
+  // to and briefly highlighted — see SheetDetail.tsx's handling of
+  // ?highlightRow=, which reuses the same scroll+highlight it already does
+  // for "Check Running Sheet" findings, just triggered by a URL param
+  // instead of an in-page dialog callback.
+  const jumpToRow = (log: AuditLog) => {
+    if (!log.sheetId || !log.rowId) return;
+    setLocation(`/sheet/${log.sheetId}?highlightRow=${log.rowId}`);
   };
 
   return (
@@ -288,7 +312,7 @@ export default function AuditLogPage() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Search by user, action, or details…"
+              placeholder="Search by user, action, row, or details…"
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="pl-9"
@@ -323,6 +347,7 @@ export default function AuditLogPage() {
                     <th className="w-44">Timestamp</th>
                     <th className="w-36">Action</th>
                     <th className="w-36">CIN</th>
+                    <th className="w-56">Row</th>
                     <th>Details</th>
                   </tr>
                 </thead>
@@ -359,6 +384,28 @@ export default function AuditLogPage() {
                           <span className="text-sm font-mono text-foreground">
                             {(log as any).userCIN ?? log.userName}
                           </span>
+                        </td>
+                        <td>
+                          {log.rowTime && log.rowId ? (
+                            <button
+                              onClick={() => jumpToRow(log)}
+                              className="text-left group/row"
+                              title="Jump to this row on the running sheet"
+                            >
+                              <span className="text-sm font-mono font-semibold text-foreground group-hover/row:text-primary group-hover/row:underline">
+                                {log.rowTime}
+                              </span>
+                              {log.rowObservation && (
+                                <span className="block text-xs text-muted-foreground truncate max-w-[13rem]">
+                                  {log.rowObservation}
+                                </span>
+                              )}
+                            </button>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">
+                              —
+                            </span>
+                          )}
                         </td>
                         <td>
                           <span className="text-sm text-muted-foreground">

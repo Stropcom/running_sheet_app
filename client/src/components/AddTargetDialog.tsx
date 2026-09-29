@@ -1475,23 +1475,15 @@ export function AddTargetDialog({
             {targetType === "vehicle" ? (
               <>
                 {vehiclePrimaryBox}
-                {addressPrimaryBox}
-              </>
-            ) : (
-              <>
-                {addressPrimaryBox}
-                {vehiclePrimaryBox}
-              </>
-            )}
-
-            {targetType === "vehicle" ? (
-              <>
                 {vehicleExtras}
+                {addressPrimaryBox}
                 {addressExtras}
               </>
             ) : (
               <>
+                {addressPrimaryBox}
                 {addressExtras}
+                {vehiclePrimaryBox}
                 {vehicleExtras}
               </>
             )}

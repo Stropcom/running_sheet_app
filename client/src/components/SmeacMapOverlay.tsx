@@ -304,7 +304,7 @@ export function SmeacMapOverlay({
                           >
                             <div className="flex items-center gap-1.5 mb-1.5">
                               <span
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium border transition-colors ${pillClass}`}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${pillClass}`}
                                 title={
                                   !slot.cin
                                     ? "Not linked to a user — acknowledgement can't be tracked"

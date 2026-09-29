@@ -1394,6 +1394,22 @@ export default function IntelligenceMapping() {
   })();
   const closeUcoGuideOverlay = () => setLocation("/intelligence/mapping");
 
+  // Opened via ?forCapture=1 — see MapSnapshotDialog.tsx's "Open Map in New
+  // Tab" button in the SMEAC map-snapshot flow. The whole SPA shares one
+  // static <title> (index.html), so a second tab of this same app is
+  // otherwise indistinguishable from any other tab in the browser's
+  // getDisplayMedia() screen-share picker. Setting a distinct title only
+  // while this param is present gives the officer something to look for.
+  const forCapture = new URLSearchParams(search).get("forCapture") === "1";
+  useEffect(() => {
+    if (!forCapture) return;
+    const prevTitle = document.title;
+    document.title = "RunLog — Map (select this tab)";
+    return () => {
+      document.title = prevTitle;
+    };
+  }, [forCapture]);
+
   // Filter state — persisted in localStorage
   const [selectedOpIds, setSelectedOpIds] = useState<number[]>(() => {
     try {

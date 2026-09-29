@@ -109,7 +109,9 @@ export function MapSnapshotDialog({
   onOpenChange: (open: boolean) => void;
   onInsert: (result: { url: string; source: "upload" | "capture" }) => void;
 }) {
-  const [view, setView] = useState<"choice" | "cropping">("choice");
+  const [view, setView] = useState<"choice" | "capture-intro" | "cropping">(
+    "choice"
+  );
   const [busy, setBusy] = useState(false);
   const [captureCanvas, setCaptureCanvas] = useState<HTMLCanvasElement | null>(
     null
@@ -134,6 +136,18 @@ export function MapSnapshotDialog({
       setBusy(false);
     }
   }, [open]);
+
+  // This form's own tab never has the map on it — the whole SPA shares one
+  // static <title> (see index.html), so an officer's second tab of this
+  // same app looks identical to this one in the browser's screen-share
+  // picker, with nothing to tell them apart by name. Opening it here (with
+  // ?forCapture=1, which IntelligenceMapping.tsx uses to give that one tab
+  // a distinct title — see the effect there) guarantees the right tab
+  // actually exists before the picker opens, and gives the officer
+  // something to look for in it.
+  const openMapTab = () => {
+    window.open("/intelligence/mapping?forCapture=1", "_blank");
+  };
 
   const uploadBlob = async (
     blob: Blob,
@@ -313,7 +327,11 @@ export function MapSnapshotDialog({
       <DialogContent className={view === "cropping" ? "sm:max-w-xl" : ""}>
         <DialogHeader>
           <DialogTitle>
-            {view === "choice" ? "Insert Map Snapshot" : "Frame the area"}
+            {view === "choice"
+              ? "Insert Map Snapshot"
+              : view === "capture-intro"
+                ? "Capture Map Area"
+                : "Frame the area"}
           </DialogTitle>
         </DialogHeader>
 
@@ -349,7 +367,7 @@ export function MapSnapshotDialog({
             <button
               type="button"
               disabled={busy}
-              onClick={startCapture}
+              onClick={() => setView("capture-intro")}
               className="flex items-start gap-3 text-left rounded-lg border border-border bg-muted/30 hover:border-primary p-3 disabled:opacity-50"
             >
               <MonitorUp className="h-5 w-5 text-primary shrink-0 mt-0.5" />
@@ -358,9 +376,8 @@ export function MapSnapshotDialog({
                   Capture map area
                 </span>
                 <span className="block text-xs text-muted-foreground mt-0.5">
-                  Open the map in another tab first. This opens your browser's
-                  share picker — choose that tab, then crop it down.
-                  Laptop/desktop browsers only.
+                  Grabs the live map straight from your screen, then crop it
+                  down. Laptop/desktop browsers only.
                 </span>
               </span>
             </button>
@@ -369,6 +386,52 @@ export function MapSnapshotDialog({
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading…
               </div>
             )}
+          </div>
+        )}
+
+        {view === "capture-intro" && (
+          <div className="flex flex-col gap-3">
+            <ol className="text-sm space-y-2.5 list-decimal list-inside marker:text-muted-foreground marker:font-semibold">
+              <li>
+                Click <b>Open Map in New Tab</b> below.
+              </li>
+              <li>
+                In that tab, mark up whatever the briefing needs, then switch
+                back to this tab.
+              </li>
+              <li>
+                Click <b>Continue</b> — your browser will ask which tab to
+                share. Choose the one titled{" "}
+                <span className="font-mono text-xs bg-muted px-1 py-0.5 rounded">
+                  RunLog — Map (select this tab)
+                </span>
+                .
+              </li>
+            </ol>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={openMapTab}
+              className="self-start gap-1.5"
+            >
+              <MonitorUp className="h-3.5 w-3.5" /> Open Map in New Tab
+            </Button>
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => setView("choice")}
+              >
+                Back
+              </Button>
+              <Button disabled={busy} onClick={startCapture}>
+                {busy && (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                )}
+                Continue
+              </Button>
+            </DialogFooter>
           </div>
         )}
 

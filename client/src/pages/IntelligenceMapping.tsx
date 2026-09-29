@@ -565,13 +565,19 @@ const DEFAULT_RECT_HALF_SIDE_M = 120;
 /** Builds a Polyline's `icons` option for a "line" shape's dashed/arrow
  * styling. The Maps JS API has no native dashed-stroke option, so a dashed
  * look is done the standard way — an invisible (strokeOpacity 0) base
- * stroke with a small line symbol repeated along the path — and a
- * direction-of-travel arrowhead is a single forward-pointing symbol placed
- * at the very end of the path (offset "100%"). Both can be combined on the
- * same Polyline. Returns undefined (not an empty array) when neither is on,
- * so callers can spread this straight into Polyline options without an
- * `icons: []` override disturbing a plain solid line. */
+ * stroke with a small line symbol repeated along the path. A
+ * direction-of-travel arrowhead is one forward-pointing symbol per segment
+ * (not just one at the very end of the whole path) — an IconSequence's
+ * offset is a percentage of the PATH's total length, not per-segment, so
+ * each segment's end point needs its own cumulative-distance percentage
+ * worked out via the geometry library, in a real-world multi-segment line
+ * every leg shows its own direction rather than only the last one. Both
+ * dashed and arrowEnd can be combined on the same Polyline. Returns
+ * undefined (not an empty array) when neither is on, so callers can spread
+ * this straight into Polyline options without an `icons: []` override
+ * disturbing a plain solid line. */
 function renderLineIcons(
+  path: { lat: number; lng: number }[],
   dashed: boolean,
   arrowEnd: boolean,
   color: string,
@@ -591,17 +597,33 @@ function renderLineIcons(
       repeat: "16px",
     });
   }
-  if (arrowEnd) {
-    icons.push({
-      icon: {
-        path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-        strokeColor: color,
-        fillColor: color,
-        fillOpacity: opacity,
-        scale: 4,
-      },
-      offset: "100%",
-    });
+  if (arrowEnd && path.length >= 2) {
+    const segmentLengths: number[] = [];
+    let totalLength = 0;
+    for (let i = 1; i < path.length; i++) {
+      const d = google.maps.geometry.spherical.computeDistanceBetween(
+        new google.maps.LatLng(path[i - 1].lat, path[i - 1].lng),
+        new google.maps.LatLng(path[i].lat, path[i].lng)
+      );
+      segmentLengths.push(d);
+      totalLength += d;
+    }
+    if (totalLength > 0) {
+      let cumulative = 0;
+      for (const segmentLength of segmentLengths) {
+        cumulative += segmentLength;
+        icons.push({
+          icon: {
+            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+            strokeColor: color,
+            fillColor: color,
+            fillOpacity: opacity,
+            scale: 4,
+          },
+          offset: `${(cumulative / totalLength) * 100}%`,
+        });
+      }
+    }
   }
   return icons;
 }
@@ -2059,6 +2081,27 @@ export default function IntelligenceMapping() {
   // Line-only styling — see renderLineIcons above.
   const [shapeLineDashed, setShapeLineDashed] = useState(false);
   const [shapeLineArrowEnd, setShapeLineArrowEnd] = useState(false);
+  // Mirrors shapeColour/shapeOpacity/shapeLineDashed/shapeLineArrowEnd for
+  // the draft line overlay's path-change listener (syncPath, below) — that
+  // listener is wired up once per overlay and needs the CURRENT styling
+  // whenever a vertex is dragged, not whatever it closed over when the
+  // overlay was created, since per-segment arrow offsets (see
+  // renderLineIcons) have to be recomputed on every path change to stay
+  // correctly positioned as the line is reshaped.
+  const shapeLineStyleRef = useRef({
+    colour: shapeColour,
+    opacity: shapeOpacity,
+    dashed: shapeLineDashed,
+    arrowEnd: shapeLineArrowEnd,
+  });
+  useEffect(() => {
+    shapeLineStyleRef.current = {
+      colour: shapeColour,
+      opacity: shapeOpacity,
+      dashed: shapeLineDashed,
+      arrowEnd: shapeLineArrowEnd,
+    };
+  }, [shapeColour, shapeOpacity, shapeLineDashed, shapeLineArrowEnd]);
   // A shape saved with no operation is hidden from any single/multi-
   // operation-filtered map view — same "silent default" trap as custom
   // markers had, see the Operation picker in the marker panel below for the
@@ -4832,6 +4875,7 @@ export default function IntelligenceMapping() {
         const path = (s.points ?? []) as { lat: number; lng: number }[];
         const dashed = !!s.lineDashed;
         const icons = renderLineIcons(
+          path,
           dashed,
           !!s.lineArrowEnd,
           fillColor,
@@ -5077,6 +5121,7 @@ export default function IntelligenceMapping() {
         strokeOpacity: shapeLineDashed ? 0 : opacity,
         strokeWeight: 4,
         icons: renderLineIcons(
+          pendingShape.points ?? [],
           shapeLineDashed,
           shapeLineArrowEnd,
           fillColor,
@@ -5089,6 +5134,21 @@ export default function IntelligenceMapping() {
           .getArray()
           .map(p => ({ lat: p.lat(), lng: p.lng() }));
         setPendingShape(p => (p ? { ...p, points: pts } : p));
+        // Per-segment arrow offsets are percentages of the path's total
+        // length at the moment they're computed — reshaping the line by
+        // dragging a vertex changes every segment's share of that length,
+        // so they need recomputing here too, not just when colour/opacity/
+        // dashed/arrow themselves change (see shapeLineStyleRef above).
+        const style = shapeLineStyleRef.current;
+        line.setOptions({
+          icons: renderLineIcons(
+            pts,
+            style.dashed,
+            style.arrowEnd,
+            MARKER_COLOURS[style.colour],
+            style.opacity / 100
+          ),
+        });
       };
       line.getPath().addListener("set_at", syncPath);
       line.getPath().addListener("insert_at", syncPath);
@@ -5115,10 +5175,20 @@ export default function IntelligenceMapping() {
     const fillColor = MARKER_COLOURS[shapeColour];
     const opacity = shapeOpacity / 100;
     if (overlay instanceof google.maps.Polyline) {
+      // Read the overlay's own live path rather than pendingShape.points —
+      // this effect doesn't depend on the path (dragging a vertex touches
+      // it far more often than colour/opacity/dashed/arrow, and re-running
+      // it on every drag frame would fight the drag), so pendingShape.points
+      // can lag a frame or two behind what's actually on the map.
+      const path = overlay
+        .getPath()
+        .getArray()
+        .map(p => ({ lat: p.lat(), lng: p.lng() }));
       overlay.setOptions({
         strokeColor: fillColor,
         strokeOpacity: shapeLineDashed ? 0 : opacity,
         icons: renderLineIcons(
+          path,
           shapeLineDashed,
           shapeLineArrowEnd,
           fillColor,

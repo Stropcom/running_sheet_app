@@ -216,33 +216,38 @@ function SmeacBriefingRow({
 
   return (
     <div className="rounded-xl bg-card border border-border overflow-hidden">
-      <div className="flex items-center gap-2 hover:bg-accent/50 transition-colors">
+      <div className="flex items-start gap-2 hover:bg-accent/50 transition-colors">
         <button
           onClick={onToggleExpand}
-          className="flex-1 min-w-0 text-left flex items-center gap-3 p-3.5"
+          className="flex-1 min-w-0 text-left flex items-start gap-3 p-3.5"
         >
           {isExpanded ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
           ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
           )}
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 mb-0.5">
-              <p className="text-sm font-semibold truncate">{operationName}</p>
+            {/* One wrapping flex row for name/badge/rev/date — on a narrow
+                phone this drops the date (and, if needed, rev/badge) to a
+                second line instead of squeezing the operation name down to
+                a couple of characters via truncate, which is what a fixed-
+                width date sitting beside a min-w-0 name used to do. */}
+            <div className="flex items-center gap-x-2 gap-y-1 flex-wrap mb-0.5">
+              <p className="text-sm font-semibold">{operationName}</p>
               <StatusBadge status={b.status} />
-              <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+              <span className="text-[10px] font-mono text-muted-foreground">
                 Rev {b.revision}
+              </span>
+              <span className="text-[11px] text-muted-foreground ml-auto">
+                {b.postedAt
+                  ? format(new Date(b.postedAt), "d MMM, h:mm a")
+                  : format(new Date(b.createdAt), "d MMM, h:mm a")}
               </span>
             </div>
             <p className="text-xs text-muted-foreground truncate">
               {b.situation || "No situation summary"}
             </p>
           </div>
-          <span className="text-[11px] text-muted-foreground shrink-0">
-            {b.postedAt
-              ? format(new Date(b.postedAt), "d MMM, h:mm a")
-              : format(new Date(b.createdAt), "d MMM, h:mm a")}
-          </span>
         </button>
         {isAdmin && (
           <div className="flex items-center gap-0.5 shrink-0 mr-2">
@@ -269,30 +274,32 @@ function SmeacBriefingRow({
               Briefing not found.
             </p>
           ) : (
-            <>
-              <SmeacReadOnlyContent briefing={detail.data} />
-              <div className="flex items-center gap-2 pt-3 border-t border-border">
-                {isAdmin && (
-                  <Button variant="outline" size="sm" onClick={onEdit}>
-                    <Pencil className="h-3.5 w-3.5 mr-1.5" />
-                    Edit
-                  </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onExportPdf}
-                  disabled={isExporting}
-                >
-                  {isExporting ? (
-                    <Spinner className="h-3.5 w-3.5 mr-1.5" />
-                  ) : (
-                    <FileDown className="h-3.5 w-3.5 mr-1.5" />
+            <SmeacReadOnlyContent
+              briefing={detail.data}
+              headerActions={
+                <div className="flex items-center gap-2 shrink-0">
+                  {isAdmin && (
+                    <Button variant="outline" size="sm" onClick={onEdit}>
+                      <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                      Edit
+                    </Button>
                   )}
-                  Export
-                </Button>
-              </div>
-            </>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onExportPdf}
+                    disabled={isExporting}
+                  >
+                    {isExporting ? (
+                      <Spinner className="h-3.5 w-3.5 mr-1.5" />
+                    ) : (
+                      <FileDown className="h-3.5 w-3.5 mr-1.5" />
+                    )}
+                    Export
+                  </Button>
+                </div>
+              }
+            />
           )}
         </div>
       )}

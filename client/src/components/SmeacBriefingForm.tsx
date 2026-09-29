@@ -352,7 +352,11 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
         });
         if (isPosted) {
           toast.success("Changes saved");
-          setLocation(`/administration/smeac/${briefingId}`);
+          // Not /administration/smeac/${briefingId} — for a posted briefing
+          // that route redirects straight to the map overlay (see
+          // SmeacBriefingDetailPage.tsx), which should only happen from the
+          // Post notification, not from the admin's own save action.
+          setLocation("/administration/smeac");
         } else {
           toast.success("Draft saved");
           utils.smeacBriefing.getById.invalidate({ id: briefingId! });
@@ -390,7 +394,10 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
       toast.success(
         `${isPosted ? "Re-posted" : "Posted"} — notified ${result.notified} users`
       );
-      setLocation(`/administration/smeac/${id}`);
+      // Not /administration/smeac/${id} — see saveDraft's matching comment
+      // above: only the Post notification should land on the map overlay,
+      // not the admin's own post/re-notify action.
+      setLocation("/administration/smeac");
     } catch (e: any) {
       toast.error(e.message ?? "Failed to post");
     } finally {

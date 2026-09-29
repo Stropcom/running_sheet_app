@@ -21,8 +21,14 @@ export type SmeacBriefingDetail = RouterOutputs["smeacBriefing"]["getById"];
 
 export function SmeacReadOnlyContent({
   briefing,
+  headerActions,
 }: {
   briefing: SmeacBriefingDetail;
+  // Rendered on the same line as the "N acknowledged" pill, right-aligned —
+  // the list page's inline review row uses this for its Edit/Export
+  // buttons; the map overlay leaves it unset (its own actions live in its
+  // header bar / footer instead, see SmeacMapOverlay.tsx).
+  headerActions?: React.ReactNode;
 }) {
   const rawHome =
     briefing.hbOverride || briefing.target?.hbf || briefing.target?.hb;
@@ -31,10 +37,13 @@ export function SmeacReadOnlyContent({
 
   return (
     <div className="space-y-4">
-      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-card border border-border shadow-sm">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-        {briefing.acknowledgedCount} acknowledged
-      </span>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-card border border-border shadow-sm">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          {briefing.acknowledgedCount} acknowledged
+        </span>
+        {headerActions}
+      </div>
 
       {/* TARGET — precedes SMEAC, not part of it */}
       {(briefing.target || briefing.extraLocations.length > 0) && (

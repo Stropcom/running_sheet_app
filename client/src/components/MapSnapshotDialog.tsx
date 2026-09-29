@@ -186,13 +186,12 @@ export function MapSnapshotDialog({
     }
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        // Chromium-only hint — lets the officer capture this same tab
-        // without hunting for it in the picker if the map is open here.
-        // @ts-expect-error non-standard, Chromium-only capture hint
-        preferCurrentTab: true,
-      });
+      // No preferCurrentTab hint — this form never has the map on it (see
+      // the class doc comment above), so pre-selecting "this tab" would
+      // pre-select the wrong one. The officer needs the browser's normal
+      // picker so they can choose whichever other tab/window actually has
+      // the map open.
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
     } catch {
       // Permission denied, or the officer cancelled the picker — not an
       // error worth surfacing as one.
@@ -359,9 +358,9 @@ export function MapSnapshotDialog({
                   Capture map area
                 </span>
                 <span className="block text-xs text-muted-foreground mt-0.5">
-                  Grabs the live map straight from your screen, then crop it
-                  down. Open the map in another tab first — laptop/desktop
-                  browsers only.
+                  Open the map in another tab first. This opens your browser's
+                  share picker — choose that tab, then crop it down.
+                  Laptop/desktop browsers only.
                 </span>
               </span>
             </button>

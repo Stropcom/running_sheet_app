@@ -190,6 +190,21 @@ export function buildSmeacPdfHtml(data: SmeacExportData) {
       ? `<div style="margin-bottom:8px"><p style="font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:3px">${esc(label)}</p><p style="font-size:11px;color:${GREY_TEXT};white-space:pre-wrap">${esc(value)}</p></div>`
       : "";
 
+  // Every section is a single-row <table> rather than a plain <div> so that
+  // when its body content is taller than one printed page, the browser's
+  // own table-fragmentation rules repeat the <thead> (the section-title bar)
+  // at the top of every page the content spans — a long Situation section
+  // that continues onto page 2 gets "S — SITUATION" at the top of page 2
+  // too, instead of a page of un-headed body text. This is standard,
+  // reliably-supported print CSS behaviour (the same mechanism used for
+  // repeating a table's header row across pages), not something built by
+  // measuring or predicting where page breaks will fall — Chrome's print
+  // pipeline doesn't expose that to JS/CSS at all, so there's no reliable
+  // way to detect "this is a continuation" and only then say "— continued".
+  // `title` is a static label here (not user data), so it isn't esc()'d.
+  const sectionTable = (title: string, bodyHtml: string) =>
+    `<table class="section-table"><thead><tr><th class="section-title-cell">${title}</th></tr></thead><tbody><tr><td class="section-body-cell">${bodyHtml}</td></tr></tbody></table>`;
+
   // TARGET
   const targetChips: string[] = [];
   if (data.targetName)
@@ -209,7 +224,10 @@ export function buildSmeacPdfHtml(data: SmeacExportData) {
       `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:9999px;font-size:10px;font-weight:600;border:1px solid #99f6e4;background:#f0fdfa;color:#115e59">${esc(formatIntelAddress(loc))}</span>`
     );
   const targetSection = targetChips.length
-    ? `<div class="section"><div class="section-title">Target</div><div style="display:flex;flex-wrap:wrap;gap:6px">${targetChips.join("")}</div></div>`
+    ? sectionTable(
+        "Target",
+        `<div style="display:flex;flex-wrap:wrap;gap:6px">${targetChips.join("")}</div>`
+      )
     : "";
 
   // S — SITUATION
@@ -220,12 +238,15 @@ export function buildSmeacPdfHtml(data: SmeacExportData) {
       ? `<div><p style="font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:5px">Other agencies / teams</p>${chips(data.otherAgencies)}</div>`
       : "");
   const situationSection = situationBody
-    ? `<div class="section"><div class="section-title">S — Situation</div>${situationBody}</div>`
+    ? sectionTable("S — Situation", situationBody)
     : "";
 
   // M — MISSION
   const missionSection = data.mission
-    ? `<div class="section"><div class="section-title">M — Mission</div><p style="font-size:11px;color:${GREY_TEXT};white-space:pre-wrap">${esc(data.mission)}</p></div>`
+    ? sectionTable(
+        "M — Mission",
+        `<p style="font-size:11px;color:${GREY_TEXT};white-space:pre-wrap">${esc(data.mission)}</p>`
+      )
     : "";
 
   // E — EXECUTION
@@ -262,7 +283,7 @@ export function buildSmeacPdfHtml(data: SmeacExportData) {
     objectivesHtml +
     teamSlotsHtml;
   const executionSection = executionBody
-    ? `<div class="section"><div class="section-title">E — Execution</div>${executionBody}</div>`
+    ? sectionTable("E — Execution", executionBody)
     : "";
 
   // A — ADMINISTRATION & LOGISTICS
@@ -279,7 +300,10 @@ export function buildSmeacPdfHtml(data: SmeacExportData) {
       ? `<div style="margin-bottom:8px"><p style="font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:5px">Covert police identifier</p>${chips(data.covertIdentifiers)}</div>`
       : "") +
     `<p style="font-size:11px;color:${GREY_TEXT}">${data.firstAidAllVehicles ? "First aid kit confirmed in all vehicles" : `First aid held by ${esc(data.firstAidMemberName || "—")}`}</p>`;
-  const adminSection = `<div class="section"><div class="section-title">A — Administration &amp; Logistics</div>${adminBody}</div>`;
+  const adminSection = sectionTable(
+    "A — Administration &amp; Logistics",
+    adminBody
+  );
 
   // C — COMMAND & SIGNAL
   const teamLeader = data.teamSlots.find(s => s.isTeamLeader);
@@ -296,7 +320,7 @@ export function buildSmeacPdfHtml(data: SmeacExportData) {
     data.reportingProcedures ||
     data.commsPrimary ||
     data.commsSecondary
-      ? `<div class="section"><div class="section-title">C — Command &amp; Signal</div>${commandBody}</div>`
+      ? sectionTable("C — Command &amp; Signal", commandBody)
       : "";
 
   const statusLabel = data.status === "posted" ? "Posted" : "Draft";
@@ -322,10 +346,18 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .stat-num { font-size:20px; font-weight:700; color:${BLUE_DARK} !important; }
 .stat-label { font-size:9px; text-transform:uppercase; letter-spacing:0.08em; color:#64748b; }
 .content { padding:20px 32px; }
-.section { margin-bottom:20px; }
-.section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; -webkit-print-color-adjust:exact; print-color-adjust:exact; page-break-after:avoid; break-after:avoid; }
+/* Each section is a <table> (see sectionTable() above) purely so its
+   <thead> — the title bar — repeats at the top of every printed page the
+   section's body spans; display:table-header-group is what triggers that
+   repeat, not just cosmetic. section-title-cell keeps the exact look
+   .section-title had as a div. section-body-cell's top padding replaces
+   the gap section-title's old margin-bottom provided. */
+.section-table { width:100%; border-collapse:collapse; margin-bottom:20px; }
+.section-table thead { display:table-header-group; }
+.section-title-cell { text-align:left; font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+.section-body-cell { padding:10px 0 0 0; }
 .footer { margin-top:32px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
-@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .stats-row { background:${BLUE_LIGHT} !important; } .section-title { background:${BLUE_LIGHT} !important; } }
+@media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .stats-row { background:${BLUE_LIGHT} !important; } .section-title-cell { background:${BLUE_LIGHT} !important; } }
 </style></head><body>
 <div class="cover-header">
   <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog Surveillance SMEAC</span></div>

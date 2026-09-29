@@ -6,6 +6,7 @@ import { detectAndEmbedFaces, cosineSimilarity } from "./faceRecognition";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
+import { CIN_LINK_CATEGORY } from "@shared/attachmentLinking";
 import { TARGET_TYPES } from "../drizzle/schema";
 import {
   buildRunningSheetTitle,
@@ -5714,12 +5715,52 @@ export const appRouter = router({
             }
           }
 
-          // Build a map of rowId → time string for photo rows
-          const photoRowTimes = new Map<number, string>();
+          // Which CIN actually took a row's photo/s is decided by the
+          // attachment→CIN links built at upload time (single-member rows
+          // auto-link) or confirmed by an officer via LinkAttachmentDialog
+          // (multi-member rows) — see shared/attachmentLinking.ts. A
+          // statement must only ever claim an officer took images they're
+          // actually confirmed for, not every CIN who happened to be on the
+          // row. Rows with attachments still pending a CIN link get no
+          // credit yet (nobody's statement should assert it ahead of that
+          // confirmation); rows with no attachments at all (legacy text-only
+          // entries predating the upload feature) fall back to crediting
+          // every CIN on the row, as before.
+          const rowIdToConfirmedCins = new Map<number, Set<string>>();
+          const rowIdsWithAttachments = new Set<number>();
+          if (rowIds.length > 0) {
+            const attachments = await getAttachmentsByRowIds(rowIds);
+            for (const att of attachments) {
+              if (att.rowId == null) continue;
+              rowIdsWithAttachments.add(att.rowId);
+              const cins = (att.linkedEntities ?? [])
+                .filter(e => e.category === CIN_LINK_CATEGORY)
+                .map(e => e.label.toUpperCase());
+              if (cins.length === 0) continue;
+              const set = rowIdToConfirmedCins.get(att.rowId) ?? new Set();
+              for (const c of cins) set.add(c);
+              rowIdToConfirmedCins.set(att.rowId, set);
+            }
+          }
+
+          // Build a map of rowId → { time, cins } for photo rows. cins ===
+          // null means "credit every CIN on the row" (legacy fallback).
+          const photoRowCredit = new Map<
+            number,
+            { time: string; cins: Set<string> | null }
+          >();
           for (const row of sortedRows) {
             const obs = (row.observation ?? "").trim();
-            if (PHOTO_PATTERN.test(obs) && row.time) {
-              photoRowTimes.set(row.id, row.time);
+            if (!(PHOTO_PATTERN.test(obs) && row.time)) continue;
+            if (rowIdsWithAttachments.has(row.id)) {
+              const confirmed = rowIdToConfirmedCins.get(row.id);
+              if (confirmed && confirmed.size > 0) {
+                photoRowCredit.set(row.id, { time: row.time, cins: confirmed });
+              }
+              // else: attachments exist but aren't linked to a CIN yet — no
+              // credit until that's resolved.
+            } else {
+              photoRowCredit.set(row.id, { time: row.time, cins: null });
             }
           }
 
@@ -5738,11 +5779,16 @@ export const appRouter = router({
               .filter(m => m.memberName.toUpperCase() === cinUpper)
               .map(m => m.rowId);
 
-            // Collect image times: rows where this CIN is a member AND row has photo observation
+            // Collect image times: rows where this CIN is a member AND is
+            // either the confirmed photo-taker (linked rows) or the row has
+            // no attachment records at all (legacy fallback — see above).
             const imageTimes: string[] = [];
             for (const rowId of cinRowIds) {
-              const t = photoRowTimes.get(rowId);
-              if (t) imageTimes.push(t);
+              const credit = photoRowCredit.get(rowId);
+              if (!credit) continue;
+              if (credit.cins === null || credit.cins.has(cinUpper)) {
+                imageTimes.push(credit.time);
+              }
             }
 
             data.surveillanceDays.push({

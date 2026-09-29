@@ -4130,6 +4130,24 @@ export default function IntelligenceMapping() {
       // reactively).
       map.addListener("heading_changed", () => {
         mapHeadingRef.current = map.getHeading() ?? 0;
+        // Custom map marker icons are DOM overlays (DivIconOverlay), not
+        // symbols the map itself renders — so unlike a native rotated
+        // symbol, they don't turn with the map on their own; without this
+        // they'd stay glued to the screen instead of the compass direction
+        // they were placed facing. Each icon's data-rotation is the angle
+        // it was placed at (see the poll-cycle build below and
+        // __cmPopupRotate, both of which set it); subtracting the map's
+        // current heading is the same "compensate for map rotation" math
+        // createUserPinElement already uses for the live-heading arrow
+        // (mapHeadingRef's own comment above). Imperative DOM writes, not
+        // React state, for the same reason NorthUpButton isolates its own
+        // subscription — a rotate gesture can fire this many times a
+        // second and re-rendering this whole page on every tick would
+        // fight the map's own rendering for the main thread.
+        customMarkerImgRefs.current.forEach(img => {
+          const base = Number(img.dataset.rotation ?? "0");
+          img.style.transform = `rotate(${base - mapHeadingRef.current}deg)`;
+        });
       });
 
       // Let a user gesture (wheel/pinch zoom, drag) immediately take over
@@ -4316,6 +4334,7 @@ export default function IntelligenceMapping() {
       if (!incomingIds.has(id)) {
         marker.map = null;
         existing.delete(id);
+        customMarkerImgRefs.current.delete(id);
       }
     });
 
@@ -4364,7 +4383,16 @@ export default function IntelligenceMapping() {
         iconBox.style.cssText = "position:relative;display:inline-flex;";
         const img = document.createElement("img");
         img.src = dataUrl;
-        img.style.cssText = `width:40px;height:40px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation}deg);`;
+        // data-rotation is the compass angle this icon was placed facing —
+        // the heading_changed listener above reads it back to keep the
+        // icon glued to that direction as the map rotates, rather than to
+        // the screen. The transform itself is offset by the map's CURRENT
+        // heading (not just `rotation`) so it's already correct on this
+        // build even if the map was rotated before this marker last redrew
+        // (e.g. after a poll refresh) — same "subtract the map's heading"
+        // math the heading_changed listener uses to keep it that way.
+        img.dataset.rotation = String(rotation);
+        img.style.cssText = `width:40px;height:40px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation - mapHeadingRef.current}deg);`;
         iconBox.appendChild(img);
         // Store direct img ref for live rotation
         customMarkerImgRefs.current.set(outerCm.id, img);
@@ -5406,9 +5434,19 @@ export default function IntelligenceMapping() {
       ) as HTMLElement | null;
       if (previewImg) previewImg.style.transform = `rotate(${rotation}deg)`;
       if (degLabel) degLabel.textContent = `${rotation}°`;
-      // Also rotate the actual map marker element immediately via direct img ref
+      // Also rotate the actual map marker element immediately via direct img
+      // ref — offset by the map's current heading (not just `rotation`
+      // directly), same as the poll-cycle build and the heading_changed
+      // listener, so the icon stays glued to the compass direction being
+      // dragged to rather than snapping to look right only at heading 0.
+      // data-rotation is updated too, so a later heading change (without
+      // touching this slider again) keeps compensating from the new value.
+      const onMapRotation = rotation - mapHeadingRef.current;
       const markerImg = customMarkerImgRefs.current.get(id);
-      if (markerImg) markerImg.style.transform = `rotate(${rotation}deg)`;
+      if (markerImg) {
+        markerImg.dataset.rotation = String(rotation);
+        markerImg.style.transform = `rotate(${onMapRotation}deg)`;
+      }
       // Fallback: query through content if direct ref not found
       if (!markerImg) {
         const markerEl = customMarkerMapRefs.current.get(id);
@@ -5416,7 +5454,10 @@ export default function IntelligenceMapping() {
           const img = markerEl.content.querySelector(
             "img"
           ) as HTMLImageElement | null;
-          if (img) img.style.transform = `rotate(${rotation}deg)`;
+          if (img) {
+            img.dataset.rotation = String(rotation);
+            img.style.transform = `rotate(${onMapRotation}deg)`;
+          }
         }
       }
       // Debounce the DB save so we don't fire on every pixel of drag

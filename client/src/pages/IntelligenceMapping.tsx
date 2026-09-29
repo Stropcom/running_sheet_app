@@ -562,6 +562,50 @@ const SHAPE_TYPE_LABELS: Record<ShapeType, string> = {
 const DEFAULT_SHAPE_RADIUS_M = 150;
 const DEFAULT_RECT_HALF_SIDE_M = 120;
 
+/** Builds a Polyline's `icons` option for a "line" shape's dashed/arrow
+ * styling. The Maps JS API has no native dashed-stroke option, so a dashed
+ * look is done the standard way — an invisible (strokeOpacity 0) base
+ * stroke with a small line symbol repeated along the path — and a
+ * direction-of-travel arrowhead is a single forward-pointing symbol placed
+ * at the very end of the path (offset "100%"). Both can be combined on the
+ * same Polyline. Returns undefined (not an empty array) when neither is on,
+ * so callers can spread this straight into Polyline options without an
+ * `icons: []` override disturbing a plain solid line. */
+function renderLineIcons(
+  dashed: boolean,
+  arrowEnd: boolean,
+  color: string,
+  opacity: number
+): google.maps.IconSequence[] | undefined {
+  if (!dashed && !arrowEnd) return undefined;
+  const icons: google.maps.IconSequence[] = [];
+  if (dashed) {
+    icons.push({
+      icon: {
+        path: "M 0,-1 0,1",
+        strokeOpacity: opacity,
+        strokeColor: color,
+        scale: 4,
+      },
+      offset: "0",
+      repeat: "16px",
+    });
+  }
+  if (arrowEnd) {
+    icons.push({
+      icon: {
+        path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+        strokeColor: color,
+        fillColor: color,
+        fillOpacity: opacity,
+        scale: 4,
+      },
+      offset: "100%",
+    });
+  }
+  return icons;
+}
+
 /** Builds the point path for a circular sector ("pizza slice") — a Polygon
  * fan from the center out to an arc of points between startAngle and
  * endAngle (degrees, 0 = North, clockwise, same convention as marker
@@ -2012,6 +2056,9 @@ export default function IntelligenceMapping() {
   const [shapeColour, setShapeColour] = useState<MarkerColour>("blue");
   const [shapeOpacity, setShapeOpacity] = useState(30); // 0-100 %
   const [shapeLabel, setShapeLabel] = useState("");
+  // Line-only styling — see renderLineIcons above.
+  const [shapeLineDashed, setShapeLineDashed] = useState(false);
+  const [shapeLineArrowEnd, setShapeLineArrowEnd] = useState(false);
   // A shape saved with no operation is hidden from any single/multi-
   // operation-filtered map view — same "silent default" trap as custom
   // markers had, see the Operation picker in the marker panel below for the
@@ -2052,6 +2099,14 @@ export default function IntelligenceMapping() {
   useEffect(() => {
     drawingLineRef.current = drawingLine;
   }, [drawingLine]);
+  // Visual reference for each tapped point while drawing a line — before
+  // this, nothing marked where a tap actually landed until "Finish" closed
+  // the line, so a mis-tap was invisible until the whole line was done. One
+  // small dot per point, plus a thin preview connecting them once there are
+  // at least two, both cleared and rebuilt on every tap (see the effect
+  // near the other draft-shape-overlay effects below).
+  const drawingLinePointMarkersRef = useRef<DivIconOverlay[]>([]);
+  const drawingLinePreviewRef = useRef<google.maps.Polyline | null>(null);
   // mapShapesDataRef itself is declared below, right after the mapShape
   // query it mirrors (it can't be declared here — mapShapesData doesn't
   // exist yet at this point in the component).
@@ -2063,6 +2118,8 @@ export default function IntelligenceMapping() {
     setShapeOpacity(s.opacity ?? 30);
     setShapeLabel(s.label ?? "");
     setShapeOpId(s.operationId ?? null);
+    setShapeLineDashed(s.lineDashed ?? false);
+    setShapeLineArrowEnd(s.lineArrowEnd ?? false);
     setPendingShape({
       id: s.id,
       shapeType: s.shapeType,
@@ -2090,6 +2147,8 @@ export default function IntelligenceMapping() {
       setShapeColour("blue");
       setShapeOpacity(30);
       setShapeLabel("");
+      setShapeLineDashed(false);
+      setShapeLineArrowEnd(false);
       const currentOpIds = effectiveOpIdsForMarkersRef.current;
       setShapeOpId(
         currentOpIds && currentOpIds.length === 1 ? currentOpIds[0] : null
@@ -4771,17 +4830,29 @@ export default function IntelligenceMapping() {
       } else {
         // line
         const path = (s.points ?? []) as { lat: number; lng: number }[];
+        const dashed = !!s.lineDashed;
+        const icons = renderLineIcons(
+          dashed,
+          !!s.lineArrowEnd,
+          fillColor,
+          opacity
+        );
         let line = existing.get(s.id) as google.maps.Polyline | undefined;
         if (line) {
           line.setPath(path);
-          line.setOptions({ strokeColor: fillColor, strokeOpacity: opacity });
+          line.setOptions({
+            strokeColor: fillColor,
+            strokeOpacity: dashed ? 0 : opacity,
+            icons,
+          });
         } else {
           line = new google.maps.Polyline({
             map,
             path,
             strokeColor: fillColor,
-            strokeOpacity: opacity,
+            strokeOpacity: dashed ? 0 : opacity,
             strokeWeight: 4,
+            icons,
             clickable: true,
           });
           wireShapeEditClick(line, openEdit);
@@ -4993,8 +5064,14 @@ export default function IntelligenceMapping() {
         editable: true,
         draggable: true,
         strokeColor: fillColor,
-        strokeOpacity: opacity,
+        strokeOpacity: shapeLineDashed ? 0 : opacity,
         strokeWeight: 4,
+        icons: renderLineIcons(
+          shapeLineDashed,
+          shapeLineArrowEnd,
+          fillColor,
+          opacity
+        ),
       });
       const syncPath = () => {
         const pts = line
@@ -5019,16 +5096,25 @@ export default function IntelligenceMapping() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, pendingShape?.id, pendingShape?.shapeType]);
 
-  // Pushes a live colour/opacity change (from the panel's swatches/slider)
-  // onto whichever draft overlay is currently on the map, without
-  // recreating it.
+  // Pushes a live colour/opacity/dashed/arrow change (from the panel's
+  // swatches/slider/switches) onto whichever draft overlay is currently on
+  // the map, without recreating it.
   useEffect(() => {
     const overlay = draftShapeOverlayRef.current;
     if (!overlay) return;
     const fillColor = MARKER_COLOURS[shapeColour];
     const opacity = shapeOpacity / 100;
     if (overlay instanceof google.maps.Polyline) {
-      overlay.setOptions({ strokeColor: fillColor, strokeOpacity: opacity });
+      overlay.setOptions({
+        strokeColor: fillColor,
+        strokeOpacity: shapeLineDashed ? 0 : opacity,
+        icons: renderLineIcons(
+          shapeLineDashed,
+          shapeLineArrowEnd,
+          fillColor,
+          opacity
+        ),
+      });
     } else {
       overlay.setOptions({
         fillColor,
@@ -5036,7 +5122,45 @@ export default function IntelligenceMapping() {
         strokeColor: fillColor,
       });
     }
-  }, [shapeColour, shapeOpacity]);
+  }, [shapeColour, shapeOpacity, shapeLineDashed, shapeLineArrowEnd]);
+
+  // Renders a dot for every point tapped so far while drawing a line (see
+  // drawingLinePointMarkersRef above), plus a thin connecting preview once
+  // there are at least two — full clear-then-rebuild on every tap, which is
+  // cheap at the point counts this feature is used at.
+  useEffect(() => {
+    drawingLinePointMarkersRef.current.forEach(m => {
+      m.map = null;
+    });
+    drawingLinePointMarkersRef.current = [];
+    if (drawingLinePreviewRef.current) {
+      drawingLinePreviewRef.current.setMap(null);
+      drawingLinePreviewRef.current = null;
+    }
+    if (!mapReady || !mapRef.current || !drawingLine) return;
+    const map = mapRef.current;
+    drawingLine.points.forEach((pt, idx) => {
+      const el = document.createElement("div");
+      el.innerHTML = `<div style="width:14px;height:14px;border-radius:50%;background:#F9A825;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.5)"></div>`;
+      const marker = new DivIconOverlay({
+        map,
+        position: pt,
+        content: el,
+        title: `Point ${idx + 1}`,
+      });
+      drawingLinePointMarkersRef.current.push(marker);
+    });
+    if (drawingLine.points.length >= 2) {
+      drawingLinePreviewRef.current = new google.maps.Polyline({
+        map,
+        path: drawingLine.points,
+        strokeColor: "#F9A825",
+        strokeOpacity: 0.9,
+        strokeWeight: 3,
+        clickable: false,
+      });
+    }
+  }, [drawingLine, mapReady]);
 
   // A sector's geometry is driven by the panel's radius/angle sliders
   // rather than by dragging the polygon itself (see the "not editable"
@@ -8015,6 +8139,36 @@ export default function IntelligenceMapping() {
                 />
               </div>
 
+              {/* Line-only: dashed stroke, and an arrowhead at the last
+                  point to show a direction of travel. */}
+              {pendingShape.shapeType === "line" && (
+                <div className="mb-4 space-y-2">
+                  <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+                    <p className="text-[11px] font-semibold text-foreground">
+                      Dashed
+                    </p>
+                    <Switch
+                      checked={shapeLineDashed}
+                      onCheckedChange={setShapeLineDashed}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+                    <div>
+                      <p className="text-[11px] font-semibold text-foreground">
+                        Arrow at end
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        Shows a direction of travel
+                      </p>
+                    </div>
+                    <Switch
+                      checked={shapeLineArrowEnd}
+                      onCheckedChange={setShapeLineArrowEnd}
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Sector-only: radius + angle sliders (the shape isn't
                   freely draggable-edge like circle/rectangle, so these are
                   its only resize controls). */}
@@ -8216,6 +8370,8 @@ export default function IntelligenceMapping() {
                         swLat: pendingShape.swLat ?? null,
                         swLng: pendingShape.swLng ?? null,
                         points: pendingShape.points ?? [],
+                        lineDashed: shapeLineDashed,
+                        lineArrowEnd: shapeLineArrowEnd,
                       };
                       if (pendingShape.id !== null) {
                         await updateMapShapeMut.mutateAsync({

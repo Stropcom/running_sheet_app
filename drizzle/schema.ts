@@ -1178,6 +1178,13 @@ export const mapShapes = mysqlTable("map_shapes", {
   swLng: double("swLng"),
   // Line — JSON array of {lat, lng} points, in path order
   points: text("points"),
+  // Line only — dashed vs solid stroke, and an arrowhead at the last point
+  // to indicate a direction of travel. Rendered via Polyline `icons` (a
+  // repeating dash symbol / a single end-of-path arrow symbol) since the
+  // Maps JS API has no native dashed-stroke option — see the two
+  // renderLineIcons() call sites in IntelligenceMapping.tsx.
+  lineDashed: boolean("lineDashed").default(false).notNull(),
+  lineArrowEnd: boolean("lineArrowEnd").default(false).notNull(),
   deletedAt: bigint("deletedAt", { mode: "number" }), // soft-delete timestamp
   deletedByCIN: varchar("deletedByCIN", { length: 32 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

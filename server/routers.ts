@@ -6362,6 +6362,8 @@ export const appRouter = router({
           points: z
             .array(z.object({ lat: z.number(), lng: z.number() }))
             .optional(),
+          lineDashed: z.boolean().optional(),
+          lineArrowEnd: z.boolean().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -6383,6 +6385,8 @@ export const appRouter = router({
           swLat: input.swLat ?? null,
           swLng: input.swLng ?? null,
           points: input.points ?? [],
+          lineDashed: input.lineDashed,
+          lineArrowEnd: input.lineArrowEnd,
         });
         return { id };
       }),
@@ -6408,6 +6412,8 @@ export const appRouter = router({
           points: z
             .array(z.object({ lat: z.number(), lng: z.number() }))
             .optional(),
+          lineDashed: z.boolean().optional(),
+          lineArrowEnd: z.boolean().optional(),
         })
       )
       .mutation(async ({ input }) => {

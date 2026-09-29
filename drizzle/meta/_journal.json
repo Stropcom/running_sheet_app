@@ -764,6 +764,13 @@
       "when": 1790700000000,
       "tag": "0108_wooden_black_widow",
       "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "5",
+      "when": 1790750000000,
+      "tag": "0109_bright_ricochet",
+      "breakpoints": true
     }
   ]
 }

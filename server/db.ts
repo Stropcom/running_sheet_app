@@ -14189,6 +14189,8 @@ export interface MapShapeRow {
   swLat: number | null;
   swLng: number | null;
   points: { lat: number; lng: number }[]; // parsed from JSON
+  lineDashed: boolean;
+  lineArrowEnd: boolean;
   deletedAt: number | null;
   deletedByCIN: string | null;
   createdAt: Date;
@@ -14254,6 +14256,8 @@ export async function createMapShape(data: {
   swLat?: number | null;
   swLng?: number | null;
   points?: { lat: number; lng: number }[];
+  lineDashed?: boolean;
+  lineArrowEnd?: boolean;
 }): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -14275,6 +14279,8 @@ export async function createMapShape(data: {
     swLat: data.swLat ?? null,
     swLng: data.swLng ?? null,
     points: JSON.stringify(data.points ?? []),
+    lineDashed: data.lineDashed ?? false,
+    lineArrowEnd: data.lineArrowEnd ?? false,
   });
   return (result as any).insertId as number;
 }
@@ -14297,6 +14303,8 @@ export async function updateMapShape(
     swLat?: number | null;
     swLng?: number | null;
     points?: { lat: number; lng: number }[];
+    lineDashed?: boolean;
+    lineArrowEnd?: boolean;
   }
 ): Promise<void> {
   const db = await getDb();
@@ -14318,6 +14326,8 @@ export async function updateMapShape(
   if (data.swLat !== undefined) update.swLat = data.swLat;
   if (data.swLng !== undefined) update.swLng = data.swLng;
   if (data.points !== undefined) update.points = JSON.stringify(data.points);
+  if (data.lineDashed !== undefined) update.lineDashed = data.lineDashed;
+  if (data.lineArrowEnd !== undefined) update.lineArrowEnd = data.lineArrowEnd;
   if (Object.keys(update).length > 0) {
     await db.update(mapShapes).set(update).where(eq(mapShapes.id, id));
   }

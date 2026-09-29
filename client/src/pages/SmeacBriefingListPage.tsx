@@ -7,6 +7,8 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { SmeacReadOnlyContent } from "@/components/SmeacReadOnlyContent";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,12 +26,19 @@ import {
   Trash2,
   Pencil,
   FileDown,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import {
   buildSmeacPdfHtml,
   mapBriefingToExportData,
   openSmeacPdfExport,
 } from "@/lib/smeacExport";
+import type { inferRouterOutputs } from "@trpc/server";
+import type { AppRouter } from "../../../server/routers";
+
+type RouterOutputs = inferRouterOutputs<AppRouter>;
+type SmeacBriefingListItem = RouterOutputs["smeacBriefing"]["list"][number];
 
 export default function SmeacBriefingListPage() {
   const { user } = useAuth();
@@ -39,6 +48,11 @@ export default function SmeacBriefingListPage() {
   const { data: operations } = trpc.operation.list.useQuery();
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [exportingId, setExportingId] = useState<number | null>(null);
+  // Accordion — only one briefing's review row open at a time, same as the
+  // sidebar's expandable folders. Clicking a row's own banner now reviews it
+  // inline instead of navigating away (see SmeacBriefingRow below); the
+  // Post notification still links straight to the map overlay unchanged.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const deleteMutation = trpc.smeacBriefing.delete.useMutation({
     onSuccess: () => {
@@ -116,68 +130,20 @@ export default function SmeacBriefingListPage() {
         ) : (
           <div className="space-y-2">
             {briefings.map(b => (
-              <div
+              <SmeacBriefingRow
                 key={b.id}
-                className="flex items-center gap-2 rounded-xl bg-card border border-border hover:bg-accent/50 transition-colors"
-              >
-                <button
-                  onClick={() => setLocation(`/administration/smeac/${b.id}`)}
-                  className="flex-1 min-w-0 text-left flex items-center gap-3 p-3.5"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <p className="text-sm font-semibold truncate">
-                        {operationName(b.operationId)}
-                      </p>
-                      <StatusBadge status={b.status} />
-                      <span className="text-[10px] font-mono text-muted-foreground shrink-0">
-                        Rev {b.revision}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {b.situation || "No situation summary"}
-                    </p>
-                  </div>
-                  <span className="text-[11px] text-muted-foreground shrink-0">
-                    {b.postedAt
-                      ? format(new Date(b.postedAt), "d MMM, h:mm a")
-                      : format(new Date(b.createdAt), "d MMM, h:mm a")}
-                  </span>
-                </button>
-                <div className="flex items-center gap-0.5 shrink-0 mr-2">
-                  <button
-                    onClick={() => handleExportPdf(b.id)}
-                    disabled={exportingId === b.id}
-                    className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-                    aria-label="Export briefing"
-                    title="Export briefing"
-                  >
-                    <FileDown className="h-3.5 w-3.5" />
-                  </button>
-                  {user?.role === "admin" && (
-                    <>
-                      <button
-                        onClick={() =>
-                          setLocation(`/administration/smeac/${b.id}/edit`)
-                        }
-                        className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                        aria-label="Edit briefing"
-                        title="Edit briefing"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setConfirmDeleteId(b.id)}
-                        className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                        aria-label="Delete briefing"
-                        title="Delete briefing"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
+                briefing={b}
+                operationName={operationName(b.operationId)}
+                isAdmin={user?.role === "admin"}
+                isExpanded={expandedId === b.id}
+                onToggleExpand={() =>
+                  setExpandedId(current => (current === b.id ? null : b.id))
+                }
+                onEdit={() => setLocation(`/administration/smeac/${b.id}/edit`)}
+                onExportPdf={() => handleExportPdf(b.id)}
+                isExporting={exportingId === b.id}
+                onDelete={() => setConfirmDeleteId(b.id)}
+              />
             ))}
           </div>
         )}
@@ -213,6 +179,124 @@ export default function SmeacBriefingListPage() {
         </AlertDialogContent>
       </AlertDialog>
     </DashboardLayout>
+  );
+}
+
+// One briefing's row — a banner that expands inline into a read-only review
+// (SmeacReadOnlyContent, the same content the map's docked overlay shows)
+// with its own Edit/Export actions, rather than navigating away. Its own
+// component (not inlined in the .map() above) because the expanded review
+// needs its own data fetch, and hooks can only be called from a component,
+// not conditionally inside a loop.
+function SmeacBriefingRow({
+  briefing: b,
+  operationName,
+  isAdmin,
+  isExpanded,
+  onToggleExpand,
+  onEdit,
+  onExportPdf,
+  isExporting,
+  onDelete,
+}: {
+  briefing: SmeacBriefingListItem;
+  operationName: string;
+  isAdmin: boolean;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onEdit: () => void;
+  onExportPdf: () => void;
+  isExporting: boolean;
+  onDelete: () => void;
+}) {
+  const detail = trpc.smeacBriefing.getById.useQuery(
+    { id: b.id },
+    { enabled: isExpanded }
+  );
+
+  return (
+    <div className="rounded-xl bg-card border border-border overflow-hidden">
+      <div className="flex items-center gap-2 hover:bg-accent/50 transition-colors">
+        <button
+          onClick={onToggleExpand}
+          className="flex-1 min-w-0 text-left flex items-center gap-3 p-3.5"
+        >
+          {isExpanded ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-0.5">
+              <p className="text-sm font-semibold truncate">{operationName}</p>
+              <StatusBadge status={b.status} />
+              <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                Rev {b.revision}
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground truncate">
+              {b.situation || "No situation summary"}
+            </p>
+          </div>
+          <span className="text-[11px] text-muted-foreground shrink-0">
+            {b.postedAt
+              ? format(new Date(b.postedAt), "d MMM, h:mm a")
+              : format(new Date(b.createdAt), "d MMM, h:mm a")}
+          </span>
+        </button>
+        {isAdmin && (
+          <div className="flex items-center gap-0.5 shrink-0 mr-2">
+            <button
+              onClick={onDelete}
+              className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+              aria-label="Delete briefing"
+              title="Delete briefing"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {isExpanded && (
+        <div className="border-t border-border p-4 space-y-4">
+          {detail.isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Spinner className="h-5 w-5" />
+            </div>
+          ) : !detail.data ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              Briefing not found.
+            </p>
+          ) : (
+            <>
+              <SmeacReadOnlyContent briefing={detail.data} />
+              <div className="flex items-center gap-2 pt-3 border-t border-border">
+                {isAdmin && (
+                  <Button variant="outline" size="sm" onClick={onEdit}>
+                    <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                    Edit
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onExportPdf}
+                  disabled={isExporting}
+                >
+                  {isExporting ? (
+                    <Spinner className="h-3.5 w-3.5 mr-1.5" />
+                  ) : (
+                    <FileDown className="h-3.5 w-3.5 mr-1.5" />
+                  )}
+                  Export
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -10373,10 +10373,10 @@ export default function IntelligenceMapping() {
                 </button>
               </div>
 
-              {/* 0. Location / Business Name — shown at top for quick identification */}
+              {/* 0. Label — shown at top for quick identification */}
               <div className="mb-3">
                 <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
-                  Location / Business Name
+                  Label
                 </label>
                 <input
                   type="text"
@@ -10521,12 +10521,12 @@ export default function IntelligenceMapping() {
               {/* 3. Rotation — not applicable to a Label Only marker. */}
               {!cmLabelOnly && (
                 <div className="mb-4">
-                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                    Rotation — {cmRotation}°
-                  </p>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      Rotation — {cmRotation}°
+                    </p>
                     {/* Rotated preview */}
-                    <div className="shrink-0 w-10 h-10 flex items-center justify-center">
+                    <div className="shrink-0 w-8 h-8 flex items-center justify-center">
                       <img
                         src={getMarkerDataUrl(cmIcon, cmColour)}
                         alt="preview"
@@ -10534,47 +10534,48 @@ export default function IntelligenceMapping() {
                         style={{ transform: `rotate(${cmRotation}deg)` }}
                       />
                     </div>
-                    {/* Slider */}
-                    <input
-                      type="range"
-                      min={0}
-                      max={359}
-                      step={1}
-                      value={cmRotation}
-                      onChange={e => setCmRotation(Number(e.target.value))}
-                      className="flex-1 accent-primary"
-                    />
-                    {/* Quick preset buttons */}
-                    <div className="flex gap-1">
-                      {[0, 45, 90, 135, 180, 225, 270, 315].map(deg => (
-                        <button
-                          key={deg}
-                          onClick={() => setCmRotation(deg)}
-                          title={`${deg}°`}
-                          className={`w-6 h-6 text-[9px] rounded border transition-all ${
-                            cmRotation === deg
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "border-border hover:border-primary/50 text-muted-foreground"
-                          }`}
-                        >
-                          {deg === 0
-                            ? "N"
-                            : deg === 45
-                              ? "NE"
-                              : deg === 90
-                                ? "E"
-                                : deg === 135
-                                  ? "SE"
-                                  : deg === 180
-                                    ? "S"
-                                    : deg === 225
-                                      ? "SW"
-                                      : deg === 270
-                                        ? "W"
-                                        : "NW"}
-                        </button>
-                      ))}
-                    </div>
+                  </div>
+                  {/* Slider — full width */}
+                  <input
+                    type="range"
+                    min={0}
+                    max={359}
+                    step={1}
+                    value={cmRotation}
+                    onChange={e => setCmRotation(Number(e.target.value))}
+                    className="w-full accent-primary"
+                  />
+                  {/* Quick preset buttons — equal-width tabs spanning the
+                      same full width as the slider above. */}
+                  <div className="grid grid-cols-8 gap-1 mt-2">
+                    {[0, 45, 90, 135, 180, 225, 270, 315].map(deg => (
+                      <button
+                        key={deg}
+                        onClick={() => setCmRotation(deg)}
+                        title={`${deg}°`}
+                        className={`h-7 text-[9px] rounded border transition-all ${
+                          cmRotation === deg
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "border-border hover:border-primary/50 text-muted-foreground"
+                        }`}
+                      >
+                        {deg === 0
+                          ? "N"
+                          : deg === 45
+                            ? "NE"
+                            : deg === 90
+                              ? "E"
+                              : deg === 135
+                                ? "SE"
+                                : deg === 180
+                                  ? "S"
+                                  : deg === 225
+                                    ? "SW"
+                                    : deg === 270
+                                      ? "W"
+                                      : "NW"}
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}

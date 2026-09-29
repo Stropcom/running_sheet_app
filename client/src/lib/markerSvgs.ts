@@ -9,6 +9,10 @@ export type MarkerIcon =
   | "house_outline"
   | "house_filled"
   | "sedan"
+  // suv/ute/van/hatchback stay here (and in getMarkerSvg below) purely so
+  // any marker already saved with one of these keys keeps rendering
+  // correctly — MARKER_ICON_GROUPS below no longer offers them as a choice
+  // for a new/edited marker, per the officer's request to only keep Sedan.
   | "suv"
   | "ute"
   | "van"
@@ -16,6 +20,10 @@ export type MarkerIcon =
   | "arrow_up"
   | "arrow_right"
   | "arrow_ne"
+  | "arrow_up_dashed"
+  | "arrow_right_dashed"
+  | "arrow_ne_dashed"
+  | "line_straight"
   | "camera_photo"
   | "camera_cctv"
   | "hazard"
@@ -51,6 +59,10 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
   arrow_up: "Arrow (up)",
   arrow_right: "Arrow (right)",
   arrow_ne: "Arrow (NE)",
+  arrow_up_dashed: "Dashed arrow (up)",
+  arrow_right_dashed: "Dashed arrow (right)",
+  arrow_ne_dashed: "Dashed arrow (NE)",
+  line_straight: "Line",
   camera_photo: "Camera",
   camera_cctv: "CCTV Camera",
   hazard: "Hazard",
@@ -62,10 +74,24 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
 
 export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
   { label: "Locations", icons: ["house_outline", "house_filled"] },
-  { label: "Vehicles", icons: ["sedan", "suv", "ute", "van", "hatchback"] },
-  { label: "Directions", icons: ["arrow_up", "arrow_right", "arrow_ne"] },
-  { label: "Surveillance", icons: ["camera_photo", "camera_cctv"] },
-  { label: "Points of Interest", icons: ["hazard", "coffee", "toilet", "rv", "boat_cruiser"] },
+  { label: "Vehicles", icons: ["sedan"] },
+  {
+    label: "Arrow",
+    icons: [
+      "arrow_up",
+      "arrow_right",
+      "arrow_ne",
+      "arrow_up_dashed",
+      "arrow_right_dashed",
+      "arrow_ne_dashed",
+    ],
+  },
+  { label: "Lines", icons: ["line_straight"] },
+  { label: "Cameras", icons: ["camera_photo", "camera_cctv"] },
+  {
+    label: "Points of Interest",
+    icons: ["hazard", "coffee", "toilet", "rv", "boat_cruiser"],
+  },
 ];
 
 /** Generate an SVG string for a given icon + colour */
@@ -248,6 +274,29 @@ export function getMarkerSvg(icon: MarkerIcon, colour: MarkerColour): string {
         <polygon points="40,8 26,14 34,22" fill="${c}"/>
       </svg>`;
 
+    case "arrow_up_dashed":
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        <line x1="24" y1="40" x2="24" y2="10" stroke="${c}" stroke-width="6" stroke-linecap="round" stroke-dasharray="6 5"/>
+        <polygon points="24,4 34,18 14,18" fill="${c}"/>
+      </svg>`;
+
+    case "arrow_right_dashed":
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        <line x1="8" y1="24" x2="38" y2="24" stroke="${c}" stroke-width="6" stroke-linecap="round" stroke-dasharray="6 5"/>
+        <polygon points="44,24 30,14 30,34" fill="${c}"/>
+      </svg>`;
+
+    case "arrow_ne_dashed":
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        <line x1="8" y1="40" x2="34" y2="14" stroke="${c}" stroke-width="6" stroke-linecap="round" stroke-dasharray="6 5"/>
+        <polygon points="40,8 26,14 34,22" fill="${c}"/>
+      </svg>`;
+
+    case "line_straight":
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        <line x1="24" y1="4" x2="24" y2="44" stroke="${c}" stroke-width="6" stroke-linecap="round"/>
+      </svg>`;
+
     case "camera_photo":
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
         <!-- Body -->
@@ -345,7 +394,10 @@ export function svgToDataUrl(svg: string): string {
 }
 
 /** Get a data URL for a given icon + colour */
-export function getMarkerDataUrl(icon: MarkerIcon, colour: MarkerColour): string {
+export function getMarkerDataUrl(
+  icon: MarkerIcon,
+  colour: MarkerColour
+): string {
   return svgToDataUrl(getMarkerSvg(icon, colour));
 }
 
@@ -359,7 +411,16 @@ function hexToRgb(hex: string): [number, number, number] {
 }
 
 function rgbToHex(r: number, g: number, b: number): string {
-  return "#" + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
+  return (
+    "#" +
+    [r, g, b]
+      .map(v =>
+        Math.max(0, Math.min(255, Math.round(v)))
+          .toString(16)
+          .padStart(2, "0")
+      )
+      .join("")
+  );
 }
 
 function darken(hex: string, amount: number): string {
@@ -369,5 +430,9 @@ function darken(hex: string, amount: number): string {
 
 function lighten(hex: string, amount: number): string {
   const [r, g, b] = hexToRgb(hex);
-  return rgbToHex(r + (255 - r) * amount, g + (255 - g) * amount, b + (255 - b) * amount);
+  return rgbToHex(
+    r + (255 - r) * amount,
+    g + (255 - g) * amount,
+    b + (255 - b) * amount
+  );
 }

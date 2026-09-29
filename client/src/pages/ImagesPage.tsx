@@ -19,12 +19,10 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
 import { DeletePhotoButton } from "@/components/DeletePhotoButton";
-import { AttachmentLinkBadge } from "@/components/AttachmentLinkBadge";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { UploadImageDialog } from "@/components/UploadImageDialog";
 import { CompareFacesDialog } from "@/components/CompareFacesDialog";
 import { formatAttachmentBanner } from "@/lib/attachmentBanner";
-import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 
 // Folder progression: Images → Operation → Running Sheet → RS images
 
@@ -418,18 +416,11 @@ export function SheetFolderList({
                           {formatAttachmentBanner(a)}
                         </p>
                       </div>
-                      <AttachmentLinkBadge
-                        isProperlyLinked={isAttachmentProperlyLinked(
-                          a,
-                          a.memberCINs?.length
-                        )}
-                        hasAnyLink={(a.linkedCount ?? 0) > 0}
-                        onClick={() => setLinking({ id: a.id, url: a.url })}
-                        positionClassName="absolute top-1.5 left-1.5"
-                      />
                     </div>
                     <LinkedEntityPills
                       entities={a.linkedEntities}
+                      faceCount={a.faceCount}
+                      rowMemberCount={a.memberCINs?.length}
                       onClick={() => setLinking({ id: a.id, url: a.url })}
                     />
                   </div>
@@ -588,18 +579,11 @@ export function SheetGallery({
                     {formatAttachmentBanner(a)}
                   </p>
                 </div>
-                <AttachmentLinkBadge
-                  isProperlyLinked={isAttachmentProperlyLinked(
-                    a,
-                    a.memberCINs?.length
-                  )}
-                  hasAnyLink={(a.linkedCount ?? 0) > 0}
-                  onClick={() => setLinking({ id: a.id, url: a.url })}
-                  positionClassName="absolute top-1.5 left-1.5"
-                />
               </div>
               <LinkedEntityPills
                 entities={a.linkedEntities}
+                faceCount={a.faceCount}
+                rowMemberCount={a.memberCINs?.length}
                 onClick={() => setLinking({ id: a.id, url: a.url })}
               />
             </div>

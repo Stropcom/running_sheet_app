@@ -295,6 +295,7 @@ import {
   softDeleteAttachment,
   reinstateAttachment,
   linkAttachmentToEntity,
+  reconcileRowPhotoMemberLinks,
   unlinkAttachmentFromEntity,
   getEntityLinkById,
   getAttachmentRowSheetInfo,
@@ -2329,6 +2330,17 @@ export const appRouter = router({
             details: `CIN ${cinUpper} added to row`,
             createdAt: Date.now(),
           });
+          // Best-effort, silent — if the row now has exactly one real CIN,
+          // link it to any of the row's existing photos that don't already
+          // have a CIN link (e.g. a photo uploaded before any CIN was on
+          // the row). See its own comment in db.ts for what this does and
+          // doesn't touch.
+          reconcileRowPhotoMemberLinks(input.rowId).catch(err => {
+            console.error(
+              "[member.add] reconcileRowPhotoMemberLinks failed:",
+              err
+            );
+          });
         }
         return { id };
       }),
@@ -2366,6 +2378,14 @@ export const appRouter = router({
           action: "member_removed",
           details: `CIN removed from row`,
           createdAt: Date.now(),
+        });
+        // Removing a member can also bring the row down to exactly one real
+        // CIN — same reconciliation as member.add above.
+        reconcileRowPhotoMemberLinks(input.rowId).catch(err => {
+          console.error(
+            "[member.remove] reconcileRowPhotoMemberLinks failed:",
+            err
+          );
         });
         return { success: true };
       }),

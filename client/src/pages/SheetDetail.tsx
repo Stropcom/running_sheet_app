@@ -16,12 +16,10 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
-import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 import {
   SuggestedFaceMatchDialog,
   type FaceMatchSuggestion,
 } from "@/components/SuggestedFaceMatchDialog";
-import { AttachmentLinkBadge } from "@/components/AttachmentLinkBadge";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { DeletePhotoButton } from "@/components/DeletePhotoButton";
 import {
@@ -181,6 +179,7 @@ type RowAttachment = {
   linkedCount?: number;
   linkedCategories?: string[];
   linkedEntities?: Array<{ category: string; label: string }>;
+  faceCount?: number | null;
 };
 
 type SheetRow = {
@@ -1486,14 +1485,6 @@ function ObservationAttachments({
             className="w-full rounded border border-border cursor-zoom-in"
             onClick={() => setLightbox(a.url)}
           />
-          <AttachmentLinkBadge
-            isProperlyLinked={isAttachmentProperlyLinked(a, rowCins.length)}
-            hasAnyLink={(a.linkedCount ?? 0) > 0}
-            onClick={() => setLinking({ id: a.id, url: a.url })}
-            positionClassName="absolute -top-1.5 -left-1.5"
-            iconSize="h-3.5 w-3.5 sm:h-4 sm:w-4"
-            glyphSize="h-2 w-2 sm:h-2.5 sm:w-2.5"
-          />
           {canEdit && (
             <DeletePhotoButton
               pending={deletePending}
@@ -1505,6 +1496,8 @@ function ObservationAttachments({
           )}
           <LinkedEntityPills
             entities={a.linkedEntities}
+            faceCount={a.faceCount}
+            rowMemberCount={rowCins.length}
             onClick={() => setLinking({ id: a.id, url: a.url })}
           />
         </div>

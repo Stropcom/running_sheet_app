@@ -1649,20 +1649,52 @@ export async function autoLinkAttachmentToRowAddresses(
 // 2+ real members (excluding the "__SPACE__" spacer row) is left alone: the
 // officer picks which member(s) via LinkAttachmentDialog's own CIN section
 // in the 2+ case, and there's nothing to attribute in the 0 case.
-export async function autoLinkAttachmentToRowMemberIfSingle(
-  attachmentId: number,
-  rowId: number
-): Promise<void> {
+async function getSingleRowMemberCin(rowId: number): Promise<string | null> {
   const members = await getMembersByRowId(rowId);
   const cins = members
     .map(m => m.memberName)
     .filter(name => name !== "__SPACE__");
-  if (cins.length !== 1) return;
+  return cins.length === 1 ? cins[0] : null;
+}
+
+export async function autoLinkAttachmentToRowMemberIfSingle(
+  attachmentId: number,
+  rowId: number
+): Promise<void> {
+  const cin = await getSingleRowMemberCin(rowId);
+  if (!cin) return;
   await linkAttachmentToEntity({
     attachmentId,
     category: "member",
-    entityLabel: cins[0],
+    entityLabel: cin,
   });
+}
+
+// Called whenever a row's member list changes (added, removed — a "changed"
+// CIN is really a remove + add of two different mutations, both call this)
+// — retroactively applies the same single-CIN rule above to every one of
+// the row's EXISTING photos, not just a freshly-uploaded one. Only fills in
+// photos that have no "member" link at all yet; never touches or removes an
+// existing member link (auto-created earlier, or an officer's own manual
+// pick on a multi-CIN row) even if the row's members have since changed —
+// silently swapping/removing a link an officer may have deliberately picked
+// would be a worse failure mode than occasionally leaving a stale one for
+// them to notice and fix via LinkAttachmentDialog.
+export async function reconcileRowPhotoMemberLinks(
+  rowId: number
+): Promise<void> {
+  const cin = await getSingleRowMemberCin(rowId);
+  if (!cin) return;
+  const attachments = await getAttachmentsByRowIds([rowId]);
+  for (const a of attachments) {
+    if (!a.linkedCategories.includes("member")) {
+      await linkAttachmentToEntity({
+        attachmentId: a.id,
+        category: "member",
+        entityLabel: cin,
+      });
+    }
+  }
 }
 
 export async function unlinkAttachmentFromEntity(linkId: number) {

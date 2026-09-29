@@ -22,11 +22,11 @@ export function DeletePhotoButton({
 }: {
   onConfirm: () => void;
   pending?: boolean;
-  /** Positioning only — sizing is separate. Match the paired AttachmentLinkBadge's own positionClassName. */
+  /** Positioning only — sizing is separate. */
   positionClassName?: string;
-  /** Size of the button circle — match the paired AttachmentLinkBadge's iconSize so both read as one size. */
+  /** Size of the button circle. */
   iconSize?: string;
-  /** Size of the X glyph inside the button — match the paired AttachmentLinkBadge's glyphSize. */
+  /** Size of the X glyph inside the button. */
   glyphSize?: string;
 }) {
   const [confirming, setConfirming] = useState(false);
@@ -49,9 +49,9 @@ export function DeletePhotoButton({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete photo?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this photo? Any links to
-              targets, associates, vehicles, or locations will be removed
-              too. This cannot be undone.
+              Are you sure you want to delete this photo? Any links to targets,
+              associates, vehicles, or locations will be removed too. This
+              cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -1821,6 +1821,7 @@ export const appRouter = router({
             "associate",
             "location",
             "unidentified_person",
+            "member",
           ]),
           targetId: z.number().optional(),
           entityLabel: z.string().min(1),

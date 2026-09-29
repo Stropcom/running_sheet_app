@@ -6,6 +6,7 @@ import { storagePut } from "./storage";
 import { detectAndEmbedFaces } from "./faceRecognition";
 import {
   autoLinkAttachmentToRowAddresses,
+  autoLinkAttachmentToRowMemberIfSingle,
   createAuditLog,
   createRowAttachment,
   getRowById,
@@ -169,6 +170,13 @@ export async function processAttachmentUpload(params: {
   autoLinkAttachmentToRowAddresses(id, row.id).catch(err => {
     console.error("[attachmentUpload] auto-link to row address failed:", err);
   });
+  // Same background/best-effort treatment as the address auto-link above —
+  // a row with exactly one member gets this photo attributed to that CIN
+  // without the officer having to do it manually (see its own comment in
+  // db.ts for the 0/2+ member cases, which are left alone here).
+  autoLinkAttachmentToRowMemberIfSingle(id, row.id).catch(err => {
+    console.error("[attachmentUpload] auto-link to row CIN failed:", err);
+  });
   runFaceDetectionForAttachment(id, buffer).catch(err => {
     console.error("[attachmentUpload] face detection failed:", err);
   });
@@ -244,6 +252,9 @@ export async function processManualAttachmentUpload(params: {
   if (row) {
     autoLinkAttachmentToRowAddresses(id, row.id).catch(err => {
       console.error("[attachmentUpload] auto-link to row address failed:", err);
+    });
+    autoLinkAttachmentToRowMemberIfSingle(id, row.id).catch(err => {
+      console.error("[attachmentUpload] auto-link to row CIN failed:", err);
     });
   }
   runFaceDetectionForAttachment(id, buffer).catch(err => {

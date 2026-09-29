@@ -16,6 +16,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
+import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 import {
   SuggestedFaceMatchDialog,
   type FaceMatchSuggestion,
@@ -1336,6 +1337,14 @@ function ObservationAttachments({
   const [linking, setLinking] = useState<{ id: number; url: string } | null>(
     null
   );
+  // This row's real CINs (excluding the "__SPACE__" spacer) — a single-CIN
+  // row gets its photos auto-linked at upload (see
+  // autoLinkAttachmentToRowMemberIfSingle in db.ts), so this is only
+  // actually used for the badge's "properly linked" check and, on a
+  // multi-CIN row, LinkAttachmentDialog's own CIN picker section below.
+  const rowCins = row.members
+    .map(m => m.memberName)
+    .filter(cin => cin !== "__SPACE__");
   // Set right after a photo finishes uploading, so previewFaceMatch (below)
   // has something to check. Cleared as soon as that check comes back —
   // whether or not it actually found a suggestion — since it's a one-shot
@@ -1430,7 +1439,8 @@ function ObservationAttachments({
             onClick={() => setLightbox(a.url)}
           />
           <AttachmentLinkBadge
-            linkedCount={a.linkedCount ?? 0}
+            isProperlyLinked={isAttachmentProperlyLinked(a, rowCins.length)}
+            hasAnyLink={(a.linkedCount ?? 0) > 0}
             onClick={() => setLinking({ id: a.id, url: a.url })}
             positionClassName="absolute -top-1.5 -left-1.5"
             iconSize="h-3.5 w-3.5 sm:h-4 sm:w-4"
@@ -1502,6 +1512,7 @@ function ObservationAttachments({
             if (!open) setLinking(null);
           }}
           currentOperationId={operationId}
+          rowCins={rowCins}
         />
       )}
 

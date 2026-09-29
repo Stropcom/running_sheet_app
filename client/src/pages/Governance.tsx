@@ -492,10 +492,12 @@ export default function GovernancePage() {
         faceCount?: number | null;
       }>;
       if (atts.length === 0) continue;
-      const rowCins = (row.members ?? []).map(
-        (m: { memberName: string }) => m.memberName
-      );
-      const linkedCount = atts.filter(isAttachmentProperlyLinked).length;
+      const rowCins = (row.members ?? [])
+        .map((m: { memberName: string }) => m.memberName)
+        .filter((cin: string) => cin !== "__SPACE__");
+      const linkedCount = atts.filter(a =>
+        isAttachmentProperlyLinked(a, rowCins.length)
+      ).length;
       for (const cin of rowCins) {
         const key = cin + "||" + (row.time ?? "");
         const stat = map.get(key) ?? { attachmentCount: 0, linkedCount: 0 };
@@ -524,13 +526,15 @@ export default function GovernancePage() {
         faceCount?: number | null;
       }>;
       if (atts.length === 0) continue;
-      const rowCins = (row.members ?? []).map(
-        (m: { memberName: string }) => m.memberName
-      );
+      const rowCins = (row.members ?? [])
+        .map((m: { memberName: string }) => m.memberName)
+        .filter((cin: string) => cin !== "__SPACE__");
       for (const cin of rowCins) {
         const stat = map.get(cin) ?? { attachmentCount: 0, linkedCount: 0 };
         stat.attachmentCount += atts.length;
-        stat.linkedCount += atts.filter(isAttachmentProperlyLinked).length;
+        stat.linkedCount += atts.filter(a =>
+          isAttachmentProperlyLinked(a, rowCins.length)
+        ).length;
         map.set(cin, stat);
       }
     }

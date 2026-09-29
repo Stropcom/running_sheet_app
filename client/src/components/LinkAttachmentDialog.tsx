@@ -6,7 +6,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Users, Car, User, MapPin, HelpCircle, Search, X } from "lucide-react";
+import {
+  Users,
+  Car,
+  User,
+  MapPin,
+  HelpCircle,
+  Search,
+  X,
+  IdCard,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { FaceSelectPicker } from "@/components/FaceSelectPicker";
@@ -30,12 +39,17 @@ const CATEGORY_TABS: { key: Category; label: string; icon: typeof Users }[] = [
   },
 ];
 
-const CATEGORY_ICON: Record<Category, typeof Users> = {
+// Keyed loosely (not Record<Category,...>) since a link's actual category
+// can also be "member" — the row-CIN link created by the section at the
+// bottom of this dialog / auto-linked at upload — which isn't one of the
+// five manual CATEGORY_TABS above.
+const CATEGORY_ICON: Record<string, typeof Users> = {
   target: Users,
   vehicle: Car,
   associate: User,
   location: MapPin,
   unidentified_person: HelpCircle,
+  member: IdCard,
 };
 
 // Same per-category colour convention as UploadImageDialog.tsx's redesign —
@@ -193,6 +207,7 @@ export function LinkAttachmentDialog({
   open,
   onOpenChange,
   currentOperationId,
+  rowCins,
 }: {
   attachmentId: number;
   photoUrl?: string;
@@ -201,6 +216,11 @@ export function LinkAttachmentDialog({
   /** The operation this photo itself belongs to, if known — entities already
    * linked to it are surfaced first in "Link to another" (see filtered). */
   currentOperationId?: number;
+  /** This photo's row's real CINs (excluding the "__SPACE__" spacer). Only
+   * shown as a pickable section (below) when there's more than one — a
+   * single-CIN row gets that link made automatically at upload instead, see
+   * autoLinkAttachmentToRowMemberIfSingle in db.ts. */
+  rowCins?: string[];
 }) {
   const [tab, setTab] = useState<Category>("target");
   const [search, setSearch] = useState("");
@@ -301,7 +321,7 @@ export function LinkAttachmentDialog({
             </p>
             <div className="flex flex-col gap-2">
               {currentLinks.map((link: any) => {
-                const Icon = CATEGORY_ICON[link.category as Category] ?? Users;
+                const Icon = CATEGORY_ICON[link.category] ?? Users;
                 const linkedOps = operationNamesFor(
                   findEntityForLink(link, entities as any[] | undefined)
                 );
@@ -516,6 +536,47 @@ export function LinkAttachmentDialog({
             </>
           )}
         </div>
+
+        {rowCins && rowCins.length > 1 && (
+          <div className="rounded-lg border border-l-4 border-teal-500/30 border-l-teal-500 bg-teal-500/5 p-3 flex flex-col gap-2.5">
+            <p className="text-xs font-bold text-teal-700 dark:text-teal-400 uppercase tracking-wide">
+              Link to a team member (CIN)
+            </p>
+            <p className="text-xs text-muted-foreground -mt-1">
+              More than one member is on this row — pick who this photo belongs
+              to.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {rowCins.map(cin => {
+                const alreadyLinked = (currentLinks ?? []).some(
+                  (link: any) =>
+                    link.category === "member" && link.entityLabel === cin
+                );
+                return (
+                  <button
+                    key={cin}
+                    disabled={linkToEntity.isPending || alreadyLinked}
+                    onClick={() =>
+                      linkToEntity.mutate({
+                        attachmentId,
+                        category: "member",
+                        entityLabel: cin,
+                      })
+                    }
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                      alreadyLinked
+                        ? "border-teal-500/40 bg-teal-500/10 text-teal-700 dark:text-teal-400"
+                        : "border-border bg-background hover:bg-accent/50"
+                    }`}
+                  >
+                    <IdCard className="h-3.5 w-3.5 text-teal-500" />
+                    {cin}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

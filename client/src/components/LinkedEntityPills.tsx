@@ -1,4 +1,4 @@
-import { Target, Car, User, MapPin, HelpCircle } from "lucide-react";
+import { Target, Car, User, MapPin, HelpCircle, IdCard } from "lucide-react";
 
 const CATEGORY_ICON: Record<string, typeof Target> = {
   target: Target,
@@ -6,6 +6,7 @@ const CATEGORY_ICON: Record<string, typeof Target> = {
   associate: User,
   location: MapPin,
   unidentified_person: HelpCircle,
+  member: IdCard,
 };
 
 // A target's registered name is often followed by free-text detail

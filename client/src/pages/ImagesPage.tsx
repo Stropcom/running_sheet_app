@@ -24,6 +24,7 @@ import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { UploadImageDialog } from "@/components/UploadImageDialog";
 import { CompareFacesDialog } from "@/components/CompareFacesDialog";
 import { formatAttachmentBanner } from "@/lib/attachmentBanner";
+import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 
 // Folder progression: Images → Operation → Running Sheet → RS images
 
@@ -418,7 +419,11 @@ export function SheetFolderList({
                         </p>
                       </div>
                       <AttachmentLinkBadge
-                        linkedCount={a.linkedCount}
+                        isProperlyLinked={isAttachmentProperlyLinked(
+                          a,
+                          a.memberCINs?.length
+                        )}
+                        hasAnyLink={(a.linkedCount ?? 0) > 0}
                         onClick={() => setLinking({ id: a.id, url: a.url })}
                         positionClassName="absolute top-1.5 left-1.5"
                       />
@@ -584,7 +589,11 @@ export function SheetGallery({
                   </p>
                 </div>
                 <AttachmentLinkBadge
-                  linkedCount={a.linkedCount}
+                  isProperlyLinked={isAttachmentProperlyLinked(
+                    a,
+                    a.memberCINs?.length
+                  )}
+                  hasAnyLink={(a.linkedCount ?? 0) > 0}
                   onClick={() => setLinking({ id: a.id, url: a.url })}
                   positionClassName="absolute top-1.5 left-1.5"
                 />

@@ -1357,7 +1357,7 @@ export async function getAttachmentsByRowIds(rowIds: number[]) {
       )
     )
     .orderBy(asc(rowAttachments.createdAt));
-  return attachLinkedCounts(db, attachments);
+  return attachLinkedCounts(db, await attachRowMemberCins(db, attachments));
 }
 
 export async function getAttachmentById(id: number) {
@@ -1540,7 +1540,8 @@ export async function linkAttachmentToEntity(data: {
     | "vehicle"
     | "associate"
     | "location"
-    | "unidentified_person";
+    | "unidentified_person"
+    | "member";
   targetId?: number;
   entityLabel: string;
 }) {
@@ -1637,6 +1638,30 @@ export async function autoLinkAttachmentToRowAddresses(
     attachmentId,
     category: "location",
     entityLabel,
+  });
+}
+
+// ─── Auto-link photos to their row's sole CIN ──────────────────────────────
+// A photo attached to a row with exactly one member on it gets silently
+// linked to that member's CIN, same "no separate officer action" pattern as
+// the location auto-link above — there's no ambiguity about who the photo
+// should be attributed to when only one CIN is on the row. A row with 0 or
+// 2+ real members (excluding the "__SPACE__" spacer row) is left alone: the
+// officer picks which member(s) via LinkAttachmentDialog's own CIN section
+// in the 2+ case, and there's nothing to attribute in the 0 case.
+export async function autoLinkAttachmentToRowMemberIfSingle(
+  attachmentId: number,
+  rowId: number
+): Promise<void> {
+  const members = await getMembersByRowId(rowId);
+  const cins = members
+    .map(m => m.memberName)
+    .filter(name => name !== "__SPACE__");
+  if (cins.length !== 1) return;
+  await linkAttachmentToEntity({
+    attachmentId,
+    category: "member",
+    entityLabel: cins[0],
   });
 }
 
@@ -9457,7 +9482,7 @@ export async function getUnlinkedImagesTodoForCin(cin: string): Promise<
     if (attachments.length === 0) continue;
     const withLinkCounts = await attachLinkedCounts(db, attachments);
     const unlinkedCount = withLinkCounts.filter(
-      a => !isAttachmentProperlyLinked(a)
+      a => !isAttachmentProperlyLinked(a, a.memberCINs.length)
     ).length;
     if (unlinkedCount === 0) continue;
 

@@ -305,6 +305,7 @@ export const attachmentEntityLinks = mysqlTable(
       "associate",
       "location",
       "unidentified_person",
+      "member",
     ]).notNull(),
     targetId: int("targetId"), // set when category = "target"
     entityKey: varchar("entityKey", { length: 512 }), // normalized label, set when category != "target"

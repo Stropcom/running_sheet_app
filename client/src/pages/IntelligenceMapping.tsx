@@ -953,45 +953,6 @@ function normalizeEntityLabelClient(label: string): string {
   return label.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-// Mirrors server/db.ts's addressBracketKey exactly.
-function addressBracketKeyClient(text: string): string {
-  const m = text.match(/\(([^()]{1,120})\)\s*$/);
-  return normalizeEntityLabelClient(m ? m[1] : text);
-}
-
-// A custom map marker's .address (reverse-geocoded or POI-built) and a
-// photo's linked-location entityLabel (derived from formatIntelAddress, via
-// findCanonicalLocationForRow) come from two different formatting passes —
-// one keeps a trailing "(...)" bracket and state abbreviation, the other
-// strips both for display — so they're rarely byte-identical even after
-// normalizeEntityLabelClient. Try an exact normalized match first, then fall
-// back to comparing whatever's inside a trailing bracket (or the whole
-// normalized string when there isn't one) as a substring in either
-// direction, which is resilient to one side including a suburb/state suffix
-// the other doesn't. Returns the ACTUAL stored entityLabel on a match (not
-// the input address) since that's what attachment.byEntity needs to find
-// the right photos.
-function findLinkedLocationLabel(
-  address: string,
-  locations: { key: string; label: string }[]
-): string | null {
-  const addrKey = normalizeEntityLabelClient(address);
-  const exact = locations.find(l => l.key === addrKey);
-  if (exact) return exact.label;
-
-  const addrBracketKey = addressBracketKeyClient(address);
-  for (const loc of locations) {
-    const locBracketKey = addressBracketKeyClient(loc.label);
-    if (
-      addrBracketKey.includes(locBracketKey) ||
-      locBracketKey.includes(addrBracketKey)
-    ) {
-      return loc.label;
-    }
-  }
-  return null;
-}
-
 function buildInfoWindowContent(
   loc: IntelMapLocation,
   override?: {
@@ -2778,27 +2739,17 @@ export default function IntelligenceMapping() {
   // upload time in server/attachmentUpload.ts) — drives the marker's photo
   // badge and the popup's "Images" button, both of which are conditional on
   // this rather than always shown. entityLinkCounts already covers every
-  // category/entity in one cheap query, so this just filters it down. Keeps
-  // both the key (for the mined-location pins, which already share the same
-  // formatting pipeline as entityLabel and so match exactly) and the raw
-  // label (for custom map markers, whose .address needs findLinkedLocationLabel's
-  // fuzzy match against the real stored label — see that function).
+  // category/entity in one cheap query, so this just filters it down.
   const { data: entityLinkCounts } =
     trpc.attachment.entityLinkCounts.useQuery();
   const photoKeysRef = useRef<Set<string>>(new Set());
-  const photoLocationsRef = useRef<{ key: string; label: string }[]>([]);
   useEffect(() => {
     const keys = new Set<string>();
-    const locations: { key: string; label: string }[] = [];
     for (const c of (entityLinkCounts as any[] | undefined) ?? []) {
-      if (c.category === "location" && c.count > 0 && c.entityKey) {
+      if (c.category === "location" && c.count > 0 && c.entityKey)
         keys.add(c.entityKey);
-        if (c.entityLabel)
-          locations.push({ key: c.entityKey, label: c.entityLabel });
-      }
     }
     photoKeysRef.current = keys;
-    photoLocationsRef.current = locations;
   }, [entityLinkCounts]);
   const savePinOverrideMut = trpc.intelligence.savePinOverride.useMutation({
     onMutate: async () => {
@@ -4480,7 +4431,7 @@ export default function IntelligenceMapping() {
         // address plainly had photos on file.
         if (
           outerCm.address &&
-          findLinkedLocationLabel(outerCm.address, photoLocationsRef.current)
+          photoKeysRef.current.has(normalizeEntityLabelClient(outerCm.address))
         ) {
           const photoBadge = document.createElement("div");
           photoBadge.style.cssText = `
@@ -4693,20 +4644,15 @@ export default function IntelligenceMapping() {
               /'/g,
               "\\'"
             );
-            // Photos link under category "location" keyed by the address
-            // text mined/canonicalized at upload time (see
-            // findCanonicalLocationForRow / autoLinkAttachmentToRowAddresses),
-            // not by whatever free-text caption a marker's Label field
-            // happens to hold — those are two different fields on
-            // custom_map_markers. Using cm.label here (as this used to)
-            // meant a marker with no label typed — an icon-only pin,
-            // exactly what a Tactical marker usually is — could never show
-            // its Images button even when its address plainly had photos
-            // linked. And cm.address itself (reverse-geocoded/POI-built)
-            // rarely matches the stored entityLabel byte-for-byte (see
-            // findLinkedLocationLabel), so the button must pass through the
-            // ACTUAL matched label, not cm.address, or attachment.byEntity
-            // finds nothing.
+            // Photos link under category "location" keyed by formatted
+            // ADDRESS (see ImagesPip's own byEntity query), not by whatever
+            // free-text caption a marker's Label field happens to hold —
+            // those are two different fields on custom_map_markers. Using
+            // cm.label here (as this used to) meant a marker with no label
+            // typed — an icon-only pin, exactly what a Tactical marker
+            // usually is — could never show its Images button even when
+            // its address plainly had photos linked.
+            const safeAddress = (cm.address ?? "").replace(/'/g, "\\'");
             const sections: string[] = [];
 
             // Row 0: RS Quick Entry — always at top, full width
@@ -4716,13 +4662,12 @@ export default function IntelligenceMapping() {
 
             // Row 1: Images — only when this marker's address already has
             // linked photos (silently auto-linked at upload time).
-            const linkedLocationLabel = cm.address
-              ? findLinkedLocationLabel(cm.address, photoLocationsRef.current)
-              : null;
-            if (linkedLocationLabel) {
-              const safeLinkedLabel = linkedLocationLabel.replace(/'/g, "\\'");
+            if (
+              cm.address &&
+              photoKeysRef.current.has(normalizeEntityLabelClient(cm.address))
+            ) {
               sections.push(
-                `<div style="margin-top:5px;"><button onclick="window.__mapOpenImagesPip('${safeLinkedLabel}')" style="${btnBase}background:#10b981;color:#fff;border:none;font-size:13px;padding:9px 0;">Images</button></div>`
+                `<div style="margin-top:5px;"><button onclick="window.__mapOpenImagesPip('${safeAddress}')" style="${btnBase}background:#10b981;color:#fff;border:none;font-size:13px;padding:9px 0;">Images</button></div>`
               );
             }
 

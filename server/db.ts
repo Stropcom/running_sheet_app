@@ -2160,6 +2160,22 @@ export async function getEntityLinkCounts() {
       category: attachmentEntityLinks.category,
       targetId: attachmentEntityLinks.targetId,
       entityKey: attachmentEntityLinks.entityKey,
+      // Needed alongside entityKey for "location" rows specifically — an
+      // address's entityKey is normalizeEntityLabel(entityLabel) computed
+      // at link time (see linkAttachmentToEntity), but the label a map
+      // marker's own .address field holds can come from an entirely
+      // different formatting pass (formatIntelAddress for a mined/registry
+      // location vs convertGoogleAddresses for a reverse-geocoded marker
+      // placement) — same real address, not necessarily the same text. The
+      // map's "does this address have photos" check needs the raw label
+      // to do a street-level fuzzy match instead of requiring byte-for-byte
+      // equality, and needs it again to hand the RIGHT string to
+      // attachment.byEntity when opening the photo viewer (that query
+      // re-derives entityKey from whatever label it's given, so handing it
+      // the marker's own address instead of the actually-linked label
+      // would silently return zero photos even after a correct "has
+      // photos" match).
+      entityLabel: attachmentEntityLinks.entityLabel,
       count: sql<number>`count(*)`.as("count"),
     })
     .from(attachmentEntityLinks)
@@ -2171,7 +2187,8 @@ export async function getEntityLinkCounts() {
     .groupBy(
       attachmentEntityLinks.category,
       attachmentEntityLinks.targetId,
-      attachmentEntityLinks.entityKey
+      attachmentEntityLinks.entityKey,
+      attachmentEntityLinks.entityLabel
     );
 }
 

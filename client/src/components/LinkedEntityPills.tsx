@@ -50,15 +50,24 @@ function categoryRank(category: string): number {
   return 1;
 }
 
-// A target/associate's composed name always ends "... (SURNAME)" — see
-// composeTargetName in lib/addressFormat.ts, which is what entityLabel is
-// set from at link time. Pulling it back out here means the Profile pill
-// doesn't need a second field just for display, and naturally has nothing
-// to show for a business-name-only associate (no parenthetical), where a
-// surname wouldn't mean anything anyway.
+// A registry target/associate composed via the structured Name form
+// (composeTargetName / composeAssociateName in lib/addressFormat.ts) always
+// ends "... (SURNAME)", which this pulls back out so the Profile pill
+// doesn't need a second field just for display. But an entity linked from
+// mined observation text (extractEntitiesFromText in server/db.ts) never
+// carries that bracket — its shortForm is just the name words themselves
+// ("Timothy HOLMES"), even though the app's own naming convention already
+// puts the surname in caps as the last word. Falls back to that last-ALL-
+// CAPS-word convention rather than leaving an otherwise perfectly good name
+// with no Profile pill at all. Still naturally has nothing to show for a
+// business-name-only associate in ordinary casing ("Pacific Route Services
+// Pty Ltd"), where a surname wouldn't mean anything anyway.
 function extractSurname(label: string): string | null {
-  const m = label.match(/\(([^()]+)\)\s*$/);
-  return m ? m[1].trim() : null;
+  const bracket = label.match(/\(([^()]+)\)\s*$/);
+  if (bracket) return bracket[1].trim();
+  const words = label.trim().split(/\s+/);
+  const last = words[words.length - 1] ?? "";
+  return /^[A-Z][A-Z'-]{1,40}$/.test(last) ? last : null;
 }
 
 // Purple "Profile SURNAME" pill — links straight to that person's

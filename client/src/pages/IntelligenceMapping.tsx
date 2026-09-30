@@ -4662,10 +4662,29 @@ export default function IntelligenceMapping() {
 
             // Row 1: Images — only when this marker's address already has
             // linked photos (silently auto-linked at upload time).
-            if (
-              cm.address &&
-              photoKeysRef.current.has(normalizeEntityLabelClient(cm.address))
-            ) {
+            const cmAddressKey = cm.address
+              ? normalizeEntityLabelClient(cm.address)
+              : null;
+            const cmHasLinkedPhotos =
+              !!cmAddressKey && photoKeysRef.current.has(cmAddressKey);
+            if (cm.address && !cmHasLinkedPhotos) {
+              // Temporary diagnostic (v1.114.3) — user reports the Images
+              // button is missing specifically for Tactical-icon markers
+              // even when the address visually matches a working
+              // Surveillance-icon marker's. This check is identical
+              // regardless of markerIcon, so logs the actual normalized
+              // key plus every key currently considered "has photos" to
+              // see whether they genuinely differ, rather than guessing
+              // again. Safe to remove once this is resolved.
+              console.debug("[MapMarkerImagesDebug] no photo match", {
+                markerId: cm.id,
+                markerIcon: cm.markerIcon,
+                address: cm.address,
+                normalizedAddressKey: cmAddressKey,
+                knownPhotoKeys: Array.from(photoKeysRef.current),
+              });
+            }
+            if (cmHasLinkedPhotos) {
               sections.push(
                 `<div style="margin-top:5px;"><button onclick="window.__mapOpenImagesPip('${safeAddress}')" style="${btnBase}background:#10b981;color:#fff;border:none;font-size:13px;padding:9px 0;">Images</button></div>`
               );

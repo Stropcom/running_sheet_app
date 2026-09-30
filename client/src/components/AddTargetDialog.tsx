@@ -83,10 +83,6 @@ import type {
   DocumentImportPrefill,
   StagedImage,
 } from "@/components/ImportTargetDocumentDialog";
-import {
-  StagedPhotoFaceReview,
-  type StagedDetectedFace,
-} from "@/components/StagedPhotoFaceReview";
 
 // Referenced only for the merge dialog's incoming.wildFields shape — Wild
 // Fields is deprecated app-wide, this dialog never collects one, but the
@@ -370,8 +366,6 @@ export function AddTargetDialog({
   const uploadImageMut = trpc.attachment.uploadManual.useMutation();
   const confirmEntityFaceMut = trpc.attachment.confirmEntityFace.useMutation();
   const linkToEntityMut = trpc.attachment.linkToEntity.useMutation();
-  const confirmSuggestedMatchMut =
-    trpc.attachment.confirmSuggestedFaceMatch.useMutation();
 
   // ── Possible-duplicate detection (fires on Save, not while typing) ──
   // A name that fuzzy-matches an existing target offers a merge instead of
@@ -463,22 +457,6 @@ export function AddTargetDialog({
     StagedImage["linkTo"] | null
   >(null);
   const manualImageInputRef = useRef<HTMLInputElement>(null);
-  const previewFacesFromBytes =
-    trpc.attachment.previewFaceMatchesFromBytes.useMutation();
-
-  // A photo just picked in this form, waiting on the immediate per-face
-  // review (StagedPhotoFaceReview) before it actually joins manualImages —
-  // per the confirmed design, this check runs right when the photo is
-  // picked, not deferred to Save.
-  const [pendingImageReview, setPendingImageReview] = useState<{
-    key: string;
-    dataBase64: string;
-    mimeType: string;
-    width: number;
-    height: number;
-    linkTo: StagedImage["linkTo"];
-    faces: StagedDetectedFace[];
-  } | null>(null);
 
   const triggerManualImageUpload = (linkTo: StagedImage["linkTo"]) => {
     setManualImageTarget(linkTo);
@@ -499,34 +477,10 @@ export function AddTargetDialog({
     }
     try {
       const { dataBase64, mimeType, width, height } = await readImageFile(file);
-      const key = makeExtraId();
-      let faces: StagedDetectedFace[] = [];
-      try {
-        const preview = await previewFacesFromBytes.mutateAsync({
-          dataBase64,
-          mimeType,
-        });
-        faces = preview.faces;
-      } catch {
-        // Best-effort — a failed check just falls through to staging the
-        // photo with no face review, same as a photo with 0 faces.
-      }
-      if (faces.length === 0) {
-        setManualImages(v => [
-          ...v,
-          { key, dataBase64, mimeType, width, height, linkTo },
-        ]);
-        return;
-      }
-      setPendingImageReview({
-        key,
-        dataBase64,
-        mimeType,
-        width,
-        height,
-        linkTo,
-        faces,
-      });
+      setManualImages(v => [
+        ...v,
+        { key: makeExtraId(), dataBase64, mimeType, width, height, linkTo },
+      ]);
     } catch {
       toast.error("Could not read that image.");
     }
@@ -882,71 +836,29 @@ export function AddTargetDialog({
           mimeType: img.mimeType,
           fileName: `imported-photo-${img.key}.png`,
         });
-
-        if (img.faceReview) {
-          // The immediate per-photo review already ran when this photo was
-          // picked (see StagedPhotoFaceReview) — no need to re-detect, just
-          // apply what the officer already decided.
-          const fr = img.faceReview;
-          if (fr.primaryFaceIndex != null) {
-            await confirmEntityFaceMut.mutateAsync({
-              attachmentId: uploaded.id,
-              faceIndex: fr.primaryFaceIndex,
-              category,
-              targetId: linkedTargetId,
-              entityLabel,
-            });
-            if (fr.primaryMatchedEntityLinkId != null) {
-              await confirmSuggestedMatchMut.mutateAsync({
-                attachmentId: uploaded.id,
-                matchedEntityLinkId: fr.primaryMatchedEntityLinkId,
-                faceIndex: fr.primaryFaceIndex,
-              });
-            }
-          } else {
-            await linkToEntityMut.mutateAsync({
-              attachmentId: uploaded.id,
-              category,
-              targetId: linkedTargetId,
-              entityLabel,
-            });
-          }
-          for (const other of fr.otherFaces) {
-            await confirmSuggestedMatchMut.mutateAsync({
-              attachmentId: uploaded.id,
-              matchedEntityLinkId: other.matchedEntityLinkId,
-              faceIndex: other.faceIndex,
-            });
-          }
+        let faces: { index: number }[] = [];
+        try {
+          faces = await utils.attachment.detectFaces.fetch({
+            attachmentId: uploaded.id,
+          });
+        } catch {
+          faces = [];
+        }
+        if (faces.length === 1) {
+          await confirmEntityFaceMut.mutateAsync({
+            attachmentId: uploaded.id,
+            faceIndex: faces[0].index,
+            category,
+            targetId: linkedTargetId,
+            entityLabel,
+          });
         } else {
-          // Bulk photos extracted from an imported document never went
-          // through the interactive per-photo review — same shortcut as
-          // before: auto-pick the one face if there's exactly one, else
-          // link the whole photo with no face picked.
-          let faces: { index: number }[] = [];
-          try {
-            faces = await utils.attachment.detectFaces.fetch({
-              attachmentId: uploaded.id,
-            });
-          } catch {
-            faces = [];
-          }
-          if (faces.length === 1) {
-            await confirmEntityFaceMut.mutateAsync({
-              attachmentId: uploaded.id,
-              faceIndex: faces[0].index,
-              category,
-              targetId: linkedTargetId,
-              entityLabel,
-            });
-          } else {
-            await linkToEntityMut.mutateAsync({
-              attachmentId: uploaded.id,
-              category,
-              targetId: linkedTargetId,
-              entityLabel,
-            });
-          }
+          await linkToEntityMut.mutateAsync({
+            attachmentId: uploaded.id,
+            category,
+            targetId: linkedTargetId,
+            entityLabel,
+          });
         }
       } catch {
         failed++;
@@ -1623,27 +1535,6 @@ export function AddTargetDialog({
             className="hidden"
             onChange={handleManualImageSelected}
           />
-          {pendingImageReview && (
-            <StagedPhotoFaceReview
-              photoUrl={`data:${pendingImageReview.mimeType};base64,${pendingImageReview.dataBase64}`}
-              faces={pendingImageReview.faces}
-              onComplete={faceReview => {
-                setManualImages(v => [
-                  ...v,
-                  {
-                    key: pendingImageReview.key,
-                    dataBase64: pendingImageReview.dataBase64,
-                    mimeType: pendingImageReview.mimeType,
-                    width: pendingImageReview.width,
-                    height: pendingImageReview.height,
-                    linkTo: pendingImageReview.linkTo,
-                    faceReview,
-                  },
-                ]);
-                setPendingImageReview(null);
-              }}
-            />
-          )}
           <div className="flex flex-col gap-3 py-2">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">

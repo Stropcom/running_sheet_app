@@ -95,16 +95,6 @@ import {
 } from "@/components/PossibleDuplicateAlert";
 import { runDuplicateChecks } from "@/lib/duplicateCheck";
 import { IndicesBadge } from "@/components/IndicesBadge";
-import { FaceSelectPicker } from "@/components/FaceSelectPicker";
-import {
-  FaceMatchReviewQueue,
-  type FaceReviewItem,
-} from "@/components/FaceMatchReviewQueue";
-import {
-  StagedPhotoFaceReview,
-  type StagedDetectedFace,
-  type StagedFaceResult,
-} from "@/components/StagedPhotoFaceReview";
 import type { TargetType } from "@shared/types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -1263,119 +1253,16 @@ function AssociateCard({
   // AddTargetDialog's saveStagedImages. An already-saved associate has a
   // stable name already, so its photo uploads and links immediately.
   const [manualImages, setManualImages] = useState<
-    {
-      key: string;
-      dataBase64: string;
-      mimeType: string;
-      faceReview?: StagedFaceResult;
-    }[]
+    { key: string; dataBase64: string; mimeType: string }[]
   >([]);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const manualImageInputRef = useRef<HTMLInputElement>(null);
   const uploadImageMut = trpc.attachment.uploadManual.useMutation();
   const confirmEntityFaceMut = trpc.attachment.confirmEntityFace.useMutation();
   const linkToEntityMut = trpc.attachment.linkToEntity.useMutation();
-  const confirmSuggestedMatchMut =
-    trpc.attachment.confirmSuggestedFaceMatch.useMutation();
-  const previewFacesFromBytes =
-    trpc.attachment.previewFaceMatchesFromBytes.useMutation();
-
-  // A photo picked while this associate is still being created (isNew) and
-  // waiting on the immediate per-photo review before joining manualImages —
-  // same "check right at pick time" flow as AddTargetDialog's Person
-  // Identity photo.
-  const [pendingImageReview, setPendingImageReview] = useState<{
-    key: string;
-    dataBase64: string;
-    mimeType: string;
-    faces: StagedDetectedFace[];
-  } | null>(null);
-
-  // For an ALREADY-saved associate, a picked photo uploads immediately
-  // (the name to link against already exists) — these two cover that
-  // live version of the same review, driven off the real attachmentId
-  // instead of raw bytes. 2+ faces reuses the existing FaceSelectPicker
-  // (entity mode) to tap which one is this associate; exactly 1 face with
-  // a suggestion gets the same single-card review as everywhere else.
-  const [livePrimaryPick, setLivePrimaryPick] = useState<{
-    id: number;
-    url: string;
-  } | null>(null);
-  const [liveSingleReview, setLiveSingleReview] = useState<{
-    id: number;
-    url: string;
-    allFaces: Array<{ index: number; bbox: [number, number, number, number] }>;
-    queue: FaceReviewItem[];
-  } | null>(null);
-
-  // Applies an already-decided face review (from the pre-upload staging
-  // step) to a just-uploaded attachment — used by savePendingPhotos below.
-  // Falls back to the old "exactly one face" shortcut when no review was
-  // ever recorded (e.g. the pre-upload check itself failed).
-  const applyFaceReview = async (
-    attachmentId: number,
-    entityLabel: string,
-    faceReview?: StagedFaceResult
-  ) => {
-    if (faceReview) {
-      if (faceReview.primaryFaceIndex != null) {
-        await confirmEntityFaceMut.mutateAsync({
-          attachmentId,
-          faceIndex: faceReview.primaryFaceIndex,
-          category: "associate",
-          entityLabel,
-        });
-        if (faceReview.primaryMatchedEntityLinkId != null) {
-          await confirmSuggestedMatchMut.mutateAsync({
-            attachmentId,
-            matchedEntityLinkId: faceReview.primaryMatchedEntityLinkId,
-            faceIndex: faceReview.primaryFaceIndex,
-          });
-        }
-      } else {
-        await linkToEntityMut.mutateAsync({
-          attachmentId,
-          category: "associate",
-          entityLabel,
-        });
-      }
-      for (const other of faceReview.otherFaces) {
-        await confirmSuggestedMatchMut.mutateAsync({
-          attachmentId,
-          matchedEntityLinkId: other.matchedEntityLinkId,
-          faceIndex: other.faceIndex,
-        });
-      }
-      return;
-    }
-    let faces: { index: number }[] = [];
-    try {
-      faces = await utils.attachment.detectFaces.fetch({ attachmentId });
-    } catch {
-      faces = [];
-    }
-    if (faces.length === 1) {
-      await confirmEntityFaceMut.mutateAsync({
-        attachmentId,
-        faceIndex: faces[0].index,
-        category: "associate",
-        entityLabel,
-      });
-    } else {
-      await linkToEntityMut.mutateAsync({
-        attachmentId,
-        category: "associate",
-        entityLabel,
-      });
-    }
-  };
 
   const uploadAndLinkPhoto = async (
-    img: {
-      dataBase64: string;
-      mimeType: string;
-      faceReview?: StagedFaceResult;
-    },
+    img: { dataBase64: string; mimeType: string },
     entityLabel: string
   ) => {
     if (!operationId) return;
@@ -1385,7 +1272,28 @@ function AssociateCard({
       mimeType: img.mimeType,
       fileName: `associate-photo-${Date.now()}.png`,
     });
-    await applyFaceReview(uploaded.id, entityLabel, img.faceReview);
+    let faces: { index: number }[] = [];
+    try {
+      faces = await utils.attachment.detectFaces.fetch({
+        attachmentId: uploaded.id,
+      });
+    } catch {
+      faces = [];
+    }
+    if (faces.length === 1) {
+      await confirmEntityFaceMut.mutateAsync({
+        attachmentId: uploaded.id,
+        faceIndex: faces[0].index,
+        category: "associate",
+        entityLabel,
+      });
+    } else {
+      await linkToEntityMut.mutateAsync({
+        attachmentId: uploaded.id,
+        category: "associate",
+        entityLabel,
+      });
+    }
   };
 
   // Runs once a new associate has actually been created (see createMut/
@@ -1432,54 +1340,12 @@ function AssociateCard({
       return;
     }
     if (isNew) {
-      const key = makeExtraId();
-      let faces: StagedDetectedFace[] = [];
-      try {
-        const preview = await previewFacesFromBytes.mutateAsync(img);
-        faces = preview.faces;
-      } catch {
-        // best-effort — falls through to staging with no review
-      }
-      if (faces.length === 0) {
-        setManualImages(v => [...v, { key, ...img }]);
-        return;
-      }
-      setPendingImageReview({ key, ...img, faces });
+      setManualImages(v => [...v, { key: makeExtraId(), ...img }]);
       return;
     }
     setUploadingPhoto(true);
     try {
-      const uploaded = await uploadImageMut.mutateAsync({
-        operationId,
-        dataBase64: img.dataBase64,
-        mimeType: img.mimeType,
-        fileName: `associate-photo-${Date.now()}.png`,
-      });
-      const preview = await utils.attachment.previewFaceMatches.fetch({
-        attachmentId: uploaded.id,
-      });
-      if (preview.faces.length >= 2) {
-        // Genuinely ambiguous — tap which face is this associate, same as
-        // the running sheet/manual images' own Link panel does.
-        setLivePrimaryPick({ id: uploaded.id, url: uploaded.url });
-        return;
-      }
-      if (preview.faces.length === 1 && preview.faces[0].suggestion) {
-        await confirmEntityFaceMut.mutateAsync({
-          attachmentId: uploaded.id,
-          faceIndex: preview.faces[0].index,
-          category: "associate",
-          entityLabel: associate!.name,
-        });
-        setLiveSingleReview({
-          id: uploaded.id,
-          url: uploaded.url,
-          allFaces: preview.faces.map(f => ({ index: f.index, bbox: f.bbox })),
-          queue: [preview.faces[0] as FaceReviewItem],
-        });
-        return;
-      }
-      await applyFaceReview(uploaded.id, associate!.name);
+      await uploadAndLinkPhoto(img, associate!.name);
       utils.attachment.byEntity.invalidate({
         category: "associate",
         entityLabel: associate!.name,
@@ -1861,68 +1727,6 @@ function AssociateCard({
               className="hidden"
               onChange={handleImageSelected}
             />
-            {pendingImageReview && (
-              <StagedPhotoFaceReview
-                photoUrl={`data:${pendingImageReview.mimeType};base64,${pendingImageReview.dataBase64}`}
-                faces={pendingImageReview.faces}
-                onComplete={faceReview => {
-                  setManualImages(v => [
-                    ...v,
-                    {
-                      key: pendingImageReview.key,
-                      dataBase64: pendingImageReview.dataBase64,
-                      mimeType: pendingImageReview.mimeType,
-                      faceReview,
-                    },
-                  ]);
-                  setPendingImageReview(null);
-                }}
-              />
-            )}
-            {livePrimaryPick && (
-              <FaceSelectPicker
-                mode="entity"
-                attachmentId={livePrimaryPick.id}
-                photoUrl={livePrimaryPick.url}
-                category="associate"
-                entityLabel={associate!.name}
-                onDone={() => {
-                  setLivePrimaryPick(null);
-                  utils.attachment.byEntity.invalidate({
-                    category: "associate",
-                    entityLabel: associate!.name,
-                  });
-                  toast.success("Photo added and linked.");
-                }}
-                onCancel={() => setLivePrimaryPick(null)}
-              />
-            )}
-            {liveSingleReview && (
-              <FaceMatchReviewQueue
-                photoUrl={liveSingleReview.url}
-                allFaces={liveSingleReview.allFaces}
-                queue={liveSingleReview.queue}
-                onConfirm={async item => {
-                  await confirmSuggestedMatchMut.mutateAsync({
-                    attachmentId: liveSingleReview.id,
-                    matchedEntityLinkId: item.suggestion.entityLinkId,
-                    faceIndex: item.index,
-                  });
-                  toast.success(
-                    `Also linked to ${item.suggestion.entityLabel}`
-                  );
-                }}
-                onSkip={() => {}}
-                onDone={() => {
-                  setLiveSingleReview(null);
-                  utils.attachment.byEntity.invalidate({
-                    category: "associate",
-                    entityLabel: associate!.name,
-                  });
-                  toast.success("Photo added and linked.");
-                }}
-              />
-            )}
             <Button
               type="button"
               size="sm"

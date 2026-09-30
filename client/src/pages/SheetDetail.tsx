@@ -17,9 +17,9 @@ import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
 import {
-  FaceMatchReviewQueue,
-  type FaceReviewItem,
-} from "@/components/FaceMatchReviewQueue";
+  SuggestedFaceMatchDialog,
+  type FaceMatchSuggestion,
+} from "@/components/SuggestedFaceMatchDialog";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { DeletePhotoButton } from "@/components/DeletePhotoButton";
 import {
@@ -1398,30 +1398,27 @@ function ObservationAttachments({
   const rowCins = row.members
     .map(m => m.memberName)
     .filter(cin => cin !== "__SPACE__");
-  // Set right after a photo finishes uploading, so previewFaceMatches
-  // (below) has something to check. Cleared as soon as that check comes
-  // back — whether or not it actually found anything — since it's a
-  // one-shot "just uploaded" check, not a standing subscription for this
-  // photo.
+  // Set right after a photo finishes uploading, so previewFaceMatch (below)
+  // has something to check. Cleared as soon as that check comes back —
+  // whether or not it actually found a suggestion — since it's a one-shot
+  // "just uploaded" check, not a standing subscription for this photo.
   const [suggestCheck, setSuggestCheck] = useState<{
     id: number;
     url: string;
   } | null>(null);
-  const [reviewQueue, setReviewQueue] = useState<{
+  const [suggestion, setSuggestion] = useState<{
     id: number;
     url: string;
-    allFaces: Array<{ index: number; bbox: [number, number, number, number] }>;
-    queue: FaceReviewItem[];
+    match: FaceMatchSuggestion;
   } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const utils = trpc.useUtils();
 
-  // Runs once per detected face — a photo with 0 faces, or where nothing
-  // matched anyone already on file, comes back empty and nothing pops up,
-  // same "shortcut, never required" behaviour as before this covered more
-  // than one face at a time; the normal Link badge is always available too.
+  // Deliberately narrow: only offers a suggestion for a photo with exactly
+  // one detected face (see previewFaceMatch's own comment) — a photo with 0
+  // or 2+ faces is left completely untouched, same as before this feature
+  // existed, and the officer uses the normal Link badge whenever they want.
   const { data: facePreview, isFetched: facePreviewFetched } =
-    trpc.attachment.previewFaceMatches.useQuery(
+    trpc.attachment.previewFaceMatch.useQuery(
       { attachmentId: suggestCheck?.id ?? 0 },
       { enabled: suggestCheck !== null, retry: false }
     );
@@ -1430,33 +1427,16 @@ function ObservationAttachments({
   // callback (removed in v5) — react to the result landing instead.
   useEffect(() => {
     if (!suggestCheck || !facePreviewFetched) return;
-    const matched = (facePreview?.faces ?? []).filter(
-      (f): f is FaceReviewItem => f.suggestion !== null
-    );
-    if (matched.length > 0) {
-      setReviewQueue({
+    if (facePreview?.suggestion) {
+      setSuggestion({
         id: suggestCheck.id,
         url: suggestCheck.url,
-        allFaces: (facePreview?.faces ?? []).map(f => ({
-          index: f.index,
-          bbox: f.bbox,
-        })),
-        queue: matched,
+        match: facePreview.suggestion,
       });
     }
     setSuggestCheck(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facePreviewFetched, facePreview]);
-
-  const confirmSuggestedMatch =
-    trpc.attachment.confirmSuggestedFaceMatch.useMutation();
-  const invalidateLinkViews = () => {
-    utils.attachment.linksFor.invalidate();
-    utils.attachment.entityLinkCounts.invalidate();
-    utils.attachment.listBySheet.invalidate();
-    utils.attachment.listByOperation.invalidate();
-    utils.row.list.invalidate();
-  };
 
   if (!IMAGERY_PHRASE_PATTERN.test(row.observation ?? "")) return null;
 
@@ -1583,38 +1563,12 @@ function ObservationAttachments({
         />
       )}
 
-      {reviewQueue && (
-        <FaceMatchReviewQueue
-          photoUrl={reviewQueue.url}
-          allFaces={reviewQueue.allFaces}
-          queue={reviewQueue.queue}
-          onConfirm={async item => {
-            try {
-              await confirmSuggestedMatch.mutateAsync({
-                attachmentId: reviewQueue.id,
-                matchedEntityLinkId: item.suggestion.entityLinkId,
-                faceIndex: item.index,
-              });
-              toast.success(`Linked to ${item.suggestion.entityLabel}`);
-              invalidateLinkViews();
-            } catch (e: any) {
-              toast.error(e?.message ?? "Couldn't link that face.");
-              throw e;
-            }
-          }}
-          onSkip={() => {}}
-          onDone={() => {
-            // Faces with no match never get a card (silent, by design) —
-            // if the photo had more of them, go straight to the same
-            // manual Link panel the amber tag opens, already showing every
-            // face boxed and tappable, instead of leaving the officer to
-            // find and click that tag themselves.
-            const unmatched =
-              reviewQueue.allFaces.length - reviewQueue.queue.length;
-            const finished = { id: reviewQueue.id, url: reviewQueue.url };
-            setReviewQueue(null);
-            if (unmatched > 0) setLinking(finished);
-          }}
+      {suggestion && (
+        <SuggestedFaceMatchDialog
+          attachmentId={suggestion.id}
+          photoUrl={suggestion.url}
+          suggestion={suggestion.match}
+          onDone={() => setSuggestion(null)}
         />
       )}
     </div>

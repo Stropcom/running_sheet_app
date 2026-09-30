@@ -7929,6 +7929,29 @@ export async function getAllIntelligenceEntities(): Promise<
     rowsBySheet.get(row.sheetId)!.push(row);
   }
 
+  // A person entity mined from observation text has its own raw, unbracketed
+  // shortForm ("Timothy HOLMES") used as a literal search/matching key all
+  // through the two-pass scan below and extractEntitiesFromText's many other
+  // callers — changing that key's shape is out of scope here and risks
+  // degrading bare-re-mention matching in later rows. This instead only
+  // dresses up the DISPLAY shortForm actually stored on the final
+  // IntelligenceEntity (what LinkAttachmentDialog hands the photo linker as
+  // entityLabel), so a mined associate matches the same "Name SURNAME
+  // (SURNAME)" convention a registry Target/Associate card gets from
+  // composeTargetName/composeAssociateName — which is what LinkedEntityPills'
+  // Profile pill actually keys off. No-ops (idempotent) when it's not a
+  // person, already ends in a bracket, or the last word isn't a clean
+  // all-caps surname to begin with.
+  function withSurnameBracket(shortForm: string, type: string): string {
+    if (type !== "person") return shortForm;
+    if (/\([^()]+\)\s*$/.test(shortForm)) return shortForm;
+    const words = shortForm.trim().split(/\s+/);
+    const last = words[words.length - 1] ?? "";
+    return /^[A-Z][A-Z'-]{1,40}$/.test(last)
+      ? `${shortForm} (${last})`
+      : shortForm;
+  }
+
   // Helper: register or merge an entity occurrence into entityMap
   function registerOccurrence(
     e: {
@@ -8022,7 +8045,7 @@ export async function getAllIntelligenceEntities(): Promise<
 
     if (!entityMap.has(key)) {
       entityMap.set(key, {
-        shortForm: displayShortForm,
+        shortForm: withSurnameBracket(displayShortForm, e.type),
         type: e.type,
         isTarget: false,
         occurrences: [],
@@ -8039,6 +8062,10 @@ export async function getAllIntelligenceEntities(): Promise<
       if (existing.type === "business" && e.type === "address") {
         existing.type = "address";
       }
+      // Compared/assigned bracketed, not raw — existing.shortForm was
+      // already bracketed at creation above, so comparing raw e.shortForm's
+      // length against it here would unfairly favour existing every time.
+      const candidateShortForm = withSurnameBracket(e.shortForm, e.type);
       const shouldUpgrade =
         e.type === "vehicle"
           ? preferVehicleShortForm(
@@ -8046,8 +8073,8 @@ export async function getAllIntelligenceEntities(): Promise<
               e.shortForm,
               normShortForm
             )
-          : e.shortForm.length > existing.shortForm.length;
-      if (shouldUpgrade) existing.shortForm = e.shortForm;
+          : candidateShortForm.length > existing.shortForm.length;
+      if (shouldUpgrade) existing.shortForm = candidateShortForm;
     }
     if (
       resolved &&

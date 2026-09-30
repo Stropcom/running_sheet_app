@@ -4421,9 +4421,17 @@ export default function IntelligenceMapping() {
         customMarkerImgRefs.current.set(outerCm.id, img);
         // Camera badge — same "has linked photos" check as the intel pin
         // badge (see photoKeysRef), purely informational at a glance.
+        // Keyed on the marker's ADDRESS, not its (often empty, free-text)
+        // label — photoKeysRef only ever holds "location" category keys,
+        // i.e. formatted addresses (see its own build effect above), which
+        // is what a photo actually gets linked to, not whatever caption an
+        // officer may or may not have typed for this marker. Checking
+        // .label here meant a marker with no label (icon-only, like a
+        // plain Tactical pin) could never show the badge even when its
+        // address plainly had photos on file.
         if (
-          outerCm.label &&
-          photoKeysRef.current.has(normalizeEntityLabelClient(outerCm.label))
+          outerCm.address &&
+          photoKeysRef.current.has(normalizeEntityLabelClient(outerCm.address))
         ) {
           const photoBadge = document.createElement("div");
           photoBadge.style.cssText = `
@@ -4636,6 +4644,15 @@ export default function IntelligenceMapping() {
               /'/g,
               "\\'"
             );
+            // Photos link under category "location" keyed by formatted
+            // ADDRESS (see ImagesPip's own byEntity query), not by whatever
+            // free-text caption a marker's Label field happens to hold —
+            // those are two different fields on custom_map_markers. Using
+            // cm.label here (as this used to) meant a marker with no label
+            // typed — an icon-only pin, exactly what a Tactical marker
+            // usually is — could never show its Images button even when
+            // its address plainly had photos linked.
+            const safeAddress = (cm.address ?? "").replace(/'/g, "\\'");
             const sections: string[] = [];
 
             // Row 0: RS Quick Entry — always at top, full width
@@ -4643,14 +4660,14 @@ export default function IntelligenceMapping() {
               `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;"><button onclick="window.__cmRsQuickEntry(${cm.id})" style="${btnBase}background:#6366f1;color:#fff;border:none;font-size:13px;padding:9px 0;">RS Quick Entry</button></div>`
             );
 
-            // Row 1: Images — only when this marker's label already has
+            // Row 1: Images — only when this marker's address already has
             // linked photos (silently auto-linked at upload time).
             if (
-              cm.label &&
-              photoKeysRef.current.has(normalizeEntityLabelClient(cm.label))
+              cm.address &&
+              photoKeysRef.current.has(normalizeEntityLabelClient(cm.address))
             ) {
               sections.push(
-                `<div style="margin-top:5px;"><button onclick="window.__mapOpenImagesPip('${safeLabel}')" style="${btnBase}background:#10b981;color:#fff;border:none;font-size:13px;padding:9px 0;">Images</button></div>`
+                `<div style="margin-top:5px;"><button onclick="window.__mapOpenImagesPip('${safeAddress}')" style="${btnBase}background:#10b981;color:#fff;border:none;font-size:13px;padding:9px 0;">Images</button></div>`
               );
             }
 

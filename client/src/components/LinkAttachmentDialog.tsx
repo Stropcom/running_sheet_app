@@ -16,9 +16,13 @@ import {
   X,
   IdCard,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { FaceSelectPicker } from "@/components/FaceSelectPicker";
+import { TapSelectFace } from "@/components/TapSelectFace";
+import {
+  PossibleMatchDialog,
+  type PendingMatch,
+} from "@/components/PossibleMatchDialog";
 
 type Category =
   | "target"
@@ -38,6 +42,11 @@ const CATEGORY_TABS: { key: Category; label: string; icon: typeof Users }[] = [
     icon: HelpCircle,
   },
 ];
+
+// A face is only meaningful for the two "this is a real/possible person"
+// categories — Vehicles/Locations link the whole photo, not a face within
+// it, same as before this redesign.
+const FACE_CATEGORIES = new Set<Category>(["target", "associate"]);
 
 // Keyed loosely (not Record<Category,...>) since a link's actual category
 // can also be "member" — the row-CIN link created by the section at the
@@ -201,6 +210,15 @@ function EntityCandidateRow({
   );
 }
 
+// Tap the face first, then pick who it is: the photo (with any detected
+// faces shown as tappable boxes via TapSelectFace) sits at the top of the
+// dialog and stays visible the whole time — picking a category or an
+// entity below never swaps it out for a different screen. Selecting a face
+// is optional; a candidate can still be linked with no face chosen (e.g. a
+// photo where auto-detection missed the person, or a Vehicle/Location link,
+// which has no face at all). Single-select only for now, matching
+// TapSelectFace — see the "Lets just start with one person" spec this was
+// built to.
 export function LinkAttachmentDialog({
   attachmentId,
   photoUrl,
@@ -224,12 +242,20 @@ export function LinkAttachmentDialog({
 }) {
   const [tab, setTab] = useState<Category>("target");
   const [search, setSearch] = useState("");
-  const [pickingEntity, setPickingEntity] = useState<{
-    category: "target" | "associate";
-    targetId?: number;
-    entityLabel: string;
-  } | null>(null);
+  const [selectedFaceIndex, setSelectedFaceIndex] = useState<number | null>(
+    null
+  );
+  const [pendingMatches, setPendingMatches] = useState<PendingMatch[] | null>(
+    null
+  );
   const utils = trpc.useUtils();
+
+  // Same double-tap guard as the picker this replaces: confirmPending only
+  // flips true once React commits the mutation's isPending state — async
+  // relative to the click itself — so a fast double-tap (common on the
+  // touchscreen devices this is used on) can fire twice before any button
+  // disables. Set synchronously in the click handler to close that window.
+  const submittingRef = useRef(false);
 
   const { data: entities, isLoading } = trpc.intelligence.getEntities.useQuery(
     undefined,
@@ -243,6 +269,12 @@ export function LinkAttachmentDialog({
     { enabled: open }
   );
 
+  const { data: faces, isLoading: facesLoading } =
+    trpc.attachment.detectFaces.useQuery(
+      { attachmentId },
+      { enabled: open && !!photoUrl }
+    );
+
   const invalidateLinkViews = () => {
     utils.attachment.linksFor.invalidate({ attachmentId });
     utils.attachment.entityLinkCounts.invalidate();
@@ -253,12 +285,80 @@ export function LinkAttachmentDialog({
     utils.export.sheetData.invalidate();
   };
 
-  const linkToEntity = trpc.attachment.linkToEntity.useMutation({
-    onSuccess: () => {
+  // Target/Associate/Unidentified Person links close this dialog once
+  // they're made (whether or not a face was involved) — those are "this
+  // photo is of this person" identifications, one-and-done. Vehicle/
+  // Location links keep it open, same as before, so an officer can link the
+  // same photo to several of those in a row ("Link to another").
+  const finishPersonLink = (matches: PendingMatch[]) => {
+    invalidateLinkViews();
+    setSelectedFaceIndex(null);
+    submittingRef.current = false;
+    if (matches.length > 0) setPendingMatches(matches);
+    else onOpenChange(false);
+  };
+
+  const confirmEntity = trpc.attachment.confirmEntityFace.useMutation({
+    onSuccess: data => {
       toast.success("Photo linked");
-      invalidateLinkViews();
+      finishPersonLink(
+        data.matches.map(match => ({
+          newLinkId: data.linkId,
+          newPhotoUrl: photoUrl!,
+          match,
+        }))
+      );
     },
-    onError: e => toast.error(e.message),
+    onError: e => {
+      submittingRef.current = false;
+      toast.error(e.message);
+    },
+  });
+
+  const confirmUnidentified =
+    trpc.attachment.confirmUnidentifiedPersonFaces.useMutation({
+      onSuccess: data => {
+        toast.success(
+          `Tagged ${data.results.length} Unidentified Person entr${data.results.length === 1 ? "y" : "ies"}`
+        );
+        finishPersonLink(
+          data.results.flatMap(r =>
+            r.matches.map(match => ({
+              newLinkId: r.linkId,
+              newPhotoUrl: photoUrl!,
+              match,
+            }))
+          )
+        );
+      },
+      onError: e => {
+        submittingRef.current = false;
+        toast.error(e.message);
+      },
+    });
+
+  const linkToEntity = trpc.attachment.linkToEntity.useMutation({
+    onSuccess: (_data, variables) => {
+      toast.success(
+        variables.category === "unidentified_person"
+          ? "Tagged as Unidentified Person"
+          : "Photo linked"
+      );
+      invalidateLinkViews();
+      submittingRef.current = false;
+      setSelectedFaceIndex(null);
+      if (
+        variables.category === "target" ||
+        variables.category === "associate" ||
+        variables.category === "unidentified_person"
+      ) {
+        onOpenChange(false);
+      }
+    },
+    onError: e => {
+      submittingRef.current = false;
+      toast.error(e.message);
+    },
   });
 
   const unlinkFromEntity = trpc.attachment.unlinkFromEntity.useMutation({
@@ -268,6 +368,49 @@ export function LinkAttachmentDialog({
     },
     onError: e => toast.error(e.message),
   });
+
+  const anyPending =
+    confirmEntity.isPending ||
+    confirmUnidentified.isPending ||
+    linkToEntity.isPending;
+
+  const pickCandidate = (e: any) => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    if (FACE_CATEGORIES.has(tab) && selectedFaceIndex != null) {
+      confirmEntity.mutate({
+        attachmentId,
+        faceIndex: selectedFaceIndex,
+        category: tab as "target" | "associate",
+        targetId: e.targetId,
+        entityLabel: e.shortForm,
+      });
+    } else {
+      linkToEntity.mutate({
+        attachmentId,
+        category: tab,
+        targetId: e.targetId,
+        entityLabel: e.shortForm,
+      });
+    }
+  };
+
+  const tagUnidentified = () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    if (selectedFaceIndex != null) {
+      confirmUnidentified.mutate({
+        attachmentId,
+        faceIndices: [selectedFaceIndex],
+      });
+    } else {
+      linkToEntity.mutate({
+        attachmentId,
+        category: "unidentified_person",
+        entityLabel: `Unidentified Person #${attachmentId}`,
+      });
+    }
+  };
 
   const filtered = useMemo(() => {
     if (!entities) return [];
@@ -297,287 +440,232 @@ export function LinkAttachmentDialog({
   }, [filtered, currentOperationId]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Link photo to entity</DialogTitle>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Link photo to entity</DialogTitle>
+          </DialogHeader>
 
-        {photoUrl && (
-          <div className="flex items-center gap-2.5 rounded-lg border border-border bg-muted/20 p-2">
-            <img
-              src={photoUrl}
-              alt="Photo being linked"
-              className="h-14 w-14 rounded-md object-cover border border-border shrink-0"
+          {photoUrl && (
+            <TapSelectFace
+              photoUrl={photoUrl}
+              faces={(faces ?? []) as any}
+              loading={facesLoading}
+              selectedIndex={selectedFaceIndex}
+              onSelect={setSelectedFaceIndex}
             />
-            <p className="text-xs text-muted-foreground">Linking this photo</p>
-          </div>
-        )}
+          )}
 
-        {currentLinks && currentLinks.length > 0 && (
-          <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3 flex flex-col gap-2">
-            <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">
-              Currently linked
-            </p>
-            <div className="flex flex-col gap-2">
-              {currentLinks.map((link: any) => {
-                const Icon = CATEGORY_ICON[link.category] ?? Users;
-                const linkedOps = operationNamesFor(
-                  findEntityForLink(link, entities as any[] | undefined)
-                );
-                return (
-                  <div key={link.id} className="flex flex-col gap-0.5">
-                    <span className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full bg-background border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-xs font-medium w-fit max-w-full">
-                      <Icon className="h-3 w-3 shrink-0" />
-                      <span
-                        className="truncate max-w-[260px]"
-                        title={link.entityLabel}
-                      >
-                        {link.entityLabel}
+          {currentLinks && currentLinks.length > 0 && (
+            <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3 flex flex-col gap-2">
+              <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">
+                Currently linked
+              </p>
+              <div className="flex flex-col gap-2">
+                {currentLinks.map((link: any) => {
+                  const Icon = CATEGORY_ICON[link.category] ?? Users;
+                  const linkedOps = operationNamesFor(
+                    findEntityForLink(link, entities as any[] | undefined)
+                  );
+                  return (
+                    <div key={link.id} className="flex flex-col gap-0.5">
+                      <span className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full bg-background border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-xs font-medium w-fit max-w-full">
+                        <Icon className="h-3 w-3 shrink-0" />
+                        <span
+                          className="truncate max-w-[260px]"
+                          title={link.entityLabel}
+                        >
+                          {link.entityLabel}
+                        </span>
+                        <button
+                          onClick={() =>
+                            unlinkFromEntity.mutate({ linkId: link.id })
+                          }
+                          disabled={unlinkFromEntity.isPending}
+                          title="Unlink"
+                          className="h-4 w-4 rounded-full flex items-center justify-center hover:bg-emerald-600/20 transition-colors shrink-0"
+                        >
+                          <X className="h-2.5 w-2.5" />
+                        </button>
                       </span>
-                      <button
-                        onClick={() =>
-                          unlinkFromEntity.mutate({ linkId: link.id })
-                        }
-                        disabled={unlinkFromEntity.isPending}
-                        title="Unlink"
-                        className="h-4 w-4 rounded-full flex items-center justify-center hover:bg-emerald-600/20 transition-colors shrink-0"
-                      >
-                        <X className="h-2.5 w-2.5" />
-                      </button>
-                    </span>
-                    {linkedOps.length > 0 && (
-                      <p
-                        className="text-[10px] text-muted-foreground pl-2 truncate"
-                        title={linkedOps.join(", ")}
-                      >
-                        {linkedOps.length === 1 ? "Op: " : "Ops: "}
-                        {linkedOps.join(", ")}
-                      </p>
-                    )}
-                    {link.category === "unidentified_person" && (
-                      <OtherLinkedPhotos
-                        category={link.category as Category}
-                        targetId={link.targetId}
-                        entityLabel={link.entityLabel}
-                        excludeAttachmentId={attachmentId}
-                      />
-                    )}
-                  </div>
+                      {linkedOps.length > 0 && (
+                        <p
+                          className="text-[10px] text-muted-foreground pl-2 truncate"
+                          title={linkedOps.join(", ")}
+                        >
+                          {linkedOps.length === 1 ? "Op: " : "Ops: "}
+                          {linkedOps.join(", ")}
+                        </p>
+                      )}
+                      {link.category === "unidentified_person" && (
+                        <OtherLinkedPhotos
+                          category={link.category as Category}
+                          targetId={link.targetId}
+                          entityLabel={link.entityLabel}
+                          excludeAttachmentId={attachmentId}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-lg border border-l-4 border-violet-500/30 border-l-violet-500 bg-violet-500/5 p-3 flex flex-col gap-2.5">
+            <p className="text-xs font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide">
+              {currentLinks && currentLinks.length > 0
+                ? "Link to another"
+                : "Link to"}
+            </p>
+
+            <div className="grid grid-cols-5 max-[420px]:grid-cols-3 gap-1.5">
+              {CATEGORY_TABS.map(t => {
+                const styles = CATEGORY_STYLES[t.key];
+                const active = tab === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    onClick={() => setTab(t.key)}
+                    className={`flex flex-col items-center gap-1 rounded-lg border px-1 py-2 text-center text-[10.5px] font-medium leading-tight transition-colors ${
+                      active
+                        ? `${styles.activeBorder} ${styles.activeBg} ${styles.activeText}`
+                        : "border-border bg-background text-muted-foreground hover:bg-muted/50"
+                    }`}
+                  >
+                    <t.icon
+                      className={`h-4 w-4 ${active ? "" : styles.icon}`}
+                    />
+                    {t.label}
+                  </button>
                 );
               })}
             </div>
-          </div>
-        )}
 
-        <div className="rounded-lg border border-l-4 border-violet-500/30 border-l-violet-500 bg-violet-500/5 p-3 flex flex-col gap-2.5">
-          <p className="text-xs font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide">
-            {currentLinks && currentLinks.length > 0
-              ? "Link to another"
-              : "Link to"}
-          </p>
-
-          <div className="grid grid-cols-5 max-[420px]:grid-cols-3 gap-1.5">
-            {CATEGORY_TABS.map(t => {
-              const styles = CATEGORY_STYLES[t.key];
-              const active = tab === t.key;
-              return (
-                <button
-                  key={t.key}
-                  onClick={() => {
-                    setTab(t.key);
-                    setPickingEntity(null);
-                  }}
-                  className={`flex flex-col items-center gap-1 rounded-lg border px-1 py-2 text-center text-[10.5px] font-medium leading-tight transition-colors ${
-                    active
-                      ? `${styles.activeBorder} ${styles.activeBg} ${styles.activeText}`
-                      : "border-border bg-background text-muted-foreground hover:bg-muted/50"
-                  }`}
-                >
-                  <t.icon className={`h-4 w-4 ${active ? "" : styles.icon}`} />
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {tab === "unidentified_person" ? (
-            photoUrl ? (
-              <FaceSelectPicker
-                attachmentId={attachmentId}
-                photoUrl={photoUrl}
-                onDone={() => onOpenChange(false)}
-                onCancel={() => setTab("target")}
-              />
-            ) : (
+            {tab === "unidentified_person" ? (
               <div className="flex flex-col gap-2 py-2">
                 <p className="text-sm text-muted-foreground">
-                  Tags this photo as a new, distinct Unidentified Person pool
-                  entry. Tap once per person if the photo shows more than one
-                  unidentified individual.
+                  {selectedFaceIndex != null
+                    ? "Tags the selected face as a new, distinct Unidentified Person pool entry."
+                    : "Tags this photo as a new, distinct Unidentified Person pool entry. Tap a face above first if you want to mark specifically who."}
                 </p>
                 <button
-                  disabled={linkToEntity.isPending}
-                  onClick={() =>
-                    linkToEntity.mutate({
-                      attachmentId,
-                      category: "unidentified_person",
-                      entityLabel: `Unidentified Person #${attachmentId}`,
-                    })
-                  }
+                  disabled={anyPending}
+                  onClick={tagUnidentified}
                   className="text-left px-3 py-2 rounded-lg text-sm border border-border bg-background hover:bg-accent/50 transition-colors"
                 >
                   + Tag as new Unidentified Person
                 </button>
               </div>
-            )
-          ) : pickingEntity && photoUrl ? (
-            <FaceSelectPicker
-              mode="entity"
-              attachmentId={attachmentId}
-              photoUrl={photoUrl}
-              category={pickingEntity.category}
-              targetId={pickingEntity.targetId}
-              entityLabel={pickingEntity.entityLabel}
-              onDone={() => {
-                setPickingEntity(null);
-                onOpenChange(false);
-              }}
-              onCancel={() => setPickingEntity(null)}
-            />
-          ) : (
-            <>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search…"
-                  className="pl-8 h-9 text-sm bg-background"
-                />
-              </div>
+            ) : (
+              <>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Search…"
+                    className="pl-8 h-9 text-sm bg-background"
+                  />
+                </div>
 
-              <div className="max-h-72 overflow-y-auto flex flex-col gap-1">
-                {isLoading ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">
-                    Loading…
-                  </p>
-                ) : filtered.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">
-                    No matches
-                  </p>
-                ) : (
-                  <>
-                    {inCurrentOp.length > 0 && (
-                      <>
-                        <span className="inline-flex items-center w-fit mx-3 mt-1 mb-0.5 px-2 py-0.5 rounded-full border border-blue-700/50 bg-blue-700/10 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400 shrink-0">
-                          In this operation
-                        </span>
-                        {inCurrentOp.map((e, idx) => (
-                          <EntityCandidateRow
-                            key={`cur-${e.shortForm}-${idx}`}
-                            e={e}
-                            disabled={linkToEntity.isPending}
-                            onPick={() => {
-                              if (
-                                photoUrl &&
-                                (tab === "target" || tab === "associate")
-                              ) {
-                                setPickingEntity({
-                                  category: tab,
-                                  targetId: e.targetId,
-                                  entityLabel: e.shortForm,
-                                });
-                                return;
-                              }
-                              linkToEntity.mutate({
-                                attachmentId,
-                                category: tab,
-                                targetId: e.targetId,
-                                entityLabel: e.shortForm,
-                              });
-                            }}
-                          />
-                        ))}
-                        <span className="inline-flex items-center w-fit mx-3 mt-2 mb-0.5 px-2 py-0.5 rounded-full border border-slate-500/50 bg-slate-500/10 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400 shrink-0">
-                          Other operations
-                        </span>
-                      </>
-                    )}
-                    {otherEntities.map((e, idx) => (
-                      <EntityCandidateRow
-                        key={`other-${e.shortForm}-${idx}`}
-                        e={e}
-                        disabled={linkToEntity.isPending}
-                        onPick={() => {
-                          if (
-                            photoUrl &&
-                            (tab === "target" || tab === "associate")
-                          ) {
-                            setPickingEntity({
-                              category: tab,
-                              targetId: e.targetId,
-                              entityLabel: e.shortForm,
-                            });
-                            return;
-                          }
-                          linkToEntity.mutate({
-                            attachmentId,
-                            category: tab,
-                            targetId: e.targetId,
-                            entityLabel: e.shortForm,
-                          });
-                        }}
-                      />
-                    ))}
-                  </>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-
-        {rowCins && rowCins.length > 1 && (
-          <div className="rounded-lg border border-l-4 border-teal-500/30 border-l-teal-500 bg-teal-500/5 p-3 flex flex-col gap-2.5">
-            <p className="text-xs font-bold text-teal-700 dark:text-teal-400 uppercase tracking-wide">
-              Link to a team member (CIN)
-            </p>
-            <p className="text-xs text-muted-foreground -mt-1">
-              More than one member is on this row — pick who this photo belongs
-              to.
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {rowCins.map(cin => {
-                const alreadyLinked = (currentLinks ?? []).some(
-                  (link: any) =>
-                    link.category === "member" && link.entityLabel === cin
-                );
-                return (
-                  <button
-                    key={cin}
-                    disabled={linkToEntity.isPending || alreadyLinked}
-                    onClick={() =>
-                      linkToEntity.mutate({
-                        attachmentId,
-                        category: "member",
-                        entityLabel: cin,
-                      })
-                    }
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-colors ${
-                      alreadyLinked
-                        ? "border-teal-500/40 bg-teal-500/10 text-teal-700 dark:text-teal-400"
-                        : "border-border bg-background hover:bg-accent/50"
-                    }`}
-                  >
-                    <IdCard className="h-3.5 w-3.5 text-teal-500" />
-                    {cin}
-                  </button>
-                );
-              })}
-            </div>
+                <div className="max-h-72 overflow-y-auto flex flex-col gap-1">
+                  {isLoading ? (
+                    <p className="text-sm text-muted-foreground text-center py-6">
+                      Loading…
+                    </p>
+                  ) : filtered.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-6">
+                      No matches
+                    </p>
+                  ) : (
+                    <>
+                      {inCurrentOp.length > 0 && (
+                        <>
+                          <span className="inline-flex items-center w-fit mx-3 mt-1 mb-0.5 px-2 py-0.5 rounded-full border border-blue-700/50 bg-blue-700/10 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400 shrink-0">
+                            In this operation
+                          </span>
+                          {inCurrentOp.map((e, idx) => (
+                            <EntityCandidateRow
+                              key={`cur-${e.shortForm}-${idx}`}
+                              e={e}
+                              disabled={anyPending}
+                              onPick={() => pickCandidate(e)}
+                            />
+                          ))}
+                          <span className="inline-flex items-center w-fit mx-3 mt-2 mb-0.5 px-2 py-0.5 rounded-full border border-slate-500/50 bg-slate-500/10 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400 shrink-0">
+                            Other operations
+                          </span>
+                        </>
+                      )}
+                      {otherEntities.map((e, idx) => (
+                        <EntityCandidateRow
+                          key={`other-${e.shortForm}-${idx}`}
+                          e={e}
+                          disabled={anyPending}
+                          onPick={() => pickCandidate(e)}
+                        />
+                      ))}
+                    </>
+                  )}
+                </div>
+              </>
+            )}
           </div>
-        )}
-      </DialogContent>
-    </Dialog>
+
+          {rowCins && rowCins.length > 1 && (
+            <div className="rounded-lg border border-l-4 border-teal-500/30 border-l-teal-500 bg-teal-500/5 p-3 flex flex-col gap-2.5">
+              <p className="text-xs font-bold text-teal-700 dark:text-teal-400 uppercase tracking-wide">
+                Link to a team member (CIN)
+              </p>
+              <p className="text-xs text-muted-foreground -mt-1">
+                More than one member is on this row — pick who this photo
+                belongs to.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {rowCins.map(cin => {
+                  const alreadyLinked = (currentLinks ?? []).some(
+                    (link: any) =>
+                      link.category === "member" && link.entityLabel === cin
+                  );
+                  return (
+                    <button
+                      key={cin}
+                      disabled={linkToEntity.isPending || alreadyLinked}
+                      onClick={() =>
+                        linkToEntity.mutate({
+                          attachmentId,
+                          category: "member",
+                          entityLabel: cin,
+                        })
+                      }
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                        alreadyLinked
+                          ? "border-teal-500/40 bg-teal-500/10 text-teal-700 dark:text-teal-400"
+                          : "border-border bg-background hover:bg-accent/50"
+                      }`}
+                    >
+                      <IdCard className="h-3.5 w-3.5 text-teal-500" />
+                      {cin}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {pendingMatches && (
+        <PossibleMatchDialog
+          matches={pendingMatches}
+          onDone={() => {
+            setPendingMatches(null);
+            onOpenChange(false);
+          }}
+        />
+      )}
+    </>
   );
 }

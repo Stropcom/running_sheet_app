@@ -4,6 +4,8 @@
  * Colours: red (#E53935), yellow (#F9A825), blue (#1E88E5), purple (#8E24AA)
  */
 
+import { getTacticalIconSrc, getTacticalIconLabel } from "./tacticalMarkers";
+
 export type MarkerColour = "red" | "yellow" | "blue" | "purple" | "black";
 export type MarkerIcon =
   | "house_outline"
@@ -399,6 +401,30 @@ export function getMarkerDataUrl(
   colour: MarkerColour
 ): string {
   return svgToDataUrl(getMarkerSvg(icon, colour));
+}
+
+/**
+ * Same shape as getMarkerDataUrl, but also resolves a tactical marker key
+ * (see lib/tacticalMarkers.ts) — a fixed-colour raster icon with no colour
+ * of its own to apply, unlike every MarkerIcon here. Every call site that
+ * renders a saved custom_map_markers row (picker previews, the actual pin
+ * drawn on the map, edit-dialog previews) should go through this rather
+ * than getMarkerDataUrl directly, since markerIcon on that table is a
+ * free-text column that can hold either kind of key. Takes `icon` as a
+ * plain string (not the narrower MarkerIcon type) for exactly that reason.
+ */
+export function getMarkerIconUrl(icon: string, colour: MarkerColour): string {
+  const tacticalSrc = getTacticalIconSrc(icon);
+  if (tacticalSrc) return tacticalSrc;
+  return getMarkerDataUrl(icon as MarkerIcon, colour);
+}
+
+/** Same fallback-lookup pattern as getMarkerIconUrl, for a marker's display
+ * label (map pin title, info-window heading) rather than its image. */
+export function getMarkerIconLabel(icon: string): string {
+  return (
+    getTacticalIconLabel(icon) ?? MARKER_ICON_LABELS[icon as MarkerIcon] ?? icon
+  );
 }
 
 // ─── Colour utilities ─────────────────────────────────────────────────────────

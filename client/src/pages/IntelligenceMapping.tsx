@@ -7,6 +7,8 @@ import {
 import { DivIconOverlay, wasAnyMarkerJustTapped } from "@/lib/divIconOverlay";
 import {
   getMarkerDataUrl,
+  getMarkerIconUrl,
+  getMarkerIconLabel,
   getMarkerSvg,
   MARKER_COLOURS,
   MARKER_COLOUR_LABELS,
@@ -15,6 +17,7 @@ import {
   type MarkerColour,
   type MarkerIcon,
 } from "@/lib/markerSvgs";
+import { TACTICAL_ICONS, isTacticalIcon } from "@/lib/tacticalMarkers";
 import {
   convertGoogleAddresses,
   buildPoiAddress,
@@ -1356,6 +1359,13 @@ function animateLiveMarkerTo(
   );
 }
 
+// Flat (no per-group headings) list of every recolourable marker shape, for
+// the Place Map Marker picker's Surveillance tab — see the redesign note on
+// that picker below. Module-level since it never changes.
+const SURVEILLANCE_ICONS: MarkerIcon[] = MARKER_ICON_GROUPS.flatMap(
+  g => g.icons
+);
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function IntelligenceMapping() {
   const [, setLocation] = useLocation();
@@ -2050,9 +2060,17 @@ export default function IntelligenceMapping() {
   const [cmOpId, setCmOpId] = useState<number | null>(null);
   const [cmPersons, setCmPersons] = useState<string[]>([]);
   const [cmVehicles, setCmVehicles] = useState<string[]>([]);
-  const [cmIcon, setCmIcon] = useState<MarkerIcon>("house_filled");
+  // string, not MarkerIcon — can also hold a tactical marker key (see
+  // lib/tacticalMarkers.ts), which has no colour of its own to combine with.
+  const [cmIcon, setCmIcon] = useState<string>("house_filled");
   const [cmColour, setCmColour] = useState<MarkerColour>("red");
   const [cmRotation, setCmRotation] = useState(0);
+  // Which tab is active in the Marker Icon picker — All/Surveillance keep
+  // cmColour meaningful; Tactical hides the colour section entirely since
+  // those icons are fixed-colour raster art, not a recolourable shape.
+  const [cmIconFilter, setCmIconFilter] = useState<
+    "all" | "surveillance" | "tactical"
+  >("all");
   // "Label only" — the marker renders as just its label pill, no icon (see
   // the Add Shape feature's own note-label pill, which this borrows the
   // look of). Off by default so ordinary icon markers behave as before.
@@ -4360,8 +4378,8 @@ export default function IntelligenceMapping() {
         );
         customMarkerImgRefs.current.delete(outerCm.id);
       } else {
-        const dataUrl = getMarkerDataUrl(
-          outerCm.markerIcon as MarkerIcon,
+        const dataUrl = getMarkerIconUrl(
+          outerCm.markerIcon,
           outerCm.markerColour as MarkerColour
         );
         rotation = (outerCm.rotation ?? 0) as number;
@@ -4434,9 +4452,7 @@ export default function IntelligenceMapping() {
           map,
           position: { lat: outerCm.lat, lng: outerCm.lng },
           content,
-          title:
-            outerCm.label ??
-            MARKER_ICON_LABELS[outerCm.markerIcon as MarkerIcon],
+          title: outerCm.label ?? getMarkerIconLabel(outerCm.markerIcon),
         });
         marker.addListener("click", () => {
           if (!infoWindowRef.current) return;
@@ -4454,11 +4470,10 @@ export default function IntelligenceMapping() {
             ) ?? outerCm;
           const lat = cm.lat;
           const lng = cm.lng;
-          const iconLabel =
-            MARKER_ICON_LABELS[cm.markerIcon as MarkerIcon] ?? cm.markerIcon;
+          const iconLabel = getMarkerIconLabel(cm.markerIcon);
           const currentRotation = cm.rotation ?? 0;
-          const dataUrl = getMarkerDataUrl(
-            cm.markerIcon as MarkerIcon,
+          const dataUrl = getMarkerIconUrl(
+            cm.markerIcon,
             cm.markerColour as MarkerColour
           );
           // Check if intel locations have been merged into this marker (array, target_address first)
@@ -10637,7 +10652,7 @@ export default function IntelligenceMapping() {
             }}
           >
             <div
-              className="fixed left-0 right-0 mx-auto w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 overflow-y-auto"
+              className="fixed left-0 right-0 mx-auto w-full max-w-lg md:max-w-2xl lg:max-w-3xl bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 overflow-y-auto"
               style={{
                 bottom: vvKeyboardInset,
                 maxHeight: Math.round(vvVisibleHeight * 0.9),
@@ -10734,82 +10749,159 @@ export default function IntelligenceMapping() {
               )}
 
               {/* 1. Icon picker — not shown for a Label Only marker, which
-                  has no icon to pick. */}
+                  has no icon to pick. Flat tile grid, no per-shape-type
+                  headings (Locations/Vehicles/etc. — with only a couple of
+                  icons in each, the heading added nothing). All/Surveillance/
+                  Tactical filter chips instead: Surveillance is the original
+                  recolourable shape set, Tactical is the fixed-colour
+                  library traced from the AFP iSurv marker set (18-icon
+                  trial batch — see lib/tacticalMarkers.ts). The tile grid
+                  itself scrolls in a fixed-height box so the rest of the
+                  dialog (colour, rotation, operation, buttons) stays put. */}
               {!cmLabelOnly && (
                 <div className="mb-4">
-                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                    Marker Icon
-                  </p>
-                  <div className="space-y-3">
-                    {MARKER_ICON_GROUPS.map(group => (
-                      <div key={group.label}>
-                        <p className="text-[10px] text-muted-foreground/70 mb-1.5">
-                          {group.label}
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {group.icons.map(iconKey => (
-                            <button
-                              key={iconKey}
-                              onClick={() => setCmIcon(iconKey as MarkerIcon)}
-                              title={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
-                              className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
-                                cmIcon === iconKey
-                                  ? "border-primary bg-primary/10 scale-110"
-                                  : "border-border bg-accent/30 hover:border-primary/50"
-                              }`}
-                            >
-                              <img
-                                src={getMarkerDataUrl(
-                                  iconKey as MarkerIcon,
-                                  cmColour
-                                )}
-                                alt={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
-                                className="w-7 h-7 object-contain"
-                              />
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+                  <div className="flex items-center justify-between mb-2 gap-2">
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                      Marker Icon
+                    </p>
+                    <div className="flex gap-1.5">
+                      {[
+                        {
+                          key: "all" as const,
+                          label: `All (${SURVEILLANCE_ICONS.length + TACTICAL_ICONS.length})`,
+                        },
+                        {
+                          key: "surveillance" as const,
+                          label: `Surveillance (${SURVEILLANCE_ICONS.length})`,
+                        },
+                        {
+                          key: "tactical" as const,
+                          label: `Tactical (${TACTICAL_ICONS.length})`,
+                        },
+                      ].map(f => (
+                        <button
+                          key={f.key}
+                          onClick={() => setCmIconFilter(f.key)}
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border whitespace-nowrap transition-all ${
+                            cmIconFilter === f.key
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "border-border text-muted-foreground hover:border-primary/50"
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-accent/10 p-2">
+                    <div className="grid grid-cols-6 md:grid-cols-9 lg:grid-cols-11 gap-1.5">
+                      {(cmIconFilter === "all" ||
+                        cmIconFilter === "surveillance") &&
+                        SURVEILLANCE_ICONS.map(iconKey => (
+                          <button
+                            key={iconKey}
+                            onClick={() => setCmIcon(iconKey)}
+                            title={MARKER_ICON_LABELS[iconKey]}
+                            className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${
+                              cmIcon === iconKey
+                                ? "border-primary bg-primary/10"
+                                : "border-border bg-background hover:border-primary/50"
+                            }`}
+                          >
+                            <img
+                              src={getMarkerDataUrl(iconKey, cmColour)}
+                              alt={MARKER_ICON_LABELS[iconKey]}
+                              className="w-6 h-6 object-contain"
+                            />
+                          </button>
+                        ))}
+
+                      {cmIconFilter === "all" && (
+                        <div className="col-span-full h-px bg-border my-1" />
+                      )}
+
+                      {(cmIconFilter === "all" ||
+                        cmIconFilter === "tactical") &&
+                        TACTICAL_ICONS.map(t => (
+                          <button
+                            key={t.key}
+                            onClick={() => setCmIcon(t.key)}
+                            title={t.label}
+                            className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${
+                              cmIcon === t.key
+                                ? "border-primary bg-primary/10"
+                                : "border-border bg-background hover:border-primary/50"
+                            }`}
+                          >
+                            <img
+                              src={t.src}
+                              alt={t.label}
+                              className="w-6 h-6 object-contain"
+                            />
+                          </button>
+                        ))}
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* 2. Colour picker — doubles as the label pill's background
-                  colour when Label Only is on. */}
-              <div className="mb-4">
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                  {cmLabelOnly ? "Label Colour" : "Colour"}
-                </p>
-                <div className="flex gap-2">
-                  {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(col => (
-                    <button
-                      key={col}
-                      onClick={() => setCmColour(col)}
-                      title={MARKER_COLOUR_LABELS[col]}
-                      className={`w-8 h-8 rounded-full border-2 transition-all ${
-                        cmColour === col
-                          ? "border-foreground scale-110"
-                          : "border-transparent hover:border-foreground/40"
-                      }`}
-                      style={{ background: MARKER_COLOURS[col] }}
-                    />
-                  ))}
-                </div>
-                {cmLabelOnly && (
-                  <div className="mt-3">
-                    <span
-                      className="inline-flex items-center max-w-[200px] truncate rounded-full border-[1.5px] px-2.5 py-1 text-[11px] font-bold text-white shadow"
-                      style={{
-                        background: MARKER_COLOURS[cmColour],
-                        borderColor: "rgba(255,255,255,0.7)",
-                      }}
-                    >
-                      {cmLabel.trim() || "(no label)"}
-                    </span>
+                  colour when Label Only is on. Hidden outright when the
+                  Tactical tab is active (and this isn't a Label Only
+                  marker) — those icons are fixed-colour raster art with no
+                  colour for the picker to apply. Dimmed, with an
+                  explanatory note, if a Tactical icon is the one currently
+                  selected while browsing the All tab instead. */}
+              {(cmLabelOnly || cmIconFilter !== "tactical") && (
+                <div className="mb-4">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    {cmLabelOnly ? "Label Colour" : "Colour"}
+                  </p>
+                  {!cmLabelOnly && isTacticalIcon(cmIcon) && (
+                    <p className="text-[10px] text-muted-foreground mb-2">
+                      This icon's colour is fixed — it comes from the Tactical
+                      library as-is.
+                    </p>
+                  )}
+                  <div
+                    className="flex gap-2"
+                    style={{
+                      opacity:
+                        !cmLabelOnly && isTacticalIcon(cmIcon) ? 0.35 : 1,
+                    }}
+                  >
+                    {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(
+                      col => (
+                        <button
+                          key={col}
+                          onClick={() => setCmColour(col)}
+                          title={MARKER_COLOUR_LABELS[col]}
+                          className={`w-8 h-8 rounded-full border-2 transition-all ${
+                            cmColour === col
+                              ? "border-foreground scale-110"
+                              : "border-transparent hover:border-foreground/40"
+                          }`}
+                          style={{ background: MARKER_COLOURS[col] }}
+                        />
+                      )
+                    )}
                   </div>
-                )}
-              </div>
+                  {cmLabelOnly && (
+                    <div className="mt-3">
+                      <span
+                        className="inline-flex items-center max-w-[200px] truncate rounded-full border-[1.5px] px-2.5 py-1 text-[11px] font-bold text-white shadow"
+                        style={{
+                          background: MARKER_COLOURS[cmColour],
+                          borderColor: "rgba(255,255,255,0.7)",
+                        }}
+                      >
+                        {cmLabel.trim() || "(no label)"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 3. Rotation — not applicable to a Label Only marker. */}
               {!cmLabelOnly && (
@@ -10821,7 +10913,7 @@ export default function IntelligenceMapping() {
                     {/* Rotated preview */}
                     <div className="shrink-0 w-8 h-8 flex items-center justify-center">
                       <img
-                        src={getMarkerDataUrl(cmIcon, cmColour)}
+                        src={getMarkerIconUrl(cmIcon, cmColour)}
                         alt="preview"
                         className="w-8 h-8 object-contain transition-transform"
                         style={{ transform: `rotate(${cmRotation}deg)` }}

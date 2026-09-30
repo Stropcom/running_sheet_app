@@ -1958,6 +1958,33 @@ export const appRouter = router({
         }
       }),
 
+    // Same as detectFaces above, but for a photo that hasn't been uploaded
+    // to storage yet — the Upload Photo staging screen runs this the moment
+    // a file is picked, so the officer can tap a face before the photo is
+    // actually saved (see attachment.uploadManual, called separately once
+    // "Confirm upload" is pressed). A mutation, not a query, since it POSTs
+    // the full photo bytes rather than referencing an attachmentId. Pure
+    // detect-only, same as detectFaces — nothing written.
+    detectFacesFromBytes: protectedProcedure
+      .input(z.object({ dataBase64: z.string(), mimeType: z.string() }))
+      .mutation(async ({ input }) => {
+        try {
+          const buffer = Buffer.from(input.dataBase64, "base64");
+          const faces = await detectAndEmbedFaces(buffer);
+          return faces.map((f, index) => ({
+            index,
+            bbox: f.bbox,
+            confidence: f.confidence,
+          }));
+        } catch (err) {
+          console.error("Face detection failed:", err);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Face detection failed.",
+          });
+        }
+      }),
+
     // Called once, right after a photo finishes uploading, to offer an
     // immediate shortcut before the officer opens the manual Link dialog at
     // all. Deliberately narrow in scope: only a photo with EXACTLY one

@@ -20,7 +20,6 @@ import { toast } from "sonner";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
 import { DeletePhotoButton } from "@/components/DeletePhotoButton";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
-import { UploadImageDialog } from "@/components/UploadImageDialog";
 import { CompareFacesDialog } from "@/components/CompareFacesDialog";
 import { formatAttachmentBanner } from "@/lib/attachmentBanner";
 
@@ -178,7 +177,7 @@ function OperationFolderList({
         </div>
       )}
 
-      <UploadImageDialog open={uploadOpen} onOpenChange={setUploadOpen} />
+      <LinkAttachmentDialog open={uploadOpen} onOpenChange={setUploadOpen} />
       <CompareFacesDialog open={compareOpen} onOpenChange={setCompareOpen} />
     </div>
   );
@@ -492,7 +491,7 @@ export function SheetFolderList({
         />
       )}
 
-      <UploadImageDialog
+      <LinkAttachmentDialog
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         defaultOperationId={operationId}

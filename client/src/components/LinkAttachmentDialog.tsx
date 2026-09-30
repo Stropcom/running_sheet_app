@@ -1,11 +1,21 @@
 import { trpc } from "@/lib/trpc";
+import { compressAttachmentImage } from "@/lib/imageCompress";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Users,
   Car,
@@ -15,14 +25,22 @@ import {
   Search,
   X,
   IdCard,
+  ImagePlus,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { TapSelectFace } from "@/components/TapSelectFace";
+import {
+  TapSelectFace,
+  type DetectedFaceBox,
+} from "@/components/TapSelectFace";
 import {
   PossibleMatchDialog,
   type PendingMatch,
 } from "@/components/PossibleMatchDialog";
+import {
+  SuggestedFaceMatchDialog,
+  type FaceMatchSuggestion,
+} from "@/components/SuggestedFaceMatchDialog";
 
 type Category =
   | "target"
@@ -61,8 +79,7 @@ const CATEGORY_ICON: Record<string, typeof Users> = {
   member: IdCard,
 };
 
-// Same per-category colour convention as UploadImageDialog.tsx's redesign —
-// full literal class strings, not string-interpolated colour names, since
+// Full literal class strings, not string-interpolated colour names, since
 // Tailwind's JIT only picks up classes it can see written out in source.
 const CATEGORY_STYLES: Record<
   Category,
@@ -105,6 +122,21 @@ function categoryForEntity(e: { type: string; isTarget?: boolean }): Category {
   if (e.type === "vehicle") return "vehicle";
   if (e.type === "address" || e.type === "business") return "location";
   return "associate";
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      resolve((reader.result as string).split(",")[1] ?? "");
+    reader.onerror = () => reject(new Error("Could not read photo."));
+    reader.readAsDataURL(blob);
+  });
 }
 
 // Every IntelligenceEntity (including targets, via operation_target_links —
@@ -183,10 +215,12 @@ function OtherLinkedPhotos({
 function EntityCandidateRow({
   e,
   disabled,
+  selected,
   onPick,
 }: {
   e: any;
   disabled: boolean;
+  selected?: boolean;
   onPick: () => void;
 }) {
   const ops = operationNamesFor(e);
@@ -194,7 +228,11 @@ function EntityCandidateRow({
     <button
       disabled={disabled}
       onClick={onPick}
-      className="text-left px-3 py-2 rounded-lg text-sm bg-background hover:bg-accent/50 transition-colors shrink-0"
+      className={`text-left px-3 py-2 rounded-lg text-sm transition-colors shrink-0 ${
+        selected
+          ? "bg-emerald-500/15 border border-emerald-500/50 text-emerald-700 dark:text-emerald-400"
+          : "bg-background hover:bg-accent/50 border border-transparent"
+      }`}
     >
       <span className="block truncate">{e.shortForm}</span>
       {ops.length > 0 && (
@@ -210,36 +248,68 @@ function EntityCandidateRow({
   );
 }
 
+// One category + a specific entity within it, chosen but not yet committed —
+// only meaningful in upload (staging) mode, where nothing is saved until
+// "Confirm upload" is pressed. entityLabel is left undefined for a new
+// Unidentified Person pick, since its real label (`Unidentified Person
+// #<id>`) can only be built once the upload has issued a real attachmentId.
+interface PendingEntityPick {
+  category: Category;
+  targetId?: number;
+  entityLabel?: string;
+}
+
 // Tap the face first, then pick who it is: the photo (with any detected
 // faces shown as tappable boxes via TapSelectFace) sits at the top of the
 // dialog and stays visible the whole time — picking a category or an
-// entity below never swaps it out for a different screen. Selecting a face
-// is optional; a candidate can still be linked with no face chosen (e.g. a
-// photo where auto-detection missed the person, or a Vehicle/Location link,
-// which has no face at all). Single-select only for now, matching
-// TapSelectFace — see the "Lets just start with one person" spec this was
-// built to.
+// entity below never swaps it out for a different screen.
+//
+// Two modes, one window, matching the officer's own mental model of "the
+// Link photo to entity window" as a single thing:
+//   - Existing mode (attachmentId given): the photo is already saved.
+//     Picking a candidate links it immediately — no separate save step.
+//   - Upload (staging) mode (attachmentId omitted): the photo hasn't been
+//     saved yet. Face detection runs on the raw picked bytes
+//     (detectFacesFromBytes) so the tap-a-face UI works before there's an
+//     attachmentId to hang it on. Operation (required) and Running
+//     Sheet/Row (optional) selects appear here too, since a manual upload
+//     has no row to infer them from. Picking a category/entity here only
+//     stages the choice (highlighted, not yet linked) — "Confirm upload"
+//     uploads the photo and, if something was picked, links it in the same
+//     action. Leaving nothing picked and confirming mirrors the running
+//     sheet's own upload exactly: the photo saves, then the same
+//     single-face auto-match popup offers a shortcut if it finds one.
+// Single-face selection only for now, matching TapSelectFace — see the
+// "Lets just start with one person" spec this was built to.
 export function LinkAttachmentDialog({
   attachmentId,
   photoUrl,
   open,
   onOpenChange,
   currentOperationId,
+  defaultOperationId,
   rowCins,
 }: {
-  attachmentId: number;
+  /** Omit to open in upload (staging) mode instead of linking an existing photo. */
+  attachmentId?: number;
   photoUrl?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The operation this photo itself belongs to, if known — entities already
-   * linked to it are surfaced first in "Link to another" (see filtered). */
+  /** Existing mode: the operation this photo itself belongs to, if known —
+   * entities already linked to it are surfaced first (see filtered). */
   currentOperationId?: number;
-  /** This photo's row's real CINs (excluding the "__SPACE__" spacer). Only
-   * shown as a pickable section (below) when there's more than one — a
-   * single-CIN row gets that link made automatically at upload instead, see
+  /** Upload mode: pre-fills the required Operation select, e.g. when
+   * opened from inside a specific operation's Images folder. */
+  defaultOperationId?: number;
+  /** Existing mode only. This photo's row's real CINs (excluding the
+   * "__SPACE__" spacer). Only shown as a pickable section (below) when
+   * there's more than one — a single-CIN row gets that link made
+   * automatically at upload instead, see
    * autoLinkAttachmentToRowMemberIfSingle in db.ts. */
   rowCins?: string[];
 }) {
+  const isUploadMode = attachmentId == null;
+
   const [tab, setTab] = useState<Category>("target");
   const [search, setSearch] = useState("");
   const [selectedFaceIndex, setSelectedFaceIndex] = useState<number | null>(
@@ -248,35 +318,77 @@ export function LinkAttachmentDialog({
   const [pendingMatches, setPendingMatches] = useState<PendingMatch[] | null>(
     null
   );
+  // Upload mode only — a category+entity picked but not yet linked (see
+  // PendingEntityPick), and the single-face auto-match popup for when
+  // nothing was picked at all (mirrors the running sheet's own upload).
+  const [pendingEntity, setPendingEntity] = useState<PendingEntityPick | null>(
+    null
+  );
+  const [uploadSuggestion, setUploadSuggestion] = useState<{
+    id: number;
+    url: string;
+    match: FaceMatchSuggestion;
+  } | null>(null);
+
+  // Upload mode only — the picked-but-not-yet-saved photo and its
+  // destination fields.
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<{
+    blob: Blob;
+    mimeType: string;
+    fileName: string;
+  } | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [uploadFaces, setUploadFaces] = useState<DetectedFaceBox[]>([]);
+  const [uploadFacesLoading, setUploadFacesLoading] = useState(false);
+  const [operationId, setOperationId] = useState<number | null>(
+    defaultOperationId ?? null
+  );
+  const [sheetId, setSheetId] = useState<number | null>(null);
+  const [rowId, setRowId] = useState<number | null>(null);
+
   const utils = trpc.useUtils();
 
-  // Same double-tap guard as the picker this replaces: confirmPending only
-  // flips true once React commits the mutation's isPending state — async
-  // relative to the click itself — so a fast double-tap (common on the
-  // touchscreen devices this is used on) can fire twice before any button
-  // disables. Set synchronously in the click handler to close that window.
+  // Same double-tap guard as the picker this replaces: a mutation's own
+  // isPending only flips true once React commits it — async relative to
+  // the click itself — so a fast double-tap (common on the touchscreen
+  // devices this is used on) can fire twice before any button disables.
+  // Set synchronously in each click/submit handler to close that window.
   const submittingRef = useRef(false);
 
   const { data: entities, isLoading } = trpc.intelligence.getEntities.useQuery(
     undefined,
-    {
-      enabled: open,
-    }
-  );
-
-  const { data: currentLinks } = trpc.attachment.linksFor.useQuery(
-    { attachmentId },
     { enabled: open }
   );
 
-  const { data: faces, isLoading: facesLoading } =
+  const { data: currentLinks } = trpc.attachment.linksFor.useQuery(
+    { attachmentId: attachmentId ?? 0 },
+    { enabled: open && !isUploadMode }
+  );
+
+  const { data: existingFaces, isLoading: existingFacesLoading } =
     trpc.attachment.detectFaces.useQuery(
-      { attachmentId },
-      { enabled: open && !!photoUrl }
+      { attachmentId: attachmentId ?? 0 },
+      { enabled: open && !isUploadMode && !!photoUrl }
     );
 
-  const invalidateLinkViews = () => {
-    utils.attachment.linksFor.invalidate({ attachmentId });
+  const { data: allOperations } = trpc.operation.list.useQuery(undefined, {
+    enabled: open && isUploadMode,
+  });
+  const operationOptions = (allOperations ?? []) as any[];
+
+  const { data: sheets } = trpc.sheet.listByOperation.useQuery(
+    { operationId: operationId ?? -1 },
+    { enabled: isUploadMode && operationId != null }
+  );
+
+  const { data: rows } = trpc.row.list.useQuery(
+    { sheetId: sheetId ?? -1 },
+    { enabled: isUploadMode && sheetId != null }
+  );
+
+  const invalidateLinkViews = (id: number) => {
+    utils.attachment.linksFor.invalidate({ attachmentId: id });
     utils.attachment.entityLinkCounts.invalidate();
     // Refresh every place a linked/unlinked badge is shown for this photo
     utils.attachment.listBySheet.invalidate();
@@ -285,43 +397,128 @@ export function LinkAttachmentDialog({
     utils.export.sheetData.invalidate();
   };
 
-  // Target/Associate/Unidentified Person links close this dialog once
-  // they're made (whether or not a face was involved) — those are "this
-  // photo is of this person" identifications, one-and-done. Vehicle/
-  // Location links keep it open, same as before, so an officer can link the
-  // same photo to several of those in a row ("Link to another").
-  const finishPersonLink = (matches: PendingMatch[]) => {
-    invalidateLinkViews();
+  const detectBytes = trpc.attachment.detectFacesFromBytes.useMutation();
+  const uploadManual = trpc.attachment.uploadManual.useMutation();
+  const confirmEntity = trpc.attachment.confirmEntityFace.useMutation();
+  const confirmUnidentified =
+    trpc.attachment.confirmUnidentifiedPersonFaces.useMutation();
+  const linkToEntity = trpc.attachment.linkToEntity.useMutation();
+  const unlinkFromEntity = trpc.attachment.unlinkFromEntity.useMutation({
+    onSuccess: () => {
+      toast.success("Photo unlinked");
+      if (attachmentId != null) invalidateLinkViews(attachmentId);
+    },
+    onError: e => toast.error(e.message),
+  });
+
+  const anyPending =
+    uploadManual.isPending ||
+    confirmEntity.isPending ||
+    confirmUnidentified.isPending ||
+    linkToEntity.isPending;
+
+  const resetUpload = () => {
+    setFile(null);
+    setPreview(null);
+    setUploadFaces([]);
+    setUploadFacesLoading(false);
+    setOperationId(defaultOperationId ?? null);
+    setSheetId(null);
+    setRowId(null);
     setSelectedFaceIndex(null);
-    submittingRef.current = false;
+    setPendingEntity(null);
+  };
+
+  const faces = isUploadMode ? uploadFaces : ((existingFaces ?? []) as any);
+  const facesLoading = isUploadMode ? uploadFacesLoading : existingFacesLoading;
+  const tapPhotoUrl = isUploadMode ? preview : photoUrl;
+
+  // Resolves once a link (or upload+link) succeeds — invalidates the usual
+  // views, and either shows a possible-match popup or, once that's clear,
+  // closes the dialog. Existing mode must defer that close until the popup
+  // (if any) is dismissed, since this component is conditionally mounted by
+  // its caller ({linking !== null && <LinkAttachmentDialog .../>}) and
+  // closing would unmount it — and the popup with it — immediately.
+  const finishLink = (id: number, matches: PendingMatch[]) => {
+    invalidateLinkViews(id);
+    setSelectedFaceIndex(null);
     if (matches.length > 0) setPendingMatches(matches);
     else onOpenChange(false);
   };
 
-  const confirmEntity = trpc.attachment.confirmEntityFace.useMutation({
-    onSuccess: data => {
-      toast.success("Photo linked");
-      finishPersonLink(
-        data.matches.map(match => ({
-          newLinkId: data.linkId,
-          newPhotoUrl: photoUrl!,
-          match,
-        }))
+  const pickCandidate = async (e: any) => {
+    if (isUploadMode) {
+      setPendingEntity(prev =>
+        prev &&
+        prev.category === tab &&
+        prev.targetId === e.targetId &&
+        prev.entityLabel === e.shortForm
+          ? null
+          : { category: tab, targetId: e.targetId, entityLabel: e.shortForm }
       );
-    },
-    onError: e => {
+      return;
+    }
+    if (submittingRef.current || attachmentId == null) return;
+    submittingRef.current = true;
+    try {
+      if (FACE_CATEGORIES.has(tab) && selectedFaceIndex != null) {
+        const data = await confirmEntity.mutateAsync({
+          attachmentId,
+          faceIndex: selectedFaceIndex,
+          category: tab as "target" | "associate",
+          targetId: e.targetId,
+          entityLabel: e.shortForm,
+        });
+        toast.success("Photo linked");
+        finishLink(
+          attachmentId,
+          data.matches.map(match => ({
+            newLinkId: data.linkId,
+            newPhotoUrl: photoUrl!,
+            match,
+          }))
+        );
+      } else {
+        await linkToEntity.mutateAsync({
+          attachmentId,
+          category: tab,
+          targetId: e.targetId,
+          entityLabel: e.shortForm,
+        });
+        toast.success("Photo linked");
+        invalidateLinkViews(attachmentId);
+        setSelectedFaceIndex(null);
+        if (tab === "target" || tab === "associate") onOpenChange(false);
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? "Something went wrong.");
+    } finally {
       submittingRef.current = false;
-      toast.error(e.message);
-    },
-  });
+    }
+  };
 
-  const confirmUnidentified =
-    trpc.attachment.confirmUnidentifiedPersonFaces.useMutation({
-      onSuccess: data => {
+  const tagUnidentified = async () => {
+    if (isUploadMode) {
+      setPendingEntity(prev =>
+        prev && prev.category === "unidentified_person"
+          ? null
+          : { category: "unidentified_person" }
+      );
+      return;
+    }
+    if (submittingRef.current || attachmentId == null) return;
+    submittingRef.current = true;
+    try {
+      if (selectedFaceIndex != null) {
+        const data = await confirmUnidentified.mutateAsync({
+          attachmentId,
+          faceIndices: [selectedFaceIndex],
+        });
         toast.success(
           `Tagged ${data.results.length} Unidentified Person entr${data.results.length === 1 ? "y" : "ies"}`
         );
-        finishPersonLink(
+        finishLink(
+          attachmentId,
           data.results.flatMap(r =>
             r.matches.map(match => ({
               newLinkId: r.linkId,
@@ -330,85 +527,181 @@ export function LinkAttachmentDialog({
             }))
           )
         );
-      },
-      onError: e => {
-        submittingRef.current = false;
-        toast.error(e.message);
-      },
-    });
-
-  const linkToEntity = trpc.attachment.linkToEntity.useMutation({
-    onSuccess: (_data, variables) => {
-      toast.success(
-        variables.category === "unidentified_person"
-          ? "Tagged as Unidentified Person"
-          : "Photo linked"
-      );
-      invalidateLinkViews();
-      submittingRef.current = false;
-      setSelectedFaceIndex(null);
-      if (
-        variables.category === "target" ||
-        variables.category === "associate" ||
-        variables.category === "unidentified_person"
-      ) {
+      } else {
+        await linkToEntity.mutateAsync({
+          attachmentId,
+          category: "unidentified_person",
+          entityLabel: `Unidentified Person #${attachmentId}`,
+        });
+        toast.success("Tagged as Unidentified Person");
+        invalidateLinkViews(attachmentId);
         onOpenChange(false);
       }
-    },
-    onError: e => {
+    } catch (err: any) {
+      toast.error(err?.message ?? "Something went wrong.");
+    } finally {
       submittingRef.current = false;
-      toast.error(e.message);
-    },
-  });
-
-  const unlinkFromEntity = trpc.attachment.unlinkFromEntity.useMutation({
-    onSuccess: () => {
-      toast.success("Photo unlinked");
-      invalidateLinkViews();
-    },
-    onError: e => toast.error(e.message),
-  });
-
-  const anyPending =
-    confirmEntity.isPending ||
-    confirmUnidentified.isPending ||
-    linkToEntity.isPending;
-
-  const pickCandidate = (e: any) => {
-    if (submittingRef.current) return;
-    submittingRef.current = true;
-    if (FACE_CATEGORIES.has(tab) && selectedFaceIndex != null) {
-      confirmEntity.mutate({
-        attachmentId,
-        faceIndex: selectedFaceIndex,
-        category: tab as "target" | "associate",
-        targetId: e.targetId,
-        entityLabel: e.shortForm,
-      });
-    } else {
-      linkToEntity.mutate({
-        attachmentId,
-        category: tab,
-        targetId: e.targetId,
-        entityLabel: e.shortForm,
-      });
     }
   };
 
-  const tagUnidentified = () => {
-    if (submittingRef.current) return;
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    try {
+      const compressed = await compressAttachmentImage(f);
+      const blob = compressed?.blob ?? f;
+      const mimeType = compressed?.mimeType ?? f.type;
+      const fileName = compressed?.fileName ?? f.name;
+      if (blob.size > 25 * 1024 * 1024) {
+        toast.error("Photo must be under 25 MB.");
+        return;
+      }
+      setFile({ blob, mimeType, fileName });
+      setSelectedFaceIndex(null);
+      setPendingEntity(null);
+      const isHeic =
+        !compressed &&
+        (/^image\/hei[cf]/i.test(f.type) || /\.hei[cf]$/i.test(f.name));
+      if (isHeic) {
+        setPreview(null);
+        setUploadFaces([]);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => setPreview(reader.result as string);
+      reader.readAsDataURL(blob);
+
+      setUploadFacesLoading(true);
+      try {
+        const dataBase64 = await blobToBase64(blob);
+        const result = await detectBytes.mutateAsync({ dataBase64, mimeType });
+        setUploadFaces(result);
+      } catch {
+        setUploadFaces([]);
+      } finally {
+        setUploadFacesLoading(false);
+      }
+    } catch {
+      toast.error(
+        "Couldn't process that photo — try again, or use a different photo."
+      );
+    }
+  };
+
+  const canConfirm = !!file && operationId != null && !anyPending;
+
+  const handleConfirmUpload = async () => {
+    if (!file || operationId == null || submittingRef.current) return;
     submittingRef.current = true;
-    if (selectedFaceIndex != null) {
-      confirmUnidentified.mutate({
-        attachmentId,
-        faceIndices: [selectedFaceIndex],
+    try {
+      const dataBase64 = await blobToBase64(file.blob);
+      const result = await uploadManual.mutateAsync({
+        operationId,
+        rowId: rowId ?? undefined,
+        dataBase64,
+        mimeType: file.mimeType,
+        fileName: file.fileName,
       });
-    } else {
-      linkToEntity.mutate({
-        attachmentId,
-        category: "unidentified_person",
-        entityLabel: `Unidentified Person #${attachmentId}`,
-      });
+      utils.attachment.listByOperation.invalidate({ operationId });
+      if (sheetId != null) utils.attachment.listBySheet.invalidate({ sheetId });
+      if (rowId != null)
+        utils.row.list.invalidate({ sheetId: sheetId ?? undefined });
+      toast.success("Photo uploaded");
+
+      // Capture what was picked, then clear the picker/dialog immediately —
+      // this component stays mounted either way (see resetUpload), so
+      // nothing here needs to wait for a popup to survive.
+      const chosenFaceIndex = selectedFaceIndex;
+      const chosenEntity = pendingEntity;
+      resetUpload();
+      onOpenChange(false);
+
+      if (chosenEntity && FACE_CATEGORIES.has(chosenEntity.category)) {
+        if (chosenFaceIndex != null) {
+          const data = await confirmEntity.mutateAsync({
+            attachmentId: result.id,
+            faceIndex: chosenFaceIndex,
+            category: chosenEntity.category as "target" | "associate",
+            targetId: chosenEntity.targetId,
+            entityLabel: chosenEntity.entityLabel!,
+          });
+          toast.success("Photo linked");
+          invalidateLinkViews(result.id);
+          const matches = data.matches.map(match => ({
+            newLinkId: data.linkId,
+            newPhotoUrl: result.url,
+            match,
+          }));
+          if (matches.length > 0) setPendingMatches(matches);
+        } else {
+          await linkToEntity.mutateAsync({
+            attachmentId: result.id,
+            category: chosenEntity.category,
+            targetId: chosenEntity.targetId,
+            entityLabel: chosenEntity.entityLabel!,
+          });
+          toast.success("Photo linked");
+          invalidateLinkViews(result.id);
+        }
+      } else if (
+        chosenEntity &&
+        chosenEntity.category === "unidentified_person"
+      ) {
+        if (chosenFaceIndex != null) {
+          const data = await confirmUnidentified.mutateAsync({
+            attachmentId: result.id,
+            faceIndices: [chosenFaceIndex],
+          });
+          toast.success(
+            `Tagged ${data.results.length} Unidentified Person entr${data.results.length === 1 ? "y" : "ies"}`
+          );
+          invalidateLinkViews(result.id);
+          const matches = data.results.flatMap(r =>
+            r.matches.map(match => ({
+              newLinkId: r.linkId,
+              newPhotoUrl: result.url,
+              match,
+            }))
+          );
+          if (matches.length > 0) setPendingMatches(matches);
+        } else {
+          await linkToEntity.mutateAsync({
+            attachmentId: result.id,
+            category: "unidentified_person",
+            entityLabel: `Unidentified Person #${result.id}`,
+          });
+          toast.success("Tagged as Unidentified Person");
+          invalidateLinkViews(result.id);
+        }
+      } else if (chosenEntity) {
+        // Vehicle / Location — no face involved.
+        await linkToEntity.mutateAsync({
+          attachmentId: result.id,
+          category: chosenEntity.category,
+          targetId: chosenEntity.targetId,
+          entityLabel: chosenEntity.entityLabel!,
+        });
+        toast.success("Photo linked");
+        invalidateLinkViews(result.id);
+      } else {
+        // Nothing picked — same single-face auto-match safety net the
+        // running sheet's own upload has always had.
+        const facePreview = await utils.attachment.previewFaceMatch.fetch({
+          attachmentId: result.id,
+        });
+        if (facePreview?.suggestion) {
+          setUploadSuggestion({
+            id: result.id,
+            url: result.url,
+            match: facePreview.suggestion,
+          });
+        }
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? "Upload failed.");
+    } finally {
+      submittingRef.current = false;
     }
   };
 
@@ -421,43 +714,216 @@ export function LinkAttachmentDialog({
       .sort((a, b) => a.shortForm.localeCompare(b.shortForm));
   }, [entities, tab, search]);
 
+  const activeOperationId = isUploadMode ? operationId : currentOperationId;
+
   // With hundreds of entities across every operation, the entities actually
   // relevant to the running sheet/operation this photo belongs to are what
   // an officer is almost always looking for — split those out to the top
   // instead of leaving them to scroll past everything else alphabetically.
   const { inCurrentOp, otherEntities } = useMemo(() => {
-    if (!currentOperationId)
+    if (!activeOperationId)
       return { inCurrentOp: [] as any[], otherEntities: filtered };
     const inOp: any[] = [];
     const rest: any[] = [];
     for (const e of filtered) {
       const linked = (e.occurrences ?? []).some(
-        (o: any) => o.operationId === currentOperationId
+        (o: any) => o.operationId === activeOperationId
       );
       (linked ? inOp : rest).push(e);
     }
     return { inCurrentOp: inOp, otherEntities: rest };
-  }, [filtered, currentOperationId]);
+  }, [filtered, activeOperationId]);
+
+  const isPendingPick = (
+    category: Category,
+    targetId?: number,
+    entityLabel?: string
+  ) =>
+    !!pendingEntity &&
+    pendingEntity.category === category &&
+    pendingEntity.targetId === targetId &&
+    pendingEntity.entityLabel === entityLabel;
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog
+        open={open}
+        onOpenChange={o => {
+          if (!o && isUploadMode) resetUpload();
+          onOpenChange(o);
+        }}
+      >
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Link photo to entity</DialogTitle>
+            <DialogTitle>
+              {isUploadMode ? "Upload photo" : "Link photo to entity"}
+            </DialogTitle>
           </DialogHeader>
 
-          {photoUrl && (
-            <TapSelectFace
-              photoUrl={photoUrl}
-              faces={(faces ?? []) as any}
-              loading={facesLoading}
-              selectedIndex={selectedFaceIndex}
-              onSelect={setSelectedFaceIndex}
-            />
+          {isUploadMode ? (
+            <div className="rounded-lg border border-l-4 border-border border-l-muted-foreground/40 bg-muted/20 p-3 flex flex-col gap-2">
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
+                Photo
+              </p>
+              <input
+                ref={inputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFile}
+              />
+              {file ? (
+                <div className="flex flex-col gap-2">
+                  {preview ? (
+                    <TapSelectFace
+                      photoUrl={preview}
+                      faces={uploadFaces}
+                      loading={uploadFacesLoading}
+                      selectedIndex={selectedFaceIndex}
+                      onSelect={setSelectedFaceIndex}
+                    />
+                  ) : (
+                    <div className="w-full h-56 rounded-lg border border-border bg-background flex items-center justify-center text-xs text-muted-foreground text-center px-2">
+                      No preview available for this file type
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium truncate">
+                        {file.fileName}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {formatFileSize(file.blob.size)}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => inputRef.current?.click()}
+                      className="shrink-0"
+                    >
+                      Change photo
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => inputRef.current?.click()}
+                  className="w-full flex flex-col items-center gap-2 rounded-lg border-[1.5px] border-dashed border-border bg-background py-8 px-4 text-center hover:border-muted-foreground/50 hover:bg-muted/30 transition-colors"
+                >
+                  <ImagePlus className="h-6 w-6 text-muted-foreground" />
+                  <span className="text-sm font-medium">Choose photo</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    JPEG, PNG or HEIC, up to 25 MB
+                  </span>
+                </button>
+              )}
+            </div>
+          ) : (
+            tapPhotoUrl && (
+              <TapSelectFace
+                photoUrl={tapPhotoUrl}
+                faces={faces}
+                loading={facesLoading}
+                selectedIndex={selectedFaceIndex}
+                onSelect={setSelectedFaceIndex}
+              />
+            )
           )}
 
-          {currentLinks && currentLinks.length > 0 && (
+          {isUploadMode && (
+            <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3 flex flex-col gap-2">
+              <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5">
+                Operation
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-sky-500 text-white tracking-wider">
+                  REQUIRED
+                </span>
+              </p>
+              {operationOptions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No operations found.
+                </p>
+              ) : (
+                <Select
+                  value={operationId != null ? String(operationId) : undefined}
+                  onValueChange={v => {
+                    setOperationId(Number(v));
+                    setSheetId(null);
+                    setRowId(null);
+                  }}
+                >
+                  <SelectTrigger className="h-9 text-sm bg-background">
+                    <SelectValue placeholder="Select operation…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {operationOptions.map((o: any) => (
+                      <SelectItem key={o.id} value={String(o.id)}>
+                        {o.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
+
+          {isUploadMode && operationId != null && (
+            <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3 flex flex-col gap-2">
+              <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5">
+                Running sheet
+                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-background border border-border text-muted-foreground tracking-wider">
+                  OPTIONAL
+                </span>
+              </p>
+              <Select
+                value={sheetId != null ? String(sheetId) : "__none__"}
+                onValueChange={v => {
+                  setSheetId(v === "__none__" ? null : Number(v));
+                  setRowId(null);
+                }}
+              >
+                <SelectTrigger className="h-9 text-sm bg-background">
+                  <SelectValue placeholder="Select running sheet…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— None —</SelectItem>
+                  {(sheets ?? []).map((s: any) => (
+                    <SelectItem key={s.id} value={String(s.id)}>
+                      {s.title || `Sheet #${s.id}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {sheetId != null && (
+                <Select
+                  value={rowId != null ? String(rowId) : "__none__"}
+                  onValueChange={v =>
+                    setRowId(v === "__none__" ? null : Number(v))
+                  }
+                >
+                  <SelectTrigger className="h-9 text-sm bg-background">
+                    <SelectValue placeholder="Select row…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— None —</SelectItem>
+                    {(rows ?? []).map((r: any) => (
+                      <SelectItem key={r.id} value={String(r.id)}>
+                        {(r.time ?? "—") +
+                          " · " +
+                          (r.observation
+                            ? String(r.observation).slice(0, 60)
+                            : "(no observation)")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
+
+          {!isUploadMode && currentLinks && currentLinks.length > 0 && (
             <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3 flex flex-col gap-2">
               <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">
                 Currently linked
@@ -503,7 +969,7 @@ export function LinkAttachmentDialog({
                           category={link.category as Category}
                           targetId={link.targetId}
                           entityLabel={link.entityLabel}
-                          excludeAttachmentId={attachmentId}
+                          excludeAttachmentId={attachmentId!}
                         />
                       )}
                     </div>
@@ -515,9 +981,11 @@ export function LinkAttachmentDialog({
 
           <div className="rounded-lg border border-l-4 border-violet-500/30 border-l-violet-500 bg-violet-500/5 p-3 flex flex-col gap-2.5">
             <p className="text-xs font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide">
-              {currentLinks && currentLinks.length > 0
-                ? "Link to another"
-                : "Link to"}
+              {isUploadMode
+                ? "Link to (optional)"
+                : currentLinks && currentLinks.length > 0
+                  ? "Link to another"
+                  : "Link to"}
             </p>
 
             <div className="grid grid-cols-5 max-[420px]:grid-cols-3 gap-1.5">
@@ -553,9 +1021,15 @@ export function LinkAttachmentDialog({
                 <button
                   disabled={anyPending}
                   onClick={tagUnidentified}
-                  className="text-left px-3 py-2 rounded-lg text-sm border border-border bg-background hover:bg-accent/50 transition-colors"
+                  className={`text-left px-3 py-2 rounded-lg text-sm border transition-colors ${
+                    isUploadMode && isPendingPick("unidentified_person")
+                      ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-400"
+                      : "border-border bg-background hover:bg-accent/50"
+                  }`}
                 >
-                  + Tag as new Unidentified Person
+                  {isUploadMode && isPendingPick("unidentified_person")
+                    ? "✓ Will tag as new Unidentified Person"
+                    : "+ Tag as new Unidentified Person"}
                 </button>
               </div>
             ) : (
@@ -591,6 +1065,10 @@ export function LinkAttachmentDialog({
                               key={`cur-${e.shortForm}-${idx}`}
                               e={e}
                               disabled={anyPending}
+                              selected={
+                                isUploadMode &&
+                                isPendingPick(tab, e.targetId, e.shortForm)
+                              }
                               onPick={() => pickCandidate(e)}
                             />
                           ))}
@@ -604,6 +1082,10 @@ export function LinkAttachmentDialog({
                           key={`other-${e.shortForm}-${idx}`}
                           e={e}
                           disabled={anyPending}
+                          selected={
+                            isUploadMode &&
+                            isPendingPick(tab, e.targetId, e.shortForm)
+                          }
                           onPick={() => pickCandidate(e)}
                         />
                       ))}
@@ -614,7 +1096,7 @@ export function LinkAttachmentDialog({
             )}
           </div>
 
-          {rowCins && rowCins.length > 1 && (
+          {!isUploadMode && rowCins && rowCins.length > 1 && (
             <div className="rounded-lg border border-l-4 border-teal-500/30 border-l-teal-500 bg-teal-500/5 p-3 flex flex-col gap-2.5">
               <p className="text-xs font-bold text-teal-700 dark:text-teal-400 uppercase tracking-wide">
                 Link to a team member (CIN)
@@ -633,13 +1115,19 @@ export function LinkAttachmentDialog({
                     <button
                       key={cin}
                       disabled={linkToEntity.isPending || alreadyLinked}
-                      onClick={() =>
-                        linkToEntity.mutate({
-                          attachmentId,
-                          category: "member",
-                          entityLabel: cin,
-                        })
-                      }
+                      onClick={async () => {
+                        try {
+                          await linkToEntity.mutateAsync({
+                            attachmentId: attachmentId!,
+                            category: "member",
+                            entityLabel: cin,
+                          });
+                          toast.success("Photo linked");
+                          invalidateLinkViews(attachmentId!);
+                        } catch (err: any) {
+                          toast.error(err?.message ?? "Something went wrong.");
+                        }
+                      }}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm border transition-colors ${
                         alreadyLinked
                           ? "border-teal-500/40 bg-teal-500/10 text-teal-700 dark:text-teal-400"
@@ -654,6 +1142,23 @@ export function LinkAttachmentDialog({
               </div>
             </div>
           )}
+
+          {isUploadMode && (
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  resetUpload();
+                  onOpenChange(false);
+                }}
+              >
+                Close
+              </Button>
+              <Button disabled={!canConfirm} onClick={handleConfirmUpload}>
+                {anyPending ? "Uploading…" : "Confirm upload"}
+              </Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -662,8 +1167,17 @@ export function LinkAttachmentDialog({
           matches={pendingMatches}
           onDone={() => {
             setPendingMatches(null);
-            onOpenChange(false);
+            if (!isUploadMode) onOpenChange(false);
           }}
+        />
+      )}
+
+      {uploadSuggestion && (
+        <SuggestedFaceMatchDialog
+          attachmentId={uploadSuggestion.id}
+          photoUrl={uploadSuggestion.url}
+          suggestion={uploadSuggestion.match}
+          onDone={() => setUploadSuggestion(null)}
         />
       )}
     </>

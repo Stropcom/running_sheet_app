@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -163,7 +164,19 @@ export function StagedPhotoFaceReview({
           ]);
         }}
         onSkip={() => {}}
-        onDone={() => setOthersReviewed(true)}
+        onDone={() => {
+          // Any other detected face with no suggestion never got a card
+          // here either (silent, by design) — say so, so it's clear this
+          // finished reviewing everything it could rather than stopping
+          // partway through.
+          const stillUnreviewed = otherDetected.length - otherQueue.length;
+          if (stillUnreviewed > 0) {
+            toast(
+              `${stillUnreviewed} other face${stillUnreviewed === 1 ? "" : "s"} in this photo didn't match anyone on file — link ${stillUnreviewed === 1 ? "it" : "them"} manually from the Images folder afterward, if needed.`
+            );
+          }
+          setOthersReviewed(true);
+        }}
       />
     );
   }

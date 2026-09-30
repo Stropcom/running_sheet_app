@@ -1603,7 +1603,19 @@ function ObservationAttachments({
             }
           }}
           onSkip={() => {}}
-          onDone={() => setReviewQueue(null)}
+          onDone={() => {
+            // Faces with no match never get a card (silent, by design) —
+            // say so explicitly when there were more, so it doesn't read
+            // as the flow just stopping partway through.
+            const unmatched =
+              reviewQueue.allFaces.length - reviewQueue.queue.length;
+            if (unmatched > 0) {
+              toast(
+                `${unmatched} other face${unmatched === 1 ? "" : "s"} in this photo didn't match anyone on file — link ${unmatched === 1 ? "it" : "them"} manually via the Link badge if needed.`
+              );
+            }
+            setReviewQueue(null);
+          }}
         />
       )}
     </div>

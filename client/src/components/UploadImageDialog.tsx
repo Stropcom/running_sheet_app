@@ -494,7 +494,21 @@ export function UploadImageDialog({
               );
             }}
             onSkip={() => {}}
-            onDone={() => setPreUploadReview(null)}
+            onDone={() => {
+              // Faces with no match at all never get a card (silent, by
+              // design) — but leaving no trace at all reads as "it just
+              // stopped" rather than "nothing else to review here", so say
+              // so explicitly whenever this photo had more faces than got
+              // reviewed.
+              const unmatched =
+                preUploadReview.allFaces.length - preUploadReview.queue.length;
+              if (unmatched > 0) {
+                toast(
+                  `${unmatched} other face${unmatched === 1 ? "" : "s"} in this photo didn't match anyone on file — link ${unmatched === 1 ? "it" : "them"} manually below or after uploading, if needed.`
+                );
+              }
+              setPreUploadReview(null);
+            }}
           />
         ) : faceSelectState?.mode === "unidentified" ? (
           <FaceSelectPicker

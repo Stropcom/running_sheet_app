@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "wouter";
 import {
   Dialog,
   DialogContent,
@@ -6,7 +7,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Check, X, ScanFace, FileText, ImageUp } from "lucide-react";
+import {
+  Check,
+  X,
+  ScanFace,
+  FileText,
+  ImageUp,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import type { FaceMatchCandidate } from "@/components/PossibleMatchDialog";
 
 export type { FaceMatchCandidate };
@@ -24,14 +33,60 @@ const CATEGORY_LABEL: Record<string, string> = {
   unidentified_person: "Unidentified Person",
 };
 
+// Same zoom steps as PossibleMatchDialog (the existing compare tool this
+// mirrors) — see that file's own comment for why each step sets a
+// percentage column width plus a matching sm:max-w on the dialog itself
+// rather than a fixed px size.
+const ZOOM_STEPS: {
+  label: string;
+  colClass: string;
+  imgFit: string;
+  dialogClass: string;
+}[] = [
+  {
+    label: "Small",
+    colClass: "w-28",
+    imgFit: "object-cover",
+    dialogClass: "max-w-sm sm:max-w-sm",
+  },
+  {
+    label: "Medium",
+    colClass: "w-[34%]",
+    imgFit: "object-contain bg-muted",
+    dialogClass: "w-[80vw] max-w-[80vw] sm:max-w-[80vw]",
+  },
+  {
+    label: "Large",
+    colClass: "w-[40%]",
+    imgFit: "object-contain bg-muted",
+    dialogClass: "w-[90vw] max-w-[90vw] sm:max-w-[90vw]",
+  },
+  {
+    label: "X-Large",
+    colClass: "w-[44%]",
+    imgFit: "object-contain bg-muted",
+    dialogClass: "w-[95vw] max-w-[95vw] sm:max-w-[95vw]",
+  },
+  {
+    label: "Maximum",
+    colClass: "w-[48%]",
+    imgFit: "object-contain bg-muted",
+    dialogClass: "w-[99vw] max-w-[99vw] sm:max-w-[99vw]",
+  },
+];
+const MAX_ZOOM_INDEX = ZOOM_STEPS.length - 1;
+
 /**
  * Steps through every detected face in a photo that got a possible-match
  * suggestion (one card at a time — the same accept/reject shape as the old
  * single-face SuggestedFaceMatchDialog), with the full photo shown above
  * each card and a box drawn over every detected face so which one the card
- * is actually talking about is never ambiguous: the face under review is
- * solid/highlighted, faces already handled are green, everything else is
- * dashed and labelled "not part of this check".
+ * is actually talking about is never ambiguous: a plain colour tells the
+ * story — green for the face under review, amber for every other
+ * detected face — with no label text sitting on top of anyone's face.
+ * The compare row below reuses the same zoom control as the app's
+ * existing PossibleMatchDialog so the two photos can be sized up for a
+ * closer look, not just the small default thumbnails.
  *
  * `allFaces` is every detected face (for drawing every box); `queue` is the
  * subset that actually got a suggestion (what gets stepped through) —
@@ -56,7 +111,9 @@ export function FaceMatchReviewQueue({
   onSkip: (item: FaceReviewItem) => void;
   onDone: () => void;
 }) {
+  const [, setLocation] = useLocation();
   const [pos, setPos] = useState(0);
+  const [zoomIndex, setZoomIndex] = useState(0);
   const [naturalSize, setNaturalSize] = useState<{
     w: number;
     h: number;
@@ -119,6 +176,7 @@ export function FaceMatchReviewQueue({
   const advance = () => {
     setPending(false);
     setCropUrl(null);
+    setZoomIndex(0);
     if (pos + 1 >= queue.length) onDone();
     else setPos(pos + 1);
   };
@@ -140,10 +198,13 @@ export function FaceMatchReviewQueue({
   };
 
   const pct = Math.round(current.suggestion.similarity * 100);
+  const zoom = ZOOM_STEPS[zoomIndex];
 
   return (
     <Dialog open onOpenChange={o => !o && onDone()}>
-      <DialogContent className="max-w-sm max-h-[92vh] overflow-y-auto">
+      <DialogContent
+        className={`${zoom.dialogClass} max-h-[92vh] overflow-y-auto`}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between gap-2 pr-6">
             <span className="flex items-center gap-2">
@@ -158,17 +219,23 @@ export function FaceMatchReviewQueue({
           </DialogTitle>
         </DialogHeader>
 
-        <p className="text-xs text-muted-foreground bg-sky-500/10 border border-border rounded-lg px-2.5 py-2 leading-relaxed">
-          The highlighted box below is the face being compared — any other face
-          in this photo is not part of this check.
+        <p className="text-xs text-muted-foreground bg-sky-500/10 border border-border rounded-lg px-2.5 py-2 leading-relaxed flex items-center gap-3 flex-wrap">
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm border-2 border-emerald-500 shrink-0" />
+            Face being compared
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm border-2 border-amber-500 shrink-0" />
+            Other face — not part of this check
+          </span>
         </p>
 
-        <div className="relative w-full rounded-lg overflow-hidden border border-border">
+        <div className="relative w-full">
           <img
             ref={imgRef}
             src={photoUrl}
             alt="Uploaded photo"
-            className="w-full block"
+            className="w-full block rounded-lg border border-border"
             onLoad={e => {
               const el = e.currentTarget;
               setNaturalSize({ w: el.naturalWidth, h: el.naturalHeight });
@@ -179,15 +246,14 @@ export function FaceMatchReviewQueue({
             const isCurrent = b.index === current.index;
             const isHandled =
               handledInSession.has(b.index) || alreadyHandled?.has(b.index);
-            const cls = isCurrent
-              ? "border-primary bg-primary/20 shadow-[0_0_0_3px_rgba(0,0,0,0.08)]"
-              : isHandled
-                ? "border-emerald-500 bg-emerald-500/15"
-                : "border-muted-foreground/50 bg-muted-foreground/10 border-dashed";
+            const cls =
+              isCurrent || isHandled
+                ? "border-emerald-500"
+                : "border-amber-500";
             return (
               <div
                 key={b.index}
-                className={`absolute border-2 rounded ${cls}`}
+                className={`absolute border-[3px] rounded ${cls}`}
                 style={{
                   left: b.left,
                   top: b.top,
@@ -195,78 +261,106 @@ export function FaceMatchReviewQueue({
                   height: b.height,
                 }}
               >
-                <span
-                  className={`absolute top-0.5 left-0.5 text-[7.5px] font-bold font-mono px-1 py-px rounded ${
-                    isCurrent
-                      ? "bg-primary text-primary-foreground"
-                      : isHandled
-                        ? "bg-background border border-emerald-500 text-emerald-600 dark:text-emerald-400"
-                        : "bg-background border border-muted-foreground/50 text-muted-foreground"
-                  }`}
-                >
-                  {isCurrent
-                    ? "Comparing now"
-                    : isHandled
-                      ? "Already linked"
-                      : "Other face"}
-                </span>
+                {isHandled && !isCurrent && (
+                  <span className="absolute -top-2 -right-2 h-4 w-4 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+                    <Check className="h-2.5 w-2.5" />
+                  </span>
+                )}
               </div>
             );
           })}
         </div>
 
-        <div className="flex items-center gap-2.5 rounded-lg border border-border bg-muted/20 p-2.5">
-          <div className="flex-1 min-w-0 flex flex-col items-center gap-1">
+        <div className="flex items-center justify-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            disabled={zoomIndex === 0}
+            onClick={() => setZoomIndex(z => Math.max(0, z - 1))}
+            title="Zoom out"
+          >
+            <ZoomOut className="h-3.5 w-3.5" />
+          </Button>
+          <span className="text-xs text-muted-foreground w-16 text-center">
+            {zoom.label}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            disabled={zoomIndex === MAX_ZOOM_INDEX}
+            onClick={() => setZoomIndex(z => Math.min(MAX_ZOOM_INDEX, z + 1))}
+            title="Zoom in"
+          >
+            <ZoomIn className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+
+        <div className="flex items-start justify-center gap-4 sm:gap-8">
+          <div
+            className={`flex flex-col items-center gap-1.5 shrink-0 ${zoom.colClass}`}
+          >
             {cropUrl ? (
               <img
                 src={cropUrl}
                 alt="Highlighted face, this photo"
-                className="h-14 w-14 rounded-md object-cover border border-border"
+                className={`w-full aspect-square rounded-lg border border-border transition-all ${zoom.imgFit}`}
               />
             ) : (
-              <div className="h-14 w-14 rounded-md bg-muted border border-border" />
+              <div className="w-full aspect-square rounded-lg border border-border bg-muted" />
             )}
-            <span className="text-[9.5px] text-muted-foreground text-center leading-tight">
-              This photo
-            </span>
+            <span className="text-xs text-muted-foreground">This photo</span>
           </div>
-          <div className="flex flex-col items-center gap-0.5 shrink-0">
-            <span className="font-mono font-bold text-primary text-base">
-              {pct}%
-            </span>
-            <span className="text-[8px] uppercase tracking-wide text-muted-foreground">
-              similar
-            </span>
+          <div className="text-muted-foreground text-lg shrink-0 self-center">
+            ≈
           </div>
-          <div className="flex-1 min-w-0 flex flex-col items-center gap-1">
+          <div
+            className={`flex flex-col items-center gap-1.5 shrink-0 ${zoom.colClass}`}
+          >
             <img
               src={current.suggestion.photoUrl}
               alt={current.suggestion.entityLabel}
-              className="h-14 w-14 rounded-md object-cover border border-dashed border-muted-foreground/60"
+              className={`w-full aspect-square rounded-lg border border-border transition-all ${zoom.imgFit}`}
             />
-            <span className="text-[10.5px] font-semibold text-center leading-tight break-words w-full">
+            <span className="text-xs text-muted-foreground text-center break-words w-full">
               {current.suggestion.entityLabel}
             </span>
-            <span className="text-[9px] text-muted-foreground text-center leading-tight">
-              {CATEGORY_LABEL[current.suggestion.category] ??
-                current.suggestion.category}
-            </span>
             {current.suggestion.sourceSheetId ? (
-              <span className="flex items-center gap-1 text-[9px] text-muted-foreground break-words w-full justify-center">
+              <button
+                type="button"
+                onClick={() =>
+                  setLocation(`/sheet/${current.suggestion.sourceSheetId}`)
+                }
+                title={`Open ${current.suggestion.sourceSheetTitle} — ${current.suggestion.sourceOperationName}, to see other photos there`}
+                className="flex items-center gap-1 text-[10px] text-primary underline underline-offset-2 break-words w-full justify-center"
+              >
                 <FileText className="h-2.5 w-2.5 shrink-0" />
-                <span className="break-words truncate">
+                <span className="break-words">
                   {current.suggestion.sourceSheetTitle}
                 </span>
-              </span>
+              </button>
             ) : (
-              <span className="flex items-center gap-1 text-[9px] text-muted-foreground break-words w-full justify-center">
+              <span
+                title="Uploaded directly to this operation's Images folder — not attached to a running sheet row"
+                className="flex items-center gap-1 text-[10px] text-muted-foreground break-words w-full justify-center"
+              >
                 <ImageUp className="h-2.5 w-2.5 shrink-0" />
-                <span className="truncate">
+                <span className="break-words">
                   {current.suggestion.sourceOperationName}
                 </span>
               </span>
             )}
           </div>
+        </div>
+
+        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+          {CATEGORY_LABEL[current.suggestion.category] ??
+            current.suggestion.category}
+          <span className="text-muted-foreground/60">·</span>
+          {pct}% similar
         </div>
 
         <div className="flex justify-center gap-2 pt-1">

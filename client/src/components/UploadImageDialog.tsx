@@ -165,20 +165,26 @@ export function UploadImageDialog({
     | null
   >(null);
 
-  // Set right after any manual upload succeeds — this photo may not have
-  // an entity category picked at all, but the instant match-check runs
-  // regardless (same as the running sheet's row uploads; manual uploads
-  // never had this check before). Cleared once every face with a
-  // suggestion has been reviewed, at which point proceedAfterReview picks
-  // up whatever the normal post-upload flow was going to do anyway.
-  const [reviewQueue, setReviewQueue] = useState<{
-    id: number;
-    url: string;
+  // Set the moment a photo is picked — the check runs on the raw bytes
+  // before the rest of the form (Operation/Link to entity) is even shown,
+  // so if this photo matches someone already on file that's the first
+  // thing the officer sees, not the upload form. Manual uploads never had
+  // this at all before. Cleared once every face with a suggestion has
+  // been reviewed, at which point the normal upload form appears.
+  const [preUploadReview, setPreUploadReview] = useState<{
     allFaces: Array<{ index: number; bbox: [number, number, number, number] }>;
     queue: FaceReviewItem[];
   } | null>(null);
+  // Recorded (not yet written to the database — this photo isn't uploaded
+  // yet) from the pre-upload review above; applied once the real upload
+  // succeeds, before whatever the officer picked in "Link to entity" runs.
+  const [pendingCrossLinks, setPendingCrossLinks] = useState<
+    Array<{ faceIndex: number; matchedEntityLinkId: number }>
+  >([]);
   const confirmSuggestedMatch =
     trpc.attachment.confirmSuggestedFaceMatch.useMutation();
+  const previewFacesFromBytes =
+    trpc.attachment.previewFaceMatchesFromBytes.useMutation();
 
   const knownEntitySelected =
     entityTab && entityTab !== "unidentified_person" && !!selectedEntity;
@@ -262,7 +268,8 @@ export function UploadImageDialog({
     setSheetId(null);
     setRowId(null);
     setFaceSelectState(null);
-    setReviewQueue(null);
+    setPreUploadReview(null);
+    setPendingCrossLinks([]);
   };
 
   const uploadManual = trpc.attachment.uploadManual.useMutation();
@@ -282,15 +289,47 @@ export function UploadImageDialog({
         return;
       }
       setFile({ blob, mimeType, fileName });
+      setPendingCrossLinks([]);
+      setPreUploadReview(null);
       const isHeic =
         !compressed &&
         (/^image\/hei[cf]/i.test(f.type) || /\.hei[cf]$/i.test(f.name));
-      if (!isHeic) {
-        const reader = new FileReader();
-        reader.onload = () => setPreview(reader.result as string);
-        reader.readAsDataURL(blob);
-      } else {
+      if (isHeic) {
         setPreview(null);
+        return;
+      }
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Could not read photo."));
+        reader.readAsDataURL(blob);
+      });
+      setPreview(dataUrl);
+
+      // Run the same instant match check every other upload path gets, on
+      // the raw bytes — before the officer has even seen the Operation/
+      // Link to entity form below. Best-effort: a failed check just skips
+      // straight to that normal form, same as a photo with no match.
+      try {
+        const dataBase64 = dataUrl.split(",")[1] ?? "";
+        const facePreview = await previewFacesFromBytes.mutateAsync({
+          dataBase64,
+          mimeType,
+        });
+        const matched = facePreview.faces.filter(
+          (x): x is FaceReviewItem => x.suggestion !== null
+        );
+        if (matched.length > 0) {
+          setPreUploadReview({
+            allFaces: facePreview.faces.map(x => ({
+              index: x.index,
+              bbox: x.bbox,
+            })),
+            queue: matched,
+          });
+        }
+      } catch {
+        // fall through to the normal upload form
       }
     } catch {
       toast.error(
@@ -393,32 +432,21 @@ export function UploadImageDialog({
         fileName: file.fileName,
       });
 
-      // Same instant per-face match check every other upload path gets,
-      // regardless of whether an entity category was picked above — manual
-      // uploads never had this before. Best-effort: if the check itself
-      // fails, just fall through to the normal flow rather than blocking
-      // the upload the officer already completed.
-      try {
-        const preview = await utils.attachment.previewFaceMatches.fetch({
-          attachmentId: result.id,
-        });
-        const matched = preview.faces.filter(
-          (f): f is FaceReviewItem => f.suggestion !== null
-        );
-        if (matched.length > 0) {
-          setReviewQueue({
-            id: result.id,
-            url: result.url,
-            allFaces: preview.faces.map(f => ({
-              index: f.index,
-              bbox: f.bbox,
-            })),
-            queue: matched,
+      // Apply whatever the officer already confirmed in the pre-upload
+      // review (see handleFile) — that ran on raw bytes before this photo
+      // existed anywhere to link against, so those decisions couldn't be
+      // written until now.
+      for (const link of pendingCrossLinks) {
+        try {
+          await confirmSuggestedMatch.mutateAsync({
+            attachmentId: result.id,
+            matchedEntityLinkId: link.matchedEntityLinkId,
+            faceIndex: link.faceIndex,
           });
-          return;
+        } catch {
+          // best-effort — the officer already saw and accepted this match;
+          // don't block the rest of the upload over one failed cross-link.
         }
-      } catch {
-        // fall through
       }
 
       proceedAfterUpload(result);
@@ -438,7 +466,7 @@ export function UploadImageDialog({
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {reviewQueue
+            {preUploadReview
               ? "Possible match found"
               : faceSelectState?.mode === "unidentified"
                 ? "Tag Unidentified Person"
@@ -448,34 +476,25 @@ export function UploadImageDialog({
           </DialogTitle>
         </DialogHeader>
 
-        {reviewQueue ? (
+        {preUploadReview && preview ? (
           <FaceMatchReviewQueue
-            photoUrl={reviewQueue.url}
-            allFaces={reviewQueue.allFaces}
-            queue={reviewQueue.queue}
+            photoUrl={preview}
+            allFaces={preUploadReview.allFaces}
+            queue={preUploadReview.queue}
             onConfirm={async item => {
-              try {
-                await confirmSuggestedMatch.mutateAsync({
-                  attachmentId: reviewQueue.id,
-                  matchedEntityLinkId: item.suggestion.entityLinkId,
+              setPendingCrossLinks(prev => [
+                ...prev,
+                {
                   faceIndex: item.index,
-                });
-                toast.success(`Linked to ${item.suggestion.entityLabel}`);
-                utils.attachment.linksFor.invalidate({
-                  attachmentId: reviewQueue.id,
-                });
-                utils.attachment.entityLinkCounts.invalidate();
-              } catch (e: any) {
-                toast.error(e?.message ?? "Couldn't link that face.");
-                throw e;
-              }
+                  matchedEntityLinkId: item.suggestion.entityLinkId,
+                },
+              ]);
+              toast.success(
+                `Will link to ${item.suggestion.entityLabel} once uploaded`
+              );
             }}
             onSkip={() => {}}
-            onDone={() => {
-              const finished = { id: reviewQueue.id, url: reviewQueue.url };
-              setReviewQueue(null);
-              proceedAfterUpload(finished);
-            }}
+            onDone={() => setPreUploadReview(null)}
           />
         ) : faceSelectState?.mode === "unidentified" ? (
           <FaceSelectPicker

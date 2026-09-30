@@ -4410,7 +4410,12 @@ export default function IntelligenceMapping() {
         // (e.g. after a poll refresh) — same "subtract the map's heading"
         // math the heading_changed listener uses to keep it that way.
         img.dataset.rotation = String(rotation);
-        img.style.cssText = `width:40px;height:40px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation - mapHeadingRef.current}deg);`;
+        // Tactical source PNGs carry a few px of baked-in margin the
+        // hand-drawn Surveillance SVGs don't — sized slightly larger so
+        // both read as the same visual weight on the map (see the matching
+        // note on the picker's tactical tile size, above).
+        const iconPx = isTacticalIcon(outerCm.markerIcon) ? 44 : 40;
+        img.style.cssText = `width:${iconPx}px;height:${iconPx}px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation - mapHeadingRef.current}deg);`;
         iconBox.appendChild(img);
         // Store direct img ref for live rotation
         customMarkerImgRefs.current.set(outerCm.id, img);
@@ -4599,11 +4604,16 @@ export default function IntelligenceMapping() {
 
             // Rotation slider — not applicable to a "label only" marker,
             // there's no icon to rotate.
-            if (!cm.labelOnly)
+            if (!cm.labelOnly) {
+              // Tactical source PNGs carry a few px of baked-in margin the
+              // hand-drawn Surveillance SVGs don't — sized slightly larger
+              // so both read as the same visual weight (see the matching
+              // note on the picker's tactical tile size).
+              const popupIconPx = isTacticalIcon(cm.markerIcon) ? 27 : 24;
               lines.push(`
               <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">
                 <div style="display:flex;align-items:center;gap:8px;">
-                  <img id="cm-popup-preview-${cm.id}" src="${dataUrl}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${rotation}deg);transition:transform 0.1s;" />
+                  <img id="cm-popup-preview-${cm.id}" src="${dataUrl}" style="width:${popupIconPx}px;height:${popupIconPx}px;object-fit:contain;flex-shrink:0;transform:rotate(${rotation}deg);transition:transform 0.1s;" />
                   <div style="flex:1;">
                     <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
                       <span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Rotation</span>
@@ -4617,6 +4627,7 @@ export default function IntelligenceMapping() {
                 </div>
               </div>
             `);
+            }
 
             // ── Action buttons: symmetric grid layout ─────────────────────────────
             const btnBase =
@@ -10837,7 +10848,14 @@ export default function IntelligenceMapping() {
                             <img
                               src={t.src}
                               alt={t.label}
-                              className="w-6 h-6 object-contain"
+                              // Tactical source PNGs carry a few px of
+                              // baked-in margin the hand-drawn Surveillance
+                              // SVGs don't (their glyph fills the source
+                              // canvas closer to edge-to-edge) — sized
+                              // slightly larger here so the two sets read as
+                              // the same visual weight in the grid instead
+                              // of tactical icons looking a touch smaller.
+                              className="w-[27px] h-[27px] object-contain"
                             />
                           </button>
                         ))}
@@ -10846,62 +10864,68 @@ export default function IntelligenceMapping() {
                 </div>
               )}
 
-              {/* 2. Colour picker — doubles as the label pill's background
-                  colour when Label Only is on. Hidden outright when the
-                  Tactical tab is active (and this isn't a Label Only
-                  marker) — those icons are fixed-colour raster art with no
-                  colour for the picker to apply. Dimmed, with an
-                  explanatory note, if a Tactical icon is the one currently
-                  selected while browsing the All tab instead. */}
-              {(cmLabelOnly || cmIconFilter !== "tactical") && (
-                <div className="mb-4">
-                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                    {cmLabelOnly ? "Label Colour" : "Colour"}
-                  </p>
-                  {!cmLabelOnly && isTacticalIcon(cmIcon) && (
-                    <p className="text-[10px] text-muted-foreground mb-2">
-                      This icon's colour is fixed — it comes from the Tactical
-                      library as-is.
+              {/* 2. Colour picker — controls two different things depending
+                  on context: it recolours a Surveillance icon shape, AND/OR
+                  it sets the background of the label pill that renders
+                  under ANY icon (tactical included) once a Label is typed
+                  — see the labelText branch in the map-drawing effect
+                  above. A Tactical icon's own artwork is fixed-colour and
+                  never uses this, but if a Label is also set, the picker is
+                  still very much live — it's just controlling the pill, not
+                  the icon. Only truly hidden when neither applies: a
+                  Tactical icon selected with no Label typed and Label Only
+                  off, where nothing on screen would use a colour at all. */}
+              {(() => {
+                const iconIsTactical = !cmLabelOnly && isTacticalIcon(cmIcon);
+                const labelPillShowing = cmLabelOnly || cmLabel.trim() !== "";
+                if (iconIsTactical && !labelPillShowing) return null;
+                return (
+                  <div className="mb-4">
+                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                      {cmLabelOnly || iconIsTactical
+                        ? "Label Colour"
+                        : "Colour"}
                     </p>
-                  )}
-                  <div
-                    className="flex gap-2"
-                    style={{
-                      opacity:
-                        !cmLabelOnly && isTacticalIcon(cmIcon) ? 0.35 : 1,
-                    }}
-                  >
-                    {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(
-                      col => (
-                        <button
-                          key={col}
-                          onClick={() => setCmColour(col)}
-                          title={MARKER_COLOUR_LABELS[col]}
-                          className={`w-8 h-8 rounded-full border-2 transition-all ${
-                            cmColour === col
-                              ? "border-foreground scale-110"
-                              : "border-transparent hover:border-foreground/40"
-                          }`}
-                          style={{ background: MARKER_COLOURS[col] }}
-                        />
-                      )
+                    {iconIsTactical && (
+                      <p className="text-[10px] text-muted-foreground mb-2">
+                        This icon's own colour is fixed — it comes from the
+                        Tactical library as-is. The colour below sets your
+                        label's pill instead.
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(
+                        col => (
+                          <button
+                            key={col}
+                            onClick={() => setCmColour(col)}
+                            title={MARKER_COLOUR_LABELS[col]}
+                            className={`w-8 h-8 rounded-full border-2 transition-all ${
+                              cmColour === col
+                                ? "border-foreground scale-110"
+                                : "border-transparent hover:border-foreground/40"
+                            }`}
+                            style={{ background: MARKER_COLOURS[col] }}
+                          />
+                        )
+                      )}
+                    </div>
+                    {cmLabelOnly && (
+                      <div className="mt-3">
+                        <span
+                          className="inline-flex items-center max-w-[200px] truncate rounded-full border-[1.5px] px-2.5 py-1 text-[11px] font-bold text-white shadow"
+                          style={{
+                            background: MARKER_COLOURS[cmColour],
+                            borderColor: "rgba(255,255,255,0.7)",
+                          }}
+                        >
+                          {cmLabel.trim() || "(no label)"}
+                        </span>
+                      </div>
                     )}
                   </div>
-                  {cmLabelOnly && (
-                    <div className="mt-3">
-                      <span
-                        className="inline-flex items-center max-w-[200px] truncate rounded-full border-[1.5px] px-2.5 py-1 text-[11px] font-bold text-white shadow"
-                        style={{
-                          background: MARKER_COLOURS[cmColour],
-                          borderColor: "rgba(255,255,255,0.7)",
-                        }}
-                      >
-                        {cmLabel.trim() || "(no label)"}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
+                );
+              })()}
 
               {/* 3. Rotation — not applicable to a Label Only marker. */}
               {!cmLabelOnly && (
@@ -10911,11 +10935,13 @@ export default function IntelligenceMapping() {
                       Rotation — {cmRotation}°
                     </p>
                     {/* Rotated preview */}
-                    <div className="shrink-0 w-8 h-8 flex items-center justify-center">
+                    <div
+                      className={`shrink-0 flex items-center justify-center ${isTacticalIcon(cmIcon) ? "w-9 h-9" : "w-8 h-8"}`}
+                    >
                       <img
                         src={getMarkerIconUrl(cmIcon, cmColour)}
                         alt="preview"
-                        className="w-8 h-8 object-contain transition-transform"
+                        className={`object-contain transition-transform ${isTacticalIcon(cmIcon) ? "w-9 h-9" : "w-8 h-8"}`}
                         style={{ transform: `rotate(${cmRotation}deg)` }}
                       />
                     </div>

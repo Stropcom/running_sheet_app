@@ -139,20 +139,36 @@ export function FaceMatchReviewQueue({
     });
   }, [allFaces, naturalSize]);
 
+  // Face-detection boxes are deliberately tight (eyebrows-to-chin, the
+  // region the matching model actually compares — same convention as the
+  // tap-select boxes in FaceSelectPicker/StagedPhotoFaceReview). Cropped
+  // exactly to that box for a close-up thumbnail looks unnaturally zoomed
+  // in, cutting off forehead/hair/jaw — pad outward on every side so the
+  // whole face is visible, same as a normal portrait crop, clamped to the
+  // photo's actual bounds.
+  const CROP_PADDING_RATIO = 0.6;
+
   const cropDataUrl = (
     img: HTMLImageElement,
-    bbox: [number, number, number, number]
+    bbox: [number, number, number, number],
+    size: { w: number; h: number }
   ): string | null => {
     try {
       const [x0, y0, x1, y1] = bbox;
-      const w = Math.max(1, x1 - x0);
-      const h = Math.max(1, y1 - y0);
+      const padX = (x1 - x0) * CROP_PADDING_RATIO;
+      const padY = (y1 - y0) * CROP_PADDING_RATIO;
+      const px0 = Math.max(0, x0 - padX);
+      const py0 = Math.max(0, y0 - padY);
+      const px1 = Math.min(size.w, x1 + padX);
+      const py1 = Math.min(size.h, y1 + padY);
+      const w = Math.max(1, px1 - px0);
+      const h = Math.max(1, py1 - py0);
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext("2d");
       if (!ctx) return null;
-      ctx.drawImage(img, x0, y0, w, h, 0, 0, w, h);
+      ctx.drawImage(img, px0, py0, w, h, 0, 0, w, h);
       return canvas.toDataURL("image/jpeg", 0.85);
     } catch {
       return null;
@@ -167,7 +183,7 @@ export function FaceMatchReviewQueue({
   // the already-loaded element whenever the queue advances to a new face.
   useEffect(() => {
     if (!naturalSize || !imgRef.current || !current) return;
-    setCropUrl(cropDataUrl(imgRef.current, current.bbox));
+    setCropUrl(cropDataUrl(imgRef.current, current.bbox, naturalSize));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [naturalSize, current?.index]);
 
@@ -238,22 +254,28 @@ export function FaceMatchReviewQueue({
             className="w-full block rounded-lg border border-border"
             onLoad={e => {
               const el = e.currentTarget;
-              setNaturalSize({ w: el.naturalWidth, h: el.naturalHeight });
-              setCropUrl(cropDataUrl(el, current.bbox));
+              const size = { w: el.naturalWidth, h: el.naturalHeight };
+              setNaturalSize(size);
+              setCropUrl(cropDataUrl(el, current.bbox, size));
             }}
           />
           {boxStyles.map(b => {
             const isCurrent = b.index === current.index;
             const isHandled =
               handledInSession.has(b.index) || alreadyHandled?.has(b.index);
+            // Same border weight and translucent fill as the tap-select
+            // boxes everywhere else in the app (FaceSelectPicker,
+            // StagedPhotoFaceReview) — a bare outline on a small,
+            // detector-tight box reads as broken/misplaced; the fill is
+            // what makes the marked area legible at a glance.
             const cls =
               isCurrent || isHandled
-                ? "border-emerald-500"
-                : "border-amber-500";
+                ? "border-emerald-500 bg-emerald-500/20"
+                : "border-amber-500 bg-amber-500/10";
             return (
               <div
                 key={b.index}
-                className={`absolute border-[3px] rounded ${cls}`}
+                className={`absolute border-2 rounded ${cls}`}
                 style={{
                   left: b.left,
                   top: b.top,

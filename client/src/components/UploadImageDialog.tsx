@@ -28,6 +28,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FaceSelectPicker } from "@/components/FaceSelectPicker";
+import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
 import {
   FaceMatchReviewQueue,
   type FaceReviewItem,
@@ -186,6 +187,23 @@ export function UploadImageDialog({
   const previewFacesFromBytes =
     trpc.attachment.previewFaceMatchesFromBytes.useMutation();
 
+  // Total faces detected in the picked photo (set once, in handleFile,
+  // regardless of how many actually matched) — used after upload to decide
+  // whether anyone's still left to link manually. Null until the pre-check
+  // has run.
+  const [detectedFaceCount, setDetectedFaceCount] = useState<number | null>(
+    null
+  );
+  // Opened after upload, in place of just closing, when the photo had more
+  // detected faces than the auto-check (and a manually-picked entity, if
+  // any) accounted for — the same "Link photo to entity" panel used
+  // everywhere else, already showing the photo with every face boxed and
+  // tappable, exactly as the manual flow should.
+  const [linkAfterUpload, setLinkAfterUpload] = useState<{
+    id: number;
+    url: string;
+  } | null>(null);
+
   const knownEntitySelected =
     entityTab && entityTab !== "unidentified_person" && !!selectedEntity;
 
@@ -270,6 +288,8 @@ export function UploadImageDialog({
     setFaceSelectState(null);
     setPreUploadReview(null);
     setPendingCrossLinks([]);
+    setDetectedFaceCount(null);
+    setLinkAfterUpload(null);
   };
 
   const uploadManual = trpc.attachment.uploadManual.useMutation();
@@ -291,6 +311,7 @@ export function UploadImageDialog({
       setFile({ blob, mimeType, fileName });
       setPendingCrossLinks([]);
       setPreUploadReview(null);
+      setDetectedFaceCount(null);
       const isHeic =
         !compressed &&
         (/^image\/hei[cf]/i.test(f.type) || /\.hei[cf]$/i.test(f.name));
@@ -316,6 +337,7 @@ export function UploadImageDialog({
           dataBase64,
           mimeType,
         });
+        setDetectedFaceCount(facePreview.faces.length);
         const matched = facePreview.faces.filter(
           (x): x is FaceReviewItem => x.suggestion !== null
         );
@@ -401,12 +423,26 @@ export function UploadImageDialog({
     }
     finishUpload();
 
+    // Vehicle/Location links (above) never touch faces at all, and no
+    // entity category was picked in this branch either — so if the photo
+    // had more detected faces than the auto-check accounted for, there
+    // are still people in it nothing has offered to link yet. Open the
+    // same manual "Link photo to entity" panel used everywhere else,
+    // already showing every face boxed and tappable, instead of just
+    // closing as if there was nothing left to do.
     function finishUpload() {
       if (operationId == null) return;
       utils.attachment.listByOperation.invalidate({ operationId });
       if (sheetId != null) utils.attachment.listBySheet.invalidate({ sheetId });
       if (rowId != null)
         utils.row.list.invalidate({ sheetId: sheetId ?? undefined });
+      if (
+        detectedFaceCount != null &&
+        detectedFaceCount > pendingCrossLinks.length
+      ) {
+        setLinkAfterUpload({ id: result.id, url: result.url });
+        return;
+      }
       toast.success("Photo uploaded");
       onOpenChange(false);
       reset();
@@ -454,6 +490,24 @@ export function UploadImageDialog({
       toast.error(err?.message ?? "Upload failed.");
     }
   };
+
+  if (linkAfterUpload) {
+    return (
+      <LinkAttachmentDialog
+        attachmentId={linkAfterUpload.id}
+        photoUrl={linkAfterUpload.url}
+        open
+        onOpenChange={o => {
+          if (!o) {
+            toast.success("Photo uploaded");
+            onOpenChange(false);
+            reset();
+          }
+        }}
+        currentOperationId={operationId ?? undefined}
+      />
+    );
+  }
 
   return (
     <Dialog

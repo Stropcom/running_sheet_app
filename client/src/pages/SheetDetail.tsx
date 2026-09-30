@@ -1605,16 +1605,15 @@ function ObservationAttachments({
           onSkip={() => {}}
           onDone={() => {
             // Faces with no match never get a card (silent, by design) —
-            // say so explicitly when there were more, so it doesn't read
-            // as the flow just stopping partway through.
+            // if the photo had more of them, go straight to the same
+            // manual Link panel the amber tag opens, already showing every
+            // face boxed and tappable, instead of leaving the officer to
+            // find and click that tag themselves.
             const unmatched =
               reviewQueue.allFaces.length - reviewQueue.queue.length;
-            if (unmatched > 0) {
-              toast(
-                `${unmatched} other face${unmatched === 1 ? "" : "s"} in this photo didn't match anyone on file — link ${unmatched === 1 ? "it" : "them"} manually via the Link badge if needed.`
-              );
-            }
+            const finished = { id: reviewQueue.id, url: reviewQueue.url };
             setReviewQueue(null);
+            if (unmatched > 0) setLinking(finished);
           }}
         />
       )}

@@ -538,35 +538,61 @@ const PdfPages = forwardRef<
         canvas.className = "absolute inset-0 w-full h-full block bg-white";
         wrapper.appendChild(canvas);
         await (entry as any)._page.render({ canvas, viewport }).promise;
+        // The page image itself is the one thing that must work — mark
+        // it rendered as soon as the canvas succeeds, before the two
+        // enhancement layers below, so a failure in either of THEM
+        // (caught separately, each its own try/catch) can never wipe out
+        // an already-visible page by falling through to the outer catch,
+        // which clears the wrapper entirely.
+        entry.rendered = true;
 
-        const textLayerDiv = document.createElement("div");
-        textLayerDiv.className = "rs-pdf-text-layer";
-        wrapper.appendChild(textLayerDiv);
-        const textLayer = new pdfjsLib.TextLayer({
-          textContentSource: textContent,
-          container: textLayerDiv,
-          viewport,
-        });
-        await textLayer.render();
-        entry.textDivs = textLayer.textDivs;
-        entry.textStrs = textLayer.textContentItemsStr;
-
-        if (linkServiceRef.current) {
-          const annotations = await (entry as any)._page.getAnnotations();
-          if (annotations.length > 0) {
-            const annotationDiv = document.createElement("div");
-            annotationDiv.className = "rs-pdf-annotation-layer";
-            wrapper.appendChild(annotationDiv);
-            const annotationLayer = new pdfjsLib.AnnotationLayer({
-              div: annotationDiv,
-              page: (entry as any)._page,
-              viewport: viewport.clone({ dontFlip: true }),
-              linkService: linkServiceRef.current,
+        // textContent is null when pass1's getTextContent() failed for
+        // this page (see below) — the page still renders as a plain
+        // image in that case, just without a selectable/searchable text
+        // layer, rather than the whole document failing over it.
+        if (textContent) {
+          try {
+            const textLayerDiv = document.createElement("div");
+            textLayerDiv.className = "rs-pdf-text-layer";
+            wrapper.appendChild(textLayerDiv);
+            const textLayer = new pdfjsLib.TextLayer({
+              textContentSource: textContent,
+              container: textLayerDiv,
+              viewport,
             });
-            await annotationLayer.render({ annotations, renderForms: false });
+            await textLayer.render();
+            entry.textDivs = textLayer.textDivs;
+            entry.textStrs = textLayer.textContentItemsStr;
+          } catch (e) {
+            console.error(
+              `[DocumentViewerModal] text layer failed on page ${entry.pageNum}:`,
+              e
+            );
           }
         }
-        entry.rendered = true;
+
+        if (linkServiceRef.current) {
+          try {
+            const annotations = await (entry as any)._page.getAnnotations();
+            if (annotations.length > 0) {
+              const annotationDiv = document.createElement("div");
+              annotationDiv.className = "rs-pdf-annotation-layer";
+              wrapper.appendChild(annotationDiv);
+              const annotationLayer = new pdfjsLib.AnnotationLayer({
+                div: annotationDiv,
+                page: (entry as any)._page,
+                viewport: viewport.clone({ dontFlip: true }),
+                linkService: linkServiceRef.current,
+              });
+              await annotationLayer.render({ annotations, renderForms: false });
+            }
+          } catch (e) {
+            console.error(
+              `[DocumentViewerModal] annotation layer failed on page ${entry.pageNum}:`,
+              e
+            );
+          }
+        }
       } catch (e) {
         console.error(
           `[DocumentViewerModal] page ${entry.pageNum} render failed:`,
@@ -742,21 +768,40 @@ const PdfPages = forwardRef<
         // actually been drawn.
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
           if (cancelled) return;
-          step = `pass1 layout (page ${pageNum}/${pdf.numPages})`;
+          step = `pass1 getPage (page ${pageNum}/${pdf.numPages})`;
           const page = await pdf.getPage(pageNum);
           // Render scale derived from this page's own native size so the
           // canvas's actual pixel resolution matches targetPageWidth (the
           // CSS width it's displayed at) at 2x for retina sharpness —
           // the same 2x headroom the previous fixed `scale: 2` gave when
           // displayed at (that viewport's width / 2).
+          step = `pass1 getViewport (page ${pageNum}/${pdf.numPages})`;
           const baseViewport = page.getViewport({ scale: 1 });
           const renderScale = (targetPageWidth / baseViewport.width) * 2;
           const viewport = page.getViewport({ scale: renderScale });
-          const textContent = await page.getTextContent();
-          const searchText = (textContent.items as any[])
-            .map(it => ("str" in it ? it.str : ""))
-            .join(" ")
-            .toLowerCase();
+          step = `pass1 getTextContent (page ${pageNum}/${pdf.numPages})`;
+          // Caught locally, not left to the whole-document try/catch
+          // below — getTextContent() only feeds search and the
+          // selectable text layer, not the page's actual visible
+          // rendering (that's renderPage's canvas.render() in pass 2),
+          // so one page's text extraction failing shouldn't make the
+          // other 53 pages un-viewable too. null here is handled by
+          // renderPage (skips the text layer) and search() (just won't
+          // find anything on this page).
+          let textContent: any = null;
+          let searchText = "";
+          try {
+            textContent = await page.getTextContent();
+            searchText = (textContent.items as any[])
+              .map(it => ("str" in it ? it.str : ""))
+              .join(" ")
+              .toLowerCase();
+          } catch (e) {
+            console.error(
+              `[DocumentViewerModal] getTextContent failed on page ${pageNum}:`,
+              e
+            );
+          }
 
           const wrapper = document.createElement("div");
           wrapper.className =

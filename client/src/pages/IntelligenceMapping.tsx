@@ -139,6 +139,7 @@ import {
   PieChart,
   Route,
   Compass,
+  Pencil,
 } from "lucide-react";
 
 // Phone/tablet (touch, no physical keyboard) vs laptop/desktop (mouse +
@@ -1821,9 +1822,23 @@ export default function IntelligenceMapping() {
   );
   const [rsAddingRow, setRsAddingRow] = useState(false);
   const [rsLastEntry, setRsLastEntry] = useState<{
+    id: number;
     label: string;
     time: string;
   } | null>(null);
+  // Tap-to-edit on the "Last Entry" confirmation below — a self-contained
+  // mini form (its own text + time fields), deliberately NOT reusing the
+  // much more elaborate create-a-new-entry state machine (rsInlineLabel/
+  // rsInlineText, mention autocomplete, CIN picker, undo stack, vehicle-
+  // arrival chips...) a correction to the entry just submitted is a much
+  // rarer path than creating a new one, and entangling the two risked
+  // regressing the one that matters far more.
+  const [rsEditingLastEntry, setRsEditingLastEntry] = useState(false);
+  const [rsEditText, setRsEditText] = useState("");
+  const [rsEditHour, setRsEditHour] = useState("12");
+  const [rsEditMinute, setRsEditMinute] = useState("00");
+  const [rsEditPeriod, setRsEditPeriod] = useState("AM");
+  const rsUpdateRow = trpc.row.update.useMutation();
   const isTouchDevice = useIsTouchDevice();
   const { visibleHeight: vvVisibleHeight, keyboardInset: vvKeyboardInset } =
     useVisualViewportInset();
@@ -3062,6 +3077,7 @@ export default function IntelligenceMapping() {
         if (next.length === 0) {
           setRsSelectedSheetId(null);
           setRsLastEntry(null);
+          setRsEditingLastEntry(false);
         }
         if (next.length <= 1) setMultiOpMode(false);
       }
@@ -3085,6 +3101,7 @@ export default function IntelligenceMapping() {
     setSelectedTargetIds([]);
     setRsSelectedSheetId(null);
     setRsLastEntry(null);
+    setRsEditingLastEntry(false);
     setOpsDropdownOpen(false);
   };
 
@@ -3107,6 +3124,7 @@ export default function IntelligenceMapping() {
     setSelectedTargetIds([]);
     setRsSelectedSheetId(null);
     setRsLastEntry(null);
+    setRsEditingLastEntry(false);
     setMultiOpMode(false);
   };
 
@@ -6162,9 +6180,11 @@ export default function IntelligenceMapping() {
           // to confirm what got written to the record, not when the tap
           // landed.
           setRsLastEntry({
+            id: (data as any)?.id,
             label: vars.observation ?? "Entry",
             time: vars.time ?? timeStr,
           });
+          setRsEditingLastEntry(false);
           setRsAddingRow(false);
           // Attach all selected CINs — use the locally captured variable, not the ref
           if (cins.length > 0 && (data as any)?.id) {
@@ -6198,6 +6218,64 @@ export default function IntelligenceMapping() {
           setRsAddingRow(false);
           toast.error(e.message);
         },
+      }
+    );
+  };
+
+  // Tap-to-edit on the "Last Entry" banner — see rsEditingLastEntry's own
+  // declaration for why this is a separate mini form rather than routing
+  // back through the create-a-new-entry flow. Pre-fills from rsLastEntry's
+  // own already-recorded text/time, not from whatever a wall-clock "now"
+  // would give.
+  const openLastEntryEdit = () => {
+    if (!rsLastEntry) return;
+    setRsEditText(rsLastEntry.label);
+    const match = rsLastEntry.time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (match) {
+      setRsEditHour(String(parseInt(match[1])));
+      setRsEditMinute(match[2]);
+      setRsEditPeriod(match[3].toUpperCase());
+    }
+    setRsEditingLastEntry(true);
+  };
+
+  const cancelLastEntryEdit = () => {
+    setRsEditingLastEntry(false);
+  };
+
+  const saveLastEntryEdit = () => {
+    if (!rsLastEntry || !rsEditText.trim()) return;
+    // Same AM/PM -> 24h conversion addQuickRsEntry uses above, kept
+    // separate rather than extracted into a shared helper — a two-line
+    // calculation isn't worth the indirection for its one other call site.
+    let h = parseInt(rsEditHour);
+    const m = parseInt(rsEditMinute);
+    if (rsEditPeriod === "PM" && h !== 12) h += 12;
+    if (rsEditPeriod === "AM" && h === 12) h = 0;
+    const totalMins = h * 60 + m;
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    const timeStr = `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${rsEditPeriod}`;
+    const trimmed = rsEditText.trim();
+    rsUpdateRow.mutate(
+      {
+        id: rsLastEntry.id,
+        time: timeStr,
+        timeMinutes: totalMins,
+        observation: trimmed,
+      },
+      {
+        onSuccess: () => {
+          setRsLastEntry({ id: rsLastEntry.id, label: trimmed, time: timeStr });
+          setRsEditingLastEntry(false);
+          toast.success("Entry updated");
+          void refetchLocations();
+          if (rsSelectedSheetId) {
+            void utils.row.entityChips.invalidate({
+              sheetId: rsSelectedSheetId,
+            });
+          }
+        },
+        onError: e => toast.error(e.message),
       }
     );
   };
@@ -7365,6 +7443,7 @@ export default function IntelligenceMapping() {
                       onValueChange={val => {
                         setRsSelectedSheetId(Number(val));
                         setRsLastEntry(null);
+                        setRsEditingLastEntry(false);
                       }}
                     >
                       <SelectTrigger className="flex-1 h-9 text-xs rounded-xl border-2">
@@ -7389,6 +7468,7 @@ export default function IntelligenceMapping() {
                         onClick={() => {
                           setRsSelectedSheetId(null);
                           setRsLastEntry(null);
+                          setRsEditingLastEntry(false);
                         }}
                         className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-xl border-2 border-border bg-muted/40 hover:bg-destructive/20 hover:border-destructive/40 active:scale-95 transition-all"
                         title="Clear running sheet selection"
@@ -9277,6 +9357,7 @@ export default function IntelligenceMapping() {
             onClick={() => {
               setMapQeOpen(false);
               setMapQeAddress("");
+              setRsEditingLastEntry(false);
               closeInlineField();
             }}
           >
@@ -9299,6 +9380,7 @@ export default function IntelligenceMapping() {
                   onClick={() => {
                     setMapQeOpen(false);
                     setMapQeAddress("");
+                    setRsEditingLastEntry(false);
                     closeInlineField();
                   }}
                   className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
@@ -10749,15 +10831,125 @@ export default function IntelligenceMapping() {
 
                   {/* Quick action buttons removed per user request */}
 
-                  {/* Last entry confirmation */}
-                  {rsLastEntry && (
-                    <div className="rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-2 md:px-3.5 md:py-3">
-                      <p className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-green-400 mb-0.5">
-                        Last Entry
-                      </p>
+                  {/* Last entry confirmation — tap to quickly correct the
+                      time/text just submitted and save again, rather than
+                      going to the Running Sheet to fix a typo. */}
+                  {rsLastEntry && !rsEditingLastEntry && (
+                    <button
+                      type="button"
+                      onClick={openLastEntryEdit}
+                      className="w-full text-left rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-2 md:px-3.5 md:py-3 hover:bg-green-500/15 active:scale-[0.99] transition-all"
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-0.5">
+                        <p className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-green-400">
+                          Last Entry
+                        </p>
+                        <Pencil className="h-3 w-3 md:h-3.5 md:w-3.5 text-green-400/70 flex-shrink-0" />
+                      </div>
                       <p className="text-[11px] md:text-sm font-mono text-foreground">
                         {rsLastEntry.time} — {rsLastEntry.label}
                       </p>
+                    </button>
+                  )}
+
+                  {rsLastEntry && rsEditingLastEntry && (
+                    <div className="rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-2 md:px-3.5 md:py-3 flex flex-col gap-2">
+                      <p className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-green-400">
+                        Editing Last Entry
+                      </p>
+                      <div className="flex items-center gap-1 md:gap-1.5 flex-wrap">
+                        <Clock className="h-3 w-3 md:h-3.5 md:w-3.5 text-muted-foreground flex-shrink-0" />
+                        <Select
+                          value={rsEditHour}
+                          onValueChange={setRsEditHour}
+                        >
+                          <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0 md:w-20 md:h-8 md:text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Array.from({ length: 12 }, (_, i) =>
+                              String(i + 1)
+                            ).map(h => (
+                              <SelectItem
+                                key={h}
+                                value={h}
+                                className="font-mono text-xs"
+                              >
+                                {String(parseInt(h)).padStart(2, "0")}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <span className="text-muted-foreground font-mono text-[11px] md:text-sm">
+                          :
+                        </span>
+                        <Select
+                          value={rsEditMinute}
+                          onValueChange={setRsEditMinute}
+                        >
+                          <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0 md:w-20 md:h-8 md:text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Array.from({ length: 60 }, (_, i) =>
+                              String(i).padStart(2, "0")
+                            ).map(m => (
+                              <SelectItem
+                                key={m}
+                                value={m}
+                                className="font-mono text-xs"
+                              >
+                                {m}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          value={rsEditPeriod}
+                          onValueChange={setRsEditPeriod}
+                        >
+                          <SelectTrigger className="w-14 h-6 text-[11px] px-1.5 py-0 md:w-16 md:h-8 md:text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="AM" className="text-xs">
+                              AM
+                            </SelectItem>
+                            <SelectItem value="PM" className="text-xs">
+                              PM
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Textarea
+                        value={rsEditText}
+                        onChange={e => setRsEditText(e.target.value)}
+                        rows={3}
+                        className="text-[11px] md:text-sm font-mono"
+                      />
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={cancelLastEntryEdit}
+                          disabled={rsUpdateRow.isPending}
+                          className="rounded-md px-2.5 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-muted/50 transition-all disabled:opacity-50 md:px-4 md:py-2 md:text-sm"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={saveLastEntryEdit}
+                          disabled={rsUpdateRow.isPending || !rsEditText.trim()}
+                          className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50 md:px-4 md:py-2 md:text-sm md:gap-1.5"
+                        >
+                          {rsUpdateRow.isPending ? (
+                            <Spinner className="h-3 w-3 md:h-4 md:w-4" />
+                          ) : (
+                            <Send className="h-3 w-3 md:h-4 md:w-4" />
+                          )}
+                          Save Changes
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

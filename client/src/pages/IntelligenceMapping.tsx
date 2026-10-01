@@ -995,6 +995,8 @@ function buildInfoWindowContent(
     markerIcon?: string | null;
     markerColour?: string | null;
     rotation?: number | null;
+    customLabel?: string | null;
+    note?: string | null;
   },
   hasPhotos = false
 ): string {
@@ -1028,6 +1030,20 @@ function buildInfoWindowContent(
     </div>
     <strong style="font-size:13px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${displayLabel}</strong>
   `);
+
+  // Officer-added caption + note (see intelPinOverrides.customLabel/note —
+  // same two fields a custom map marker has, added here for parity with
+  // that dialog). This pin's real name/address is already the heading
+  // above, so the custom label renders as a secondary line, same visual
+  // weight as a custom marker's own label/note split.
+  if (override?.customLabel)
+    lines.push(
+      `<div style="font-size:12px;color:#7c3aed;font-weight:600;margin-bottom:2px;">${override.customLabel}</div>`
+    );
+  if (override?.note)
+    lines.push(
+      `<div style="margin-top:4px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Notes</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${override.note}</p></div>`
+    );
 
   // Linked target details (for target_address).
   // The TGT alias and HBF are deliberately not repeated here: the alias is
@@ -2516,6 +2532,13 @@ export default function IntelligenceMapping() {
   const [intelEditColour, setIntelEditColour] =
     useState<MarkerColour>("purple");
   const [intelEditRotation, setIntelEditRotation] = useState<number>(0);
+  // A free-text caption + note, same fields the Place Map Marker dialog
+  // has (cmLabel/cmNote) — added per direct request for parity between
+  // the two dialogs. Persisted on intelPinOverrides.customLabel/note,
+  // not the override's own `label` column (that's the entity's keyed
+  // identifier, e.g. an address string, not something an officer types).
+  const [intelEditLabel, setIntelEditLabel] = useState("");
+  const [intelEditNote, setIntelEditNote] = useState("");
   const [intelEditIconFilter, setIntelEditIconFilter] = useState<
     "all" | "surveillance" | TacticalGroup
   >("surveillance");
@@ -5780,6 +5803,12 @@ export default function IntelligenceMapping() {
       setIntelEditIcon(icon);
       setIntelEditColour(colour);
       setIntelEditRotation(rotation);
+      // customLabel/note only ever live server-side (see intelPinOverrides)
+      // — no legacy localStorage copy to fall back to, unlike icon/colour/
+      // rotation above.
+      const override = pinOverridesRef.current.get(label);
+      setIntelEditLabel(override?.customLabel ?? "");
+      setIntelEditNote(override?.note ?? "");
       setEditingIntelLabel(label);
     };
     return () => {
@@ -9182,6 +9211,39 @@ export default function IntelligenceMapping() {
                 </button>
               </div>
 
+              {/* Label + Notes — same two fields the Place Map Marker
+                  dialog has (see its own "0."/"0c." comments), added here
+                  per direct request for parity between the two dialogs.
+                  This pin's real name/address is already the subtitle
+                  above; these are a free-text caption and a one-line note
+                  an officer can add on top of that, same as a custom
+                  marker's label/note. */}
+              <div className="mb-3">
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+                  Label
+                </label>
+                <input
+                  type="text"
+                  value={intelEditLabel}
+                  onChange={e => setIntelEditLabel(e.target.value)}
+                  placeholder="Optional custom label..."
+                  className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div className="mb-4">
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+                  Notes
+                </label>
+                <Textarea
+                  value={intelEditNote}
+                  onChange={e => setIntelEditNote(e.target.value)}
+                  placeholder="Optional notes..."
+                  rows={2}
+                  className="text-sm resize-none"
+                />
+              </div>
+
               {/* Icon picker — same filter-chip + flat scrollable grid as
                   the Place Map Marker dialog (see its own comment for why:
                   no per-shape-type headings within Surveillance, a chip
@@ -9397,6 +9459,8 @@ export default function IntelligenceMapping() {
                       markerIcon: intelEditIcon,
                       markerColour: intelEditColour,
                       rotation: intelEditRotation,
+                      customLabel: intelEditLabel.trim(),
+                      note: intelEditNote.trim(),
                     });
                     // Update the actual map marker element immediately —
                     // direct img ref first, querySelector fallback (see

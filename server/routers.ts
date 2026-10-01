@@ -4653,6 +4653,8 @@ export const appRouter = router({
           markerIcon: z.string().optional(),
           markerColour: z.string().optional(),
           rotation: z.number().optional(),
+          customLabel: z.string().optional(),
+          note: z.string().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {

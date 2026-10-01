@@ -14579,6 +14579,8 @@ export async function saveIntelPinOverride(
     markerIcon?: string;
     markerColour?: string;
     rotation?: number;
+    customLabel?: string;
+    note?: string;
   },
   cin: string | undefined
 ): Promise<void> {
@@ -14591,6 +14593,8 @@ export async function saveIntelPinOverride(
   if (data.markerIcon !== undefined) update.markerIcon = data.markerIcon;
   if (data.markerColour !== undefined) update.markerColour = data.markerColour;
   if (data.rotation !== undefined) update.rotation = data.rotation;
+  if (data.customLabel !== undefined) update.customLabel = data.customLabel;
+  if (data.note !== undefined) update.note = data.note;
 
   const existing = await db
     .select({ id: intelPinOverrides.id })

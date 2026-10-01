@@ -1213,6 +1213,13 @@ export const intelPinOverrides = mysqlTable("intel_pin_overrides", {
   markerIcon: varchar("markerIcon", { length: 64 }),
   markerColour: varchar("markerColour", { length: 32 }),
   rotation: int("rotation").default(0).notNull(),
+  // A free-text caption + note, same shape as customMapMarkers.label/note —
+  // added per officer request for parity with the Place Map Marker dialog.
+  // `customLabel` (not `label`) to keep it distinct from the column above,
+  // which is the entity's own keyed identifier (an address/name string),
+  // not something an officer types.
+  customLabel: varchar("customLabel", { length: 255 }),
+  note: text("note"),
   updatedByCIN: varchar("updatedByCIN", { length: 32 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

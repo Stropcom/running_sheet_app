@@ -3325,11 +3325,13 @@ export default function IntelligenceMapping() {
 
     const img = document.createElement("img");
     img.src = getMarkerIconUrl(icon, colour);
-    // Tactical source PNGs carry a few px of baked-in transparent margin
-    // the hand-drawn Surveillance SVGs don't — sized slightly larger so
-    // both read as the same visual weight (see the matching note on the
-    // custom map marker pin rendering and the picker's tactical tile size).
-    const iconPx = isTacticalIcon(icon) ? 44 : 40;
+    // Previously sized a few px larger than Surveillance icons to
+    // compensate for baked-in transparent margin on the tactical PNGs —
+    // removed per direct feedback that it made the raster tactical icons
+    // read as oversized/blurry next to the crisp vector Surveillance set.
+    // Same size for both now (see the matching note on the custom map
+    // marker pin rendering and the picker's tactical tile size).
+    const iconPx = 40;
     img.style.cssText = `width:${iconPx}px;height:${iconPx}px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;transform:rotate(${rotation}deg);`;
     el.appendChild(img);
     // Direct img ref for live rotation/icon updates — avoids stale
@@ -4454,11 +4456,11 @@ export default function IntelligenceMapping() {
         // (e.g. after a poll refresh) — same "subtract the map's heading"
         // math the heading_changed listener uses to keep it that way.
         img.dataset.rotation = String(rotation);
-        // Tactical source PNGs carry a few px of baked-in margin the
-        // hand-drawn Surveillance SVGs don't — sized slightly larger so
-        // both read as the same visual weight on the map (see the matching
-        // note on the picker's tactical tile size, above).
-        const iconPx = isTacticalIcon(outerCm.markerIcon) ? 44 : 40;
+        // Previously sized larger than Surveillance icons to compensate for
+        // baked-in margin on the tactical PNGs — removed per direct
+        // feedback that it made the raster tactical icons read as
+        // oversized/blurry next to the crisp vector Surveillance set.
+        const iconPx = 40;
         img.style.cssText = `width:${iconPx}px;height:${iconPx}px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation - mapHeadingRef.current}deg);`;
         iconBox.appendChild(img);
         // Store direct img ref for live rotation
@@ -4657,11 +4659,9 @@ export default function IntelligenceMapping() {
             // Rotation slider — not applicable to a "label only" marker,
             // there's no icon to rotate.
             if (!cm.labelOnly) {
-              // Tactical source PNGs carry a few px of baked-in margin the
-              // hand-drawn Surveillance SVGs don't — sized slightly larger
-              // so both read as the same visual weight (see the matching
-              // note on the picker's tactical tile size).
-              const popupIconPx = isTacticalIcon(cm.markerIcon) ? 27 : 24;
+              // Same size as Surveillance icons — see the matching note on
+              // the map-pin rendering above.
+              const popupIconPx = 24;
               lines.push(`
               <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">
                 <div style="display:flex;align-items:center;gap:8px;">
@@ -9219,13 +9219,11 @@ export default function IntelligenceMapping() {
                   Rotation — {intelEditRotation}°
                 </p>
                 <div className="flex items-center gap-3">
-                  <div
-                    className={`shrink-0 flex items-center justify-center ${isTacticalIcon(intelEditIcon) ? "w-11 h-11" : "w-10 h-10"}`}
-                  >
+                  <div className="shrink-0 flex items-center justify-center w-10 h-10">
                     <img
                       src={getMarkerIconUrl(intelEditIcon, intelEditColour)}
                       alt="preview"
-                      className={`object-contain transition-transform ${isTacticalIcon(intelEditIcon) ? "w-9 h-9" : "w-8 h-8"}`}
+                      className="object-contain transition-transform w-8 h-8"
                       style={{ transform: `rotate(${intelEditRotation}deg)` }}
                     />
                   </div>
@@ -9314,11 +9312,8 @@ export default function IntelligenceMapping() {
                         intelEditIcon,
                         intelEditColour
                       );
-                      const savedIconPx = isTacticalIcon(intelEditIcon)
-                        ? 44
-                        : 40;
-                      img.style.width = `${savedIconPx}px`;
-                      img.style.height = `${savedIconPx}px`;
+                      img.style.width = "40px";
+                      img.style.height = "40px";
                       img.style.transform = `rotate(${intelEditRotation}deg)`;
                     }
                     setEditingIntelLabel(null);
@@ -11269,13 +11264,11 @@ export default function IntelligenceMapping() {
                       Rotation — {cmRotation}°
                     </p>
                     {/* Rotated preview */}
-                    <div
-                      className={`shrink-0 flex items-center justify-center ${isTacticalIcon(cmIcon) ? "w-9 h-9" : "w-8 h-8"}`}
-                    >
+                    <div className="shrink-0 flex items-center justify-center w-8 h-8">
                       <img
                         src={getMarkerIconUrl(cmIcon, cmColour)}
                         alt="preview"
-                        className={`object-contain transition-transform ${isTacticalIcon(cmIcon) ? "w-9 h-9" : "w-8 h-8"}`}
+                        className="object-contain transition-transform w-8 h-8"
                         style={{ transform: `rotate(${cmRotation}deg)` }}
                       />
                     </div>

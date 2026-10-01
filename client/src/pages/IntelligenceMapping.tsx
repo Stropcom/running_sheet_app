@@ -2366,11 +2366,16 @@ export default function IntelligenceMapping() {
   const [editingIntelLabel, setEditingIntelLabel] = useState<string | null>(
     null
   );
-  const [intelEditIcon, setIntelEditIcon] =
-    useState<MarkerIcon>("house_filled");
+  // Widened to plain string (not MarkerIcon) so a Tactical icon key — not
+  // part of the MarkerIcon enum — can be selected here too, same reasoning
+  // as cmIcon above.
+  const [intelEditIcon, setIntelEditIcon] = useState<string>("house_filled");
   const [intelEditColour, setIntelEditColour] =
     useState<MarkerColour>("purple");
   const [intelEditRotation, setIntelEditRotation] = useState<number>(0);
+  const [intelEditIconFilter, setIntelEditIconFilter] = useState<
+    "all" | "surveillance" | "tactical"
+  >("all");
 
   // Map state
   const [mapReady, setMapReady] = useState(false);
@@ -3264,8 +3269,7 @@ export default function IntelligenceMapping() {
     // etc.) AND shows up for every officer on every device, not just the
     // one that set it.
     const override = pinOverridesRef.current.get(loc.label);
-    const icon: MarkerIcon =
-      (override?.markerIcon as MarkerIcon) ?? "house_filled";
+    const icon: string = override?.markerIcon ?? "house_filled";
     const colour: MarkerColour =
       (override?.markerColour as MarkerColour) ?? (isTarget ? "red" : "purple");
     const rotation = override?.rotation ?? 0;
@@ -3274,8 +3278,13 @@ export default function IntelligenceMapping() {
     el.style.cssText = `position:relative;display:inline-flex;flex-direction:column;align-items:center;cursor:pointer;`;
 
     const img = document.createElement("img");
-    img.src = getMarkerDataUrl(icon, colour);
-    img.style.cssText = `width:40px;height:40px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;transform:rotate(${rotation}deg);`;
+    img.src = getMarkerIconUrl(icon, colour);
+    // Tactical source PNGs carry a few px of baked-in transparent margin
+    // the hand-drawn Surveillance SVGs don't — sized slightly larger so
+    // both read as the same visual weight (see the matching note on the
+    // custom map marker pin rendering and the picker's tactical tile size).
+    const iconPx = isTacticalIcon(icon) ? 44 : 40;
+    img.style.cssText = `width:${iconPx}px;height:${iconPx}px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;transform:rotate(${rotation}deg);`;
     el.appendChild(img);
     // Direct img ref for live rotation/icon updates — avoids stale
     // `.content.querySelector` lookups (see intelPinImgRefs declaration).
@@ -5627,14 +5636,14 @@ export default function IntelligenceMapping() {
     (window as any).__intelOpenEditDialog = (label: string) => {
       infoWindowRef.current?.close();
       // Load current appearance from localStorage
-      let icon: MarkerIcon = "house_filled";
+      let icon: string = "house_filled";
       let colour: MarkerColour = "purple";
       let rotation = 0;
       try {
         const stored = localStorage.getItem(`runlog_intel_appearance_${label}`);
         if (stored) {
           const parsed = JSON.parse(stored);
-          if (parsed.icon) icon = parsed.icon as MarkerIcon;
+          if (parsed.icon) icon = parsed.icon as string;
           if (parsed.colour) colour = parsed.colour as MarkerColour;
           if (typeof parsed.rotation === "number") rotation = parsed.rotation;
         }
@@ -8984,68 +8993,125 @@ export default function IntelligenceMapping() {
                 </button>
               </div>
 
-              {/* Icon picker */}
+              {/* Icon picker — same filter-chip + flat scrollable grid as
+                  the Place Map Marker dialog (see its own comment for why:
+                  no per-shape-type headings, All/Surveillance/Tactical
+                  chips instead). */}
               <div className="mb-4">
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                  Marker Icon
-                </p>
-                <div className="space-y-3">
-                  {MARKER_ICON_GROUPS.map(group => (
-                    <div key={group.label}>
-                      <p className="text-[10px] text-muted-foreground/70 mb-1.5">
-                        {group.label}
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {group.icons.map(iconKey => (
-                          <button
-                            key={iconKey}
-                            onClick={() =>
-                              setIntelEditIcon(iconKey as MarkerIcon)
-                            }
-                            title={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
-                            className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
-                              intelEditIcon === iconKey
-                                ? "border-primary bg-primary/10 scale-110"
-                                : "border-border bg-accent/30 hover:border-primary/50"
-                            }`}
-                          >
-                            <img
-                              src={getMarkerDataUrl(
-                                iconKey as MarkerIcon,
-                                intelEditColour
-                              )}
-                              alt={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
-                              className="w-7 h-7 object-contain"
-                            />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex items-center justify-between mb-2 gap-2">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    Marker Icon
+                  </p>
+                  <div className="flex gap-1.5">
+                    {[
+                      {
+                        key: "all" as const,
+                        label: `All (${SURVEILLANCE_ICONS.length + TACTICAL_ICONS.length})`,
+                      },
+                      {
+                        key: "surveillance" as const,
+                        label: `Surveillance (${SURVEILLANCE_ICONS.length})`,
+                      },
+                      {
+                        key: "tactical" as const,
+                        label: `Tactical (${TACTICAL_ICONS.length})`,
+                      },
+                    ].map(f => (
+                      <button
+                        key={f.key}
+                        onClick={() => setIntelEditIconFilter(f.key)}
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border whitespace-nowrap transition-all ${
+                          intelEditIconFilter === f.key
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "border-border text-muted-foreground hover:border-primary/50"
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-accent/10 p-2">
+                  <div className="grid grid-cols-6 md:grid-cols-9 lg:grid-cols-11 gap-1.5">
+                    {(intelEditIconFilter === "all" ||
+                      intelEditIconFilter === "surveillance") &&
+                      SURVEILLANCE_ICONS.map(iconKey => (
+                        <button
+                          key={iconKey}
+                          onClick={() => setIntelEditIcon(iconKey)}
+                          title={MARKER_ICON_LABELS[iconKey]}
+                          className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${
+                            intelEditIcon === iconKey
+                              ? "border-primary bg-primary/10"
+                              : "border-border bg-background hover:border-primary/50"
+                          }`}
+                        >
+                          <img
+                            src={getMarkerDataUrl(iconKey, intelEditColour)}
+                            alt={MARKER_ICON_LABELS[iconKey]}
+                            className="w-6 h-6 object-contain"
+                          />
+                        </button>
+                      ))}
+
+                    {intelEditIconFilter === "all" && (
+                      <div className="col-span-full h-px bg-border my-1" />
+                    )}
+
+                    {(intelEditIconFilter === "all" ||
+                      intelEditIconFilter === "tactical") &&
+                      TACTICAL_ICONS.map(t => (
+                        <button
+                          key={t.key}
+                          onClick={() => setIntelEditIcon(t.key)}
+                          title={t.label}
+                          className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${
+                            intelEditIcon === t.key
+                              ? "border-primary bg-primary/10"
+                              : "border-border bg-background hover:border-primary/50"
+                          }`}
+                        >
+                          <img
+                            src={t.src}
+                            alt={t.label}
+                            className="w-[27px] h-[27px] object-contain"
+                          />
+                        </button>
+                      ))}
+                  </div>
                 </div>
               </div>
 
-              {/* Colour picker */}
-              <div className="mb-4">
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                  Colour
-                </p>
-                <div className="flex gap-2">
-                  {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(col => (
-                    <button
-                      key={col}
-                      onClick={() => setIntelEditColour(col)}
-                      title={MARKER_COLOUR_LABELS[col]}
-                      className={`w-8 h-8 rounded-full border-2 transition-all ${
-                        intelEditColour === col
-                          ? "border-foreground scale-110"
-                          : "border-transparent hover:border-foreground/40"
-                      }`}
-                      style={{ background: MARKER_COLOURS[col] }}
-                    />
-                  ))}
+              {/* Colour picker — a Tactical icon's artwork is fixed-colour,
+                  and unlike a custom map marker, an intel pin has no label
+                  pill either, so there's nothing left for this to control
+                  once a Tactical icon is selected — hidden in that case
+                  rather than shown with no visible effect. */}
+              {!isTacticalIcon(intelEditIcon) && (
+                <div className="mb-4">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    Colour
+                  </p>
+                  <div className="flex gap-2">
+                    {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(
+                      col => (
+                        <button
+                          key={col}
+                          onClick={() => setIntelEditColour(col)}
+                          title={MARKER_COLOUR_LABELS[col]}
+                          className={`w-8 h-8 rounded-full border-2 transition-all ${
+                            intelEditColour === col
+                              ? "border-foreground scale-110"
+                              : "border-transparent hover:border-foreground/40"
+                          }`}
+                          style={{ background: MARKER_COLOURS[col] }}
+                        />
+                      )
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Rotation */}
               <div className="mb-4">
@@ -9053,11 +9119,13 @@ export default function IntelligenceMapping() {
                   Rotation — {intelEditRotation}°
                 </p>
                 <div className="flex items-center gap-3">
-                  <div className="shrink-0 w-10 h-10 flex items-center justify-center">
+                  <div
+                    className={`shrink-0 flex items-center justify-center ${isTacticalIcon(intelEditIcon) ? "w-11 h-11" : "w-10 h-10"}`}
+                  >
                     <img
-                      src={getMarkerDataUrl(intelEditIcon, intelEditColour)}
+                      src={getMarkerIconUrl(intelEditIcon, intelEditColour)}
                       alt="preview"
-                      className="w-8 h-8 object-contain transition-transform"
+                      className={`object-contain transition-transform ${isTacticalIcon(intelEditIcon) ? "w-9 h-9" : "w-8 h-8"}`}
                       style={{ transform: `rotate(${intelEditRotation}deg)` }}
                     />
                   </div>
@@ -9142,10 +9210,15 @@ export default function IntelligenceMapping() {
                           : null;
                       })();
                     if (img) {
-                      img.src = getMarkerDataUrl(
+                      img.src = getMarkerIconUrl(
                         intelEditIcon,
                         intelEditColour
                       );
+                      const savedIconPx = isTacticalIcon(intelEditIcon)
+                        ? 44
+                        : 40;
+                      img.style.width = `${savedIconPx}px`;
+                      img.style.height = `${savedIconPx}px`;
                       img.style.transform = `rotate(${intelEditRotation}deg)`;
                     }
                     setEditingIntelLabel(null);

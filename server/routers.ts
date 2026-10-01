@@ -6428,6 +6428,7 @@ export const appRouter = router({
           neLng: z.number().optional().nullable(),
           swLat: z.number().optional().nullable(),
           swLng: z.number().optional().nullable(),
+          rotation: z.number().optional().nullable(),
           points: z
             .array(z.object({ lat: z.number(), lng: z.number() }))
             .optional(),
@@ -6453,6 +6454,7 @@ export const appRouter = router({
           neLng: input.neLng ?? null,
           swLat: input.swLat ?? null,
           swLng: input.swLng ?? null,
+          rotation: input.rotation ?? null,
           points: input.points ?? [],
           lineDashed: input.lineDashed,
           lineArrowEnd: input.lineArrowEnd,
@@ -6478,6 +6480,7 @@ export const appRouter = router({
           neLng: z.number().optional().nullable(),
           swLat: z.number().optional().nullable(),
           swLng: z.number().optional().nullable(),
+          rotation: z.number().optional().nullable(),
           points: z
             .array(z.object({ lat: z.number(), lng: z.number() }))
             .optional(),

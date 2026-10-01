@@ -14401,6 +14401,7 @@ export interface MapShapeRow {
   neLng: number | null;
   swLat: number | null;
   swLng: number | null;
+  rotation: number; // rectangle only — degrees, 0 = unrotated
   points: { lat: number; lng: number }[]; // parsed from JSON
   lineDashed: boolean;
   lineArrowEnd: boolean;
@@ -14468,6 +14469,7 @@ export async function createMapShape(data: {
   neLng?: number | null;
   swLat?: number | null;
   swLng?: number | null;
+  rotation?: number | null;
   points?: { lat: number; lng: number }[];
   lineDashed?: boolean;
   lineArrowEnd?: boolean;
@@ -14491,6 +14493,7 @@ export async function createMapShape(data: {
     neLng: data.neLng ?? null,
     swLat: data.swLat ?? null,
     swLng: data.swLng ?? null,
+    rotation: data.rotation ?? 0,
     points: JSON.stringify(data.points ?? []),
     lineDashed: data.lineDashed ?? false,
     lineArrowEnd: data.lineArrowEnd ?? false,
@@ -14515,6 +14518,7 @@ export async function updateMapShape(
     neLng?: number | null;
     swLat?: number | null;
     swLng?: number | null;
+    rotation?: number | null;
     points?: { lat: number; lng: number }[];
     lineDashed?: boolean;
     lineArrowEnd?: boolean;
@@ -14538,6 +14542,7 @@ export async function updateMapShape(
   if (data.neLng !== undefined) update.neLng = data.neLng;
   if (data.swLat !== undefined) update.swLat = data.swLat;
   if (data.swLng !== undefined) update.swLng = data.swLng;
+  if (data.rotation !== undefined) update.rotation = data.rotation ?? 0;
   if (data.points !== undefined) update.points = JSON.stringify(data.points);
   if (data.lineDashed !== undefined) update.lineDashed = data.lineDashed;
   if (data.lineArrowEnd !== undefined) update.lineArrowEnd = data.lineArrowEnd;

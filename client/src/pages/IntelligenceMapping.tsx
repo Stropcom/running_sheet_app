@@ -693,6 +693,66 @@ function sectorPolygonPath(
   return [...outerArc, ...innerArc];
 }
 
+/** Builds the 4-corner point path for a rectangle shape, optionally rotated
+ * around its own center — Google Maps' native Rectangle has no rotation
+ * option, so a non-zero rotation has to be hand-built as a Polygon instead
+ * (same reason sectorPolygonPath above exists). neLat/neLng/swLat/swLng
+ * describe the UNROTATED box (what the officer actually drags to
+ * resize/move — see the rectangle editing effect below); rotation (degrees,
+ * 0 = North, clockwise, same convention as sector's angles) is applied on
+ * top of that at render time. Returns corners in NE, SE, SW, NW order
+ * (clockwise) — a Polygon path closes itself, so there's no need to repeat
+ * the first point. */
+function rectanglePolygonPath(
+  neLat: number,
+  neLng: number,
+  swLat: number,
+  swLng: number,
+  rotationDeg = 0
+): google.maps.LatLngLiteral[] {
+  if (!rotationDeg) {
+    return [
+      { lat: neLat, lng: neLng }, // NE
+      { lat: swLat, lng: neLng }, // SE
+      { lat: swLat, lng: swLng }, // SW
+      { lat: neLat, lng: swLng }, // NW
+    ];
+  }
+  const centerLat = (neLat + swLat) / 2;
+  const centerLng = (neLng + swLng) / 2;
+  const center = new google.maps.LatLng(centerLat, centerLng);
+  const halfWidthM =
+    google.maps.geometry.spherical.computeDistanceBetween(
+      new google.maps.LatLng(centerLat, swLng),
+      new google.maps.LatLng(centerLat, neLng)
+    ) / 2;
+  const halfHeightM =
+    google.maps.geometry.spherical.computeDistanceBetween(
+      new google.maps.LatLng(swLat, centerLng),
+      new google.maps.LatLng(neLat, centerLng)
+    ) / 2;
+  const diag = Math.hypot(halfWidthM, halfHeightM);
+  // Heading from center to the (unrotated) NE corner — atan2(east, north).
+  const baseAngle =
+    halfWidthM === 0 && halfHeightM === 0
+      ? 0
+      : (Math.atan2(halfWidthM, halfHeightM) * 180) / Math.PI;
+  const cornerHeadings = [
+    baseAngle, // NE
+    180 - baseAngle, // SE
+    180 + baseAngle, // SW
+    360 - baseAngle, // NW
+  ];
+  return cornerHeadings.map(heading => {
+    const pt = google.maps.geometry.spherical.computeOffset(
+      center,
+      diag,
+      heading + rotationDeg
+    );
+    return { lat: pt.lat(), lng: pt.lng() };
+  });
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const TEAM_COLOURS: Record<string, string> = {
   TEAM1: "#ec4899", // pink
@@ -2224,6 +2284,7 @@ export default function IntelligenceMapping() {
     neLng?: number;
     swLat?: number;
     swLng?: number;
+    rotation?: number;
     points?: { lat: number; lng: number }[];
   } | null>(null);
   const [shapeColour, setShapeColour] = useState<MarkerColour>("blue");
@@ -2284,6 +2345,14 @@ export default function IntelligenceMapping() {
   // that handler for why a delta against this ref, not the point's
   // supposed identity, is what actually stays correct).
   const sectorDragAnchorRef = useRef<google.maps.LatLngLiteral | null>(null);
+  // A rotated rectangle is edited the same way as a Polygon's rotation
+  // can't be dragged natively: the officer still drags a plain axis-aligned
+  // google.maps.Rectangle for position/size (draftShapeOverlayRef, kept
+  // invisible once rotation != 0), while this companion Polygon is the
+  // actual visible, rotated shape — rebuilt from that Rectangle's bounds +
+  // the rotation slider (see the two effects below). Only ever non-null
+  // while editing a rectangle; null/cleared for every other shape type.
+  const draftRectRotatedOverlayRef = useRef<google.maps.Polygon | null>(null);
   // Mirrors drawingLine for the map's click listener (set up once in
   // handleMapReady, so it can't read the state value directly without
   // going stale — same reasoning as customMarkersDataRef above).
@@ -2327,6 +2396,7 @@ export default function IntelligenceMapping() {
       neLng: s.neLng ?? undefined,
       swLat: s.swLat ?? undefined,
       swLng: s.swLng ?? undefined,
+      rotation: s.rotation ?? 0,
       points: s.points ?? undefined,
     });
   }, []);
@@ -2370,6 +2440,7 @@ export default function IntelligenceMapping() {
           neLng: lng + lngOffset,
           swLat: lat - latOffset,
           swLng: lng - lngOffset,
+          rotation: 0,
         });
       } else if (type === "sector") {
         setPendingShape({
@@ -5033,24 +5104,29 @@ export default function IntelligenceMapping() {
           existing.set(s.id, circle);
         }
       } else if (s.shapeType === "rectangle") {
-        const bounds = {
-          north: s.neLat,
-          east: s.neLng,
-          south: s.swLat,
-          west: s.swLng,
-        };
-        let rect = existing.get(s.id) as google.maps.Rectangle | undefined;
-        if (rect) {
-          rect.setBounds(bounds);
-          rect.setOptions({
+        // Rendered as a Polygon, not a native google.maps.Rectangle — the
+        // latter has no rotation option (see rectanglePolygonPath above).
+        // An unrotated rectangle's path is just its 4 corners, so this one
+        // code path covers both cases.
+        const path = rectanglePolygonPath(
+          s.neLat,
+          s.neLng,
+          s.swLat,
+          s.swLng,
+          s.rotation ?? 0
+        );
+        let rectPoly = existing.get(s.id) as google.maps.Polygon | undefined;
+        if (rectPoly) {
+          rectPoly.setPath(path);
+          rectPoly.setOptions({
             fillColor,
             fillOpacity: opacity,
             strokeColor: fillColor,
           });
         } else {
-          rect = new google.maps.Rectangle({
+          rectPoly = new google.maps.Polygon({
             map,
-            bounds,
+            paths: path,
             fillColor,
             fillOpacity: opacity,
             strokeColor: fillColor,
@@ -5058,9 +5134,9 @@ export default function IntelligenceMapping() {
             strokeWeight: 2,
             clickable: true,
           });
-          wireShapeEditClick(rect, openEdit);
-          wireShapeActionChooserGesture(rect);
-          existing.set(s.id, rect);
+          wireShapeEditClick(rectPoly, openEdit);
+          wireShapeActionChooserGesture(rectPoly);
+          existing.set(s.id, rectPoly);
         }
       } else if (s.shapeType === "sector") {
         const path = sectorPolygonPath(
@@ -5148,7 +5224,12 @@ export default function IntelligenceMapping() {
           : s.shapeType === "sector"
             ? { lat: s.centerLat, lng: s.centerLng }
             : s.shapeType === "rectangle"
-              ? { lat: s.swLat, lng: (s.neLng + s.swLng) / 2 }
+              ? s.rotation
+                ? // Rotated — "bottom edge, centred" has no single fixed
+                  // spot any more, so this falls back to the shape's own
+                  // center instead of picking one (arbitrary-looking) corner.
+                  { lat: (s.neLat + s.swLat) / 2, lng: (s.neLng + s.swLng) / 2 }
+                : { lat: s.swLat, lng: (s.neLng + s.swLng) / 2 }
               : ((s.points ?? [])[0] ?? null);
       const labelTransform = labelIsBottomCentered
         ? "translate(-50%, 12px)"
@@ -5247,16 +5328,22 @@ export default function IntelligenceMapping() {
         { lat: pendingShape.swLat!, lng: pendingShape.swLng! },
         { lat: pendingShape.neLat!, lng: pendingShape.neLng! }
       );
+      // The interactive drag-corner-to-resize / drag-to-move handle — kept
+      // as a plain axis-aligned native Rectangle (position/size are always
+      // edited in the shape's own unrotated frame, same as before rotation
+      // existed) but invisible aside from a faint reference outline. The
+      // actual visible, rotated shape is the companion Polygon below —
+      // google.maps.Rectangle has no rotation option, so it can't do double
+      // duty as both the handle and the real shape once rotation != 0.
       const rect = new google.maps.Rectangle({
         map,
         bounds,
         editable: true,
         draggable: true,
-        fillColor,
-        fillOpacity: opacity,
-        strokeColor: fillColor,
-        strokeOpacity: 0.95,
-        strokeWeight: 2,
+        fillOpacity: 0,
+        strokeColor: "#6b7280",
+        strokeOpacity: 0.6,
+        strokeWeight: 1,
       });
       rect.addListener("bounds_changed", () => {
         const b = rect.getBounds();
@@ -5275,6 +5362,24 @@ export default function IntelligenceMapping() {
             : p
         );
       });
+      const rotatedPath = rectanglePolygonPath(
+        pendingShape.neLat!,
+        pendingShape.neLng!,
+        pendingShape.swLat!,
+        pendingShape.swLng!,
+        pendingShape.rotation ?? 0
+      );
+      const rotatedPoly = new google.maps.Polygon({
+        map,
+        paths: rotatedPath,
+        clickable: false,
+        fillColor,
+        fillOpacity: opacity,
+        strokeColor: fillColor,
+        strokeOpacity: 0.95,
+        strokeWeight: 2,
+      });
+      draftRectRotatedOverlayRef.current = rotatedPoly;
       overlay = rect;
     } else if (pendingShape.shapeType === "sector") {
       const path = sectorPolygonPath(
@@ -5380,10 +5485,17 @@ export default function IntelligenceMapping() {
     }
 
     draftShapeOverlayRef.current = overlay;
+    const rotatedCompanion = draftRectRotatedOverlayRef.current;
     return () => {
       overlay.setMap(null);
       if (draftShapeOverlayRef.current === overlay) {
         draftShapeOverlayRef.current = null;
+      }
+      if (rotatedCompanion) {
+        rotatedCompanion.setMap(null);
+        if (draftRectRotatedOverlayRef.current === rotatedCompanion) {
+          draftRectRotatedOverlayRef.current = null;
+        }
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -5417,6 +5529,15 @@ export default function IntelligenceMapping() {
           fillColor,
           opacity
         ),
+      });
+    } else if (draftRectRotatedOverlayRef.current) {
+      // Rectangle — colour/opacity apply to the visible rotated companion
+      // Polygon, not the invisible resize-handle Rectangle beneath it (see
+      // the rectangle branch above for why there are two overlays here).
+      draftRectRotatedOverlayRef.current.setOptions({
+        fillColor,
+        fillOpacity: opacity,
+        strokeColor: fillColor,
       });
     } else {
       overlay.setOptions({
@@ -5491,6 +5612,33 @@ export default function IntelligenceMapping() {
     pendingShape?.endAngle,
     pendingShape?.radiusMeters,
     pendingShape?.innerRadiusMeters,
+  ]);
+
+  // Keeps the rectangle's visible rotated companion Polygon (see the
+  // rectangle branch of the draft-overlay effect above) in sync with the
+  // resize-handle Rectangle's bounds AND the rotation slider — either one
+  // changing needs this rebuilt, unlike the handle Rectangle itself, which
+  // only needs its own bounds (that's what dragging it already does
+  // natively).
+  useEffect(() => {
+    const poly = draftRectRotatedOverlayRef.current;
+    if (!poly || !pendingShape || pendingShape.shapeType !== "rectangle")
+      return;
+    poly.setPath(
+      rectanglePolygonPath(
+        pendingShape.neLat!,
+        pendingShape.neLng!,
+        pendingShape.swLat!,
+        pendingShape.swLng!,
+        pendingShape.rotation ?? 0
+      )
+    );
+  }, [
+    pendingShape?.neLat,
+    pendingShape?.neLng,
+    pendingShape?.swLat,
+    pendingShape?.swLng,
+    pendingShape?.rotation,
   ]);
 
   // Global RS Quick Entry handler for merged marker popup
@@ -8664,6 +8812,33 @@ export default function IntelligenceMapping() {
                 </div>
               )}
 
+              {/* Rectangle-only: rotation. Position/size still come from
+                  dragging the shape's corners/edges in its own unrotated
+                  frame (see the rectangle branch of the draft-overlay
+                  effect) — this slider spins the visible shape around its
+                  center independently of that, same pattern as the sector
+                  sliders just above. */}
+              {pendingShape.shapeType === "rectangle" && (
+                <div className="mb-4 rounded-lg border border-border bg-muted/20 p-3">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                    Rotation — {Math.round(pendingShape.rotation ?? 0)}°
+                  </p>
+                  <input
+                    type="range"
+                    min={0}
+                    max={359}
+                    step={1}
+                    value={pendingShape.rotation ?? 0}
+                    onChange={e =>
+                      setPendingShape(p =>
+                        p ? { ...p, rotation: Number(e.target.value) } : p
+                      )
+                    }
+                    className="w-full accent-primary"
+                  />
+                </div>
+              )}
+
               {/* Operation — a shape saved with no operation is hidden from
                   any single/multi-operation-filtered map view (only the
                   "all operations" view shows it), same trap this fix closed
@@ -8753,6 +8928,7 @@ export default function IntelligenceMapping() {
                         neLng: pendingShape.neLng ?? null,
                         swLat: pendingShape.swLat ?? null,
                         swLng: pendingShape.swLng ?? null,
+                        rotation: pendingShape.rotation ?? 0,
                         points: pendingShape.points ?? [],
                         lineDashed: shapeLineDashed,
                         lineArrowEnd: shapeLineArrowEnd,

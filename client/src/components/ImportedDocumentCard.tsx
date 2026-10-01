@@ -57,6 +57,22 @@ export interface DocumentImportRow {
   snapshotJson: string;
 }
 
+// Whether a document import row actually had its fields parsed/extracted
+// (vs. the officer choosing "Just attach the document" at upload time — see
+// the Parse & extract fields toggle in ImportTargetDocumentDialog). Used by
+// the Operation/Target profile sections to number ONLY the parsed imports as
+// versions of the target's profile — a not-parsed attachment is just a file
+// kept for reference and must never bump the "current version" or push an
+// actually-current parsed version out of the "Current" slot.
+export function isParsedDocumentImport(row: DocumentImportRow): boolean {
+  try {
+    const snapshot = JSON.parse(row.snapshotJson) as DocumentImportPrefill;
+    return snapshot.parsed !== false;
+  } catch {
+    return true;
+  }
+}
+
 export function formatImportDate(value: string | Date): string {
   return new Date(value).toLocaleDateString("en-AU", {
     day: "2-digit",
@@ -246,13 +262,14 @@ export function ImportedDocumentCard({
             </p>
             <span
               className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full shrink-0 ${
-                isCurrent
+                !notParsed && isCurrent
                   ? "bg-violet-500/15 text-violet-600 dark:text-violet-400"
                   : "bg-muted text-muted-foreground"
               }`}
             >
-              Version {version}
-              {isCurrent ? " · Current" : ""}
+              {notParsed
+                ? "Attached"
+                : `Version ${version}${isCurrent ? " · Current" : ""}`}
             </span>
           </div>
           <p className="text-xs text-muted-foreground truncate">

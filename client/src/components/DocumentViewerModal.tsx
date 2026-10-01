@@ -525,41 +525,62 @@ const PdfPages = forwardRef<
       const { wrapper, viewport, textContent } = entry;
       wrapper.innerHTML = "";
 
-      const canvas = document.createElement("canvas");
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      canvas.className = "absolute inset-0 w-full h-full block bg-white";
-      wrapper.appendChild(canvas);
-      await (entry as any)._page.render({ canvas, viewport }).promise;
+      // Caught per-page, not left to bubble as an unhandled rejection —
+      // this runs lazily (IntersectionObserver, fire-and-forget) well
+      // after the whole-document try/catch above has already resolved to
+      // "done", so a failure here would otherwise be completely silent
+      // (just a blank page) with nothing in the UI and nothing in the
+      // console on a device with no remote debugger attached.
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.className = "absolute inset-0 w-full h-full block bg-white";
+        wrapper.appendChild(canvas);
+        await (entry as any)._page.render({ canvas, viewport }).promise;
 
-      const textLayerDiv = document.createElement("div");
-      textLayerDiv.className = "rs-pdf-text-layer";
-      wrapper.appendChild(textLayerDiv);
-      const textLayer = new pdfjsLib.TextLayer({
-        textContentSource: textContent,
-        container: textLayerDiv,
-        viewport,
-      });
-      await textLayer.render();
-      entry.textDivs = textLayer.textDivs;
-      entry.textStrs = textLayer.textContentItemsStr;
+        const textLayerDiv = document.createElement("div");
+        textLayerDiv.className = "rs-pdf-text-layer";
+        wrapper.appendChild(textLayerDiv);
+        const textLayer = new pdfjsLib.TextLayer({
+          textContentSource: textContent,
+          container: textLayerDiv,
+          viewport,
+        });
+        await textLayer.render();
+        entry.textDivs = textLayer.textDivs;
+        entry.textStrs = textLayer.textContentItemsStr;
 
-      if (linkServiceRef.current) {
-        const annotations = await (entry as any)._page.getAnnotations();
-        if (annotations.length > 0) {
-          const annotationDiv = document.createElement("div");
-          annotationDiv.className = "rs-pdf-annotation-layer";
-          wrapper.appendChild(annotationDiv);
-          const annotationLayer = new pdfjsLib.AnnotationLayer({
-            div: annotationDiv,
-            page: (entry as any)._page,
-            viewport: viewport.clone({ dontFlip: true }),
-            linkService: linkServiceRef.current,
-          });
-          await annotationLayer.render({ annotations, renderForms: false });
+        if (linkServiceRef.current) {
+          const annotations = await (entry as any)._page.getAnnotations();
+          if (annotations.length > 0) {
+            const annotationDiv = document.createElement("div");
+            annotationDiv.className = "rs-pdf-annotation-layer";
+            wrapper.appendChild(annotationDiv);
+            const annotationLayer = new pdfjsLib.AnnotationLayer({
+              div: annotationDiv,
+              page: (entry as any)._page,
+              viewport: viewport.clone({ dontFlip: true }),
+              linkService: linkServiceRef.current,
+            });
+            await annotationLayer.render({ annotations, renderForms: false });
+          }
         }
+        entry.rendered = true;
+      } catch (e) {
+        console.error(
+          `[DocumentViewerModal] page ${entry.pageNum} render failed:`,
+          e
+        );
+        const err = e as { name?: string; message?: string } | undefined;
+        wrapper.innerHTML = "";
+        wrapper.style.aspectRatio = "";
+        const msg = document.createElement("div");
+        msg.className =
+          "p-4 text-center text-[11px] text-muted-foreground font-mono break-words";
+        msg.textContent = `Couldn't render page ${entry.pageNum}. ${err?.name ?? "Error"}: ${err?.message ?? "(no message)"}`;
+        wrapper.appendChild(msg);
       }
-      entry.rendered = true;
     })();
     entry.renderPromise = promise;
     return promise;
@@ -601,6 +622,15 @@ const PdfPages = forwardRef<
     onSearchReady(false);
     pagesRef.current.clear();
     (async () => {
+      // Labels the phase in progress when a failure happens — Safari's
+      // JavaScriptCore reports a bare "TypeError: undefined is not a
+      // function (near '...i of e...')" for this kind of failure with no
+      // file/line info at all (confirmed against a real device — see the
+      // errorDetail this produced), and there's no way to attach a remote
+      // debugger to an officer's iPad/iPhone in the field to get a real
+      // stack trace. This is the only way left to localize WHICH call is
+      // actually throwing.
+      let step = "setup";
       try {
         // pdfjs-dist@6.3.289 calls Map.prototype.getOrInsertComputed
         // internally (confirmed via direct testing against a real build of
@@ -622,7 +652,9 @@ const PdfPages = forwardRef<
             return value;
           };
         }
+        step = "import pdfjs-dist";
         const pdfjsLib = await import("pdfjs-dist");
+        step = "import pdf_viewer";
         const { EventBus, PDFLinkService } = await import(
           "pdfjs-dist/web/pdf_viewer.mjs"
         );
@@ -648,13 +680,16 @@ const PdfPages = forwardRef<
         // resolved by Vite's plugin purely from the import specifier
         // string, so it works the same whether this import is static or
         // (as here) dynamic.
+        step = "import worker url";
         const pdfjsWorkerUrl = (
           await import("../lib/pdfjsWorkerEntry.ts?worker&url")
         ).default;
         pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
         pdfjsRef.current = pdfjsLib;
+        step = "fetch file bytes";
         const buffer = await (await fetch(url)).arrayBuffer();
         if (cancelled) return;
+        step = "getDocument";
         const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
         if (cancelled) return;
 
@@ -668,6 +703,7 @@ const PdfPages = forwardRef<
         // CSS-transform approach above), it's handed a minimal object
         // that just does that one thing against this component's own
         // lazily-rendered page wrappers.
+        step = "link service setup";
         const eventBus = new EventBus();
         const linkService = new PDFLinkService({ eventBus });
         linkService.setDocument(pdf);
@@ -706,6 +742,7 @@ const PdfPages = forwardRef<
         // actually been drawn.
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
           if (cancelled) return;
+          step = `pass1 layout (page ${pageNum}/${pdf.numPages})`;
           const page = await pdf.getPage(pageNum);
           // Render scale derived from this page's own native size so the
           // canvas's actual pixel resolution matches targetPageWidth (the
@@ -760,6 +797,7 @@ const PdfPages = forwardRef<
         }
         if (cancelled) return;
         onSearchReady(true);
+        step = "pass2 observer setup";
 
         // Pass 2: lazily render each page (canvas + text layer + link
         // layer) once its placeholder is near the viewport, instead of
@@ -791,14 +829,17 @@ const PdfPages = forwardRef<
 
         setStatus("done");
       } catch (e) {
-        console.error("[DocumentViewerModal] PDF render failed:", e);
+        console.error(
+          `[DocumentViewerModal] PDF render failed at "${step}":`,
+          e
+        );
         if (!cancelled) {
           const err = e as { name?: string; message?: string } | undefined;
-          setErrorDetail(
+          const detail =
             err?.name || err?.message
               ? `${err?.name ?? "Error"}: ${err?.message ?? "(no message)"}`
-              : String(e)
-          );
+              : String(e);
+          setErrorDetail(`[${step}] ${detail}`);
           setStatus("error");
         }
       }

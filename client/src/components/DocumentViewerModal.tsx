@@ -498,6 +498,12 @@ const PdfPages = forwardRef<
 >(function PdfPages({ url, scrollContainerRef, onSearchReady }, ref) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"loading" | "error" | "done">("loading");
+  // Surfaced in the error state below — the previous bare "Couldn't
+  // display this PDF." with a silently-swallowed error gave no way to
+  // tell WHY a load failed on a device this can't be live-tested against
+  // (no remote debugger access to an officer's iPad/iPhone in the field),
+  // so a screenshot of the error is the only diagnostic channel available.
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const pagesRef = useRef<Map<number, PdfPageEntry>>(new Map());
   const pdfjsRef = useRef<any>(null); // the pdfjs-dist module itself
   const linkServiceRef = useRef<any>(null);
@@ -591,6 +597,7 @@ const PdfPages = forwardRef<
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
+    setErrorDetail(null);
     onSearchReady(false);
     pagesRef.current.clear();
     (async () => {
@@ -677,6 +684,21 @@ const PdfPages = forwardRef<
         if (!root) return;
         root.innerHTML = "";
 
+        // Target CSS width for each page — fills the viewer's own current
+        // width (minus its p-3/sm:p-5 padding) rather than always being
+        // the PDF's native point-size, which only happened to roughly
+        // fill the viewer back when the dialog was a fixed ~672px wide.
+        // Widening the dialog (sm:max-w-2xl → lg:max-w-6xl) otherwise left
+        // a growing blank gutter beside a page that never grew past its
+        // own native size. Read once, up front — pages are laid out once
+        // per open, with pinch/ctrl+wheel zoom afterwards handled entirely
+        // by ZoomScrollArea's CSS transform, not by re-laying-out pages.
+        const containerWidth = scrollContainerRef.current?.clientWidth ?? 800;
+        const targetPageWidth = Math.max(
+          200,
+          Math.min(containerWidth - 48, 1400)
+        );
+
         // Pass 1 (cheap): build every page's placeholder + search index up
         // front, so the document's full scroll height is correct from the
         // start (no layout shift as pages lazily render in) and the whole
@@ -685,7 +707,14 @@ const PdfPages = forwardRef<
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
           if (cancelled) return;
           const page = await pdf.getPage(pageNum);
-          const viewport = page.getViewport({ scale: 2 });
+          // Render scale derived from this page's own native size so the
+          // canvas's actual pixel resolution matches targetPageWidth (the
+          // CSS width it's displayed at) at 2x for retina sharpness —
+          // the same 2x headroom the previous fixed `scale: 2` gave when
+          // displayed at (that viewport's width / 2).
+          const baseViewport = page.getViewport({ scale: 1 });
+          const renderScale = (targetPageWidth / baseViewport.width) * 2;
+          const viewport = page.getViewport({ scale: renderScale });
           const textContent = await page.getTextContent();
           const searchText = (textContent.items as any[])
             .map(it => ("str" in it ? it.str : ""))
@@ -709,7 +738,7 @@ const PdfPages = forwardRef<
           // modal. A real, non-percentage width (capped by max-width so it
           // still shrinks on a narrow phone screen) gives the whole chain
           // something concrete to anchor to again.
-          wrapper.style.width = `${viewport.width / 2}px`;
+          wrapper.style.width = `${targetPageWidth}px`;
           wrapper.style.maxWidth = "100%";
           wrapper.style.aspectRatio = `${viewport.width} / ${viewport.height}`;
           wrapper.dataset.pageNum = String(pageNum);
@@ -761,8 +790,17 @@ const PdfPages = forwardRef<
         }
 
         setStatus("done");
-      } catch {
-        if (!cancelled) setStatus("error");
+      } catch (e) {
+        console.error("[DocumentViewerModal] PDF render failed:", e);
+        if (!cancelled) {
+          const err = e as { name?: string; message?: string } | undefined;
+          setErrorDetail(
+            err?.name || err?.message
+              ? `${err?.name ?? "Error"}: ${err?.message ?? "(no message)"}`
+              : String(e)
+          );
+          setStatus("error");
+        }
       }
     })();
     return () => {
@@ -775,7 +813,18 @@ const PdfPages = forwardRef<
   return (
     <div>
       {status === "loading" && <ViewerStatus text="Loading document…" />}
-      {status === "error" && <ViewerStatus text="Couldn't display this PDF." />}
+      {status === "error" && (
+        <div className="py-16 text-center">
+          <p className="text-sm text-muted-foreground">
+            Couldn't display this PDF.
+          </p>
+          {errorDetail && (
+            <p className="mt-2 px-6 text-[11px] text-muted-foreground/70 font-mono break-words">
+              {errorDetail}
+            </p>
+          )}
+        </div>
+      )}
       <div ref={rootRef} />
     </div>
   );
@@ -822,10 +871,12 @@ function highlightMatchOnPage(
 function DocxContent({ url }: { url: string }) {
   const [html, setHtml] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "error" | "done">("loading");
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
+    setErrorDetail(null);
     (async () => {
       try {
         const mammoth = await import("mammoth");
@@ -835,8 +886,17 @@ function DocxContent({ url }: { url: string }) {
         if (cancelled) return;
         setHtml(result.value);
         setStatus("done");
-      } catch {
-        if (!cancelled) setStatus("error");
+      } catch (e) {
+        console.error("[DocumentViewerModal] DOCX render failed:", e);
+        if (!cancelled) {
+          const err = e as { name?: string; message?: string } | undefined;
+          setErrorDetail(
+            err?.name || err?.message
+              ? `${err?.name ?? "Error"}: ${err?.message ?? "(no message)"}`
+              : String(e)
+          );
+          setStatus("error");
+        }
       }
     })();
     return () => {
@@ -846,7 +906,18 @@ function DocxContent({ url }: { url: string }) {
 
   if (status === "loading") return <ViewerStatus text="Loading document…" />;
   if (status === "error" || html === null)
-    return <ViewerStatus text="Couldn't display this document." />;
+    return (
+      <div className="py-16 text-center">
+        <p className="text-sm text-muted-foreground">
+          Couldn't display this document.
+        </p>
+        {errorDetail && (
+          <p className="mt-2 px-6 text-[11px] text-muted-foreground/70 font-mono break-words">
+            {errorDetail}
+          </p>
+        )}
+      </div>
+    );
 
   return (
     <>

@@ -953,6 +953,34 @@ function normalizeEntityLabelClient(label: string): string {
   return label.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+// Opens (or re-opens) the shared singleton InfoWindow after its new content
+// has had a chance to actually lay out — both call sites were already
+// deferring by one requestAnimationFrame to guard against exactly this
+// ("off-centre on the first click, correct on the second" — see their own
+// comments), but a real officer reported it still happening intermittently
+// on an iPad, badly enough to make tapping the right popup button
+// difficult (the content box and its own arrow ending up nowhere near each
+// other). Strengthened two ways rather than guessing which one was the
+// actual gap: explicitly closes first, so tapping a different marker while
+// one popup is already open starts from a clean, fully torn-down state
+// instead of Google measuring an in-place content swap mid-transition; and
+// defers by TWO animation frames instead of one — a single rAF runs right
+// before the next paint, which is normally enough time for content changed
+// earlier in the same tick to have been laid out, but evidently wasn't
+// always reliable on this device/browser. A second frame gives strictly
+// more margin at a cost of one imperceptible extra frame (~16ms).
+function openInfoWindowDeferred(
+  infoWindowRef: React.MutableRefObject<google.maps.InfoWindow | null>,
+  map: google.maps.Map
+) {
+  infoWindowRef.current?.close();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      infoWindowRef.current?.open(map);
+    });
+  });
+}
+
 function buildInfoWindowContent(
   loc: IntelMapLocation,
   override?: {
@@ -3663,18 +3691,7 @@ export default function IntelligenceMapping() {
           lat: position.lat,
           lng: position.lng,
         });
-        // Deferred one frame: the InfoWindow computes its on-screen pixel
-        // position (including which way to flip itself near a map edge)
-        // from its content's actual rendered size, but the browser hasn't
-        // laid out the HTML setContent() just injected until the next
-        // paint — opening in the same tick can position the bubble using a
-        // stale/zero size from whatever was in this reused singleton
-        // InfoWindow before, which is exactly the "off-centre on the first
-        // click, correct on the second" symptom this fixes (the second
-        // click's content was already painted from the first).
-        requestAnimationFrame(() => {
-          infoWindowRef.current?.open(mapRef.current!);
-        });
+        openInfoWindowDeferred(infoWindowRef, mapRef.current!);
       });
       markersRef.current.push(marker);
     },
@@ -4733,15 +4750,7 @@ export default function IntelligenceMapping() {
 
           infoWindowRef.current.setContent(buildPopupHtml(currentRotation));
           infoWindowRef.current.setPosition({ lat, lng });
-          // Deferred one frame — same reasoning as the intel pin popup's
-          // own open() above: the browser hasn't laid out the HTML
-          // setContent() just injected until the next paint, so opening in
-          // the same tick can position the bubble off-anchor using a
-          // stale/zero size from this reused singleton InfoWindow's
-          // previous content.
-          requestAnimationFrame(() => {
-            infoWindowRef.current?.open(map);
-          });
+          openInfoWindowDeferred(infoWindowRef, map);
         });
         existing.set(outerCm.id, marker);
       }

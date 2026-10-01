@@ -3799,6 +3799,11 @@ export default function SheetDetail({
         insertAfter("ARR", "DEP");
         insertAfter("RP", "FP");
         insertAfter("SPV", "DW");
+        // SP was defaulting to the end of the row (not in
+        // CANONICAL_CHIP_ORDER at all until now) — move it next to DW/SPV,
+        // same migration pattern as the others above, rather than leaving
+        // sheets with an already-saved order stuck with it at the tail.
+        insertAfter("SP", "DW");
         if (changed) {
           localStorage.setItem(
             `runsheet_field_order_${sheetId}`,

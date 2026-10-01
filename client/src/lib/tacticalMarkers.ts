@@ -2548,30 +2548,3 @@ export function getTacticalIconSrc(icon: string): string | null {
 export function getTacticalIconLabel(icon: string): string | null {
   return TACTICAL_ICON_MAP[icon]?.label ?? null;
 }
-
-// A hand-picked subset of Tactical icons an officer reaches for
-// constantly enough (identified directly off a real running map — see
-// the session this was added in) that they're worth surfacing on the
-// Surveillance picker tab too, not just buried in their own (369-icon,
-// for "tactical") group tab. Copies, not moves — every one of these
-// keeps its original `group` and stays exactly where it was in the
-// Tactical/Vehicles/Facilities tabs as well; this list only controls
-// the EXTRA appearance on the Surveillance tab.
-export const SURVEILLANCE_PINNED_KEYS: string[] = [
-  "police_car",
-  "lay_up_point",
-  "toilets",
-  "afp",
-  "x_circle",
-  "inner_cordon",
-  "cell_tower",
-  "friendly_address",
-  "vehicle_approach_alpha",
-  "circle_1",
-  "subject_vehicle",
-];
-
-export const SURVEILLANCE_PINNED_ICONS: TacticalIcon[] =
-  SURVEILLANCE_PINNED_KEYS.map(k => TACTICAL_ICON_MAP[k]).filter(
-    (t): t is TacticalIcon => !!t
-  );

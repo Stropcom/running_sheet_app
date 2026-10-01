@@ -21,7 +21,6 @@ import {
   TACTICAL_ICONS,
   TACTICAL_GROUPS,
   TACTICAL_ICONS_BY_GROUP,
-  SURVEILLANCE_PINNED_ICONS,
   isTacticalIcon,
   type TacticalGroup,
 } from "@/lib/tacticalMarkers";
@@ -1449,47 +1448,6 @@ function TacticalIconGroupTiles({
         </p>
       )}
       {icons.map(t => (
-        <button
-          key={t.key}
-          onClick={() => onSelect(t.key)}
-          title={t.label}
-          className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${
-            selectedKey === t.key
-              ? "border-primary bg-primary/10"
-              : "border-border bg-background hover:border-primary/50"
-          }`}
-        >
-          <img
-            src={t.src}
-            alt={t.label}
-            className="w-[27px] h-[27px] object-contain"
-          />
-        </button>
-      ))}
-    </>
-  );
-}
-
-// A small, curated set of Tactical icons (see SURVEILLANCE_PINNED_KEYS)
-// an officer reaches for often enough to surface on the Surveillance tab
-// too, as its own labelled section ahead of the hand-drawn Surveillance
-// shapes — copies, not moves, each one stays in its real group's own tab
-// as well. Caller is responsible for only rendering this while the
-// Surveillance chip is actually selected (see both call sites).
-function PinnedTacticalIconTiles({
-  selectedKey,
-  onSelect,
-}: {
-  selectedKey: string;
-  onSelect: (key: string) => void;
-}) {
-  if (SURVEILLANCE_PINNED_ICONS.length === 0) return null;
-  return (
-    <>
-      <p className="col-span-full text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mt-1.5 mb-0.5 border-t border-border/60 pt-1.5">
-        Pinned
-      </p>
-      {SURVEILLANCE_PINNED_ICONS.map(t => (
         <button
           key={t.key}
           onClick={() => onSelect(t.key)}
@@ -9322,20 +9280,6 @@ export default function IntelligenceMapping() {
                         </button>
                       ))}
 
-                    {/* A hand-picked set of frequently-used Tactical icons,
-                        copied in here too (not moved — each stays in its
-                        own Tactical/Vehicles/etc tab as well) so an officer
-                        doesn't have to leave the Surveillance tab to reach
-                        the ones they reach for constantly. Surveillance-tab
-                        only, not shown under "All" — they're already there
-                        via their real group's own section. */}
-                    {intelEditIconFilter === "surveillance" && (
-                      <PinnedTacticalIconTiles
-                        selectedKey={intelEditIcon}
-                        onSelect={setIntelEditIcon}
-                      />
-                    )}
-
                     {TACTICAL_GROUPS.map(g => (
                       <TacticalIconGroupTiles
                         key={g.key}
@@ -11330,16 +11274,6 @@ export default function IntelligenceMapping() {
                             />
                           </button>
                         ))}
-
-                      {/* See the matching comment on the intel-pin edit
-                          dialog's copy of this — pinned Tactical favourites,
-                          Surveillance-tab only. */}
-                      {cmIconFilter === "surveillance" && (
-                        <PinnedTacticalIconTiles
-                          selectedKey={cmIcon}
-                          onSelect={setCmIcon}
-                        />
-                      )}
 
                       {TACTICAL_GROUPS.map(g => (
                         <TacticalIconGroupTiles

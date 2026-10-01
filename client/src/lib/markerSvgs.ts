@@ -68,12 +68,13 @@ export type MarkerIcon =
   | "fuel_pump"
   | "fup_badge"
   | "afp_badge"
-  // The walking-person glyph used for an on-foot live team member pin (see
-  // IntelligenceMapping.tsx's liveUser.onFoot rendering) — offered as a
-  // selectable custom marker too. An emoji carries its own fixed colours,
-  // so unlike every other icon here the colour swatch has no visible
-  // effect on this one.
-  | "person_foot";
+  // The walking/standing-still person glyphs used for an on-foot live team
+  // member pin (see IntelligenceMapping.tsx's liveUser.onFoot rendering,
+  // 🚶 for walking / 🧍 for stopped 10s+) — offered as selectable custom
+  // markers too. An emoji carries its own fixed colours, so unlike every
+  // other icon here the colour swatch has no visible effect on these.
+  | "person_foot"
+  | "person_standing";
 
 export const MARKER_COLOURS: Record<MarkerColour, string> = {
   red: "#E53935",
@@ -135,6 +136,7 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
   fup_badge: "FUP",
   afp_badge: "AFP",
   person_foot: "Person (Foot)",
+  person_standing: "Person (Standing)",
 };
 
 export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
@@ -174,7 +176,7 @@ export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
   },
   { label: "Badges", icons: ["fup_badge", "afp_badge", "shield_f"] },
   { label: "Indicators", icons: ["dashed_line", "drone"] },
-  { label: "People", icons: ["person_foot"] },
+  { label: "People", icons: ["person_foot", "person_standing"] },
 ];
 
 /** Generate an SVG string for a given icon + colour */
@@ -580,7 +582,14 @@ m2697 -148 c14 -14 15 -105 13 -803 -2 -769 -2 -788 -22 -819 -11 -17 -37 -44
 
     case "person_foot":
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
-        <text x="24" y="38" text-anchor="middle" font-size="40">🚶</text>
+        <circle cx="24" cy="24" r="21" fill="${c}" stroke="${dark}" stroke-width="2"/>
+        <text x="24" y="33" text-anchor="middle" font-size="26">🚶</text>
+      </svg>`;
+
+    case "person_standing":
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        <circle cx="24" cy="24" r="21" fill="${c}" stroke="${dark}" stroke-width="2"/>
+        <text x="24" y="33" text-anchor="middle" font-size="26">🧍</text>
       </svg>`;
 
     default:

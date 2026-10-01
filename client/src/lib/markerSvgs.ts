@@ -21,6 +21,12 @@ export type MarkerIcon =
   | "hatchback"
   | "arrow_up"
   | "arrow_right"
+  // arrow_ne, both dashed-arrow variants, line_straight, and camera_cctv
+  // stay here (and in getMarkerSvg/MARKER_ICON_LABELS below) purely so any
+  // marker already saved with one of these keys keeps rendering correctly
+  // — MARKER_ICON_GROUPS below no longer offers them as a choice for a
+  // new/edited marker, per the officer's request to trim the Surveillance
+  // picker down. Same pattern as suv/ute/van/hatchback above.
   | "arrow_ne"
   | "arrow_up_dashed"
   | "arrow_right_dashed"
@@ -77,19 +83,8 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
 export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
   { label: "Locations", icons: ["house_outline", "house_filled"] },
   { label: "Vehicles", icons: ["sedan"] },
-  {
-    label: "Arrow",
-    icons: [
-      "arrow_up",
-      "arrow_right",
-      "arrow_ne",
-      "arrow_up_dashed",
-      "arrow_right_dashed",
-      "arrow_ne_dashed",
-    ],
-  },
-  { label: "Lines", icons: ["line_straight"] },
-  { label: "Cameras", icons: ["camera_photo", "camera_cctv"] },
+  { label: "Arrow", icons: ["arrow_up", "arrow_right"] },
+  { label: "Cameras", icons: ["camera_photo"] },
   {
     label: "Points of Interest",
     icons: ["hazard", "coffee", "toilet", "rv", "boat_cruiser"],

@@ -9032,6 +9032,17 @@ export default function IntelligenceMapping() {
                   </div>
                 </div>
 
+                {/* See the matching comment on the Place Map Marker
+                    dialog's own copy of this line — no hover on a
+                    touchscreen, so this is the only way a tapped icon's
+                    name is ever shown there. */}
+                <p className="text-[11px] text-muted-foreground mb-1.5">
+                  Selected:{" "}
+                  <span className="font-semibold text-foreground">
+                    {getMarkerIconLabel(intelEditIcon)}
+                  </span>
+                </p>
+
                 <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-accent/10 p-2">
                   <div className="grid grid-cols-6 md:grid-cols-9 lg:grid-cols-11 gap-1.5">
                     {(intelEditIconFilter === "all" ||
@@ -10913,6 +10924,19 @@ export default function IntelligenceMapping() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Desktop shows an icon's name on hover (the tile's own
+                      title attribute) — there's no hover on a touchscreen,
+                      so this is the only way a tapped icon's name is ever
+                      shown there. Live, not just on tap: it's really "the
+                      currently selected icon's name", which is already
+                      correct the instant a tap lands. */}
+                  <p className="text-[11px] text-muted-foreground mb-1.5">
+                    Selected:{" "}
+                    <span className="font-semibold text-foreground">
+                      {getMarkerIconLabel(cmIcon)}
+                    </span>
+                  </p>
 
                   <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-accent/10 p-2">
                     <div className="grid grid-cols-6 md:grid-cols-9 lg:grid-cols-11 gap-1.5">

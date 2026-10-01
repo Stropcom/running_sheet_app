@@ -17,7 +17,13 @@ import {
   type MarkerColour,
   type MarkerIcon,
 } from "@/lib/markerSvgs";
-import { TACTICAL_ICONS, isTacticalIcon } from "@/lib/tacticalMarkers";
+import {
+  TACTICAL_ICONS,
+  TACTICAL_GROUPS,
+  TACTICAL_ICONS_BY_GROUP,
+  isTacticalIcon,
+  type TacticalGroup,
+} from "@/lib/tacticalMarkers";
 import {
   convertGoogleAddresses,
   buildPoiAddress,
@@ -1395,6 +1401,58 @@ const SURVEILLANCE_ICONS: MarkerIcon[] = MARKER_ICON_GROUPS.flatMap(
   g => g.icons
 );
 
+// Renders one TACTICAL_GROUPS entry's tiles inside the shared icon-picker
+// grid (both the intel pin "Edit Marker Appearance" dialog and the Place
+// Map Marker dialog use this identically) — a divider + small uppercase
+// label ahead of its tiles when the picker is on the "All" filter (so
+// ~413 icons read as five labelled sections rather than one wall of
+// tiles), nothing extra when a single group's own chip is selected since
+// the chip label already said which group this is.
+function TacticalIconGroupTiles({
+  group,
+  visible,
+  showHeading,
+  selectedKey,
+  onSelect,
+}: {
+  group: { key: TacticalGroup; label: string };
+  visible: boolean;
+  showHeading: boolean;
+  selectedKey: string;
+  onSelect: (key: string) => void;
+}) {
+  if (!visible) return null;
+  const icons = TACTICAL_ICONS_BY_GROUP[group.key];
+  if (icons.length === 0) return null;
+  return (
+    <>
+      {showHeading && (
+        <p className="col-span-full text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mt-1.5 mb-0.5 border-t border-border/60 pt-1.5 first:border-t-0 first:pt-0 first:mt-0">
+          {group.label}
+        </p>
+      )}
+      {icons.map(t => (
+        <button
+          key={t.key}
+          onClick={() => onSelect(t.key)}
+          title={t.label}
+          className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${
+            selectedKey === t.key
+              ? "border-primary bg-primary/10"
+              : "border-border bg-background hover:border-primary/50"
+          }`}
+        >
+          <img
+            src={t.src}
+            alt={t.label}
+            className="w-[27px] h-[27px] object-contain"
+          />
+        </button>
+      ))}
+    </>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function IntelligenceMapping() {
   const [, setLocation] = useLocation();
@@ -2112,7 +2170,7 @@ export default function IntelligenceMapping() {
   // cmColour meaningful; Tactical hides the colour section entirely since
   // those icons are fixed-colour raster art, not a recolourable shape.
   const [cmIconFilter, setCmIconFilter] = useState<
-    "all" | "surveillance" | "tactical"
+    "all" | "surveillance" | TacticalGroup
   >("all");
   // "Label only" — the marker renders as just its label pill, no icon (see
   // the Add Shape feature's own note-label pill, which this borrows the
@@ -2417,7 +2475,7 @@ export default function IntelligenceMapping() {
     useState<MarkerColour>("purple");
   const [intelEditRotation, setIntelEditRotation] = useState<number>(0);
   const [intelEditIconFilter, setIntelEditIconFilter] = useState<
-    "all" | "surveillance" | "tactical"
+    "all" | "surveillance" | TacticalGroup
   >("all");
 
   // Map state
@@ -9084,14 +9142,19 @@ export default function IntelligenceMapping() {
 
               {/* Icon picker — same filter-chip + flat scrollable grid as
                   the Place Map Marker dialog (see its own comment for why:
-                  no per-shape-type headings, All/Surveillance/Tactical
-                  chips instead). */}
+                  no per-shape-type headings within Surveillance, a chip
+                  per TACTICAL_GROUPS entry instead — the tactical library
+                  grew from an 18-icon trial to the full ~413-icon traced
+                  set, so "Tactical" alone is no longer a single flat tab;
+                  "All" shows every chip's icons as its own labelled
+                  section, in TACTICAL_GROUPS order, rather than one
+                  undifferentiated wall of tiles). */}
               <div className="mb-4">
-                <div className="flex items-center justify-between mb-2 gap-2">
+                <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
                   <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
                     Marker Icon
                   </p>
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-1.5 flex-wrap justify-end">
                     {[
                       {
                         key: "all" as const,
@@ -9101,10 +9164,10 @@ export default function IntelligenceMapping() {
                         key: "surveillance" as const,
                         label: `Surveillance (${SURVEILLANCE_ICONS.length})`,
                       },
-                      {
-                        key: "tactical" as const,
-                        label: `Tactical (${TACTICAL_ICONS.length})`,
-                      },
+                      ...TACTICAL_GROUPS.map(g => ({
+                        key: g.key as "all" | "surveillance" | TacticalGroup,
+                        label: `${g.label} (${TACTICAL_ICONS_BY_GROUP[g.key].length})`,
+                      })),
                     ].map(f => (
                       <button
                         key={f.key}
@@ -9155,30 +9218,19 @@ export default function IntelligenceMapping() {
                         </button>
                       ))}
 
-                    {intelEditIconFilter === "all" && (
-                      <div className="col-span-full h-px bg-border my-1" />
-                    )}
-
-                    {(intelEditIconFilter === "all" ||
-                      intelEditIconFilter === "tactical") &&
-                      TACTICAL_ICONS.map(t => (
-                        <button
-                          key={t.key}
-                          onClick={() => setIntelEditIcon(t.key)}
-                          title={t.label}
-                          className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${
-                            intelEditIcon === t.key
-                              ? "border-primary bg-primary/10"
-                              : "border-border bg-background hover:border-primary/50"
-                          }`}
-                        >
-                          <img
-                            src={t.src}
-                            alt={t.label}
-                            className="w-[27px] h-[27px] object-contain"
-                          />
-                        </button>
-                      ))}
+                    {TACTICAL_GROUPS.map(g => (
+                      <TacticalIconGroupTiles
+                        key={g.key}
+                        group={g}
+                        visible={
+                          intelEditIconFilter === "all" ||
+                          intelEditIconFilter === g.key
+                        }
+                        showHeading={intelEditIconFilter === "all"}
+                        selectedKey={intelEditIcon}
+                        onSelect={setIntelEditIcon}
+                      />
+                    ))}
                   </div>
                 </div>
               </div>
@@ -11076,22 +11128,24 @@ export default function IntelligenceMapping() {
               )}
 
               {/* 1. Icon picker — not shown for a Label Only marker, which
-                  has no icon to pick. Flat tile grid, no per-shape-type
-                  headings (Locations/Vehicles/etc. — with only a couple of
-                  icons in each, the heading added nothing). All/Surveillance/
-                  Tactical filter chips instead: Surveillance is the original
-                  recolourable shape set, Tactical is the fixed-colour
-                  library traced from the AFP iSurv marker set (18-icon
-                  trial batch — see lib/tacticalMarkers.ts). The tile grid
-                  itself scrolls in a fixed-height box so the rest of the
-                  dialog (colour, rotation, operation, buttons) stays put. */}
+                  has no icon to pick. Flat tile grid within Surveillance
+                  (no per-shape-type headings — with only a couple of icons
+                  in each, the heading added nothing); a chip per
+                  TACTICAL_GROUPS entry otherwise — the tactical library
+                  grew from an 18-icon trial to the full ~413-icon traced
+                  set (see lib/tacticalMarkers.ts), so one flat "Tactical"
+                  tab stopped being usable. "All" shows every chip's icons
+                  as its own labelled section rather than one wall of
+                  tiles. The tile grid itself scrolls in a fixed-height box
+                  so the rest of the dialog (colour, rotation, operation,
+                  buttons) stays put. */}
               {!cmLabelOnly && (
                 <div className="mb-4">
-                  <div className="flex items-center justify-between mb-2 gap-2">
+                  <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
                     <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
                       Marker Icon
                     </p>
-                    <div className="flex gap-1.5">
+                    <div className="flex gap-1.5 flex-wrap justify-end">
                       {[
                         {
                           key: "all" as const,
@@ -11101,10 +11155,10 @@ export default function IntelligenceMapping() {
                           key: "surveillance" as const,
                           label: `Surveillance (${SURVEILLANCE_ICONS.length})`,
                         },
-                        {
-                          key: "tactical" as const,
-                          label: `Tactical (${TACTICAL_ICONS.length})`,
-                        },
+                        ...TACTICAL_GROUPS.map(g => ({
+                          key: g.key as "all" | "surveillance" | TacticalGroup,
+                          label: `${g.label} (${TACTICAL_ICONS_BY_GROUP[g.key].length})`,
+                        })),
                       ].map(f => (
                         <button
                           key={f.key}
@@ -11157,37 +11211,18 @@ export default function IntelligenceMapping() {
                           </button>
                         ))}
 
-                      {cmIconFilter === "all" && (
-                        <div className="col-span-full h-px bg-border my-1" />
-                      )}
-
-                      {(cmIconFilter === "all" ||
-                        cmIconFilter === "tactical") &&
-                        TACTICAL_ICONS.map(t => (
-                          <button
-                            key={t.key}
-                            onClick={() => setCmIcon(t.key)}
-                            title={t.label}
-                            className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${
-                              cmIcon === t.key
-                                ? "border-primary bg-primary/10"
-                                : "border-border bg-background hover:border-primary/50"
-                            }`}
-                          >
-                            <img
-                              src={t.src}
-                              alt={t.label}
-                              // Tactical source PNGs carry a few px of
-                              // baked-in margin the hand-drawn Surveillance
-                              // SVGs don't (their glyph fills the source
-                              // canvas closer to edge-to-edge) — sized
-                              // slightly larger here so the two sets read as
-                              // the same visual weight in the grid instead
-                              // of tactical icons looking a touch smaller.
-                              className="w-[27px] h-[27px] object-contain"
-                            />
-                          </button>
-                        ))}
+                      {TACTICAL_GROUPS.map(g => (
+                        <TacticalIconGroupTiles
+                          key={g.key}
+                          group={g}
+                          visible={
+                            cmIconFilter === "all" || cmIconFilter === g.key
+                          }
+                          showHeading={cmIconFilter === "all"}
+                          selectedKey={cmIcon}
+                          onSelect={setCmIcon}
+                        />
+                      ))}
                     </div>
                   </div>
                 </div>

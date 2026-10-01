@@ -230,6 +230,18 @@ export default defineConfig({
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
   },
+  // Vite's production worker chunks default to "iife" format — but
+  // pdfjs-dist (see lib/pdfjsWorkerEntry.ts) hardcodes
+  // `new Worker(workerSrc, { type: "module" })` when it spawns its own
+  // worker, so an iife-built chunk gets loaded as a module script it
+  // wasn't built as. Confirmed to render PDFs fine on Chromium (laptop)
+  // but fail ("Couldn't display this PDF.") on iPad/iPhone Safari —
+  // consistent with a format mismatch WebKit's module-worker loader
+  // enforces more strictly than Chromium's. Building worker chunks as
+  // real ES modules matches what pdf.js actually requests.
+  worker: {
+    format: "es",
+  },
   server: {
     host: true,
     allowedHosts: [

@@ -123,7 +123,7 @@ export function DocumentViewerModal({
         role="dialog"
         aria-modal="true"
         aria-label="Document viewer"
-        className="relative w-full h-full sm:h-auto sm:max-w-2xl sm:max-h-[calc(100vh-3rem)] bg-card border border-border sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        className="relative w-full h-full sm:h-auto sm:max-w-2xl md:max-w-4xl lg:max-w-6xl sm:max-h-[calc(100vh-3rem)] bg-card border border-border sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden"
       >
         <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">

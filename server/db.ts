@@ -3622,6 +3622,49 @@ export async function recordTargetDocumentImport(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
+
+  // "Just attach the document" (Parse & extract fields toggled off in
+  // ImportTargetDocumentDialog) carries no new reviewed fields — just a
+  // copy of the file — so per officer feedback it shouldn't read as a new
+  // "Version N" in ImportedDocumentCard's history the way an actual
+  // parsed re-import does. Swap it into the most recent existing import
+  // for this target+operation instead of appending a row, when one
+  // exists — a target's very first import still inserts normally, since
+  // there's nothing yet to attach it to.
+  let notParsed = false;
+  try {
+    notParsed = JSON.parse(data.snapshotJson)?.parsed === false;
+  } catch {
+    notParsed = false;
+  }
+
+  if (notParsed) {
+    const [latest] = await db
+      .select({ id: targetDocumentImports.id })
+      .from(targetDocumentImports)
+      .where(
+        and(
+          eq(targetDocumentImports.targetId, data.targetId),
+          eq(targetDocumentImports.operationId, data.operationId)
+        )
+      )
+      .orderBy(desc(targetDocumentImports.uploadedAt))
+      .limit(1);
+    if (latest) {
+      await db
+        .update(targetDocumentImports)
+        .set({
+          uploadedByCIN: data.uploadedByCIN,
+          uploadedAt: new Date(),
+          sourceFileName: data.sourceFileName || null,
+          sourceFileUrl: data.sourceFileUrl || null,
+          renderablePdfUrl: data.renderablePdfUrl || null,
+        })
+        .where(eq(targetDocumentImports.id, latest.id));
+      return;
+    }
+  }
+
   await db.insert(targetDocumentImports).values({
     targetId: data.targetId,
     operationId: data.operationId,

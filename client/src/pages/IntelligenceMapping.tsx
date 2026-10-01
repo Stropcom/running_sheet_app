@@ -9,7 +9,6 @@ import {
   getMarkerDataUrl,
   getMarkerIconUrl,
   getMarkerIconLabel,
-  getMarkerSvg,
   MARKER_COLOURS,
   MARKER_COLOUR_LABELS,
   MARKER_ICON_GROUPS,
@@ -1180,7 +1179,7 @@ function buildInfoWindowContent(
     sections.push(`
       <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">
         <div style="display:flex;align-items:center;gap:8px;">
-          <img id="intel-popup-preview-${encodedLabel}" src="data:image/svg+xml;base64,${btoa(getMarkerSvg(intelIcon as any, intelColour as any))}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${intelRotation}deg);transition:transform 0.1s;" />
+          <img id="intel-popup-preview-${encodedLabel}" src="${getMarkerDataUrl(intelIcon as any, intelColour as any)}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${intelRotation}deg);transition:transform 0.1s;" />
           <div style="flex:1;">
             <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
               <span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Rotation</span>
@@ -1253,7 +1252,7 @@ function buildInfoWindowContent(
     sections.push(`
       <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">
         <div style="display:flex;align-items:center;gap:8px;">
-          <img id="intel-popup-preview-${encodedLabel}" src="data:image/svg+xml;base64,${btoa(getMarkerSvg(intelIcon as any, intelColour as any))}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${intelRotation}deg);transition:transform 0.1s;" />
+          <img id="intel-popup-preview-${encodedLabel}" src="${getMarkerDataUrl(intelIcon as any, intelColour as any)}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${intelRotation}deg);transition:transform 0.1s;" />
           <div style="flex:1;">
             <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
               <span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Rotation</span>

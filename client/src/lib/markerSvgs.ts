@@ -4,7 +4,11 @@
  * Colours: red (#E53935), yellow (#F9A825), blue (#1E88E5), purple (#8E24AA)
  */
 
-import { getTacticalIconSrc, getTacticalIconLabel } from "./tacticalMarkers";
+import {
+  getTacticalIconSrc,
+  getTacticalIconLabel,
+  isTacticalIconRecolorable,
+} from "./tacticalMarkers";
 
 export type MarkerColour = "red" | "yellow" | "blue" | "purple" | "black";
 export type MarkerIcon =
@@ -399,18 +403,58 @@ export function getMarkerDataUrl(
 }
 
 /**
+ * Recolours a tactical icon's existing PNG via an SVG <mask> rather than
+ * re-tracing its artwork — the mask is set to alpha mode, so it goes purely
+ * off which pixels are opaque in the source PNG, ignoring whatever colour
+ * it happened to already be drawn in underneath. Only called for an icon
+ * flagged recolorable: true in TACTICAL_ICONS (see its own comment for why
+ * most tactical icons — realistic vehicle depictions, or ones whose colour
+ * IS their meaning — are deliberately NOT included here).
+ *
+ * `src` MUST be a data: URI (an inlined import, not a /public path string)
+ * — confirmed by direct testing: a browser loading an SVG via
+ * <img src="data:image/svg+xml,..."> sandboxes that SVG against loading
+ * any FURTHER external resource, so an <image href="/some/path.png">
+ * inside it silently loads nothing and the whole mask renders blank. A
+ * data: URI has no further fetch to sandbox, so it works — see
+ * tacticalMarkers.ts's own comment on why its recolorable icons are
+ * imported from src/assets (Vite-inlined) rather than referenced from
+ * public/ like every other tactical icon.
+ */
+function getTacticalIconMaskedDataUrl(
+  src: string,
+  colour: MarkerColour
+): string {
+  const c = MARKER_COLOURS[colour];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+    <mask id="m" mask-type="alpha">
+      <image href="${src}" x="0" y="0" width="48" height="48"/>
+    </mask>
+    <rect x="0" y="0" width="48" height="48" fill="${c}" mask="url(#m)"/>
+  </svg>`;
+  return svgToDataUrl(svg);
+}
+
+/**
  * Same shape as getMarkerDataUrl, but also resolves a tactical marker key
  * (see lib/tacticalMarkers.ts) — a fixed-colour raster icon with no colour
- * of its own to apply, unlike every MarkerIcon here. Every call site that
- * renders a saved custom_map_markers row (picker previews, the actual pin
- * drawn on the map, edit-dialog previews) should go through this rather
- * than getMarkerDataUrl directly, since markerIcon on that table is a
- * free-text column that can hold either kind of key. Takes `icon` as a
- * plain string (not the narrower MarkerIcon type) for exactly that reason.
+ * of its own to apply for most keys, unlike every MarkerIcon here, EXCEPT
+ * the handful flagged recolorable: true, which get tinted via
+ * getTacticalIconMaskedDataUrl instead of being returned as-is. Every call
+ * site that renders a saved custom_map_markers row (picker previews, the
+ * actual pin drawn on the map, edit-dialog previews) should go through
+ * this rather than getMarkerDataUrl directly, since markerIcon on that
+ * table is a free-text column that can hold either kind of key. Takes
+ * `icon` as a plain string (not the narrower MarkerIcon type) for exactly
+ * that reason.
  */
 export function getMarkerIconUrl(icon: string, colour: MarkerColour): string {
   const tacticalSrc = getTacticalIconSrc(icon);
-  if (tacticalSrc) return tacticalSrc;
+  if (tacticalSrc) {
+    return isTacticalIconRecolorable(icon)
+      ? getTacticalIconMaskedDataUrl(tacticalSrc, colour)
+      : tacticalSrc;
+  }
   return getMarkerDataUrl(icon as MarkerIcon, colour);
 }
 

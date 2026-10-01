@@ -17,7 +17,11 @@ import {
   type MarkerColour,
   type MarkerIcon,
 } from "@/lib/markerSvgs";
-import { TACTICAL_ICONS, isTacticalIcon } from "@/lib/tacticalMarkers";
+import {
+  TACTICAL_ICONS,
+  isTacticalIcon,
+  isTacticalIconRecolorable,
+} from "@/lib/tacticalMarkers";
 import {
   convertGoogleAddresses,
   buildPoiAddress,
@@ -9173,7 +9177,7 @@ export default function IntelligenceMapping() {
                           }`}
                         >
                           <img
-                            src={t.src}
+                            src={getMarkerIconUrl(t.key, intelEditColour)}
                             alt={t.label}
                             className="w-[27px] h-[27px] object-contain"
                           />
@@ -9183,12 +9187,18 @@ export default function IntelligenceMapping() {
                 </div>
               </div>
 
-              {/* Colour picker — a Tactical icon's artwork is fixed-colour,
-                  and unlike a custom map marker, an intel pin has no label
-                  pill either, so there's nothing left for this to control
-                  once a Tactical icon is selected — hidden in that case
-                  rather than shown with no visible effect. */}
-              {!isTacticalIcon(intelEditIcon) && (
+              {/* Colour picker — a fixed-colour Tactical icon's artwork
+                  can't be recoloured (see TACTICAL_ICONS' own comment on
+                  the handful flagged recolorable: true, which this DOES
+                  apply to), and unlike a custom map marker, an intel pin
+                  has no label pill either, so there's nothing left for
+                  this to control for a fixed-colour tactical icon —
+                  hidden in that case rather than shown with no visible
+                  effect. */}
+              {!(
+                isTacticalIcon(intelEditIcon) &&
+                !isTacticalIconRecolorable(intelEditIcon)
+              ) && (
                 <div className="mb-4">
                   <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
                     Colour
@@ -11180,7 +11190,7 @@ export default function IntelligenceMapping() {
                             }`}
                           >
                             <img
-                              src={t.src}
+                              src={getMarkerIconUrl(t.key, cmColour)}
                               alt={t.label}
                               // Tactical source PNGs carry a few px of
                               // baked-in margin the hand-drawn Surveillance
@@ -11198,29 +11208,36 @@ export default function IntelligenceMapping() {
                 </div>
               )}
 
-              {/* 2. Colour picker — controls two different things depending
-                  on context: it recolours a Surveillance icon shape, AND/OR
-                  it sets the background of the label pill that renders
-                  under ANY icon (tactical included) once a Label is typed
-                  — see the labelText branch in the map-drawing effect
-                  above. A Tactical icon's own artwork is fixed-colour and
-                  never uses this, but if a Label is also set, the picker is
-                  still very much live — it's just controlling the pill, not
-                  the icon. Only truly hidden when neither applies: a
-                  Tactical icon selected with no Label typed and Label Only
-                  off, where nothing on screen would use a colour at all. */}
+              {/* 2. Colour picker — controls up to two different things
+                  depending on context: it recolours a Surveillance icon
+                  shape OR a Tactical icon flagged recolorable (a simple
+                  single-colour symbol — see TACTICAL_ICONS' own comment on
+                  why most tactical icons aren't), AND/OR it sets the
+                  background of the label pill that renders under ANY icon
+                  once a Label is typed — see the labelText branch in the
+                  map-drawing effect above. A fixed-colour tactical icon's
+                  own artwork never uses this, but if a Label is also set,
+                  the picker is still very much live — it's just
+                  controlling the pill, not the icon. Only truly hidden
+                  when neither applies: a fixed-colour Tactical icon
+                  selected with no Label typed and Label Only off, where
+                  nothing on screen would use a colour at all. */}
               {(() => {
-                const iconIsTactical = !cmLabelOnly && isTacticalIcon(cmIcon);
+                const tactical = !cmLabelOnly && isTacticalIcon(cmIcon);
+                const tacticalRecolorable =
+                  tactical && isTacticalIconRecolorable(cmIcon);
+                const iconIsFixedColourTactical =
+                  tactical && !tacticalRecolorable;
                 const labelPillShowing = cmLabelOnly || cmLabel.trim() !== "";
-                if (iconIsTactical && !labelPillShowing) return null;
+                if (iconIsFixedColourTactical && !labelPillShowing) return null;
                 return (
                   <div className="mb-4">
                     <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                      {cmLabelOnly || iconIsTactical
+                      {cmLabelOnly || iconIsFixedColourTactical
                         ? "Label Colour"
                         : "Colour"}
                     </p>
-                    {iconIsTactical && (
+                    {iconIsFixedColourTactical && (
                       <p className="text-[10px] text-muted-foreground mb-2">
                         This icon's own colour is fixed — it comes from the
                         Tactical library as-is. The colour below sets your

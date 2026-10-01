@@ -30,6 +30,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -161,6 +162,13 @@ export interface DocumentImportPrefill {
    * documentSnapshotForHistory in AddTargetDialog.tsx. */
   sourceFileBase64: string;
   sourceFileMimeType: string;
+  /** False when the officer chose "Just attach the document" and skipped
+   * parsing entirely (see the toggle below) — every other field above is
+   * then just its empty default, not "the document genuinely had nothing
+   * in it". Optional/undefined on snapshots saved before this existed,
+   * which were always parsed. ImportedDocumentCard uses this to show a
+   * plain "not parsed" note instead of a wall of empty field boxes. */
+  parsed?: boolean;
 }
 
 interface PossibleMatch {
@@ -250,6 +258,17 @@ export function ImportTargetDocumentDialog({
     dataBase64: string;
     mimeType: string;
   } | null>(null);
+  // When on, skip parseDocument entirely and attach the file as-is — added
+  // for 50-page/100-image documents where the full parse (table/text
+  // extraction plus up to 8 sequential on-device AI re-checks, see
+  // target.registry.parseDocument) is slow enough to be impractical.
+  // Defaults off: parsing is still what most documents want.
+  const [bypassParsing, setBypassParsing] = useState(false);
+  // parseMut.isPending only covers the parse path — the bypass path still
+  // has to read a possibly-large file into base64 before it can hand off,
+  // which is otherwise invisible (no mutation in flight to show a spinner
+  // for).
+  const [isReadingFile, setIsReadingFile] = useState(false);
   const parseMut = trpc.target.registry.parseDocument.useMutation();
   const utils = trpc.useUtils();
   const updateAssociateMut = trpc.associate.update.useMutation();
@@ -388,6 +407,7 @@ export function ImportTargetDocumentDialog({
     setImageChoices({});
     setImageLinkChoices({});
     setSourceFile(null);
+    setBypassParsing(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -404,6 +424,7 @@ export function ImportTargetDocumentDialog({
       return;
     }
     try {
+      setIsReadingFile(true);
       const dataBase64 = await readFileAsBase64(file);
       const mimeType =
         file.type ||
@@ -411,12 +432,38 @@ export function ImportTargetDocumentDialog({
           ? "application/pdf"
           : "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
       setSourceFile({ dataBase64, mimeType });
+      if (bypassParsing) {
+        // Skip parseDocument (and the review screen entirely, since there's
+        // nothing to review) — just hand off the raw file. AddTargetDialog
+        // already treats every one of these fields as optional/empty-able
+        // ("no name field found — fill this in manually" etc. on the normal
+        // path), so an all-empty prefill is just that same path with
+        // everything empty, not a new shape it has to learn to handle.
+        onContinue({
+          identity: { firstNames: "", surname: "", bornDate: "" },
+          address: EMPTY_ADDRESS_PARTS,
+          vehicle: EMPTY_VEHICLE_PARTS,
+          extraAddresses: [],
+          extraVehicles: [],
+          associates: [],
+          images: [],
+          background: "",
+          sourceFileName: file.name,
+          sourceFileBase64: dataBase64,
+          sourceFileMimeType: mimeType,
+          parsed: false,
+        });
+        reset();
+        return;
+      }
       await parseMut.mutateAsync({ fileName: file.name, dataBase64 });
     } catch (err: any) {
       setError(
         err?.message ??
           "Couldn't read that document — it may be corrupt or in an unsupported format."
       );
+    } finally {
+      setIsReadingFile(false);
     }
   };
 
@@ -708,6 +755,7 @@ export function ImportTargetDocumentDialog({
         sourceFileName: fileName,
         sourceFileBase64: sourceFile?.dataBase64 ?? "",
         sourceFileMimeType: sourceFile?.mimeType ?? "",
+        parsed: true,
       });
       reset();
     } finally {
@@ -734,6 +782,24 @@ export function ImportTargetDocumentDialog({
               <p className="text-sm font-semibold text-destructive">
                 DO NOT upload photographs of documents.
               </p>
+
+              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+                <div className="pr-3">
+                  <p className="text-[11px] font-semibold text-foreground">
+                    Parse &amp; extract fields
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {bypassParsing
+                      ? "Off — the document is just attached, nothing is read from it. Faster for long documents with many images."
+                      : "Reads the document for name/address/vehicle/associates/photos to pre-fill the form below."}
+                  </p>
+                </div>
+                <Switch
+                  checked={!bypassParsing}
+                  onCheckedChange={checked => setBypassParsing(!checked)}
+                />
+              </div>
+
               <input
                 ref={fileInputRef}
                 type="file"
@@ -747,19 +813,23 @@ export function ImportTargetDocumentDialog({
               <Button
                 variant="outline"
                 className="gap-2 self-start"
-                disabled={parseMut.isPending}
+                disabled={parseMut.isPending || isReadingFile}
                 onClick={() => fileInputRef.current?.click()}
               >
-                {parseMut.isPending ? (
+                {parseMut.isPending || isReadingFile ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Upload className="w-4 h-4" />
                 )}
                 {parseMut.isPending
                   ? "Reading document…"
-                  : "Choose .docx or .pdf file"}
+                  : isReadingFile
+                    ? bypassParsing
+                      ? "Attaching document…"
+                      : "Reading document…"
+                    : "Choose .docx or .pdf file"}
               </Button>
-              {fileName && !parseMut.isPending && (
+              {fileName && !parseMut.isPending && !isReadingFile && (
                 <p className="text-xs text-muted-foreground">{fileName}</p>
               )}
               {error && (

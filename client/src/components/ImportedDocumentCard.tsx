@@ -143,6 +143,16 @@ export function ImportedDocumentCard({
   }
   if (!snapshot) return null;
 
+  // The officer chose "Just attach the document" at upload time (see the
+  // Parse & extract fields toggle in ImportTargetDocumentDialog) — every
+  // field below is then just its empty default, not "the document
+  // genuinely had nothing in it". Diffing it against a previous (parsed)
+  // version would otherwise show every one of that version's fields as
+  // "removed", reading as "this document deleted the address" rather than
+  // "this document just wasn't parsed" — skipped entirely for a not-parsed
+  // current version, same as Version 1 has nothing to diff against.
+  const notParsed = snapshot.parsed === false;
+
   let previousSnapshot: DocumentImportPrefill | null = null;
   if (previous) {
     try {
@@ -151,7 +161,9 @@ export function ImportedDocumentCard({
       previousSnapshot = null;
     }
   }
-  const diff = diffDocumentSnapshots(snapshot, previousSnapshot);
+  const diff = notParsed
+    ? null
+    : diffDocumentSnapshots(snapshot, previousSnapshot);
   const changeCount = countChanges(diff);
   const allDiffLines = diff
     ? [
@@ -264,8 +276,9 @@ export function ImportedDocumentCard({
       {open && (
         <div className="border-t border-border/40 px-4 pb-4 pt-3 space-y-3 text-xs">
           <p className="text-[10.5px] text-muted-foreground italic">
-            Shown exactly as parsed from the uploaded document — not the
-            target's current live details, which may have been edited since.
+            {notParsed
+              ? "Attached without parsing — no fields were read from this document, only the file itself was kept."
+              : "Shown exactly as parsed from the uploaded document — not the target's current live details, which may have been edited since."}
           </p>
           {row.sourceFileUrl && (
             <div className="rounded-lg border border-l-4 border-slate-500/30 border-l-slate-500 bg-slate-500/5 p-3">
@@ -298,13 +311,15 @@ export function ImportedDocumentCard({
               </button>
             </div>
           )}
-          <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
-            <p className="font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">
-              <Target className="w-3 h-3" />
-              Name
-            </p>
-            <p className="text-foreground">{name || "—"}</p>
-          </div>
+          {!notParsed && (
+            <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
+              <p className="font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+                <Target className="w-3 h-3" />
+                Name
+              </p>
+              <p className="text-foreground">{name || "—"}</p>
+            </div>
+          )}
           {addressLines.length > 0 && (
             <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3">
               <p className="font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">

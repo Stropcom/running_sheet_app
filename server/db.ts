@@ -3622,6 +3622,49 @@ export async function recordTargetDocumentImport(data: {
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
+
+  // "Just attach the document" (Parse & extract fields toggled off in
+  // ImportTargetDocumentDialog) carries no new reviewed fields — just a
+  // copy of the file — so per officer feedback it shouldn't read as a new
+  // "Version N" in ImportedDocumentCard's history the way an actual
+  // parsed re-import does. Swap it into the most recent existing import
+  // for this target+operation instead of appending a row, when one
+  // exists — a target's very first import still inserts normally, since
+  // there's nothing yet to attach it to.
+  let notParsed = false;
+  try {
+    notParsed = JSON.parse(data.snapshotJson)?.parsed === false;
+  } catch {
+    notParsed = false;
+  }
+
+  if (notParsed) {
+    const [latest] = await db
+      .select({ id: targetDocumentImports.id })
+      .from(targetDocumentImports)
+      .where(
+        and(
+          eq(targetDocumentImports.targetId, data.targetId),
+          eq(targetDocumentImports.operationId, data.operationId)
+        )
+      )
+      .orderBy(desc(targetDocumentImports.uploadedAt))
+      .limit(1);
+    if (latest) {
+      await db
+        .update(targetDocumentImports)
+        .set({
+          uploadedByCIN: data.uploadedByCIN,
+          uploadedAt: new Date(),
+          sourceFileName: data.sourceFileName || null,
+          sourceFileUrl: data.sourceFileUrl || null,
+          renderablePdfUrl: data.renderablePdfUrl || null,
+        })
+        .where(eq(targetDocumentImports.id, latest.id));
+      return;
+    }
+  }
+
   await db.insert(targetDocumentImports).values({
     targetId: data.targetId,
     operationId: data.operationId,
@@ -14358,6 +14401,7 @@ export interface MapShapeRow {
   neLng: number | null;
   swLat: number | null;
   swLng: number | null;
+  rotation: number; // rectangle only — degrees, 0 = unrotated
   points: { lat: number; lng: number }[]; // parsed from JSON
   lineDashed: boolean;
   lineArrowEnd: boolean;
@@ -14425,6 +14469,7 @@ export async function createMapShape(data: {
   neLng?: number | null;
   swLat?: number | null;
   swLng?: number | null;
+  rotation?: number | null;
   points?: { lat: number; lng: number }[];
   lineDashed?: boolean;
   lineArrowEnd?: boolean;
@@ -14448,6 +14493,7 @@ export async function createMapShape(data: {
     neLng: data.neLng ?? null,
     swLat: data.swLat ?? null,
     swLng: data.swLng ?? null,
+    rotation: data.rotation ?? 0,
     points: JSON.stringify(data.points ?? []),
     lineDashed: data.lineDashed ?? false,
     lineArrowEnd: data.lineArrowEnd ?? false,
@@ -14472,6 +14518,7 @@ export async function updateMapShape(
     neLng?: number | null;
     swLat?: number | null;
     swLng?: number | null;
+    rotation?: number | null;
     points?: { lat: number; lng: number }[];
     lineDashed?: boolean;
     lineArrowEnd?: boolean;
@@ -14495,6 +14542,7 @@ export async function updateMapShape(
   if (data.neLng !== undefined) update.neLng = data.neLng;
   if (data.swLat !== undefined) update.swLat = data.swLat;
   if (data.swLng !== undefined) update.swLng = data.swLng;
+  if (data.rotation !== undefined) update.rotation = data.rotation ?? 0;
   if (data.points !== undefined) update.points = JSON.stringify(data.points);
   if (data.lineDashed !== undefined) update.lineDashed = data.lineDashed;
   if (data.lineArrowEnd !== undefined) update.lineArrowEnd = data.lineArrowEnd;
@@ -14536,6 +14584,8 @@ export async function saveIntelPinOverride(
     markerIcon?: string;
     markerColour?: string;
     rotation?: number;
+    customLabel?: string;
+    note?: string;
   },
   cin: string | undefined
 ): Promise<void> {
@@ -14548,6 +14598,8 @@ export async function saveIntelPinOverride(
   if (data.markerIcon !== undefined) update.markerIcon = data.markerIcon;
   if (data.markerColour !== undefined) update.markerColour = data.markerColour;
   if (data.rotation !== undefined) update.rotation = data.rotation;
+  if (data.customLabel !== undefined) update.customLabel = data.customLabel;
+  if (data.note !== undefined) update.note = data.note;
 
   const existing = await db
     .select({ id: intelPinOverrides.id })

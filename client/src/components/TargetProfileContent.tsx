@@ -27,6 +27,7 @@ import {
 import { IndicesBadge } from "@/components/IndicesBadge";
 import {
   ImportedDocumentCard,
+  isParsedDocumentImport,
   type DocumentImportRow,
 } from "@/components/ImportedDocumentCard";
 
@@ -618,16 +619,29 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                     verbatim as parsed.
                   </p>
                   <div className="space-y-2">
-                    {versionsForOp.map((row, idx) => (
-                      <ImportedDocumentCard
-                        key={row.id}
-                        row={row}
-                        version={idx + 1}
-                        isCurrent={idx === versionsForOp.length - 1}
-                        subject={profile.name}
-                        previous={versionsForOp[idx - 1] ?? null}
-                      />
-                    ))}
+                    {(() => {
+                      const totalParsed = versionsForOp.filter(
+                        isParsedDocumentImport
+                      ).length;
+                      let parsedCount = 0;
+                      let lastParsedRow: DocumentImportRow | null = null;
+                      return versionsForOp.map(row => {
+                        const parsed = isParsedDocumentImport(row);
+                        if (parsed) parsedCount++;
+                        const card = (
+                          <ImportedDocumentCard
+                            key={row.id}
+                            row={row}
+                            version={parsed ? parsedCount : 0}
+                            isCurrent={parsed && parsedCount === totalParsed}
+                            subject={profile.name}
+                            previous={parsed ? lastParsedRow : null}
+                          />
+                        );
+                        if (parsed) lastParsedRow = row;
+                        return card;
+                      });
+                    })()}
                   </div>
                 </div>
               );

@@ -29,6 +29,7 @@ import {
 import { IndicesBadge } from "@/components/IndicesBadge";
 import {
   ImportedDocumentCard,
+  isParsedDocumentImport,
   type DocumentImportRow,
 } from "@/components/ImportedDocumentCard";
 
@@ -199,17 +200,26 @@ function ImportedDocumentsSection({ operationId }: { operationId: number }) {
         parsed.
       </p>
       <div className="space-y-2">
-        {Array.from(byTarget.values()).flatMap(rows =>
-          rows.map((row, idx) => (
-            <ImportedDocumentCard
-              key={row.id}
-              row={row}
-              version={idx + 1}
-              isCurrent={idx === rows.length - 1}
-              previous={rows[idx - 1] ?? null}
-            />
-          ))
-        )}
+        {Array.from(byTarget.values()).flatMap(rows => {
+          const totalParsed = rows.filter(isParsedDocumentImport).length;
+          let parsedCount = 0;
+          let lastParsedRow: DocumentImportRow | null = null;
+          return rows.map(row => {
+            const parsed = isParsedDocumentImport(row);
+            if (parsed) parsedCount++;
+            const card = (
+              <ImportedDocumentCard
+                key={row.id}
+                row={row}
+                version={parsed ? parsedCount : 0}
+                isCurrent={parsed && parsedCount === totalParsed}
+                previous={parsed ? lastParsedRow : null}
+              />
+            );
+            if (parsed) lastParsedRow = row;
+            return card;
+          });
+        })}
       </div>
     </div>
   );

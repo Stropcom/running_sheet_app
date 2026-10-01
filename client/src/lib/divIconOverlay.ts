@@ -284,6 +284,24 @@ function getImplCtor(): DivIconOverlayImplCtor {
       const startClientY = e.clientY;
       let moved = false;
 
+      // The map is configured with gestureHandling: "greedy" (see
+      // components/Map.tsx) specifically so a single finger pans the map on
+      // mobile without needing two fingers — exactly what was also stealing
+      // THIS finger's drag away from the marker the moment it moved: with
+      // "greedy" on, Maps' own touch gesture recognition claims any
+      // one-finger drag on the map as a pan, and it runs independently of
+      // normal DOM bubbling (confirmed by this handler's own
+      // stopPropagation already being insufficient on its own — same root
+      // cause noted in wasAnyMarkerJustTapped's comment above, where
+      // Google's POI hit-testing similarly ignores stopPropagation).
+      // Disabling gestures on the map for the duration of this one drag —
+      // restored in onUp, whatever it was before, never hardcoded back to
+      // "greedy" — is the documented way to hand a touch gesture entirely
+      // to a custom overlay instead of fighting the map for it.
+      const map = this.getMap() as google.maps.Map | null;
+      const prevGestureHandling = map?.get("gestureHandling");
+      map?.setOptions({ gestureHandling: "none" });
+
       const onMove = (moveEvent: PointerEvent) => {
         moved = true;
         const dx = moveEvent.clientX - startClientX;
@@ -299,6 +317,7 @@ function getImplCtor(): DivIconOverlayImplCtor {
       const onUp = () => {
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
+        map?.setOptions({ gestureHandling: prevGestureHandling ?? "greedy" });
         if (moved) {
           this._suppressNextClick = true;
           google.maps.event.trigger(this, "dragend");

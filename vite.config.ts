@@ -198,6 +198,16 @@ const pwaPlugin = VitePWA({
     // than keep raising this ceiling indefinitely.
     maximumFileSizeToCacheInBytes: 6 * 1024 * 1024, // 6 MiB
     globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+    // The tactical marker library (client/public/tactical-markers/*.svg)
+    // is ~413 traced icons, ~7 MB total even after svgo optimisation —
+    // most officers only ever use a handful per operation, so forcing
+    // every device to download the whole set on every app-shell update
+    // isn't worth it the way precaching the JS/CSS bundle is. Still
+    // served normally as static files, just not force-cached up front;
+    // an icon not yet viewed before going offline won't render until
+    // back online, same degradation as any other image this app doesn't
+    // precache.
+    globIgnores: ["tactical-markers/**"],
     rollupFormat: "es",
   },
   devOptions: {
@@ -229,6 +239,18 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+  },
+  // Vite's production worker chunks default to "iife" format — but
+  // pdfjs-dist (see lib/pdfjsWorkerEntry.ts) hardcodes
+  // `new Worker(workerSrc, { type: "module" })` when it spawns its own
+  // worker, so an iife-built chunk gets loaded as a module script it
+  // wasn't built as. Confirmed to render PDFs fine on Chromium (laptop)
+  // but fail ("Couldn't display this PDF.") on iPad/iPhone Safari —
+  // consistent with a format mismatch WebKit's module-worker loader
+  // enforces more strictly than Chromium's. Building worker chunks as
+  // real ES modules matches what pdf.js actually requests.
+  worker: {
+    format: "es",
   },
   server: {
     host: true,

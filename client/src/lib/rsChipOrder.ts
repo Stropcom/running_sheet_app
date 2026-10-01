@@ -19,6 +19,7 @@ export const RS_CANONICAL_CHIP_ORDER = [
   "HB",
   "CP",
   "DW",
+  "SP",
   "SPV",
   "CV",
   "OOS",

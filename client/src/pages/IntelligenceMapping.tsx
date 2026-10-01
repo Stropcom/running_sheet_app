@@ -9,7 +9,6 @@ import {
   getMarkerDataUrl,
   getMarkerIconUrl,
   getMarkerIconLabel,
-  getMarkerSvg,
   MARKER_COLOURS,
   MARKER_COLOUR_LABELS,
   MARKER_ICON_GROUPS,
@@ -17,7 +16,13 @@ import {
   type MarkerColour,
   type MarkerIcon,
 } from "@/lib/markerSvgs";
-import { TACTICAL_ICONS, isTacticalIcon } from "@/lib/tacticalMarkers";
+import {
+  TACTICAL_ICONS,
+  TACTICAL_GROUPS,
+  TACTICAL_ICONS_BY_GROUP,
+  isTacticalIcon,
+  type TacticalGroup,
+} from "@/lib/tacticalMarkers";
 import {
   convertGoogleAddresses,
   buildPoiAddress,
@@ -139,6 +144,7 @@ import {
   PieChart,
   Route,
   Compass,
+  Pencil,
 } from "lucide-react";
 
 // Phone/tablet (touch, no physical keyboard) vs laptop/desktop (mouse +
@@ -686,6 +692,66 @@ function sectorPolygonPath(
   return [...outerArc, ...innerArc];
 }
 
+/** Builds the 4-corner point path for a rectangle shape, optionally rotated
+ * around its own center — Google Maps' native Rectangle has no rotation
+ * option, so a non-zero rotation has to be hand-built as a Polygon instead
+ * (same reason sectorPolygonPath above exists). neLat/neLng/swLat/swLng
+ * describe the UNROTATED box (what the officer actually drags to
+ * resize/move — see the rectangle editing effect below); rotation (degrees,
+ * 0 = North, clockwise, same convention as sector's angles) is applied on
+ * top of that at render time. Returns corners in NE, SE, SW, NW order
+ * (clockwise) — a Polygon path closes itself, so there's no need to repeat
+ * the first point. */
+function rectanglePolygonPath(
+  neLat: number,
+  neLng: number,
+  swLat: number,
+  swLng: number,
+  rotationDeg = 0
+): google.maps.LatLngLiteral[] {
+  if (!rotationDeg) {
+    return [
+      { lat: neLat, lng: neLng }, // NE
+      { lat: swLat, lng: neLng }, // SE
+      { lat: swLat, lng: swLng }, // SW
+      { lat: neLat, lng: swLng }, // NW
+    ];
+  }
+  const centerLat = (neLat + swLat) / 2;
+  const centerLng = (neLng + swLng) / 2;
+  const center = new google.maps.LatLng(centerLat, centerLng);
+  const halfWidthM =
+    google.maps.geometry.spherical.computeDistanceBetween(
+      new google.maps.LatLng(centerLat, swLng),
+      new google.maps.LatLng(centerLat, neLng)
+    ) / 2;
+  const halfHeightM =
+    google.maps.geometry.spherical.computeDistanceBetween(
+      new google.maps.LatLng(swLat, centerLng),
+      new google.maps.LatLng(neLat, centerLng)
+    ) / 2;
+  const diag = Math.hypot(halfWidthM, halfHeightM);
+  // Heading from center to the (unrotated) NE corner — atan2(east, north).
+  const baseAngle =
+    halfWidthM === 0 && halfHeightM === 0
+      ? 0
+      : (Math.atan2(halfWidthM, halfHeightM) * 180) / Math.PI;
+  const cornerHeadings = [
+    baseAngle, // NE
+    180 - baseAngle, // SE
+    180 + baseAngle, // SW
+    360 - baseAngle, // NW
+  ];
+  return cornerHeadings.map(heading => {
+    const pt = google.maps.geometry.spherical.computeOffset(
+      center,
+      diag,
+      heading + rotationDeg
+    );
+    return { lat: pt.lat(), lng: pt.lng() };
+  });
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const TEAM_COLOURS: Record<string, string> = {
   TEAM1: "#ec4899", // pink
@@ -953,12 +1019,42 @@ function normalizeEntityLabelClient(label: string): string {
   return label.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+// Opens (or re-opens) the shared singleton InfoWindow after its new content
+// has had a chance to actually lay out — both call sites were already
+// deferring by one requestAnimationFrame to guard against exactly this
+// ("off-centre on the first click, correct on the second" — see their own
+// comments), but a real officer reported it still happening intermittently
+// on an iPad, badly enough to make tapping the right popup button
+// difficult (the content box and its own arrow ending up nowhere near each
+// other). Strengthened two ways rather than guessing which one was the
+// actual gap: explicitly closes first, so tapping a different marker while
+// one popup is already open starts from a clean, fully torn-down state
+// instead of Google measuring an in-place content swap mid-transition; and
+// defers by TWO animation frames instead of one — a single rAF runs right
+// before the next paint, which is normally enough time for content changed
+// earlier in the same tick to have been laid out, but evidently wasn't
+// always reliable on this device/browser. A second frame gives strictly
+// more margin at a cost of one imperceptible extra frame (~16ms).
+function openInfoWindowDeferred(
+  infoWindowRef: React.MutableRefObject<google.maps.InfoWindow | null>,
+  map: google.maps.Map
+) {
+  infoWindowRef.current?.close();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      infoWindowRef.current?.open(map);
+    });
+  });
+}
+
 function buildInfoWindowContent(
   loc: IntelMapLocation,
   override?: {
     markerIcon?: string | null;
     markerColour?: string | null;
     rotation?: number | null;
+    customLabel?: string | null;
+    note?: string | null;
   },
   hasPhotos = false
 ): string {
@@ -992,6 +1088,20 @@ function buildInfoWindowContent(
     </div>
     <strong style="font-size:13px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${displayLabel}</strong>
   `);
+
+  // Officer-added caption + note (see intelPinOverrides.customLabel/note —
+  // same two fields a custom map marker has, added here for parity with
+  // that dialog). This pin's real name/address is already the heading
+  // above, so the custom label renders as a secondary line, same visual
+  // weight as a custom marker's own label/note split.
+  if (override?.customLabel)
+    lines.push(
+      `<div style="font-size:12px;color:#7c3aed;font-weight:600;margin-bottom:2px;">${override.customLabel}</div>`
+    );
+  if (override?.note)
+    lines.push(
+      `<div style="margin-top:4px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Notes</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${override.note}</p></div>`
+    );
 
   // Linked target details (for target_address).
   // The TGT alias and HBF are deliberately not repeated here: the alias is
@@ -1069,7 +1179,7 @@ function buildInfoWindowContent(
     sections.push(`
       <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">
         <div style="display:flex;align-items:center;gap:8px;">
-          <img id="intel-popup-preview-${encodedLabel}" src="data:image/svg+xml;base64,${btoa(getMarkerSvg(intelIcon as any, intelColour as any))}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${intelRotation}deg);transition:transform 0.1s;" />
+          <img id="intel-popup-preview-${encodedLabel}" src="${getMarkerDataUrl(intelIcon as any, intelColour as any)}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${intelRotation}deg);transition:transform 0.1s;" />
           <div style="flex:1;">
             <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
               <span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Rotation</span>
@@ -1142,7 +1252,7 @@ function buildInfoWindowContent(
     sections.push(`
       <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">
         <div style="display:flex;align-items:center;gap:8px;">
-          <img id="intel-popup-preview-${encodedLabel}" src="data:image/svg+xml;base64,${btoa(getMarkerSvg(intelIcon as any, intelColour as any))}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${intelRotation}deg);transition:transform 0.1s;" />
+          <img id="intel-popup-preview-${encodedLabel}" src="${getMarkerDataUrl(intelIcon as any, intelColour as any)}" style="width:24px;height:24px;object-fit:contain;flex-shrink:0;transform:rotate(${intelRotation}deg);transition:transform 0.1s;" />
           <div style="flex:1;">
             <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
               <span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Rotation</span>
@@ -1365,6 +1475,58 @@ function animateLiveMarkerTo(
 const SURVEILLANCE_ICONS: MarkerIcon[] = MARKER_ICON_GROUPS.flatMap(
   g => g.icons
 );
+
+// Renders one TACTICAL_GROUPS entry's tiles inside the shared icon-picker
+// grid (both the intel pin "Edit Marker Appearance" dialog and the Place
+// Map Marker dialog use this identically) — a divider + small uppercase
+// label ahead of its tiles when the picker is on the "All" filter (so
+// ~413 icons read as five labelled sections rather than one wall of
+// tiles), nothing extra when a single group's own chip is selected since
+// the chip label already said which group this is.
+function TacticalIconGroupTiles({
+  group,
+  visible,
+  showHeading,
+  selectedKey,
+  onSelect,
+}: {
+  group: { key: TacticalGroup; label: string };
+  visible: boolean;
+  showHeading: boolean;
+  selectedKey: string;
+  onSelect: (key: string) => void;
+}) {
+  if (!visible) return null;
+  const icons = TACTICAL_ICONS_BY_GROUP[group.key];
+  if (icons.length === 0) return null;
+  return (
+    <>
+      {showHeading && (
+        <p className="col-span-full text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mt-1.5 mb-0.5 border-t border-border/60 pt-1.5 first:border-t-0 first:pt-0 first:mt-0">
+          {group.label}
+        </p>
+      )}
+      {icons.map(t => (
+        <button
+          key={t.key}
+          onClick={() => onSelect(t.key)}
+          title={t.label}
+          className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${
+            selectedKey === t.key
+              ? "border-primary bg-primary/10"
+              : "border-border bg-background hover:border-primary/50"
+          }`}
+        >
+          <img
+            src={t.src}
+            alt={t.label}
+            className="w-[27px] h-[27px] object-contain"
+          />
+        </button>
+      ))}
+    </>
+  );
+}
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function IntelligenceMapping() {
@@ -1793,9 +1955,23 @@ export default function IntelligenceMapping() {
   );
   const [rsAddingRow, setRsAddingRow] = useState(false);
   const [rsLastEntry, setRsLastEntry] = useState<{
+    id: number;
     label: string;
     time: string;
   } | null>(null);
+  // Tap-to-edit on the "Last Entry" confirmation below — a self-contained
+  // mini form (its own text + time fields), deliberately NOT reusing the
+  // much more elaborate create-a-new-entry state machine (rsInlineLabel/
+  // rsInlineText, mention autocomplete, CIN picker, undo stack, vehicle-
+  // arrival chips...) a correction to the entry just submitted is a much
+  // rarer path than creating a new one, and entangling the two risked
+  // regressing the one that matters far more.
+  const [rsEditingLastEntry, setRsEditingLastEntry] = useState(false);
+  const [rsEditText, setRsEditText] = useState("");
+  const [rsEditHour, setRsEditHour] = useState("12");
+  const [rsEditMinute, setRsEditMinute] = useState("00");
+  const [rsEditPeriod, setRsEditPeriod] = useState("AM");
+  const rsUpdateRow = trpc.row.update.useMutation();
   const isTouchDevice = useIsTouchDevice();
   const { visibleHeight: vvVisibleHeight, keyboardInset: vvKeyboardInset } =
     useVisualViewportInset();
@@ -2069,8 +2245,8 @@ export default function IntelligenceMapping() {
   // cmColour meaningful; Tactical hides the colour section entirely since
   // those icons are fixed-colour raster art, not a recolourable shape.
   const [cmIconFilter, setCmIconFilter] = useState<
-    "all" | "surveillance" | "tactical"
-  >("all");
+    "all" | "surveillance" | TacticalGroup
+  >("surveillance");
   // "Label only" — the marker renders as just its label pill, no icon (see
   // the Add Shape feature's own note-label pill, which this borrows the
   // look of). Off by default so ordinary icon markers behave as before.
@@ -2107,6 +2283,7 @@ export default function IntelligenceMapping() {
     neLng?: number;
     swLat?: number;
     swLng?: number;
+    rotation?: number;
     points?: { lat: number; lng: number }[];
   } | null>(null);
   const [shapeColour, setShapeColour] = useState<MarkerColour>("blue");
@@ -2167,6 +2344,14 @@ export default function IntelligenceMapping() {
   // that handler for why a delta against this ref, not the point's
   // supposed identity, is what actually stays correct).
   const sectorDragAnchorRef = useRef<google.maps.LatLngLiteral | null>(null);
+  // A rotated rectangle is edited the same way as a Polygon's rotation
+  // can't be dragged natively: the officer still drags a plain axis-aligned
+  // google.maps.Rectangle for position/size (draftShapeOverlayRef, kept
+  // invisible once rotation != 0), while this companion Polygon is the
+  // actual visible, rotated shape — rebuilt from that Rectangle's bounds +
+  // the rotation slider (see the two effects below). Only ever non-null
+  // while editing a rectangle; null/cleared for every other shape type.
+  const draftRectRotatedOverlayRef = useRef<google.maps.Polygon | null>(null);
   // Mirrors drawingLine for the map's click listener (set up once in
   // handleMapReady, so it can't read the state value directly without
   // going stale — same reasoning as customMarkersDataRef above).
@@ -2210,6 +2395,7 @@ export default function IntelligenceMapping() {
       neLng: s.neLng ?? undefined,
       swLat: s.swLat ?? undefined,
       swLng: s.swLng ?? undefined,
+      rotation: s.rotation ?? 0,
       points: s.points ?? undefined,
     });
   }, []);
@@ -2253,6 +2439,7 @@ export default function IntelligenceMapping() {
           neLng: lng + lngOffset,
           swLat: lat - latOffset,
           swLng: lng - lngOffset,
+          rotation: 0,
         });
       } else if (type === "sector") {
         setPendingShape({
@@ -2366,11 +2553,23 @@ export default function IntelligenceMapping() {
   const [editingIntelLabel, setEditingIntelLabel] = useState<string | null>(
     null
   );
-  const [intelEditIcon, setIntelEditIcon] =
-    useState<MarkerIcon>("house_filled");
+  // Widened to plain string (not MarkerIcon) so a Tactical icon key — not
+  // part of the MarkerIcon enum — can be selected here too, same reasoning
+  // as cmIcon above.
+  const [intelEditIcon, setIntelEditIcon] = useState<string>("house_filled");
   const [intelEditColour, setIntelEditColour] =
     useState<MarkerColour>("purple");
   const [intelEditRotation, setIntelEditRotation] = useState<number>(0);
+  // A free-text caption + note, same fields the Place Map Marker dialog
+  // has (cmLabel/cmNote) — added per direct request for parity between
+  // the two dialogs. Persisted on intelPinOverrides.customLabel/note,
+  // not the override's own `label` column (that's the entity's keyed
+  // identifier, e.g. an address string, not something an officer types).
+  const [intelEditLabel, setIntelEditLabel] = useState("");
+  const [intelEditNote, setIntelEditNote] = useState("");
+  const [intelEditIconFilter, setIntelEditIconFilter] = useState<
+    "all" | "surveillance" | TacticalGroup
+  >("surveillance");
 
   // Map state
   const [mapReady, setMapReady] = useState(false);
@@ -3029,6 +3228,7 @@ export default function IntelligenceMapping() {
         if (next.length === 0) {
           setRsSelectedSheetId(null);
           setRsLastEntry(null);
+          setRsEditingLastEntry(false);
         }
         if (next.length <= 1) setMultiOpMode(false);
       }
@@ -3052,6 +3252,7 @@ export default function IntelligenceMapping() {
     setSelectedTargetIds([]);
     setRsSelectedSheetId(null);
     setRsLastEntry(null);
+    setRsEditingLastEntry(false);
     setOpsDropdownOpen(false);
   };
 
@@ -3074,6 +3275,7 @@ export default function IntelligenceMapping() {
     setSelectedTargetIds([]);
     setRsSelectedSheetId(null);
     setRsLastEntry(null);
+    setRsEditingLastEntry(false);
     setMultiOpMode(false);
   };
 
@@ -3264,8 +3466,7 @@ export default function IntelligenceMapping() {
     // etc.) AND shows up for every officer on every device, not just the
     // one that set it.
     const override = pinOverridesRef.current.get(loc.label);
-    const icon: MarkerIcon =
-      (override?.markerIcon as MarkerIcon) ?? "house_filled";
+    const icon: string = override?.markerIcon ?? "house_filled";
     const colour: MarkerColour =
       (override?.markerColour as MarkerColour) ?? (isTarget ? "red" : "purple");
     const rotation = override?.rotation ?? 0;
@@ -3274,8 +3475,15 @@ export default function IntelligenceMapping() {
     el.style.cssText = `position:relative;display:inline-flex;flex-direction:column;align-items:center;cursor:pointer;`;
 
     const img = document.createElement("img");
-    img.src = getMarkerDataUrl(icon, colour);
-    img.style.cssText = `width:40px;height:40px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;transform:rotate(${rotation}deg);`;
+    img.src = getMarkerIconUrl(icon, colour);
+    // Previously sized a few px larger than Surveillance icons to
+    // compensate for baked-in transparent margin on the tactical PNGs —
+    // removed per direct feedback that it made the raster tactical icons
+    // read as oversized/blurry next to the crisp vector Surveillance set.
+    // Same size for both now (see the matching note on the custom map
+    // marker pin rendering and the picker's tactical tile size).
+    const iconPx = 40;
+    img.style.cssText = `width:${iconPx}px;height:${iconPx}px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;transform:rotate(${rotation}deg);`;
     el.appendChild(img);
     // Direct img ref for live rotation/icon updates — avoids stale
     // `.content.querySelector` lookups (see intelPinImgRefs declaration).
@@ -3654,18 +3862,7 @@ export default function IntelligenceMapping() {
           lat: position.lat,
           lng: position.lng,
         });
-        // Deferred one frame: the InfoWindow computes its on-screen pixel
-        // position (including which way to flip itself near a map edge)
-        // from its content's actual rendered size, but the browser hasn't
-        // laid out the HTML setContent() just injected until the next
-        // paint — opening in the same tick can position the bubble using a
-        // stale/zero size from whatever was in this reused singleton
-        // InfoWindow before, which is exactly the "off-centre on the first
-        // click, correct on the second" symptom this fixes (the second
-        // click's content was already painted from the first).
-        requestAnimationFrame(() => {
-          infoWindowRef.current?.open(mapRef.current!);
-        });
+        openInfoWindowDeferred(infoWindowRef, mapRef.current!);
       });
       markersRef.current.push(marker);
     },
@@ -4410,11 +4607,11 @@ export default function IntelligenceMapping() {
         // (e.g. after a poll refresh) — same "subtract the map's heading"
         // math the heading_changed listener uses to keep it that way.
         img.dataset.rotation = String(rotation);
-        // Tactical source PNGs carry a few px of baked-in margin the
-        // hand-drawn Surveillance SVGs don't — sized slightly larger so
-        // both read as the same visual weight on the map (see the matching
-        // note on the picker's tactical tile size, above).
-        const iconPx = isTacticalIcon(outerCm.markerIcon) ? 44 : 40;
+        // Previously sized larger than Surveillance icons to compensate for
+        // baked-in margin on the tactical PNGs — removed per direct
+        // feedback that it made the raster tactical icons read as
+        // oversized/blurry next to the crisp vector Surveillance set.
+        const iconPx = 40;
         img.style.cssText = `width:${iconPx}px;height:${iconPx}px;object-fit:contain;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));transform:rotate(${rotation - mapHeadingRef.current}deg);`;
         iconBox.appendChild(img);
         // Store direct img ref for live rotation
@@ -4613,11 +4810,9 @@ export default function IntelligenceMapping() {
             // Rotation slider — not applicable to a "label only" marker,
             // there's no icon to rotate.
             if (!cm.labelOnly) {
-              // Tactical source PNGs carry a few px of baked-in margin the
-              // hand-drawn Surveillance SVGs don't — sized slightly larger
-              // so both read as the same visual weight (see the matching
-              // note on the picker's tactical tile size).
-              const popupIconPx = isTacticalIcon(cm.markerIcon) ? 27 : 24;
+              // Same size as Surveillance icons — see the matching note on
+              // the map-pin rendering above.
+              const popupIconPx = 24;
               lines.push(`
               <div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">
                 <div style="display:flex;align-items:center;gap:8px;">
@@ -4662,10 +4857,29 @@ export default function IntelligenceMapping() {
 
             // Row 1: Images — only when this marker's address already has
             // linked photos (silently auto-linked at upload time).
-            if (
-              cm.address &&
-              photoKeysRef.current.has(normalizeEntityLabelClient(cm.address))
-            ) {
+            const cmAddressKey = cm.address
+              ? normalizeEntityLabelClient(cm.address)
+              : null;
+            const cmHasLinkedPhotos =
+              !!cmAddressKey && photoKeysRef.current.has(cmAddressKey);
+            if (cm.address && !cmHasLinkedPhotos) {
+              // Temporary diagnostic (v1.114.3) — user reports the Images
+              // button is missing specifically for Tactical-icon markers
+              // even when the address visually matches a working
+              // Surveillance-icon marker's. This check is identical
+              // regardless of markerIcon, so logs the actual normalized
+              // key plus every key currently considered "has photos" to
+              // see whether they genuinely differ, rather than guessing
+              // again. Safe to remove once this is resolved.
+              console.debug("[MapMarkerImagesDebug] no photo match", {
+                markerId: cm.id,
+                markerIcon: cm.markerIcon,
+                address: cm.address,
+                normalizedAddressKey: cmAddressKey,
+                knownPhotoKeys: Array.from(photoKeysRef.current),
+              });
+            }
+            if (cmHasLinkedPhotos) {
               sections.push(
                 `<div style="margin-top:5px;"><button onclick="window.__mapOpenImagesPip('${safeAddress}')" style="${btnBase}background:#10b981;color:#fff;border:none;font-size:13px;padding:9px 0;">Images</button></div>`
               );
@@ -4705,15 +4919,7 @@ export default function IntelligenceMapping() {
 
           infoWindowRef.current.setContent(buildPopupHtml(currentRotation));
           infoWindowRef.current.setPosition({ lat, lng });
-          // Deferred one frame — same reasoning as the intel pin popup's
-          // own open() above: the browser hasn't laid out the HTML
-          // setContent() just injected until the next paint, so opening in
-          // the same tick can position the bubble off-anchor using a
-          // stale/zero size from this reused singleton InfoWindow's
-          // previous content.
-          requestAnimationFrame(() => {
-            infoWindowRef.current?.open(map);
-          });
+          openInfoWindowDeferred(infoWindowRef, map);
         });
         existing.set(outerCm.id, marker);
       }
@@ -4897,24 +5103,29 @@ export default function IntelligenceMapping() {
           existing.set(s.id, circle);
         }
       } else if (s.shapeType === "rectangle") {
-        const bounds = {
-          north: s.neLat,
-          east: s.neLng,
-          south: s.swLat,
-          west: s.swLng,
-        };
-        let rect = existing.get(s.id) as google.maps.Rectangle | undefined;
-        if (rect) {
-          rect.setBounds(bounds);
-          rect.setOptions({
+        // Rendered as a Polygon, not a native google.maps.Rectangle — the
+        // latter has no rotation option (see rectanglePolygonPath above).
+        // An unrotated rectangle's path is just its 4 corners, so this one
+        // code path covers both cases.
+        const path = rectanglePolygonPath(
+          s.neLat,
+          s.neLng,
+          s.swLat,
+          s.swLng,
+          s.rotation ?? 0
+        );
+        let rectPoly = existing.get(s.id) as google.maps.Polygon | undefined;
+        if (rectPoly) {
+          rectPoly.setPath(path);
+          rectPoly.setOptions({
             fillColor,
             fillOpacity: opacity,
             strokeColor: fillColor,
           });
         } else {
-          rect = new google.maps.Rectangle({
+          rectPoly = new google.maps.Polygon({
             map,
-            bounds,
+            paths: path,
             fillColor,
             fillOpacity: opacity,
             strokeColor: fillColor,
@@ -4922,9 +5133,9 @@ export default function IntelligenceMapping() {
             strokeWeight: 2,
             clickable: true,
           });
-          wireShapeEditClick(rect, openEdit);
-          wireShapeActionChooserGesture(rect);
-          existing.set(s.id, rect);
+          wireShapeEditClick(rectPoly, openEdit);
+          wireShapeActionChooserGesture(rectPoly);
+          existing.set(s.id, rectPoly);
         }
       } else if (s.shapeType === "sector") {
         const path = sectorPolygonPath(
@@ -5012,7 +5223,12 @@ export default function IntelligenceMapping() {
           : s.shapeType === "sector"
             ? { lat: s.centerLat, lng: s.centerLng }
             : s.shapeType === "rectangle"
-              ? { lat: s.swLat, lng: (s.neLng + s.swLng) / 2 }
+              ? s.rotation
+                ? // Rotated — "bottom edge, centred" has no single fixed
+                  // spot any more, so this falls back to the shape's own
+                  // center instead of picking one (arbitrary-looking) corner.
+                  { lat: (s.neLat + s.swLat) / 2, lng: (s.neLng + s.swLng) / 2 }
+                : { lat: s.swLat, lng: (s.neLng + s.swLng) / 2 }
               : ((s.points ?? [])[0] ?? null);
       const labelTransform = labelIsBottomCentered
         ? "translate(-50%, 12px)"
@@ -5111,16 +5327,22 @@ export default function IntelligenceMapping() {
         { lat: pendingShape.swLat!, lng: pendingShape.swLng! },
         { lat: pendingShape.neLat!, lng: pendingShape.neLng! }
       );
+      // The interactive drag-corner-to-resize / drag-to-move handle — kept
+      // as a plain axis-aligned native Rectangle (position/size are always
+      // edited in the shape's own unrotated frame, same as before rotation
+      // existed) but invisible aside from a faint reference outline. The
+      // actual visible, rotated shape is the companion Polygon below —
+      // google.maps.Rectangle has no rotation option, so it can't do double
+      // duty as both the handle and the real shape once rotation != 0.
       const rect = new google.maps.Rectangle({
         map,
         bounds,
         editable: true,
         draggable: true,
-        fillColor,
-        fillOpacity: opacity,
-        strokeColor: fillColor,
-        strokeOpacity: 0.95,
-        strokeWeight: 2,
+        fillOpacity: 0,
+        strokeColor: "#6b7280",
+        strokeOpacity: 0.6,
+        strokeWeight: 1,
       });
       rect.addListener("bounds_changed", () => {
         const b = rect.getBounds();
@@ -5139,6 +5361,24 @@ export default function IntelligenceMapping() {
             : p
         );
       });
+      const rotatedPath = rectanglePolygonPath(
+        pendingShape.neLat!,
+        pendingShape.neLng!,
+        pendingShape.swLat!,
+        pendingShape.swLng!,
+        pendingShape.rotation ?? 0
+      );
+      const rotatedPoly = new google.maps.Polygon({
+        map,
+        paths: rotatedPath,
+        clickable: false,
+        fillColor,
+        fillOpacity: opacity,
+        strokeColor: fillColor,
+        strokeOpacity: 0.95,
+        strokeWeight: 2,
+      });
+      draftRectRotatedOverlayRef.current = rotatedPoly;
       overlay = rect;
     } else if (pendingShape.shapeType === "sector") {
       const path = sectorPolygonPath(
@@ -5244,10 +5484,17 @@ export default function IntelligenceMapping() {
     }
 
     draftShapeOverlayRef.current = overlay;
+    const rotatedCompanion = draftRectRotatedOverlayRef.current;
     return () => {
       overlay.setMap(null);
       if (draftShapeOverlayRef.current === overlay) {
         draftShapeOverlayRef.current = null;
+      }
+      if (rotatedCompanion) {
+        rotatedCompanion.setMap(null);
+        if (draftRectRotatedOverlayRef.current === rotatedCompanion) {
+          draftRectRotatedOverlayRef.current = null;
+        }
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -5281,6 +5528,15 @@ export default function IntelligenceMapping() {
           fillColor,
           opacity
         ),
+      });
+    } else if (draftRectRotatedOverlayRef.current) {
+      // Rectangle — colour/opacity apply to the visible rotated companion
+      // Polygon, not the invisible resize-handle Rectangle beneath it (see
+      // the rectangle branch above for why there are two overlays here).
+      draftRectRotatedOverlayRef.current.setOptions({
+        fillColor,
+        fillOpacity: opacity,
+        strokeColor: fillColor,
       });
     } else {
       overlay.setOptions({
@@ -5355,6 +5611,33 @@ export default function IntelligenceMapping() {
     pendingShape?.endAngle,
     pendingShape?.radiusMeters,
     pendingShape?.innerRadiusMeters,
+  ]);
+
+  // Keeps the rectangle's visible rotated companion Polygon (see the
+  // rectangle branch of the draft-overlay effect above) in sync with the
+  // resize-handle Rectangle's bounds AND the rotation slider — either one
+  // changing needs this rebuilt, unlike the handle Rectangle itself, which
+  // only needs its own bounds (that's what dragging it already does
+  // natively).
+  useEffect(() => {
+    const poly = draftRectRotatedOverlayRef.current;
+    if (!poly || !pendingShape || pendingShape.shapeType !== "rectangle")
+      return;
+    poly.setPath(
+      rectanglePolygonPath(
+        pendingShape.neLat!,
+        pendingShape.neLng!,
+        pendingShape.swLat!,
+        pendingShape.swLng!,
+        pendingShape.rotation ?? 0
+      )
+    );
+  }, [
+    pendingShape?.neLat,
+    pendingShape?.neLng,
+    pendingShape?.swLat,
+    pendingShape?.swLng,
+    pendingShape?.rotation,
   ]);
 
   // Global RS Quick Entry handler for merged marker popup
@@ -5608,14 +5891,14 @@ export default function IntelligenceMapping() {
     (window as any).__intelOpenEditDialog = (label: string) => {
       infoWindowRef.current?.close();
       // Load current appearance from localStorage
-      let icon: MarkerIcon = "house_filled";
+      let icon: string = "house_filled";
       let colour: MarkerColour = "purple";
       let rotation = 0;
       try {
         const stored = localStorage.getItem(`runlog_intel_appearance_${label}`);
         if (stored) {
           const parsed = JSON.parse(stored);
-          if (parsed.icon) icon = parsed.icon as MarkerIcon;
+          if (parsed.icon) icon = parsed.icon as string;
           if (parsed.colour) colour = parsed.colour as MarkerColour;
           if (typeof parsed.rotation === "number") rotation = parsed.rotation;
         }
@@ -5625,6 +5908,12 @@ export default function IntelligenceMapping() {
       setIntelEditIcon(icon);
       setIntelEditColour(colour);
       setIntelEditRotation(rotation);
+      // customLabel/note only ever live server-side (see intelPinOverrides)
+      // — no legacy localStorage copy to fall back to, unlike icon/colour/
+      // rotation above.
+      const override = pinOverridesRef.current.get(label);
+      setIntelEditLabel(override?.customLabel ?? "");
+      setIntelEditNote(override?.note ?? "");
       setEditingIntelLabel(label);
     };
     return () => {
@@ -6125,9 +6414,11 @@ export default function IntelligenceMapping() {
           // to confirm what got written to the record, not when the tap
           // landed.
           setRsLastEntry({
+            id: (data as any)?.id,
             label: vars.observation ?? "Entry",
             time: vars.time ?? timeStr,
           });
+          setRsEditingLastEntry(false);
           setRsAddingRow(false);
           // Attach all selected CINs — use the locally captured variable, not the ref
           if (cins.length > 0 && (data as any)?.id) {
@@ -6161,6 +6452,64 @@ export default function IntelligenceMapping() {
           setRsAddingRow(false);
           toast.error(e.message);
         },
+      }
+    );
+  };
+
+  // Tap-to-edit on the "Last Entry" banner — see rsEditingLastEntry's own
+  // declaration for why this is a separate mini form rather than routing
+  // back through the create-a-new-entry flow. Pre-fills from rsLastEntry's
+  // own already-recorded text/time, not from whatever a wall-clock "now"
+  // would give.
+  const openLastEntryEdit = () => {
+    if (!rsLastEntry) return;
+    setRsEditText(rsLastEntry.label);
+    const match = rsLastEntry.time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (match) {
+      setRsEditHour(String(parseInt(match[1])));
+      setRsEditMinute(match[2]);
+      setRsEditPeriod(match[3].toUpperCase());
+    }
+    setRsEditingLastEntry(true);
+  };
+
+  const cancelLastEntryEdit = () => {
+    setRsEditingLastEntry(false);
+  };
+
+  const saveLastEntryEdit = () => {
+    if (!rsLastEntry || !rsEditText.trim()) return;
+    // Same AM/PM -> 24h conversion addQuickRsEntry uses above, kept
+    // separate rather than extracted into a shared helper — a two-line
+    // calculation isn't worth the indirection for its one other call site.
+    let h = parseInt(rsEditHour);
+    const m = parseInt(rsEditMinute);
+    if (rsEditPeriod === "PM" && h !== 12) h += 12;
+    if (rsEditPeriod === "AM" && h === 12) h = 0;
+    const totalMins = h * 60 + m;
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    const timeStr = `${String(h12).padStart(2, "0")}:${String(m).padStart(2, "0")} ${rsEditPeriod}`;
+    const trimmed = rsEditText.trim();
+    rsUpdateRow.mutate(
+      {
+        id: rsLastEntry.id,
+        time: timeStr,
+        timeMinutes: totalMins,
+        observation: trimmed,
+      },
+      {
+        onSuccess: () => {
+          setRsLastEntry({ id: rsLastEntry.id, label: trimmed, time: timeStr });
+          setRsEditingLastEntry(false);
+          toast.success("Entry updated");
+          void refetchLocations();
+          if (rsSelectedSheetId) {
+            void utils.row.entityChips.invalidate({
+              sheetId: rsSelectedSheetId,
+            });
+          }
+        },
+        onError: e => toast.error(e.message),
       }
     );
   };
@@ -7328,6 +7677,7 @@ export default function IntelligenceMapping() {
                       onValueChange={val => {
                         setRsSelectedSheetId(Number(val));
                         setRsLastEntry(null);
+                        setRsEditingLastEntry(false);
                       }}
                     >
                       <SelectTrigger className="flex-1 h-9 text-xs rounded-xl border-2">
@@ -7352,6 +7702,7 @@ export default function IntelligenceMapping() {
                         onClick={() => {
                           setRsSelectedSheetId(null);
                           setRsLastEntry(null);
+                          setRsEditingLastEntry(false);
                         }}
                         className="flex-shrink-0 h-9 w-9 flex items-center justify-center rounded-xl border-2 border-border bg-muted/40 hover:bg-destructive/20 hover:border-destructive/40 active:scale-95 transition-all"
                         title="Clear running sheet selection"
@@ -8460,6 +8811,33 @@ export default function IntelligenceMapping() {
                 </div>
               )}
 
+              {/* Rectangle-only: rotation. Position/size still come from
+                  dragging the shape's corners/edges in its own unrotated
+                  frame (see the rectangle branch of the draft-overlay
+                  effect) — this slider spins the visible shape around its
+                  center independently of that, same pattern as the sector
+                  sliders just above. */}
+              {pendingShape.shapeType === "rectangle" && (
+                <div className="mb-4 rounded-lg border border-border bg-muted/20 p-3">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                    Rotation — {Math.round(pendingShape.rotation ?? 0)}°
+                  </p>
+                  <input
+                    type="range"
+                    min={0}
+                    max={359}
+                    step={1}
+                    value={pendingShape.rotation ?? 0}
+                    onChange={e =>
+                      setPendingShape(p =>
+                        p ? { ...p, rotation: Number(e.target.value) } : p
+                      )
+                    }
+                    className="w-full accent-primary"
+                  />
+                </div>
+              )}
+
               {/* Operation — a shape saved with no operation is hidden from
                   any single/multi-operation-filtered map view (only the
                   "all operations" view shows it), same trap this fix closed
@@ -8549,6 +8927,7 @@ export default function IntelligenceMapping() {
                         neLng: pendingShape.neLng ?? null,
                         swLat: pendingShape.swLat ?? null,
                         swLng: pendingShape.swLng ?? null,
+                        rotation: pendingShape.rotation ?? 0,
                         points: pendingShape.points ?? [],
                         lineDashed: shapeLineDashed,
                         lineArrowEnd: shapeLineArrowEnd,
@@ -8944,7 +9323,7 @@ export default function IntelligenceMapping() {
             onClick={() => setEditingIntelLabel(null)}
           >
             <div
-              className="w-full max-w-lg bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
+              className="w-full max-w-lg md:max-w-2xl lg:max-w-3xl bg-card border border-border rounded-t-2xl shadow-2xl p-5 pb-8 max-h-[90vh] overflow-y-auto"
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}
@@ -8965,68 +9344,163 @@ export default function IntelligenceMapping() {
                 </button>
               </div>
 
-              {/* Icon picker */}
+              {/* Label + Notes — same two fields the Place Map Marker
+                  dialog has (see its own "0."/"0c." comments), added here
+                  per direct request for parity between the two dialogs.
+                  This pin's real name/address is already the subtitle
+                  above; these are a free-text caption and a one-line note
+                  an officer can add on top of that, same as a custom
+                  marker's label/note. */}
+              <div className="mb-3">
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+                  Label
+                </label>
+                <input
+                  type="text"
+                  value={intelEditLabel}
+                  onChange={e => setIntelEditLabel(e.target.value)}
+                  placeholder="Optional custom label..."
+                  className="w-full text-sm bg-background border border-border rounded-md px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
               <div className="mb-4">
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                  Marker Icon
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+                  Notes
+                </label>
+                <Textarea
+                  value={intelEditNote}
+                  onChange={e => setIntelEditNote(e.target.value)}
+                  placeholder="Optional notes..."
+                  rows={2}
+                  className="text-sm resize-none"
+                />
+              </div>
+
+              {/* Icon picker — same filter-chip + flat scrollable grid as
+                  the Place Map Marker dialog (see its own comment for why:
+                  no per-shape-type headings within Surveillance, a chip
+                  per TACTICAL_GROUPS entry instead — the tactical library
+                  grew from an 18-icon trial to the full ~413-icon traced
+                  set, so "Tactical" alone is no longer a single flat tab;
+                  "All" shows every chip's icons as its own labelled
+                  section, in TACTICAL_GROUPS order, rather than one
+                  undifferentiated wall of tiles). */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    Marker Icon
+                  </p>
+                  <div className="flex gap-1.5 flex-wrap justify-end">
+                    {[
+                      {
+                        key: "all" as const,
+                        label: `All (${SURVEILLANCE_ICONS.length + TACTICAL_ICONS.length})`,
+                      },
+                      {
+                        key: "surveillance" as const,
+                        label: `Surveillance (${SURVEILLANCE_ICONS.length})`,
+                      },
+                      ...TACTICAL_GROUPS.map(g => ({
+                        key: g.key as "all" | "surveillance" | TacticalGroup,
+                        label: `${g.label} (${TACTICAL_ICONS_BY_GROUP[g.key].length})`,
+                      })),
+                    ].map(f => (
+                      <button
+                        key={f.key}
+                        onClick={() => setIntelEditIconFilter(f.key)}
+                        className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border whitespace-nowrap transition-all ${
+                          intelEditIconFilter === f.key
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "border-border text-muted-foreground hover:border-primary/50"
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* See the matching comment on the Place Map Marker
+                    dialog's own copy of this line — no hover on a
+                    touchscreen, so this is the only way a tapped icon's
+                    name is ever shown there. */}
+                <p className="text-[11px] text-muted-foreground mb-1.5">
+                  Selected:{" "}
+                  <span className="font-semibold text-foreground">
+                    {getMarkerIconLabel(intelEditIcon)}
+                  </span>
                 </p>
-                <div className="space-y-3">
-                  {MARKER_ICON_GROUPS.map(group => (
-                    <div key={group.label}>
-                      <p className="text-[10px] text-muted-foreground/70 mb-1.5">
-                        {group.label}
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {group.icons.map(iconKey => (
-                          <button
-                            key={iconKey}
-                            onClick={() =>
-                              setIntelEditIcon(iconKey as MarkerIcon)
-                            }
-                            title={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
-                            className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center transition-all ${
-                              intelEditIcon === iconKey
-                                ? "border-primary bg-primary/10 scale-110"
-                                : "border-border bg-accent/30 hover:border-primary/50"
-                            }`}
-                          >
-                            <img
-                              src={getMarkerDataUrl(
-                                iconKey as MarkerIcon,
-                                intelEditColour
-                              )}
-                              alt={MARKER_ICON_LABELS[iconKey as MarkerIcon]}
-                              className="w-7 h-7 object-contain"
-                            />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+
+                <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-accent/10 p-2">
+                  <div className="grid grid-cols-6 md:grid-cols-9 lg:grid-cols-11 gap-1.5">
+                    {(intelEditIconFilter === "all" ||
+                      intelEditIconFilter === "surveillance") &&
+                      SURVEILLANCE_ICONS.map(iconKey => (
+                        <button
+                          key={iconKey}
+                          onClick={() => setIntelEditIcon(iconKey)}
+                          title={MARKER_ICON_LABELS[iconKey]}
+                          className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${
+                            intelEditIcon === iconKey
+                              ? "border-primary bg-primary/10"
+                              : "border-border bg-background hover:border-primary/50"
+                          }`}
+                        >
+                          <img
+                            src={getMarkerDataUrl(iconKey, intelEditColour)}
+                            alt={MARKER_ICON_LABELS[iconKey]}
+                            className="w-6 h-6 object-contain"
+                          />
+                        </button>
+                      ))}
+
+                    {TACTICAL_GROUPS.map(g => (
+                      <TacticalIconGroupTiles
+                        key={g.key}
+                        group={g}
+                        visible={
+                          intelEditIconFilter === "all" ||
+                          intelEditIconFilter === g.key
+                        }
+                        showHeading={intelEditIconFilter === "all"}
+                        selectedKey={intelEditIcon}
+                        onSelect={setIntelEditIcon}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              {/* Colour picker */}
-              <div className="mb-4">
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                  Colour
-                </p>
-                <div className="flex gap-2">
-                  {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(col => (
-                    <button
-                      key={col}
-                      onClick={() => setIntelEditColour(col)}
-                      title={MARKER_COLOUR_LABELS[col]}
-                      className={`w-8 h-8 rounded-full border-2 transition-all ${
-                        intelEditColour === col
-                          ? "border-foreground scale-110"
-                          : "border-transparent hover:border-foreground/40"
-                      }`}
-                      style={{ background: MARKER_COLOURS[col] }}
-                    />
-                  ))}
+              {/* Colour picker — a Tactical icon's artwork is fixed-colour,
+                  and unlike a custom map marker, an intel pin has no label
+                  pill either, so there's nothing left for this to control
+                  once a Tactical icon is selected — hidden in that case
+                  rather than shown with no visible effect. */}
+              {!isTacticalIcon(intelEditIcon) && (
+                <div className="mb-4">
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    Colour
+                  </p>
+                  <div className="flex gap-2">
+                    {(Object.keys(MARKER_COLOURS) as MarkerColour[]).map(
+                      col => (
+                        <button
+                          key={col}
+                          onClick={() => setIntelEditColour(col)}
+                          title={MARKER_COLOUR_LABELS[col]}
+                          className={`w-8 h-8 rounded-full border-2 transition-all ${
+                            intelEditColour === col
+                              ? "border-foreground scale-110"
+                              : "border-transparent hover:border-foreground/40"
+                          }`}
+                          style={{ background: MARKER_COLOURS[col] }}
+                        />
+                      )
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Rotation */}
               <div className="mb-4">
@@ -9034,11 +9508,11 @@ export default function IntelligenceMapping() {
                   Rotation — {intelEditRotation}°
                 </p>
                 <div className="flex items-center gap-3">
-                  <div className="shrink-0 w-10 h-10 flex items-center justify-center">
+                  <div className="shrink-0 flex items-center justify-center w-10 h-10">
                     <img
-                      src={getMarkerDataUrl(intelEditIcon, intelEditColour)}
+                      src={getMarkerIconUrl(intelEditIcon, intelEditColour)}
                       alt="preview"
-                      className="w-8 h-8 object-contain transition-transform"
+                      className="object-contain transition-transform w-8 h-8"
                       style={{ transform: `rotate(${intelEditRotation}deg)` }}
                     />
                   </div>
@@ -9104,6 +9578,8 @@ export default function IntelligenceMapping() {
                       markerIcon: intelEditIcon,
                       markerColour: intelEditColour,
                       rotation: intelEditRotation,
+                      customLabel: intelEditLabel.trim(),
+                      note: intelEditNote.trim(),
                     });
                     // Update the actual map marker element immediately —
                     // direct img ref first, querySelector fallback (see
@@ -9123,10 +9599,12 @@ export default function IntelligenceMapping() {
                           : null;
                       })();
                     if (img) {
-                      img.src = getMarkerDataUrl(
+                      img.src = getMarkerIconUrl(
                         intelEditIcon,
                         intelEditColour
                       );
+                      img.style.width = "40px";
+                      img.style.height = "40px";
                       img.style.transform = `rotate(${intelEditRotation}deg)`;
                     }
                     setEditingIntelLabel(null);
@@ -9165,6 +9643,7 @@ export default function IntelligenceMapping() {
             onClick={() => {
               setMapQeOpen(false);
               setMapQeAddress("");
+              setRsEditingLastEntry(false);
               closeInlineField();
             }}
           >
@@ -9187,6 +9666,7 @@ export default function IntelligenceMapping() {
                   onClick={() => {
                     setMapQeOpen(false);
                     setMapQeAddress("");
+                    setRsEditingLastEntry(false);
                     closeInlineField();
                   }}
                   className="ml-3 text-muted-foreground hover:text-foreground flex-shrink-0"
@@ -10637,15 +11117,125 @@ export default function IntelligenceMapping() {
 
                   {/* Quick action buttons removed per user request */}
 
-                  {/* Last entry confirmation */}
-                  {rsLastEntry && (
-                    <div className="rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-2 md:px-3.5 md:py-3">
-                      <p className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-green-400 mb-0.5">
-                        Last Entry
-                      </p>
+                  {/* Last entry confirmation — tap to quickly correct the
+                      time/text just submitted and save again, rather than
+                      going to the Running Sheet to fix a typo. */}
+                  {rsLastEntry && !rsEditingLastEntry && (
+                    <button
+                      type="button"
+                      onClick={openLastEntryEdit}
+                      className="w-full text-left rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-2 md:px-3.5 md:py-3 hover:bg-green-500/15 active:scale-[0.99] transition-all"
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-0.5">
+                        <p className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-green-400">
+                          Last Entry
+                        </p>
+                        <Pencil className="h-3 w-3 md:h-3.5 md:w-3.5 text-green-400/70 flex-shrink-0" />
+                      </div>
                       <p className="text-[11px] md:text-sm font-mono text-foreground">
                         {rsLastEntry.time} — {rsLastEntry.label}
                       </p>
+                    </button>
+                  )}
+
+                  {rsLastEntry && rsEditingLastEntry && (
+                    <div className="rounded-md border border-green-500/30 bg-green-500/10 px-2.5 py-2 md:px-3.5 md:py-3 flex flex-col gap-2">
+                      <p className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-green-400">
+                        Editing Last Entry
+                      </p>
+                      <div className="flex items-center gap-1 md:gap-1.5 flex-wrap">
+                        <Clock className="h-3 w-3 md:h-3.5 md:w-3.5 text-muted-foreground flex-shrink-0" />
+                        <Select
+                          value={rsEditHour}
+                          onValueChange={setRsEditHour}
+                        >
+                          <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0 md:w-20 md:h-8 md:text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Array.from({ length: 12 }, (_, i) =>
+                              String(i + 1)
+                            ).map(h => (
+                              <SelectItem
+                                key={h}
+                                value={h}
+                                className="font-mono text-xs"
+                              >
+                                {String(parseInt(h)).padStart(2, "0")}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <span className="text-muted-foreground font-mono text-[11px] md:text-sm">
+                          :
+                        </span>
+                        <Select
+                          value={rsEditMinute}
+                          onValueChange={setRsEditMinute}
+                        >
+                          <SelectTrigger className="w-16 h-6 text-[11px] font-mono px-1.5 py-0 md:w-20 md:h-8 md:text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Array.from({ length: 60 }, (_, i) =>
+                              String(i).padStart(2, "0")
+                            ).map(m => (
+                              <SelectItem
+                                key={m}
+                                value={m}
+                                className="font-mono text-xs"
+                              >
+                                {m}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Select
+                          value={rsEditPeriod}
+                          onValueChange={setRsEditPeriod}
+                        >
+                          <SelectTrigger className="w-14 h-6 text-[11px] px-1.5 py-0 md:w-16 md:h-8 md:text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="AM" className="text-xs">
+                              AM
+                            </SelectItem>
+                            <SelectItem value="PM" className="text-xs">
+                              PM
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Textarea
+                        value={rsEditText}
+                        onChange={e => setRsEditText(e.target.value)}
+                        rows={3}
+                        className="text-[11px] md:text-sm font-mono"
+                      />
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={cancelLastEntryEdit}
+                          disabled={rsUpdateRow.isPending}
+                          className="rounded-md px-2.5 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-muted/50 transition-all disabled:opacity-50 md:px-4 md:py-2 md:text-sm"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={saveLastEntryEdit}
+                          disabled={rsUpdateRow.isPending || !rsEditText.trim()}
+                          className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-[10px] font-semibold text-primary-foreground hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-50 md:px-4 md:py-2 md:text-sm md:gap-1.5"
+                        >
+                          {rsUpdateRow.isPending ? (
+                            <Spinner className="h-3 w-3 md:h-4 md:w-4" />
+                          ) : (
+                            <Send className="h-3 w-3 md:h-4 md:w-4" />
+                          )}
+                          Save Changes
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -10777,22 +11367,24 @@ export default function IntelligenceMapping() {
               )}
 
               {/* 1. Icon picker — not shown for a Label Only marker, which
-                  has no icon to pick. Flat tile grid, no per-shape-type
-                  headings (Locations/Vehicles/etc. — with only a couple of
-                  icons in each, the heading added nothing). All/Surveillance/
-                  Tactical filter chips instead: Surveillance is the original
-                  recolourable shape set, Tactical is the fixed-colour
-                  library traced from the AFP iSurv marker set (18-icon
-                  trial batch — see lib/tacticalMarkers.ts). The tile grid
-                  itself scrolls in a fixed-height box so the rest of the
-                  dialog (colour, rotation, operation, buttons) stays put. */}
+                  has no icon to pick. Flat tile grid within Surveillance
+                  (no per-shape-type headings — with only a couple of icons
+                  in each, the heading added nothing); a chip per
+                  TACTICAL_GROUPS entry otherwise — the tactical library
+                  grew from an 18-icon trial to the full ~413-icon traced
+                  set (see lib/tacticalMarkers.ts), so one flat "Tactical"
+                  tab stopped being usable. "All" shows every chip's icons
+                  as its own labelled section rather than one wall of
+                  tiles. The tile grid itself scrolls in a fixed-height box
+                  so the rest of the dialog (colour, rotation, operation,
+                  buttons) stays put. */}
               {!cmLabelOnly && (
                 <div className="mb-4">
-                  <div className="flex items-center justify-between mb-2 gap-2">
+                  <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
                     <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
                       Marker Icon
                     </p>
-                    <div className="flex gap-1.5">
+                    <div className="flex gap-1.5 flex-wrap justify-end">
                       {[
                         {
                           key: "all" as const,
@@ -10802,10 +11394,10 @@ export default function IntelligenceMapping() {
                           key: "surveillance" as const,
                           label: `Surveillance (${SURVEILLANCE_ICONS.length})`,
                         },
-                        {
-                          key: "tactical" as const,
-                          label: `Tactical (${TACTICAL_ICONS.length})`,
-                        },
+                        ...TACTICAL_GROUPS.map(g => ({
+                          key: g.key as "all" | "surveillance" | TacticalGroup,
+                          label: `${g.label} (${TACTICAL_ICONS_BY_GROUP[g.key].length})`,
+                        })),
                       ].map(f => (
                         <button
                           key={f.key}
@@ -10821,6 +11413,19 @@ export default function IntelligenceMapping() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Desktop shows an icon's name on hover (the tile's own
+                      title attribute) — there's no hover on a touchscreen,
+                      so this is the only way a tapped icon's name is ever
+                      shown there. Live, not just on tap: it's really "the
+                      currently selected icon's name", which is already
+                      correct the instant a tap lands. */}
+                  <p className="text-[11px] text-muted-foreground mb-1.5">
+                    Selected:{" "}
+                    <span className="font-semibold text-foreground">
+                      {getMarkerIconLabel(cmIcon)}
+                    </span>
+                  </p>
 
                   <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-accent/10 p-2">
                     <div className="grid grid-cols-6 md:grid-cols-9 lg:grid-cols-11 gap-1.5">
@@ -10845,37 +11450,18 @@ export default function IntelligenceMapping() {
                           </button>
                         ))}
 
-                      {cmIconFilter === "all" && (
-                        <div className="col-span-full h-px bg-border my-1" />
-                      )}
-
-                      {(cmIconFilter === "all" ||
-                        cmIconFilter === "tactical") &&
-                        TACTICAL_ICONS.map(t => (
-                          <button
-                            key={t.key}
-                            onClick={() => setCmIcon(t.key)}
-                            title={t.label}
-                            className={`aspect-square rounded-lg border-2 flex items-center justify-center transition-all ${
-                              cmIcon === t.key
-                                ? "border-primary bg-primary/10"
-                                : "border-border bg-background hover:border-primary/50"
-                            }`}
-                          >
-                            <img
-                              src={t.src}
-                              alt={t.label}
-                              // Tactical source PNGs carry a few px of
-                              // baked-in margin the hand-drawn Surveillance
-                              // SVGs don't (their glyph fills the source
-                              // canvas closer to edge-to-edge) — sized
-                              // slightly larger here so the two sets read as
-                              // the same visual weight in the grid instead
-                              // of tactical icons looking a touch smaller.
-                              className="w-[27px] h-[27px] object-contain"
-                            />
-                          </button>
-                        ))}
+                      {TACTICAL_GROUPS.map(g => (
+                        <TacticalIconGroupTiles
+                          key={g.key}
+                          group={g}
+                          visible={
+                            cmIconFilter === "all" || cmIconFilter === g.key
+                          }
+                          showHeading={cmIconFilter === "all"}
+                          selectedKey={cmIcon}
+                          onSelect={setCmIcon}
+                        />
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -10952,13 +11538,11 @@ export default function IntelligenceMapping() {
                       Rotation — {cmRotation}°
                     </p>
                     {/* Rotated preview */}
-                    <div
-                      className={`shrink-0 flex items-center justify-center ${isTacticalIcon(cmIcon) ? "w-9 h-9" : "w-8 h-8"}`}
-                    >
+                    <div className="shrink-0 flex items-center justify-center w-8 h-8">
                       <img
                         src={getMarkerIconUrl(cmIcon, cmColour)}
                         alt="preview"
-                        className={`object-contain transition-transform ${isTacticalIcon(cmIcon) ? "w-9 h-9" : "w-8 h-8"}`}
+                        className="object-contain transition-transform w-8 h-8"
                         style={{ transform: `rotate(${cmRotation}deg)` }}
                       />
                     </div>

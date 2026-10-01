@@ -1171,11 +1171,19 @@ export const mapShapes = mysqlTable("map_shapes", {
   // tip off, drawing a closed annular "arc band" (outer arc + inner arc,
   // no center vertex) between the two radii.
   innerRadiusMeters: double("innerRadiusMeters"),
-  // Rectangle — two opposite corners (a google.maps.LatLngBounds)
+  // Rectangle — two opposite corners (a google.maps.LatLngBounds) of the
+  // UNROTATED box, plus a separate rotation applied around its center at
+  // render time (see rectanglePolygonPath in IntelligenceMapping.tsx) —
+  // keeps the existing drag-corner resize editing simple (always an
+  // axis-aligned box underneath) while the visible shape spins
+  // independently via the rotation slider.
   neLat: double("neLat"),
   neLng: double("neLng"),
   swLat: double("swLat"),
   swLng: double("swLng"),
+  // Rectangle only — degrees, 0 = unrotated (edges north/south/east/west),
+  // clockwise, same convention as sector's startAngle/endAngle.
+  rotation: double("rotation").default(0).notNull(),
   // Line — JSON array of {lat, lng} points, in path order
   points: text("points"),
   // Line only — dashed vs solid stroke, and an arrowhead at the last point
@@ -1213,6 +1221,13 @@ export const intelPinOverrides = mysqlTable("intel_pin_overrides", {
   markerIcon: varchar("markerIcon", { length: 64 }),
   markerColour: varchar("markerColour", { length: 32 }),
   rotation: int("rotation").default(0).notNull(),
+  // A free-text caption + note, same shape as customMapMarkers.label/note —
+  // added per officer request for parity with the Place Map Marker dialog.
+  // `customLabel` (not `label`) to keep it distinct from the column above,
+  // which is the entity's own keyed identifier (an address/name string),
+  // not something an officer types.
+  customLabel: varchar("customLabel", { length: 255 }),
+  note: text("note"),
   updatedByCIN: varchar("updatedByCIN", { length: 32 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

@@ -216,19 +216,25 @@ export function TargetStatusFields({
   const conditionsYes = bailYes && value.bailConditions === "yes";
   const mdlError = !!showMdlError && mdlMissing(value);
   return (
-    <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-2 gap-3">
+    <div className="flex flex-col gap-3 border-t border-border/40 pt-3">
+      {/* Single column on a phone so every dropdown is the same full width
+          and no label wraps; side by side from sm up (three across once
+          Bail Conditions appears, so the row stays evenly filled). */}
+      <div
+        className={`grid grid-cols-1 gap-3 ${bailYes ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
+      >
         <div className="flex flex-col gap-1.5">
-          <FieldLabel>MDL (Motor Drivers Licence) *</FieldLabel>
+          <FieldLabel>MDL *</FieldLabel>
           <Select
             value={value.mdlStatus}
             onValueChange={v => onChange({ ...value, mdlStatus: v })}
             disabled={disabled}
           >
             <SelectTrigger
+              title="Motor Drivers Licence"
               className={`w-full ${mdlError ? "border-destructive" : ""}`}
             >
-              <SelectValue placeholder="Select…" />
+              <SelectValue placeholder="Licence status…" />
             </SelectTrigger>
             <SelectContent>
               {MDL_STATUSES.map(m => (
@@ -270,34 +276,34 @@ export function TargetStatusFields({
             </SelectContent>
           </Select>
         </div>
+        {bailYes && (
+          <div className="flex flex-col gap-1.5">
+            <FieldLabel>Bail Conditions</FieldLabel>
+            <Select
+              value={value.bailConditions}
+              onValueChange={v =>
+                onChange({
+                  ...value,
+                  bailConditions: v,
+                  ...(v === "yes" ? {} : { bailConditionsText: "" }),
+                })
+              }
+              disabled={disabled}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select…" />
+              </SelectTrigger>
+              <SelectContent>
+                {YES_NO.map(y => (
+                  <SelectItem key={y} value={y}>
+                    {YES_NO_LABELS[y]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
-      {bailYes && (
-        <div className="flex flex-col gap-1.5">
-          <FieldLabel>Bail Conditions</FieldLabel>
-          <Select
-            value={value.bailConditions}
-            onValueChange={v =>
-              onChange({
-                ...value,
-                bailConditions: v,
-                ...(v === "yes" ? {} : { bailConditionsText: "" }),
-              })
-            }
-            disabled={disabled}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select…" />
-            </SelectTrigger>
-            <SelectContent>
-              {YES_NO.map(y => (
-                <SelectItem key={y} value={y}>
-                  {YES_NO_LABELS[y]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
       {conditionsYes && (
         <div className="flex flex-col gap-1.5">
           <FieldLabel>Conditions</FieldLabel>

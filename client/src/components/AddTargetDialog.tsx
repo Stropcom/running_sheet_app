@@ -1737,14 +1737,31 @@ export function AddTargetDialog({
                 >
                   <Users className="w-3 h-3" /> {cfg.cardLabel} {i + 1}
                 </span>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-6 w-6 text-destructive hover:text-destructive"
-                  onClick={() => removeStaged(assoc.key)}
-                >
-                  <X className="w-3 h-3" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs"
+                    onClick={() =>
+                      patchStaged(assoc.key, {
+                        relationship:
+                          kind === "resident" ? "associate" : "resident",
+                      })
+                    }
+                  >
+                    {kind === "resident"
+                      ? "Move to Associates"
+                      : "Move to Residents"}
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6 text-destructive hover:text-destructive"
+                    onClick={() => removeStaged(assoc.key)}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
               </div>
               <TargetIdentityFields
                 value={assoc.identity}

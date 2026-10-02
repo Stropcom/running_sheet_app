@@ -69,6 +69,7 @@ import { reflowNarrativeText } from "@/lib/textFormat";
 import {
   composeAddress,
   composeVehicle,
+  isSameHomeAddress,
   type StructuredAddressParts,
   type StructuredNameParts,
   type StructuredVehicleParts,
@@ -632,10 +633,23 @@ export function ImportTargetDocumentDialog({
       // Everything else the officer left as "Create as new" (the default
       // for anything with no match) stages into AddTargetDialog exactly as
       // before — "skip" and "update" are excluded here.
+      const [primaryAddress, ...restAddresses] = result.addresses;
+
+      // A document only has "associates" — there's no residents section to
+      // read — so anyone listed at the target's own Home Address is filed
+      // as an Other Home Address Resident instead (see isSameHomeAddress for
+      // what counts as the same address). The officer can still move them
+      // back from the card in the Add Target dialog.
       const associates: StagedAssociate[] = associateCandidates
         .filter(a => (associateChoices[a.key] ?? "create") === "create")
         .map(a => ({
           key: a.key,
+          relationship:
+            primaryAddress &&
+            a.address &&
+            isSameHomeAddress(a.address, primaryAddress)
+              ? ("resident" as const)
+              : ("associate" as const),
           identity: {
             firstNames: a.firstNames,
             surname: a.surname,
@@ -645,7 +659,6 @@ export function ImportTargetDocumentDialog({
           vehicle: a.vehicle ?? EMPTY_VEHICLE_PARTS,
         }));
 
-      const [primaryAddress, ...restAddresses] = result.addresses;
       const [primaryVehicle, ...restVehicles] = result.vehicles;
 
       // Content the document clearly intended as an address/vehicle but

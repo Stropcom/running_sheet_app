@@ -95,6 +95,15 @@ const COLOUR_MODIFIERS = new Set([
   "bright",
   "pale",
   "deep",
+  // Finish/paint-type descriptors, same treatment ("pearl white Lexus" is
+  // colour White, not make "pearl") — officer rule: only a real colour
+  // belongs in the colour field, never a word that merely describes one.
+  "pearl",
+  "pearlescent",
+  "matte",
+  "matt",
+  "gloss",
+  "glossy",
 ]);
 
 // Mirrors client/src/lib/addressFormat.ts's VEHICLE_TYPE_OPTIONS values —

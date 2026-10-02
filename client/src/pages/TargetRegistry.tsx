@@ -1115,6 +1115,17 @@ function TargetCard({
             <AssociatesSection
               targetId={target.id}
               operationId={target.linkedOperations[0]?.operationId ?? null}
+              targetAddress={{
+                unitNo: target.addrUnitNo ?? "",
+                houseNo: target.addrHouseNo ?? "",
+                streetName: target.addrStreetName ?? "",
+                streetType: target.addrStreetType ?? "",
+                suburb: target.addrSuburb ?? "",
+                state: target.addrState ?? "WA",
+                // Not copied: a business/place name stands in for a
+                // person's name on an associate card (composeAssociateName).
+                businessName: "",
+              }}
             />
 
             {/* ── Depart / Arrive ── */}
@@ -1246,6 +1257,7 @@ function AssociateCard({
   operationId,
   onCreated,
   relationship: newRelationship = "associate",
+  defaultAddress,
 }: {
   targetId: number;
   associate: AssociateRecord | null; // null = new, unsaved
@@ -1253,6 +1265,9 @@ function AssociateCard({
   onCreated?: () => void;
   /** Which kind a NEW card creates (an existing record keeps its own). */
   relationship?: PersonKind;
+  /** Pre-fills a NEW card's Home Address — used for Other Home Address
+   * Residents, who by definition live at the target's home address. */
+  defaultAddress?: StructuredAddressParts;
 }) {
   const utils = trpc.useUtils();
   const isNew = associate === null;
@@ -1284,7 +1299,7 @@ function AssociateCard({
           state: associate.addrState ?? "WA",
           businessName: associate.addrBusinessName ?? "",
         }
-      : EMPTY_ADDRESS_PARTS
+      : (defaultAddress ?? EMPTY_ADDRESS_PARTS)
   );
   const [vehicle, setVehicle] = useState<
     StructuredVehicleParts & { vehicleType: string }
@@ -1433,8 +1448,11 @@ function AssociateCard({
   // structured fields were saved but the composed text wasn't — otherwise
   // those records show as unlocked with no lock button to correct, despite
   // clearly having a value.
+  // A new card always opens straight into edit, even when its address is
+  // pre-filled (a resident's, from the target) — there's nothing saved yet
+  // to lock.
   const [addressMode, setAddressMode] = useState<"locked" | "edit">(
-    associate?.hbf || associate?.hb || composeAddress(address).full
+    !isNew && (associate?.hbf || associate?.hb || composeAddress(address).full)
       ? "locked"
       : "edit"
   );
@@ -1607,6 +1625,37 @@ function AssociateCard({
 
   const warnPayload = useRef<ReturnType<typeof buildPayload> | null>(null);
 
+  // Name last run through the possible-duplicate check (on Surname blur, or
+  // at Save) — so Save doesn't ask the same name question again once the
+  // officer has already answered it.
+  const checkedNameRef = useRef("");
+
+  // Early check for a NEW card, fired when the officer tabs out of the
+  // Surname field — same behaviour as the Add Target dialog's own Surname
+  // blur: surface a name match against existing targets, associates and
+  // mined people straight away rather than only at Save. Silent on
+  // no-match/failure. warnPayload stays null on this path, so "No,
+  // different" just closes the prompt instead of saving.
+  const checkNameOnBlur = async () => {
+    if (!isNew) return;
+    const { name } = composeAssociateName(identity, address.businessName);
+    if (!name || name === checkedNameRef.current) return;
+    checkedNameRef.current = name;
+    try {
+      const warnings = await runDuplicateChecks(utils, [
+        { kind: "target", label: name },
+        { kind: "person", label: name },
+      ]);
+      if (warnings.length > 0) {
+        warnPayload.current = null;
+        setWarnQueue(warnings);
+        setWarnIndex(0);
+      }
+    } catch {
+      // Silent — Save still runs the full check.
+    }
+  };
+
   const handleWarnContinue = () => {
     const current = warnQueue[warnIndex];
     if (current) {
@@ -1641,8 +1690,10 @@ function AssociateCard({
     // link to a Target, not to each other), so that falls into the same
     // create-as-entered-and-alias path as a plain text mention below.
     if (warning.linkable?.recordType !== "target") {
-      const payload = warnPayload.current;
-      if (!payload) return;
+      // Save-time prompts stash the payload; a Surname-blur prompt hasn't,
+      // so build it from the form as it stands.
+      const payload = warnPayload.current ?? buildPayload();
+      if (!payload.name) return;
       setLinking(true);
       try {
         createNow(payload);
@@ -1725,8 +1776,13 @@ function AssociateCard({
       return;
     }
     const warnings = await runDuplicateChecks(utils, [
-      { kind: "target", label: payload.name },
-      { kind: "person", label: payload.name },
+      // Name already answered on Surname blur — don't ask again.
+      ...(checkedNameRef.current === payload.name
+        ? []
+        : [
+            { kind: "target" as const, label: payload.name },
+            { kind: "person" as const, label: payload.name },
+          ]),
       { kind: "address", label: payload.hbf ?? "" },
       { kind: "vehicle", label: payload.v1f ?? "" },
       ...extraAddresses.map(ea => ({
@@ -1782,6 +1838,7 @@ function AssociateCard({
           <TargetIdentityFields
             value={identity}
             onChange={v => mark(() => setIdentity(v))}
+            onSurnameBlur={checkNameOnBlur}
           />
 
           <div className="flex flex-col gap-2">
@@ -1867,18 +1924,19 @@ function AssociateCard({
                   value={address}
                   onChange={v => mark(() => setAddress(v))}
                 />
-                {(associate?.hbf ||
-                  associate?.hb ||
-                  composeAddress(address).full) && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="gap-1.5 text-xs self-start"
-                    onClick={() => setAddressMode("locked")}
-                  >
-                    Cancel
-                  </Button>
-                )}
+                {!isNew &&
+                  (associate?.hbf ||
+                    associate?.hb ||
+                    composeAddress(address).full) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="gap-1.5 text-xs self-start"
+                      onClick={() => setAddressMode("locked")}
+                    >
+                      Cancel
+                    </Button>
+                  )}
               </div>
             )}
           </div>
@@ -2139,11 +2197,14 @@ function PersonListSection({
   targetId,
   operationId,
   people,
+  defaultAddress,
 }: {
   kind: PersonKind;
   targetId: number;
   operationId: number | null;
   people: AssociateRecord[];
+  /** Pre-fills a new card's Home Address (residents only). */
+  defaultAddress?: StructuredAddressParts;
 }) {
   const [addingNew, setAddingNew] = useState(false);
   const style = PERSON_SECTION_STYLE[kind];
@@ -2170,6 +2231,7 @@ function PersonListSection({
           associate={null}
           operationId={operationId}
           relationship={kind}
+          defaultAddress={defaultAddress}
           onCreated={() => setAddingNew(false)}
         />
       )}
@@ -2190,8 +2252,11 @@ function PersonListSection({
 function AssociatesSection({
   targetId,
   operationId,
+  targetAddress,
 }: {
   targetId: number;
+  /** The target's saved Home Address — becomes a new resident's default. */
+  targetAddress: StructuredAddressParts;
   /** Used to upload a photo staged from the Upload Image button (see
    * AssociateCard) — a target can be linked to several operations, so this
    * is just the first one; attachment.uploadManual needs some operation to
@@ -2211,6 +2276,7 @@ function AssociatesSection({
         targetId={targetId}
         operationId={operationId}
         people={all.filter(a => a.relationship === "resident")}
+        defaultAddress={targetAddress}
       />
       <PersonListSection
         kind="associate"

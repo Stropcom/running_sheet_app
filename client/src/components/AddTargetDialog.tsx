@@ -54,6 +54,8 @@ import {
   EMPTY_VEHICLE_PARTS,
   EMPTY_STATUS_PARTS,
   makeExtraId,
+  parseExtraAddresses,
+  parseExtraVehicles,
   mdlMissing,
   statusPartsToPayload,
   type ExtraAddress,
@@ -68,6 +70,7 @@ import {
   composeVehicleTargetName,
   composeLocationTargetName,
   ddMmYyyyToIso,
+  isoToDdMmYyyy,
   type StructuredNameParts,
   type StructuredAddressParts,
   type StructuredVehicleParts,
@@ -171,6 +174,20 @@ export interface StagedAssociate {
    * shape as the target's own extras. */
   extraAddresses?: ExtraAddress[];
   extraVehicles?: ExtraVehicle[];
+  /** Residents only: while true, the Home Address shown and saved is the
+   * target's own (live, as it's typed). Editing the resident's address
+   * flips this off so it can differ. */
+  addressFollowsTarget?: boolean;
+  /** Set when the officer confirmed the Surname-blur match is the same
+   * person as this existing Target — saved via createLinkedFromTarget. */
+  linkedTargetId?: number | null;
+  /** Mined-mention matches the officer confirmed as the same person —
+   * folded in as aliases (intelligence.mergeEntities) once saved. */
+  aliasMerges?: Array<{
+    type: "person" | "vehicle" | "address";
+    winnerLabel: string;
+    loserLabel: string;
+  }>;
 }
 
 // composeAddress/composeVehicle are all-or-nothing — a document import (or
@@ -382,6 +399,8 @@ export function AddTargetDialog({
   const [linking, setLinking] = useState(false);
   const utils = trpc.useUtils();
   const associateCreateMut = trpc.associate.create.useMutation();
+  const associateCreateLinkedMut =
+    trpc.associate.createLinkedFromTarget.useMutation();
   const uploadImageMut = trpc.attachment.uploadManual.useMutation();
   const confirmEntityFaceMut = trpc.attachment.confirmEntityFace.useMutation();
   const linkToEntityMut = trpc.attachment.linkToEntity.useMutation();
@@ -574,6 +593,8 @@ export function AddTargetDialog({
     setExtraAddresses([]);
     setExtraVehicles([]);
     setAssociates([]);
+    setStagedWarn(null);
+    stagedCheckedRef.current = {};
     setManualImages([]);
     setManualImageTarget(null);
     setDupMatch(null);
@@ -681,7 +702,8 @@ export function AddTargetDialog({
     targetId: number
   ): Promise<Record<string, number>> => {
     const toCreate = associates
-      .map(a => {
+      .map(rawAssoc => {
+        const a = effectiveStaged(rawAssoc);
         const { name, tgt } = composeAssociateName(
           a.identity,
           a.address.businessName
@@ -699,6 +721,8 @@ export function AddTargetDialog({
           .filter(ev => ev.full);
         return {
           key: a.key,
+          linkedTargetId: a.linkedTargetId ?? null,
+          aliasMerges: a.aliasMerges ?? [],
           payload: {
             targetId,
             relationship: a.relationship ?? ("associate" as const),
@@ -734,17 +758,29 @@ export function AddTargetDialog({
       .filter((x): x is NonNullable<typeof x> => x !== null);
     if (toCreate.length === 0) return {};
     const results = await Promise.allSettled(
-      toCreate.map(item => associateCreateMut.mutateAsync(item.payload))
+      toCreate.map(item =>
+        item.linkedTargetId
+          ? associateCreateLinkedMut.mutateAsync({
+              ...item.payload,
+              existingTargetId: item.linkedTargetId,
+            })
+          : associateCreateMut.mutateAsync(item.payload)
+      )
     );
     const idByKey: Record<string, number> = {};
     let failed = 0;
+    const aliasJobs: Promise<unknown>[] = [];
     results.forEach((r, i) => {
       if (r.status === "fulfilled") {
         idByKey[toCreate[i].key] = r.value.id;
+        for (const m of toCreate[i].aliasMerges) {
+          aliasJobs.push(mergeEntitiesMutation.mutateAsync(m).catch(() => {}));
+        }
       } else {
         failed++;
       }
     });
+    await Promise.all(aliasJobs);
     if (failed > 0) {
       toast.error(
         `Target saved, but ${failed} associate${failed > 1 ? "s" : ""} failed to save — add ${failed > 1 ? "them" : "it"} from the target's card in the registry.`
@@ -1504,6 +1540,136 @@ export function AddTargetDialog({
     </>
   );
 
+  // A staged resident that still follows the target takes the target's
+  // current Home Address (business name excluded — on an associate card it
+  // stands in for the person's name, see composeAssociateName).
+  const effectiveStaged = (a: StagedAssociate): StagedAssociate =>
+    a.addressFollowsTarget
+      ? { ...a, address: { ...address, businessName: "" } }
+      : a;
+
+  // ── Possible-duplicate check for staged associates / residents ──
+  // Same trigger as the target's own Surname field: fires the moment a
+  // staged person's Surname loses focus, searching targets, associates and
+  // mined people already in the app. Kept separate from the target's own
+  // warnQueue since the answers mean different things (see below).
+  const [stagedWarn, setStagedWarn] = useState<{
+    key: string;
+    queue: DuplicateWarning[];
+    index: number;
+  } | null>(null);
+  const [stagedLinking, setStagedLinking] = useState(false);
+  const stagedCheckedRef = useRef<Record<string, string>>({});
+
+  const checkStagedNameOnBlur = async (key: string) => {
+    const a = associates.find(x => x.key === key);
+    if (!a) return;
+    const { name } = composeAssociateName(a.identity, a.address.businessName);
+    if (!name || stagedCheckedRef.current[key] === name) return;
+    stagedCheckedRef.current[key] = name;
+    try {
+      const warnings = await runDuplicateChecks(utils, [
+        { kind: "target", label: name },
+        { kind: "person", label: name },
+      ]);
+      if (warnings.length > 0)
+        setStagedWarn({ key, queue: warnings, index: 0 });
+    } catch {
+      // Silent — an early heads-up only; staged people are created after
+      // the target saves and can be merged from the registry afterwards.
+    }
+  };
+
+  const advanceStagedWarn = () =>
+    setStagedWarn(w =>
+      w && w.index + 1 < w.queue.length ? { ...w, index: w.index + 1 } : null
+    );
+
+  const handleStagedWarnContinue = () => {
+    const current = stagedWarn?.queue[stagedWarn.index];
+    if (current) {
+      notDuplicateMutation.mutate({
+        type: current.kind === "target" ? "person" : current.kind,
+        labelA: current.candidateLabel,
+        labelB: current.existingLabel,
+      });
+    }
+    advanceStagedWarn();
+  };
+
+  // "Yes — same person": an existing Target is copied into the staged card
+  // and linked on save (same outcome as AssociateCard's link-and-copy); a
+  // mined mention is folded in as an alias on save; another Associate has
+  // no link concept (associates link to Targets, not each other), so it
+  // simply carries on as entered.
+  const handleStagedWarnYes = async (warning: DuplicateWarning) => {
+    const key = stagedWarn?.key;
+    if (!key) return;
+    setStagedLinking(true);
+    try {
+      if (warning.linkable?.recordType === "target") {
+        const t = await utils.target.getById.fetch({ id: warning.linkable.id });
+        if (!t) {
+          toast.error("Couldn't load the matched target.");
+          return;
+        }
+        patchStaged(key, {
+          linkedTargetId: t.id,
+          identity: {
+            firstNames: t.firstNames ?? "",
+            surname: t.surname ?? "",
+            bornDate: isoToDdMmYyyy(t.bornDate),
+          },
+          address: {
+            unitNo: t.addrUnitNo ?? "",
+            houseNo: t.addrHouseNo ?? "",
+            streetName: t.addrStreetName ?? "",
+            streetType: t.addrStreetType ?? "",
+            suburb: t.addrSuburb ?? "",
+            state: t.addrState ?? "WA",
+            businessName: t.addrBusinessName ?? "",
+          },
+          addressFollowsTarget: false,
+          vehicle: {
+            registration: t.vehRegistration ?? "",
+            state: t.vehState ?? "WA",
+            colour: t.vehColour ?? "",
+            make: t.vehMake ?? "",
+            model: t.vehModel ?? "",
+            vehicleType: t.vehType ?? "",
+          },
+          extraAddresses: parseExtraAddresses(t.extraAddresses),
+          extraVehicles: parseExtraVehicles(t.extraVehicles),
+        });
+        toast.success(
+          `Copied from ${t.name} — will be linked as the same person when saved.`
+        );
+        // The copied name now matches that Target exactly; don't re-ask.
+        stagedCheckedRef.current[key] = t.name;
+        setStagedWarn(null);
+        return;
+      }
+      if (warning.kind !== "target") {
+        const a = associates.find(x => x.key === key);
+        patchStaged(key, {
+          aliasMerges: [
+            ...(a?.aliasMerges ?? []),
+            {
+              type: warning.kind,
+              winnerLabel: warning.candidateLabel,
+              loserLabel: warning.existingLabel,
+            },
+          ],
+        });
+      }
+      advanceStagedWarn();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to copy the matched record.");
+    } finally {
+      setStagedLinking(false);
+    }
+  };
+
   // ── Staged associates / residents ──
   // Both kinds live in the one `associates` array (distinguished by
   // `relationship`) and render through the same card, so a resident is
@@ -1583,6 +1749,7 @@ export function AddTargetDialog({
               <TargetIdentityFields
                 value={assoc.identity}
                 onChange={v => patchStaged(assoc.key, { identity: v })}
+                onSurnameBlur={() => checkStagedNameOnBlur(assoc.key)}
               />
               {manualImageUploadSection(
                 { type: "associate", associateKey: assoc.key },
@@ -1592,9 +1759,20 @@ export function AddTargetDialog({
                 <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
                   <Home className="w-3 h-3" /> Home Address
                 </p>
+                {assoc.addressFollowsTarget && (
+                  <p className="text-xs text-muted-foreground italic mb-2">
+                    Same as the target's Home Address — edit below to change it
+                    for this person only.
+                  </p>
+                )}
                 <TargetAddressFields
-                  value={assoc.address}
-                  onChange={v => patchStaged(assoc.key, { address: v })}
+                  value={effectiveStaged(assoc).address}
+                  onChange={v =>
+                    patchStaged(assoc.key, {
+                      address: v,
+                      addressFollowsTarget: false,
+                    })
+                  }
                 />
               </div>
               {extraAddrs.map((ea, ai) => (
@@ -1750,6 +1928,7 @@ export function AddTargetDialog({
               {
                 key: makeExtraId(),
                 relationship: kind,
+                addressFollowsTarget: kind === "resident",
                 identity: EMPTY_NAME_PARTS,
                 address: EMPTY_ADDRESS_PARTS,
                 vehicle: EMPTY_VEHICLE_PARTS,
@@ -2106,6 +2285,18 @@ export function AddTargetDialog({
         onReview={handleWarnReview}
         onLinkAndCopy={handleWarnLinkAndCopy}
         linking={linking}
+      />
+
+      {/* Possible-duplicate prompt for a staged associate/resident's name */}
+      <PossibleDuplicateAlert
+        warning={
+          stagedWarn ? (stagedWarn.queue[stagedWarn.index] ?? null) : null
+        }
+        creates="associate"
+        onContinue={handleStagedWarnContinue}
+        onReview={() => setStagedWarn(null)}
+        onLinkAndCopy={handleStagedWarnYes}
+        linking={stagedLinking}
       />
 
       {/* Field-level merge into the existing target */}

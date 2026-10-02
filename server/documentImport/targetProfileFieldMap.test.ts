@@ -54,6 +54,10 @@ const PDF_BLUEGUM_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-training-bluegum.pdf"
 );
+const PDF_SIDE_BY_SIDE_FIXTURE_PATH = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-side-by-side-associates.pdf"
+);
 const PDF_COLON_FIXTURE_PATH = join(
   __dirname,
   "__fixtures__/target-profile-pdf-colon.pdf"
@@ -1330,5 +1334,83 @@ describe("mapDocumentToTargetProfile — PDF documents", () => {
     expect(profile.associateBlocks.map(a => a.surname)).toEqual(
       expect.arrayContaining(["RUSSO", "KHAN"])
     );
+  });
+  describe("side-by-side associates PDF (Operation TIDEMARK)", () => {
+    it("attributes each associate's OWN address and vehicle, never the target's", async () => {
+      const result = mapDocumentToTargetProfile(
+        await readPdfText(readFileSync(PDF_SIDE_BY_SIDE_FIXTURE_PATH))
+      );
+      const byName = (surname: string) =>
+        result.associateBlocks.find(a => a.surname === surname);
+      const karim = byName("NAJJAR");
+      expect(karim?.firstNames).toBe("Karim Elias");
+      expect(karim?.address).toMatchObject({
+        houseNo: "16",
+        streetName: "Olive",
+        suburb: "SUBIACO",
+      });
+      expect(karim?.vehicle?.registration).toBe("1KEN45");
+      const sophia = byName("D'ANGELO");
+      expect(sophia?.firstNames).toBe("Sophia Marie");
+      expect(sophia?.address).toMatchObject({
+        houseNo: "42",
+        streetName: "Amherst",
+        suburb: "COTTESLOE",
+      });
+      expect(sophia?.vehicle?.registration).toBe("1SMD42");
+      // The surname-from-a-heading bug: "OBSERVATION LOG" is not a surname.
+      expect(
+        result.associateBlocks.some(a => a.surname === "OBSERVATION")
+      ).toBe(false);
+      expect(
+        result.candidateEntities.some(c => c.value.includes("OBSERVATION"))
+      ).toBe(false);
+    });
+
+    it("keeps the target's own fields and imports 'pearl white' as colour White", async () => {
+      const result = mapDocumentToTargetProfile(
+        await readPdfText(readFileSync(PDF_SIDE_BY_SIDE_FIXTURE_PATH))
+      );
+      expect(result.name).toMatchObject({
+        firstNames: "Leila Samira",
+        surname: "HADDAD",
+        bornDate: "14/04/1988",
+      });
+      expect(result.addresses).toHaveLength(4);
+      const lexus = result.vehicles.find(v => v.registration === "1TDM414");
+      expect(lexus).toMatchObject({
+        colour: "White",
+        make: "Lexus",
+        model: "NX350h",
+        year: "2023",
+      });
+      // The two transposed registrations stay two separate vehicles.
+      expect(result.vehicles.map(v => v.registration)).toEqual([
+        "1TDM414",
+        "1TMD414",
+        "TFG414",
+      ]);
+    });
+  });
+
+  describe("associate blocks with a DOB line between name and address", () => {
+    it("still finds the vehicle that follows the DOB line", () => {
+      const result = mapDocumentToTargetProfile({
+        tables: [],
+        images: [],
+        paragraphs: [
+          "NAME",
+          "Test TARGET",
+          "Associates:",
+          "Fatma Nour EL-SAYED",
+          "DOB 21/12/1989",
+          "14 Windermere Crescent, NEDLANDS WA 6009.",
+          "1FNE14 (WA) 2021 black Audi Q3 wagon.",
+        ],
+      });
+      const a = result.associateBlocks.find(x => x.surname === "EL-SAYED");
+      expect(a?.address).toMatchObject({ houseNo: "14" });
+      expect(a?.vehicle?.registration).toBe("1FNE14");
+    });
   });
 });

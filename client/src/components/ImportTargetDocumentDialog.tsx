@@ -385,17 +385,45 @@ export function ImportTargetDocumentDialog({
   // Every extracted photo the parser found, with a stable key for the
   // keep/discard toggle and the eventual save — same one-memo-per-result
   // pattern as associateCandidates above.
-  const imageCandidates: StagedImage[] = useMemo(() => {
-    if (!result) return [];
-    return result.images.map(img => ({
-      key: makeExtraId(),
-      dataBase64: img.dataBase64,
-      mimeType: img.mimeType,
-      width: img.width,
-      height: img.height,
-      linkTo: { type: "target" as const },
-    }));
-  }, [result]);
+  const imageCandidates: (StagedImage & { captionName?: string })[] =
+    useMemo(() => {
+      if (!result) return [];
+      return result.images.map(img => ({
+        key: makeExtraId(),
+        dataBase64: img.dataBase64,
+        mimeType: img.mimeType,
+        width: img.width,
+        height: img.height,
+        linkTo: { type: "target" as const },
+        // A name printed under the photo in the source PDF — a hint for who it's
+        // of (see defaultLinkKeyFor), not part of what gets saved.
+        captionName: img.captionName,
+      }));
+    }, [result]);
+
+  // Who an untouched photo defaults to: the associate whose full name exactly
+  // matches the caption printed under it in the source document, otherwise the
+  // target (the long-standing default). Exact-match only — a near miss falls
+  // back to "target" rather than guessing — and an associate the officer has
+  // chosen to skip is never a default, since the photo would then point at
+  // someone who won't be saved. Always overridable with the "Who is this?"
+  // chips; this only changes what's pre-selected.
+  const defaultLinkKeyFor = (img: { captionName?: string }): string => {
+    if (!img.captionName) return "target";
+    const norm = (t: string) =>
+      t
+        .toLowerCase()
+        .replace(/[^a-z' -]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const caption = norm(img.captionName);
+    const match = associateCandidates.find(
+      a =>
+        norm(`${a.firstNames} ${a.surname}`) === caption &&
+        (associateChoices[a.key] ?? "create") !== "skip"
+    );
+    return match ? match.key : "target";
+  };
 
   const reset = () => {
     setFileName("");
@@ -720,7 +748,7 @@ export function ImportTargetDocumentDialog({
         images: imageCandidates
           .filter(img => imageChoices[img.key] ?? true)
           .map(img => {
-            const linkKey = imageLinkChoices[img.key];
+            const linkKey = imageLinkChoices[img.key] ?? defaultLinkKeyFor(img);
             const candidate = linkKey
               ? associateCandidates.find(a => a.key === linkKey)
               : undefined;
@@ -990,7 +1018,8 @@ export function ImportTargetDocumentDialog({
                       <div className="flex flex-col gap-2">
                         {imageCandidates.map(img => {
                           const kept = imageChoices[img.key] ?? true;
-                          const linkKey = imageLinkChoices[img.key] ?? "target";
+                          const linkKey =
+                            imageLinkChoices[img.key] ?? defaultLinkKeyFor(img);
                           const linkedAssociate = linkableAssociates.find(
                             a => a.key === linkKey
                           );

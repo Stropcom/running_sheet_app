@@ -526,6 +526,9 @@ function findAssociateTableRows(
  * neither an address nor a vehicle following it is left for
  * findCandidatePersons to pick up as a bare mention instead — this
  * function only claims names it can attach something concrete to. */
+const BARE_DOB_LINE_RE =
+  /^(?:DOB|D\.O\.B\.?|Date of Birth|Born)\b\s*:?\s*\d{1,2}[\/. -](?:\d{1,2}|[A-Za-z]+)[\/. -]\d{2,4}\.?$/i;
+
 function findAssociateBlocks(text: string): FreeTextAssociate[] {
   const lines = text
     .split("\n")
@@ -533,7 +536,25 @@ function findAssociateBlocks(text: string): FreeTextAssociate[] {
     .filter(Boolean);
   const out: FreeTextAssociate[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const person = matchWholeLinePersonName(lines[i]);
+    // A name alone on its line, OR the "Name - New associate" heading shape
+    // (name, spaced dash, a short descriptor with no address/vehicle of its
+    // own) whose real facts sit on the lines below — what a side-by-side
+    // PDF cell reads out as once its lines are no longer fused with the
+    // neighbouring column's. A dash line that already carries its own
+    // address/vehicle in the same sentence is findDashSeparatedAssociates'
+    // job, not this one's.
+    let person = matchWholeLinePersonName(lines[i]);
+    if (!person) {
+      const dash = lines[i].match(DASH_ASSOCIATE_RE);
+      const dashPerson = dash ? matchWholeLinePersonName(dash[1]) : null;
+      if (dash && dashPerson) {
+        const own = extractAddressAndVehicleFromSentences(
+          splitIntoSentences(dash[2]),
+          dashPerson.surname
+        );
+        if (!own.address && !own.vehicle) person = dashPerson;
+      }
+    }
     if (!person) continue;
 
     // The next couple of lines, split into sentences and searched TOGETHER
@@ -559,9 +580,20 @@ function findAssociateBlocks(text: string): FreeTextAssociate[] {
     // wrong data (someone else's vehicle attributed to this person), so
     // this stays at 2 lines — the DOB-interleaved DOCX case is a known,
     // accepted gap rather than worth the regression.
-    const windowSentences = lines
-      .slice(i + 1, Math.min(i + 3, lines.length))
-      .flatMap(splitIntoSentences);
+    //
+    // A bare "DOB <date>" line directly under the name is the one thing
+    // that's stepped over rather than counted against that window: it's an
+    // attribute of this same person, never an address/vehicle line itself
+    // (and never another associate's), so skipping it can't pull in anyone
+    // else's facts — it only stops a "Name / DOB / address / vehicle" block
+    // (the shape a side-by-side PDF "Associates" cell reads out as, one
+    // field per line) losing its vehicle just because the DOB sits between.
+    const windowLines: string[] = [];
+    for (let j = i + 1; j < lines.length && windowLines.length < 2; j++) {
+      if (BARE_DOB_LINE_RE.test(lines[j])) continue;
+      windowLines.push(lines[j]);
+    }
+    const windowSentences = windowLines.flatMap(splitIntoSentences);
     const { address, vehicle } = extractAddressAndVehicleFromSentences(
       windowSentences,
       person.surname

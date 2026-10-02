@@ -33,6 +33,7 @@ import path from "path";
 import { getDocument, OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs";
 import sharp from "sharp";
 import { ALL_KNOWN_LABELS } from "./targetProfileFieldMap";
+import { matchWholeLinePersonName } from "./freeTextEntityScan";
 import { isHeadingLine } from "@shared/textSections";
 import type {
   DocumentReadResult,
@@ -1414,6 +1415,123 @@ function pairRowCells(cells: Cell[]): string[][] | null {
   return rows.length > 0 ? rows : null;
 }
 
+// ── Side-by-side flow regions ───────────────────────────────────────────────
+// A tall narrow cell sitting beside a tall wide cell (a real training
+// document: an "Associates:" box — photos, then one block of details per
+// person — to the left of a "SUMMARY" narrative, both running on across a page
+// break) is two independent text flows. buildPageUnits otherwise pairs ANY
+// cells sharing a y into one row, so the two flows were being merged line by
+// line: "Karim Elias NAJJAR Sophia Marie OBSERVATION LOG" (a caption fused
+// with the next column's heading, stranding the real surname "D'ANGELO"), and
+// the associates' own "DOB: ..." lines being read as extra identity-table rows.
+//
+// The signal is the page's own content-stream order: a table exported cell by
+// cell writes a whole cell's text before starting the next, so a tall left
+// cell shows up as a long run of consecutive items that all sit well left of a
+// gutter, with the right-hand cell's items following (or preceding) it at the
+// same heights. A label column ("NAME / DOB / ALIASES" beside their values) is
+// interleaved row by row instead, so it never forms such a run — and a run
+// that is mostly known labels is rejected anyway.
+const FLOW_MIN_RUN_ITEMS = 6;
+const FLOW_MIN_RUN_LINES = 4;
+const FLOW_MIN_RIGHT_LINES = 3;
+const FLOW_GUTTER = 8;
+const FLOW_MIN_CHARS = 80;
+const FLOW_Y_TOLERANCE = 2;
+
+function distinctLineCount(items: PositionedItem[]): number {
+  const ys: number[] = [];
+  for (const it of items) {
+    if (!ys.some(y => Math.abs(y - it.y) <= FLOW_Y_TOLERANCE)) ys.push(it.y);
+  }
+  return ys.length;
+}
+
+function splitSideBySideFlows(items: PositionedItem[]): {
+  above: PositionedItem[];
+  right: PositionedItem[];
+  left: PositionedItem[];
+} | null {
+  const real = items.filter(i => i.str.trim() !== "");
+  if (real.length < FLOW_MIN_RUN_ITEMS) return null;
+  const candidates = Array.from(new Set(real.map(i => Math.round(i.x)))).sort(
+    (a, b) => a - b
+  );
+  for (const g of candidates) {
+    const isLeft = (it: PositionedItem) => it.x + it.width <= g - FLOW_GUTTER;
+    // Longest stream-consecutive run of left items.
+    let best: PositionedItem[] = [];
+    let cur: PositionedItem[] = [];
+    for (const it of real) {
+      if (isLeft(it)) {
+        cur.push(it);
+        if (cur.length > best.length) best = cur.slice();
+      } else {
+        cur = [];
+      }
+    }
+    if (
+      best.length < FLOW_MIN_RUN_ITEMS ||
+      distinctLineCount(best) < FLOW_MIN_RUN_LINES
+    ) {
+      continue;
+    }
+    const runChars = best.reduce((n, i) => n + i.str.trim().length, 0);
+    if (runChars < FLOW_MIN_CHARS) continue;
+    const topY = Math.max(...best.map(i => i.y));
+    const bottomY = Math.min(...best.map(i => i.y));
+    const lineTexts: string[] = [];
+    for (const it of best) {
+      const t = it.str.trim().toUpperCase();
+      if (t) lineTexts.push(t);
+    }
+    const labelish = lineTexts.filter(t =>
+      LINE_LABELS.some(l => l.toUpperCase() === t.replace(/:$/, ""))
+    ).length;
+    if (labelish / lineTexts.length >= 0.5) continue;
+    // A cell that OPENS with a known label ("VEHICLES" + its wrapped value,
+    // sitting beside "LOCATION OF INTEREST") is one half of a label/value
+    // grid, not a free-standing flow — leave grids to buildPageUnits.
+    if (
+      LINE_LABELS.some(l => l.toUpperCase() === lineTexts[0].replace(/:$/, ""))
+    ) {
+      continue;
+    }
+
+    const inBand = (it: PositionedItem) => it.y <= topY + FLOW_Y_TOLERANCE;
+    const right = items.filter(it => inBand(it) && it.x >= g - 1);
+    // The right-hand flow has to genuinely sit BESIDE the left one (real
+    // text at the same heights), not merely exist somewhere below it.
+    const besideChars = right
+      .filter(it => it.y >= bottomY - FLOW_Y_TOLERANCE)
+      .reduce((n, i) => n + i.str.trim().length, 0);
+    if (besideChars < FLOW_MIN_CHARS) continue;
+    if (
+      distinctLineCount(right.filter(i => i.str.trim() !== "")) <
+      FLOW_MIN_RIGHT_LINES
+    ) {
+      continue;
+    }
+    // Nothing in the band may straddle the gutter — that would be a single
+    // wide line (or a merged cell), not two separate flows.
+    const straddles = real.some(
+      it =>
+        inBand(it) &&
+        it.x < g - 1 &&
+        it.x + it.width > g - FLOW_GUTTER &&
+        !best.includes(it)
+    );
+    if (straddles) continue;
+
+    const left = items.filter(it => inBand(it) && isLeft(it));
+    const above = items.filter(
+      it => !inBand(it) || (!isLeft(it) && it.x < g - 1)
+    );
+    return { above, right, left };
+  }
+  return null;
+}
+
 /** Reads every page's text from a PDF's bytes, reconstructing labelled
  * lines as synthetic table rows and everything else as paragraph text
  * (see the module comment). Returns an empty result (not a thrown error)
@@ -1462,6 +1580,110 @@ function isRawPdfImage(v: unknown): v is RawPdfImage {
   );
 }
 
+// ── Photo captions ─────────────────────────────────────────────────────────
+type Matrix = [number, number, number, number, number, number];
+
+/** PDF "cm": the new CTM is M applied in the CURRENT user space, i.e.
+ * M × CTM (row-vector convention, as the PDF spec writes it). */
+function multiplyMatrix(m: Matrix, ctm: Matrix): Matrix {
+  return [
+    m[0] * ctm[0] + m[1] * ctm[2],
+    m[0] * ctm[1] + m[1] * ctm[3],
+    m[2] * ctm[0] + m[3] * ctm[2],
+    m[2] * ctm[1] + m[3] * ctm[3],
+    m[4] * ctm[0] + m[5] * ctm[2] + ctm[4],
+    m[4] * ctm[1] + m[5] * ctm[3] + ctm[5],
+  ];
+}
+
+interface ImageBox {
+  x0: number;
+  x1: number;
+  bottom: number;
+  top: number;
+}
+
+/** The page-space box an image occupies: PDF paints every image into the unit
+ * square, scaled/placed by the current transformation matrix. */
+function imageBoxFromCtm(ctm: Matrix): ImageBox {
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const [ux, uy] of [
+    [0, 0],
+    [1, 0],
+    [0, 1],
+    [1, 1],
+  ]) {
+    xs.push(ctm[0] * ux + ctm[2] * uy + ctm[4]);
+    ys.push(ctm[1] * ux + ctm[3] * uy + ctm[5]);
+  }
+  return {
+    x0: Math.min(...xs),
+    x1: Math.max(...xs),
+    bottom: Math.min(...ys),
+    top: Math.max(...ys),
+  };
+}
+
+// How far below a photo's bottom edge a caption may sit, and the largest
+// line-to-line step still counted as the same wrapped caption.
+const CAPTION_MAX_DROP = 40;
+const CAPTION_MAX_LINE_STEP = 14;
+const CAPTION_X_SLACK = 6;
+
+/** The person's name printed directly beneath a photo, or undefined. Only text
+ * whose own centre sits within the photo's horizontal span counts (so a
+ * neighbouring photo's caption on the same line is never picked up), and the
+ * result must read as a whole-line person name — a heading or label
+ * ("Associates:") that merely happens to sit below a photo is rejected. A
+ * caption wrapped onto a second line ("Sophia Marie" / "D'ANGELO") is tried
+ * both on its own first line and joined. */
+function captionBelowImage(
+  box: ImageBox,
+  items: PositionedItem[]
+): string | undefined {
+  const below = items.filter(it => {
+    if (!it.str.trim()) return false;
+    const cx = it.x + it.width / 2;
+    return (
+      it.y <= box.bottom + 2 &&
+      box.bottom - it.y <= CAPTION_MAX_DROP &&
+      cx >= box.x0 - CAPTION_X_SLACK &&
+      cx <= box.x1 + CAPTION_X_SLACK
+    );
+  });
+  if (below.length === 0) return undefined;
+  const lines: { y: number; items: PositionedItem[] }[] = [];
+  for (const it of below.sort((a, b) => b.y - a.y)) {
+    const line = lines.find(l => Math.abs(l.y - it.y) <= 2);
+    if (line) line.items.push(it);
+    else lines.push({ y: it.y, items: [it] });
+  }
+  const lineText = (l: { items: PositionedItem[] }) =>
+    l.items
+      .sort((a, b) => a.x - b.x)
+      .map(i => i.str.trim())
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const first = lines[0];
+  const second =
+    lines[1] && first.y - lines[1].y <= CAPTION_MAX_LINE_STEP
+      ? lines[1]
+      : undefined;
+  const attempts = [lineText(first)];
+  if (second) attempts.push(`${lineText(first)} ${lineText(second)}`);
+  return attempts.find(t => {
+    const person = matchWholeLinePersonName(t);
+    // "Marcus Andrew" + the next column's "ROLE" label reads as a name shape;
+    // a known field label is never a surname.
+    return (
+      person !== null &&
+      !LINE_LABELS.some(l => l.toUpperCase() === person.surname.toUpperCase())
+    );
+  });
+}
+
 /** Pulls every embedded photo out of one PDF page's own content stream. A
  * PDF has no separate "media" folder like a .docx (see the module comment)
  * — an image is one of the drawing operators making up the page itself, so
@@ -1476,16 +1698,34 @@ function isRawPdfImage(v: unknown): v is RawPdfImage {
  * image, or a page whose operator list can't be walked, is skipped rather
  * than failing the whole read. */
 async function extractPdfPageImages(
-  page: PageImageSource
+  page: PageImageSource,
+  textItems: PositionedItem[]
 ): Promise<ExtractedDocumentImage[]> {
   const images: ExtractedDocumentImage[] = [];
   try {
     const opList = await page.getOperatorList();
     const seen = new Set<string>();
+    let ctm: Matrix = [1, 0, 0, 1, 0, 0];
+    const ctmStack: Matrix[] = [];
     for (let i = 0; i < opList.fnArray.length; i++) {
       const fn = opList.fnArray[i];
+      if (fn === OPS.save) {
+        ctmStack.push(ctm);
+        continue;
+      }
+      if (fn === OPS.restore) {
+        ctm = ctmStack.pop() ?? ctm;
+        continue;
+      }
+      if (fn === OPS.transform) {
+        const m = opList.argsArray[i] as unknown as number[] | undefined;
+        if (m && m.length >= 6)
+          ctm = multiplyMatrix(m as unknown as Matrix, ctm);
+        continue;
+      }
       if (fn !== OPS.paintImageXObject && fn !== OPS.paintImageXObjectRepeat)
         continue;
+      const imageBox = imageBoxFromCtm(ctm);
       const objId = opList.argsArray[i]?.[0];
       if (typeof objId !== "string" || seen.has(objId)) continue;
       seen.add(objId);
@@ -1510,11 +1750,13 @@ async function extractPdfPageImages(
         })
           .png()
           .toBuffer();
+        const captionName = captionBelowImage(imageBox, textItems);
         images.push({
           dataBase64: png.toString("base64"),
           mimeType: "image/png",
           width: raw.width,
           height: raw.height,
+          ...(captionName ? { captionName } : {}),
         });
       } catch {
         // One undecodable image shouldn't drop the rest of the page.
@@ -1554,9 +1796,175 @@ export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
       }
     };
 
+    // Left-hand flows of side-by-side pages, held back so a tall left cell
+    // that runs across a page break reads as ONE block after the right-hand
+    // column it sits beside has finished (see splitSideBySideFlows).
+    const deferredLeft: PositionedItem[][] = [];
+    const flushDeferredLeft = () => {
+      for (const its of deferredLeft.splice(0)) {
+        for (const unit of buildPageUnits(groupIntoLines(its))) {
+          emitUnit(unit, true);
+        }
+        flushParagraph();
+        prevLineY = null;
+      }
+    };
+    const emitUnit = (unit: PageUnit, plain: boolean): void => {
+      // A "row" (2+ narrow-column cells sharing a y — see
+      // buildPageUnits) is tried as a genuine multi-label grid row
+      // first; a row with no recognised label falls back to being read
+      // as one flowing text line — but joined cell by cell (each cell's
+      // own columnText), never by flattening every cell's raw items
+      // into one array first. pdf.js glyphs carry no space between two
+      // adjacent CELLS' text (there was never a real character in that
+      // horizontal gap, just column spacing) — readLine's own
+      // columnText concatenates raw item strings with nothing inserted,
+      // so flattening across a cell boundary glues one cell's trailing
+      // word straight onto the next cell's first word. Concretely: a
+      // VEHICLES cell's own value sharing a row with an unrelated
+      // "Current Address:" cell (a genuine 2-column LOCATION OF
+      // INTEREST layout, see the module's own regression test) becomes
+      // "...wagon.Current Address:..." with no space or break of any
+      // kind — which then can't be told apart from one continuous
+      // sentence by anything downstream (findVehicleLines' own
+      // sentence-boundary cut relies on a real space following the
+      // vehicle's closing "."), so the unrelated address text gets
+      // silently absorbed into the vehicle's own model field. Joining
+      // per-cell text with an explicit space avoids the glue entirely.
+      let text: string;
+      let rows: string[][] | null;
+      let y: number;
+      if (unit.kind === "row") {
+        // A row whose every cell is itself a bare recognised label (no
+        // value cell alongside any of them in THIS row) is two or more
+        // section headings that happen to share a y purely because
+        // they're each vertically centred beside their own tall,
+        // multi-line value elsewhere on the page (e.g. "VEHICLES" and
+        // "LOCATION OF INTEREST" sitting side by side, their actual
+        // values several lines below) — not one combined heading.
+        // Emitting each as its own heading paragraph, rather than
+        // falling through to the flattened "VEHICLES LOCATION OF
+        // INTEREST" single-line join below, matters beyond cosmetics:
+        // findParagraphSection's own heading regexes are substring
+        // matches (VEHICLES_HEADING_RE, LOCATION_HEADING_RE), so a
+        // combined heading like that satisfies BOTH — pulling the exact
+        // same following paragraphs in as both this target's VEHICLES
+        // value and its LOCATION OF INTEREST value, corrupting the
+        // latter with vehicle text parseAddressBlock can't read (and
+        // reports as a confusing duplicate needsReview entry).
+        let cells = unit.cells;
+        const cellTexts = cells.map(c => columnText(c.items));
+        if (
+          cellTexts.length > 1 &&
+          cellTexts.every(t =>
+            LINE_LABELS.some(l => l.toUpperCase() === t.toUpperCase())
+          )
+        ) {
+          flushParagraph();
+          for (const t of cellTexts) paragraphs.push(canonicalLabel(t));
+          prevLineY = null;
+          return;
+        }
+        rows = pairRowCells(cells);
+        // pairRowCells already handles a genuine label:value row (each
+        // label cell paired with its own adjacent value cell, however
+        // many pairs sit in the row — see NAME/ROLE/COB above), so only
+        // reached when it found NOTHING pairable. That happens for a
+        // MIXED row shape it isn't built for: one cell is still another
+        // column's value continuing down the page, and another cell is a
+        // bare label with NO value of its own in THIS particular row — a
+        // real training document (CROSSWIND) has "LOCATION OF INTEREST"
+        // (a bare 2-line-wrapped heading) sharing a row with the
+        // VEHICLES column's own wrapped text, because the heading's row
+        // happens to land next to the vehicle list's third line, not its
+        // first. Emit any such bare label(s) as their own heading
+        // paragraph — same as the all-labels case above — then keep
+        // flowing the REMAINING cell(s) afterwards instead of folding
+        // the heading's text into that flow — without this, "LOCATION OF
+        // INTEREST" silently disappears into the middle of a vehicle
+        // sentence (still space-joined, not glued, but never its own
+        // paragraph), so findParagraphSection can never find this
+        // section's heading at all and its real address content falls
+        // through to the much weaker whole-document narrative scan
+        // instead.
+        if (!rows) {
+          const bareLabelCells = cells.filter((_, idx) =>
+            LINE_LABELS.some(
+              l => l.toUpperCase() === cellTexts[idx].toUpperCase()
+            )
+          );
+          if (bareLabelCells.length > 0) {
+            flushParagraph();
+            for (const cell of bareLabelCells) {
+              paragraphs.push(canonicalLabel(columnText(cell.items)));
+            }
+            cells = cells.filter(c => !bareLabelCells.includes(c));
+            if (cells.length === 0) {
+              prevLineY = null;
+              return;
+            }
+          }
+        }
+        text = cells
+          .map(c => columnText(c.items))
+          .filter(Boolean)
+          .join(" ");
+        if (!rows) {
+          const colonMatch = text.match(COLON_LABEL_RE);
+          if (colonMatch) {
+            rows = [[canonicalLabel(colonMatch[1]), colonMatch[2].trim()]];
+          }
+        }
+        y = cells[0].y;
+      } else {
+        const read = readLine(unit.line.items);
+        text = read.text;
+        rows = read.rows;
+        y = unit.line.y;
+      }
+      if (!text) {
+        flushParagraph();
+        prevLineY = null;
+        return;
+      }
+      // A side-by-side flow region (see splitSideBySideFlows) is prose, not
+      // a label/value grid: a "DOB: 03/11/1981" line inside an associate's
+      // cell is that associate's own text, never a second identity-table
+      // row for the target.
+      if (plain) rows = null;
+      if (rows) {
+        tableRows.push(...rows);
+        flushParagraph();
+        prevLineY = null;
+        return;
+      }
+      // A section-heading line ("VEHICLES", "SUMMARY", "LOCATION OF
+      // INTEREST", ...) needs to become its own paragraph regardless of
+      // how much vertical whitespace surrounds it — a real Word document
+      // gets that for free (a heading is always its own paragraph
+      // object), but flowed PDF text often gives a heading only a normal
+      // line-height gap from the content around it, well under the
+      // blank-line threshold below. Without this, findParagraphSection/
+      // findSubjectFromParagraphs (which key off a heading being its own
+      // paragraph) never see it, and the section it introduces silently
+      // falls back to the much weaker whole-document narrative scan.
+      if (isHeadingLine(text)) {
+        flushParagraph();
+        paragraphs.push(text);
+        prevLineY = null;
+        return;
+      }
+      const gap = prevLineY !== null ? Math.abs(prevLineY - y) : prevLineGap;
+      if (prevLineY !== null && gap > prevLineGap * 1.6) {
+        flushParagraph();
+      }
+      paragraphBuffer.push(text);
+      prevLineY = y;
+      if (gap > 0) prevLineGap = gap;
+    };
+
     for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
       const page = await doc.getPage(pageNum);
-      images.push(...(await extractPdfPageImages(page)));
       const content = await page.getTextContent();
       const items: PositionedItem[] = [];
       for (const raw of content.items) {
@@ -1572,157 +1980,27 @@ export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
         });
       }
 
-      for (const unit of buildPageUnits(groupIntoLines(items))) {
-        // A "row" (2+ narrow-column cells sharing a y — see
-        // buildPageUnits) is tried as a genuine multi-label grid row
-        // first; a row with no recognised label falls back to being read
-        // as one flowing text line — but joined cell by cell (each cell's
-        // own columnText), never by flattening every cell's raw items
-        // into one array first. pdf.js glyphs carry no space between two
-        // adjacent CELLS' text (there was never a real character in that
-        // horizontal gap, just column spacing) — readLine's own
-        // columnText concatenates raw item strings with nothing inserted,
-        // so flattening across a cell boundary glues one cell's trailing
-        // word straight onto the next cell's first word. Concretely: a
-        // VEHICLES cell's own value sharing a row with an unrelated
-        // "Current Address:" cell (a genuine 2-column LOCATION OF
-        // INTEREST layout, see the module's own regression test) becomes
-        // "...wagon.Current Address:..." with no space or break of any
-        // kind — which then can't be told apart from one continuous
-        // sentence by anything downstream (findVehicleLines' own
-        // sentence-boundary cut relies on a real space following the
-        // vehicle's closing "."), so the unrelated address text gets
-        // silently absorbed into the vehicle's own model field. Joining
-        // per-cell text with an explicit space avoids the glue entirely.
-        let text: string;
-        let rows: string[][] | null;
-        let y: number;
-        if (unit.kind === "row") {
-          // A row whose every cell is itself a bare recognised label (no
-          // value cell alongside any of them in THIS row) is two or more
-          // section headings that happen to share a y purely because
-          // they're each vertically centred beside their own tall,
-          // multi-line value elsewhere on the page (e.g. "VEHICLES" and
-          // "LOCATION OF INTEREST" sitting side by side, their actual
-          // values several lines below) — not one combined heading.
-          // Emitting each as its own heading paragraph, rather than
-          // falling through to the flattened "VEHICLES LOCATION OF
-          // INTEREST" single-line join below, matters beyond cosmetics:
-          // findParagraphSection's own heading regexes are substring
-          // matches (VEHICLES_HEADING_RE, LOCATION_HEADING_RE), so a
-          // combined heading like that satisfies BOTH — pulling the exact
-          // same following paragraphs in as both this target's VEHICLES
-          // value and its LOCATION OF INTEREST value, corrupting the
-          // latter with vehicle text parseAddressBlock can't read (and
-          // reports as a confusing duplicate needsReview entry).
-          let cells = unit.cells;
-          const cellTexts = cells.map(c => columnText(c.items));
-          if (
-            cellTexts.length > 1 &&
-            cellTexts.every(t =>
-              LINE_LABELS.some(l => l.toUpperCase() === t.toUpperCase())
-            )
-          ) {
-            flushParagraph();
-            for (const t of cellTexts) paragraphs.push(canonicalLabel(t));
-            prevLineY = null;
-            continue;
-          }
-          rows = pairRowCells(cells);
-          // pairRowCells already handles a genuine label:value row (each
-          // label cell paired with its own adjacent value cell, however
-          // many pairs sit in the row — see NAME/ROLE/COB above), so only
-          // reached when it found NOTHING pairable. That happens for a
-          // MIXED row shape it isn't built for: one cell is still another
-          // column's value continuing down the page, and another cell is a
-          // bare label with NO value of its own in THIS particular row — a
-          // real training document (CROSSWIND) has "LOCATION OF INTEREST"
-          // (a bare 2-line-wrapped heading) sharing a row with the
-          // VEHICLES column's own wrapped text, because the heading's row
-          // happens to land next to the vehicle list's third line, not its
-          // first. Emit any such bare label(s) as their own heading
-          // paragraph — same as the all-labels case above — then keep
-          // flowing the REMAINING cell(s) afterwards instead of folding
-          // the heading's text into that flow — without this, "LOCATION OF
-          // INTEREST" silently disappears into the middle of a vehicle
-          // sentence (still space-joined, not glued, but never its own
-          // paragraph), so findParagraphSection can never find this
-          // section's heading at all and its real address content falls
-          // through to the much weaker whole-document narrative scan
-          // instead.
-          if (!rows) {
-            const bareLabelCells = cells.filter((_, idx) =>
-              LINE_LABELS.some(
-                l => l.toUpperCase() === cellTexts[idx].toUpperCase()
-              )
-            );
-            if (bareLabelCells.length > 0) {
-              flushParagraph();
-              for (const cell of bareLabelCells) {
-                paragraphs.push(canonicalLabel(columnText(cell.items)));
-              }
-              cells = cells.filter(c => !bareLabelCells.includes(c));
-              if (cells.length === 0) {
-                prevLineY = null;
-                continue;
-              }
-            }
-          }
-          text = cells
-            .map(c => columnText(c.items))
-            .filter(Boolean)
-            .join(" ");
-          if (!rows) {
-            const colonMatch = text.match(COLON_LABEL_RE);
-            if (colonMatch) {
-              rows = [[canonicalLabel(colonMatch[1]), colonMatch[2].trim()]];
-            }
-          }
-          y = cells[0].y;
-        } else {
-          const read = readLine(unit.line.items);
-          text = read.text;
-          rows = read.rows;
-          y = unit.line.y;
+      const emitUnits = (its: PositionedItem[], plain: boolean) => {
+        for (const unit of buildPageUnits(groupIntoLines(its))) {
+          emitUnit(unit, plain);
         }
-        if (!text) {
-          flushParagraph();
-          prevLineY = null;
-          continue;
-        }
-        if (rows) {
-          tableRows.push(...rows);
-          flushParagraph();
-          prevLineY = null;
-          continue;
-        }
-        // A section-heading line ("VEHICLES", "SUMMARY", "LOCATION OF
-        // INTEREST", ...) needs to become its own paragraph regardless of
-        // how much vertical whitespace surrounds it — a real Word document
-        // gets that for free (a heading is always its own paragraph
-        // object), but flowed PDF text often gives a heading only a normal
-        // line-height gap from the content around it, well under the
-        // blank-line threshold below. Without this, findParagraphSection/
-        // findSubjectFromParagraphs (which key off a heading being its own
-        // paragraph) never see it, and the section it introduces silently
-        // falls back to the much weaker whole-document narrative scan.
-        if (isHeadingLine(text)) {
-          flushParagraph();
-          paragraphs.push(text);
-          prevLineY = null;
-          continue;
-        }
-        const gap = prevLineY !== null ? Math.abs(prevLineY - y) : prevLineGap;
-        if (prevLineY !== null && gap > prevLineGap * 1.6) {
-          flushParagraph();
-        }
-        paragraphBuffer.push(text);
-        prevLineY = y;
-        if (gap > 0) prevLineGap = gap;
+        flushParagraph();
+        prevLineY = null;
+      };
+
+      images.push(...(await extractPdfPageImages(page, items)));
+
+      const split = splitSideBySideFlows(items);
+      if (split) {
+        emitUnits(split.above, false);
+        emitUnits(split.right, false);
+        deferredLeft.push(split.left);
+      } else {
+        flushDeferredLeft();
+        emitUnits(items, false);
       }
-      flushParagraph();
-      prevLineY = null;
     }
+    flushDeferredLeft();
 
     if (tableRows.length === 0 && paragraphs.length === 0) {
       // No real text layer — this is a scanned/photographed PDF (already

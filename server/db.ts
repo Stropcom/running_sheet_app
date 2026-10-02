@@ -2834,6 +2834,10 @@ export async function updateTarget(
       | "vehModel"
       | "vehType"
       | "extraAddresses"
+      | "mdlStatus"
+      | "bailStatus"
+      | "bailConditions"
+      | "bailConditionsText"
     >
   >,
   /** Set when the officer has explicitly chosen "Add new" over "Edit
@@ -11640,7 +11644,14 @@ export interface IntelTargetProfile {
     v1f: string | null;
     v1: string | null;
     isIndicesOnly: boolean;
+    /** "associate" or "resident" (Other Home Address Resident). */
+    relationship: string;
   }>;
+  /** Person-target status from the registry — null until an officer sets it. */
+  mdlStatus: string | null;
+  bailStatus: string | null;
+  bailConditions: string | null;
+  bailConditionsText: string | null;
 }
 
 export interface IntelOperationProfile {
@@ -11687,6 +11698,7 @@ export interface IntelOperationProfile {
       v1f: string | null;
       v1: string | null;
       isIndicesOnly: boolean;
+      relationship: string;
     }>;
   }>;
   /** Cross-operation links found for any target in this operation — a
@@ -12551,7 +12563,12 @@ export async function getIntelTargetProfile(
       v1f: a.v1f,
       v1: a.v1,
       isIndicesOnly: associateEntityById.get(a.id)?.isIndicesOnly ?? false,
+      relationship: a.relationship,
     })),
+    mdlStatus: target.mdlStatus ?? null,
+    bailStatus: target.bailStatus ?? null,
+    bailConditions: target.bailConditions ?? null,
+    bailConditionsText: target.bailConditionsText ?? null,
   };
 }
 
@@ -12659,6 +12676,7 @@ export async function getIntelOperationProfile(
         v1f: a.v1f,
         v1: a.v1,
         isIndicesOnly: associateEntityById.get(a.id)?.isIndicesOnly ?? false,
+        relationship: a.relationship,
       }));
       return {
         targetId,

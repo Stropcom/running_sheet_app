@@ -65,9 +65,14 @@ import {
   parseExtraVehicles,
   parseExtraAddresses,
   makeExtraId,
+  mdlMissing,
+  statusPartsFromRecord,
+  statusPartsToPayload,
   type ExtraVehicle,
   type ExtraAddress,
+  type TargetStatusParts,
 } from "@/components/TargetStructuredFields";
+import { formatBail, mdlLabel } from "@shared/targetStatus";
 import {
   AddTargetDialog,
   computePrimaryIdentity,
@@ -120,6 +125,10 @@ type RegistryTarget = {
   firstNames: string | null;
   surname: string | null;
   bornDate: string | null; // ISO yyyy-mm-dd
+  mdlStatus: string | null; // active | none | suspended
+  bailStatus: string | null; // yes | no
+  bailConditions: string | null; // yes | no (only when bailStatus = yes)
+  bailConditionsText: string | null;
   addrUnitNo: string | null;
   addrHouseNo: string | null;
   addrStreetName: string | null;
@@ -305,6 +314,11 @@ function TargetCard({
     surname: target.surname ?? "",
     bornDate: isoToDdMmYyyy(target.bornDate),
   });
+  const [status, setStatus] = useState<TargetStatusParts>(() =>
+    statusPartsFromRecord(target)
+  );
+  // Flips on after a save attempt with MDL unanswered, to show the inline error.
+  const [showMdlError, setShowMdlError] = useState(false);
   const [address, setAddress] = useState<StructuredAddressParts>({
     unitNo: target.addrUnitNo ?? "",
     houseNo: target.addrHouseNo ?? "",
@@ -380,6 +394,8 @@ function TargetCard({
       surname: target.surname ?? "",
       bornDate: isoToDdMmYyyy(target.bornDate),
     });
+    setStatus(statusPartsFromRecord(target));
+    setShowMdlError(false);
     setAddress({
       unitNo: target.addrUnitNo ?? "",
       houseNo: target.addrHouseNo ?? "",
@@ -427,6 +443,8 @@ function TargetCard({
       surname: target.surname ?? "",
       bornDate: isoToDdMmYyyy(target.bornDate),
     });
+    setStatus(statusPartsFromRecord(target));
+    setShowMdlError(false);
   };
 
   const startEditAddress = () => {
@@ -569,6 +587,16 @@ function TargetCard({
       );
       return;
     }
+    // MDL is compulsory for a person target — open the Name panel so the
+    // dropdown (and its error) is actually in front of the officer.
+    if (target.targetType === "person" && mdlMissing(status)) {
+      setShowMdlError(true);
+      setNameMode("edit");
+      toast.error(
+        "Select the target's MDL status (Active, None or Suspended)."
+      );
+      return;
+    }
     const { full: hbf, short: hb } = composeAddress(address);
     const { full: v1f, short: v1 } = composeVehicle(vehicle);
     if (addressMode === "new" && !hbf) {
@@ -640,6 +668,7 @@ function TargetCard({
       firstNames: identity.firstNames || null,
       surname: identity.surname || null,
       bornDate: ddMmYyyyToIso(identity.bornDate) || null,
+      ...(target.targetType === "person" ? statusPartsToPayload(status) : {}),
       addrUnitNo: address.unitNo || null,
       addrHouseNo: address.houseNo || null,
       addrStreetName: address.streetName || null,
@@ -785,9 +814,22 @@ function TargetCard({
                 </p>
                 {nameMode === "locked" ? (
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-3">
-                    <p className="text-sm text-foreground flex-1">
-                      {target.name}
-                    </p>
+                    <div className="flex-1 flex flex-col gap-0.5">
+                      <p className="text-sm text-foreground">{target.name}</p>
+                      <p
+                        className={`text-xs ${target.mdlStatus ? "text-muted-foreground" : "text-destructive"}`}
+                      >
+                        MDL:{" "}
+                        {target.mdlStatus
+                          ? mdlLabel(target.mdlStatus)
+                          : "not set — required"}
+                      </p>
+                      {target.bailStatus && (
+                        <p className="text-xs text-muted-foreground">
+                          Bail: {formatBail(target)}
+                        </p>
+                      )}
+                    </div>
                     <Button
                       size="sm"
                       variant="outline"
@@ -802,6 +844,9 @@ function TargetCard({
                     <TargetIdentityFields
                       value={identity}
                       onChange={v => mark(() => setIdentity(v))}
+                      status={status}
+                      onStatusChange={v => mark(() => setStatus(v))}
+                      showMdlError={showMdlError}
                     />
                     {target.name && (
                       <Button
@@ -1183,6 +1228,16 @@ type AssociateRecord = {
    * a Target elsewhere in the registry — mirror of RegistryTarget's
    * linkedAssociateId above. */
   linkedTargetId?: number | null;
+  /** "associate" or "resident" (Other Home Address Resident). */
+  relationship?: string;
+};
+
+// The two kinds of person filed under a target share one record shape and
+// one card; only the wording and colour differ.
+type PersonKind = "associate" | "resident";
+const PERSON_KIND_LABEL: Record<PersonKind, string> = {
+  associate: "Associate",
+  resident: "Resident",
 };
 
 function AssociateCard({
@@ -1190,14 +1245,23 @@ function AssociateCard({
   associate,
   operationId,
   onCreated,
+  relationship: newRelationship = "associate",
 }: {
   targetId: number;
   associate: AssociateRecord | null; // null = new, unsaved
   operationId: number | null;
   onCreated?: () => void;
+  /** Which kind a NEW card creates (an existing record keeps its own). */
+  relationship?: PersonKind;
 }) {
   const utils = trpc.useUtils();
   const isNew = associate === null;
+  const relationship: PersonKind = associate
+    ? associate.relationship === "resident"
+      ? "resident"
+      : "associate"
+    : newRelationship;
+  const kindLabel = PERSON_KIND_LABEL[relationship];
   const [expanded, setExpanded] = useState(isNew);
 
   const [identity, setIdentity] = useState<StructuredNameParts>(() =>
@@ -1469,7 +1533,7 @@ function AssociateCard({
   const createMut = trpc.associate.create.useMutation({
     onSuccess: () => {
       utils.associate.listForTarget.invalidate({ targetId });
-      toast.success("Associate added");
+      toast.success(`${kindLabel} added`);
       onCreated?.();
     },
     onError: (e: { message: string }) => toast.error(e.message),
@@ -1477,7 +1541,7 @@ function AssociateCard({
   const createLinkedMut = trpc.associate.createLinkedFromTarget.useMutation({
     onSuccess: () => {
       utils.associate.listForTarget.invalidate({ targetId });
-      toast.success("Associate added and linked to the existing target");
+      toast.success(`${kindLabel} added and linked to the existing target`);
       onCreated?.();
     },
     onError: (e: { message: string }) => toast.error(e.message),
@@ -1486,14 +1550,14 @@ function AssociateCard({
     onSuccess: () => {
       utils.associate.listForTarget.invalidate({ targetId });
       setDirty(false);
-      toast.success("Associate saved");
+      toast.success(`${kindLabel} saved`);
     },
     onError: (e: { message: string }) => toast.error(e.message),
   });
   const deleteMut = trpc.associate.delete.useMutation({
     onSuccess: () => {
       utils.associate.listForTarget.invalidate({ targetId });
-      toast.success("Associate removed");
+      toast.success(`${kindLabel} removed`);
     },
     onError: (e: { message: string }) => toast.error(e.message),
   });
@@ -1536,7 +1600,7 @@ function AssociateCard({
 
   const createNow = (payload: ReturnType<typeof buildPayload>) => {
     createMut.mutate(
-      { targetId, ...payload },
+      { targetId, relationship, ...payload },
       { onSuccess: () => savePendingPhotos(payload.name) }
     );
   };
@@ -1610,6 +1674,7 @@ function AssociateCard({
       createLinkedMut.mutate(
         {
           targetId,
+          relationship,
           name: target.name,
           tgt: target.tgt,
           hbf: target.hbf,
@@ -1686,7 +1751,7 @@ function AssociateCard({
   const displayName =
     associate?.name ||
     composeAssociateName(identity, address.businessName).name ||
-    "New Associate";
+    `New ${kindLabel}`;
 
   return (
     <div className="rounded-lg border border-border/60 bg-muted/10 overflow-hidden">
@@ -1998,7 +2063,7 @@ function AssociateCard({
               disabled={saving || (!isNew && !dirty)}
             >
               <Save className="w-3.5 h-3.5" />
-              {saving ? "Saving…" : isNew ? "Add Associate" : "Save"}
+              {saving ? "Saving…" : isNew ? `Add ${kindLabel}` : "Save"}
             </Button>
           </div>
         </div>
@@ -2008,10 +2073,13 @@ function AssociateCard({
         <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Remove associate?</AlertDialogTitle>
+              <AlertDialogTitle>
+                Remove {kindLabel.toLowerCase()}?
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                Remove <strong>{associate.name}</strong> as an associate of this
-                target? This cannot be undone.
+                Remove <strong>{associate.name}</strong> as{" "}
+                {relationship === "resident" ? "a resident" : "an associate"} of
+                this target? This cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -2042,6 +2110,83 @@ function AssociateCard({
   );
 }
 
+const PERSON_SECTION_STYLE: Record<
+  PersonKind,
+  { box: string; heading: string; title: string; add: string }
+> = {
+  associate: {
+    box: "border-violet-500/30 border-l-violet-500 bg-violet-500/5",
+    heading: "text-violet-700 dark:text-violet-400",
+    title: "Associates",
+    add: "Add Associate",
+  },
+  // Amber is already the Vehicle colour on the target card, so residents
+  // use rose — distinct from violet (associates), sky (name), emerald
+  // (address) and amber (vehicle).
+  resident: {
+    box: "border-rose-500/30 border-l-rose-500 bg-rose-500/5",
+    heading: "text-rose-700 dark:text-rose-400",
+    title: "Other Home Address Residents",
+    add: "Add Resident",
+  },
+};
+
+/** One coloured block of people filed under a target — either its
+ * Associates or its Other Home Address Residents. Same card, same fields;
+ * `kind` only changes the heading, colour and which rows are listed. */
+function PersonListSection({
+  kind,
+  targetId,
+  operationId,
+  people,
+}: {
+  kind: PersonKind;
+  targetId: number;
+  operationId: number | null;
+  people: AssociateRecord[];
+}) {
+  const [addingNew, setAddingNew] = useState(false);
+  const style = PERSON_SECTION_STYLE[kind];
+  return (
+    <div
+      className={`mt-2 rounded-lg border border-l-4 ${style.box} p-3 flex flex-col gap-2`}
+    >
+      <p
+        className={`text-xs font-bold ${style.heading} uppercase tracking-wide flex items-center gap-1.5`}
+      >
+        <Users className="w-3.5 h-3.5" /> {style.title}
+      </p>
+      {people.map(a => (
+        <AssociateCard
+          key={a.id}
+          targetId={targetId}
+          associate={a}
+          operationId={operationId}
+        />
+      ))}
+      {addingNew && (
+        <AssociateCard
+          targetId={targetId}
+          associate={null}
+          operationId={operationId}
+          relationship={kind}
+          onCreated={() => setAddingNew(false)}
+        />
+      )}
+      {!addingNew && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5 self-start"
+          onClick={() => setAddingNew(true)}
+        >
+          <Plus className="w-3.5 h-3.5" /> {style.add}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function AssociatesSection({
   targetId,
   operationId,
@@ -2056,40 +2201,24 @@ function AssociatesSection({
   const { data: assocList } = trpc.associate.listForTarget.useQuery({
     targetId,
   });
-  const [addingNew, setAddingNew] = useState(false);
-
+  const all = (assocList ?? []) as AssociateRecord[];
+  // Residents first, then Associates — residents are the people living with
+  // the target, associates everyone else known to them.
   return (
-    <div className="mt-2 rounded-lg border border-l-4 border-violet-500/30 border-l-violet-500 bg-violet-500/5 p-3 flex flex-col gap-2">
-      <p className="text-xs font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide flex items-center gap-1.5">
-        <Users className="w-3.5 h-3.5" /> Associates
-      </p>
-      {(assocList ?? []).map(a => (
-        <AssociateCard
-          key={a.id}
-          targetId={targetId}
-          associate={a}
-          operationId={operationId}
-        />
-      ))}
-      {addingNew && (
-        <AssociateCard
-          targetId={targetId}
-          associate={null}
-          operationId={operationId}
-          onCreated={() => setAddingNew(false)}
-        />
-      )}
-      {!addingNew && (
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5 self-start"
-          onClick={() => setAddingNew(true)}
-        >
-          <Plus className="w-3.5 h-3.5" /> Add Associate
-        </Button>
-      )}
-    </div>
+    <>
+      <PersonListSection
+        kind="resident"
+        targetId={targetId}
+        operationId={operationId}
+        people={all.filter(a => a.relationship === "resident")}
+      />
+      <PersonListSection
+        kind="associate"
+        targetId={targetId}
+        operationId={operationId}
+        people={all.filter(a => a.relationship !== "resident")}
+      />
+    </>
   );
 }
 

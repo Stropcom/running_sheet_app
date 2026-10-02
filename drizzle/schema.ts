@@ -562,6 +562,15 @@ export const targets = mysqlTable("targets", {
   surname: varchar("surname", { length: 255 }), // stored uppercase
   bornDate: date("bornDate", { mode: "string" }), // YYYY-MM-DD
 
+  // Person-target status (all nullable — blank until an officer picks one).
+  // mdlStatus: Motor Drivers Licence — "active" | "none" | "suspended".
+  // bailStatus: "yes" | "no". bailConditions ("yes" | "no") only applies when
+  // bailStatus is "yes"; bailConditionsText is the free-form conditions.
+  mdlStatus: varchar("mdlStatus", { length: 16 }),
+  bailStatus: varchar("bailStatus", { length: 8 }),
+  bailConditions: varchar("bailConditions", { length: 8 }),
+  bailConditionsText: text("bailConditionsText"),
+
   // Primary/home address structured parts — compose into hbf/hb
   addrUnitNo: varchar("addrUnitNo", { length: 32 }),
   addrHouseNo: varchar("addrHouseNo", { length: 32 }),
@@ -614,6 +623,13 @@ export const associates = mysqlTable("associates", {
   // record is this same person" (only set when confirmed via the
   // possible-duplicate prompt).
   linkedTargetId: int("linkedTargetId"),
+  // "associate" (a known associate of the target) or "resident" (another
+  // person who lives at the target's home address). Same table, same shape —
+  // the Target Registry just shows them in separate, differently-coloured
+  // sections. Existing rows backfill to "associate".
+  relationship: varchar("relationship", { length: 16 })
+    .default("associate")
+    .notNull(),
 
   firstNames: varchar("firstNames", { length: 255 }),
   surname: varchar("surname", { length: 255 }),

@@ -283,6 +283,12 @@ export function ImportTargetDocumentDialog({
   const [associateChoices, setAssociateChoices] = useState<
     Record<string, AssociateChoice>
   >({});
+  // Associate candidate key → true (file under Other Home Address Residents)
+  // or false (file under Associates), overriding the automatic same-address
+  // classification below. Absent === use the automatic one.
+  const [residentOverrides, setResidentOverrides] = useState<
+    Record<string, boolean>
+  >({});
   // Keyed by image key, kept-by-default (absent === kept) so a fresh parse
   // needs no separate init effect the way associateChoices does.
   const [imageChoices, setImageChoices] = useState<Record<string, boolean>>({});
@@ -359,6 +365,19 @@ export function ImportTargetDocumentDialog({
     return [...blocks, ...bare];
   }, [result]);
 
+  // A document only has "associates" — there's no residents section to read
+  // — so anyone listed at the target's own Home Address (the document's
+  // first address; see isSameHomeAddress for what counts as the same) is
+  // filed as an Other Home Address Resident instead. The officer can flip
+  // any one with the Move button on its review card, or later from the Add
+  // Target dialog.
+  const isResidentCandidate = (a: AssociateCandidate): boolean => {
+    const override = residentOverrides[a.key];
+    if (override !== undefined) return override;
+    const home = result?.addresses[0];
+    return !!home && !!a.address && isSameHomeAddress(a.address, home);
+  };
+
   // Business/place blocks pulled out of associateBlocks above — see the
   // comment on associateCandidates for why these don't belong there. Kept
   // as their own memo (rather than computed inline in handleContinue) so
@@ -433,6 +452,7 @@ export function ImportTargetDocumentDialog({
     setPrimaryMatch(null);
     setAssociateMatches({});
     setAssociateChoices({});
+    setResidentOverrides({});
     setImageChoices({});
     setImageLinkChoices({});
     setSourceFile(null);
@@ -635,21 +655,15 @@ export function ImportTargetDocumentDialog({
       // before — "skip" and "update" are excluded here.
       const [primaryAddress, ...restAddresses] = result.addresses;
 
-      // A document only has "associates" — there's no residents section to
-      // read — so anyone listed at the target's own Home Address is filed
-      // as an Other Home Address Resident instead (see isSameHomeAddress for
-      // what counts as the same address). The officer can still move them
-      // back from the card in the Add Target dialog.
+      // Same classification the review screen showed (see
+      // isResidentCandidate) — so what the officer saw is what gets staged.
       const associates: StagedAssociate[] = associateCandidates
         .filter(a => (associateChoices[a.key] ?? "create") === "create")
         .map(a => ({
           key: a.key,
-          relationship:
-            primaryAddress &&
-            a.address &&
-            isSameHomeAddress(a.address, primaryAddress)
-              ? ("resident" as const)
-              : ("associate" as const),
+          relationship: isResidentCandidate(a)
+            ? ("resident" as const)
+            : ("associate" as const),
           identity: {
             firstNames: a.firstNames,
             surname: a.surname,
@@ -802,6 +816,103 @@ export function ImportTargetDocumentDialog({
     } finally {
       setApplying(false);
     }
+  };
+
+  // One review card per associate candidate — shared by the Residents and
+  // Associates groups below.
+  const renderAssociateCard = (a: AssociateCandidate) => {
+    const match = associateMatches[a.key];
+    const choice = associateChoices[a.key] ?? "create";
+    const colours = ASSOCIATE_CHOICE_CLASSES[choice];
+    return (
+      <div
+        key={a.key}
+        className="rounded-md bg-background/70 border border-border/60 p-2.5 flex flex-col gap-1"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium">
+            {a.firstNames} {a.surname}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-xs"
+            onClick={() =>
+              setResidentOverrides(prev => ({
+                ...prev,
+                [a.key]: !isResidentCandidate(a),
+              }))
+            }
+          >
+            {isResidentCandidate(a)
+              ? "Move to Associates"
+              : "Move to Residents"}
+          </Button>
+        </div>
+        {a.address && (
+          <span className="text-muted-foreground text-xs">
+            {[
+              a.address.unitNo && `${a.address.unitNo}/`,
+              a.address.houseNo,
+              a.address.streetName,
+              a.address.streetType,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            , {a.address.suburb} {a.address.state}
+          </span>
+        )}
+        {a.vehicle && (
+          <span className="text-muted-foreground text-xs">
+            {a.vehicle.registration} ({a.vehicle.state}) — {a.vehicle.colour}{" "}
+            {a.vehicle.make} {a.vehicle.model}
+          </span>
+        )}
+        {match ? (
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <Badge
+              variant="outline"
+              className={`gap-1 font-normal text-[10px] w-full max-w-full justify-start text-left whitespace-normal break-words items-start py-1 [&>svg]:mt-0.5 [&>svg]:shrink-0 ${colours.badge}`}
+            >
+              <Link2 className="w-3 h-3" />
+              Matches existing {match.type}: {match.name}
+            </Badge>
+            <Select
+              value={choice}
+              onValueChange={v =>
+                setAssociateChoices(prev => ({
+                  ...prev,
+                  [a.key]: v as AssociateChoice,
+                }))
+              }
+            >
+              <SelectTrigger
+                className={`h-7 w-auto text-xs gap-1.5 font-semibold border ${colours.select}`}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {match.type === "associate" && (
+                  <SelectItem value="update">
+                    Update existing associate
+                  </SelectItem>
+                )}
+                <SelectItem value="create">Create as new anyway</SelectItem>
+                <SelectItem value="skip">Skip — don't add</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <Badge
+            variant="outline"
+            className={`gap-1 font-normal text-[10px] mt-1 w-fit ${ASSOCIATE_CHOICE_CLASSES.create.badge}`}
+          >
+            New — no match found
+          </Badge>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -1180,94 +1291,46 @@ export function ImportTargetDocumentDialog({
                 </div>
               )}
 
-              {associateCandidates.length > 0 && (
-                <div className="rounded-lg border border-l-4 border-violet-500/30 border-l-violet-500 bg-violet-500/5 p-3 flex flex-col gap-2.5">
-                  <p className="text-xs font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide">
-                    Associates found ({associateCandidates.length})
-                  </p>
-                  {associateCandidates.map(a => {
-                    const match = associateMatches[a.key];
-                    const choice = associateChoices[a.key] ?? "create";
-                    const colours = ASSOCIATE_CHOICE_CLASSES[choice];
-                    return (
-                      <div
-                        key={a.key}
-                        className="rounded-md bg-background/70 border border-border/60 p-2.5 flex flex-col gap-1"
+              {associateCandidates.length > 0 &&
+                [
+                  {
+                    kind: "resident",
+                    title: "Other Home Address Residents found",
+                    note: "Listed at the target's own home address, so filed here rather than as associates.",
+                    box: "border-rose-500/30 border-l-rose-500 bg-rose-500/5",
+                    heading: "text-rose-700 dark:text-rose-400",
+                    people: associateCandidates.filter(isResidentCandidate),
+                  },
+                  {
+                    kind: "associate",
+                    title: "Associates found",
+                    note: "",
+                    box: "border-violet-500/30 border-l-violet-500 bg-violet-500/5",
+                    heading: "text-violet-700 dark:text-violet-400",
+                    people: associateCandidates.filter(
+                      a => !isResidentCandidate(a)
+                    ),
+                  },
+                ]
+                  .filter(g => g.people.length > 0)
+                  .map(g => (
+                    <div
+                      key={g.kind}
+                      className={`rounded-lg border border-l-4 ${g.box} p-3 flex flex-col gap-2.5`}
+                    >
+                      <p
+                        className={`text-xs font-bold ${g.heading} uppercase tracking-wide`}
                       >
-                        <span className="text-sm font-medium">
-                          {a.firstNames} {a.surname}
-                        </span>
-                        {a.address && (
-                          <span className="text-muted-foreground text-xs">
-                            {[
-                              a.address.unitNo && `${a.address.unitNo}/`,
-                              a.address.houseNo,
-                              a.address.streetName,
-                              a.address.streetType,
-                            ]
-                              .filter(Boolean)
-                              .join(" ")}
-                            , {a.address.suburb} {a.address.state}
-                          </span>
-                        )}
-                        {a.vehicle && (
-                          <span className="text-muted-foreground text-xs">
-                            {a.vehicle.registration} ({a.vehicle.state}) —{" "}
-                            {a.vehicle.colour} {a.vehicle.make}{" "}
-                            {a.vehicle.model}
-                          </span>
-                        )}
-                        {match ? (
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <Badge
-                              variant="outline"
-                              className={`gap-1 font-normal text-[10px] w-full max-w-full justify-start text-left whitespace-normal break-words items-start py-1 [&>svg]:mt-0.5 [&>svg]:shrink-0 ${colours.badge}`}
-                            >
-                              <Link2 className="w-3 h-3" />
-                              Matches existing {match.type}: {match.name}
-                            </Badge>
-                            <Select
-                              value={choice}
-                              onValueChange={v =>
-                                setAssociateChoices(prev => ({
-                                  ...prev,
-                                  [a.key]: v as AssociateChoice,
-                                }))
-                              }
-                            >
-                              <SelectTrigger
-                                className={`h-7 w-auto text-xs gap-1.5 font-semibold border ${colours.select}`}
-                              >
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {match.type === "associate" && (
-                                  <SelectItem value="update">
-                                    Update existing associate
-                                  </SelectItem>
-                                )}
-                                <SelectItem value="create">
-                                  Create as new anyway
-                                </SelectItem>
-                                <SelectItem value="skip">
-                                  Skip — don't add
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        ) : (
-                          <Badge
-                            variant="outline"
-                            className={`gap-1 font-normal text-[10px] mt-1 w-fit ${ASSOCIATE_CHOICE_CLASSES.create.badge}`}
-                          >
-                            New — no match found
-                          </Badge>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                        {g.title} ({g.people.length})
+                      </p>
+                      {g.note && (
+                        <p className="text-[11px] text-muted-foreground">
+                          {g.note}
+                        </p>
+                      )}
+                      {g.people.map(renderAssociateCard)}
+                    </div>
+                  ))}
 
               {result.freeText.trim() && (
                 <div className="rounded-lg border border-l-4 border-slate-400/40 border-l-slate-400 bg-slate-500/5 p-3 flex flex-col gap-1">

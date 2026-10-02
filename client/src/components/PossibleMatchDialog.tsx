@@ -86,7 +86,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 // Every class below is a literal string (not built from a runtime
 // template) so Tailwind's build-time scanner picks them all up regardless
 // of which step is active at render time.
-const ZOOM_STEPS: {
+export const ZOOM_STEPS: {
   label: string;
   colClass: string;
   imgFit: string;
@@ -123,7 +123,7 @@ const ZOOM_STEPS: {
     dialogClass: "w-[99vw] max-w-[99vw] sm:max-w-[99vw]",
   },
 ];
-const MAX_ZOOM_INDEX = ZOOM_STEPS.length - 1;
+export const MAX_ZOOM_INDEX = ZOOM_STEPS.length - 1;
 
 // Steps through every possible-match candidate surfaced after confirming
 // face(s) — one candidate at a time, always requiring an explicit human

@@ -7067,6 +7067,7 @@ export default function IntelligenceMapping() {
               initialZoom={mapInitialZoom}
               initialMapTypeId={mapInitialTypeId}
               hideMapTypeControl
+              showStreetViewControl
             />
 
             {/* Map / Sat toggle — top-right, replaces Google's native
@@ -7441,14 +7442,11 @@ export default function IntelligenceMapping() {
             </div>
           </div>
 
-          {streetViewPip && (
-            <StreetViewPip
-              lat={streetViewPip.lat}
-              lng={streetViewPip.lng}
-              label={streetViewPip.label}
-              onClose={() => setStreetViewPip(null)}
-            />
-          )}
+          <StreetViewPip
+            map={mapReady ? mapRef.current : null}
+            request={streetViewPip}
+            onClose={() => setStreetViewPip(null)}
+          />
 
           {imagesPip && (
             <ImagesPip

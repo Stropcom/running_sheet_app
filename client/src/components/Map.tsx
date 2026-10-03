@@ -157,6 +157,10 @@ interface MapViewProps {
   // near that corner (e.g. a search bar) can collide with it on narrow
   // screens no matter how much clearance is reserved for it.
   hideMapTypeControl?: boolean;
+  // Shows Google's Street View "little man" (bottom-right). Pages that also
+  // render a StreetViewPip bind it to the map with map.setStreetView(), so a
+  // drop opens that floating panel rather than taking over the whole map.
+  showStreetViewControl?: boolean;
   onMapReady?: (map: google.maps.Map) => void;
 }
 
@@ -166,6 +170,7 @@ export function MapView({
   initialZoom = 12,
   initialMapTypeId,
   hideMapTypeControl = false,
+  showStreetViewControl = false,
   onMapReady,
 }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -188,7 +193,10 @@ export function MapView({
       },
       fullscreenControl: false,
       zoomControl: false,
-      streetViewControl: false,
+      streetViewControl: showStreetViewControl,
+      streetViewControlOptions: {
+        position: google.maps.ControlPosition.RIGHT_BOTTOM,
+      },
       gestureHandling: "greedy", // one-finger pan on mobile
     });
     if (onMapReady) {

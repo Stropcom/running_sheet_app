@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Maximize2, X } from "lucide-react";
+import { DivIconOverlay } from "@/lib/divIconOverlay";
 
 const MIN_WIDTH = 220;
 const MIN_HEIGHT = 160;
@@ -8,34 +9,34 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-// Picture-in-picture Street View panel — opened from a map marker's info
-// window "Street View" button (see the window.__*OpenStreetView bridge
-// functions in IntelligenceMapping.tsx/RSMapping.tsx; an InfoWindow's
-// content is raw HTML via setContent(), not React, so it can't call this
-// component directly). Renders google.maps.StreetViewPanorama over the map
-// itself instead of the previous <a target="_blank"> link that took the
-// officer out of the app to a separate Google Maps tab.
+// Picture-in-picture Street View panel. The panorama is created ONCE per map
+// and bound to it with map.setStreetView(), so Google's own Street View
+// "little man" (turned on in components/Map.tsx) drops straight into this
+// floating panel instead of taking over the whole map. A marker popup's
+// Street View button feeds the same panorama through `request` (an InfoWindow's
+// content is raw HTML via setContent(), not React, so it reaches this
+// component through a window.__*OpenStreetView bridge that sets page state).
+//
+// While the panel is open, a small blue dot with a view cone sits on the map
+// at the panorama's position, rotating with where it is facing — Google only
+// draws that itself in its own full-screen mode.
 //
 // Deliberately never `class X extends google.maps.*` at module scope (see
 // CLAUDE.md's map-drift note on divIconOverlay.ts for why that crashed the
-// whole app on load) — this only ever calls `new google.maps.
-// StreetViewPanorama(...)` inside an effect, which by construction can't
-// run before this component is even mounted, which itself only happens
-// after a marker's info window (which needs the map already loaded) has
-// been clicked.
+// whole app on load): the panorama and the cone overlay are only built inside
+// an effect, after the map exists.
 //
 // Drag and resize mutate the panel's own style directly via refs rather
 // than React state, so dragging doesn't re-render on every pointermove —
 // same reasoning as the app's other drag interactions (DivIconOverlay).
 export function StreetViewPip({
-  lat,
-  lng,
-  label,
+  map,
+  request,
   onClose,
 }: {
-  lat: number;
-  lng: number;
-  label: string;
+  map: google.maps.Map | null;
+  /** A marker popup's Street View click; a new object each click. */
+  request: { lat: number; lng: number; label: string } | null;
   onClose: () => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -43,21 +44,27 @@ export function StreetViewPip({
   const resizeHandleRef = useRef<HTMLDivElement>(null);
   const panoDivRef = useRef<HTMLDivElement>(null);
   const panoramaRef = useRef<google.maps.StreetViewPanorama | null>(null);
+  const requestedRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
   const [panoStatus, setPanoStatus] = useState<"loading" | "ok" | "none">(
     "loading"
   );
 
-  // Create the panorama once on mount.
+  // Create the panorama (and the on-map view cone) once the map exists.
   useEffect(() => {
-    if (!panoDivRef.current || !window.google?.maps) return;
+    if (!map || !panoDivRef.current || !window.google?.maps) return;
     const panorama = new google.maps.StreetViewPanorama(panoDivRef.current, {
-      position: { lat, lng },
+      visible: false,
       addressControl: false,
       fullscreenControl: false,
       motionTracking: false,
       motionTrackingControl: false,
       linksControl: true,
       panControl: false,
+      enableCloseButton: false,
       // Off, not just repositioned — Street View's default zoom control
       // sits in the bottom-right corner, the same spot our own resize
       // handle needs (see the handle's placement below for why that
@@ -65,26 +72,82 @@ export function StreetViewPip({
       zoomControl: false,
     });
     panoramaRef.current = panorama;
-    const listener = panorama.addListener("status_changed", () => {
-      setPanoStatus(
-        panorama.getStatus() === google.maps.StreetViewStatus.OK ? "ok" : "none"
-      );
+    map.setStreetView(panorama);
+
+    // View cone: a dot plus a wedge, rotated to the panorama's heading
+    // (relative to the map's own rotation).
+    const cone = document.createElement("div");
+    cone.style.cssText = "width:64px;height:64px;pointer-events:none;";
+    cone.innerHTML =
+      '<svg width="64" height="64" viewBox="-32 -32 64 64" style="display:block;overflow:visible">' +
+      '<g data-cone><path d="M0 0 L-16 -27 A31 31 0 0 1 16 -27 Z" fill="rgba(66,133,244,0.40)" stroke="rgba(66,133,244,0.9)" stroke-width="1.5" stroke-linejoin="round"/></g>' +
+      '<circle r="6.5" fill="#4285f4" stroke="#fff" stroke-width="2.5"/></svg>';
+    const coneRotor = cone.querySelector("[data-cone]") as SVGGElement;
+    const coneOverlay = new DivIconOverlay({
+      map: null,
+      position: map.getCenter()?.toJSON() ?? { lat: 0, lng: 0 },
+      content: cone,
+      zIndex: 5,
     });
+    const syncCone = () => {
+      const pos = panorama.getPosition();
+      if (pos) coneOverlay.position = { lat: pos.lat(), lng: pos.lng() };
+      const heading =
+        (panorama.getPov().heading ?? 0) - (map.getHeading() ?? 0);
+      coneRotor.setAttribute("transform", `rotate(${heading})`);
+    };
+
+    const listeners: google.maps.MapsEventListener[] = [
+      panorama.addListener("status_changed", () => {
+        setPanoStatus(
+          panorama.getStatus() === google.maps.StreetViewStatus.OK
+            ? "ok"
+            : "none"
+        );
+      }),
+      panorama.addListener("visible_changed", () => {
+        const visible = panorama.getVisible();
+        setOpen(visible);
+        coneOverlay.map = visible ? map : null;
+        if (visible) {
+          // Opened by the pegman drop (a popup request sets its own label).
+          if (!requestedRef.current) setLabel("Dropped position");
+          requestedRef.current = false;
+          syncCone();
+          // The panel was hidden (but laid out) until now.
+          google.maps.event.trigger(panorama, "resize");
+        } else {
+          setLabel("");
+          onCloseRef.current();
+        }
+      }),
+      panorama.addListener("position_changed", syncCone),
+      panorama.addListener("pov_changed", syncCone),
+      map.addListener("heading_changed", syncCone),
+    ];
     return () => {
-      listener.remove();
+      listeners.forEach(l => l.remove());
+      coneOverlay.map = null;
+      panorama.setVisible(false);
+      map.setStreetView(null);
       panoramaRef.current = null;
     };
-    // Mount-only — position updates for an already-open panel are handled
-    // by the effect below instead of recreating the panorama each time.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [map]);
 
-  // Re-point an already-open panel at a newly clicked marker.
+  // A marker popup's Street View button: point the panorama there and show it.
   useEffect(() => {
-    if (!panoramaRef.current) return;
+    const panorama = panoramaRef.current;
+    if (!request || !panorama) return;
+    requestedRef.current = !panorama.getVisible();
+    setLabel(request.label);
     setPanoStatus("loading");
-    panoramaRef.current.setPosition({ lat, lng });
-  }, [lat, lng]);
+    panorama.setPosition({ lat: request.lat, lng: request.lng });
+    panorama.setVisible(true);
+  }, [request, map]);
+
+  const closePanel = () => {
+    panoramaRef.current?.setVisible(false);
+  };
 
   // Initial position/size + drag + resize, all via direct style mutation.
   useEffect(() => {
@@ -208,7 +271,9 @@ export function StreetViewPip({
   return (
     <div
       ref={panelRef}
-      className="absolute w-[320px] h-[230px] max-w-[calc(100%-16px)] max-h-[calc(100%-16px)] bg-card border border-border rounded-xl shadow-2xl overflow-hidden flex flex-col z-30"
+      className={`absolute w-[320px] h-[230px] max-w-[calc(100%-16px)] max-h-[calc(100%-16px)] bg-card border border-border rounded-xl shadow-2xl overflow-hidden flex flex-col z-30 ${
+        open ? "" : "invisible pointer-events-none"
+      }`}
       style={{ width: 320, height: 230 }}
     >
       <div
@@ -227,7 +292,7 @@ export function StreetViewPip({
         <button
           type="button"
           data-pip-close
-          onClick={onClose}
+          onClick={closePanel}
           aria-label="Close Street View"
           className="w-6 h-6 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:bg-accent/20 hover:text-foreground transition-colors shrink-0"
         >

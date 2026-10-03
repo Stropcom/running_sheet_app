@@ -33,7 +33,10 @@ import path from "path";
 import { getDocument, OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs";
 import sharp from "sharp";
 import { ALL_KNOWN_LABELS } from "./targetProfileFieldMap";
-import { matchWholeLinePersonName } from "./freeTextEntityScan";
+import {
+  matchWholeLinePersonName,
+  stripPhotoCaptionLabel,
+} from "./freeTextEntityScan";
 import { isLikelyPhoto, isPhotoShapedSize } from "./imagePhotoFilter";
 import { isHeadingLine } from "@shared/textSections";
 import type {
@@ -1670,7 +1673,8 @@ function captionBelowImage(
       : undefined;
   const attempts = [lineText(first)];
   if (second) attempts.push(`${lineText(first)} ${lineText(second)}`);
-  return attempts.find(t => {
+  // "Photograph: Jane SMITH" captions name the person after a label.
+  return attempts.map(stripPhotoCaptionLabel).find(t => {
     const person = matchWholeLinePersonName(t);
     // "Marcus Andrew" + the next column's "ROLE" label reads as a name shape;
     // a known field label is never a surname.

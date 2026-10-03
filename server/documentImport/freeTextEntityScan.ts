@@ -285,6 +285,21 @@ function stripRelationshipLabel(line: string): string {
   return s;
 }
 
+/** Strips a leading photo-caption label — "Photograph: Jane SMITH",
+ * "Photo of Jane SMITH", "Image - Jane SMITH" — so a caption that labels what
+ * the picture is still reads as the name it names. Returns the input
+ * unchanged when there is no such label. */
+export function stripPhotoCaptionLabel(line: string): string {
+  return line
+    .trim()
+    .replace(
+      /^(?:photograph|photo|image|picture|pic|mugshot|mug\s*shot)(?:\s+of)?\s*[-–:]?\s+(?=\S)/i,
+      ""
+    )
+    .replace(/^(?:photograph|photo|image|picture|pic)\s*[-–:]\s*/i, "")
+    .trim();
+}
+
 /** Matches a single line that is ENTIRELY a "Firstname [Middlename]
  * SURNAME" name and nothing else — used to anchor an "associate block" (a
  * name on its own line, followed by that person's address and/or vehicle

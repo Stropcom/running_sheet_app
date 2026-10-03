@@ -1,4 +1,8 @@
-import { formatBail, mdlLabel } from "@shared/targetStatus";
+import {
+  formatBail,
+  formatSpecialProjects,
+  mdlLabel,
+} from "@shared/targetStatus";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -231,15 +235,11 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     profile.v1f ||
     profile.v2f ||
     profile.extraVehicles ||
-    profile.extraAddresses ||
-    profile.mdlStatus ||
-    profile.bailStatus
+    profile.extraAddresses
       ? `
   <div class="section">
     <div class="section-title">Registered Details</div>
     <div class="detail-grid">
-      ${profile.mdlStatus ? `<span class="detail-label">MDL</span><span class="detail-value">${esc(mdlLabel(profile.mdlStatus))}</span>` : ""}
-      ${profile.bailStatus ? `<span class="detail-label">Bail</span><span class="detail-value">${esc(formatBail(profile))}</span>` : ""}
       ${profile.hbf ? `<span class="detail-label">Home Address</span><span class="detail-value">${esc(formatIntelAddress(profile.hbf))}</span>` : ""}
       ${prevHtml("hbf") ? `<span style="grid-column:1/-1">${prevHtml("hbf")}</span>` : ""}
       ${
@@ -285,6 +285,20 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
             })()
           : ""
       }
+    </div>
+  </div>`
+      : ""
+  }
+
+  ${
+    profile.mdlStatus || profile.bailStatus || profile.specialProjects
+      ? `
+  <div class="section">
+    <div class="section-title">Status</div>
+    <div class="detail-grid">
+      ${profile.mdlStatus ? `<span class="detail-label">MDL</span><span class="detail-value">${esc(mdlLabel(profile.mdlStatus))}</span>` : ""}
+      ${profile.bailStatus ? `<span class="detail-label">Bail</span><span class="detail-value">${esc(formatBail(profile))}</span>` : ""}
+      ${formatSpecialProjects(profile.specialProjects) ? `<span class="detail-label">Special Projects</span><span class="detail-value">${esc(formatSpecialProjects(profile.specialProjects))}</span>` : ""}
     </div>
   </div>`
       : ""
@@ -673,6 +687,57 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                         return card;
                       });
                     })()}
+
+                    {/* Status — MDL, bail and special projects, in their own section
+              below Registered Details. */}
+                    {(profile.mdlStatus ||
+                      profile.bailStatus ||
+                      profile.specialProjects) && (
+                      <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+                        <SectionHeading
+                          label="Status"
+                          count={
+                            [
+                              profile.mdlStatus,
+                              profile.bailStatus,
+                              formatSpecialProjects(profile.specialProjects),
+                            ].filter(Boolean).length
+                          }
+                        />
+                        <div className="grid grid-cols-1 gap-2 text-sm">
+                          {profile.mdlStatus && (
+                            <div className="flex gap-3 items-start">
+                              <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
+                                MDL
+                              </span>
+                              <span className="text-xs text-foreground">
+                                {mdlLabel(profile.mdlStatus)}
+                              </span>
+                            </div>
+                          )}
+                          {profile.bailStatus && (
+                            <div className="flex gap-3 items-start">
+                              <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
+                                Bail
+                              </span>
+                              <span className="text-xs text-foreground">
+                                {formatBail(profile)}
+                              </span>
+                            </div>
+                          )}
+                          {formatSpecialProjects(profile.specialProjects) && (
+                            <div className="flex gap-3 items-start">
+                              <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
+                                Special Projects
+                              </span>
+                              <span className="text-xs text-foreground">
+                                {formatSpecialProjects(profile.specialProjects)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -683,9 +748,7 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
             profile.v1f ||
             profile.v2f ||
             profile.extraVehicles ||
-            profile.extraAddresses ||
-            profile.mdlStatus ||
-            profile.bailStatus) &&
+            profile.extraAddresses) &&
             (() => {
               const extraVehicleList: Array<{ full?: string; short?: string }> =
                 (() => {
@@ -722,26 +785,6 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                     count={totalCount}
                   />
                   <div className="grid grid-cols-1 gap-2 text-sm">
-                    {profile.mdlStatus && (
-                      <div className="flex gap-3 items-start">
-                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
-                          MDL
-                        </span>
-                        <span className="text-xs text-foreground">
-                          {mdlLabel(profile.mdlStatus)}
-                        </span>
-                      </div>
-                    )}
-                    {profile.bailStatus && (
-                      <div className="flex gap-3 items-start">
-                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
-                          Bail
-                        </span>
-                        <span className="text-xs text-foreground">
-                          {formatBail(profile)}
-                        </span>
-                      </div>
-                    )}
                     {profile.hbf && (
                       <div className="flex gap-3 items-start">
                         <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">

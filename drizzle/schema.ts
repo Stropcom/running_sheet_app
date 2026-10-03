@@ -570,6 +570,11 @@ export const targets = mysqlTable("targets", {
   bailStatus: varchar("bailStatus", { length: 8 }),
   bailConditions: varchar("bailConditions", { length: 8 }),
   bailConditionsText: text("bailConditionsText"),
+  // Special projects the target is involved in (TI / LBS / SEEK / CAD):
+  // JSON array of { key, detail } — same shape as sheet_summaries.
+  // specialProjects, so a new running sheet's summary can copy it straight
+  // across. detail is the agency ("AFP" / "WAPOL"), free text like the summary.
+  specialProjects: text("specialProjects"),
 
   // Primary/home address structured parts — compose into hbf/hb
   addrUnitNo: varchar("addrUnitNo", { length: 32 }),

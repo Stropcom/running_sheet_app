@@ -29,3 +29,64 @@ describe("targetStatus", () => {
     );
   });
 });
+
+import {
+  formatSpecialProjects,
+  mergeSpecialProjects,
+  sanitizeTargetSpecialProjects,
+} from "../shared/targetStatus";
+
+describe("special projects", () => {
+  it("keeps only the four registry projects, once each, in order", () => {
+    const raw = JSON.stringify([
+      { key: "CAD", detail: " WAPOL " },
+      { key: "Tracker", detail: "x" },
+      { key: "TI", detail: "AFP" },
+      { key: "TI", detail: "dup" },
+    ]);
+    expect(JSON.parse(sanitizeTargetSpecialProjects(raw)!)).toEqual([
+      { key: "TI", detail: "AFP" },
+      { key: "CAD", detail: "WAPOL" },
+    ]);
+    expect(sanitizeTargetSpecialProjects("")).toBeNull();
+    expect(sanitizeTargetSpecialProjects("not json")).toBeNull();
+  });
+
+  it("formats for display", () => {
+    expect(
+      formatSpecialProjects(
+        JSON.stringify([
+          { key: "TI", detail: "AFP" },
+          { key: "LBS", detail: "" },
+        ])
+      )
+    ).toBe("TI (AFP), LBS");
+    expect(formatSpecialProjects(null)).toBe("");
+  });
+
+  it("merges a target's projects into a summary without disturbing it", () => {
+    const summary = JSON.stringify([
+      { key: "Tracker", detail: "1ABC123" },
+      { key: "LBS", detail: "" },
+    ]);
+    const target = JSON.stringify([
+      { key: "LBS", detail: "WAPOL" },
+      { key: "TI", detail: "AFP" },
+    ]);
+    expect(JSON.parse(mergeSpecialProjects(summary, target)!)).toEqual([
+      { key: "Tracker", detail: "1ABC123" },
+      { key: "LBS", detail: "WAPOL" },
+      { key: "TI", detail: "AFP" },
+    ]);
+    // A summary's own wording is never overwritten.
+    expect(
+      JSON.parse(
+        mergeSpecialProjects(
+          JSON.stringify([{ key: "LBS", detail: "AFP" }]),
+          target
+        )!
+      )[0].detail
+    ).toBe("AFP");
+    expect(mergeSpecialProjects(null, null)).toBeNull();
+  });
+});

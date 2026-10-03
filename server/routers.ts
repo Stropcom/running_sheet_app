@@ -7,6 +7,11 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
 import { CIN_LINK_CATEGORY } from "@shared/attachmentLinking";
+import {
+  sanitizeTargetSpecialProjects,
+  mergeSpecialProjects,
+  parseSpecialProjects,
+} from "@shared/targetStatus";
 import { TARGET_TYPES } from "../drizzle/schema";
 import {
   buildRunningSheetTitle,
@@ -496,6 +501,14 @@ const targetStatusFieldsSchema = {
   bailStatus: z.enum(["yes", "no"]).optional().nullable(),
   bailConditions: z.enum(["yes", "no"]).optional().nullable(),
   bailConditionsText: z.string().optional().nullable(),
+  // JSON [{key, detail}] — only TI/LBS/SEEK/CAD survive (see shared/targetStatus).
+  specialProjects: z
+    .string()
+    .optional()
+    .nullable()
+    .transform(v =>
+      v === undefined ? undefined : sanitizeTargetSpecialProjects(v)
+    ),
 };
 
 const smeacTeamSlotSchema = z.object({
@@ -5037,7 +5050,12 @@ export const appRouter = router({
             location: extractSummaryLocation(rows),
             ioSupport: priorSummary?.ioSupport ?? null,
             intelSupport: priorSummary?.intelSupport ?? null,
-            specialProjects: priorSummary?.specialProjects ?? null,
+            // The prior summary's projects, plus whichever of TI/LBS/SEEK/CAD
+            // the Target Registry says this target is involved in.
+            specialProjects: mergeSpecialProjects(
+              priorSummary?.specialProjects ?? null,
+              target?.specialProjects ?? null
+            ),
             objectives: priorSummary?.objectives ?? null,
           });
         } else {
@@ -5046,6 +5064,7 @@ export const appRouter = router({
             startTime?: string | null;
             finishTime?: string | null;
             location?: string | null;
+            specialProjects?: string | null;
           } = { sheetId: input.sheetId };
           if (
             !record.startTimeEdited &&
@@ -5070,10 +5089,28 @@ export const appRouter = router({
             const derivedLocation = extractSummaryLocation(rows);
             if (derivedLocation) patch.location = derivedLocation;
           }
+          // Special Projects: a summary whose list is still empty (opened
+          // before the target's projects were set, or none were carried
+          // over) picks up the target's TI/LBS/SEEK/CAD now. Once it has
+          // any entry the supervisor owns the list — a project they
+          // unticked is never silently re-added.
+          if (
+            !record.completedAt &&
+            parseSpecialProjects(record.specialProjects).length === 0 &&
+            sheet.targetId
+          ) {
+            const t = await getTargetById(sheet.targetId);
+            const fromTarget = mergeSpecialProjects(
+              null,
+              t?.specialProjects ?? null
+            );
+            if (fromTarget) patch.specialProjects = fromTarget;
+          }
           if (
             patch.startTime !== undefined ||
             patch.finishTime !== undefined ||
-            patch.location !== undefined
+            patch.location !== undefined ||
+            patch.specialProjects !== undefined
           ) {
             record = await upsertSheetSummary(patch);
           }

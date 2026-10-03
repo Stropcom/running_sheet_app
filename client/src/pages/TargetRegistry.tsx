@@ -72,7 +72,11 @@ import {
   type ExtraAddress,
   type TargetStatusParts,
 } from "@/components/TargetStructuredFields";
-import { formatBail, mdlLabel } from "@shared/targetStatus";
+import {
+  formatBail,
+  formatSpecialProjects,
+  mdlLabel,
+} from "@shared/targetStatus";
 import {
   AddTargetDialog,
   computePrimaryIdentity,
@@ -129,6 +133,7 @@ type RegistryTarget = {
   bailStatus: string | null; // yes | no
   bailConditions: string | null; // yes | no (only when bailStatus = yes)
   bailConditionsText: string | null;
+  specialProjects: string | null; // JSON [{key, detail}]
   addrUnitNo: string | null;
   addrHouseNo: string | null;
   addrStreetName: string | null;
@@ -827,6 +832,12 @@ function TargetCard({
                       {target.bailStatus && (
                         <p className="text-xs text-muted-foreground">
                           Bail: {formatBail(target)}
+                        </p>
+                      )}
+                      {formatSpecialProjects(target.specialProjects) && (
+                        <p className="text-xs text-muted-foreground">
+                          Special projects:{" "}
+                          {formatSpecialProjects(target.specialProjects)}
                         </p>
                       )}
                     </div>

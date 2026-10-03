@@ -2838,6 +2838,7 @@ export async function updateTarget(
       | "bailStatus"
       | "bailConditions"
       | "bailConditionsText"
+      | "specialProjects"
     >
   >,
   /** Set when the officer has explicitly chosen "Add new" over "Edit
@@ -11652,6 +11653,8 @@ export interface IntelTargetProfile {
   bailStatus: string | null;
   bailConditions: string | null;
   bailConditionsText: string | null;
+  /** JSON [{key, detail}] — TI / LBS / SEEK / CAD. */
+  specialProjects: string | null;
 }
 
 export interface IntelOperationProfile {
@@ -12565,6 +12568,7 @@ export async function getIntelTargetProfile(
       isIndicesOnly: associateEntityById.get(a.id)?.isIndicesOnly ?? false,
       relationship: a.relationship,
     })),
+    specialProjects: target.specialProjects ?? null,
     mdlStatus: target.mdlStatus ?? null,
     bailStatus: target.bailStatus ?? null,
     bailConditions: target.bailConditions ?? null,

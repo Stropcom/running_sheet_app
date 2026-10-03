@@ -136,6 +136,7 @@ export interface RegistryCreatePayload {
   bailStatus?: "yes" | "no" | null;
   bailConditions?: "yes" | "no" | null;
   bailConditionsText?: string | null;
+  specialProjects?: string | null;
   addrUnitNo: string | null;
   addrHouseNo: string | null;
   addrStreetName: string | null;

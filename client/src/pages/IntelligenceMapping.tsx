@@ -993,19 +993,39 @@ const POPUP_SCROLL =
  * an entity short form — both go through the same formatter the Intelligence
  * folder uses, so a vehicle reads identically in both places. */
 function popupVehicleLines(vehicles: string[], fontSize: string): string {
-  return vehicles
+  // "rego colour make model type" — formatIntelVehicle drops the "bearing WA
+  // registration" wording — and one line per vehicle even when the same one
+  // is listed twice.
+  return Array.from(new Set(vehicles.map(v => formatIntelVehicle(v))))
     .map(
       v =>
-        `<div style="font-size:${fontSize};color:#111;padding:1px 0;">${formatIntelVehicle(v)}</div>`
+        `<div style="font-size:${fontSize};color:#111;padding:1px 0;">${v}</div>`
     )
     .join("");
+}
+
+/** A person's name as shown in map popups: "Min Jae KIM" — no ", born …"
+ * date and no trailing "(KIM)" surname bracket, to keep the popup compact. */
+function shortPopupName(name: string): string {
+  return name
+    .replace(/\s*\([^()]*\)\s*$/, "")
+    .split(/,\s*born\b/i)[0]
+    .trim();
 }
 
 /** Person mentions display one per line, same layout as popupVehicleLines —
  * a comma-joined paragraph reads as a single run-on line in the popup's
  * narrow width instead of a scannable list. */
 function popupPersonLines(persons: string[], fontSize: string): string {
+  const seen = new Set<string>();
   return persons
+    .map(shortPopupName)
+    .filter(p => {
+      const key = p.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .map(
       p =>
         `<div style="font-size:${fontSize};color:#111;padding:1px 0;">${p}</div>`
@@ -1136,7 +1156,7 @@ function buildInfoWindowContent(
         `<div style="margin-bottom:5px;padding:6px 8px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:0 4px 4px 0;">`
       );
       lines.push(
-        `<div style="font-size:12px;font-weight:700;color:#111;margin-bottom:2px;">${t.name}</div>`
+        `<div style="font-size:12px;font-weight:700;color:#111;margin-bottom:2px;">${shortPopupName(t.name)}</div>`
       );
       const tVehicles = [t.v1f, t.v2f].filter((v): v is string => !!v);
       if (tVehicles.length) lines.push(popupVehicleLines(tVehicles, "11px"));
@@ -1162,7 +1182,7 @@ function buildInfoWindowContent(
       );
       for (const t of loc.linkedTargets) {
         entityLines.push(
-          `<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}${
+          `<div style="font-size:12px;color:#111;padding:1px 0;">${shortPopupName(t.name)}${
             t.addressLabel
               ? `<span style="color:#7c3aed;font-weight:600;"> · ${t.addressLabel}</span>`
               : ""
@@ -1348,7 +1368,7 @@ function buildInfoWindowContent(
             `<span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`,
             ...sec.linkedTargets.map(
               t =>
-                `<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}</div>`
+                `<div style="font-size:12px;color:#111;padding:1px 0;">${shortPopupName(t.name)}</div>`
             ),
           ];
           lines.push(
@@ -4799,7 +4819,7 @@ export default function IntelligenceMapping() {
             // Vehicles (from custom marker)
             if (cm.assocVehicles?.length)
               lines.push(
-                `<div style="margin-top:4px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${(cm.assocVehicles as string[]).join(", ")}</p></div>`
+                `<div style="margin-top:4px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Vehicles</span><div style="margin-top:2px">${popupVehicleLines(cm.assocVehicles as string[], "12px")}</div></div>`
               );
 
             // ── Merged intel section: render each merged entry (target_address first) ──
@@ -4828,7 +4848,7 @@ export default function IntelligenceMapping() {
                     `<div style="padding:4px 6px;background:#fef2f2;border-left:2px solid #dc2626;border-radius:0 3px 3px 0;margin-bottom:3px;">`
                   );
                   lines.push(
-                    `<div style="font-size:11px;font-weight:700;color:#111;">${t.name}</div>`
+                    `<div style="font-size:11px;font-weight:700;color:#111;">${shortPopupName(t.name)}</div>`
                   );
                   const tVehicles = [t.v1f, t.v2f].filter(
                     (v): v is string => !!v
@@ -4847,7 +4867,7 @@ export default function IntelligenceMapping() {
                 );
                 for (const t of intel.linkedTargets) {
                   intelEntityLines.push(
-                    `<div style="font-size:11px;color:#111;">${t.name}</div>`
+                    `<div style="font-size:11px;color:#111;">${shortPopupName(t.name)}</div>`
                   );
                 }
               }

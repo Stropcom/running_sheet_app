@@ -19,6 +19,10 @@ import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
 import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 import {
+  applyTargetProjectsToSummary,
+  sanitizeTargetSpecialProjects,
+} from "@shared/targetStatus";
+import {
   formatIntelAddress,
   formatIntelVehicle,
   bracketCodeFromRegisteredName,
@@ -2861,7 +2865,7 @@ export async function updateTarget(
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
 
-  return db.transaction(async tx => {
+  const result = await db.transaction(async tx => {
     const hasExtraChanges =
       (options?.newExtraAddressIds?.length ?? 0) > 0 ||
       (options?.newExtraVehicleIds?.length ?? 0) > 0;
@@ -2986,6 +2990,13 @@ export async function updateTarget(
 
     return { id };
   });
+
+  // TI/LBS/SEEK/CAD changed on the target — open summaries follow it.
+  if (data.specialProjects !== undefined) {
+    await syncTargetProjectsToOpenSummaries(id);
+  }
+
+  return result;
 }
 
 export async function getTargetById(id: number) {
@@ -10361,6 +10372,76 @@ export async function getMostRecentSheetSummaryForOperation(
     .orderBy(desc(runningSheets.createdAt))
     .limit(1);
   return rows[0]?.summary ?? null;
+}
+
+// ─── Special projects: Target Registry ↔ Sheet Summary sync ────────────────
+// TI / LBS / SEEK / CAD live on the target (targets.specialProjects) AND on
+// each running sheet's summary (sheet_summaries.specialProjects), and an
+// edit to either side is mirrored to the other. Only those four keys sync —
+// the summary's Tracker/LD/Coyotes/Other are per-deployment and untouched.
+// A COMPLETED summary is a locked record of that day and is never rewritten;
+// every open summary for the target follows the registry.
+
+/** Pushes a target's projects onto every open (not completed) summary of a
+ * running sheet belonging to that target, optionally skipping one sheet (the
+ * one the edit came from). Only writes a summary that actually changes. */
+export async function syncTargetProjectsToOpenSummaries(
+  targetId: number,
+  exceptSheetId?: number
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const [target] = await db
+    .select({ specialProjects: targets.specialProjects })
+    .from(targets)
+    .where(eq(targets.id, targetId))
+    .limit(1);
+  if (!target) return;
+  const rows = await db
+    .select({ summary: sheetSummaries })
+    .from(sheetSummaries)
+    .innerJoin(runningSheets, eq(sheetSummaries.sheetId, runningSheets.id))
+    .where(
+      and(
+        eq(runningSheets.targetId, targetId),
+        isNull(sheetSummaries.completedAt)
+      )
+    );
+  for (const { summary } of rows) {
+    if (exceptSheetId !== undefined && summary.sheetId === exceptSheetId)
+      continue;
+    const next = applyTargetProjectsToSummary(
+      summary.specialProjects,
+      target.specialProjects
+    );
+    if ((next ?? null) === (summary.specialProjects ?? null)) continue;
+    await db
+      .update(sheetSummaries)
+      .set({ specialProjects: next })
+      .where(eq(sheetSummaries.id, summary.id));
+  }
+}
+
+/** A summary's Special Projects were edited: copy its TI/LBS/SEEK/CAD to the
+ * sheet's target, then let every other open summary of that target follow.
+ * No-op for a sheet with no target. */
+export async function syncSummaryProjectsToTarget(
+  sheetId: number,
+  summaryProjectsRaw: string | null
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const [sheet] = await db
+    .select({ targetId: runningSheets.targetId })
+    .from(runningSheets)
+    .where(eq(runningSheets.id, sheetId))
+    .limit(1);
+  if (!sheet?.targetId) return;
+  await db
+    .update(targets)
+    .set({ specialProjects: sanitizeTargetSpecialProjects(summaryProjectsRaw) })
+    .where(eq(targets.id, sheet.targetId));
+  await syncTargetProjectsToOpenSummaries(sheet.targetId, sheetId);
 }
 
 export interface OperationSummaryRollupRow {

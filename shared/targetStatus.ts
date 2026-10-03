@@ -102,3 +102,30 @@ export function mergeSpecialProjects(
   }
   return merged.length ? JSON.stringify(merged) : null;
 }
+
+/** Makes a summary's TI/LBS/SEEK/CAD entries exactly match the target's, in
+ * both directions of the registry↔summary sync: a project the target lacks
+ * is removed from the summary, one it has is added (or has its detail
+ * updated), and every other entry the summary holds (Tracker, LD, Coyotes,
+ * Other) is left alone. Returns JSON, or null when the result is empty. */
+export function applyTargetProjectsToSummary(
+  summaryRaw: string | null | undefined,
+  targetRaw: string | null | undefined
+): string | null {
+  const target = parseSpecialProjects(targetRaw);
+  const isTargetKey = (k: string) =>
+    (TARGET_SPECIAL_PROJECTS as readonly string[]).includes(k);
+  const next: SpecialProjectEntry[] = [];
+  for (const entry of parseSpecialProjects(summaryRaw)) {
+    if (!isTargetKey(entry.key)) {
+      next.push(entry);
+      continue;
+    }
+    const t = target.find(x => x.key === entry.key);
+    if (t) next.push({ key: entry.key, detail: t.detail });
+  }
+  for (const t of target) {
+    if (!next.some(n => n.key === t.key)) next.push({ ...t });
+  }
+  return next.length ? JSON.stringify(next) : null;
+}

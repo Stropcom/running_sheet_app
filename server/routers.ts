@@ -11,6 +11,7 @@ import {
   sanitizeTargetSpecialProjects,
   mergeSpecialProjects,
   parseSpecialProjects,
+  applyTargetProjectsToSummary,
 } from "@shared/targetStatus";
 import { TARGET_TYPES } from "../drizzle/schema";
 import {
@@ -197,6 +198,7 @@ import {
   computeAllRowsSigned,
   getSheetSummary,
   upsertSheetSummary,
+  syncSummaryProjectsToTarget,
   orderTeamCins,
   extractSummaryLocation,
   computeSheetSummaryVehicles,
@@ -5050,12 +5052,15 @@ export const appRouter = router({
             location: extractSummaryLocation(rows),
             ioSupport: priorSummary?.ioSupport ?? null,
             intelSupport: priorSummary?.intelSupport ?? null,
-            // The prior summary's projects, plus whichever of TI/LBS/SEEK/CAD
-            // the Target Registry says this target is involved in.
-            specialProjects: mergeSpecialProjects(
-              priorSummary?.specialProjects ?? null,
-              target?.specialProjects ?? null
-            ),
+            // The prior summary's projects, with TI/LBS/SEEK/CAD set to
+            // exactly what the Target Registry says (the registry and the
+            // summaries stay in step — see syncTargetProjectsToOpenSummaries).
+            specialProjects: target
+              ? applyTargetProjectsToSummary(
+                  priorSummary?.specialProjects ?? null,
+                  target.specialProjects ?? null
+                )
+              : (priorSummary?.specialProjects ?? null),
             objectives: priorSummary?.objectives ?? null,
           });
         } else {
@@ -5179,7 +5184,7 @@ export const appRouter = router({
           });
         }
         const userCIN = ctx.user.cin ?? ctx.user.username ?? "Unknown";
-        return upsertSheetSummary({
+        const saved = await upsertSheetSummary({
           ...input,
           lastEditedByCIN: userCIN,
           // A manual edit here sticks — stop auto-syncing that field from
@@ -5187,6 +5192,15 @@ export const appRouter = router({
           ...(input.startTime !== undefined ? { startTimeEdited: true } : {}),
           ...(input.finishTime !== undefined ? { finishTimeEdited: true } : {}),
         });
+        // TI/LBS/SEEK/CAD edited here also change the Target Registry (and,
+        // through it, the target's other open summaries).
+        if (input.specialProjects !== undefined) {
+          await syncSummaryProjectsToTarget(
+            input.sheetId,
+            input.specialProjects
+          );
+        }
+        return saved;
       }),
 
     /** Team Leader (or Admin) acknowledges the summary is complete — locks it */

@@ -90,3 +90,42 @@ describe("special projects", () => {
     expect(mergeSpecialProjects(null, null)).toBeNull();
   });
 });
+
+import { applyTargetProjectsToSummary } from "../shared/targetStatus";
+
+describe("registry ↔ summary project sync", () => {
+  it("makes the summary's TI/LBS/SEEK/CAD match the target and leaves the rest", () => {
+    const summary = JSON.stringify([
+      { key: "Tracker", detail: "1ABC123" },
+      { key: "TI", detail: "AFP" },
+      { key: "CAD", detail: "WAPOL" },
+    ]);
+    const target = JSON.stringify([
+      { key: "TI", detail: "WAPOL" },
+      { key: "LBS", detail: "AFP" },
+    ]);
+    // TI detail follows the target, CAD (not on the target) is removed, LBS
+    // is added, and the per-deployment Tracker is untouched.
+    expect(JSON.parse(applyTargetProjectsToSummary(summary, target)!)).toEqual([
+      { key: "Tracker", detail: "1ABC123" },
+      { key: "TI", detail: "WAPOL" },
+      { key: "LBS", detail: "AFP" },
+    ]);
+  });
+
+  it("clears the four projects when the target has none, keeping others", () => {
+    const summary = JSON.stringify([
+      { key: "LBS", detail: "AFP" },
+      { key: "Coyotes", detail: "Fremantle" },
+    ]);
+    expect(JSON.parse(applyTargetProjectsToSummary(summary, null)!)).toEqual([
+      { key: "Coyotes", detail: "Fremantle" },
+    ]);
+    expect(
+      applyTargetProjectsToSummary(
+        JSON.stringify([{ key: "LBS", detail: "" }]),
+        null
+      )
+    ).toBeNull();
+  });
+});

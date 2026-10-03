@@ -1,3 +1,8 @@
+import {
+  sharedLinkChipText,
+  sharedLinkSentence,
+  type CrossLinkVia,
+} from "@/lib/crossLinkText";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -83,7 +88,7 @@ interface IntelOperationProfile {
     targetName: string;
     otherOperationId: number;
     otherOperationName: string;
-    via: "vehicle" | "address";
+    via: CrossLinkVia;
     sharedValue: string;
   }>;
 }
@@ -150,7 +155,7 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
     profile.crossOperationLinks.length
       ? `<div style="margin-bottom:16px"><div class="section-title">Cross-Operation Links</div>
     <p style="font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:6px 8px;margin-bottom:8px">${profile.crossOperationLinks.length} target${profile.crossOperationLinks.length !== 1 ? "s" : ""} in this operation also reach into another operation — worth checking for a connection.</p>
-    ${profile.crossOperationLinks.map(l => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(l.targetName)}</strong> shares a registered ${esc(l.via)} (${esc(l.sharedValue)}) with a target on <strong>${esc(l.otherOperationName)}</strong></p>`).join("")}
+    ${profile.crossOperationLinks.map(l => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(l.targetName)}</strong> ${esc(sharedLinkSentence(l.via, l.sharedValue))} — with a target on <strong>${esc(l.otherOperationName)}</strong></p>`).join("")}
   </div>`
       : ""
   }
@@ -362,7 +367,7 @@ export function OperationProfileContent({
                       <Folder className="w-3 h-3" />
                       {l.otherOperationName}
                       <span className="text-[9px] uppercase tracking-wide opacity-70">
-                        shared {l.via}
+                        {sharedLinkChipText(l.via, l.sharedValue)}
                       </span>
                     </span>
                   </button>

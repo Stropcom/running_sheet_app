@@ -72,7 +72,11 @@ import {
   type ExtraAddress,
   type TargetStatusParts,
 } from "@/components/TargetStructuredFields";
-import { formatBail, mdlLabel } from "@shared/targetStatus";
+import {
+  formatBail,
+  formatSpecialProjects,
+  mdlLabel,
+} from "@shared/targetStatus";
 import {
   AddTargetDialog,
   computePrimaryIdentity,
@@ -82,7 +86,9 @@ import {
 import {
   ImportTargetDocumentDialog,
   type DocumentImportPrefill,
+  type ImportSession,
 } from "@/components/ImportTargetDocumentDialog";
+import { documentTargetCount } from "@/lib/importDocumentFocus";
 import {
   composeTargetName,
   composeAssociateName,
@@ -100,6 +106,7 @@ import {
 } from "@/components/PossibleDuplicateAlert";
 import { runDuplicateChecks } from "@/lib/duplicateCheck";
 import { IndicesBadge } from "@/components/IndicesBadge";
+import { PhotoOwnerCaption } from "@/components/PhotoOwnerCaption";
 import type { TargetType } from "@shared/types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -129,6 +136,7 @@ type RegistryTarget = {
   bailStatus: string | null; // yes | no
   bailConditions: string | null; // yes | no (only when bailStatus = yes)
   bailConditionsText: string | null;
+  specialProjects: string | null; // JSON [{key, detail}]
   addrUnitNo: string | null;
   addrHouseNo: string | null;
   addrStreetName: string | null;
@@ -827,6 +835,12 @@ function TargetCard({
                       {target.bailStatus && (
                         <p className="text-xs text-muted-foreground">
                           Bail: {formatBail(target)}
+                        </p>
+                      )}
+                      {formatSpecialProjects(target.specialProjects) && (
+                        <p className="text-xs text-muted-foreground">
+                          Special projects:{" "}
+                          {formatSpecialProjects(target.specialProjects)}
                         </p>
                       )}
                     </div>
@@ -1865,23 +1879,26 @@ function AssociateCard({
                 {manualImages.map(img => (
                   <div
                     key={img.key}
-                    className="relative rounded-md overflow-hidden border-2 border-violet-500"
+                    className="flex flex-col items-center gap-1 w-16"
                   >
-                    <img
-                      src={`data:${img.mimeType};base64,${img.dataBase64}`}
-                      alt="Uploaded"
-                      className="w-16 h-16 object-cover block"
-                    />
-                    <button
-                      type="button"
-                      title="Remove this photo"
-                      onClick={() =>
-                        setManualImages(v => v.filter(i => i.key !== img.key))
-                      }
-                      className="absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-black/60 text-white flex items-center justify-center"
-                    >
-                      <X className="h-2.5 w-2.5" />
-                    </button>
+                    <div className="relative rounded-md overflow-hidden border-2 border-violet-500">
+                      <img
+                        src={`data:${img.mimeType};base64,${img.dataBase64}`}
+                        alt="Uploaded"
+                        className="w-16 h-16 object-cover block"
+                      />
+                      <button
+                        type="button"
+                        title="Remove this photo"
+                        onClick={() =>
+                          setManualImages(v => v.filter(i => i.key !== img.key))
+                        }
+                        className="absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-black/60 text-white flex items-center justify-center"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                    <PhotoOwnerCaption label={displayName} />
                   </div>
                 ))}
               </div>
@@ -2300,6 +2317,35 @@ export default function TargetRegistryPage() {
   const [importPrefill, setImportPrefill] =
     useState<DocumentImportPrefill | null>(null);
   const [importKey, setImportKey] = useState(0);
+  // The imported document currently being worked through, pointing at the
+  // target now being reviewed/added. Back from the Add Target form returns to
+  // that target's review; after each target is saved the Import review reopens
+  // for the next one (then its Add Target form), so every target in a
+  // multi-target document goes through the same steps.
+  const [importSession, setImportSession] = useState<ImportSession | null>(
+    null
+  );
+  // The Operation the previous target in the batch was saved against —
+  // pre-selected for the next one (the whole document is about one
+  // operation, so re-picking it five times would be pure friction).
+  const [importOperation, setImportOperation] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
+  // Ends a multi-target document early (the dialog was cancelled/closed) —
+  // the officer can re-import the document to pick up any targets left.
+  const endImportSession = () => {
+    if (
+      importSession &&
+      importSession.focus + 1 < documentTargetCount(importSession.full)
+    ) {
+      toast.info(
+        "Stopped importing this document — re-import it to pick up any targets not yet added."
+      );
+    }
+    setImportSession(null);
+    setImportOperation(null);
+  };
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"alpha" | "recent" | "operation">(
     "alpha"
@@ -2688,7 +2734,40 @@ export default function TargetRegistryPage() {
         onClose={() => {
           setShowCreate(false);
           setImportPrefill(null);
+          // Cancelling any one target ends the rest of the batch — the
+          // officer can re-import the document to pick the others up.
+          endImportSession();
         }}
+        initialOperation={importOperation}
+        onSaved={savedOperation => {
+          setShowCreate(false);
+          setImportPrefill(null);
+          if (
+            !importSession ||
+            importSession.focus + 1 >= documentTargetCount(importSession.full)
+          ) {
+            setImportSession(null);
+            setImportOperation(null);
+            return;
+          }
+          // Back to the review screen for the next target in the document.
+          setImportSession({
+            ...importSession,
+            focus: importSession.focus + 1,
+          });
+          setImportOperation(savedOperation);
+          setShowImportDocument(true);
+        }}
+        onBack={
+          importSession
+            ? () => {
+                // Return to this target's review screen.
+                setShowCreate(false);
+                setImportPrefill(null);
+                setShowImportDocument(true);
+              }
+            : undefined
+        }
         onSave={async payload => {
           const { existingAssociateId, ...rest } = payload;
           if (existingAssociateId) {
@@ -2705,6 +2784,7 @@ export default function TargetRegistryPage() {
         initialExtraAddresses={importPrefill?.extraAddresses}
         initialExtraVehicles={importPrefill?.extraVehicles}
         initialAssociates={importPrefill?.associates}
+        initialStatus={importPrefill?.status}
         initialImages={importPrefill?.images}
         initialBackground={importPrefill?.background}
         initialDocumentSnapshot={importPrefill}
@@ -2713,8 +2793,17 @@ export default function TargetRegistryPage() {
       {/* Import from Document dialog */}
       <ImportTargetDocumentDialog
         open={showImportDocument}
-        onClose={() => setShowImportDocument(false)}
-        onContinue={prefill => {
+        session={importSession}
+        onBackToUpload={() => setImportSession(null)}
+        onClose={() => {
+          setShowImportDocument(false);
+          endImportSession();
+        }}
+        onContinue={(prefill, nextSession) => {
+          // A fresh upload starts with no operation chosen; a later target
+          // in the same document keeps the one already picked.
+          if (!importSession) setImportOperation(null);
+          setImportSession(nextSession);
           setImportPrefill(prefill);
           setImportKey(k => k + 1);
           setShowImportDocument(false);

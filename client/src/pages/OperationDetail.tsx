@@ -147,6 +147,7 @@ function TargetCard({
     bailStatus?: string | null;
     bailConditions?: string | null;
     bailConditionsText?: string | null;
+    specialProjects?: string | null;
     addrUnitNo?: string | null;
     addrHouseNo?: string | null;
     addrStreetName?: string | null;

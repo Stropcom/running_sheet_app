@@ -10,7 +10,10 @@
 import JSZip from "jszip";
 import { XMLParser } from "fast-xml-parser";
 import sharp from "sharp";
+import { createHash } from "crypto";
 import type { ExtractedDocumentImage } from "./documentReadResult";
+import { matchWholeLinePersonName } from "./freeTextEntityScan";
+import { isLikelyPhoto } from "./imagePhotoFilter";
 
 export interface DocxTable {
   /** Each row is a list of cell texts, in the order the cells actually
@@ -28,37 +31,160 @@ export interface DocxReadResult {
   images: ExtractedDocumentImage[];
 }
 
-// Below this, in either dimension, an embedded image is treated as
-// decorative (a letterhead logo, a divider rule, a bullet icon) rather than
-// a genuine subject photo worth running through face recognition.
-const MIN_IMAGE_DIMENSION = 120;
+// Size / banner-shape / flat-graphic filtering lives in imagePhotoFilter.ts
+// (shared with the PDF reader).
+
+/** Where the document body references each picture, in reading order, with
+ * the (top-level) table it sits inside, if any. Header/footer pictures (a
+ * letterhead logo repeated on every page) live in their own parts and are
+ * never referenced from document.xml, so they're excluded by construction. */
+interface ImageRef {
+  target: string;
+  /** Top-level table the picture sits in (null when it's not in a table),
+   * with the row/cell of that table — a photoboard grid holds many people,
+   * so the cell is what says whose photo it is. */
+  tableIndex: number | null;
+  rowIndex: number;
+  cellIndex: number;
+}
+
+async function findBodyImageRefs(zip: JSZip, xml: string): Promise<ImageRef[]> {
+  const relsFile = zip.file("word/_rels/document.xml.rels");
+  if (!relsFile) return [];
+  const rels = await relsFile.async("text");
+  const targetById = new Map<string, string>();
+  for (const m of Array.from(rels.matchAll(/<Relationship\b[^>]*>/g))) {
+    const tag = m[0];
+    const id = tag.match(/\bId="([^"]+)"/)?.[1];
+    const target = tag.match(/\bTarget="([^"]+)"/)?.[1];
+    const type = tag.match(/\bType="([^"]+)"/)?.[1] ?? "";
+    if (id && target && /\/image$/.test(type)) {
+      targetById.set(id, target.replace(/^\//, "").replace(/^word\//, ""));
+    }
+  }
+  const refs: ImageRef[] = [];
+  let depth = 0;
+  let tableIndex = -1;
+  let rowIndex = -1;
+  let cellIndex = -1;
+  for (const m of Array.from(
+    xml.matchAll(
+      /<w:tbl>|<\/w:tbl>|<w:tr[ >]|<w:tc[ >]|r:embed="([^"]+)"|<v:imagedata\b[^>]*\br:id="([^"]+)"/g
+    )
+  )) {
+    if (m[0] === "<w:tbl>") {
+      if (depth === 0) {
+        tableIndex++;
+        rowIndex = -1;
+        cellIndex = -1;
+      }
+      depth++;
+    } else if (m[0] === "</w:tbl>") {
+      depth--;
+    } else if (m[0].startsWith("<w:tr")) {
+      // Only the top-level table's own rows/cells are counted (a nested
+      // table's belong to the enclosing cell).
+      if (depth === 1) {
+        rowIndex++;
+        cellIndex = -1;
+      }
+    } else if (m[0].startsWith("<w:tc")) {
+      if (depth === 1) cellIndex++;
+    } else {
+      const target = targetById.get(m[1] ?? m[2]);
+      if (target) {
+        refs.push({
+          target,
+          tableIndex: depth > 0 ? tableIndex : null,
+          rowIndex,
+          cellIndex,
+        });
+      }
+    }
+  }
+  return refs;
+}
+
+/** A person's name that LEADS a cell's text ("Tomas Ivo VARGA\nDOB: …" or a
+ * bare "Nadia Elise KOVACS"). A cell that merely mentions a name further down
+ * ("Associate of Target\nNadia Elise KOVACS" — the owner, not the person) is
+ * deliberately not a match. */
+function leadingCellName(cell: string | undefined): string {
+  const first = (cell ?? "").split("\n")[0]?.trim() ?? "";
+  return first && matchWholeLinePersonName(first) ? first : "";
+}
+
+/** Whose photo a picture is, from where it sits: the name leading its own
+ * cell (a photoboard grid of many people), else — only when the table is
+ * ONE person's card, i.e. exactly one cell leads with a name — that name.
+ * Empty when it can't tell. */
+function captionForImageRef(ref: ImageRef, tables: DocxTable[]): string {
+  if (ref.tableIndex === null) return "";
+  const table = tables[ref.tableIndex];
+  if (!table) return "";
+  const own = leadingCellName(table.rows[ref.rowIndex]?.[ref.cellIndex]);
+  if (own) return own;
+  const names = new Set(table.rows.flat().map(leadingCellName).filter(Boolean));
+  return names.size === 1 ? Array.from(names)[0] : "";
+}
 
 /** Pulls every embedded picture out of a .docx's word/media/ part — these
  * are literal separate files inside the zip (unlike a PDF, which has no
  * equivalent and needs its own page-content-stream walk — see
  * pdfTextReader.ts). Re-encodes each to PNG via sharp so the caller doesn't
  * need to care whether the source was a .png/.jpeg/.bmp/etc, and drops
- * anything sharp can't decode (e.g. a .wmf/.emf vector drawing) or that's
- * too small to be a real subject photo. Best-effort: one bad image is
- * skipped, not fatal to the whole read. */
+ * anything sharp can't decode (e.g. a .wmf/.emf vector drawing), anything
+ * too small, and anything banner-shaped. Pictures are returned in the order
+ * the document first shows them, each once even when the template re-uses
+ * the same photo in several places (a photoboard AND the person's own card),
+ * with a name caption when the photo sits inside a named person's card.
+ * Best-effort: one bad image is skipped, not fatal to the whole read. */
 async function extractDocxImages(
-  zip: JSZip
+  zip: JSZip,
+  bodyXml: string,
+  tables: DocxTable[]
 ): Promise<ExtractedDocumentImage[]> {
+  const refs = await findBodyImageRefs(zip, bodyXml);
+  // First reference per media part, in reading order; the caption comes from
+  // whichever reference sits in a named person's card (a photo reused on a
+  // photoboard and in its owner's card is captioned by the card).
+  const order: string[] = [];
+  const captionByTarget = new Map<string, string>();
+  for (const ref of refs) {
+    if (!order.includes(ref.target)) order.push(ref.target);
+    if (!captionByTarget.has(ref.target)) {
+      const owner = captionForImageRef(ref, tables);
+      if (owner) captionByTarget.set(ref.target, owner);
+    }
+  }
+  // Nothing recognisable referenced from the body (an unusual markup shape):
+  // fall back to every media part so a photo is never lost outright.
+  const paths = order.length
+    ? order
+    : zip.file(/^word\/media\//).map(f => f.name.replace(/^word\//, ""));
+
   const images: ExtractedDocumentImage[] = [];
-  for (const file of zip.file(/^word\/media\//)) {
+  const seenHashes = new Set<string>();
+  for (const target of paths) {
     try {
+      const file = zip.file(`word/${target}`);
+      if (!file) continue;
       const raw = await file.async("nodebuffer");
+      const hash = createHash("sha1").update(raw).digest("hex");
+      if (seenHashes.has(hash)) continue;
       const decoded = sharp(raw);
       const meta = await decoded.metadata();
       if (!meta.width || !meta.height) continue;
-      if (meta.width < MIN_IMAGE_DIMENSION || meta.height < MIN_IMAGE_DIMENSION)
-        continue;
+      if (!(await isLikelyPhoto(decoded, meta.width, meta.height))) continue;
+      seenHashes.add(hash);
       const png = await decoded.png().toBuffer();
+      const caption = captionByTarget.get(target);
       images.push({
         dataBase64: png.toString("base64"),
         mimeType: "image/png",
         width: meta.width,
         height: meta.height,
+        ...(caption ? { captionName: caption } : {}),
       });
     } catch {
       // Not a decodable raster image — skip it rather than failing the read.
@@ -145,16 +271,15 @@ function cleanText(s: string): string {
 export async function readDocxTables(buffer: Buffer): Promise<DocxReadResult> {
   try {
     const zip = await JSZip.loadAsync(buffer);
-    const images = await extractDocxImages(zip);
     const docXmlFile = zip.file("word/document.xml");
-    if (!docXmlFile) return { tables: [], paragraphs: [], images };
+    if (!docXmlFile) return { tables: [], paragraphs: [], images: [] };
     const xml = await docXmlFile.async("text");
     const tree = parser.parse(xml) as unknown[];
 
     const documentNode = findAll(tree, "w:document")[0];
-    if (!documentNode) return { tables: [], paragraphs: [], images };
+    if (!documentNode) return { tables: [], paragraphs: [], images: [] };
     const bodyNode = findAll(documentNode["w:document"], "w:body")[0];
-    if (!bodyNode) return { tables: [], paragraphs: [], images };
+    if (!bodyNode) return { tables: [], paragraphs: [], images: [] };
     const body = bodyNode["w:body"];
 
     const tables: DocxTable[] = findAll(body, "w:tbl").map(tblNode => {
@@ -176,6 +301,7 @@ export async function readDocxTables(buffer: Buffer): Promise<DocxReadResult> {
       .map(p => cleanText(collectText(p["w:p"])))
       .filter(text => text.length > 0);
 
+    const images = await extractDocxImages(zip, xml, tables);
     return { tables, paragraphs, images };
   } catch {
     return { tables: [], paragraphs: [], images: [] };

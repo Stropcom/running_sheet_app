@@ -86,6 +86,7 @@ import {
 } from "@/components/PossibleDuplicateAlert";
 import { runDuplicateChecks } from "@/lib/duplicateCheck";
 import { OperationPicker } from "@/components/OperationPicker";
+import { PhotoOwnerCaption } from "@/components/PhotoOwnerCaption";
 import type {
   DocumentImportPrefill,
   StagedImage,
@@ -136,6 +137,7 @@ export interface RegistryCreatePayload {
   bailStatus?: "yes" | "no" | null;
   bailConditions?: "yes" | "no" | null;
   bailConditionsText?: string | null;
+  specialProjects?: string | null;
   addrUnitNo: string | null;
   addrHouseNo: string | null;
   addrStreetName: string | null;
@@ -301,6 +303,9 @@ export function AddTargetDialog({
   initialExtraAddresses,
   initialExtraVehicles,
   initialAssociates,
+  initialStatus,
+  onSaved,
+  onBack,
   initialImages,
   initialBackground,
   initialDocumentSnapshot,
@@ -331,6 +336,17 @@ export function AddTargetDialog({
   initialExtraAddresses?: ExtraAddress[];
   initialExtraVehicles?: ExtraVehicle[];
   initialAssociates?: StagedAssociate[];
+  /** MDL / bail answers read from an imported document, when it stated them
+   * in wording that maps cleanly. Read once on mount, like the other
+   * initial* props. */
+  initialStatus?: DocumentImportPrefill["status"];
+  /** Called once after a target has actually been saved (not on cancel), in
+   * place of onClose — lets the document-import queue move on to the next
+   * target, or close when there isn't one. */
+  onSaved?: (savedOperation: { id: number; name: string } | null) => void;
+  /** Document-import only: go back to the import review screen instead of
+   * cancelling. Shown as a Back button beside Save Target. */
+  onBack?: () => void;
   /** Photos the officer chose to keep on the import review screen — same
    * one-time-seed treatment as the other initial* import fields: read
    * directly (no local state), uploaded and run through face recognition
@@ -376,7 +392,10 @@ export function AddTargetDialog({
     () => initialIdentity ?? EMPTY_NAME_PARTS
   );
   // MDL (compulsory for a person target) and bail — blank until picked.
-  const [status, setStatus] = useState<TargetStatusParts>(EMPTY_STATUS_PARTS);
+  const [status, setStatus] = useState<TargetStatusParts>(() => ({
+    ...EMPTY_STATUS_PARTS,
+    ...(initialStatus ?? {}),
+  }));
   const [showMdlError, setShowMdlError] = useState(false);
   const [address, setAddress] = useState<StructuredAddressParts>(
     () => initialAddress ?? EMPTY_ADDRESS_PARTS
@@ -580,7 +599,7 @@ export function AddTargetDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dupMatch?.id]);
 
-  const resetAndClose = () => {
+  const resetState = () => {
     setOperation(initialOperation ?? null);
     setTargetType("person");
     setIdentity(EMPTY_NAME_PARTS);
@@ -608,7 +627,22 @@ export function AddTargetDialog({
     setWarnFromSave(false);
     setLinking(false);
     setPendingAfterOperation(null);
+  };
+
+  const resetAndClose = () => {
+    resetState();
     onClose();
+  };
+
+  // A target (and its staged associates/photos) was actually saved — close
+  // as usual, then let the document-import queue move on to the next one.
+  // When the caller supplies onSaved it owns what happens next (including
+  // closing); otherwise this is just a normal close.
+  const finishSaved = () => {
+    const savedOperation = operation;
+    resetState();
+    if (onSaved) onSaved(savedOperation);
+    else onClose();
   };
 
   // documentSnapshotJson is a permanent version-history record (see
@@ -948,7 +982,7 @@ export function AddTargetDialog({
       const result = await onSave(buildPayload());
       const associateIdByKey = await saveStagedAssociates(result.id);
       await saveStagedImages(result.id, associateIdByKey);
-      resetAndClose();
+      finishSaved();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to save target.");
     } finally {
@@ -1285,7 +1319,7 @@ export function AddTargetDialog({
       }
       setWarnQueue([]);
       setWarnIndex(0);
-      resetAndClose();
+      finishSaved();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to link and copy.");
     } finally {
@@ -1959,6 +1993,23 @@ export function AddTargetDialog({
     );
   }
 
+  // Who a staged photo is of, for the name printed under its thumbnail.
+  const photoOwnerLabel = (linkTo: StagedImage["linkTo"]): string => {
+    if (linkTo.type === "existingAssociate") return linkTo.entityLabel;
+    if (linkTo.type === "associate") {
+      const staged = associates.find(a => a.key === linkTo.associateKey);
+      if (staged) {
+        const { name } = composeAssociateName(
+          staged.identity,
+          staged.address.businessName
+        );
+        if (name) return name;
+      }
+      return "This associate";
+    }
+    return "This target";
+  };
+
   // Upload Image control shared by Person Identity and each associate's
   // identity box — stages the picked file into manualImages (linked by
   // "target" or that associate's staged key) and shows what's staged so
@@ -1991,23 +2042,28 @@ export function AddTargetDialog({
             {staged.map(img => (
               <div
                 key={img.key}
-                className={`relative rounded-md overflow-hidden border-2 ${accentBorderClass}`}
+                className="flex flex-col items-center gap-1 w-16"
               >
-                <img
-                  src={`data:${img.mimeType};base64,${img.dataBase64}`}
-                  alt="Uploaded"
-                  className="w-16 h-16 object-cover block"
-                />
-                <button
-                  type="button"
-                  title="Remove this photo"
-                  onClick={() =>
-                    setManualImages(v => v.filter(i => i.key !== img.key))
-                  }
-                  className="absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-black/60 text-white flex items-center justify-center"
+                <div
+                  className={`relative rounded-md overflow-hidden border-2 ${accentBorderClass}`}
                 >
-                  <X className="h-2.5 w-2.5" />
-                </button>
+                  <img
+                    src={`data:${img.mimeType};base64,${img.dataBase64}`}
+                    alt="Uploaded"
+                    className="w-16 h-16 object-cover block"
+                  />
+                  <button
+                    type="button"
+                    title="Remove this photo"
+                    onClick={() =>
+                      setManualImages(v => v.filter(i => i.key !== img.key))
+                    }
+                    className="absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-black/60 text-white flex items-center justify-center"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </div>
+                <PhotoOwnerCaption label={photoOwnerLabel(img.linkTo)} />
               </div>
             ))}
           </div>
@@ -2024,7 +2080,10 @@ export function AddTargetDialog({
           if (!v) resetAndClose();
         }}
       >
-        <DialogContent className="md:max-w-2xl lg:max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          className="md:max-w-2xl lg:max-w-5xl max-h-[90vh] overflow-y-auto"
+          onInteractOutside={e => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Add Target to Registry</DialogTitle>
           </DialogHeader>
@@ -2171,43 +2230,54 @@ export function AddTargetDialog({
                   {(initialImages ?? []).map(img => {
                     const kept = imageChoices[img.key] ?? true;
                     const isDup = duplicateImageKeys.has(img.key);
+                    const ownerLabel = photoOwnerLabel(img.linkTo);
                     return (
-                      <button
+                      <div
                         key={img.key}
-                        type="button"
-                        onClick={() =>
-                          setImageChoices(prev => ({
-                            ...prev,
-                            [img.key]: !kept,
-                          }))
-                        }
-                        title={
-                          kept
-                            ? "Tap to discard this photo"
-                            : "Tap to keep this photo"
-                        }
-                        className={`relative rounded-md overflow-hidden border-2 transition-colors ${
-                          kept
-                            ? "border-indigo-500"
-                            : "border-border opacity-40 grayscale"
-                        }`}
+                        className="flex flex-col items-center gap-1 w-20"
                       >
-                        <img
-                          src={`data:${img.mimeType};base64,${img.dataBase64}`}
-                          alt="Extracted from document"
-                          className="w-20 h-20 object-cover block"
-                        />
-                        {kept && (
-                          <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-indigo-500 text-white flex items-center justify-center">
-                            <Check className="h-2.5 w-2.5" />
-                          </span>
-                        )}
-                        {isDup && (
-                          <span className="absolute bottom-0 left-0 right-0 bg-amber-500 text-white text-[8px] font-bold text-center py-0.5 leading-none">
-                            ALREADY HAVE
-                          </span>
-                        )}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setImageChoices(prev => ({
+                              ...prev,
+                              [img.key]: !kept,
+                            }))
+                          }
+                          title={
+                            kept
+                              ? "Tap to discard this photo"
+                              : "Tap to keep this photo"
+                          }
+                          className={`relative rounded-md overflow-hidden border-2 transition-colors ${
+                            kept
+                              ? "border-indigo-500"
+                              : "border-border opacity-40 grayscale"
+                          }`}
+                        >
+                          <img
+                            src={`data:${img.mimeType};base64,${img.dataBase64}`}
+                            alt="Extracted from document"
+                            className="w-20 h-20 object-cover block"
+                          />
+                          {kept && (
+                            <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-indigo-500 text-white flex items-center justify-center">
+                              <Check className="h-2.5 w-2.5" />
+                            </span>
+                          )}
+                          {isDup && (
+                            <span className="absolute bottom-0 left-0 right-0 bg-amber-500 text-white text-[8px] font-bold text-center py-0.5 leading-none">
+                              ALREADY HAVE
+                            </span>
+                          )}
+                        </button>
+                        <span
+                          className="text-[10px] leading-tight text-center text-muted-foreground break-words w-full"
+                          title={ownerLabel}
+                        >
+                          {ownerLabel}
+                        </span>
+                      </div>
                     );
                   })}
                 </div>
@@ -2232,7 +2302,7 @@ export function AddTargetDialog({
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="sm:justify-between">
             <Button
               variant="outline"
               onClick={resetAndClose}
@@ -2240,9 +2310,23 @@ export function AddTargetDialog({
             >
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving || checkingDup}>
-              {checkingDup ? "Checking…" : saving ? "Saving…" : "Save Target"}
-            </Button>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              {onBack && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    resetState();
+                    onBack();
+                  }}
+                  disabled={saving || checkingDup}
+                >
+                  Back
+                </Button>
+              )}
+              <Button onClick={handleSave} disabled={saving || checkingDup}>
+                {checkingDup ? "Checking…" : saving ? "Saving…" : "Save Target"}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2361,7 +2445,7 @@ export function AddTargetDialog({
             utils.associate.listForTarget.invalidate();
             utils.intelligence.targetProfile.invalidate();
             utils.intelligence.operationProfile.invalidate();
-            resetAndClose();
+            finishSaved();
           }}
         />
       )}

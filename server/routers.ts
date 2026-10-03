@@ -7,6 +7,12 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
 import { CIN_LINK_CATEGORY } from "@shared/attachmentLinking";
+import {
+  sanitizeTargetSpecialProjects,
+  mergeSpecialProjects,
+  parseSpecialProjects,
+  applyTargetProjectsToSummary,
+} from "@shared/targetStatus";
 import { TARGET_TYPES } from "../drizzle/schema";
 import {
   buildRunningSheetTitle,
@@ -192,6 +198,7 @@ import {
   computeAllRowsSigned,
   getSheetSummary,
   upsertSheetSummary,
+  syncSummaryProjectsToTarget,
   orderTeamCins,
   extractSummaryLocation,
   computeSheetSummaryVehicles,
@@ -496,6 +503,14 @@ const targetStatusFieldsSchema = {
   bailStatus: z.enum(["yes", "no"]).optional().nullable(),
   bailConditions: z.enum(["yes", "no"]).optional().nullable(),
   bailConditionsText: z.string().optional().nullable(),
+  // JSON [{key, detail}] — only TI/LBS/SEEK/CAD survive (see shared/targetStatus).
+  specialProjects: z
+    .string()
+    .optional()
+    .nullable()
+    .transform(v =>
+      v === undefined ? undefined : sanitizeTargetSpecialProjects(v)
+    ),
 };
 
 const smeacTeamSlotSchema = z.object({
@@ -5037,7 +5052,15 @@ export const appRouter = router({
             location: extractSummaryLocation(rows),
             ioSupport: priorSummary?.ioSupport ?? null,
             intelSupport: priorSummary?.intelSupport ?? null,
-            specialProjects: priorSummary?.specialProjects ?? null,
+            // The prior summary's projects, with TI/LBS/SEEK/CAD set to
+            // exactly what the Target Registry says (the registry and the
+            // summaries stay in step — see syncTargetProjectsToOpenSummaries).
+            specialProjects: target
+              ? applyTargetProjectsToSummary(
+                  priorSummary?.specialProjects ?? null,
+                  target.specialProjects ?? null
+                )
+              : (priorSummary?.specialProjects ?? null),
             objectives: priorSummary?.objectives ?? null,
           });
         } else {
@@ -5046,6 +5069,7 @@ export const appRouter = router({
             startTime?: string | null;
             finishTime?: string | null;
             location?: string | null;
+            specialProjects?: string | null;
           } = { sheetId: input.sheetId };
           if (
             !record.startTimeEdited &&
@@ -5070,10 +5094,28 @@ export const appRouter = router({
             const derivedLocation = extractSummaryLocation(rows);
             if (derivedLocation) patch.location = derivedLocation;
           }
+          // Special Projects: a summary whose list is still empty (opened
+          // before the target's projects were set, or none were carried
+          // over) picks up the target's TI/LBS/SEEK/CAD now. Once it has
+          // any entry the supervisor owns the list — a project they
+          // unticked is never silently re-added.
+          if (
+            !record.completedAt &&
+            parseSpecialProjects(record.specialProjects).length === 0 &&
+            sheet.targetId
+          ) {
+            const t = await getTargetById(sheet.targetId);
+            const fromTarget = mergeSpecialProjects(
+              null,
+              t?.specialProjects ?? null
+            );
+            if (fromTarget) patch.specialProjects = fromTarget;
+          }
           if (
             patch.startTime !== undefined ||
             patch.finishTime !== undefined ||
-            patch.location !== undefined
+            patch.location !== undefined ||
+            patch.specialProjects !== undefined
           ) {
             record = await upsertSheetSummary(patch);
           }
@@ -5142,7 +5184,7 @@ export const appRouter = router({
           });
         }
         const userCIN = ctx.user.cin ?? ctx.user.username ?? "Unknown";
-        return upsertSheetSummary({
+        const saved = await upsertSheetSummary({
           ...input,
           lastEditedByCIN: userCIN,
           // A manual edit here sticks — stop auto-syncing that field from
@@ -5150,6 +5192,15 @@ export const appRouter = router({
           ...(input.startTime !== undefined ? { startTimeEdited: true } : {}),
           ...(input.finishTime !== undefined ? { finishTimeEdited: true } : {}),
         });
+        // TI/LBS/SEEK/CAD edited here also change the Target Registry (and,
+        // through it, the target's other open summaries).
+        if (input.specialProjects !== undefined) {
+          await syncSummaryProjectsToTarget(
+            input.sheetId,
+            input.specialProjects
+          );
+        }
+        return saved;
       }),
 
     /** Team Leader (or Admin) acknowledges the summary is complete — locks it */

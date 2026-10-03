@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, X, Check, ScanFace } from "lucide-react";
+import { PhotoOwnerCaption, shortPersonName } from "@/components/PhotoOwnerCaption";
 import { useMemo, useState } from "react";
 
 interface Slot {
@@ -123,15 +124,25 @@ function CompareSlot({
               ) : !photos || photos.length === 0 ? (
                 <p className="col-span-3 text-sm text-muted-foreground text-center py-4">No photos in this operation</p>
               ) : (
-                (photos as any[]).map(p => (
-                  <button
-                    key={p.id}
-                    onClick={() => onChange({ ...slot, attachmentId: p.id, photoUrl: p.url, faceIndex: null })}
-                    className="aspect-square rounded-lg overflow-hidden border border-border hover:border-primary transition-colors shrink-0"
-                  >
-                    <img src={p.url} alt="Photo" className="w-full h-full object-cover" />
-                  </button>
-                ))
+                (photos as any[]).map(p => {
+                  // Who the photo is already linked to, so the right one is
+                  // easy to pick out of a folder of portraits.
+                  const names = ((p.linkedEntities ?? []) as { category: string; label: string }[])
+                    .filter(e => e.category !== "member")
+                    .map(e => shortPersonName(e.label))
+                    .join(", ");
+                  return (
+                    <div key={p.id} className="flex flex-col items-center gap-1">
+                      <button
+                        onClick={() => onChange({ ...slot, attachmentId: p.id, photoUrl: p.url, faceIndex: null })}
+                        className="aspect-square w-full rounded-lg overflow-hidden border border-border hover:border-primary transition-colors shrink-0"
+                      >
+                        <img src={p.url} alt="Photo" className="w-full h-full object-cover" />
+                      </button>
+                      {names && <PhotoOwnerCaption label={names} />}
+                    </div>
+                  );
+                })
               )}
             </div>
           )}

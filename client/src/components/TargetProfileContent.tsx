@@ -1,5 +1,15 @@
-import { formatBail, mdlLabel } from "@shared/targetStatus";
+import {
+  formatBail,
+  formatSpecialProjects,
+  mdlLabel,
+} from "@shared/targetStatus";
 import { useLocation } from "wouter";
+import {
+  sharedLinkChipText,
+  sharedLinksTooltip,
+  type CrossLinkVia,
+} from "@/lib/crossLinkText";
+import { shortPersonName } from "@/components/PhotoOwnerCaption";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -60,8 +70,9 @@ interface CrossOpExtra {
   id: number;
   name: string;
   kind: "mentioned" | "shared";
-  via?: "vehicle" | "address";
-  sharedValue?: string;
+  /** Everything shared with this operation, stated exactly (registration
+   * numbers, addresses, associate names) — one entry per kind. */
+  links: Array<{ via: CrossLinkVia; sharedValue: string }>;
 }
 
 function getCrossOperationExtras(profile: {
@@ -70,7 +81,7 @@ function getCrossOperationExtras(profile: {
   sharedEntityLinks: Array<{
     operationId: number;
     operationName: string;
-    via: "vehicle" | "address";
+    via: CrossLinkVia;
     sharedValue: string;
   }>;
 }): CrossOpExtra[] {
@@ -82,17 +93,29 @@ function getCrossOperationExtras(profile: {
       id: s.operationId,
       name: s.operationName,
       kind: "mentioned",
+      links: [],
     });
   }
   for (const l of profile.sharedEntityLinks) {
-    if (linkedOpIds.has(l.operationId) || map.has(l.operationId)) continue;
-    map.set(l.operationId, {
-      id: l.operationId,
-      name: l.operationName,
-      kind: "shared",
-      via: l.via,
-      sharedValue: l.sharedValue,
-    });
+    if (linkedOpIds.has(l.operationId)) continue;
+    const existing = map.get(l.operationId);
+    // A shared vehicle/address/associate is a stronger, more specific claim
+    // than a plain mention, so it takes over the chip — and every thing
+    // shared with that operation is kept, not just the first.
+    if (!existing || existing.kind === "mentioned") {
+      map.set(l.operationId, {
+        id: l.operationId,
+        name: l.operationName,
+        kind: "shared",
+        links: [{ via: l.via, sharedValue: l.sharedValue }],
+      });
+    } else if (
+      !existing.links.some(
+        x => x.via === l.via && x.sharedValue === l.sharedValue
+      )
+    ) {
+      existing.links.push({ via: l.via, sharedValue: l.sharedValue });
+    }
   }
   return Array.from(map.values());
 }
@@ -221,7 +244,14 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     <div class="ops-list">${profile.operations.map(o => `<span class="op-badge">${esc(o.name)}</span>`).join("")}${crossOpExtras
       .map(
         op =>
-          `<span class="op-badge" style="background:#fef3c7 !important;color:#92400e !important;border-color:#fde68a">${esc(op.name)} <span style="font-size:8px;text-transform:uppercase">(${op.kind === "shared" ? `shared ${op.via}` : "mentioned"})</span></span>`
+          `<span class="op-badge" style="background:#fef3c7 !important;color:#92400e !important;border-color:#fde68a">${esc(op.name)} <span style="font-size:8px;text-transform:uppercase">(${
+            op.kind === "shared"
+              ? op.links
+                  .map(l => sharedLinkChipText(l.via, l.sharedValue))
+                  .map(esc)
+                  .join(" · ")
+              : "mentioned"
+          })</span></span>`
       )
       .join("")}</div>
   </div>
@@ -231,15 +261,11 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     profile.v1f ||
     profile.v2f ||
     profile.extraVehicles ||
-    profile.extraAddresses ||
-    profile.mdlStatus ||
-    profile.bailStatus
+    profile.extraAddresses
       ? `
   <div class="section">
     <div class="section-title">Registered Details</div>
     <div class="detail-grid">
-      ${profile.mdlStatus ? `<span class="detail-label">MDL</span><span class="detail-value">${esc(mdlLabel(profile.mdlStatus))}</span>` : ""}
-      ${profile.bailStatus ? `<span class="detail-label">Bail</span><span class="detail-value">${esc(formatBail(profile))}</span>` : ""}
       ${profile.hbf ? `<span class="detail-label">Home Address</span><span class="detail-value">${esc(formatIntelAddress(profile.hbf))}</span>` : ""}
       ${prevHtml("hbf") ? `<span style="grid-column:1/-1">${prevHtml("hbf")}</span>` : ""}
       ${
@@ -285,6 +311,20 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
             })()
           : ""
       }
+    </div>
+  </div>`
+      : ""
+  }
+
+  ${
+    profile.mdlStatus || profile.bailStatus || profile.specialProjects
+      ? `
+  <div class="section">
+    <div class="section-title">Status</div>
+    <div class="detail-grid">
+      ${profile.mdlStatus ? `<span class="detail-label">MDL</span><span class="detail-value">${esc(mdlLabel(profile.mdlStatus))}</span>` : ""}
+      ${profile.bailStatus ? `<span class="detail-label">Bail</span><span class="detail-value">${esc(formatBail(profile))}</span>` : ""}
+      ${formatSpecialProjects(profile.specialProjects) ? `<span class="detail-label">Special Projects</span><span class="detail-value">${esc(formatSpecialProjects(profile.specialProjects))}</span>` : ""}
     </div>
   </div>`
       : ""
@@ -607,15 +647,19 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                   onClick={() => navigate(`/intelligence/operation/${op.id}`)}
                   title={
                     op.kind === "shared"
-                      ? `Not formally linked — shares a registered ${op.via} (${op.sharedValue}) with a target on this operation`
-                      : "Not formally linked — this target was named in an observation on this operation"
+                      ? sharedLinksTooltip(op.links)
+                      : `Not formally linked — ${shortPersonName(profile.name)} was named in an observation on this operation`
                   }
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 transition-colors"
                 >
                   <Folder className="w-3 h-3" />
                   {op.name}
                   <span className="text-[9px] uppercase tracking-wide opacity-70">
-                    {op.kind === "shared" ? `shared ${op.via}` : "mentioned"}
+                    {op.kind === "shared"
+                      ? op.links
+                          .map(l => sharedLinkChipText(l.via, l.sharedValue))
+                          .join(" · ")
+                      : `${shortPersonName(profile.name)} mentioned`}
                   </span>
                 </button>
               ))}
@@ -673,6 +717,57 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                         return card;
                       });
                     })()}
+
+                    {/* Status — MDL, bail and special projects, in their own section
+              below Registered Details. */}
+                    {(profile.mdlStatus ||
+                      profile.bailStatus ||
+                      profile.specialProjects) && (
+                      <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+                        <SectionHeading
+                          label="Status"
+                          count={
+                            [
+                              profile.mdlStatus,
+                              profile.bailStatus,
+                              formatSpecialProjects(profile.specialProjects),
+                            ].filter(Boolean).length
+                          }
+                        />
+                        <div className="grid grid-cols-1 gap-2 text-sm">
+                          {profile.mdlStatus && (
+                            <div className="flex gap-3 items-start">
+                              <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
+                                MDL
+                              </span>
+                              <span className="text-xs text-foreground">
+                                {mdlLabel(profile.mdlStatus)}
+                              </span>
+                            </div>
+                          )}
+                          {profile.bailStatus && (
+                            <div className="flex gap-3 items-start">
+                              <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
+                                Bail
+                              </span>
+                              <span className="text-xs text-foreground">
+                                {formatBail(profile)}
+                              </span>
+                            </div>
+                          )}
+                          {formatSpecialProjects(profile.specialProjects) && (
+                            <div className="flex gap-3 items-start">
+                              <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
+                                Special Projects
+                              </span>
+                              <span className="text-xs text-foreground">
+                                {formatSpecialProjects(profile.specialProjects)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -683,9 +778,7 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
             profile.v1f ||
             profile.v2f ||
             profile.extraVehicles ||
-            profile.extraAddresses ||
-            profile.mdlStatus ||
-            profile.bailStatus) &&
+            profile.extraAddresses) &&
             (() => {
               const extraVehicleList: Array<{ full?: string; short?: string }> =
                 (() => {
@@ -722,26 +815,6 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                     count={totalCount}
                   />
                   <div className="grid grid-cols-1 gap-2 text-sm">
-                    {profile.mdlStatus && (
-                      <div className="flex gap-3 items-start">
-                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
-                          MDL
-                        </span>
-                        <span className="text-xs text-foreground">
-                          {mdlLabel(profile.mdlStatus)}
-                        </span>
-                      </div>
-                    )}
-                    {profile.bailStatus && (
-                      <div className="flex gap-3 items-start">
-                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
-                          Bail
-                        </span>
-                        <span className="text-xs text-foreground">
-                          {formatBail(profile)}
-                        </span>
-                      </div>
-                    )}
                     {profile.hbf && (
                       <div className="flex gap-3 items-start">
                         <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">

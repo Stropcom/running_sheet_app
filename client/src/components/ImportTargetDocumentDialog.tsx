@@ -67,6 +67,14 @@ import {
 import type { StagedAssociate } from "@/components/AddTargetDialog";
 import { reflowNarrativeText } from "@/lib/textFormat";
 import {
+  documentTargetCount,
+  documentTargetNames,
+  focusParsedDocument,
+  namesOutsideFocus,
+  normPersonName,
+  type ParsedDocument,
+} from "@/lib/importDocumentFocus";
+import {
   composeAddress,
   composeVehicle,
   isSameHomeAddress,
@@ -170,6 +178,15 @@ export interface DocumentImportPrefill {
    * which were always parsed. ImportedDocumentCard uses this to show a
    * plain "not parsed" note instead of a wall of empty field boxes. */
   parsed?: boolean;
+  /** MDL / bail answers the document stated in wording that maps cleanly
+   * (see mapMdlStatus/mapBail in server/documentImport/
+   * tacticalProfileCards.ts). Absent for formats that don't carry them. */
+  status?: {
+    mdlStatus: string;
+    bailStatus: string;
+    bailConditions: string;
+    bailConditionsText: string;
+  };
 }
 
 interface PossibleMatch {
@@ -184,6 +201,10 @@ interface AssociateCandidate {
   key: string;
   firstNames: string;
   surname: string;
+  /** DD/MM/YYYY when the source gave this associate's own date of birth. */
+  bornDate?: string;
+  /** The target this associate belongs to, by name ("" → the primary). */
+  ownerTargetName?: string;
   address: StructuredAddressParts | null;
   vehicle: (StructuredVehicleParts & { vehicleType: string }) | null;
 }
@@ -237,25 +258,49 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
+/** A parsed document being worked through one target at a time. The caller
+ * keeps this between targets and hands it back (with `focus` advanced) to
+ * review the next one, so every target in a multi-target document gets the
+ * same review screen → Add Target form. */
+export interface ImportSession {
+  full: ParsedDocument;
+  /** Which target is being reviewed: 0 = the document's primary target. */
+  focus: number;
+  fileName: string;
+  sourceFile: { dataBase64: string; mimeType: string } | null;
+}
+
 export function ImportTargetDocumentDialog({
   open,
   onClose,
   onContinue,
+  onBackToUpload,
+  session,
 }: {
   open: boolean;
   onClose: () => void;
   /** Fires once the officer confirms the review screen — the caller opens
-   * AddTargetDialog pre-filled with this. */
-  onContinue: (prefill: DocumentImportPrefill) => void;
+   * AddTargetDialog pre-filled with this. The second argument carries the
+   * document forward when it describes more targets than this one. */
+  onContinue: (
+    prefill: DocumentImportPrefill,
+    session: ImportSession | null
+  ) => void;
+  /** Review this (already parsed) document's target `session.focus` instead
+   * of asking for an upload. */
+  session?: ImportSession | null;
+  /** Back from a session-driven review returns to the upload step — the
+   * caller drops its session so this dialog shows the file picker again. */
+  onBackToUpload?: () => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [fileName, setFileName] = useState("");
+  const [uploadedFileName, setFileName] = useState("");
   const [error, setError] = useState("");
   // The uploaded file's raw bytes, kept alongside the parsed result so they
   // can be threaded through to the save mutation once the officer confirms
   // (see DocumentImportPrefill.sourceFileBase64) — parseMut itself only
   // returns the parsed fields, not the original bytes.
-  const [sourceFile, setSourceFile] = useState<{
+  const [uploadedSource, setSourceFile] = useState<{
     dataBase64: string;
     mimeType: string;
   } | null>(null);
@@ -299,7 +344,25 @@ export function ImportTargetDocumentDialog({
     Record<string, string>
   >({});
 
-  const result = parseMut.data;
+  // What's being reviewed: either a fresh upload's parse (target 0) or one
+  // target of a document already parsed (see ImportSession).
+  const fullResult = session?.full ?? parseMut.data;
+  const focus = session?.focus ?? 0;
+  const fileName = session?.fileName ?? uploadedFileName;
+  const sourceFile = session ? session.sourceFile : uploadedSource;
+  const result = useMemo(
+    () => (fullResult ? focusParsedDocument(fullResult, focus) : undefined),
+    [fullResult, focus]
+  );
+  const targetCount = fullResult ? documentTargetCount(fullResult) : 1;
+  // Targets still to come after this one, by name.
+  const laterTargetNames = fullResult
+    ? documentTargetNames(fullResult).slice(focus + 1)
+    : [];
+  // Photo captions naming people who belong to a different target's review.
+  const foreignNames = fullResult
+    ? namesOutsideFocus(fullResult, focus)
+    : new Set<string>();
 
   // Every associate candidate the parser found, in one list with a stable
   // key — block-derived (full address/vehicle) and bare mentions alike.
@@ -327,6 +390,8 @@ export function ImportTargetDocumentDialog({
         key: makeExtraId(),
         firstNames: a.firstNames,
         surname: a.surname,
+        bornDate: a.bornDate ?? "",
+        ownerTargetName: a.ownerTargetName ?? "",
         address: a.address
           ? {
               unitNo: a.address.unitNo,
@@ -371,6 +436,8 @@ export function ImportTargetDocumentDialog({
   // filed as an Other Home Address Resident instead. The officer can flip
   // any one with the Move button on its review card, or later from the Add
   // Target dialog.
+  const normName = normPersonName;
+
   const isResidentCandidate = (a: AssociateCandidate): boolean => {
     const override = residentOverrides[a.key];
     if (override !== undefined) return override;
@@ -445,6 +512,46 @@ export function ImportTargetDocumentDialog({
     return match ? match.key : "target";
   };
 
+  // Where a photo goes: onto the associate it's linked to, or onto the target
+  // itself. linkTo is what saveStagedImages uses to attach it.
+  const placeImage = (img: (typeof imageCandidates)[number]): StagedImage => {
+    const linkKey = imageLinkChoices[img.key] ?? defaultLinkKeyFor(img);
+    const candidate = linkKey
+      ? associateCandidates.find(a => a.key === linkKey)
+      : undefined;
+    const choice = candidate
+      ? (associateChoices[candidate.key] ?? "create")
+      : null;
+    if (candidate && choice === "create") {
+      return {
+        ...img,
+        linkTo: { type: "associate" as const, associateKey: candidate.key },
+      };
+    }
+    if (candidate && choice === "update") {
+      const match = associateMatches[candidate.key];
+      if (match) {
+        return {
+          ...img,
+          linkTo: {
+            type: "existingAssociate" as const,
+            associateId: match.id,
+            entityLabel: match.name,
+          },
+        };
+      }
+    }
+    return { ...img, linkTo: { type: "target" as const } };
+  };
+
+  // Only the photos of the target in focus (and its associates) are offered
+  // here — a photo captioned with someone from another target's card is
+  // offered when THAT target is reviewed.
+  const reviewImages = imageCandidates.filter(
+    img => !foreignNames.has(normName(img.captionName ?? ""))
+  );
+  const otherTargetPhotoCount = imageCandidates.length - reviewImages.length;
+
   const reset = () => {
     setFileName("");
     setError("");
@@ -463,6 +570,12 @@ export function ImportTargetDocumentDialog({
   const handleClose = () => {
     reset();
     onClose();
+  };
+
+  // Back returns to the upload step (discarding this review's choices).
+  const handleBack = () => {
+    reset();
+    if (session) onBackToUpload?.();
   };
 
   const handleFilePicked = async (file: File) => {
@@ -488,20 +601,23 @@ export function ImportTargetDocumentDialog({
         // ("no name field found — fill this in manually" etc. on the normal
         // path), so an all-empty prefill is just that same path with
         // everything empty, not a new shape it has to learn to handle.
-        onContinue({
-          identity: { firstNames: "", surname: "", bornDate: "" },
-          address: EMPTY_ADDRESS_PARTS,
-          vehicle: EMPTY_VEHICLE_PARTS,
-          extraAddresses: [],
-          extraVehicles: [],
-          associates: [],
-          images: [],
-          background: "",
-          sourceFileName: file.name,
-          sourceFileBase64: dataBase64,
-          sourceFileMimeType: mimeType,
-          parsed: false,
-        });
+        onContinue(
+          {
+            identity: { firstNames: "", surname: "", bornDate: "" },
+            address: EMPTY_ADDRESS_PARTS,
+            vehicle: EMPTY_VEHICLE_PARTS,
+            extraAddresses: [],
+            extraVehicles: [],
+            associates: [],
+            images: [],
+            background: "",
+            sourceFileName: file.name,
+            sourceFileBase64: dataBase64,
+            sourceFileMimeType: mimeType,
+            parsed: false,
+          },
+          null
+        );
         reset();
         return;
       }
@@ -667,7 +783,7 @@ export function ImportTargetDocumentDialog({
           identity: {
             firstNames: a.firstNames,
             surname: a.surname,
-            bornDate: "",
+            bornDate: a.bornDate ?? "",
           },
           address: a.address ?? EMPTY_ADDRESS_PARTS,
           vehicle: a.vehicle ?? EMPTY_VEHICLE_PARTS,
@@ -711,107 +827,94 @@ export function ImportTargetDocumentDialog({
           short: "",
         }));
 
-      onContinue({
-        identity: result.name
-          ? {
-              firstNames: result.name.firstNames,
-              surname: result.name.surname,
-              bornDate: result.name.bornDate,
-            }
-          : { firstNames: "", surname: "", bornDate: "" },
-        address: primaryAddress
-          ? {
-              unitNo: primaryAddress.unitNo,
-              houseNo: primaryAddress.houseNo,
-              streetName: primaryAddress.streetName,
-              streetType: primaryAddress.streetType,
-              suburb: primaryAddress.suburb,
-              state: primaryAddress.state,
-              businessName: "",
-            }
-          : EMPTY_ADDRESS_PARTS,
-        vehicle: primaryVehicle
-          ? {
-              registration: primaryVehicle.registration,
-              state: primaryVehicle.state,
-              colour: primaryVehicle.colour,
-              make: primaryVehicle.make,
-              model: primaryVehicle.model,
-              vehicleType: primaryVehicle.vehicleType,
-            }
-          : EMPTY_VEHICLE_PARTS,
-        extraAddresses: [
-          ...restAddresses.map(a => ({
-            id: makeExtraId(),
-            label: a.label,
-            businessName: "",
-            unitNo: a.unitNo,
-            houseNo: a.houseNo,
-            streetName: a.streetName,
-            streetType: a.streetType,
-            suburb: a.suburb,
-            state: a.state,
-            full: "",
-            short: "",
-          })),
-          ...unparsedExtraAddresses,
-          ...businessLocations,
-        ],
-        extraVehicles: [
-          ...restVehicles.map(v => ({
-            id: makeExtraId(),
-            registration: v.registration,
-            state: v.state,
-            colour: v.colour,
-            make: v.make,
-            model: v.model,
-            vehicleType: v.vehicleType,
-            full: "",
-            short: "",
-          })),
-          ...unparsedExtraVehicles,
-        ],
-        associates,
-        images: imageCandidates
-          .filter(img => imageChoices[img.key] ?? true)
-          .map(img => {
-            const linkKey = imageLinkChoices[img.key] ?? defaultLinkKeyFor(img);
-            const candidate = linkKey
-              ? associateCandidates.find(a => a.key === linkKey)
-              : undefined;
-            const choice = candidate
-              ? (associateChoices[candidate.key] ?? "create")
-              : null;
-            if (candidate && choice === "create") {
-              return {
-                ...img,
-                linkTo: {
-                  type: "associate" as const,
-                  associateKey: candidate.key,
-                },
-              };
-            }
-            if (candidate && choice === "update") {
-              const match = associateMatches[candidate.key];
-              if (match) {
-                return {
-                  ...img,
-                  linkTo: {
-                    type: "existingAssociate" as const,
-                    associateId: match.id,
-                    entityLabel: match.name,
-                  },
-                };
+      const keptImages = imageCandidates.filter(
+        img =>
+          (imageChoices[img.key] ?? true) &&
+          !foreignNames.has(normName(img.captionName ?? ""))
+      );
+
+      onContinue(
+        {
+          identity: result.name
+            ? {
+                firstNames: result.name.firstNames,
+                surname: result.name.surname,
+                bornDate: result.name.bornDate,
               }
-            }
-            return { ...img, linkTo: { type: "target" as const } };
-          }),
-        background: result.freeText.trim(),
-        sourceFileName: fileName,
-        sourceFileBase64: sourceFile?.dataBase64 ?? "",
-        sourceFileMimeType: sourceFile?.mimeType ?? "",
-        parsed: true,
-      });
+            : { firstNames: "", surname: "", bornDate: "" },
+          address: primaryAddress
+            ? {
+                unitNo: primaryAddress.unitNo,
+                houseNo: primaryAddress.houseNo,
+                streetName: primaryAddress.streetName,
+                streetType: primaryAddress.streetType,
+                suburb: primaryAddress.suburb,
+                state: primaryAddress.state,
+                businessName: "",
+              }
+            : EMPTY_ADDRESS_PARTS,
+          vehicle: primaryVehicle
+            ? {
+                registration: primaryVehicle.registration,
+                state: primaryVehicle.state,
+                colour: primaryVehicle.colour,
+                make: primaryVehicle.make,
+                model: primaryVehicle.model,
+                vehicleType: primaryVehicle.vehicleType,
+              }
+            : EMPTY_VEHICLE_PARTS,
+          extraAddresses: [
+            ...restAddresses.map(a => ({
+              id: makeExtraId(),
+              label: a.label,
+              businessName: "",
+              unitNo: a.unitNo,
+              houseNo: a.houseNo,
+              streetName: a.streetName,
+              streetType: a.streetType,
+              suburb: a.suburb,
+              state: a.state,
+              full: "",
+              short: "",
+            })),
+            ...unparsedExtraAddresses,
+            ...businessLocations,
+          ],
+          extraVehicles: [
+            ...restVehicles.map(v => ({
+              id: makeExtraId(),
+              registration: v.registration,
+              state: v.state,
+              colour: v.colour,
+              make: v.make,
+              model: v.model,
+              vehicleType: v.vehicleType,
+              full: "",
+              short: "",
+            })),
+            ...unparsedExtraVehicles,
+          ],
+          associates,
+          images: keptImages.map(placeImage),
+          background: result.freeText.trim(),
+          sourceFileName: fileName,
+          sourceFileBase64: sourceFile?.dataBase64 ?? "",
+          sourceFileMimeType: sourceFile?.mimeType ?? "",
+          parsed: true,
+          status: {
+            mdlStatus: result.mdlStatus ?? "",
+            bailStatus: result.bailStatus ?? "",
+            bailConditions: result.bailConditions ?? "",
+            bailConditionsText: result.bailConditionsText ?? "",
+          },
+        },
+        // Hand the document back (pointing at THIS target) so the caller can
+        // return here if the officer goes Back from the Add Target form, and
+        // advance to the next target once this one is saved.
+        fullResult && sourceFile !== undefined
+          ? { full: fullResult, focus, fileName, sourceFile }
+          : null
+      );
       reset();
     } finally {
       setApplying(false);
@@ -917,7 +1020,10 @@ export function ImportTargetDocumentDialog({
 
   return (
     <Dialog open={open} onOpenChange={o => !o && handleClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-lg max-h-[90vh] overflow-y-auto"
+        onInteractOutside={e => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-primary" />
@@ -1123,8 +1229,16 @@ export function ImportTargetDocumentDialog({
               {imageCandidates.length > 0 && (
                 <div className="rounded-lg border border-l-4 border-indigo-500/30 border-l-indigo-500 bg-indigo-500/5 p-3 flex flex-col gap-2.5">
                   <p className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wide">
-                    Photos found ({imageCandidates.length})
+                    Photos found ({reviewImages.length})
                   </p>
+                  {otherTargetPhotoCount > 0 && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {otherTargetPhotoCount} more photo
+                      {otherTargetPhotoCount > 1 ? "s" : ""} in this document
+                      belong to the other targets and their associates — each is
+                      offered when that target is reviewed.
+                    </p>
+                  )}
                   <p className="text-[11px] text-muted-foreground">
                     Each kept photo is uploaded and run through face recognition
                     once you save. Tap a photo to untick it, or tap a name below
@@ -1140,7 +1254,7 @@ export function ImportTargetDocumentDialog({
                     );
                     return (
                       <div className="flex flex-col gap-2">
-                        {imageCandidates.map(img => {
+                        {reviewImages.map(img => {
                           const kept = imageChoices[img.key] ?? true;
                           const linkKey =
                             imageLinkChoices[img.key] ?? defaultLinkKeyFor(img);
@@ -1240,6 +1354,15 @@ export function ImportTargetDocumentDialog({
                                         </span>
                                       );
                                     })()}
+                                  {!linkedAssociate && (
+                                    <span className="text-[10px] text-muted-foreground">
+                                      Linked to this target
+                                      {result.name
+                                        ? ` (${result.name.firstNames} ${result.name.surname})`
+                                        : ""}
+                                      .
+                                    </span>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -1287,6 +1410,27 @@ export function ImportTargetDocumentDialog({
                       (On-device AI assist isn't installed on this deployment
                       yet — these are shown as read by the existing rules only.)
                     </p>
+                  )}
+                </div>
+              )}
+
+              {(laterTargetNames.length > 0 || focus > 0) && (
+                <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3 flex flex-col gap-1.5">
+                  <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide">
+                    Target {focus + 1} of {targetCount} in this document
+                  </p>
+                  {laterTargetNames.length > 0 && (
+                    <>
+                      <p className="text-[11px] text-muted-foreground">
+                        Each target gets this same review, then the Add Target
+                        form, one after another. Still to come:
+                      </p>
+                      {laterTargetNames.map((n, i) => (
+                        <span key={i} className="text-sm font-medium">
+                          {n}
+                        </span>
+                      ))}
+                    </>
                   )}
                 </div>
               )}
@@ -1437,19 +1581,30 @@ export function ImportTargetDocumentDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="sm:justify-between">
           <Button variant="outline" onClick={handleClose}>
             Cancel
           </Button>
           {result && (
-            <Button
-              onClick={handleContinue}
-              disabled={applying || checkingDuplicates}
-              className="gap-1.5"
-            >
-              {applying && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              Continue to Add Target
-            </Button>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              {focus === 0 && (
+                <Button
+                  variant="outline"
+                  onClick={handleBack}
+                  disabled={applying}
+                >
+                  Back
+                </Button>
+              )}
+              <Button
+                onClick={handleContinue}
+                disabled={applying || checkingDuplicates}
+                className="gap-1.5"
+              >
+                {applying && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Continue to Add Target
+              </Button>
+            </div>
           )}
         </DialogFooter>
       </DialogContent>

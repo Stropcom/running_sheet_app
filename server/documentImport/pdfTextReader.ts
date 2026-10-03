@@ -34,6 +34,7 @@ import { getDocument, OPS, ImageKind } from "pdfjs-dist/legacy/build/pdf.mjs";
 import sharp from "sharp";
 import { ALL_KNOWN_LABELS } from "./targetProfileFieldMap";
 import { matchWholeLinePersonName } from "./freeTextEntityScan";
+import { isLikelyPhoto, isPhotoShapedSize } from "./imagePhotoFilter";
 import { isHeadingLine } from "@shared/textSections";
 import type {
   DocumentReadResult,
@@ -1539,12 +1540,8 @@ function splitSideBySideFlows(items: PositionedItem[]): {
  * text layer at all (a scanned image) — the caller surfaces that as
  * "couldn't read this file" rather than a crash, the same tolerant-
  * failure pattern docxTableReader.ts uses. */
-// Below this, in either dimension, an embedded image is treated as
-// decorative (a letterhead logo, a signature scrawl, a divider rule) rather
-// than a genuine subject photo worth running through face recognition —
-// same threshold and reasoning as MIN_IMAGE_DIMENSION in
-// docxTableReader.ts.
-const MIN_IMAGE_DIMENSION = 120;
+// Size / banner-shape / flat-graphic filtering lives in imagePhotoFilter.ts
+// (shared with docxTableReader.ts).
 
 // Minimal duck-typed surface of PDFPageProxy actually used below, following
 // the same pattern as RawTextItem above — pdfjs-dist's public type
@@ -1734,8 +1731,7 @@ async function extractPdfPageImages(
           page.objs.get(objId, resolve)
         );
         if (!isRawPdfImage(raw)) continue;
-        if (raw.width < MIN_IMAGE_DIMENSION || raw.height < MIN_IMAGE_DIMENSION)
-          continue;
+        if (!isPhotoShapedSize(raw.width, raw.height)) continue;
         const channels =
           raw.kind === ImageKind.RGBA_32BPP
             ? 4
@@ -1745,11 +1741,13 @@ async function extractPdfPageImages(
         // GRAYSCALE_1BPP (bit-packed) or unrecognised — skip rather than
         // risk mis-decoding raw bytes with the wrong channel count.
         if (channels === null) continue;
-        const png = await sharp(Buffer.from(raw.data), {
+        const decoded = sharp(Buffer.from(raw.data), {
           raw: { width: raw.width, height: raw.height, channels },
-        })
-          .png()
-          .toBuffer();
+        });
+        // Flat graphics (icon bars, legends) pass the size/shape check but
+        // aren't photographs — see imagePhotoFilter.ts.
+        if (!(await isLikelyPhoto(decoded, raw.width, raw.height))) continue;
+        const png = await decoded.png().toBuffer();
         const captionName = captionBelowImage(imageBox, textItems);
         images.push({
           dataBase64: png.toString("base64"),

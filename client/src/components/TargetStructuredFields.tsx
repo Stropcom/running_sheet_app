@@ -31,6 +31,9 @@ import {
   MDL_LABELS,
   YES_NO,
   YES_NO_LABELS,
+  TARGET_SPECIAL_PROJECTS,
+  parseSpecialProjects,
+  sanitizeTargetSpecialProjects,
 } from "@shared/targetStatus";
 import {
   composeAddress,
@@ -148,6 +151,9 @@ export type TargetStatusParts = {
   bailStatus: string;
   bailConditions: string;
   bailConditionsText: string;
+  /** JSON [{key, detail}] for TI / LBS / SEEK / CAD — same shape as the
+   * Sheet Summary's Special Projects ("" when none ticked). */
+  specialProjects: string;
 };
 
 export const EMPTY_STATUS_PARTS: TargetStatusParts = {
@@ -155,6 +161,7 @@ export const EMPTY_STATUS_PARTS: TargetStatusParts = {
   bailStatus: "",
   bailConditions: "",
   bailConditionsText: "",
+  specialProjects: "",
 };
 
 /** True when the compulsory MDL dropdown hasn't been answered. */
@@ -168,12 +175,14 @@ export function statusPartsFromRecord(r: {
   bailStatus?: string | null;
   bailConditions?: string | null;
   bailConditionsText?: string | null;
+  specialProjects?: string | null;
 }): TargetStatusParts {
   return {
     mdlStatus: r.mdlStatus ?? "",
     bailStatus: r.bailStatus ?? "",
     bailConditions: r.bailConditions ?? "",
     bailConditionsText: r.bailConditionsText ?? "",
+    specialProjects: r.specialProjects ?? "",
   };
 }
 
@@ -197,6 +206,7 @@ export function statusPartsToPayload(status: TargetStatusParts) {
     bailConditionsText: conditionsYes
       ? status.bailConditionsText.trim() || null
       : null,
+    specialProjects: sanitizeTargetSpecialProjects(status.specialProjects),
   };
 }
 
@@ -215,6 +225,20 @@ export function TargetStatusFields({
   const bailYes = value.bailStatus === "yes";
   const conditionsYes = bailYes && value.bailConditions === "yes";
   const mdlError = !!showMdlError && mdlMissing(value);
+  const projects = parseSpecialProjects(value.specialProjects);
+  const writeProjects = (next: { key: string; detail: string }[]) =>
+    onChange({
+      ...value,
+      specialProjects: next.length ? JSON.stringify(next) : "",
+    });
+  const toggleProject = (key: string) =>
+    writeProjects(
+      projects.some(p => p.key === key)
+        ? projects.filter(p => p.key !== key)
+        : [...projects, { key, detail: "" }]
+    );
+  const setProjectDetail = (key: string, detail: string) =>
+    writeProjects(projects.map(p => (p.key === key ? { ...p, detail } : p)));
   return (
     <div className="flex flex-col gap-3 border-t border-border/40 pt-3">
       {/* Single column on a phone so every dropdown is the same full width
@@ -313,11 +337,55 @@ export function TargetStatusFields({
             onChange={e =>
               onChange({ ...value, bailConditionsText: e.target.value })
             }
-            placeholder="e.g. Curfew 2000–0600, no contact with…"
+            placeholder="Reporting conditions - days, location"
             rows={3}
           />
         </div>
       )}
+      {/* Special Projects — a checklist, each ticked project getting its own
+          agency box, exactly as on the Sheet Summary (and stored the same
+          way, so a new running sheet's summary copies it across). */}
+      <div className="flex flex-col gap-2">
+        <FieldLabel>Special Projects</FieldLabel>
+        <div className="grid grid-cols-4 gap-2">
+          {TARGET_SPECIAL_PROJECTS.map(key => {
+            const checked = projects.some(p => p.key === key);
+            return (
+              <label
+                key={key}
+                className="flex items-center justify-center gap-1.5 text-sm cursor-pointer rounded-md border border-border/60 bg-background/60 py-1.5"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={disabled}
+                  onChange={() => toggleProject(key)}
+                  className="w-4 h-4 rounded border-border"
+                />
+                {key}
+              </label>
+            );
+          })}
+        </div>
+        {projects.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {projects.map(p => (
+              <div key={p.key} className="flex items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground w-12 shrink-0">
+                  {p.key}
+                </span>
+                <Input
+                  value={p.detail}
+                  disabled={disabled}
+                  onChange={e => setProjectDetail(p.key, e.target.value)}
+                  placeholder="AFP or WAPOL"
+                  className="text-sm"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

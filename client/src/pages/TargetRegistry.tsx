@@ -306,12 +306,10 @@ function LinkOperationDialog({
 function TargetCard({
   target,
   onDeleted,
-  onLinkOps,
   defaultExpanded = false,
 }: {
   target: RegistryTarget;
   onDeleted: () => void;
-  onLinkOps: () => void;
   defaultExpanded?: boolean;
 }) {
   const utils = trpc.useUtils();
@@ -768,20 +766,6 @@ function TargetCard({
               ))}
             </div>
           )}
-          <div
-            className="flex items-center gap-1 shrink-0"
-            onClick={e => e.stopPropagation()}
-          >
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={onLinkOps}
-              title="Link to operations"
-            >
-              <Link2 className="h-4 w-4" />
-            </Button>
-          </div>
           <ChevronRight
             className={`w-4 h-4 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`}
           />
@@ -2459,7 +2443,6 @@ export default function TargetRegistryPage() {
     null
   );
   const [showCreate, setShowCreate] = useState(false);
-  const [linkTarget, setLinkTarget] = useState<RegistryTarget | null>(null);
   // Store just the id, not a snapshot of the target object — deriving it
   // live from `targets` below means the tile dialog always reflects the
   // latest data (e.g. right after a merge), instead of freezing whatever
@@ -2713,18 +2696,6 @@ export default function TargetRegistryPage() {
                   <div className="p-2.5 rounded-lg bg-rose-400/10 border border-rose-400/20 shrink-0">
                     {targetTypeIcon(t.targetType)}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-sky-400 hover:bg-sky-500/10"
-                    onClick={e => {
-                      e.stopPropagation();
-                      setLinkTarget(t as RegistryTarget);
-                    }}
-                    title="Link to operations"
-                  >
-                    <Link2 className="w-3.5 h-3.5" />
-                  </Button>
                 </div>
 
                 {/* Name */}
@@ -2785,7 +2756,6 @@ export default function TargetRegistryPage() {
                 key={t.id}
                 target={t as RegistryTarget}
                 onDeleted={() => {}}
-                onLinkOps={() => setLinkTarget(t as RegistryTarget)}
               />
             ))}
           </div>
@@ -2817,10 +2787,6 @@ export default function TargetRegistryPage() {
                 onDeleted={() => {
                   setSelectedTileTargetId(null);
                   utils.target.registry.list.invalidate();
-                }}
-                onLinkOps={() => {
-                  setLinkTarget(selectedTileTarget);
-                  setSelectedTileTargetId(null);
                 }}
                 defaultExpanded
               />
@@ -2915,19 +2881,6 @@ export default function TargetRegistryPage() {
           setShowCreate(true);
         }}
       />
-
-      {/* Link to operations */}
-      {linkTarget && (
-        <LinkOperationDialog
-          open={!!linkTarget}
-          onClose={() => setLinkTarget(null)}
-          targetId={linkTarget.id}
-          targetName={linkTarget.name}
-          linkedOperationIds={linkTarget.linkedOperations.map(
-            o => o.operationId
-          )}
-        />
-      )}
     </DashboardLayout>
   );
 }

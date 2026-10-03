@@ -1328,24 +1328,40 @@ function entityBlocksHtml(
   return `<div style="${compact ? "max-height:170px;" : "max-height:240px;"}overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;">${html.join("")}</div>`;
 }
 
-/** Small blue camera badge, bottom-left of a marker — profile / baseball-card
- * photos of the people at this address (the green bottom-right badge is the
- * running-sheet photos). */
-function createProfilePhotoBadge(): HTMLDivElement {
-  const badge = document.createElement("div");
-  badge.title = "Profile photos of people at this address";
-  badge.style.cssText = `
-    position:absolute;bottom:-4px;left:-4px;
-    background:#2563eb;
-    width:16px;height:16px;
-    border-radius:50%;
-    display:flex;align-items:center;justify-content:center;
-    border:1.5px solid #fff;
-    box-shadow:0 1px 3px rgba(0,0,0,0.3);
+/** Photo indicator across the bottom edge of a marker: one small pill, blue
+ * half (portrait icon) for profile / baseball-card photos of the people at the
+ * address, green half (photo icon) for running-sheet photos. Only one kind
+ * present shows a single solid-colour pill. Returns null when neither. */
+function createPhotoPill(
+  runningSheet: boolean,
+  profile: boolean
+): HTMLDivElement | null {
+  if (!runningSheet && !profile) return null;
+  const photoIcon =
+    '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6" fill="#fff"/><path d="M4 18l5-5 4 4 3-3 4 4"/></svg>';
+  const portraitIcon =
+    '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="10" r="3.2" fill="#fff"/><path d="M6 19c1-3.4 3.2-5 6-5s5 1.6 6 5"/></svg>';
+  const half = (bg: string, icon: string) =>
+    `<span style="display:inline-flex;align-items:center;justify-content:center;padding:0 4px;background:${bg};">${icon}</span>`;
+  const pill = document.createElement("div");
+  pill.title =
+    runningSheet && profile
+      ? "Running-sheet photos and profile photos"
+      : runningSheet
+        ? "Running-sheet photos"
+        : "Profile photos of people at this address";
+  pill.style.cssText = `
+    position:absolute;left:50%;top:100%;transform:translate(-50%,-9px);
+    display:inline-flex;align-items:stretch;height:15px;
+    border-radius:9px;overflow:hidden;
+    border:1.5px solid #fff;box-sizing:content-box;
+    box-shadow:0 1px 3px rgba(0,0,0,0.35);
+    pointer-events:none;
   `;
-  badge.innerHTML =
-    '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.2"/><path d="M8 6l1.5-2.3h5L16 6"/></svg>';
-  return badge;
+  pill.innerHTML =
+    (profile ? half("#2563eb", portraitIcon) : "") +
+    (runningSheet ? half("#10b981", photoIcon) : "");
+  return pill;
 }
 
 function buildInfoWindowContent(
@@ -3755,28 +3771,15 @@ export default function IntelligenceMapping() {
       el.appendChild(badge);
     }
 
-    // Small camera badge — bottom-right, opposite the count badge — when
-    // this address already has photos linked (see photoKeysRef). Purely
-    // informational at a glance; the popup's own Images button is what
-    // actually opens them.
-    if (photoKeysRef.current.has(normalizeEntityLabelClient(loc.label))) {
-      const photoBadge = document.createElement("div");
-      photoBadge.style.cssText = `
-        position:absolute;bottom:-4px;right:-4px;
-        background:#10b981;
-        width:16px;height:16px;
-        border-radius:50%;
-        display:flex;align-items:center;justify-content:center;
-        border:1.5px solid #fff;
-        box-shadow:0 1px 3px rgba(0,0,0,0.3);
-      `;
-      photoBadge.innerHTML =
-        '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.2"/><path d="M8 6l1.5-2.3h5L16 6"/></svg>';
-      el.appendChild(photoBadge);
-    }
-    if (personPhotosByKeyRef.current.has(addressMatchKey(loc.label))) {
-      el.appendChild(createProfilePhotoBadge());
-    }
+    // Photo pill across the bottom edge — running-sheet photos (green half,
+    // see photoKeysRef) and/or profile photos of the people living here
+    // (blue half). Purely informational at a glance; the popup's own Images
+    // button is what actually opens them.
+    const pinPhotoPill = createPhotoPill(
+      photoKeysRef.current.has(normalizeEntityLabelClient(loc.label)),
+      personPhotosByKeyRef.current.has(addressMatchKey(loc.label))
+    );
+    if (pinPhotoPill) el.appendChild(pinPhotoPill);
     return el;
   }, []);
 
@@ -4293,7 +4296,7 @@ export default function IntelligenceMapping() {
   }, [locations, renderLocations, mapReady]);
 
   // Re-draw location pins once the profile-photo lookup arrives or changes, so
-  // the blue camera badge appears without waiting for another refresh.
+  // the blue half of the photo pill appears without waiting for another refresh.
   // Re-draw the count badges when the toggle flips or the registry data they
   // are built from arrives or changes.
   const entityCountDrawnRef = useRef(false);
@@ -4900,39 +4903,19 @@ export default function IntelligenceMapping() {
         iconBox.appendChild(img);
         // Store direct img ref for live rotation
         customMarkerImgRefs.current.set(outerCm.id, img);
-        // Camera badge — same "has linked photos" check as the intel pin
-        // badge (see photoKeysRef), purely informational at a glance.
-        // Keyed on the marker's ADDRESS, not its (often empty, free-text)
-        // label — photoKeysRef only ever holds "location" category keys,
-        // i.e. formatted addresses (see its own build effect above), which
-        // is what a photo actually gets linked to, not whatever caption an
-        // officer may or may not have typed for this marker. Checking
-        // .label here meant a marker with no label (icon-only, like a
-        // plain Tactical pin) could never show the badge even when its
-        // address plainly had photos on file.
-        if (
-          outerCm.address &&
-          photoKeysRef.current.has(normalizeEntityLabelClient(outerCm.address))
-        ) {
-          const photoBadge = document.createElement("div");
-          photoBadge.style.cssText = `
-            position:absolute;bottom:-4px;right:-4px;
-            background:#10b981;
-            width:16px;height:16px;
-            border-radius:50%;
-            display:flex;align-items:center;justify-content:center;
-            border:1.5px solid #fff;
-            box-shadow:0 1px 3px rgba(0,0,0,0.3);
-          `;
-          photoBadge.innerHTML =
-            '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.2"/><path d="M8 6l1.5-2.3h5L16 6"/></svg>';
-          iconBox.appendChild(photoBadge);
-        }
-        if (
+        // Photo pill — same checks as the intel pin (see photoKeysRef /
+        // personPhotosByKeyRef). Keyed on the marker's ADDRESS, not its
+        // (often empty, free-text) label — photos link to formatted
+        // addresses, so an icon-only marker (e.g. a plain Tactical pin)
+        // still shows it when its address has photos on file.
+        const cmPhotoPill = createPhotoPill(
+          !!outerCm.address &&
+            photoKeysRef.current.has(
+              normalizeEntityLabelClient(outerCm.address)
+            ),
           personPhotosByKeyRef.current.has(addressMatchKey(outerCm.address))
-        ) {
-          iconBox.appendChild(createProfilePhotoBadge());
-        }
+        );
+        if (cmPhotoPill) iconBox.appendChild(cmPhotoPill);
         wrapper.appendChild(iconBox);
         if (labelText) {
           wrapper.appendChild(

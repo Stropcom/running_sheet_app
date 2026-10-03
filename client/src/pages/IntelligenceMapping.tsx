@@ -146,6 +146,7 @@ import {
   PieChart,
   Route,
   Compass,
+  Hash,
   Pencil,
 } from "lucide-react";
 
@@ -1112,6 +1113,56 @@ function popupPersonLines(persons: string[], fontSize: string): string {
     .join("");
 }
 
+/** A vehicle's identity for de-duplication: its registration when the line
+ * leads with one ("1NAV48 Charcoal Mazda …"), else the whole line. */
+function vehicleDedupeKey(v: string): string {
+  const shown = formatIntelVehicle(v).trim();
+  const first = shown.split(/\s+/)[0] ?? "";
+  return /\d/.test(first) && /^[A-Za-z0-9-]{3,8}$/.test(first)
+    ? first.toUpperCase()
+    : shown.toLowerCase();
+}
+
+/** Total distinct entities linked to a map marker, for its count badge: the
+ * people (linked targets, people seen there, and registered residents /
+ * associates at the address) plus every vehicle (seen there, or on the
+ * registry record of anyone counted) — each person and each vehicle once. */
+function markerEntityCount(
+  loc: {
+    label: string;
+    linkedTargets: Array<{
+      name: string;
+      v1f?: string | null;
+      v2f?: string | null;
+    }>;
+    assocPersons: string[];
+    assocVehicles: string[];
+  },
+  registry: MapPeopleLookup | undefined
+): number {
+  const people = new Set<string>();
+  const vehicles = new Set<string>();
+  const addVehicle = (v?: string | null) => {
+    if (v && v.trim()) vehicles.add(vehicleDedupeKey(v));
+  };
+  const addPerson = (name: string) => {
+    const key = shortPopupName(name).toLowerCase();
+    if (!key) return;
+    people.add(key);
+    registry?.byName.get(key)?.vehicles.forEach(addVehicle);
+  };
+  for (const t of loc.linkedTargets) {
+    addPerson(t.name);
+    addVehicle(t.v1f);
+    addVehicle(t.v2f);
+  }
+  loc.assocPersons.forEach(addPerson);
+  loc.assocVehicles.forEach(addVehicle);
+  for (const p of registry?.byAddress.get(addressMatchKey(loc.label)) ?? [])
+    addPerson(p.name);
+  return people.size + vehicles.size;
+}
+
 // Mirrors server/db.ts's normalizeEntityLabel exactly — the map needs the
 // same key the server computed for attachment_entity_links.entityKey to
 // check whether a given address/label has any linked photos.
@@ -1887,6 +1938,21 @@ export default function IntelligenceMapping() {
     }
     return false;
   });
+  // Count badge on the house markers (total distinct entities linked to the
+  // marker) — on by default, switchable from Map Settings.
+  const [showMarkerEntityCount, setShowMarkerEntityCount] = useState<boolean>(
+    () => {
+      try {
+        const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+        if (s) return JSON.parse(s).showMarkerEntityCount ?? true;
+      } catch {
+        /* ignore */
+      }
+      return true;
+    }
+  );
+  const showMarkerEntityCountRef = useRef(showMarkerEntityCount);
+  showMarkerEntityCountRef.current = showMarkerEntityCount;
   // Bottom-of-screen bar showing the officer's own current street + heading
   // (see StreetHeadingBar) — a display preference like mapDarkMode, not tied
   // to GPS sharing itself, so it follows the same local-only persistence.
@@ -2793,6 +2859,7 @@ export default function IntelligenceMapping() {
           panelWidthNormal,
           panelWidthProfile,
           showStreetHeadingBar,
+          showMarkerEntityCount,
         })
       );
     } catch {
@@ -2812,6 +2879,7 @@ export default function IntelligenceMapping() {
     panelWidthNormal,
     panelWidthProfile,
     showStreetHeadingBar,
+    showMarkerEntityCount,
   ]);
 
   // Save map center/zoom to localStorage whenever the map stops moving (idle event)
@@ -3621,7 +3689,9 @@ export default function IntelligenceMapping() {
 
   const createPinElement = useCallback((loc: IntelMapLocation) => {
     const isTarget = loc.type === "target_address";
-    const count = loc.linkCount;
+    const count = showMarkerEntityCountRef.current
+      ? markerEntityCount(loc, registeredPeopleLookupRef.current)
+      : 0;
 
     // Apply any saved appearance override (icon/colour/rotation) — server-
     // persisted (see intelPinOverrides), same override the popup's rotation
@@ -4208,6 +4278,21 @@ export default function IntelligenceMapping() {
 
   // Re-draw location pins once the profile-photo lookup arrives or changes, so
   // the blue camera badge appears without waiting for another refresh.
+  // Re-draw the count badges when the toggle flips or the registry data they
+  // are built from arrives or changes.
+  const entityCountDrawnRef = useRef(false);
+  useEffect(() => {
+    if (!entityCountDrawnRef.current) {
+      entityCountDrawnRef.current = true;
+      return;
+    }
+    if (locations && mapRef.current && geocoderRef.current) {
+      mergedIntelRef.current.clear();
+      renderLocations(locations);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showMarkerEntityCount, registeredPeopleData]);
+
   const hadPersonPhotosRef = useRef(false);
   useEffect(() => {
     // Nothing to draw (and nothing to undo) while there are no profile photos.
@@ -8378,6 +8463,51 @@ export default function IntelligenceMapping() {
                 </button>
               </div>
               {/* end Street & Heading */}
+
+              {/* ── MARKER ENTITY COUNT — same on/off pattern as Street &
+                Heading: the number on a house marker is the total distinct
+                people and vehicles linked to it. ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Marker Entity Count
+                </span>
+                <button
+                  onClick={() =>
+                    setShowMarkerEntityCount(!showMarkerEntityCount)
+                  }
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+                    showMarkerEntityCount
+                      ? "border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20"
+                      : "border-border bg-card hover:bg-accent/40"
+                  }`}
+                  aria-pressed={showMarkerEntityCount}
+                >
+                  <Hash
+                    className={`h-3.5 w-3.5 flex-shrink-0 ${
+                      showMarkerEntityCount
+                        ? "text-sky-500"
+                        : "text-muted-foreground"
+                    }`}
+                  />
+                  <span
+                    className={`text-xs font-semibold truncate flex-1 text-left ${
+                      showMarkerEntityCount ? "text-sky-500" : "text-foreground"
+                    }`}
+                  >
+                    Entity count on markers
+                  </span>
+                  <span
+                    className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                      showMarkerEntityCount
+                        ? "text-sky-500"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {showMarkerEntityCount ? "On" : "Off"}
+                  </span>
+                </button>
+              </div>
+              {/* end Marker Entity Count */}
             </div>
           )}
           {/* end Pane Body */}

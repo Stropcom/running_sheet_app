@@ -4113,6 +4113,8 @@ export const appRouter = router({
           v1f: z.string().optional().nullable(),
           v1: z.string().optional().nullable(),
           extraVehicles: z.string().optional().nullable(),
+          // Re-file between Associates and Other Home Address Residents.
+          relationship: z.enum(["associate", "resident"]).optional(),
           ...structuredTargetFieldsSchema,
         })
       )

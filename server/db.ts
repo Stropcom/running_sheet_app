@@ -3390,6 +3390,7 @@ export async function updateAssociate(
       | "vehType"
       | "extraAddresses"
       | "extraVehicles"
+      | "relationship"
     >
   >
 ) {

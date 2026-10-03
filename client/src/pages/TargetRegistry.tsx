@@ -94,6 +94,7 @@ import {
   composeAssociateName,
   composeAddress,
   composeVehicle,
+  isSameHomeAddress,
   isoToDdMmYyyy,
   ddMmYyyyToIso,
   type StructuredNameParts,
@@ -1272,6 +1273,7 @@ function AssociateCard({
   onCreated,
   relationship: newRelationship = "associate",
   defaultAddress,
+  targetAddress,
 }: {
   targetId: number;
   associate: AssociateRecord | null; // null = new, unsaved
@@ -1282,6 +1284,9 @@ function AssociateCard({
   /** Pre-fills a NEW card's Home Address — used for Other Home Address
    * Residents, who by definition live at the target's home address. */
   defaultAddress?: StructuredAddressParts;
+  /** The target's saved Home Address — an associate saved at this address
+   * is offered a move to Other Home Address Residents. */
+  targetAddress?: StructuredAddressParts;
 }) {
   const utils = trpc.useUtils();
   const isNew = associate === null;
@@ -1562,10 +1567,49 @@ function AssociateCard({
     setDirty(true);
   };
 
-  const createMut = trpc.associate.create.useMutation({
+  // Shown after an existing associate is saved at the target's home address
+  // — never moved silently, since it changes how they're filed on the record.
+  const [offerMove, setOfferMove] = useState(false);
+  const moveMut = trpc.associate.update.useMutation({
     onSuccess: () => {
       utils.associate.listForTarget.invalidate({ targetId });
+      setOfferMove(false);
+      toast.success("Moved to Other Home Address Residents");
+    },
+    onError: (e: { message: string }) => toast.error(e.message),
+  });
+
+  const createMut = trpc.associate.create.useMutation({
+    onSuccess: (created, vars) => {
+      utils.associate.listForTarget.invalidate({ targetId });
       toast.success(`${kindLabel} added`);
+      // Same offer as the banner below, as a toast — this card is replaced by
+      // the saved one as soon as it's created.
+      if (
+        relationship === "associate" &&
+        targetAddress &&
+        vars.addrHouseNo &&
+        isSameHomeAddress(
+          {
+            unitNo: vars.addrUnitNo ?? "",
+            houseNo: vars.addrHouseNo ?? "",
+            streetName: vars.addrStreetName ?? "",
+            streetType: vars.addrStreetType ?? "",
+            suburb: vars.addrSuburb ?? "",
+          },
+          targetAddress
+        )
+      ) {
+        toast("Same address as the target.", {
+          description: "Move to Other Home Address Residents?",
+          duration: 15000,
+          action: {
+            label: "Move",
+            onClick: () =>
+              moveMut.mutate({ id: created.id, relationship: "resident" }),
+          },
+        });
+      }
       onCreated?.();
     },
     onError: (e: { message: string }) => toast.error(e.message),
@@ -1786,7 +1830,28 @@ function AssociateCard({
       return;
     }
     if (!isNew) {
-      updateMut.mutate({ id: associate.id, ...payload });
+      // Offer the move only when this save is what brought the address to
+      // the target's home address (not on every later edit of the same card).
+      const nowHome =
+        relationship === "associate" &&
+        !!targetAddress &&
+        isSameHomeAddress(address, targetAddress);
+      const wasHome =
+        !!targetAddress &&
+        isSameHomeAddress(
+          {
+            unitNo: associate.addrUnitNo ?? "",
+            houseNo: associate.addrHouseNo ?? "",
+            streetName: associate.addrStreetName ?? "",
+            streetType: associate.addrStreetType ?? "",
+            suburb: associate.addrSuburb ?? "",
+          },
+          targetAddress
+        );
+      updateMut.mutate(
+        { id: associate.id, ...payload },
+        { onSuccess: () => setOfferMove(nowHome && !wasHome) }
+      );
       return;
     }
     const warnings = await runDuplicateChecks(utils, [
@@ -1849,6 +1914,40 @@ function AssociateCard({
       </div>
       {expanded && (
         <div className="px-3 pb-3 pt-1 flex flex-col gap-3 border-t border-border/40">
+          {offerMove && !isNew && (
+            <div className="rounded-lg border border-rose-500/30 border-l-4 border-l-rose-500 bg-rose-500/5 p-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-sm">
+                <p className="font-semibold text-rose-700 dark:text-rose-400">
+                  Same address as the target.
+                </p>
+                <p className="text-muted-foreground">
+                  Move {associate.name} to Other Home Address Residents?
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:w-64 sm:shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setOfferMove(false)}
+                  disabled={moveMut.isPending}
+                >
+                  Keep as Associate
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    moveMut.mutate({
+                      id: associate.id,
+                      relationship: "resident",
+                    })
+                  }
+                  disabled={moveMut.isPending}
+                >
+                  {moveMut.isPending ? "Moving…" : "Move"}
+                </Button>
+              </div>
+            </div>
+          )}
           <TargetIdentityFields
             value={identity}
             onChange={v => mark(() => setIdentity(v))}
@@ -2215,6 +2314,7 @@ function PersonListSection({
   operationId,
   people,
   defaultAddress,
+  targetAddress,
 }: {
   kind: PersonKind;
   targetId: number;
@@ -2222,6 +2322,8 @@ function PersonListSection({
   people: AssociateRecord[];
   /** Pre-fills a new card's Home Address (residents only). */
   defaultAddress?: StructuredAddressParts;
+  /** The target's saved Home Address, for the "move to Residents" offer. */
+  targetAddress?: StructuredAddressParts;
 }) {
   const [addingNew, setAddingNew] = useState(false);
   const style = PERSON_SECTION_STYLE[kind];
@@ -2240,6 +2342,7 @@ function PersonListSection({
           targetId={targetId}
           associate={a}
           operationId={operationId}
+          targetAddress={targetAddress}
         />
       ))}
       {addingNew && (
@@ -2249,6 +2352,7 @@ function PersonListSection({
           operationId={operationId}
           relationship={kind}
           defaultAddress={defaultAddress}
+          targetAddress={targetAddress}
           onCreated={() => setAddingNew(false)}
         />
       )}
@@ -2300,6 +2404,7 @@ function AssociatesSection({
         targetId={targetId}
         operationId={operationId}
         people={all.filter(a => a.relationship !== "resident")}
+        targetAddress={targetAddress}
       />
     </>
   );

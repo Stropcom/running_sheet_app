@@ -68,7 +68,11 @@ describe("Tactical Profile format", () => {
     // Wording with no field of its own is shown, not dropped.
     const labels = mapped.unmappedFields.map(f => f.label);
     expect(labels).toContain("Operation");
-    expect(labels).toContain("Sophia Marie D'ANGELO — Other info");
+    expect(labels).toContain("Sophia Marie D'ANGELO");
+    expect(
+      mapped.unmappedFields.find(f => f.label === "Sophia Marie D'ANGELO")
+        ?.value
+    ).toContain("Lebanese Passport RL4628107");
 
     // Only one target card is filled in this document.
     expect(mapped.additionalTargets).toEqual([]);
@@ -180,5 +184,91 @@ describe("licence and bail wording", () => {
     expect(normaliseTacticalDob("18/MAR/1988")).toBe("18/03/1988");
     expect(normaliseTacticalDob(": 03/11/1981")).toBe("03/11/1981");
     expect(normaliseTacticalDob("Years")).toBe("");
+  });
+});
+
+// A larger fictional profile (Operation KESTREL): FIVE targets, TWENTY-FIVE
+// associates, thirty portraits in photoboard grids. Each associate card names
+// the target it belongs to and leads with "Name\nDOB: dd/mm/yyyy | NN Years".
+const KESTREL_FIXTURE = join(
+  __dirname,
+  "__fixtures__/target-profile-tactical-kestrel.docx"
+);
+
+describe("Tactical Profile — five targets, twenty-five associates (KESTREL)", () => {
+  it("returns every target with its own address, vehicles and status", async () => {
+    const mapped = mapDocumentToTargetProfile(
+      await readDocxTables(readFileSync(KESTREL_FIXTURE))
+    );
+    const all = [mapped, ...(mapped.additionalTargets ?? [])];
+    expect(all.map(t => t.name!.surname)).toEqual([
+      "KOVACS",
+      "FERRARO",
+      "RAHMAN",
+      "VELASQUEZ",
+      "THORNTON",
+    ]);
+    expect(all[0].addresses[0]).toMatchObject({
+      houseNo: "14",
+      streetName: "Willow",
+      streetType: "Quay",
+    });
+    expect(all[2].addresses[0]).toMatchObject({
+      streetName: "Seabreeze",
+      streetType: "Walk",
+    });
+    // Marcus FERRARO's card has no vehicle rows; the document's vehicle list
+    // supplies his.
+    expect(all[1].vehicles.map(v => v.registration)).toEqual([
+      "1FER83",
+      "1ROS44",
+    ]);
+    // No target swallows the associate cards' vehicles any more.
+    expect(all[4].vehicles.map(v => v.registration)).toEqual([
+      "1THO37",
+      "1CLA31",
+    ]);
+    expect(all.every(t => t.mdlStatus === "active")).toBe(true);
+  });
+
+  it("files each associate under the target its card names", async () => {
+    const mapped = mapDocumentToTargetProfile(
+      await readDocxTables(readFileSync(KESTREL_FIXTURE))
+    );
+    expect(mapped.associateBlocks).toHaveLength(25);
+    const ownerCounts: Record<string, number> = {};
+    for (const a of mapped.associateBlocks) {
+      ownerCounts[a.ownerTargetName ?? ""] =
+        (ownerCounts[a.ownerTargetName ?? ""] ?? 0) + 1;
+    }
+    expect(ownerCounts).toEqual({
+      "Nadia Elise KOVACS": 5,
+      "Marcus Leon FERRARO": 5,
+      "Amira Noor RAHMAN": 5,
+      "Nathaniel Cole VELASQUEZ": 5,
+      "Evelyn Mae THORNTON": 5,
+    });
+    expect(mapped.associateBlocks[0]).toMatchObject({
+      firstNames: "Tomas Ivo",
+      surname: "VARGA",
+      bornDate: "02/01/1978",
+      address: { houseNo: "11", streetName: "Harbour", streetType: "Rise" },
+    });
+  });
+
+  it("captions each photoboard portrait with the person beside it", async () => {
+    const read = await readDocxTables(readFileSync(KESTREL_FIXTURE));
+    const captions = read.images.map(i => i.captionName);
+    // Thirty portraits, one per person, none left uncaptioned or given the
+    // grid's first name.
+    expect(new Set(captions).size).toBeGreaterThanOrEqual(30);
+    expect(captions.slice(0, 5)).toEqual([
+      "Nadia Elise KOVACS",
+      "Marcus Leon FERRARO",
+      "Amira Noor RAHMAN",
+      "Nathaniel Cole VELASQUEZ",
+      "Evelyn Mae THORNTON",
+    ]);
+    expect(captions).toContain("Declan Hugh MORRIS");
   });
 });

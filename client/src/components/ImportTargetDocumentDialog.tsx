@@ -200,6 +200,8 @@ interface AssociateCandidate {
   surname: string;
   /** DD/MM/YYYY when the source gave this associate's own date of birth. */
   bornDate?: string;
+  /** The target this associate belongs to, by name ("" → the primary). */
+  ownerTargetName?: string;
   address: StructuredAddressParts | null;
   vehicle: (StructuredVehicleParts & { vehicleType: string }) | null;
 }
@@ -344,6 +346,7 @@ export function ImportTargetDocumentDialog({
         firstNames: a.firstNames,
         surname: a.surname,
         bornDate: a.bornDate ?? "",
+        ownerTargetName: a.ownerTargetName ?? "",
         address: a.address
           ? {
               unitNo: a.address.unitNo,
@@ -388,10 +391,38 @@ export function ImportTargetDocumentDialog({
   // filed as an Other Home Address Resident instead. The officer can flip
   // any one with the Move button on its review card, or later from the Add
   // Target dialog.
+  // Which target in the document an associate belongs to: 0 = the primary,
+  // n = additionalTargets[n - 1]. A card that names no owner (or one we
+  // didn't import) goes to the primary.
+  const normName = (t: string) =>
+    t
+      .toLowerCase()
+      .replace(/[^a-z' -]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  const ownerIndexOf = (a: AssociateCandidate): number => {
+    const owner = normName(a.ownerTargetName ?? "");
+    if (!owner || !result) return 0;
+    if (
+      owner === normName(`${result.name?.firstNames} ${result.name?.surname}`)
+    )
+      return 0;
+    const idx = (result.additionalTargets ?? []).findIndex(
+      t => normName(`${t.name.firstNames} ${t.name.surname}`) === owner
+    );
+    return idx === -1 ? 0 : idx + 1;
+  };
+
   const isResidentCandidate = (a: AssociateCandidate): boolean => {
     const override = residentOverrides[a.key];
     if (override !== undefined) return override;
-    const home = result?.addresses[0];
+    // Compared with the home address of the target this associate belongs
+    // to (the primary unless the document says otherwise).
+    const owner = ownerIndexOf(a);
+    const home =
+      owner === 0
+        ? result?.addresses[0]
+        : result?.additionalTargets?.[owner - 1]?.addresses[0];
     return !!home && !!a.address && isSameHomeAddress(a.address, home);
   };
 
@@ -674,21 +705,26 @@ export function ImportTargetDocumentDialog({
 
       // Same classification the review screen showed (see
       // isResidentCandidate) — so what the officer saw is what gets staged.
-      const associates: StagedAssociate[] = associateCandidates
-        .filter(a => (associateChoices[a.key] ?? "create") === "create")
-        .map(a => ({
-          key: a.key,
-          relationship: isResidentCandidate(a)
-            ? ("resident" as const)
-            : ("associate" as const),
-          identity: {
-            firstNames: a.firstNames,
-            surname: a.surname,
-            bornDate: a.bornDate ?? "",
-          },
-          address: a.address ?? EMPTY_ADDRESS_PARTS,
-          vehicle: a.vehicle ?? EMPTY_VEHICLE_PARTS,
-        }));
+      const stagedFor = (targetIdx: number): StagedAssociate[] =>
+        associateCandidates
+          .filter(
+            a =>
+              (associateChoices[a.key] ?? "create") === "create" &&
+              ownerIndexOf(a) === targetIdx
+          )
+          .map(a => ({
+            key: a.key,
+            relationship: isResidentCandidate(a)
+              ? ("resident" as const)
+              : ("associate" as const),
+            identity: {
+              firstNames: a.firstNames,
+              surname: a.surname,
+              bornDate: a.bornDate ?? "",
+            },
+            address: a.address ?? EMPTY_ADDRESS_PARTS,
+            vehicle: a.vehicle ?? EMPTY_VEHICLE_PARTS,
+          }));
 
       const [primaryVehicle, ...restVehicles] = result.vehicles;
 
@@ -732,12 +768,6 @@ export function ImportTargetDocumentDialog({
       // hold several): each becomes its own prefill, queued to be reviewed
       // and saved after this one. A photo captioned with one of their names
       // goes to them, not to the primary target.
-      const normName = (t: string) =>
-        t
-          .toLowerCase()
-          .replace(/[^a-z' -]/g, "")
-          .replace(/\s+/g, " ")
-          .trim();
       const additional = result.additionalTargets ?? [];
       const additionalNames = additional.map(t =>
         normName(`${t.name.firstNames} ${t.name.surname}`)
@@ -745,6 +775,56 @@ export function ImportTargetDocumentDialog({
       const keptImages = imageCandidates.filter(
         img => imageChoices[img.key] ?? true
       );
+      // Each photo goes to the target it belongs to: the owner of the
+      // associate it's linked to, or the target it's captioned with, else
+      // the primary. linkTo is what saveStagedImages uses to attach it.
+      const placeImage = (
+        img: (typeof imageCandidates)[number]
+      ): { targetIdx: number; image: StagedImage } => {
+        const linkKey = imageLinkChoices[img.key] ?? defaultLinkKeyFor(img);
+        const candidate = linkKey
+          ? associateCandidates.find(a => a.key === linkKey)
+          : undefined;
+        const choice = candidate
+          ? (associateChoices[candidate.key] ?? "create")
+          : null;
+        if (candidate && choice === "create") {
+          return {
+            targetIdx: ownerIndexOf(candidate),
+            image: {
+              ...img,
+              linkTo: {
+                type: "associate" as const,
+                associateKey: candidate.key,
+              },
+            },
+          };
+        }
+        if (candidate && choice === "update") {
+          const match = associateMatches[candidate.key];
+          if (match) {
+            return {
+              targetIdx: ownerIndexOf(candidate),
+              image: {
+                ...img,
+                linkTo: {
+                  type: "existingAssociate" as const,
+                  associateId: match.id,
+                  entityLabel: match.name,
+                },
+              },
+            };
+          }
+        }
+        const named = additionalNames.indexOf(normName(img.captionName ?? ""));
+        return {
+          targetIdx: named === -1 ? 0 : named + 1,
+          image: { ...img, linkTo: { type: "target" as const } },
+        };
+      };
+      const placedImages = keptImages.map(placeImage);
+      const imagesFor = (targetIdx: number): StagedImage[] =>
+        placedImages.filter(p => p.targetIdx === targetIdx).map(p => p.image);
       const queuedTargets: DocumentImportPrefill[] = additional.map(
         (t, idx) => {
           const [home, ...otherAddresses] = t.addresses;
@@ -832,12 +912,8 @@ export function ImportTargetDocumentDialog({
                   short: "",
                 })),
             ],
-            associates: [],
-            images: keptImages
-              .filter(
-                img => normName(img.captionName ?? "") === additionalNames[idx]
-              )
-              .map(img => ({ ...img, linkTo: { type: "target" as const } })),
+            associates: stagedFor(idx + 1),
+            images: imagesFor(idx + 1),
             background: t.freeText.trim(),
             sourceFileName: fileName,
             sourceFileBase64: sourceFile?.dataBase64 ?? "",
@@ -913,43 +989,8 @@ export function ImportTargetDocumentDialog({
           })),
           ...unparsedExtraVehicles,
         ],
-        associates,
-        images: keptImages
-          .filter(
-            img => !additionalNames.includes(normName(img.captionName ?? ""))
-          )
-          .map(img => {
-            const linkKey = imageLinkChoices[img.key] ?? defaultLinkKeyFor(img);
-            const candidate = linkKey
-              ? associateCandidates.find(a => a.key === linkKey)
-              : undefined;
-            const choice = candidate
-              ? (associateChoices[candidate.key] ?? "create")
-              : null;
-            if (candidate && choice === "create") {
-              return {
-                ...img,
-                linkTo: {
-                  type: "associate" as const,
-                  associateKey: candidate.key,
-                },
-              };
-            }
-            if (candidate && choice === "update") {
-              const match = associateMatches[candidate.key];
-              if (match) {
-                return {
-                  ...img,
-                  linkTo: {
-                    type: "existingAssociate" as const,
-                    associateId: match.id,
-                    entityLabel: match.name,
-                  },
-                };
-              }
-            }
-            return { ...img, linkTo: { type: "target" as const } };
-          }),
+        associates: stagedFor(0),
+        images: imagesFor(0),
         background: result.freeText.trim(),
         sourceFileName: fileName,
         sourceFileBase64: sourceFile?.dataBase64 ?? "",
@@ -1001,6 +1042,11 @@ export function ImportTargetDocumentDialog({
               : "Move to Residents"}
           </Button>
         </div>
+        {a.ownerTargetName && (result?.additionalTargets ?? []).length > 0 && (
+          <span className="text-[11px] text-muted-foreground">
+            Associate of {a.ownerTargetName}
+          </span>
+        )}
         {a.address && (
           <span className="text-muted-foreground text-xs">
             {[

@@ -40,7 +40,12 @@ export interface DocxReadResult {
  * never referenced from document.xml, so they're excluded by construction. */
 interface ImageRef {
   target: string;
+  /** Top-level table the picture sits in (null when it's not in a table),
+   * with the row/cell of that table — a photoboard grid holds many people,
+   * so the cell is what says whose photo it is. */
   tableIndex: number | null;
+  rowIndex: number;
+  cellIndex: number;
 }
 
 async function findBodyImageRefs(zip: JSZip, xml: string): Promise<ImageRef[]> {
@@ -60,45 +65,67 @@ async function findBodyImageRefs(zip: JSZip, xml: string): Promise<ImageRef[]> {
   const refs: ImageRef[] = [];
   let depth = 0;
   let tableIndex = -1;
+  let rowIndex = -1;
+  let cellIndex = -1;
   for (const m of Array.from(
     xml.matchAll(
-      /<w:tbl>|<\/w:tbl>|r:embed="([^"]+)"|<v:imagedata\b[^>]*\br:id="([^"]+)"/g
+      /<w:tbl>|<\/w:tbl>|<w:tr[ >]|<w:tc[ >]|r:embed="([^"]+)"|<v:imagedata\b[^>]*\br:id="([^"]+)"/g
     )
   )) {
     if (m[0] === "<w:tbl>") {
-      if (depth === 0) tableIndex++;
+      if (depth === 0) {
+        tableIndex++;
+        rowIndex = -1;
+        cellIndex = -1;
+      }
       depth++;
     } else if (m[0] === "</w:tbl>") {
       depth--;
+    } else if (m[0].startsWith("<w:tr")) {
+      // Only the top-level table's own rows/cells are counted (a nested
+      // table's belong to the enclosing cell).
+      if (depth === 1) {
+        rowIndex++;
+        cellIndex = -1;
+      }
+    } else if (m[0].startsWith("<w:tc")) {
+      if (depth === 1) cellIndex++;
     } else {
       const target = targetById.get(m[1] ?? m[2]);
       if (target) {
-        refs.push({ target, tableIndex: depth > 0 ? tableIndex : null });
+        refs.push({
+          target,
+          tableIndex: depth > 0 ? tableIndex : null,
+          rowIndex,
+          cellIndex,
+        });
       }
     }
   }
   return refs;
 }
 
-/** The name that heads a table, when the table is a person's card — used to
- * caption a photo sitting in it ("Karim Elias NAJJAR"). Empty for a table
- * that isn't a person card (a photoboard, a vehicle list). */
-function tableOwnerName(table: DocxTable | undefined): string {
+/** A person's name that LEADS a cell's text ("Tomas Ivo VARGA\nDOB: …" or a
+ * bare "Nadia Elise KOVACS"). A cell that merely mentions a name further down
+ * ("Associate of Target\nNadia Elise KOVACS" — the owner, not the person) is
+ * deliberately not a match. */
+function leadingCellName(cell: string | undefined): string {
+  const first = (cell ?? "").split("\n")[0]?.trim() ?? "";
+  return first && matchWholeLinePersonName(first) ? first : "";
+}
+
+/** Whose photo a picture is, from where it sits: the name leading its own
+ * cell (a photoboard grid of many people), else — only when the table is
+ * ONE person's card, i.e. exactly one cell leads with a name — that name.
+ * Empty when it can't tell. */
+function captionForImageRef(ref: ImageRef, tables: DocxTable[]): string {
+  if (ref.tableIndex === null) return "";
+  const table = tables[ref.tableIndex];
   if (!table) return "";
-  for (const row of table.rows) {
-    let afterTargetLabel = false;
-    for (const cell of row) {
-      const text = cell.trim();
-      if (!text) continue;
-      // A target's card leads with a "Target" label, the name beside it.
-      if (!afterTargetLabel && /^Target$/i.test(text)) {
-        afterTargetLabel = true;
-        continue;
-      }
-      return matchWholeLinePersonName(text) ? text : "";
-    }
-  }
-  return "";
+  const own = leadingCellName(table.rows[ref.rowIndex]?.[ref.cellIndex]);
+  if (own) return own;
+  const names = new Set(table.rows.flat().map(leadingCellName).filter(Boolean));
+  return names.size === 1 ? Array.from(names)[0] : "";
 }
 
 /** Pulls every embedded picture out of a .docx's word/media/ part — these
@@ -125,8 +152,8 @@ async function extractDocxImages(
   const captionByTarget = new Map<string, string>();
   for (const ref of refs) {
     if (!order.includes(ref.target)) order.push(ref.target);
-    if (ref.tableIndex !== null && !captionByTarget.has(ref.target)) {
-      const owner = tableOwnerName(tables[ref.tableIndex]);
+    if (!captionByTarget.has(ref.target)) {
+      const owner = captionForImageRef(ref, tables);
       if (owner) captionByTarget.set(ref.target, owner);
     }
   }

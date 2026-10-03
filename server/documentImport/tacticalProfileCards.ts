@@ -46,6 +46,11 @@ export interface TacticalPersonCard {
   telco: Array<{ label: string; value: string }>;
   /** Target only — the "Target Background" narrative, boilerplate removed. */
   background: string;
+  /** Associate only — the target this person is "Associate of" (named in the
+   * card's own "Associate of Target" cell), "" when the card doesn't say. */
+  ownerName: string;
+  /** Target only — the physical description line, when filled in. */
+  description: string;
 }
 
 export interface TacticalProfile {
@@ -171,15 +176,27 @@ function joinValue(lines: string[] | undefined): string {
     .join("\n");
 }
 
+const TELCO_LABEL_RE = /^(TELCO|PD|LBS|EBM|MOB|INTERCEPT|STATUS)\b/i;
+
 function readTelco(cells: string[]): Array<{ label: string; value: string }> {
   const out: Array<{ label: string; value: string }> = [];
-  for (const cell of cells) {
-    // A cell is "LBS 0477004282" or "LBS\n0477004282" or "PD - #".
-    const m = cell.trim().match(/^(PD|LBS|EBM|MOB)\b[\s:-]*([\s\S]*)$/i);
-    if (!m) continue;
-    const value = m[2].replace(/\s+/g, " ").trim();
-    if (!isEmptyTacticalValue(value)) {
-      out.push({ label: m[1].toUpperCase(), value });
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i].trim();
+    // "LBS 0477004282", "LBS\n0477004282", "PD - #" — label and value in
+    // one cell…
+    const m = cell.match(
+      /^(TELCO|PD|LBS|EBM|MOB|INTERCEPT|STATUS)\b[\s:-]*([\s\S]*)$/i
+    );
+    if (m) {
+      let value = m[2].replace(/\s+/g, " ").trim();
+      // …or a bare "TELCO" label with the number in the cell beside it.
+      if (!value && /^TELCO$/i.test(cell)) {
+        const next = (cells[i + 1] ?? "").trim();
+        if (next && !TELCO_LABEL_RE.test(next)) value = next;
+      }
+      if (!isEmptyTacticalValue(value)) {
+        out.push({ label: m[1].toUpperCase(), value });
+      }
     }
   }
   return out;
@@ -194,7 +211,7 @@ function tableHasCell(table: DocumentTable, re: RegExp): boolean {
 }
 
 const TARGET_CELL_RE = /^Target$/i;
-const ASSOCIATE_CELL_RE = /^Associate of Target$/i;
+const ASSOCIATE_CELL_RE = /^Associate of Target\b/i;
 const DETAIL_CELL_RE =
   /^(ADDRESSES|BAIL|SOCIAL MEDIA|INTEL|LIFESTYLE|Registered Vehicles|Linked Vehicles|Home Address)\b/i;
 
@@ -216,7 +233,13 @@ function parseCardBody(
   cells: string[]
 ): Omit<
   TacticalPersonCard,
-  "kind" | "name" | "dob" | "background" | "homeAddressText"
+  | "kind"
+  | "name"
+  | "dob"
+  | "background"
+  | "homeAddressText"
+  | "ownerName"
+  | "description"
 > & { homeAddressText: string } {
   const lines = streamLines(cells);
 
@@ -317,20 +340,39 @@ export function readTacticalProfile(
     const cells = allCells(scope);
 
     if (tableHasCell(t, ASSOCIATE_CELL_RE)) {
-      // Associate card: "<name> | <address>" leads the first row.
+      // Associate card: "<name>\nDOB: dd/mm/yyyy | NN Years" and the home
+      // address lead the first row; "Associate of Target\n<owner>" names
+      // who they belong to.
       const first = t.rows.find(r => r.some(c => c.trim())) ?? [];
-      const name = first[0]?.trim() ?? "";
+      const firstCell = first[0]?.trim() ?? "";
+      const firstLines = firstCell.split("\n").map(l => l.trim());
+      const name = firstLines[0] ?? "";
       if (!name || !matchWholeLinePersonName(name)) continue;
+      const dobInName = firstCell.match(/\bDOB\s*:?\s*(\S+)/i);
       const dobCell = cells.find(c => normaliseTacticalDob(c));
+      const ownerCell =
+        t.rows.flat().find(c => ASSOCIATE_CELL_RE.test(c.trim())) ?? "";
+      const ownerLine =
+        ownerCell
+          .split("\n")
+          .map(l => l.trim())
+          .slice(1)
+          .find(l => matchWholeLinePersonName(l)) ?? "";
       const body = parseCardBody(cells.slice(1));
       cards.push({
         kind: "associate",
         name,
-        dob: dobCell ? normaliseTacticalDob(dobCell) : "",
+        dob: dobInName
+          ? normaliseTacticalDob(dobInName[1])
+          : dobCell
+            ? normaliseTacticalDob(dobCell)
+            : "",
         ...body,
         // The address sits beside the name on the card's first row.
         homeAddressText: first[1]?.trim() ?? "",
         background: "",
+        ownerName: ownerLine,
+        description: "",
       });
       continue;
     }
@@ -353,13 +395,59 @@ export function readTacticalProfile(
     const bodyCells = cells.filter(c => !/^\s*Target Background/i.test(c));
     if (tail) bodyCells.push(tail);
     const body = parseCardBody(bodyCells);
+    const descLabelIdx = (r: string[]) => rowHasCell(r, /^Description$/i);
+    const descRow = t.rows.find(r => descLabelIdx(r) !== -1);
+    const description = descRow
+      ? (
+          descRow.find((c, ci) => ci > descLabelIdx(descRow) && c.trim()) ?? ""
+        ).trim()
+      : "";
     cards.push({
       kind: "target",
       name,
       dob,
       ...body,
       background,
+      ownerName: "",
+      description: isEmptyTacticalValue(description) ? "" : description,
     });
+  }
+
+  // "Target's and Associate's Vehicles" — one list for the whole document,
+  // "<Name> – <vehicle>" with "Linked – <vehicle>" lines following their
+  // owner. A target's own card may not carry its vehicles (only the list
+  // does), so add any the card lacks.
+  const listTable = tables.find(t =>
+    tableHasCell(t, /^Target.s and Associate.s Vehicles$/i)
+  );
+  if (listTable) {
+    const text = listTable.rows
+      .slice(1)
+      .flat()
+      .filter(c => c.trim())
+      .join("\n");
+    let owner = "";
+    for (const raw of text.split("\n")) {
+      const line = raw.trim();
+      const m = line.match(/^(.+?)\s+[–-]\s+(\S.*)$/);
+      if (!m) continue;
+      const linked = /^Linked$/i.test(m[1]);
+      if (!linked) owner = m[1].trim();
+      const card = cards.find(c => c.name === owner);
+      if (!card) continue;
+      const rego = m[2].split(/\s+/)[0];
+      const have = `${card.registeredVehiclesText}\n${card.linkedVehiclesText}`;
+      if (have.includes(rego)) continue;
+      if (linked) {
+        card.linkedVehiclesText = [card.linkedVehiclesText, m[2]]
+          .filter(Boolean)
+          .join("\n");
+      } else {
+        card.registeredVehiclesText = [card.registeredVehiclesText, m[2]]
+          .filter(Boolean)
+          .join("\n");
+      }
+    }
   }
 
   // Operation header — first table: "MAC | TRAFFICKING | 26Z246 | | 07/AUG/2026",
@@ -377,6 +465,8 @@ export function readTacticalProfile(
         .find(c => c.trim())
         ?.trim();
       if (label && value) header.push({ label, value });
+      // A row with only one filled cell (e.g. the officer in charge's name).
+      else if (label) header.push({ label: "Header", value: label });
     }
   }
 

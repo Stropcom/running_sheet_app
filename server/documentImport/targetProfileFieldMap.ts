@@ -96,6 +96,9 @@ export interface FreeTextAssociate {
   /** DD/MM/YYYY, when the source gives the associate's own date of birth
    * (a Tactical Profile associate card does). Absent otherwise. */
   bornDate?: string;
+  /** The target this associate belongs to, by name, when the source says so
+   * (a Tactical Profile card names it). Absent → the primary target. */
+  ownerTargetName?: string;
 }
 
 /** Something the document clearly meant as an address or vehicle — it sat
@@ -1284,12 +1287,17 @@ function mapTacticalTargetCard(card: TacticalPersonCard): ImportedTargetFields {
     note("WA MDL (as printed)", card.mdlRaw);
   const bail = mapBail(card.bailRaw);
   if (card.bailRaw && !bail.bailStatus) note("Bail", card.bailRaw);
+  note("Description", card.description);
   note("Warnings", card.warnings);
   note("Alerts", card.alerts);
   note("Social media", card.socialMedia);
   note("Other info", card.otherInfo);
   note("Intel", card.intel);
-  for (const t of card.telco) note(t.label, t.value);
+  // Telco / intercept numbers as ONE line rather than one row each.
+  note(
+    "Telco & intercept",
+    card.telco.map(t => `${t.label} ${t.value}`).join(" · ")
+  );
 
   const freeText = card.background;
   const candidateEntities = dedupeBy(
@@ -1318,24 +1326,26 @@ function mapTacticalTargetCard(card: TacticalPersonCard): ImportedTargetFields {
  * same review-screen shape every other format produces. The first filled
  * target is the primary; any further targets come back in
  * `additionalTargets` so one upload can create them all, reviewed one at a
- * time. The document doesn't say which target an "Associate of Target" card
- * belongs to, so associates are filed under the first. */
+ * time. Each associate card names the target it is an "Associate of"
+ * (`ownerTargetName`); the review step files it under that target, and its
+ * read-only notes are listed with that target too. A card that doesn't name
+ * one goes to the primary. */
 function mapTacticalProfile(
   result: DocumentReadResult,
   profile: NonNullable<ReturnType<typeof readTacticalProfile>>
 ): TargetProfileImportResult | null {
   const targetCards = profile.cards.filter(c => c.kind === "target");
   if (targetCards.length === 0) return null;
-  const [primary, ...rest] = targetCards.map(mapTacticalTargetCard);
+  const mappedTargets = targetCards.map(mapTacticalTargetCard);
+  const [primary, ...rest] = mappedTargets;
 
-  const unmappedFields: UnmappedField[] = [
-    ...profile.header,
-    ...primary.unmappedFields,
-  ];
-  const associateBlocks: FreeTextAssociate[] = [];
-  const note = (label: string, value: string) => {
-    if (value) unmappedFields.push({ label, value });
+  const norm = (t: string) => t.trim().toLowerCase().replace(/\s+/g, " ");
+  const ownerIndex = (ownerName: string) => {
+    const idx = targetCards.findIndex(c => norm(c.name) === norm(ownerName));
+    return idx === -1 ? 0 : idx;
   };
+
+  const associateBlocks: FreeTextAssociate[] = [];
   for (const card of profile.cards.filter(c => c.kind === "associate")) {
     const split = splitPersonName(card.name);
     const homeText = card.homeAddressText.split("\n")[0]?.trim() ?? "";
@@ -1354,24 +1364,33 @@ function mapTacticalProfile(
       address,
       vehicle: vehicleLines[0] ?? null,
       bornDate: card.dob,
+      ownerTargetName: card.ownerName,
     });
-    const label = card.name;
-    if (card.mdlRaw && !mapMdlStatus(card.mdlRaw)) {
-      note(`${label} — WA MDL`, card.mdlRaw);
-    }
-    note(`${label} — Warnings`, card.warnings);
-    note(`${label} — Alerts`, card.alerts);
-    note(`${label} — Other info`, card.otherInfo);
-    note(`${label} — Social media`, card.socialMedia);
-    for (const t of card.telco) note(`${label} — ${t.label}`, t.value);
-    if (vehicleLines.length > 1) {
-      note(
-        `${label} — Other vehicles`,
-        vehicleLines
+
+    // Everything on the card with no field of its own, as ONE read-only line
+    // listed with the owning target (25 associates would otherwise bury the
+    // review screen under a row per telco number).
+    const parts: string[] = [];
+    if (card.mdlRaw && !mapMdlStatus(card.mdlRaw))
+      parts.push(`WA MDL ${card.mdlRaw}`);
+    if (card.warnings) parts.push(`Warnings: ${card.warnings}`);
+    if (card.alerts) parts.push(`Alerts: ${card.alerts}`);
+    if (card.otherInfo) parts.push(card.otherInfo);
+    if (card.socialMedia) parts.push(`Social: ${card.socialMedia}`);
+    if (card.telco.length)
+      parts.push(card.telco.map(t => `${t.label} ${t.value}`).join(" · "));
+    if (vehicleLines.length > 1)
+      parts.push(
+        `Other vehicles: ${vehicleLines
           .slice(1)
           .map(v => v.raw)
-          .join("\n")
+          .join("; ")}`
       );
+    if (parts.length) {
+      mappedTargets[ownerIndex(card.ownerName)].unmappedFields.push({
+        label: card.name,
+        value: parts.join(" | "),
+      });
     }
   }
 
@@ -1384,7 +1403,7 @@ function mapTacticalProfile(
     name: primary.name,
     addresses: primary.addresses,
     vehicles: primary.vehicles,
-    unmappedFields,
+    unmappedFields: [...profile.header, ...primary.unmappedFields],
     freeText: primary.freeText,
     associateBlocks,
     candidateEntities: primary.candidateEntities.filter(

@@ -1394,10 +1394,28 @@ function mapTacticalProfile(
     }
   }
 
-  const excluded = new Set([
-    `${primary.name.firstNames} ${primary.name.surname}`,
-    ...associateBlocks.map(a => `${a.firstNames} ${a.surname}`),
-  ]);
+  // A Tactical Profile lists its associates as cards, so the names that turn
+  // up in a target's background narrative are aliases, spelling variants
+  // ("Nadja Elise KOVACS", "Marco FERRARO", "Evelyn May THORNE") or people
+  // already on a card in shortened form ("Tomas VARGA") — offering them as
+  // new associates only adds look-alike duplicates to the review. They are
+  // not offered as associates; they're listed read-only instead, so a
+  // genuinely different person named in the narrative is still visible (the
+  // narrative itself is kept verbatim as the target's background).
+  for (const t of mappedTargets) {
+    const names = Array.from(
+      new Set(
+        t.candidateEntities.filter(c => c.type === "person").map(c => c.value)
+      )
+    );
+    if (names.length) {
+      t.unmappedFields.push({
+        label: "Other names in the narrative",
+        value: names.join(", "),
+      });
+    }
+    t.candidateEntities = t.candidateEntities.filter(c => c.type !== "person");
+  }
 
   return {
     name: primary.name,
@@ -1406,9 +1424,7 @@ function mapTacticalProfile(
     unmappedFields: [...profile.header, ...primary.unmappedFields],
     freeText: primary.freeText,
     associateBlocks,
-    candidateEntities: primary.candidateEntities.filter(
-      c => c.type !== "person" || !excluded.has(c.value)
-    ),
+    candidateEntities: primary.candidateEntities,
     needsReview: primary.needsReview,
     images: result.images,
     mdlStatus: primary.mdlStatus,

@@ -338,3 +338,23 @@ describe("reviewing a multi-target document one target at a time", () => {
     expect(outside.size).toBe(4 + 20);
   });
 });
+
+describe("Tactical Profile — names in the narrative", () => {
+  it("doesn't offer aliases or shortened names as extra associates", async () => {
+    const mapped = mapDocumentToTargetProfile(
+      await readDocxTables(readFileSync(KESTREL_FIXTURE))
+    );
+    // Only the five carded associates for the first target — not "Nadja
+    // Elise KOVACS" (a spelling variant of the target) or "Tomas VARGA",
+    // "Priya SHAH", "Aaron QUINN" (already on cards).
+    const full = mapped as unknown as Parameters<typeof focusParsedDocument>[0];
+    expect(focusParsedDocument(full, 0).associateBlocks).toHaveLength(5);
+    expect(mapped.candidateEntities.some(c => c.type === "person")).toBe(false);
+    // …but they're still listed, read-only.
+    expect(
+      mapped.unmappedFields.find(
+        f => f.label === "Other names in the narrative"
+      )?.value
+    ).toContain("Nadja Elise KOVACS");
+  });
+});

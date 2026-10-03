@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, X, Check, ScanFace } from "lucide-react";
-import { PhotoOwnerCaption } from "@/components/PhotoOwnerCaption";
+import { PhotoOwnerCaption, shortPersonName } from "@/components/PhotoOwnerCaption";
 import { useMemo, useState } from "react";
 
 interface Slot {
@@ -129,7 +129,7 @@ function CompareSlot({
                   // easy to pick out of a folder of portraits.
                   const names = ((p.linkedEntities ?? []) as { category: string; label: string }[])
                     .filter(e => e.category !== "member")
-                    .map(e => (e.category === "target" ? e.label.split(",")[0].trim() : e.label))
+                    .map(e => shortPersonName(e.label))
                     .join(", ");
                   return (
                     <div key={p.id} className="flex flex-col items-center gap-1">

@@ -129,3 +129,21 @@ describe("registry ↔ summary project sync", () => {
     ).toBeNull();
   });
 });
+
+import { shortPersonName } from "../client/src/components/PhotoOwnerCaption";
+
+describe("shortPersonName", () => {
+  it("reduces a composed registry name to Name SURNAME", () => {
+    expect(shortPersonName("Priya Anjali SHAH, born 5 June 1985 (SHAH)")).toBe(
+      "Priya Anjali SHAH"
+    );
+    expect(
+      shortPersonName("Daniel Joseph MERCER, born 6 February 1984 (MERCER)")
+    ).toBe("Daniel Joseph MERCER");
+    expect(shortPersonName("Tomas Ivo VARGA")).toBe("Tomas Ivo VARGA");
+    expect(shortPersonName("This target")).toBe("This target");
+    expect(shortPersonName("Pacific Route Services Pty Ltd")).toBe(
+      "Pacific Route Services Pty Ltd"
+    );
+  });
+});

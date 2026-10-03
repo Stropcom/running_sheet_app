@@ -337,7 +337,7 @@ export function TargetStatusFields({
             onChange={e =>
               onChange({ ...value, bailConditionsText: e.target.value })
             }
-            placeholder="e.g. Curfew 2000–0600, no contact with…"
+            placeholder="Reporting conditions - days, location"
             rows={3}
           />
         </div>

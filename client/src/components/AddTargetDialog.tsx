@@ -86,6 +86,7 @@ import {
 } from "@/components/PossibleDuplicateAlert";
 import { runDuplicateChecks } from "@/lib/duplicateCheck";
 import { OperationPicker } from "@/components/OperationPicker";
+import { PhotoOwnerCaption } from "@/components/PhotoOwnerCaption";
 import type {
   DocumentImportPrefill,
   StagedImage,
@@ -1991,6 +1992,23 @@ export function AddTargetDialog({
     );
   }
 
+  // Who a staged photo is of, for the name printed under its thumbnail.
+  const photoOwnerLabel = (linkTo: StagedImage["linkTo"]): string => {
+    if (linkTo.type === "existingAssociate") return linkTo.entityLabel;
+    if (linkTo.type === "associate") {
+      const staged = associates.find(a => a.key === linkTo.associateKey);
+      if (staged) {
+        const { name } = composeAssociateName(
+          staged.identity,
+          staged.address.businessName
+        );
+        if (name) return name;
+      }
+      return "This associate";
+    }
+    return "This target";
+  };
+
   // Upload Image control shared by Person Identity and each associate's
   // identity box — stages the picked file into manualImages (linked by
   // "target" or that associate's staged key) and shows what's staged so
@@ -2023,23 +2041,28 @@ export function AddTargetDialog({
             {staged.map(img => (
               <div
                 key={img.key}
-                className={`relative rounded-md overflow-hidden border-2 ${accentBorderClass}`}
+                className="flex flex-col items-center gap-1 w-16"
               >
-                <img
-                  src={`data:${img.mimeType};base64,${img.dataBase64}`}
-                  alt="Uploaded"
-                  className="w-16 h-16 object-cover block"
-                />
-                <button
-                  type="button"
-                  title="Remove this photo"
-                  onClick={() =>
-                    setManualImages(v => v.filter(i => i.key !== img.key))
-                  }
-                  className="absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-black/60 text-white flex items-center justify-center"
+                <div
+                  className={`relative rounded-md overflow-hidden border-2 ${accentBorderClass}`}
                 >
-                  <X className="h-2.5 w-2.5" />
-                </button>
+                  <img
+                    src={`data:${img.mimeType};base64,${img.dataBase64}`}
+                    alt="Uploaded"
+                    className="w-16 h-16 object-cover block"
+                  />
+                  <button
+                    type="button"
+                    title="Remove this photo"
+                    onClick={() =>
+                      setManualImages(v => v.filter(i => i.key !== img.key))
+                    }
+                    className="absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-black/60 text-white flex items-center justify-center"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                </div>
+                <PhotoOwnerCaption label={photoOwnerLabel(img.linkTo)} />
               </div>
             ))}
           </div>
@@ -2203,25 +2226,7 @@ export function AddTargetDialog({
                   {(initialImages ?? []).map(img => {
                     const kept = imageChoices[img.key] ?? true;
                     const isDup = duplicateImageKeys.has(img.key);
-                    // Who this photo is of, so a batch of portraits from a
-                    // multi-person document can be checked at a glance.
-                    const stagedOwner =
-                      img.linkTo.type === "associate"
-                        ? associates.find(
-                            a =>
-                              img.linkTo.type === "associate" &&
-                              a.key === img.linkTo.associateKey
-                          )
-                        : undefined;
-                    const ownerLabel =
-                      img.linkTo.type === "existingAssociate"
-                        ? img.linkTo.entityLabel
-                        : stagedOwner
-                          ? composeAssociateName(
-                              stagedOwner.identity,
-                              stagedOwner.address.businessName
-                            ).name
-                          : "This target";
+                    const ownerLabel = photoOwnerLabel(img.linkTo);
                     return (
                       <div
                         key={img.key}

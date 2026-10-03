@@ -1472,6 +1472,15 @@ export function ImportTargetDocumentDialog({
                                         </span>
                                       );
                                     })()}
+                                  {!linkedAssociate && (
+                                    <span className="text-[10px] text-muted-foreground">
+                                      Linked to this target
+                                      {result.name
+                                        ? ` (${result.name.firstNames} ${result.name.surname})`
+                                        : ""}
+                                      .
+                                    </span>
+                                  )}
                                 </div>
                               )}
                             </div>

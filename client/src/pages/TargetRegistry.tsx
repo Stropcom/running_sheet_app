@@ -104,6 +104,7 @@ import {
 } from "@/components/PossibleDuplicateAlert";
 import { runDuplicateChecks } from "@/lib/duplicateCheck";
 import { IndicesBadge } from "@/components/IndicesBadge";
+import { PhotoOwnerCaption } from "@/components/PhotoOwnerCaption";
 import type { TargetType } from "@shared/types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -1876,23 +1877,26 @@ function AssociateCard({
                 {manualImages.map(img => (
                   <div
                     key={img.key}
-                    className="relative rounded-md overflow-hidden border-2 border-violet-500"
+                    className="flex flex-col items-center gap-1 w-16"
                   >
-                    <img
-                      src={`data:${img.mimeType};base64,${img.dataBase64}`}
-                      alt="Uploaded"
-                      className="w-16 h-16 object-cover block"
-                    />
-                    <button
-                      type="button"
-                      title="Remove this photo"
-                      onClick={() =>
-                        setManualImages(v => v.filter(i => i.key !== img.key))
-                      }
-                      className="absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-black/60 text-white flex items-center justify-center"
-                    >
-                      <X className="h-2.5 w-2.5" />
-                    </button>
+                    <div className="relative rounded-md overflow-hidden border-2 border-violet-500">
+                      <img
+                        src={`data:${img.mimeType};base64,${img.dataBase64}`}
+                        alt="Uploaded"
+                        className="w-16 h-16 object-cover block"
+                      />
+                      <button
+                        type="button"
+                        title="Remove this photo"
+                        onClick={() =>
+                          setManualImages(v => v.filter(i => i.key !== img.key))
+                        }
+                        className="absolute top-0.5 right-0.5 h-4 w-4 rounded-full bg-black/60 text-white flex items-center justify-center"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                    <PhotoOwnerCaption label={displayName} />
                   </div>
                 ))}
               </div>

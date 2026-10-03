@@ -14025,6 +14025,12 @@ export interface IntelMapLocation {
   assocVehicles: string[];
   /** Total link count (targets + assocPersons + assocVehicles) */
   linkCount: number;
+  /** Only what running-sheet observations recorded at this location (the
+   * fields above also carry registry-derived entries): target names, other
+   * people, and vehicles. The map popup's OBSERVATIONS block. */
+  observedTargets: string[];
+  observedPersons: string[];
+  observedVehicles: string[];
 }
 
 export async function getIntelMappingLocations(
@@ -14150,6 +14156,9 @@ export async function getIntelMappingLocations(
         assocPersons: [],
         assocVehicles: [],
         linkCount: 0,
+        observedTargets: [],
+        observedPersons: [],
+        observedVehicles: [],
       });
     }
     return locationMap.get(key)!;
@@ -14312,6 +14321,8 @@ export async function getIntelMappingLocations(
         if (co.isTarget) {
           // Add to linkedTargets if not already there
           const tData = relevantTargets.find(t => t.id === co.targetId);
+          if (tData && !loc.observedTargets.includes(tData.name))
+            loc.observedTargets.push(tData.name);
           if (
             tData &&
             !loc.linkedTargets.find(lt => lt.targetId === co.targetId)
@@ -14334,9 +14345,15 @@ export async function getIntelMappingLocations(
           if (!loc.assocPersons.includes(co.shortForm)) {
             loc.assocPersons.push(co.shortForm);
           }
+          if (!loc.observedPersons.includes(co.shortForm)) {
+            loc.observedPersons.push(co.shortForm);
+          }
         } else if (co.type === "vehicle") {
           if (!loc.assocVehicles.includes(co.shortForm)) {
             loc.assocVehicles.push(co.shortForm);
+          }
+          if (!loc.observedVehicles.includes(co.shortForm)) {
+            loc.observedVehicles.push(co.shortForm);
           }
         }
       }

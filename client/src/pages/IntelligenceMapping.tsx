@@ -1048,6 +1048,26 @@ function openInfoWindowDeferred(
   });
 }
 
+/** Small blue camera badge, bottom-left of a marker — profile / baseball-card
+ * photos of the people at this address (the green bottom-right badge is the
+ * running-sheet photos). */
+function createProfilePhotoBadge(): HTMLDivElement {
+  const badge = document.createElement("div");
+  badge.title = "Profile photos of people at this address";
+  badge.style.cssText = `
+    position:absolute;bottom:-4px;left:-4px;
+    background:#2563eb;
+    width:16px;height:16px;
+    border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    border:1.5px solid #fff;
+    box-shadow:0 1px 3px rgba(0,0,0,0.3);
+  `;
+  badge.innerHTML =
+    '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.2"/><path d="M8 6l1.5-2.3h5L16 6"/></svg>';
+  return badge;
+}
+
 function buildInfoWindowContent(
   loc: IntelMapLocation,
   override?: {
@@ -3543,6 +3563,9 @@ export default function IntelligenceMapping() {
         '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.2"/><path d="M8 6l1.5-2.3h5L16 6"/></svg>';
       el.appendChild(photoBadge);
     }
+    if (personPhotosByKeyRef.current.has(addressMatchKey(loc.label))) {
+      el.appendChild(createProfilePhotoBadge());
+    }
     return el;
   }, []);
 
@@ -4056,6 +4079,20 @@ export default function IntelligenceMapping() {
       renderLocations(locations);
     }
   }, [locations, renderLocations, mapReady]);
+
+  // Re-draw location pins once the profile-photo lookup arrives or changes, so
+  // the blue camera badge appears without waiting for another refresh.
+  const hadPersonPhotosRef = useRef(false);
+  useEffect(() => {
+    // Nothing to draw (and nothing to undo) while there are no profile photos.
+    if (personPhotosByKey.size === 0 && !hadPersonPhotosRef.current) return;
+    hadPersonPhotosRef.current = personPhotosByKey.size > 0;
+    if (locations && mapRef.current && geocoderRef.current) {
+      mergedIntelRef.current.clear();
+      renderLocations(locations);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personPhotosByKey]);
 
   // Re-render pins when a pin override changes on ANOTHER device (a move or
   // appearance edit synced in by the poll above). The pinOverridesRef effect
@@ -4664,6 +4701,11 @@ export default function IntelligenceMapping() {
             '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.2"/><path d="M8 6l1.5-2.3h5L16 6"/></svg>';
           iconBox.appendChild(photoBadge);
         }
+        if (
+          personPhotosByKeyRef.current.has(addressMatchKey(outerCm.address))
+        ) {
+          iconBox.appendChild(createProfilePhotoBadge());
+        }
         wrapper.appendChild(iconBox);
         if (labelText) {
           wrapper.appendChild(
@@ -4956,7 +4998,7 @@ export default function IntelligenceMapping() {
         existing.set(outerCm.id, marker);
       }
     });
-  }, [customMarkers, mapReady, createLabelPillElement]);
+  }, [customMarkers, mapReady, createLabelPillElement, personPhotosByKey]);
 
   // ── Map shape rendering (persisted shapes) ───────────────────────────────────
   const shapesRef = useRef<

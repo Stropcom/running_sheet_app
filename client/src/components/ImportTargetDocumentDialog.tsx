@@ -67,6 +67,14 @@ import {
 import type { StagedAssociate } from "@/components/AddTargetDialog";
 import { reflowNarrativeText } from "@/lib/textFormat";
 import {
+  documentTargetCount,
+  documentTargetNames,
+  focusParsedDocument,
+  namesOutsideFocus,
+  normPersonName,
+  type ParsedDocument,
+} from "@/lib/importDocumentFocus";
+import {
   composeAddress,
   composeVehicle,
   isSameHomeAddress,
@@ -179,11 +187,6 @@ export interface DocumentImportPrefill {
     bailConditions: string;
     bailConditionsText: string;
   };
-  /** Further targets the same document describes (a Tactical Profile can
-   * hold several). Each is reviewed and saved in turn after this one — see
-   * TargetRegistry.tsx's import queue. Never persisted: stripped from the
-   * stored snapshot (documentSnapshotForHistory). */
-  queuedTargets?: DocumentImportPrefill[];
 }
 
 interface PossibleMatch {
@@ -255,25 +258,45 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
+/** A parsed document being worked through one target at a time. The caller
+ * keeps this between targets and hands it back (with `focus` advanced) to
+ * review the next one, so every target in a multi-target document gets the
+ * same review screen → Add Target form. */
+export interface ImportSession {
+  full: ParsedDocument;
+  /** Which target is being reviewed: 0 = the document's primary target. */
+  focus: number;
+  fileName: string;
+  sourceFile: { dataBase64: string; mimeType: string } | null;
+}
+
 export function ImportTargetDocumentDialog({
   open,
   onClose,
   onContinue,
+  session,
 }: {
   open: boolean;
   onClose: () => void;
   /** Fires once the officer confirms the review screen — the caller opens
-   * AddTargetDialog pre-filled with this. */
-  onContinue: (prefill: DocumentImportPrefill) => void;
+   * AddTargetDialog pre-filled with this. The second argument carries the
+   * document forward when it describes more targets than this one. */
+  onContinue: (
+    prefill: DocumentImportPrefill,
+    session: ImportSession | null
+  ) => void;
+  /** Review this (already parsed) document's target `session.focus` instead
+   * of asking for an upload. */
+  session?: ImportSession | null;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [fileName, setFileName] = useState("");
+  const [uploadedFileName, setFileName] = useState("");
   const [error, setError] = useState("");
   // The uploaded file's raw bytes, kept alongside the parsed result so they
   // can be threaded through to the save mutation once the officer confirms
   // (see DocumentImportPrefill.sourceFileBase64) — parseMut itself only
   // returns the parsed fields, not the original bytes.
-  const [sourceFile, setSourceFile] = useState<{
+  const [uploadedSource, setSourceFile] = useState<{
     dataBase64: string;
     mimeType: string;
   } | null>(null);
@@ -317,7 +340,25 @@ export function ImportTargetDocumentDialog({
     Record<string, string>
   >({});
 
-  const result = parseMut.data;
+  // What's being reviewed: either a fresh upload's parse (target 0) or one
+  // target of a document already parsed (see ImportSession).
+  const fullResult = session?.full ?? parseMut.data;
+  const focus = session?.focus ?? 0;
+  const fileName = session?.fileName ?? uploadedFileName;
+  const sourceFile = session ? session.sourceFile : uploadedSource;
+  const result = useMemo(
+    () => (fullResult ? focusParsedDocument(fullResult, focus) : undefined),
+    [fullResult, focus]
+  );
+  const targetCount = fullResult ? documentTargetCount(fullResult) : 1;
+  // Targets still to come after this one, by name.
+  const laterTargetNames = fullResult
+    ? documentTargetNames(fullResult).slice(focus + 1)
+    : [];
+  // Photo captions naming people who belong to a different target's review.
+  const foreignNames = fullResult
+    ? namesOutsideFocus(fullResult, focus)
+    : new Set<string>();
 
   // Every associate candidate the parser found, in one list with a stable
   // key — block-derived (full address/vehicle) and bare mentions alike.
@@ -391,38 +432,12 @@ export function ImportTargetDocumentDialog({
   // filed as an Other Home Address Resident instead. The officer can flip
   // any one with the Move button on its review card, or later from the Add
   // Target dialog.
-  // Which target in the document an associate belongs to: 0 = the primary,
-  // n = additionalTargets[n - 1]. A card that names no owner (or one we
-  // didn't import) goes to the primary.
-  const normName = (t: string) =>
-    t
-      .toLowerCase()
-      .replace(/[^a-z' -]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-  const ownerIndexOf = (a: AssociateCandidate): number => {
-    const owner = normName(a.ownerTargetName ?? "");
-    if (!owner || !result) return 0;
-    if (
-      owner === normName(`${result.name?.firstNames} ${result.name?.surname}`)
-    )
-      return 0;
-    const idx = (result.additionalTargets ?? []).findIndex(
-      t => normName(`${t.name.firstNames} ${t.name.surname}`) === owner
-    );
-    return idx === -1 ? 0 : idx + 1;
-  };
+  const normName = normPersonName;
 
   const isResidentCandidate = (a: AssociateCandidate): boolean => {
     const override = residentOverrides[a.key];
     if (override !== undefined) return override;
-    // Compared with the home address of the target this associate belongs
-    // to (the primary unless the document says otherwise).
-    const owner = ownerIndexOf(a);
-    const home =
-      owner === 0
-        ? result?.addresses[0]
-        : result?.additionalTargets?.[owner - 1]?.addresses[0];
+    const home = result?.addresses[0];
     return !!home && !!a.address && isSameHomeAddress(a.address, home);
   };
 
@@ -493,18 +508,9 @@ export function ImportTargetDocumentDialog({
     return match ? match.key : "target";
   };
 
-  // Each photo belongs to ONE target in the document: the owner of the
-  // associate it's linked to, or the target it's captioned with — else the
-  // primary. This review screen only offers the PRIMARY target's photos
-  // (the others are offered when their own target opens in the Add Target
-  // dialog, already pointed at the right person), and linkTo is what
-  // saveStagedImages uses to attach each one.
-  const placeImage = (
-    img: (typeof imageCandidates)[number]
-  ): { targetIdx: number; image: StagedImage } => {
-    const additionalNames = (result?.additionalTargets ?? []).map(t =>
-      normName(`${t.name.firstNames} ${t.name.surname}`)
-    );
+  // Where a photo goes: onto the associate it's linked to, or onto the target
+  // itself. linkTo is what saveStagedImages uses to attach it.
+  const placeImage = (img: (typeof imageCandidates)[number]): StagedImage => {
     const linkKey = imageLinkChoices[img.key] ?? defaultLinkKeyFor(img);
     const candidate = linkKey
       ? associateCandidates.find(a => a.key === linkKey)
@@ -514,56 +520,31 @@ export function ImportTargetDocumentDialog({
       : null;
     if (candidate && choice === "create") {
       return {
-        targetIdx: ownerIndexOf(candidate),
-        image: {
-          ...img,
-          linkTo: {
-            type: "associate" as const,
-            associateKey: candidate.key,
-          },
-        },
+        ...img,
+        linkTo: { type: "associate" as const, associateKey: candidate.key },
       };
     }
     if (candidate && choice === "update") {
       const match = associateMatches[candidate.key];
       if (match) {
         return {
-          targetIdx: ownerIndexOf(candidate),
-          image: {
-            ...img,
-            linkTo: {
-              type: "existingAssociate" as const,
-              associateId: match.id,
-              entityLabel: match.name,
-            },
+          ...img,
+          linkTo: {
+            type: "existingAssociate" as const,
+            associateId: match.id,
+            entityLabel: match.name,
           },
         };
       }
     }
-    const caption = normName(img.captionName ?? "");
-    const named = additionalNames.indexOf(caption);
-    if (named !== -1) {
-      return {
-        targetIdx: named + 1,
-        image: { ...img, linkTo: { type: "target" as const } },
-      };
-    }
-    // Captioned with an associate who was skipped (so isn't a default link):
-    // it still belongs to that associate's target, not the primary's.
-    const captioned = caption
-      ? associateCandidates.find(
-          a => normName(`${a.firstNames} ${a.surname}`) === caption
-        )
-      : undefined;
-    return {
-      targetIdx: captioned ? ownerIndexOf(captioned) : 0,
-      image: { ...img, linkTo: { type: "target" as const } },
-    };
+    return { ...img, linkTo: { type: "target" as const } };
   };
 
-  // Only the primary target's photos are reviewed on this screen.
+  // Only the photos of the target in focus (and its associates) are offered
+  // here — a photo captioned with someone from another target's card is
+  // offered when THAT target is reviewed.
   const reviewImages = imageCandidates.filter(
-    img => placeImage(img).targetIdx === 0
+    img => !foreignNames.has(normName(img.captionName ?? ""))
   );
   const otherTargetPhotoCount = imageCandidates.length - reviewImages.length;
 
@@ -610,20 +591,23 @@ export function ImportTargetDocumentDialog({
         // ("no name field found — fill this in manually" etc. on the normal
         // path), so an all-empty prefill is just that same path with
         // everything empty, not a new shape it has to learn to handle.
-        onContinue({
-          identity: { firstNames: "", surname: "", bornDate: "" },
-          address: EMPTY_ADDRESS_PARTS,
-          vehicle: EMPTY_VEHICLE_PARTS,
-          extraAddresses: [],
-          extraVehicles: [],
-          associates: [],
-          images: [],
-          background: "",
-          sourceFileName: file.name,
-          sourceFileBase64: dataBase64,
-          sourceFileMimeType: mimeType,
-          parsed: false,
-        });
+        onContinue(
+          {
+            identity: { firstNames: "", surname: "", bornDate: "" },
+            address: EMPTY_ADDRESS_PARTS,
+            vehicle: EMPTY_VEHICLE_PARTS,
+            extraAddresses: [],
+            extraVehicles: [],
+            associates: [],
+            images: [],
+            background: "",
+            sourceFileName: file.name,
+            sourceFileBase64: dataBase64,
+            sourceFileMimeType: mimeType,
+            parsed: false,
+          },
+          null
+        );
         reset();
         return;
       }
@@ -779,26 +763,21 @@ export function ImportTargetDocumentDialog({
 
       // Same classification the review screen showed (see
       // isResidentCandidate) — so what the officer saw is what gets staged.
-      const stagedFor = (targetIdx: number): StagedAssociate[] =>
-        associateCandidates
-          .filter(
-            a =>
-              (associateChoices[a.key] ?? "create") === "create" &&
-              ownerIndexOf(a) === targetIdx
-          )
-          .map(a => ({
-            key: a.key,
-            relationship: isResidentCandidate(a)
-              ? ("resident" as const)
-              : ("associate" as const),
-            identity: {
-              firstNames: a.firstNames,
-              surname: a.surname,
-              bornDate: a.bornDate ?? "",
-            },
-            address: a.address ?? EMPTY_ADDRESS_PARTS,
-            vehicle: a.vehicle ?? EMPTY_VEHICLE_PARTS,
-          }));
+      const associates: StagedAssociate[] = associateCandidates
+        .filter(a => (associateChoices[a.key] ?? "create") === "create")
+        .map(a => ({
+          key: a.key,
+          relationship: isResidentCandidate(a)
+            ? ("resident" as const)
+            : ("associate" as const),
+          identity: {
+            firstNames: a.firstNames,
+            surname: a.surname,
+            bornDate: a.bornDate ?? "",
+          },
+          address: a.address ?? EMPTY_ADDRESS_PARTS,
+          vehicle: a.vehicle ?? EMPTY_VEHICLE_PARTS,
+        }));
 
       const [primaryVehicle, ...restVehicles] = result.vehicles;
 
@@ -838,196 +817,98 @@ export function ImportTargetDocumentDialog({
           short: "",
         }));
 
-      // Further targets the same document describes (a Tactical Profile can
-      // hold several): each becomes its own prefill, queued to be reviewed
-      // and saved after this one. A photo captioned with one of their names
-      // goes to them, not to the primary target.
-      const additional = result.additionalTargets ?? [];
       const keptImages = imageCandidates.filter(
-        img => imageChoices[img.key] ?? true
-      );
-      const placedImages = keptImages.map(placeImage);
-      const imagesFor = (targetIdx: number): StagedImage[] =>
-        placedImages.filter(p => p.targetIdx === targetIdx).map(p => p.image);
-      const queuedTargets: DocumentImportPrefill[] = additional.map(
-        (t, idx) => {
-          const [home, ...otherAddresses] = t.addresses;
-          const [firstVehicle, ...otherVehicles] = t.vehicles;
-          return {
-            identity: {
-              firstNames: t.name.firstNames,
-              surname: t.name.surname,
-              bornDate: t.name.bornDate,
-            },
-            address: home
-              ? {
-                  unitNo: home.unitNo,
-                  houseNo: home.houseNo,
-                  streetName: home.streetName,
-                  streetType: home.streetType,
-                  suburb: home.suburb,
-                  state: home.state,
-                  businessName: "",
-                }
-              : EMPTY_ADDRESS_PARTS,
-            vehicle: firstVehicle
-              ? {
-                  registration: firstVehicle.registration,
-                  state: firstVehicle.state,
-                  colour: firstVehicle.colour,
-                  make: firstVehicle.make,
-                  model: firstVehicle.model,
-                  vehicleType: firstVehicle.vehicleType,
-                }
-              : EMPTY_VEHICLE_PARTS,
-            extraAddresses: [
-              ...otherAddresses.map(a => ({
-                id: makeExtraId(),
-                label: a.label,
-                businessName: "",
-                unitNo: a.unitNo,
-                houseNo: a.houseNo,
-                streetName: a.streetName,
-                streetType: a.streetType,
-                suburb: a.suburb,
-                state: a.state,
-                full: "",
-                short: "",
-              })),
-              ...t.needsReview
-                .filter(u => u.kind === "address")
-                .map(u => ({
-                  id: makeExtraId(),
-                  label: u.label,
-                  businessName: "",
-                  unitNo: "",
-                  houseNo: "",
-                  streetName: u.raw,
-                  streetType: "",
-                  suburb: "",
-                  state: "WA",
-                  full: "",
-                  short: "",
-                })),
-            ],
-            extraVehicles: [
-              ...otherVehicles.map(v => ({
-                id: makeExtraId(),
-                registration: v.registration,
-                state: v.state,
-                colour: v.colour,
-                make: v.make,
-                model: v.model,
-                vehicleType: v.vehicleType,
-                full: "",
-                short: "",
-              })),
-              ...t.needsReview
-                .filter(u => u.kind === "vehicle")
-                .map(u => ({
-                  id: makeExtraId(),
-                  registration: "",
-                  state: "WA",
-                  colour: "",
-                  make: "",
-                  model: u.raw,
-                  vehicleType: "",
-                  full: "",
-                  short: "",
-                })),
-            ],
-            associates: stagedFor(idx + 1),
-            images: imagesFor(idx + 1),
-            background: t.freeText.trim(),
-            sourceFileName: fileName,
-            sourceFileBase64: sourceFile?.dataBase64 ?? "",
-            sourceFileMimeType: sourceFile?.mimeType ?? "",
-            parsed: true,
-            status: {
-              mdlStatus: t.mdlStatus,
-              bailStatus: t.bailStatus,
-              bailConditions: t.bailConditions,
-              bailConditionsText: t.bailConditionsText,
-            },
-          };
-        }
+        img =>
+          (imageChoices[img.key] ?? true) &&
+          !foreignNames.has(normName(img.captionName ?? ""))
       );
 
-      onContinue({
-        identity: result.name
-          ? {
-              firstNames: result.name.firstNames,
-              surname: result.name.surname,
-              bornDate: result.name.bornDate,
-            }
-          : { firstNames: "", surname: "", bornDate: "" },
-        address: primaryAddress
-          ? {
-              unitNo: primaryAddress.unitNo,
-              houseNo: primaryAddress.houseNo,
-              streetName: primaryAddress.streetName,
-              streetType: primaryAddress.streetType,
-              suburb: primaryAddress.suburb,
-              state: primaryAddress.state,
+      onContinue(
+        {
+          identity: result.name
+            ? {
+                firstNames: result.name.firstNames,
+                surname: result.name.surname,
+                bornDate: result.name.bornDate,
+              }
+            : { firstNames: "", surname: "", bornDate: "" },
+          address: primaryAddress
+            ? {
+                unitNo: primaryAddress.unitNo,
+                houseNo: primaryAddress.houseNo,
+                streetName: primaryAddress.streetName,
+                streetType: primaryAddress.streetType,
+                suburb: primaryAddress.suburb,
+                state: primaryAddress.state,
+                businessName: "",
+              }
+            : EMPTY_ADDRESS_PARTS,
+          vehicle: primaryVehicle
+            ? {
+                registration: primaryVehicle.registration,
+                state: primaryVehicle.state,
+                colour: primaryVehicle.colour,
+                make: primaryVehicle.make,
+                model: primaryVehicle.model,
+                vehicleType: primaryVehicle.vehicleType,
+              }
+            : EMPTY_VEHICLE_PARTS,
+          extraAddresses: [
+            ...restAddresses.map(a => ({
+              id: makeExtraId(),
+              label: a.label,
               businessName: "",
-            }
-          : EMPTY_ADDRESS_PARTS,
-        vehicle: primaryVehicle
-          ? {
-              registration: primaryVehicle.registration,
-              state: primaryVehicle.state,
-              colour: primaryVehicle.colour,
-              make: primaryVehicle.make,
-              model: primaryVehicle.model,
-              vehicleType: primaryVehicle.vehicleType,
-            }
-          : EMPTY_VEHICLE_PARTS,
-        extraAddresses: [
-          ...restAddresses.map(a => ({
-            id: makeExtraId(),
-            label: a.label,
-            businessName: "",
-            unitNo: a.unitNo,
-            houseNo: a.houseNo,
-            streetName: a.streetName,
-            streetType: a.streetType,
-            suburb: a.suburb,
-            state: a.state,
-            full: "",
-            short: "",
-          })),
-          ...unparsedExtraAddresses,
-          ...businessLocations,
-        ],
-        extraVehicles: [
-          ...restVehicles.map(v => ({
-            id: makeExtraId(),
-            registration: v.registration,
-            state: v.state,
-            colour: v.colour,
-            make: v.make,
-            model: v.model,
-            vehicleType: v.vehicleType,
-            full: "",
-            short: "",
-          })),
-          ...unparsedExtraVehicles,
-        ],
-        associates: stagedFor(0),
-        images: imagesFor(0),
-        background: result.freeText.trim(),
-        sourceFileName: fileName,
-        sourceFileBase64: sourceFile?.dataBase64 ?? "",
-        sourceFileMimeType: sourceFile?.mimeType ?? "",
-        parsed: true,
-        status: {
-          mdlStatus: result.mdlStatus ?? "",
-          bailStatus: result.bailStatus ?? "",
-          bailConditions: result.bailConditions ?? "",
-          bailConditionsText: result.bailConditionsText ?? "",
+              unitNo: a.unitNo,
+              houseNo: a.houseNo,
+              streetName: a.streetName,
+              streetType: a.streetType,
+              suburb: a.suburb,
+              state: a.state,
+              full: "",
+              short: "",
+            })),
+            ...unparsedExtraAddresses,
+            ...businessLocations,
+          ],
+          extraVehicles: [
+            ...restVehicles.map(v => ({
+              id: makeExtraId(),
+              registration: v.registration,
+              state: v.state,
+              colour: v.colour,
+              make: v.make,
+              model: v.model,
+              vehicleType: v.vehicleType,
+              full: "",
+              short: "",
+            })),
+            ...unparsedExtraVehicles,
+          ],
+          associates,
+          images: keptImages.map(placeImage),
+          background: result.freeText.trim(),
+          sourceFileName: fileName,
+          sourceFileBase64: sourceFile?.dataBase64 ?? "",
+          sourceFileMimeType: sourceFile?.mimeType ?? "",
+          parsed: true,
+          status: {
+            mdlStatus: result.mdlStatus ?? "",
+            bailStatus: result.bailStatus ?? "",
+            bailConditions: result.bailConditions ?? "",
+            bailConditionsText: result.bailConditionsText ?? "",
+          },
         },
-        ...(queuedTargets.length ? { queuedTargets } : {}),
-      });
+        // More targets to go: hand the document back so the caller can reopen
+        // this review for the next one once this target is saved.
+        fullResult && focus + 1 < targetCount && sourceFile !== undefined
+          ? {
+              full: fullResult,
+              focus: focus + 1,
+              fileName,
+              sourceFile,
+            }
+          : null
+      );
       reset();
     } finally {
       setApplying(false);
@@ -1066,11 +947,6 @@ export function ImportTargetDocumentDialog({
               : "Move to Residents"}
           </Button>
         </div>
-        {a.ownerTargetName && (result?.additionalTargets ?? []).length > 0 && (
-          <span className="text-[11px] text-muted-foreground">
-            Associate of {a.ownerTargetName}
-          </span>
-        )}
         {a.address && (
           <span className="text-muted-foreground text-xs">
             {[
@@ -1350,9 +1226,8 @@ export function ImportTargetDocumentDialog({
                     <p className="text-[11px] text-muted-foreground">
                       {otherTargetPhotoCount} more photo
                       {otherTargetPhotoCount > 1 ? "s" : ""} in this document
-                      belong to the other targets and their associates — they're
-                      offered when each of those targets opens, already matched
-                      to the right person.
+                      belong to the other targets and their associates — each is
+                      offered when that target is reviewed.
                     </p>
                   )}
                   <p className="text-[11px] text-muted-foreground">
@@ -1366,9 +1241,7 @@ export function ImportTargetDocumentDialog({
                     // photo — only "skip" genuinely has no record for a
                     // photo to end up on.
                     const linkableAssociates = associateCandidates.filter(
-                      a =>
-                        (associateChoices[a.key] ?? "create") !== "skip" &&
-                        ownerIndexOf(a) === 0
+                      a => (associateChoices[a.key] ?? "create") !== "skip"
                     );
                     return (
                       <div className="flex flex-col gap-2">
@@ -1532,21 +1405,24 @@ export function ImportTargetDocumentDialog({
                 </div>
               )}
 
-              {(result.additionalTargets ?? []).length > 0 && (
+              {(laterTargetNames.length > 0 || focus > 0) && (
                 <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3 flex flex-col gap-1.5">
                   <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide">
-                    More targets in this document (
-                    {(result.additionalTargets ?? []).length})
+                    Target {focus + 1} of {targetCount} in this document
                   </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    Each one opens for review straight after the target above is
-                    saved, one at a time.
-                  </p>
-                  {(result.additionalTargets ?? []).map((t, i) => (
-                    <span key={i} className="text-sm font-medium">
-                      {t.name.firstNames} {t.name.surname}
-                    </span>
-                  ))}
+                  {laterTargetNames.length > 0 && (
+                    <>
+                      <p className="text-[11px] text-muted-foreground">
+                        Each target gets this same review, then the Add Target
+                        form, one after another. Still to come:
+                      </p>
+                      {laterTargetNames.map((n, i) => (
+                        <span key={i} className="text-sm font-medium">
+                          {n}
+                        </span>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
 

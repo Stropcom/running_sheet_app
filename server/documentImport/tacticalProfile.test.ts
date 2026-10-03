@@ -277,3 +277,64 @@ describe("Tactical Profile — five targets, twenty-five associates (KESTREL)", 
     expect(captions).toContain("Declan Hugh MORRIS");
   });
 });
+
+// The import review walks a multi-target document one target at a time; this
+// is the narrowing it relies on (client/src/lib/importDocumentFocus.ts).
+import {
+  documentTargetCount,
+  documentTargetNames,
+  focusParsedDocument,
+  namesOutsideFocus,
+  normPersonName,
+} from "@/lib/importDocumentFocus";
+
+describe("reviewing a multi-target document one target at a time", () => {
+  const load = async () =>
+    mapDocumentToTargetProfile(
+      await readDocxTables(readFileSync(KESTREL_FIXTURE))
+    ) as unknown as Parameters<typeof focusParsedDocument>[0];
+
+  it("focuses each target with only its own associates", async () => {
+    const full = await load();
+    expect(documentTargetCount(full)).toBe(5);
+    expect(documentTargetNames(full)[1]).toBe("Marcus Leon FERRARO");
+
+    const first = focusParsedDocument(full, 0);
+    expect(first.name?.surname).toBe("KOVACS");
+    expect(first.associateBlocks.map(a => a.surname)).toEqual([
+      "VARGA",
+      "SHAH",
+      "QUINN",
+      "MARTIN",
+      "BASHIR",
+    ]);
+    expect(first.additionalTargets).toEqual([]);
+
+    const second = focusParsedDocument(full, 1);
+    expect(second.name?.surname).toBe("FERRARO");
+    expect(second.addresses[0].streetName).toBe("Atlas");
+    expect(second.vehicles.map(v => v.registration)).toEqual([
+      "1FER83",
+      "1ROS44",
+    ]);
+    expect(second.associateBlocks.map(a => a.surname)).toEqual([
+      "ROSSI",
+      "BIANCHI",
+      "CHAO",
+      "O'DONNELL",
+      "PETROV",
+    ]);
+  });
+
+  it("knows which photo captions belong to a different target's review", async () => {
+    const full = await load();
+    const outside = namesOutsideFocus(full, 0);
+    // Marcus, and Marcus's associates, are for a later review…
+    expect(outside.has(normPersonName("Marcus Leon FERRARO"))).toBe(true);
+    expect(outside.has(normPersonName("Bianca Lucia ROSSI"))).toBe(true);
+    // …Nadia and her own associates are for this one.
+    expect(outside.has(normPersonName("Nadia Elise KOVACS"))).toBe(false);
+    expect(outside.has(normPersonName("Tomas Ivo VARGA"))).toBe(false);
+    expect(outside.size).toBe(4 + 20);
+  });
+});

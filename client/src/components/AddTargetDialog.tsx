@@ -657,9 +657,6 @@ export function AddTargetDialog({
     ...prefill,
     images: [],
     sourceFileBase64: "",
-    // The other targets in the same document are saved as their own
-    // records with their own snapshots — never nested inside this one.
-    queuedTargets: undefined,
   });
 
   const buildPayload = (): RegistryCreatePayload => {

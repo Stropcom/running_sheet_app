@@ -86,7 +86,9 @@ import {
 import {
   ImportTargetDocumentDialog,
   type DocumentImportPrefill,
+  type ImportSession,
 } from "@/components/ImportTargetDocumentDialog";
+import { documentTargetCount } from "@/lib/importDocumentFocus";
 import {
   composeTargetName,
   composeAssociateName,
@@ -2315,9 +2317,13 @@ export default function TargetRegistryPage() {
   const [importPrefill, setImportPrefill] =
     useState<DocumentImportPrefill | null>(null);
   const [importKey, setImportKey] = useState(0);
-  // Further targets from the same imported document, waiting their turn —
-  // each opens in the Add Target dialog right after the previous one saves.
-  const [importQueue, setImportQueue] = useState<DocumentImportPrefill[]>([]);
+  // The imported document currently being worked through, when it describes
+  // more targets than have been saved so far. After each target is saved the
+  // Import review reopens for the next one (then its Add Target form), so
+  // every target in a multi-target document goes through the same steps.
+  const [importSession, setImportSession] = useState<ImportSession | null>(
+    null
+  );
   // The Operation the previous target in the batch was saved against —
   // pre-selected for the next one (the whole document is about one
   // operation, so re-picking it five times would be pure friction).
@@ -2325,6 +2331,20 @@ export default function TargetRegistryPage() {
     id: number;
     name: string;
   } | null>(null);
+  // Ends a multi-target document early (the dialog was cancelled/closed) —
+  // the officer can re-import the document to pick up any targets left.
+  const endImportSession = () => {
+    if (
+      importSession &&
+      importSession.focus < documentTargetCount(importSession.full)
+    ) {
+      toast.info(
+        "Stopped importing this document — re-import it to pick up any targets not yet added."
+      );
+    }
+    setImportSession(null);
+    setImportOperation(null);
+  };
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"alpha" | "recent" | "operation">(
     "alpha"
@@ -2715,31 +2735,19 @@ export default function TargetRegistryPage() {
           setImportPrefill(null);
           // Cancelling any one target ends the rest of the batch — the
           // officer can re-import the document to pick the others up.
-          if (importQueue.length > 0) {
-            toast.info(
-              `Skipped ${importQueue.length} remaining target${importQueue.length > 1 ? "s" : ""} from the document.`
-            );
-            setImportQueue([]);
-          }
-          setImportOperation(null);
+          endImportSession();
         }}
         initialOperation={importOperation}
         onSaved={savedOperation => {
-          if (importQueue.length === 0) {
-            setShowCreate(false);
-            setImportPrefill(null);
+          setShowCreate(false);
+          setImportPrefill(null);
+          if (!importSession) {
             setImportOperation(null);
             return;
           }
-          const [next, ...rest] = importQueue;
+          // Back to the review screen for the next target in the document.
           setImportOperation(savedOperation);
-          setImportQueue(rest);
-          setImportPrefill(next);
-          setImportKey(k => k + 1);
-          setShowCreate(true);
-          toast.info(
-            `Next target from the document: ${next.identity.firstNames} ${next.identity.surname}`.trim()
-          );
+          setShowImportDocument(true);
         }}
         onSave={async payload => {
           const { existingAssociateId, ...rest } = payload;
@@ -2766,12 +2774,17 @@ export default function TargetRegistryPage() {
       {/* Import from Document dialog */}
       <ImportTargetDocumentDialog
         open={showImportDocument}
-        onClose={() => setShowImportDocument(false)}
-        onContinue={prefill => {
-          const { queuedTargets, ...first } = prefill;
-          setImportOperation(null);
-          setImportQueue(queuedTargets ?? []);
-          setImportPrefill(first);
+        session={importSession}
+        onClose={() => {
+          setShowImportDocument(false);
+          endImportSession();
+        }}
+        onContinue={(prefill, nextSession) => {
+          // A fresh upload starts with no operation chosen; a later target
+          // in the same document keeps the one already picked.
+          if (!importSession) setImportOperation(null);
+          setImportSession(nextSession);
+          setImportPrefill(prefill);
           setImportKey(k => k + 1);
           setShowImportDocument(false);
           setShowCreate(true);

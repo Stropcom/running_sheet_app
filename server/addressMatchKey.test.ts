@@ -36,3 +36,15 @@ describe("addressMatchKey", () => {
     expect(addressMatchKey(null)).toBe("");
   });
 });
+
+import { shortPersonDisplayName } from "@shared/addressFormat";
+
+describe("shortPersonDisplayName", () => {
+  it("drops the born clause and the surname bracket", () => {
+    expect(
+      shortPersonDisplayName("Min Jae KIM, born 25 August 1980 (KIM)")
+    ).toBe("Min Jae KIM");
+    expect(shortPersonDisplayName("Min Jae KIM")).toBe("Min Jae KIM");
+    expect(shortPersonDisplayName("Target 1")).toBe("Target 1");
+  });
+});

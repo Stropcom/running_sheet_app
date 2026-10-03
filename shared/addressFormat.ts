@@ -239,3 +239,14 @@ export function nameWithoutBornClause(name: string): string {
   if (commaIdx > 0) return name.slice(0, commaIdx).trim();
   return name.replace(/\s*\([^()]+\)\s*$/, "").trim();
 }
+
+/**
+ * A person's name as shown in compact map popups: "Min Jae KIM" — no
+ * ", born …" date and no trailing "(KIM)" surname bracket.
+ */
+export function shortPersonDisplayName(name: string): string {
+  return name
+    .replace(/\s*\([^()]*\)\s*$/, "")
+    .split(/,\s*born\b/i)[0]
+    .trim();
+}

@@ -56,6 +56,7 @@ import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
 import { StreetViewPip } from "@/components/StreetViewPip";
 import { ImagesPip } from "@/components/ImagesPip";
 import { addressMatchKey } from "@shared/addressMatchKey";
+import { shortPersonDisplayName } from "@shared/addressFormat";
 import { StreetHeadingBar } from "@/components/StreetHeadingBar";
 import { UcoGuideMapOverlay } from "@/components/UcoGuideMapOverlay";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
@@ -1006,11 +1007,89 @@ function popupVehicleLines(vehicles: string[], fontSize: string): string {
 
 /** A person's name as shown in map popups: "Min Jae KIM" — no ", born …"
  * date and no trailing "(KIM)" surname bracket, to keep the popup compact. */
-function shortPopupName(name: string): string {
-  return name
-    .replace(/\s*\([^()]*\)\s*$/, "")
-    .split(/,\s*born\b/i)[0]
-    .trim();
+const shortPopupName = shortPersonDisplayName;
+
+/** One registered person (target, associate or other home address resident)
+ * with every vehicle on their registry record. */
+interface MapPerson {
+  name: string;
+  role: "target" | "resident" | "associate";
+  addressKey: string;
+  vehicles: string[];
+}
+interface MapPeopleLookup {
+  byName: Map<string, MapPerson>;
+  byAddress: Map<string, MapPerson[]>;
+}
+
+function buildMapPeopleLookup(people: MapPerson[]): MapPeopleLookup {
+  const byName = new Map<string, MapPerson>();
+  const byAddress = new Map<string, MapPerson[]>();
+  for (const p of people) {
+    const key = p.name.toLowerCase();
+    const prev = byName.get(key);
+    // The same person can be on more than one target — pool their vehicles.
+    byName.set(
+      key,
+      prev
+        ? {
+            ...prev,
+            vehicles: Array.from(new Set([...prev.vehicles, ...p.vehicles])),
+          }
+        : p
+    );
+    if (p.addressKey)
+      byAddress.set(p.addressKey, [...(byAddress.get(p.addressKey) ?? []), p]);
+  }
+  return { byName, byAddress };
+}
+
+/** A target card's vehicles: everything on the target's registry record,
+ * falling back to the two on the intel entity when the registry doesn't
+ * know them (e.g. a target outside the selected operations). */
+function popupTargetVehicleLines(
+  name: string,
+  fallback: string[],
+  registry: MapPeopleLookup | undefined,
+  fontSize: string
+): string {
+  const registered = registry?.byName.get(shortPopupName(name).toLowerCase());
+  const vehicles = registered ? registered.vehicles : fallback;
+  return vehicles.length ? popupVehicleLines(vehicles, fontSize) : "";
+}
+
+/** The Persons list for an address, each name followed by ALL the vehicles on
+ * their registry record, plus any registered associate / resident whose
+ * address this is but who isn't already listed. Without registry data it is
+ * the plain name list. */
+function popupPeopleLines(
+  persons: string[],
+  addressLabel: string,
+  registry: MapPeopleLookup | undefined,
+  fontSize: string
+): string {
+  if (!registry) return popupPersonLines(persons, fontSize);
+  const seen = new Set<string>();
+  const names: string[] = [];
+  const add = (n: string) => {
+    const key = n.toLowerCase();
+    if (!n || seen.has(key)) return;
+    seen.add(key);
+    names.push(n);
+  };
+  persons.map(shortPopupName).forEach(add);
+  for (const p of registry.byAddress.get(addressMatchKey(addressLabel)) ?? [])
+    if (p.role !== "target") add(p.name);
+  return names
+    .map(n => {
+      const vehicles = registry.byName.get(n.toLowerCase())?.vehicles ?? [];
+      return `<div style="padding:1px 0;"><div style="font-size:${fontSize};color:#111;">${n}</div>${
+        vehicles.length
+          ? `<div style="padding-left:10px;">${popupVehicleLines(vehicles, "11px")}</div>`
+          : ""
+      }</div>`;
+    })
+    .join("");
 }
 
 /** Person mentions display one per line, same layout as popupVehicleLines —
@@ -1097,7 +1176,8 @@ function buildInfoWindowContent(
     customLabel?: string | null;
     note?: string | null;
   },
-  hasPhotos = false
+  hasPhotos = false,
+  registry?: MapPeopleLookup
 ): string {
   const isTarget = loc.type === "target_address";
   const isAdditionalTargetAddress =
@@ -1158,12 +1238,14 @@ function buildInfoWindowContent(
       lines.push(
         `<div style="font-size:12px;font-weight:700;color:#111;margin-bottom:2px;">${shortPopupName(t.name)}</div>`
       );
-      const tVehicles = [t.v1f, t.v2f].filter((v): v is string => !!v);
-      if (tVehicles.length) lines.push(popupVehicleLines(tVehicles, "11px"));
-      if (t.operationName)
-        lines.push(
-          `<div style="font-size:10px;color:#888;margin-top:2px;">Op: ${t.operationName}</div>`
-        );
+      lines.push(
+        popupTargetVehicleLines(
+          t.name,
+          [t.v1f, t.v2f].filter((v): v is string => !!v),
+          registry,
+          "11px"
+        )
+      );
       lines.push(`</div>`);
     }
     lines.push(`</div>`);
@@ -1191,9 +1273,15 @@ function buildInfoWindowContent(
       }
     }
 
-    if (loc.assocPersons.length > 0) {
+    const peopleHtml = popupPeopleLines(
+      loc.assocPersons,
+      loc.label,
+      registry,
+      "12px"
+    );
+    if (peopleHtml) {
       entityLines.push(
-        `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><div style="margin-top:2px">${popupPersonLines(loc.assocPersons, "12px")}</div></div>`
+        `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><div style="margin-top:2px">${peopleHtml}</div></div>`
       );
     }
 
@@ -3005,6 +3093,23 @@ export default function IntelligenceMapping() {
     () => new Map((personPhotoData ?? []).map(g => [g.addressKey, g.photos])),
     [personPhotoData]
   );
+  // Everyone registered against those operations' targets, with all their
+  // registry vehicles — the marker popups list these under each person.
+  const { data: registeredPeopleData } =
+    trpc.intelligence.registeredPeopleForMap.useQuery(
+      { operationIds: personPhotoOpIds },
+      { enabled: personPhotoOpIds.length > 0 }
+    );
+  const registeredPeopleLookupRef = useRef<MapPeopleLookup | undefined>(
+    undefined
+  );
+  registeredPeopleLookupRef.current = useMemo(
+    () =>
+      registeredPeopleData
+        ? buildMapPeopleLookup(registeredPeopleData)
+        : undefined,
+    [registeredPeopleData]
+  );
   const personPhotosByKeyRef = useRef(personPhotosByKey);
   useEffect(() => {
     personPhotosByKeyRef.current = personPhotosByKey;
@@ -3918,7 +4023,8 @@ export default function IntelligenceMapping() {
             fullEnriched,
             pinOverridesRef.current.get(loc.label),
             photoKeysRef.current.has(normalizeEntityLabelClient(loc.label)) ||
-              personPhotosByKeyRef.current.has(addressMatchKey(loc.label))
+              personPhotosByKeyRef.current.has(addressMatchKey(loc.label)),
+            registeredPeopleLookupRef.current
           )
         );
         infoWindowRef.current.setPosition({
@@ -4811,10 +4917,18 @@ export default function IntelligenceMapping() {
               );
 
             // Persons (from custom marker)
-            if (cm.assocPersons?.length)
-              lines.push(
-                `<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Persons</span><div style="margin-top:2px">${popupPersonLines(cm.assocPersons as string[], "12px")}</div></div>`
+            {
+              const cmPeopleHtml = popupPeopleLines(
+                (cm.assocPersons ?? []) as string[],
+                cm.address ?? "",
+                registeredPeopleLookupRef.current,
+                "12px"
               );
+              if (cmPeopleHtml)
+                lines.push(
+                  `<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Persons</span><div style="margin-top:2px">${cmPeopleHtml}</div></div>`
+                );
+            }
 
             // Vehicles (from custom marker)
             if (cm.assocVehicles?.length)
@@ -4850,11 +4964,14 @@ export default function IntelligenceMapping() {
                   lines.push(
                     `<div style="font-size:11px;font-weight:700;color:#111;">${shortPopupName(t.name)}</div>`
                   );
-                  const tVehicles = [t.v1f, t.v2f].filter(
-                    (v): v is string => !!v
+                  lines.push(
+                    popupTargetVehicleLines(
+                      t.name,
+                      [t.v1f, t.v2f].filter((v): v is string => !!v),
+                      registeredPeopleLookupRef.current,
+                      "10px"
+                    )
                   );
-                  if (tVehicles.length)
-                    lines.push(popupVehicleLines(tVehicles, "10px"));
                   lines.push(`</div>`);
                 }
                 lines.push(`</div>`);
@@ -4871,9 +4988,15 @@ export default function IntelligenceMapping() {
                   );
                 }
               }
-              if (intel.assocPersons.length > 0) {
+              const intelPeopleHtml = popupPeopleLines(
+                intel.assocPersons,
+                intel.label,
+                registeredPeopleLookupRef.current,
+                "11px"
+              );
+              if (intelPeopleHtml) {
                 intelEntityLines.push(
-                  `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:3px;">Intel Persons</div><div>${popupPersonLines(intel.assocPersons, "11px")}</div>`
+                  `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:3px;">Intel Persons</div><div>${intelPeopleHtml}</div>`
                 );
               }
               if (intel.assocVehicles.length > 0) {

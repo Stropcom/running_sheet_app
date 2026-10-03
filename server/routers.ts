@@ -312,6 +312,7 @@ import {
   getEntityLinkCounts,
   getAttachmentsForEntity,
   getPersonPhotosByAddress,
+  getRegisteredPeopleForMap,
   getLinkedOperationsForEntity,
   createPersonDetection,
   findSimilarFaces,
@@ -4198,6 +4199,16 @@ export const appRouter = router({
   }),
   /** Intelligence Folder */
   intelligence: router({
+    /** Everyone registered against the selected operations' targets (targets,
+     * associates, other home address residents) with all their registry
+     * vehicles — feeds the map marker popups. Registry data only; running-sheet
+     * observations are not involved. */
+    registeredPeopleForMap: protectedProcedure
+      .input(z.object({ operationIds: z.array(z.number()).max(200) }))
+      .query(async ({ input }) => {
+        return getRegisteredPeopleForMap(input.operationIds);
+      }),
+
     /**
      * Returns a stable device token for this browser, creating one if it doesn't exist.
      * The token is stored in an httpOnly cookie so it survives localStorage clears.

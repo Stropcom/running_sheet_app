@@ -28,6 +28,7 @@ import {
   formatIntelVehicle,
   bracketCodeFromRegisteredName,
   nameWithoutBornClause,
+  shortPersonDisplayName,
 } from "@shared/addressFormat";
 import {
   VEHICLE_DEPART_PATTERN,
@@ -2437,6 +2438,130 @@ export async function getPersonPhotosByAddress(operationIds: number[]): Promise<
       (a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)
     ),
   }));
+}
+
+/** Every person registered against the selected operations' targets — the
+ * targets themselves plus their associates and other home address residents
+ * — with ALL the vehicles on their registry record, for the map popups. Each
+ * carries the key of the one address they count at (see
+ * getPersonPhotosByAddress) so a pin can find the people living there. */
+export async function getRegisteredPeopleForMap(
+  operationIds: number[]
+): Promise<
+  Array<{
+    name: string;
+    role: "target" | "resident" | "associate";
+    addressKey: string;
+    vehicles: string[];
+  }>
+> {
+  const db = await getDb();
+  if (!db || operationIds.length === 0) return [];
+
+  const targetRows = await db
+    .selectDistinct({
+      id: targets.id,
+      name: targets.name,
+      hbf: targets.hbf,
+      hb: targets.hb,
+      v1f: targets.v1f,
+      v1: targets.v1,
+      v2f: targets.v2f,
+      v2: targets.v2,
+      extraVehicles: targets.extraVehicles,
+    })
+    .from(operationTargetLinks)
+    .innerJoin(targets, eq(operationTargetLinks.targetId, targets.id))
+    .where(
+      and(
+        inArray(operationTargetLinks.operationId, operationIds),
+        isNull(targets.deletedAt)
+      )
+    );
+  if (targetRows.length === 0) return [];
+
+  const associateRows = await db
+    .select({
+      name: associates.name,
+      relationship: associates.relationship,
+      hbf: associates.hbf,
+      hb: associates.hb,
+      v1f: associates.v1f,
+      v1: associates.v1,
+      extraVehicles: associates.extraVehicles,
+      extraAddresses: associates.extraAddresses,
+    })
+    .from(associates)
+    .where(
+      and(
+        inArray(
+          associates.targetId,
+          targetRows.map(t => t.id)
+        ),
+        isNull(associates.deletedAt)
+      )
+    );
+
+  const vehiclesOf = (r: {
+    v1f?: string | null;
+    v1?: string | null;
+    v2f?: string | null;
+    v2?: string | null;
+    extraVehicles?: string | null;
+  }): string[] => {
+    const out: string[] = [];
+    const add = (v?: string | null) => {
+      const t = v?.trim();
+      if (!t) return;
+      const shown = formatIntelVehicle(t);
+      if (shown && !out.includes(shown)) out.push(shown);
+    };
+    add(r.v1f || r.v1);
+    add(r.v2f || r.v2);
+    try {
+      const extras: Array<{ full?: string; short?: string }> = JSON.parse(
+        r.extraVehicles ?? "[]"
+      );
+      for (const ev of extras) add(ev.full || ev.short);
+    } catch {
+      /* malformed JSON — no extra vehicles */
+    }
+    return out;
+  };
+  const firstExtraAddress = (json: string | null): string => {
+    try {
+      const eas: Array<{ full?: string; short?: string }> = JSON.parse(
+        json ?? "[]"
+      );
+      for (const ea of eas) {
+        const v = ea.full || ea.short;
+        if (v) return v;
+      }
+    } catch {
+      /* malformed JSON — no address */
+    }
+    return "";
+  };
+
+  return [
+    ...targetRows.map(t => ({
+      name: shortPersonDisplayName(t.name),
+      role: "target" as const,
+      addressKey: addressMatchKey(t.hbf || t.hb),
+      vehicles: vehiclesOf(t),
+    })),
+    ...associateRows.map(a => ({
+      name: shortPersonDisplayName(a.name),
+      role:
+        a.relationship === "resident"
+          ? ("resident" as const)
+          : ("associate" as const),
+      addressKey: addressMatchKey(
+        a.hbf || a.hb || firstExtraAddress(a.extraAddresses)
+      ),
+      vehicles: vehiclesOf(a),
+    })),
+  ];
 }
 
 export interface OperationEntityPhoto {

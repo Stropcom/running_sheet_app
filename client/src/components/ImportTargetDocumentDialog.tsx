@@ -170,6 +170,20 @@ export interface DocumentImportPrefill {
    * which were always parsed. ImportedDocumentCard uses this to show a
    * plain "not parsed" note instead of a wall of empty field boxes. */
   parsed?: boolean;
+  /** MDL / bail answers the document stated in wording that maps cleanly
+   * (see mapMdlStatus/mapBail in server/documentImport/
+   * tacticalProfileCards.ts). Absent for formats that don't carry them. */
+  status?: {
+    mdlStatus: string;
+    bailStatus: string;
+    bailConditions: string;
+    bailConditionsText: string;
+  };
+  /** Further targets the same document describes (a Tactical Profile can
+   * hold several). Each is reviewed and saved in turn after this one — see
+   * TargetRegistry.tsx's import queue. Never persisted: stripped from the
+   * stored snapshot (documentSnapshotForHistory). */
+  queuedTargets?: DocumentImportPrefill[];
 }
 
 interface PossibleMatch {
@@ -184,6 +198,8 @@ interface AssociateCandidate {
   key: string;
   firstNames: string;
   surname: string;
+  /** DD/MM/YYYY when the source gave this associate's own date of birth. */
+  bornDate?: string;
   address: StructuredAddressParts | null;
   vehicle: (StructuredVehicleParts & { vehicleType: string }) | null;
 }
@@ -327,6 +343,7 @@ export function ImportTargetDocumentDialog({
         key: makeExtraId(),
         firstNames: a.firstNames,
         surname: a.surname,
+        bornDate: a.bornDate ?? "",
         address: a.address
           ? {
               unitNo: a.address.unitNo,
@@ -667,7 +684,7 @@ export function ImportTargetDocumentDialog({
           identity: {
             firstNames: a.firstNames,
             surname: a.surname,
-            bornDate: "",
+            bornDate: a.bornDate ?? "",
           },
           address: a.address ?? EMPTY_ADDRESS_PARTS,
           vehicle: a.vehicle ?? EMPTY_VEHICLE_PARTS,
@@ -710,6 +727,131 @@ export function ImportTargetDocumentDialog({
           full: "",
           short: "",
         }));
+
+      // Further targets the same document describes (a Tactical Profile can
+      // hold several): each becomes its own prefill, queued to be reviewed
+      // and saved after this one. A photo captioned with one of their names
+      // goes to them, not to the primary target.
+      const normName = (t: string) =>
+        t
+          .toLowerCase()
+          .replace(/[^a-z' -]/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      const additional = result.additionalTargets ?? [];
+      const additionalNames = additional.map(t =>
+        normName(`${t.name.firstNames} ${t.name.surname}`)
+      );
+      const keptImages = imageCandidates.filter(
+        img => imageChoices[img.key] ?? true
+      );
+      const queuedTargets: DocumentImportPrefill[] = additional.map(
+        (t, idx) => {
+          const [home, ...otherAddresses] = t.addresses;
+          const [firstVehicle, ...otherVehicles] = t.vehicles;
+          return {
+            identity: {
+              firstNames: t.name.firstNames,
+              surname: t.name.surname,
+              bornDate: t.name.bornDate,
+            },
+            address: home
+              ? {
+                  unitNo: home.unitNo,
+                  houseNo: home.houseNo,
+                  streetName: home.streetName,
+                  streetType: home.streetType,
+                  suburb: home.suburb,
+                  state: home.state,
+                  businessName: "",
+                }
+              : EMPTY_ADDRESS_PARTS,
+            vehicle: firstVehicle
+              ? {
+                  registration: firstVehicle.registration,
+                  state: firstVehicle.state,
+                  colour: firstVehicle.colour,
+                  make: firstVehicle.make,
+                  model: firstVehicle.model,
+                  vehicleType: firstVehicle.vehicleType,
+                }
+              : EMPTY_VEHICLE_PARTS,
+            extraAddresses: [
+              ...otherAddresses.map(a => ({
+                id: makeExtraId(),
+                label: a.label,
+                businessName: "",
+                unitNo: a.unitNo,
+                houseNo: a.houseNo,
+                streetName: a.streetName,
+                streetType: a.streetType,
+                suburb: a.suburb,
+                state: a.state,
+                full: "",
+                short: "",
+              })),
+              ...t.needsReview
+                .filter(u => u.kind === "address")
+                .map(u => ({
+                  id: makeExtraId(),
+                  label: u.label,
+                  businessName: "",
+                  unitNo: "",
+                  houseNo: "",
+                  streetName: u.raw,
+                  streetType: "",
+                  suburb: "",
+                  state: "WA",
+                  full: "",
+                  short: "",
+                })),
+            ],
+            extraVehicles: [
+              ...otherVehicles.map(v => ({
+                id: makeExtraId(),
+                registration: v.registration,
+                state: v.state,
+                colour: v.colour,
+                make: v.make,
+                model: v.model,
+                vehicleType: v.vehicleType,
+                full: "",
+                short: "",
+              })),
+              ...t.needsReview
+                .filter(u => u.kind === "vehicle")
+                .map(u => ({
+                  id: makeExtraId(),
+                  registration: "",
+                  state: "WA",
+                  colour: "",
+                  make: "",
+                  model: u.raw,
+                  vehicleType: "",
+                  full: "",
+                  short: "",
+                })),
+            ],
+            associates: [],
+            images: keptImages
+              .filter(
+                img => normName(img.captionName ?? "") === additionalNames[idx]
+              )
+              .map(img => ({ ...img, linkTo: { type: "target" as const } })),
+            background: t.freeText.trim(),
+            sourceFileName: fileName,
+            sourceFileBase64: sourceFile?.dataBase64 ?? "",
+            sourceFileMimeType: sourceFile?.mimeType ?? "",
+            parsed: true,
+            status: {
+              mdlStatus: t.mdlStatus,
+              bailStatus: t.bailStatus,
+              bailConditions: t.bailConditions,
+              bailConditionsText: t.bailConditionsText,
+            },
+          };
+        }
+      );
 
       onContinue({
         identity: result.name
@@ -772,8 +914,10 @@ export function ImportTargetDocumentDialog({
           ...unparsedExtraVehicles,
         ],
         associates,
-        images: imageCandidates
-          .filter(img => imageChoices[img.key] ?? true)
+        images: keptImages
+          .filter(
+            img => !additionalNames.includes(normName(img.captionName ?? ""))
+          )
           .map(img => {
             const linkKey = imageLinkChoices[img.key] ?? defaultLinkKeyFor(img);
             const candidate = linkKey
@@ -811,6 +955,13 @@ export function ImportTargetDocumentDialog({
         sourceFileBase64: sourceFile?.dataBase64 ?? "",
         sourceFileMimeType: sourceFile?.mimeType ?? "",
         parsed: true,
+        status: {
+          mdlStatus: result.mdlStatus ?? "",
+          bailStatus: result.bailStatus ?? "",
+          bailConditions: result.bailConditions ?? "",
+          bailConditionsText: result.bailConditionsText ?? "",
+        },
+        ...(queuedTargets.length ? { queuedTargets } : {}),
       });
       reset();
     } finally {
@@ -1288,6 +1439,24 @@ export function ImportTargetDocumentDialog({
                       yet — these are shown as read by the existing rules only.)
                     </p>
                   )}
+                </div>
+              )}
+
+              {(result.additionalTargets ?? []).length > 0 && (
+                <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3 flex flex-col gap-1.5">
+                  <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide">
+                    More targets in this document (
+                    {(result.additionalTargets ?? []).length})
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Each one opens for review straight after the target above is
+                    saved, one at a time.
+                  </p>
+                  {(result.additionalTargets ?? []).map((t, i) => (
+                    <span key={i} className="text-sm font-medium">
+                      {t.name.firstNames} {t.name.surname}
+                    </span>
+                  ))}
                 </div>
               )}
 

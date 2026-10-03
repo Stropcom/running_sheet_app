@@ -2300,6 +2300,16 @@ export default function TargetRegistryPage() {
   const [importPrefill, setImportPrefill] =
     useState<DocumentImportPrefill | null>(null);
   const [importKey, setImportKey] = useState(0);
+  // Further targets from the same imported document, waiting their turn —
+  // each opens in the Add Target dialog right after the previous one saves.
+  const [importQueue, setImportQueue] = useState<DocumentImportPrefill[]>([]);
+  // The Operation the previous target in the batch was saved against —
+  // pre-selected for the next one (the whole document is about one
+  // operation, so re-picking it five times would be pure friction).
+  const [importOperation, setImportOperation] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"alpha" | "recent" | "operation">(
     "alpha"
@@ -2688,6 +2698,33 @@ export default function TargetRegistryPage() {
         onClose={() => {
           setShowCreate(false);
           setImportPrefill(null);
+          // Cancelling any one target ends the rest of the batch — the
+          // officer can re-import the document to pick the others up.
+          if (importQueue.length > 0) {
+            toast.info(
+              `Skipped ${importQueue.length} remaining target${importQueue.length > 1 ? "s" : ""} from the document.`
+            );
+            setImportQueue([]);
+          }
+          setImportOperation(null);
+        }}
+        initialOperation={importOperation}
+        onSaved={savedOperation => {
+          if (importQueue.length === 0) {
+            setShowCreate(false);
+            setImportPrefill(null);
+            setImportOperation(null);
+            return;
+          }
+          const [next, ...rest] = importQueue;
+          setImportOperation(savedOperation);
+          setImportQueue(rest);
+          setImportPrefill(next);
+          setImportKey(k => k + 1);
+          setShowCreate(true);
+          toast.info(
+            `Next target from the document: ${next.identity.firstNames} ${next.identity.surname}`.trim()
+          );
         }}
         onSave={async payload => {
           const { existingAssociateId, ...rest } = payload;
@@ -2705,6 +2742,7 @@ export default function TargetRegistryPage() {
         initialExtraAddresses={importPrefill?.extraAddresses}
         initialExtraVehicles={importPrefill?.extraVehicles}
         initialAssociates={importPrefill?.associates}
+        initialStatus={importPrefill?.status}
         initialImages={importPrefill?.images}
         initialBackground={importPrefill?.background}
         initialDocumentSnapshot={importPrefill}
@@ -2715,7 +2753,10 @@ export default function TargetRegistryPage() {
         open={showImportDocument}
         onClose={() => setShowImportDocument(false)}
         onContinue={prefill => {
-          setImportPrefill(prefill);
+          const { queuedTargets, ...first } = prefill;
+          setImportOperation(null);
+          setImportQueue(queuedTargets ?? []);
+          setImportPrefill(first);
           setImportKey(k => k + 1);
           setShowImportDocument(false);
           setShowCreate(true);

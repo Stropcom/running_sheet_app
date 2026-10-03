@@ -30,6 +30,12 @@ import type {
   ExtractedDocumentImage,
 } from "./documentReadResult";
 import {
+  readTacticalProfile,
+  mapMdlStatus,
+  mapBail,
+  type TacticalPersonCard,
+} from "./tacticalProfileCards";
+import {
   isHeadingLine,
   VEHICLES_HEADING_RE,
   LOCATION_HEADING_RE,
@@ -87,6 +93,9 @@ export interface FreeTextAssociate {
   businessName: string;
   address: ParsedAddressLine | null;
   vehicle: ParsedVehicleLine | null;
+  /** DD/MM/YYYY, when the source gives the associate's own date of birth
+   * (a Tactical Profile associate card does). Absent otherwise. */
+  bornDate?: string;
 }
 
 /** Something the document clearly meant as an address or vehicle — it sat
@@ -135,6 +144,18 @@ export interface TargetProfileImportResult {
    * auto-saved. See ExtractedDocumentImage's own doc comment for the size
    * filtering already applied by the reader. */
   images: ExtractedDocumentImage[];
+  /** Target's Motor Drivers Licence / bail answers when the source states
+   * them in wording that maps cleanly (see mapMdlStatus / mapBail) —
+   * otherwise "" and the raw wording is in `unmappedFields` for the officer
+   * to read and answer themselves. Optional: only the Tactical Profile
+   * format carries these today. */
+  mdlStatus?: "active" | "none" | "suspended" | "";
+  bailStatus?: "yes" | "no" | "";
+  bailConditions?: "yes" | "no" | "";
+  bailConditionsText?: string;
+  /** Further targets described by the same document (a Tactical Profile can
+   * hold several) — each reviewed and saved in turn after the primary. */
+  additionalTargets?: ImportedTargetFields[];
 }
 
 /** Finds every occurrence of `label` as a cell in `rows`, paired with the
@@ -1200,9 +1221,195 @@ function dedupeBy<T>(items: T[], key: (item: T) => string): T[] {
   return out;
 }
 
+/** Everything the review screen needs for ONE target — shared by the primary
+ * target and any further targets a multi-target document describes. */
+export interface ImportedTargetFields {
+  name: ParsedPersonName;
+  addresses: ParsedAddressEntry[];
+  vehicles: ParsedVehicleLine[];
+  unmappedFields: UnmappedField[];
+  freeText: string;
+  candidateEntities: CandidateEntity[];
+  needsReview: UnparsedItem[];
+  mdlStatus: "active" | "none" | "suspended" | "";
+  bailStatus: "yes" | "no" | "";
+  bailConditions: "yes" | "no" | "";
+  bailConditionsText: string;
+}
+
+/** One Tactical Profile TARGET card → review-screen fields. The card reader
+ * only separates the text by label; every address and vehicle still goes
+ * through the shared line parsers here. */
+function mapTacticalTargetCard(card: TacticalPersonCard): ImportedTargetFields {
+  const { firstNames, surname } = splitPersonName(card.name);
+  const name: ParsedPersonName = {
+    firstNames,
+    surname,
+    bornDate: card.dob,
+    confident: !!(firstNames && surname),
+  };
+
+  const needsReview: UnparsedItem[] = [];
+  const addresses: ParsedAddressEntry[] = [];
+  const homeLine = card.homeAddressText.split("\n")[0]?.trim() ?? "";
+  if (homeLine) {
+    const home = parseAddressLine(homeLine) ?? parseAddressLineLoose(homeLine);
+    if (home) addresses.push({ ...home, label: "Home Address" });
+    else
+      needsReview.push({
+        kind: "address",
+        label: "Home Address",
+        raw: homeLine,
+      });
+  }
+  const other = parseAddressBlock(card.otherAddressText);
+  addresses.push(...other.addresses);
+  needsReview.push(...other.unparsed);
+
+  const vehicleText = [card.registeredVehiclesText, card.linkedVehiclesText]
+    .filter(Boolean)
+    .join("\n");
+  const vehicles = dedupeBy(findVehicleLines(vehicleText), v => v.registration);
+  needsReview.push(...findUnparsedVehicleItems(vehicleText, vehicles));
+
+  const unmappedFields: UnmappedField[] = [];
+  const note = (label: string, value: string) => {
+    if (value) unmappedFields.push({ label, value });
+  };
+  const mdl = mapMdlStatus(card.mdlRaw);
+  if (card.mdlRaw && !mdl) note("WA MDL", card.mdlRaw);
+  // Kept as the document's own wording too when it was mapped, so the
+  // officer can see what "Expired FEB/2026" / "Cancelled" was read as.
+  else if (card.mdlRaw && !/^(active|none|nil|suspended)$/i.test(card.mdlRaw))
+    note("WA MDL (as printed)", card.mdlRaw);
+  const bail = mapBail(card.bailRaw);
+  if (card.bailRaw && !bail.bailStatus) note("Bail", card.bailRaw);
+  note("Warnings", card.warnings);
+  note("Alerts", card.alerts);
+  note("Social media", card.socialMedia);
+  note("Other info", card.otherInfo);
+  note("Intel", card.intel);
+  for (const t of card.telco) note(t.label, t.value);
+
+  const freeText = card.background;
+  const candidateEntities = dedupeBy(
+    scanFreeText(freeText).filter(
+      c => c.type !== "person" || c.value !== `${firstNames} ${surname}`
+    ),
+    c => `${c.type}:${c.value.toLowerCase()}`
+  );
+
+  return {
+    name,
+    addresses,
+    vehicles,
+    unmappedFields,
+    freeText,
+    candidateEntities,
+    needsReview,
+    mdlStatus: mdl,
+    bailStatus: bail.bailStatus,
+    bailConditions: bail.bailConditions,
+    bailConditionsText: bail.bailConditionsText,
+  };
+}
+
+/** Maps a recognised Tactical Profile (see tacticalProfileCards.ts) onto the
+ * same review-screen shape every other format produces. The first filled
+ * target is the primary; any further targets come back in
+ * `additionalTargets` so one upload can create them all, reviewed one at a
+ * time. The document doesn't say which target an "Associate of Target" card
+ * belongs to, so associates are filed under the first. */
+function mapTacticalProfile(
+  result: DocumentReadResult,
+  profile: NonNullable<ReturnType<typeof readTacticalProfile>>
+): TargetProfileImportResult | null {
+  const targetCards = profile.cards.filter(c => c.kind === "target");
+  if (targetCards.length === 0) return null;
+  const [primary, ...rest] = targetCards.map(mapTacticalTargetCard);
+
+  const unmappedFields: UnmappedField[] = [
+    ...profile.header,
+    ...primary.unmappedFields,
+  ];
+  const associateBlocks: FreeTextAssociate[] = [];
+  const note = (label: string, value: string) => {
+    if (value) unmappedFields.push({ label, value });
+  };
+  for (const card of profile.cards.filter(c => c.kind === "associate")) {
+    const split = splitPersonName(card.name);
+    const homeText = card.homeAddressText.split("\n")[0]?.trim() ?? "";
+    const address = homeText
+      ? (parseAddressLine(homeText) ?? parseAddressLineLoose(homeText))
+      : null;
+    const vehicleLines = findVehicleLines(
+      [card.registeredVehiclesText, card.linkedVehiclesText]
+        .filter(Boolean)
+        .join("\n")
+    );
+    associateBlocks.push({
+      firstNames: split.firstNames,
+      surname: split.surname,
+      businessName: "",
+      address,
+      vehicle: vehicleLines[0] ?? null,
+      bornDate: card.dob,
+    });
+    const label = card.name;
+    if (card.mdlRaw && !mapMdlStatus(card.mdlRaw)) {
+      note(`${label} — WA MDL`, card.mdlRaw);
+    }
+    note(`${label} — Warnings`, card.warnings);
+    note(`${label} — Alerts`, card.alerts);
+    note(`${label} — Other info`, card.otherInfo);
+    note(`${label} — Social media`, card.socialMedia);
+    for (const t of card.telco) note(`${label} — ${t.label}`, t.value);
+    if (vehicleLines.length > 1) {
+      note(
+        `${label} — Other vehicles`,
+        vehicleLines
+          .slice(1)
+          .map(v => v.raw)
+          .join("\n")
+      );
+    }
+  }
+
+  const excluded = new Set([
+    `${primary.name.firstNames} ${primary.name.surname}`,
+    ...associateBlocks.map(a => `${a.firstNames} ${a.surname}`),
+  ]);
+
+  return {
+    name: primary.name,
+    addresses: primary.addresses,
+    vehicles: primary.vehicles,
+    unmappedFields,
+    freeText: primary.freeText,
+    associateBlocks,
+    candidateEntities: primary.candidateEntities.filter(
+      c => c.type !== "person" || !excluded.has(c.value)
+    ),
+    needsReview: primary.needsReview,
+    images: result.images,
+    mdlStatus: primary.mdlStatus,
+    bailStatus: primary.bailStatus,
+    bailConditions: primary.bailConditions,
+    bailConditionsText: primary.bailConditionsText,
+    additionalTargets: rest,
+  };
+}
+
 export function mapDocumentToTargetProfile(
   result: DocumentReadResult
 ): TargetProfileImportResult {
+  // A recognised Tactical Profile (repeated person cards) has its own
+  // layout — see tacticalProfileCards.ts — and is mapped separately.
+  const tacticalProfile = readTacticalProfile(result.tables);
+  if (tacticalProfile) {
+    const mapped = mapTacticalProfile(result, tacticalProfile);
+    if (mapped) return mapped;
+  }
   const rows = result.tables.flatMap(t => t.rows);
   const paragraphSections = findAllParagraphSections(result);
 

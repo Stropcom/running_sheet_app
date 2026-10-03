@@ -301,6 +301,8 @@ export function AddTargetDialog({
   initialExtraAddresses,
   initialExtraVehicles,
   initialAssociates,
+  initialStatus,
+  onSaved,
   initialImages,
   initialBackground,
   initialDocumentSnapshot,
@@ -331,6 +333,14 @@ export function AddTargetDialog({
   initialExtraAddresses?: ExtraAddress[];
   initialExtraVehicles?: ExtraVehicle[];
   initialAssociates?: StagedAssociate[];
+  /** MDL / bail answers read from an imported document, when it stated them
+   * in wording that maps cleanly. Read once on mount, like the other
+   * initial* props. */
+  initialStatus?: DocumentImportPrefill["status"];
+  /** Called once after a target has actually been saved (not on cancel), in
+   * place of onClose — lets the document-import queue move on to the next
+   * target, or close when there isn't one. */
+  onSaved?: (savedOperation: { id: number; name: string } | null) => void;
   /** Photos the officer chose to keep on the import review screen — same
    * one-time-seed treatment as the other initial* import fields: read
    * directly (no local state), uploaded and run through face recognition
@@ -376,7 +386,10 @@ export function AddTargetDialog({
     () => initialIdentity ?? EMPTY_NAME_PARTS
   );
   // MDL (compulsory for a person target) and bail — blank until picked.
-  const [status, setStatus] = useState<TargetStatusParts>(EMPTY_STATUS_PARTS);
+  const [status, setStatus] = useState<TargetStatusParts>(() => ({
+    ...EMPTY_STATUS_PARTS,
+    ...(initialStatus ?? {}),
+  }));
   const [showMdlError, setShowMdlError] = useState(false);
   const [address, setAddress] = useState<StructuredAddressParts>(
     () => initialAddress ?? EMPTY_ADDRESS_PARTS
@@ -580,7 +593,7 @@ export function AddTargetDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dupMatch?.id]);
 
-  const resetAndClose = () => {
+  const resetState = () => {
     setOperation(initialOperation ?? null);
     setTargetType("person");
     setIdentity(EMPTY_NAME_PARTS);
@@ -608,7 +621,22 @@ export function AddTargetDialog({
     setWarnFromSave(false);
     setLinking(false);
     setPendingAfterOperation(null);
+  };
+
+  const resetAndClose = () => {
+    resetState();
     onClose();
+  };
+
+  // A target (and its staged associates/photos) was actually saved — close
+  // as usual, then let the document-import queue move on to the next one.
+  // When the caller supplies onSaved it owns what happens next (including
+  // closing); otherwise this is just a normal close.
+  const finishSaved = () => {
+    const savedOperation = operation;
+    resetState();
+    if (onSaved) onSaved(savedOperation);
+    else onClose();
   };
 
   // documentSnapshotJson is a permanent version-history record (see
@@ -627,6 +655,9 @@ export function AddTargetDialog({
     ...prefill,
     images: [],
     sourceFileBase64: "",
+    // The other targets in the same document are saved as their own
+    // records with their own snapshots — never nested inside this one.
+    queuedTargets: undefined,
   });
 
   const buildPayload = (): RegistryCreatePayload => {
@@ -948,7 +979,7 @@ export function AddTargetDialog({
       const result = await onSave(buildPayload());
       const associateIdByKey = await saveStagedAssociates(result.id);
       await saveStagedImages(result.id, associateIdByKey);
-      resetAndClose();
+      finishSaved();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to save target.");
     } finally {
@@ -1285,7 +1316,7 @@ export function AddTargetDialog({
       }
       setWarnQueue([]);
       setWarnIndex(0);
-      resetAndClose();
+      finishSaved();
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to link and copy.");
     } finally {
@@ -2361,7 +2392,7 @@ export function AddTargetDialog({
             utils.associate.listForTarget.invalidate();
             utils.intelligence.targetProfile.invalidate();
             utils.intelligence.operationProfile.invalidate();
-            resetAndClose();
+            finishSaved();
           }}
         />
       )}

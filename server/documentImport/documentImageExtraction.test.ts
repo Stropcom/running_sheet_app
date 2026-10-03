@@ -57,13 +57,29 @@ async function buildDocxWithImages(
   return zip.generateAsync({ type: "nodebuffer" });
 }
 
+// Photo-like pixels: seeded noise, so the image has the many distinct tones
+// of a real photograph (a flat fill is treated as template furniture — see
+// imagePhotoFilter.ts) while the test stays deterministic.
 async function makePng(width: number, height: number): Promise<Buffer> {
+  const data = Buffer.alloc(width * height * 3);
+  let seed = 12345;
+  for (let i = 0; i < data.length; i++) {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    data[i] = seed >>> 24;
+  }
+  return sharp(data, { raw: { width, height, channels: 3 } })
+    .png()
+    .toBuffer();
+}
+
+/** A flat single-colour graphic — what an icon bar / legend looks like. */
+async function makeFlatPng(width: number, height: number): Promise<Buffer> {
   return sharp({
     create: {
       width,
       height,
       channels: 3,
-      background: { r: 180, g: 90, b: 40 },
+      background: { r: 20, g: 20, b: 20 },
     },
   })
     .png()
@@ -82,6 +98,20 @@ describe("readDocxTables — image extraction", () => {
     expect(result.images[0].height).toBe(240);
     expect(result.images[0].mimeType).toBe("image/png");
     expect(result.images[0].dataBase64.length).toBeGreaterThan(0);
+  });
+
+  it("filters out a banner-shaped image and a flat graphic, keeping the photo", async () => {
+    const banner = await makePng(2365, 147); // wide icon bar (photo-like pixels, banner shape)
+    const flat = await makeFlatPng(300, 300); // legend-style flat graphic
+    const photo = await makePng(300, 400);
+    const buffer = await buildDocxWithImages([
+      { name: "image1.png", buffer: banner },
+      { name: "image2.png", buffer: flat },
+      { name: "image3.png", buffer: photo },
+    ]);
+    const result = await readDocxTables(buffer);
+    expect(result.images).toHaveLength(1);
+    expect(result.images[0].height).toBe(400);
   });
 
   it("filters out a tiny decorative image (logo/icon/divider)", async () => {

@@ -259,16 +259,21 @@ describe("Tactical Profile — five targets, twenty-five associates (KESTREL)", 
   it("captions each photoboard portrait with the person beside it", async () => {
     const read = await readDocxTables(readFileSync(KESTREL_FIXTURE));
     const captions = read.images.map(i => i.captionName);
-    // Thirty portraits, one per person, none left uncaptioned or given the
-    // grid's first name.
-    expect(new Set(captions).size).toBeGreaterThanOrEqual(30);
-    expect(captions.slice(0, 5)).toEqual([
+    // Thirty portraits, one per person, each with its own name — none left
+    // uncaptioned or given the grid's first name.
+    expect(captions).toHaveLength(30);
+    expect(new Set(captions).size).toBe(30);
+    expect(captions).not.toContain(undefined);
+    for (const name of [
       "Nadia Elise KOVACS",
       "Marcus Leon FERRARO",
       "Amira Noor RAHMAN",
       "Nathaniel Cole VELASQUEZ",
       "Evelyn Mae THORNTON",
-    ]);
+      "Tomas Ivo VARGA",
+    ]) {
+      expect(captions).toContain(name);
+    }
     expect(captions).toContain("Declan Hugh MORRIS");
   });
 });

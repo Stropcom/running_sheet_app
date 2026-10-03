@@ -2203,43 +2203,72 @@ export function AddTargetDialog({
                   {(initialImages ?? []).map(img => {
                     const kept = imageChoices[img.key] ?? true;
                     const isDup = duplicateImageKeys.has(img.key);
+                    // Who this photo is of, so a batch of portraits from a
+                    // multi-person document can be checked at a glance.
+                    const stagedOwner =
+                      img.linkTo.type === "associate"
+                        ? associates.find(
+                            a =>
+                              img.linkTo.type === "associate" &&
+                              a.key === img.linkTo.associateKey
+                          )
+                        : undefined;
+                    const ownerLabel =
+                      img.linkTo.type === "existingAssociate"
+                        ? img.linkTo.entityLabel
+                        : stagedOwner
+                          ? composeAssociateName(
+                              stagedOwner.identity,
+                              stagedOwner.address.businessName
+                            ).name
+                          : "This target";
                     return (
-                      <button
+                      <div
                         key={img.key}
-                        type="button"
-                        onClick={() =>
-                          setImageChoices(prev => ({
-                            ...prev,
-                            [img.key]: !kept,
-                          }))
-                        }
-                        title={
-                          kept
-                            ? "Tap to discard this photo"
-                            : "Tap to keep this photo"
-                        }
-                        className={`relative rounded-md overflow-hidden border-2 transition-colors ${
-                          kept
-                            ? "border-indigo-500"
-                            : "border-border opacity-40 grayscale"
-                        }`}
+                        className="flex flex-col items-center gap-1 w-20"
                       >
-                        <img
-                          src={`data:${img.mimeType};base64,${img.dataBase64}`}
-                          alt="Extracted from document"
-                          className="w-20 h-20 object-cover block"
-                        />
-                        {kept && (
-                          <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-indigo-500 text-white flex items-center justify-center">
-                            <Check className="h-2.5 w-2.5" />
-                          </span>
-                        )}
-                        {isDup && (
-                          <span className="absolute bottom-0 left-0 right-0 bg-amber-500 text-white text-[8px] font-bold text-center py-0.5 leading-none">
-                            ALREADY HAVE
-                          </span>
-                        )}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setImageChoices(prev => ({
+                              ...prev,
+                              [img.key]: !kept,
+                            }))
+                          }
+                          title={
+                            kept
+                              ? "Tap to discard this photo"
+                              : "Tap to keep this photo"
+                          }
+                          className={`relative rounded-md overflow-hidden border-2 transition-colors ${
+                            kept
+                              ? "border-indigo-500"
+                              : "border-border opacity-40 grayscale"
+                          }`}
+                        >
+                          <img
+                            src={`data:${img.mimeType};base64,${img.dataBase64}`}
+                            alt="Extracted from document"
+                            className="w-20 h-20 object-cover block"
+                          />
+                          {kept && (
+                            <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-indigo-500 text-white flex items-center justify-center">
+                              <Check className="h-2.5 w-2.5" />
+                            </span>
+                          )}
+                          {isDup && (
+                            <span className="absolute bottom-0 left-0 right-0 bg-amber-500 text-white text-[8px] font-bold text-center py-0.5 leading-none">
+                              ALREADY HAVE
+                            </span>
+                          )}
+                        </button>
+                        <span
+                          className="text-[10px] leading-tight text-center text-muted-foreground break-words w-full"
+                          title={ownerLabel}
+                        >
+                          {ownerLabel}
+                        </span>
+                      </div>
                     );
                   })}
                 </div>

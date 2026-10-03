@@ -493,6 +493,80 @@ export function ImportTargetDocumentDialog({
     return match ? match.key : "target";
   };
 
+  // Each photo belongs to ONE target in the document: the owner of the
+  // associate it's linked to, or the target it's captioned with — else the
+  // primary. This review screen only offers the PRIMARY target's photos
+  // (the others are offered when their own target opens in the Add Target
+  // dialog, already pointed at the right person), and linkTo is what
+  // saveStagedImages uses to attach each one.
+  const placeImage = (
+    img: (typeof imageCandidates)[number]
+  ): { targetIdx: number; image: StagedImage } => {
+    const additionalNames = (result?.additionalTargets ?? []).map(t =>
+      normName(`${t.name.firstNames} ${t.name.surname}`)
+    );
+    const linkKey = imageLinkChoices[img.key] ?? defaultLinkKeyFor(img);
+    const candidate = linkKey
+      ? associateCandidates.find(a => a.key === linkKey)
+      : undefined;
+    const choice = candidate
+      ? (associateChoices[candidate.key] ?? "create")
+      : null;
+    if (candidate && choice === "create") {
+      return {
+        targetIdx: ownerIndexOf(candidate),
+        image: {
+          ...img,
+          linkTo: {
+            type: "associate" as const,
+            associateKey: candidate.key,
+          },
+        },
+      };
+    }
+    if (candidate && choice === "update") {
+      const match = associateMatches[candidate.key];
+      if (match) {
+        return {
+          targetIdx: ownerIndexOf(candidate),
+          image: {
+            ...img,
+            linkTo: {
+              type: "existingAssociate" as const,
+              associateId: match.id,
+              entityLabel: match.name,
+            },
+          },
+        };
+      }
+    }
+    const caption = normName(img.captionName ?? "");
+    const named = additionalNames.indexOf(caption);
+    if (named !== -1) {
+      return {
+        targetIdx: named + 1,
+        image: { ...img, linkTo: { type: "target" as const } },
+      };
+    }
+    // Captioned with an associate who was skipped (so isn't a default link):
+    // it still belongs to that associate's target, not the primary's.
+    const captioned = caption
+      ? associateCandidates.find(
+          a => normName(`${a.firstNames} ${a.surname}`) === caption
+        )
+      : undefined;
+    return {
+      targetIdx: captioned ? ownerIndexOf(captioned) : 0,
+      image: { ...img, linkTo: { type: "target" as const } },
+    };
+  };
+
+  // Only the primary target's photos are reviewed on this screen.
+  const reviewImages = imageCandidates.filter(
+    img => placeImage(img).targetIdx === 0
+  );
+  const otherTargetPhotoCount = imageCandidates.length - reviewImages.length;
+
   const reset = () => {
     setFileName("");
     setError("");
@@ -769,59 +843,9 @@ export function ImportTargetDocumentDialog({
       // and saved after this one. A photo captioned with one of their names
       // goes to them, not to the primary target.
       const additional = result.additionalTargets ?? [];
-      const additionalNames = additional.map(t =>
-        normName(`${t.name.firstNames} ${t.name.surname}`)
-      );
       const keptImages = imageCandidates.filter(
         img => imageChoices[img.key] ?? true
       );
-      // Each photo goes to the target it belongs to: the owner of the
-      // associate it's linked to, or the target it's captioned with, else
-      // the primary. linkTo is what saveStagedImages uses to attach it.
-      const placeImage = (
-        img: (typeof imageCandidates)[number]
-      ): { targetIdx: number; image: StagedImage } => {
-        const linkKey = imageLinkChoices[img.key] ?? defaultLinkKeyFor(img);
-        const candidate = linkKey
-          ? associateCandidates.find(a => a.key === linkKey)
-          : undefined;
-        const choice = candidate
-          ? (associateChoices[candidate.key] ?? "create")
-          : null;
-        if (candidate && choice === "create") {
-          return {
-            targetIdx: ownerIndexOf(candidate),
-            image: {
-              ...img,
-              linkTo: {
-                type: "associate" as const,
-                associateKey: candidate.key,
-              },
-            },
-          };
-        }
-        if (candidate && choice === "update") {
-          const match = associateMatches[candidate.key];
-          if (match) {
-            return {
-              targetIdx: ownerIndexOf(candidate),
-              image: {
-                ...img,
-                linkTo: {
-                  type: "existingAssociate" as const,
-                  associateId: match.id,
-                  entityLabel: match.name,
-                },
-              },
-            };
-          }
-        }
-        const named = additionalNames.indexOf(normName(img.captionName ?? ""));
-        return {
-          targetIdx: named === -1 ? 0 : named + 1,
-          image: { ...img, linkTo: { type: "target" as const } },
-        };
-      };
       const placedImages = keptImages.map(placeImage);
       const imagesFor = (targetIdx: number): StagedImage[] =>
         placedImages.filter(p => p.targetIdx === targetIdx).map(p => p.image);
@@ -1320,8 +1344,17 @@ export function ImportTargetDocumentDialog({
               {imageCandidates.length > 0 && (
                 <div className="rounded-lg border border-l-4 border-indigo-500/30 border-l-indigo-500 bg-indigo-500/5 p-3 flex flex-col gap-2.5">
                   <p className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wide">
-                    Photos found ({imageCandidates.length})
+                    Photos found ({reviewImages.length})
                   </p>
+                  {otherTargetPhotoCount > 0 && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {otherTargetPhotoCount} more photo
+                      {otherTargetPhotoCount > 1 ? "s" : ""} in this document
+                      belong to the other targets and their associates — they're
+                      offered when each of those targets opens, already matched
+                      to the right person.
+                    </p>
+                  )}
                   <p className="text-[11px] text-muted-foreground">
                     Each kept photo is uploaded and run through face recognition
                     once you save. Tap a photo to untick it, or tap a name below
@@ -1333,11 +1366,13 @@ export function ImportTargetDocumentDialog({
                     // photo — only "skip" genuinely has no record for a
                     // photo to end up on.
                     const linkableAssociates = associateCandidates.filter(
-                      a => (associateChoices[a.key] ?? "create") !== "skip"
+                      a =>
+                        (associateChoices[a.key] ?? "create") !== "skip" &&
+                        ownerIndexOf(a) === 0
                     );
                     return (
                       <div className="flex flex-col gap-2">
-                        {imageCandidates.map(img => {
+                        {reviewImages.map(img => {
                           const kept = imageChoices[img.key] ?? true;
                           const linkKey =
                             imageLinkChoices[img.key] ?? defaultLinkKeyFor(img);

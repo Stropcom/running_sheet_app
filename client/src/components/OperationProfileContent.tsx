@@ -402,23 +402,53 @@ export function OperationProfileContent({
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-semibold text-foreground truncate">
+                        {/* Phones: the whole name on its own line (wraps);
+                            larger screens keep one truncating line. */}
+                        <p className="text-sm font-semibold text-foreground sm:truncate">
                           {target.name}
                         </p>
-                        {target.isIndicesOnly && <IndicesBadge />}
+                        {target.isIndicesOnly && (
+                          <span className="hidden sm:contents">
+                            <IndicesBadge />
+                          </span>
+                        )}
                       </div>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="hidden sm:block text-xs text-muted-foreground">
                         {target.linkedSheets.length} sheet
                         {target.linkedSheets.length !== 1 ? "s" : ""} ·{" "}
                         {totalAssoc} association{totalAssoc !== 1 ? "s" : ""}
                       </p>
+                      {/* Phone second line: Indices icon, then Full Profile. */}
+                      <div className="sm:hidden flex items-center gap-2 mt-0.5">
+                        {target.isIndicesOnly && <IndicesBadge />}
+                        <span
+                          role="link"
+                          tabIndex={0}
+                          onClick={e => {
+                            e.stopPropagation();
+                            navigate(`/intelligence/target/${target.targetId}`);
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              navigate(
+                                `/intelligence/target/${target.targetId}`
+                              );
+                            }
+                          }}
+                          className="text-xs text-blue-600 dark:text-blue-400 font-medium"
+                        >
+                          Full Profile
+                        </span>
+                      </div>
                     </div>
                     <button
                       onClick={e => {
                         e.stopPropagation();
                         navigate(`/intelligence/target/${target.targetId}`);
                       }}
-                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline shrink-0 mr-2"
+                      className="hidden sm:inline text-xs text-blue-600 dark:text-blue-400 hover:underline shrink-0 mr-2"
                     >
                       Full Profile
                     </button>

@@ -311,6 +311,7 @@ import {
   getEntityLinksByAttachmentId,
   getEntityLinkCounts,
   getAttachmentsForEntity,
+  getPersonPhotosByAddress,
   getLinkedOperationsForEntity,
   createPersonDetection,
   findSimilarFaces,
@@ -1916,6 +1917,15 @@ export const appRouter = router({
       )
       .query(async ({ input }) => {
         return getAttachmentsForEntity(input);
+      }),
+
+    // Hand-uploaded photos (profiles / baseball cards) of the people living
+    // at each address, for the selected operations — feeds the map's "Images"
+    // button alongside the running-sheet photos. See getPersonPhotosByAddress.
+    personPhotosByAddress: protectedProcedure
+      .input(z.object({ operationIds: z.array(z.number()).max(200) }))
+      .query(async ({ input }) => {
+        return getPersonPhotosByAddress(input.operationIds);
       }),
 
     // Operations a given entity is already linked to — used to restrict the

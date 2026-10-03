@@ -55,6 +55,7 @@ import { MapView } from "@/components/Map";
 import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
 import { StreetViewPip } from "@/components/StreetViewPip";
 import { ImagesPip } from "@/components/ImagesPip";
+import { addressMatchKey } from "@shared/addressMatchKey";
 import { StreetHeadingBar } from "@/components/StreetHeadingBar";
 import { UcoGuideMapOverlay } from "@/components/UcoGuideMapOverlay";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
@@ -2950,6 +2951,24 @@ export default function IntelligenceMapping() {
     }
     photoKeysRef.current = keys;
   }, [entityLinkCounts]);
+  // Hand-uploaded profile / baseball-card photos of the people living at each
+  // address, for the operation(s) selected in the right-hand pane — makes the
+  // popup's Images button appear (and open them after the running-sheet
+  // photos) without touching the running-sheet photo links above.
+  const personPhotoOpIds = effectiveOpIdsForMarkers ?? [];
+  const { data: personPhotoData } =
+    trpc.attachment.personPhotosByAddress.useQuery(
+      { operationIds: personPhotoOpIds },
+      { enabled: personPhotoOpIds.length > 0 }
+    );
+  const personPhotosByKey = useMemo(
+    () => new Map((personPhotoData ?? []).map(g => [g.addressKey, g.photos])),
+    [personPhotoData]
+  );
+  const personPhotosByKeyRef = useRef(personPhotosByKey);
+  useEffect(() => {
+    personPhotosByKeyRef.current = personPhotosByKey;
+  }, [personPhotosByKey]);
   const savePinOverrideMut = trpc.intelligence.savePinOverride.useMutation({
     onMutate: async () => {
       await utils.intelligence.getPinOverrides.cancel();
@@ -3855,7 +3874,8 @@ export default function IntelligenceMapping() {
           buildInfoWindowContent(
             fullEnriched,
             pinOverridesRef.current.get(loc.label),
-            photoKeysRef.current.has(normalizeEntityLabelClient(loc.label))
+            photoKeysRef.current.has(normalizeEntityLabelClient(loc.label)) ||
+              personPhotosByKeyRef.current.has(addressMatchKey(loc.label))
           )
         );
         infoWindowRef.current.setPosition({
@@ -4879,9 +4899,21 @@ export default function IntelligenceMapping() {
                 knownPhotoKeys: Array.from(photoKeysRef.current),
               });
             }
-            if (cmHasLinkedPhotos) {
+            // Profile / baseball-card photos of the people living here — an
+            // address on the marker itself, else on a merged target/location.
+            const personPhotoAddress = [
+              cm.address,
+              ...mergedIntelList.map((m: any) => m.label),
+            ].find(
+              (a): a is string =>
+                !!a && personPhotosByKeyRef.current.has(addressMatchKey(a))
+            );
+            const imagesAddress = cmHasLinkedPhotos
+              ? safeAddress
+              : (personPhotoAddress ?? "").replace(/'/g, "\\'");
+            if (cmHasLinkedPhotos || personPhotoAddress) {
               sections.push(
-                `<div style="margin-top:5px;"><button onclick="window.__mapOpenImagesPip('${safeAddress}')" style="${btnBase}background:#10b981;color:#fff;border:none;font-size:13px;padding:9px 0;">Images</button></div>`
+                `<div style="margin-top:5px;"><button onclick="window.__mapOpenImagesPip('${imagesAddress}')" style="${btnBase}background:#10b981;color:#fff;border:none;font-size:13px;padding:9px 0;">Images</button></div>`
               );
             }
 
@@ -7203,6 +7235,9 @@ export default function IntelligenceMapping() {
           {imagesPip && (
             <ImagesPip
               label={imagesPip.label}
+              personPhotos={personPhotosByKey.get(
+                addressMatchKey(imagesPip.label)
+              )}
               onClose={() => setImagesPip(null)}
             />
           )}

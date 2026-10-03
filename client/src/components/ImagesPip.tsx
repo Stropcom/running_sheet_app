@@ -24,9 +24,20 @@ function clamp(value: number, min: number, max: number): number {
 export function ImagesPip({
   label,
   onClose,
+  personPhotos,
 }: {
   label: string;
   onClose: () => void;
+  /** Hand-uploaded profile / baseball-card photos of the people living at
+   * this address, shown after the running-sheet photos with the person's
+   * name on the banner. Optional — without it this behaves exactly as the
+   * running-sheet-only viewer. */
+  personPhotos?: Array<{
+    id: number;
+    url: string;
+    personLabel: string;
+    createdAt: string | number | Date | null;
+  }>;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -37,7 +48,7 @@ export function ImagesPip({
     category: "location",
     entityLabel: label,
   });
-  const photos = (data ?? []) as Array<{
+  const rowPhotos = (data ?? []) as Array<{
     id: number;
     url: string;
     rowDate: string | null;
@@ -45,7 +56,24 @@ export function ImagesPip({
     memberCINs: string[];
     isManualUpload: boolean;
     createdAt: string | number | Date | null;
+    personLabel?: string;
   }>;
+  const rowPhotoIds = new Set(rowPhotos.map(p => p.id));
+  const photos = [
+    ...rowPhotos,
+    ...(personPhotos ?? [])
+      .filter(p => !rowPhotoIds.has(p.id))
+      .map(p => ({
+        id: p.id,
+        url: p.url,
+        rowDate: null,
+        rowTime: null,
+        memberCINs: [] as string[],
+        isManualUpload: true,
+        createdAt: p.createdAt,
+        personLabel: p.personLabel,
+      })),
+  ];
   const count = photos.length;
 
   useEffect(() => {
@@ -293,7 +321,9 @@ export function ImagesPip({
             )}
             {current && (
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-2.5 pt-4 pb-1.5 text-[10px] text-white/90 truncate pointer-events-none">
-                {formatAttachmentBanner(current)}
+                {current.personLabel
+                  ? `${current.personLabel} · ${formatAttachmentBanner(current)}`
+                  : formatAttachmentBanner(current)}
               </div>
             )}
           </>

@@ -18,6 +18,7 @@ import { vaultEncrypt, vaultDecrypt, fingerprintVaultKey } from "./wipcVault";
 import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
 import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
+import { addressMatchKey } from "@shared/addressMatchKey";
 import {
   applyTargetProjectsToSummary,
   sanitizeTargetSpecialProjects,
@@ -2236,6 +2237,205 @@ export async function getAttachmentsForEntity(params: {
   return withCins.map(r => ({
     ...r,
     linkId: links.find(l => l.attachmentId === r.id)!.id,
+  }));
+}
+
+/** Photos of the people who live at each address, for the map's "Images"
+ * button — only photos that were uploaded by hand (profile / baseball-card
+ * imports, "Upload Image" on a target or associate), never the running-sheet
+ * row photos, which the location link already covers. Scoped to the targets
+ * linked to `operationIds` and their associates / residents.
+ *
+ * Each person counts at ONE address: a target's home address; an associate's
+ * or resident's home address, else the first of their other addresses. Keyed
+ * by shared/addressMatchKey so the client can look up a pin's address. */
+export async function getPersonPhotosByAddress(operationIds: number[]): Promise<
+  Array<{
+    addressKey: string;
+    photos: Array<{
+      id: number;
+      url: string;
+      personLabel: string;
+      createdAt: Date | null;
+    }>;
+  }>
+> {
+  const db = await getDb();
+  if (!db || operationIds.length === 0) return [];
+
+  const targetRows = await db
+    .selectDistinct({
+      id: targets.id,
+      name: targets.name,
+      firstNames: targets.firstNames,
+      surname: targets.surname,
+      hbf: targets.hbf,
+      hb: targets.hb,
+    })
+    .from(operationTargetLinks)
+    .innerJoin(targets, eq(operationTargetLinks.targetId, targets.id))
+    .where(
+      and(
+        inArray(operationTargetLinks.operationId, operationIds),
+        isNull(targets.deletedAt)
+      )
+    );
+  if (targetRows.length === 0) return [];
+  const targetIds = targetRows.map(t => t.id);
+
+  const associateRows = await db
+    .select({
+      name: associates.name,
+      firstNames: associates.firstNames,
+      surname: associates.surname,
+      hbf: associates.hbf,
+      hb: associates.hb,
+      extraAddresses: associates.extraAddresses,
+    })
+    .from(associates)
+    .where(
+      and(inArray(associates.targetId, targetIds), isNull(associates.deletedAt))
+    );
+
+  const shortName = (
+    firstNames: string | null,
+    surname: string | null,
+    fallback: string
+  ) => {
+    const first = (firstNames ?? "").trim().split(/\s+/)[0] ?? "";
+    if (first && surname) return `${first} ${surname.trim()}`;
+    return (
+      fallback
+        .replace(/\s*\([^()]*\)\s*$/, "")
+        .split(/,\s*born\b/i)[0]
+        .split(",")[0]
+        .trim() || fallback
+    );
+  };
+  const firstExtraAddress = (json: string | null): string => {
+    try {
+      const eas: Array<{ full?: string; short?: string }> = JSON.parse(
+        json ?? "[]"
+      );
+      for (const ea of eas) {
+        const v = ea.full || ea.short;
+        if (v) return v;
+      }
+    } catch {
+      /* malformed JSON — no address */
+    }
+    return "";
+  };
+
+  type Person = { addressKey: string; label: string };
+  const targetPeople = new Map<number, Person>();
+  for (const t of targetRows) {
+    const addressKey = addressMatchKey(t.hbf || t.hb);
+    if (addressKey)
+      targetPeople.set(t.id, {
+        addressKey,
+        label: shortName(t.firstNames, t.surname, t.name),
+      });
+  }
+  // associate photos link by the normalized associate name (see
+  // linkAttachmentToEntity's entityKey)
+  const associatePeople = new Map<string, Person>();
+  for (const a of associateRows) {
+    const addressKey = addressMatchKey(
+      a.hbf || a.hb || firstExtraAddress(a.extraAddresses)
+    );
+    if (addressKey)
+      associatePeople.set(normalizeEntityLabel(a.name), {
+        addressKey,
+        label: shortName(a.firstNames, a.surname, a.name),
+      });
+  }
+  if (targetPeople.size === 0 && associatePeople.size === 0) return [];
+
+  const links = await db
+    .select({
+      attachmentId: attachmentEntityLinks.attachmentId,
+      category: attachmentEntityLinks.category,
+      targetId: attachmentEntityLinks.targetId,
+      entityKey: attachmentEntityLinks.entityKey,
+    })
+    .from(attachmentEntityLinks)
+    .where(
+      or(
+        and(
+          eq(attachmentEntityLinks.category, "target"),
+          inArray(attachmentEntityLinks.targetId, targetIds)
+        ),
+        associatePeople.size > 0
+          ? and(
+              eq(attachmentEntityLinks.category, "associate"),
+              inArray(
+                attachmentEntityLinks.entityKey,
+                Array.from(associatePeople.keys())
+              )
+            )
+          : undefined
+      )
+    );
+  if (links.length === 0) return [];
+
+  const photoRows = await db
+    .select({
+      id: rowAttachments.id,
+      url: rowAttachments.url,
+      createdAt: rowAttachments.createdAt,
+    })
+    .from(rowAttachments)
+    .where(
+      and(
+        inArray(
+          rowAttachments.id,
+          links.map(l => l.attachmentId)
+        ),
+        eq(rowAttachments.isManualUpload, true),
+        isNull(rowAttachments.deletedAt)
+      )
+    )
+    .orderBy(desc(rowAttachments.createdAt));
+  const photoById = new Map(photoRows.map(p => [p.id, p]));
+
+  const byAddress = new Map<
+    string,
+    Map<
+      number,
+      { id: number; url: string; personLabel: string; createdAt: Date | null }
+    >
+  >();
+  for (const l of links) {
+    const photo = photoById.get(l.attachmentId);
+    if (!photo) continue;
+    const person =
+      l.category === "target"
+        ? targetPeople.get(l.targetId ?? -1)
+        : associatePeople.get(l.entityKey ?? "");
+    if (!person) continue;
+    const forAddress =
+      byAddress.get(person.addressKey) ??
+      new Map<
+        number,
+        { id: number; url: string; personLabel: string; createdAt: Date | null }
+      >();
+    // One photo linked to a target AND the same person as an associate shows
+    // once.
+    if (!forAddress.has(photo.id))
+      forAddress.set(photo.id, {
+        id: photo.id,
+        url: photo.url,
+        personLabel: person.label,
+        createdAt: photo.createdAt ?? null,
+      });
+    byAddress.set(person.addressKey, forAddress);
+  }
+  return Array.from(byAddress, ([addressKey, photos]) => ({
+    addressKey,
+    photos: Array.from(photos.values()).sort(
+      (a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)
+    ),
   }));
 }
 

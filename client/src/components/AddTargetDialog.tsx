@@ -305,6 +305,7 @@ export function AddTargetDialog({
   initialAssociates,
   initialStatus,
   onSaved,
+  onBack,
   initialImages,
   initialBackground,
   initialDocumentSnapshot,
@@ -343,6 +344,9 @@ export function AddTargetDialog({
    * place of onClose — lets the document-import queue move on to the next
    * target, or close when there isn't one. */
   onSaved?: (savedOperation: { id: number; name: string } | null) => void;
+  /** Document-import only: go back to the import review screen instead of
+   * cancelling. Shown as a Back button beside Save Target. */
+  onBack?: () => void;
   /** Photos the officer chose to keep on the import review screen — same
    * one-time-seed treatment as the other initial* import fields: read
    * directly (no local state), uploaded and run through face recognition
@@ -2076,7 +2080,10 @@ export function AddTargetDialog({
           if (!v) resetAndClose();
         }}
       >
-        <DialogContent className="md:max-w-2xl lg:max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          className="md:max-w-2xl lg:max-w-5xl max-h-[90vh] overflow-y-auto"
+          onInteractOutside={e => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Add Target to Registry</DialogTitle>
           </DialogHeader>
@@ -2295,7 +2302,7 @@ export function AddTargetDialog({
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="sm:justify-between">
             <Button
               variant="outline"
               onClick={resetAndClose}
@@ -2303,9 +2310,23 @@ export function AddTargetDialog({
             >
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving || checkingDup}>
-              {checkingDup ? "Checking…" : saving ? "Saving…" : "Save Target"}
-            </Button>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              {onBack && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    resetState();
+                    onBack();
+                  }}
+                  disabled={saving || checkingDup}
+                >
+                  Back
+                </Button>
+              )}
+              <Button onClick={handleSave} disabled={saving || checkingDup}>
+                {checkingDup ? "Checking…" : saving ? "Saving…" : "Save Target"}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

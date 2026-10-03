@@ -2317,10 +2317,11 @@ export default function TargetRegistryPage() {
   const [importPrefill, setImportPrefill] =
     useState<DocumentImportPrefill | null>(null);
   const [importKey, setImportKey] = useState(0);
-  // The imported document currently being worked through, when it describes
-  // more targets than have been saved so far. After each target is saved the
-  // Import review reopens for the next one (then its Add Target form), so
-  // every target in a multi-target document goes through the same steps.
+  // The imported document currently being worked through, pointing at the
+  // target now being reviewed/added. Back from the Add Target form returns to
+  // that target's review; after each target is saved the Import review reopens
+  // for the next one (then its Add Target form), so every target in a
+  // multi-target document goes through the same steps.
   const [importSession, setImportSession] = useState<ImportSession | null>(
     null
   );
@@ -2336,7 +2337,7 @@ export default function TargetRegistryPage() {
   const endImportSession = () => {
     if (
       importSession &&
-      importSession.focus < documentTargetCount(importSession.full)
+      importSession.focus + 1 < documentTargetCount(importSession.full)
     ) {
       toast.info(
         "Stopped importing this document — re-import it to pick up any targets not yet added."
@@ -2741,14 +2742,32 @@ export default function TargetRegistryPage() {
         onSaved={savedOperation => {
           setShowCreate(false);
           setImportPrefill(null);
-          if (!importSession) {
+          if (
+            !importSession ||
+            importSession.focus + 1 >= documentTargetCount(importSession.full)
+          ) {
+            setImportSession(null);
             setImportOperation(null);
             return;
           }
           // Back to the review screen for the next target in the document.
+          setImportSession({
+            ...importSession,
+            focus: importSession.focus + 1,
+          });
           setImportOperation(savedOperation);
           setShowImportDocument(true);
         }}
+        onBack={
+          importSession
+            ? () => {
+                // Return to this target's review screen.
+                setShowCreate(false);
+                setImportPrefill(null);
+                setShowImportDocument(true);
+              }
+            : undefined
+        }
         onSave={async payload => {
           const { existingAssociateId, ...rest } = payload;
           if (existingAssociateId) {
@@ -2775,6 +2794,7 @@ export default function TargetRegistryPage() {
       <ImportTargetDocumentDialog
         open={showImportDocument}
         session={importSession}
+        onBackToUpload={() => setImportSession(null)}
         onClose={() => {
           setShowImportDocument(false);
           endImportSession();

@@ -274,6 +274,7 @@ export function ImportTargetDocumentDialog({
   open,
   onClose,
   onContinue,
+  onBackToUpload,
   session,
 }: {
   open: boolean;
@@ -288,6 +289,9 @@ export function ImportTargetDocumentDialog({
   /** Review this (already parsed) document's target `session.focus` instead
    * of asking for an upload. */
   session?: ImportSession | null;
+  /** Back from a session-driven review returns to the upload step — the
+   * caller drops its session so this dialog shows the file picker again. */
+  onBackToUpload?: () => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedFileName, setFileName] = useState("");
@@ -566,6 +570,12 @@ export function ImportTargetDocumentDialog({
   const handleClose = () => {
     reset();
     onClose();
+  };
+
+  // Back returns to the upload step (discarding this review's choices).
+  const handleBack = () => {
+    reset();
+    if (session) onBackToUpload?.();
   };
 
   const handleFilePicked = async (file: File) => {
@@ -898,15 +908,11 @@ export function ImportTargetDocumentDialog({
             bailConditionsText: result.bailConditionsText ?? "",
           },
         },
-        // More targets to go: hand the document back so the caller can reopen
-        // this review for the next one once this target is saved.
-        fullResult && focus + 1 < targetCount && sourceFile !== undefined
-          ? {
-              full: fullResult,
-              focus: focus + 1,
-              fileName,
-              sourceFile,
-            }
+        // Hand the document back (pointing at THIS target) so the caller can
+        // return here if the officer goes Back from the Add Target form, and
+        // advance to the next target once this one is saved.
+        fullResult && sourceFile !== undefined
+          ? { full: fullResult, focus, fileName, sourceFile }
           : null
       );
       reset();
@@ -1014,7 +1020,10 @@ export function ImportTargetDocumentDialog({
 
   return (
     <Dialog open={open} onOpenChange={o => !o && handleClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-lg max-h-[90vh] overflow-y-auto"
+        onInteractOutside={e => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-primary" />
@@ -1572,19 +1581,30 @@ export function ImportTargetDocumentDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="sm:justify-between">
           <Button variant="outline" onClick={handleClose}>
             Cancel
           </Button>
           {result && (
-            <Button
-              onClick={handleContinue}
-              disabled={applying || checkingDuplicates}
-              className="gap-1.5"
-            >
-              {applying && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-              Continue to Add Target
-            </Button>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              {focus === 0 && (
+                <Button
+                  variant="outline"
+                  onClick={handleBack}
+                  disabled={applying}
+                >
+                  Back
+                </Button>
+              )}
+              <Button
+                onClick={handleContinue}
+                disabled={applying || checkingDuplicates}
+                className="gap-1.5"
+              >
+                {applying && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Continue to Add Target
+              </Button>
+            </div>
           )}
         </DialogFooter>
       </DialogContent>

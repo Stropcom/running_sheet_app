@@ -11649,8 +11649,10 @@ export interface SharedEntityCrossLink {
   targetName?: string;
   operationId: number;
   operationName: string;
-  via: "vehicle" | "address";
-  /** The rego or address (display form) that matched, for the tooltip/explanation. */
+  via: "vehicle" | "address" | "associate";
+  /** Exactly what is shared, for the tooltip/chip: the registration number(s)
+   * for a vehicle, the address(es) in full for an address, the person's name
+   * for an associate. Several shared things of one kind are joined. */
   sharedValue: string;
 }
 
@@ -11794,7 +11796,7 @@ export interface IntelOperationProfile {
     targetName: string;
     otherOperationId: number;
     otherOperationName: string;
-    via: "vehicle" | "address";
+    via: "vehicle" | "address" | "associate";
     sharedValue: string;
   }>;
 }
@@ -12002,32 +12004,50 @@ function markPreviousEntities(
 /** Every rego this target/associate record has registered — v1/v1f, v2/v2f,
  * and each entry in extraVehicles — normalized via extractRegoUpper so
  * "1GHH884" and "...bearing WA registration 1GHH884..." compare equal. */
-function targetVehicleRegos(t: {
+export function targetVehicleRegos(t: {
   v1f?: string | null;
   v1?: string | null;
   v2f?: string | null;
   v2?: string | null;
   extraVehicles?: string | null;
+  /** The structured Registration/Model fields (V1) — when present they are
+   * trusted over scanning the free text, which can mistake a model name
+   * ("Lexus NX350h") for a plate. */
+  vehRegistration?: string | null;
+  vehModel?: string | null;
 }): Set<string> {
   const regos = new Set<string>();
+  const squash = (v: string) => v.replace(/\s+/g, "").toUpperCase();
+  // Model names that happen to look like a plate (NX350H, CX5, D4D…) —
+  // never a registration for this record.
+  const models = new Set<string>();
+  if (t.vehModel) models.add(squash(t.vehModel));
+  let extras: Array<{
+    full?: string;
+    short?: string;
+    registration?: string;
+    model?: string;
+  }> = [];
+  try {
+    extras = JSON.parse(t.extraVehicles ?? "[]");
+  } catch {
+    /* malformed JSON — skip */
+  }
+  for (const ev of extras) if (ev.model) models.add(squash(ev.model));
   const add = (v?: string | null) => {
     const r = v ? extractRegoUpper(v) : null;
-    if (r) regos.add(r);
+    if (r && !models.has(r)) regos.add(r);
   };
+  if (t.vehRegistration) regos.add(squash(t.vehRegistration));
+  for (const ev of extras)
+    if (ev.registration) regos.add(squash(ev.registration));
   add(t.v1f);
   add(t.v1);
   add(t.v2f);
   add(t.v2);
-  try {
-    const evs: Array<{ full?: string; short?: string }> = JSON.parse(
-      t.extraVehicles ?? "[]"
-    );
-    evs.forEach(ev => {
-      add(ev.full);
-      add(ev.short);
-    });
-  } catch {
-    /* malformed JSON — skip */
+  for (const ev of extras) {
+    add(ev.full);
+    add(ev.short);
   }
   return regos;
 }
@@ -12035,7 +12055,7 @@ function targetVehicleRegos(t: {
 /** Every address this target/associate record has registered — hbf/hb,
  * dep, arr, and each entry in extraAddresses — normalized via
  * addressCoreLower so formatting differences don't stop a real match. */
-function targetAddressCores(t: {
+export function targetAddressCores(t: {
   hbf?: string | null;
   hb?: string | null;
   dep?: string | null;
@@ -12064,6 +12084,52 @@ function targetAddressCores(t: {
     /* malformed JSON — skip */
   }
   return cores;
+}
+
+/** Readable form of an address for the cross-operation explanation: the
+ * registered text without its trailing "(14 Willow Quay)" short-code bracket
+ * or full stop — "14 Willow Quay, EAST FREMANTLE WA". */
+function displayAddressForLink(v: string): string {
+  return v
+    .replace(/\s*\([^()]*\)\s*$/, "")
+    .replace(/[.\s]+$/, "")
+    .trim();
+}
+
+/** core -> a readable address, for every address a record registers (the
+ * longest text wins when the same address is held in several forms). */
+export function targetAddressDisplays(t: {
+  hbf?: string | null;
+  hb?: string | null;
+  dep?: string | null;
+  arr?: string | null;
+  extraAddresses?: string | null;
+}): Map<string, string> {
+  const out = new Map<string, string>();
+  const add = (v?: string | null) => {
+    if (!v) return;
+    const core = addressCoreLower(v);
+    if (!core) return;
+    const shown = displayAddressForLink(v);
+    const prev = out.get(core);
+    if (!prev || shown.length > prev.length) out.set(core, shown);
+  };
+  add(t.hbf);
+  add(t.hb);
+  add(t.dep);
+  add(t.arr);
+  try {
+    const eas: Array<{ full?: string; short?: string }> = JSON.parse(
+      t.extraAddresses ?? "[]"
+    );
+    eas.forEach(ea => {
+      add(ea.short);
+      add(ea.full);
+    });
+  } catch {
+    /* malformed JSON — skip */
+  }
+  return out;
 }
 
 /** Bulk targetId -> operations map from operationTargetLinks, for folding a
@@ -12114,6 +12180,8 @@ export async function getSharedEntityCrossLinks(
       v1: targets.v1,
       v2f: targets.v2f,
       v2: targets.v2,
+      vehRegistration: targets.vehRegistration,
+      vehModel: targets.vehModel,
       extraVehicles: targets.extraVehicles,
       hbf: targets.hbf,
       hb: targets.hb,
@@ -12132,12 +12200,21 @@ export async function getSharedEntityCrossLinks(
     if (t.id === excludeTargetId) continue;
     const theirRegos = targetVehicleRegos(t);
     const theirCores = targetAddressCores(t);
-    const matchedVehicle = Array.from(theirRegos).find(r =>
+    // EVERY vehicle/address both records register, stated exactly: the
+    // registration number(s), the address(es) in full.
+    const matchedVehicles = Array.from(theirRegos).filter(r =>
       ownVehicleRegos.has(r)
     );
-    const matchedAddress = Array.from(theirCores).find(c =>
-      ownAddressCores.has(c)
-    );
+    const theirDisplays = targetAddressDisplays(t);
+    const matchedAddresses = Array.from(theirCores)
+      .filter(c => ownAddressCores.has(c))
+      .map(c => theirDisplays.get(c) ?? c);
+    const matchedVehicle = matchedVehicles.length
+      ? matchedVehicles.join(", ")
+      : null;
+    const matchedAddress = matchedAddresses.length
+      ? matchedAddresses.join("; ")
+      : null;
     if (!matchedVehicle && !matchedAddress) continue;
 
     const theirOps = opLinksMap.get(t.id) ?? [];
@@ -12214,7 +12291,10 @@ export function getEntitySightingCrossLinks(
         operationId: occ.operationId,
         operationName: occ.operationName,
         via,
-        sharedValue: e.shortForm,
+        sharedValue:
+          via === "vehicle"
+            ? (extractRegoUpper(e.shortForm) ?? e.shortForm)
+            : e.shortForm,
       });
     }
   }
@@ -12254,7 +12334,13 @@ export async function getCoOccurringTargetCrossLinks(
     for (const occ of e.occurrences) {
       if (occ.rowId <= 0) continue;
       if (!ownRowVia.has(occ.rowId))
-        ownRowVia.set(occ.rowId, { via, sharedValue: e.shortForm });
+        ownRowVia.set(occ.rowId, {
+          via,
+          sharedValue:
+            via === "vehicle"
+              ? (extractRegoUpper(e.shortForm) ?? e.shortForm)
+              : e.shortForm,
+        });
     }
   }
   if (ownRowVia.size === 0) return [];
@@ -12283,6 +12369,74 @@ export async function getCoOccurringTargetCrossLinks(
         sharedValue: info.sharedValue,
       });
     }
+  }
+  return links;
+}
+
+/** Cross-operation links through PEOPLE: one of this target's registered
+ * associates is also a registered associate of — or is itself — a target on
+ * a different operation. Matched on the exact normalised name (first names +
+ * SURNAME), the same name convention every registry record uses; the link
+ * states the person's name. */
+export async function getSharedAssociateCrossLinks(
+  ownAssociateNames: string[],
+  excludeTargetId: number
+): Promise<SharedEntityCrossLink[]> {
+  const normalise = (n: string) => targetCoreName(n).replace(/\s+/g, " ");
+  const own = new Map<string, string>(); // normalised → display name
+  for (const n of ownAssociateNames) {
+    const key = normalise(n);
+    if (key && !own.has(key)) own.set(key, n.split(",")[0].trim());
+  }
+  if (own.size === 0) return [];
+  const db = await getDb();
+  if (!db) return [];
+  const opLinksMap = await getTargetOperationLinksMap();
+  const links: SharedEntityCrossLink[] = [];
+  const seen = new Set<string>();
+  const push = (
+    ownerTargetId: number,
+    ownerTargetName: string,
+    personKey: string
+  ) => {
+    for (const op of opLinksMap.get(ownerTargetId) ?? []) {
+      const key = `${ownerTargetId}::${op.id}::${personKey}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      links.push({
+        targetId: ownerTargetId,
+        targetName: ownerTargetName,
+        operationId: op.id,
+        operationName: op.name,
+        via: "associate",
+        sharedValue: own.get(personKey) ?? personKey,
+      });
+    }
+  };
+  // The same person registered as an associate of another target…
+  const otherAssociates = await db
+    .select({
+      name: associates.name,
+      targetId: associates.targetId,
+      targetName: targets.name,
+    })
+    .from(associates)
+    .innerJoin(targets, eq(targets.id, associates.targetId))
+    .where(and(isNull(associates.deletedAt), isNull(targets.deletedAt)));
+  for (const a of otherAssociates) {
+    if (a.targetId === excludeTargetId) continue;
+    const key = normalise(a.name);
+    if (own.has(key)) push(a.targetId, a.targetName, key);
+  }
+  // …or already a target in their own right.
+  const allTargets = await db
+    .select({ id: targets.id, name: targets.name })
+    .from(targets)
+    .where(isNull(targets.deletedAt));
+  for (const t of allTargets) {
+    if (t.id === excludeTargetId) continue;
+    const key = normalise(t.name);
+    if (own.has(key)) push(t.id, t.name, key);
   }
   return links;
 }
@@ -12607,6 +12761,10 @@ export async function getIntelTargetProfile(
       ownAddressCores,
       ownOperationIds
     )),
+    ...(await getSharedAssociateCrossLinks(
+      registryAssociateRows.map(a => a.name),
+      targetId
+    )),
   ]);
 
   return {
@@ -12729,10 +12887,15 @@ export async function getIntelOperationProfile(
       // below.)
       const ownVehicleRegos = targetVehicleRegos(target);
       const ownAddressCores = targetAddressCores(target);
+      const registryAssociateRows = await getAssociatesForTarget(targetId);
       const crossLinksRaw = dedupeCrossLinks([
         ...(await getSharedEntityCrossLinks(
           ownVehicleRegos,
           ownAddressCores,
+          targetId
+        )),
+        ...(await getSharedAssociateCrossLinks(
+          registryAssociateRows.map(a => a.name),
           targetId
         )),
         ...getEntitySightingCrossLinks(
@@ -12751,7 +12914,6 @@ export async function getIntelOperationProfile(
       const crossLinks = crossLinksRaw.filter(
         l => l.operationId !== operationId
       );
-      const registryAssociateRows = await getAssociatesForTarget(targetId);
       const registryAssociates = registryAssociateRows.map(a => ({
         id: a.id,
         name: a.name,

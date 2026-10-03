@@ -4,6 +4,12 @@ import {
   mdlLabel,
 } from "@shared/targetStatus";
 import { useLocation } from "wouter";
+import {
+  sharedLinkChipText,
+  sharedLinksTooltip,
+  type CrossLinkVia,
+} from "@/lib/crossLinkText";
+import { shortPersonName } from "@/components/PhotoOwnerCaption";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -64,8 +70,9 @@ interface CrossOpExtra {
   id: number;
   name: string;
   kind: "mentioned" | "shared";
-  via?: "vehicle" | "address";
-  sharedValue?: string;
+  /** Everything shared with this operation, stated exactly (registration
+   * numbers, addresses, associate names) — one entry per kind. */
+  links: Array<{ via: CrossLinkVia; sharedValue: string }>;
 }
 
 function getCrossOperationExtras(profile: {
@@ -74,7 +81,7 @@ function getCrossOperationExtras(profile: {
   sharedEntityLinks: Array<{
     operationId: number;
     operationName: string;
-    via: "vehicle" | "address";
+    via: CrossLinkVia;
     sharedValue: string;
   }>;
 }): CrossOpExtra[] {
@@ -86,17 +93,29 @@ function getCrossOperationExtras(profile: {
       id: s.operationId,
       name: s.operationName,
       kind: "mentioned",
+      links: [],
     });
   }
   for (const l of profile.sharedEntityLinks) {
-    if (linkedOpIds.has(l.operationId) || map.has(l.operationId)) continue;
-    map.set(l.operationId, {
-      id: l.operationId,
-      name: l.operationName,
-      kind: "shared",
-      via: l.via,
-      sharedValue: l.sharedValue,
-    });
+    if (linkedOpIds.has(l.operationId)) continue;
+    const existing = map.get(l.operationId);
+    // A shared vehicle/address/associate is a stronger, more specific claim
+    // than a plain mention, so it takes over the chip — and every thing
+    // shared with that operation is kept, not just the first.
+    if (!existing || existing.kind === "mentioned") {
+      map.set(l.operationId, {
+        id: l.operationId,
+        name: l.operationName,
+        kind: "shared",
+        links: [{ via: l.via, sharedValue: l.sharedValue }],
+      });
+    } else if (
+      !existing.links.some(
+        x => x.via === l.via && x.sharedValue === l.sharedValue
+      )
+    ) {
+      existing.links.push({ via: l.via, sharedValue: l.sharedValue });
+    }
   }
   return Array.from(map.values());
 }
@@ -225,7 +244,14 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     <div class="ops-list">${profile.operations.map(o => `<span class="op-badge">${esc(o.name)}</span>`).join("")}${crossOpExtras
       .map(
         op =>
-          `<span class="op-badge" style="background:#fef3c7 !important;color:#92400e !important;border-color:#fde68a">${esc(op.name)} <span style="font-size:8px;text-transform:uppercase">(${op.kind === "shared" ? `shared ${op.via}` : "mentioned"})</span></span>`
+          `<span class="op-badge" style="background:#fef3c7 !important;color:#92400e !important;border-color:#fde68a">${esc(op.name)} <span style="font-size:8px;text-transform:uppercase">(${
+            op.kind === "shared"
+              ? op.links
+                  .map(l => sharedLinkChipText(l.via, l.sharedValue))
+                  .map(esc)
+                  .join(" · ")
+              : "mentioned"
+          })</span></span>`
       )
       .join("")}</div>
   </div>
@@ -621,15 +647,19 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                   onClick={() => navigate(`/intelligence/operation/${op.id}`)}
                   title={
                     op.kind === "shared"
-                      ? `Not formally linked — shares a registered ${op.via} (${op.sharedValue}) with a target on this operation`
-                      : "Not formally linked — this target was named in an observation on this operation"
+                      ? sharedLinksTooltip(op.links)
+                      : `Not formally linked — ${shortPersonName(profile.name)} was named in an observation on this operation`
                   }
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 transition-colors"
                 >
                   <Folder className="w-3 h-3" />
                   {op.name}
                   <span className="text-[9px] uppercase tracking-wide opacity-70">
-                    {op.kind === "shared" ? `shared ${op.via}` : "mentioned"}
+                    {op.kind === "shared"
+                      ? op.links
+                          .map(l => sharedLinkChipText(l.via, l.sharedValue))
+                          .join(" · ")
+                      : `${shortPersonName(profile.name)} mentioned`}
                   </span>
                 </button>
               ))}

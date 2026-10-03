@@ -24,7 +24,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
+import {
+  MDL_STATUSES,
+  MDL_LABELS,
+  YES_NO,
+  YES_NO_LABELS,
+} from "@shared/targetStatus";
 import {
   composeAddress,
   composeTargetName,
@@ -131,15 +138,207 @@ function Preview({ text }: { text: string }) {
 
 // ─── Identity (First name/s, SURNAME, Born) ────────────────────────────────
 
+// ─── Status (MDL + Bail) ───────────────────────────────────────────────────
+// Person-target only. All four values are "" until an officer picks one;
+// MDL is compulsory when saving a person target (callers enforce that with
+// mdlMissing(); this component only shows the inline error when told to).
+
+export type TargetStatusParts = {
+  mdlStatus: string;
+  bailStatus: string;
+  bailConditions: string;
+  bailConditionsText: string;
+};
+
+export const EMPTY_STATUS_PARTS: TargetStatusParts = {
+  mdlStatus: "",
+  bailStatus: "",
+  bailConditions: "",
+  bailConditionsText: "",
+};
+
+/** True when the compulsory MDL dropdown hasn't been answered. */
+export function mdlMissing(status: TargetStatusParts): boolean {
+  return !status.mdlStatus;
+}
+
+/** Normalises a status value as read from the server (null → ""). */
+export function statusPartsFromRecord(r: {
+  mdlStatus?: string | null;
+  bailStatus?: string | null;
+  bailConditions?: string | null;
+  bailConditionsText?: string | null;
+}): TargetStatusParts {
+  return {
+    mdlStatus: r.mdlStatus ?? "",
+    bailStatus: r.bailStatus ?? "",
+    bailConditions: r.bailConditions ?? "",
+    bailConditionsText: r.bailConditionsText ?? "",
+  };
+}
+
+/** The server payload for a status block: blanks → null, and the
+ * conditions fields are cleared whenever the answer above them no longer
+ * applies, so stale conditions never linger behind a "No". */
+export function statusPartsToPayload(status: TargetStatusParts) {
+  const bailYes = status.bailStatus === "yes";
+  const conditionsYes = bailYes && status.bailConditions === "yes";
+  return {
+    mdlStatus: (status.mdlStatus || null) as
+      | "active"
+      | "none"
+      | "suspended"
+      | null,
+    bailStatus: (status.bailStatus || null) as "yes" | "no" | null,
+    bailConditions: (bailYes ? status.bailConditions || null : null) as
+      | "yes"
+      | "no"
+      | null,
+    bailConditionsText: conditionsYes
+      ? status.bailConditionsText.trim() || null
+      : null,
+  };
+}
+
+export function TargetStatusFields({
+  value,
+  onChange,
+  disabled,
+  showMdlError,
+}: {
+  value: TargetStatusParts;
+  onChange: (v: TargetStatusParts) => void;
+  disabled?: boolean;
+  /** Show the "MDL is required" error under the dropdown. */
+  showMdlError?: boolean;
+}) {
+  const bailYes = value.bailStatus === "yes";
+  const conditionsYes = bailYes && value.bailConditions === "yes";
+  const mdlError = !!showMdlError && mdlMissing(value);
+  return (
+    <div className="flex flex-col gap-3 border-t border-border/40 pt-3">
+      {/* Single column on a phone so every dropdown is the same full width
+          and no label wraps; side by side from sm up (three across once
+          Bail Conditions appears, so the row stays evenly filled). */}
+      <div
+        className={`grid grid-cols-1 gap-3 ${bailYes ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
+      >
+        <div className="flex flex-col gap-1.5">
+          <FieldLabel>MDL *</FieldLabel>
+          <Select
+            value={value.mdlStatus}
+            onValueChange={v => onChange({ ...value, mdlStatus: v })}
+            disabled={disabled}
+          >
+            <SelectTrigger
+              title="Motor Drivers Licence"
+              className={`w-full ${mdlError ? "border-destructive" : ""}`}
+            >
+              <SelectValue placeholder="Licence status…" />
+            </SelectTrigger>
+            <SelectContent>
+              {MDL_STATUSES.map(m => (
+                <SelectItem key={m} value={m}>
+                  {MDL_LABELS[m]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {mdlError && (
+            <p className="text-xs text-destructive">MDL status is required.</p>
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <FieldLabel>Bail</FieldLabel>
+          <Select
+            value={value.bailStatus}
+            onValueChange={v =>
+              onChange({
+                ...value,
+                bailStatus: v,
+                // Answers below a "No" no longer apply.
+                ...(v === "yes"
+                  ? {}
+                  : { bailConditions: "", bailConditionsText: "" }),
+              })
+            }
+            disabled={disabled}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select…" />
+            </SelectTrigger>
+            <SelectContent>
+              {YES_NO.map(y => (
+                <SelectItem key={y} value={y}>
+                  {YES_NO_LABELS[y]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {bailYes && (
+          <div className="flex flex-col gap-1.5">
+            <FieldLabel>Bail Conditions</FieldLabel>
+            <Select
+              value={value.bailConditions}
+              onValueChange={v =>
+                onChange({
+                  ...value,
+                  bailConditions: v,
+                  ...(v === "yes" ? {} : { bailConditionsText: "" }),
+                })
+              }
+              disabled={disabled}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select…" />
+              </SelectTrigger>
+              <SelectContent>
+                {YES_NO.map(y => (
+                  <SelectItem key={y} value={y}>
+                    {YES_NO_LABELS[y]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
+      {conditionsYes && (
+        <div className="flex flex-col gap-1.5">
+          <FieldLabel>Conditions</FieldLabel>
+          <Textarea
+            value={value.bailConditionsText}
+            disabled={disabled}
+            onChange={e =>
+              onChange({ ...value, bailConditionsText: e.target.value })
+            }
+            placeholder="e.g. Curfew 2000–0600, no contact with…"
+            rows={3}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TargetIdentityFields({
   value,
   onChange,
   disabled,
   onSurnameBlur,
+  status,
+  onStatusChange,
+  showMdlError,
 }: {
   value: StructuredNameParts;
   onChange: (v: StructuredNameParts) => void;
   disabled?: boolean;
+  /** Person targets only: when both are given, the MDL / Bail block renders
+   * directly under Born. Associates/residents leave these off. */
+  status?: TargetStatusParts;
+  onStatusChange?: (v: TargetStatusParts) => void;
+  showMdlError?: boolean;
   /** Fired when the Surname field loses focus — lets a caller (e.g. the Add
    * Target dialog) run a possible-duplicate check as soon as a full name is
    * entered, rather than only at Save. Optional so callers that don't need
@@ -197,6 +396,14 @@ export function TargetIdentityFields({
         )}
       </div>
       <Preview text={name} />
+      {status && onStatusChange && (
+        <TargetStatusFields
+          value={status}
+          onChange={onStatusChange}
+          disabled={disabled}
+          showMdlError={showMdlError}
+        />
+      )}
     </div>
   );
 }

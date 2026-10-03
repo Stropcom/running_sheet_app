@@ -224,6 +224,24 @@ describe("compound colours", () => {
     });
   });
 
+  it("drops finish descriptors (pearl/matte/gloss) — only the real colour stays", () => {
+    expect(
+      parseVehicleLine("1TDM414 (WA) 2023 pearl white Lexus NX350h wagon.")
+    ).toMatchObject({
+      colour: "White",
+      make: "Lexus",
+      model: "NX350h",
+      vehicleType: "station sedan",
+      year: "2023",
+      confident: true,
+    });
+    for (const word of ["pearlescent", "matte", "matt", "gloss", "glossy"]) {
+      expect(
+        parseVehicleLine(`1ABC123 (WA) ${word} black Holden Commodore`)
+      ).toMatchObject({ colour: "Black", make: "Holden", model: "Commodore" });
+    }
+  });
+
   it("reads 'light grey' the same way, dropping 'light'", () => {
     const result = parseVehicleLine("1ABC123 (WA) light grey Mazda 3 hatch");
     expect(result).toMatchObject({

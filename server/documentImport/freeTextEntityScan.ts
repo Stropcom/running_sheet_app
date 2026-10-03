@@ -111,14 +111,14 @@ const PERSON_FIRSTNAME_STOPLIST = new Set([
  * VALLEY" — a real false positive found against an actual training
  * document. */
 const PERSON_RE =
-  /\b([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){0,2})\s+([A-Z]{2,}(?:-[A-Z]{2,})?)\b/g;
+  /\b([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){0,2})\s+((?:[A-Z]')?[A-Z]{2,}(?:-[A-Z]{2,})?)\b/g;
 
 /** Same shape as PERSON_RE but anchored to the WHOLE line — used to detect
  * a name sitting on its own line as the anchor for an "associate block"
  * (name, then its address and/or vehicle on the following lines) rather
  * than scanning it out of running prose. */
 const WHOLE_LINE_PERSON_RE =
-  /^([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){0,2})\s+([A-Z]{2,}(?:-[A-Z]{2,})?)$/;
+  /^([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){0,2})\s+((?:[A-Z]')?[A-Z]{2,}(?:-[A-Z]{2,})?)$/;
 
 const BUSINESS_SUFFIX_RE =
   /\b(Pty\.?\s*Ltd\.?|Ltd\.?|Inc\.?|LLC|Corp\.?|Corporation)\b/i;

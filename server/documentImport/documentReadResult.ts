@@ -24,6 +24,13 @@ export interface ExtractedDocumentImage {
   mimeType: "image/png";
   width: number;
   height: number;
+  /** A person's name printed directly beneath the photo in the source
+   * (PDF only — read from the text layer beside the image's own position on
+   * the page), e.g. an associate's headshot captioned "Karim Elias NAJJAR".
+   * Absent when nothing name-shaped sits under the photo. The review screen
+   * uses it to pre-select who the photo is of instead of assuming it's the
+   * target — a hint only, always still correctable by the officer. */
+  captionName?: string;
 }
 
 export interface DocumentReadResult {

@@ -84,8 +84,12 @@ import {
   parseExtraVehicles,
   parseExtraAddresses,
   makeExtraId,
+  mdlMissing,
+  statusPartsFromRecord,
+  statusPartsToPayload,
   type ExtraVehicle,
   type ExtraAddress,
+  type TargetStatusParts,
 } from "@/components/TargetStructuredFields";
 import {
   AddTargetDialog,
@@ -139,6 +143,10 @@ function TargetCard({
     firstNames?: string | null;
     surname?: string | null;
     bornDate?: string | null;
+    mdlStatus?: string | null;
+    bailStatus?: string | null;
+    bailConditions?: string | null;
+    bailConditionsText?: string | null;
     addrUnitNo?: string | null;
     addrHouseNo?: string | null;
     addrStreetName?: string | null;
@@ -166,6 +174,10 @@ function TargetCard({
     surname: target.surname ?? "",
     bornDate: isoToDdMmYyyy(target.bornDate),
   });
+  const [status, setStatus] = useState<TargetStatusParts>(() =>
+    statusPartsFromRecord(target)
+  );
+  const [showMdlError, setShowMdlError] = useState(false);
   const [address, setAddress] = useState<StructuredAddressParts>({
     unitNo: target.addrUnitNo ?? "",
     houseNo: target.addrHouseNo ?? "",
@@ -242,6 +254,13 @@ function TargetCard({
       toast.error("Enter both First Name/s and Surname.");
       return;
     }
+    if (mdlMissing(status)) {
+      setShowMdlError(true);
+      toast.error(
+        "Select the target's MDL status (Active, None or Suspended)."
+      );
+      return;
+    }
     const { full: hbf, short: hb } = composeAddress(address);
     const { full: v1f, short: v1 } = composeVehicle(vehicle);
     update.mutate({
@@ -263,6 +282,7 @@ function TargetCard({
       firstNames: identity.firstNames || null,
       surname: identity.surname || null,
       bornDate: ddMmYyyyToIso(identity.bornDate) || null,
+      ...statusPartsToPayload(status),
       addrUnitNo: address.unitNo || null,
       addrHouseNo: address.houseNo || null,
       addrStreetName: address.streetName || null,
@@ -370,6 +390,9 @@ function TargetCard({
             <TargetIdentityFields
               value={identity}
               onChange={v => mark(() => setIdentity(v))}
+              status={status}
+              onStatusChange={v => mark(() => setStatus(v))}
+              showMdlError={showMdlError}
             />
 
             <div className="rounded-lg border border-border/60 bg-muted/10 p-3">

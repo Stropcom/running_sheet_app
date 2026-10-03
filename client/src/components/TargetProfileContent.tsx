@@ -1,3 +1,4 @@
+import { formatBail, mdlLabel } from "@shared/targetStatus";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -149,6 +150,13 @@ function buildTargetProfileHtml(
   const crossOpExtras = getCrossOperationExtras(profile);
   const totalOperationsCount = profile.operations.length + crossOpExtras.length;
 
+  const RA_res = profile.registryAssociates.filter(
+    a => a.relationship === "resident"
+  );
+  const RA_ass = profile.registryAssociates.filter(
+    a => a.relationship !== "resident"
+  );
+
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>RunLog Intelligence Profile — ${esc(profile.name)}</title>
 <style>
@@ -223,11 +231,15 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     profile.v1f ||
     profile.v2f ||
     profile.extraVehicles ||
-    profile.extraAddresses
+    profile.extraAddresses ||
+    profile.mdlStatus ||
+    profile.bailStatus
       ? `
   <div class="section">
     <div class="section-title">Registered Details</div>
     <div class="detail-grid">
+      ${profile.mdlStatus ? `<span class="detail-label">MDL</span><span class="detail-value">${esc(mdlLabel(profile.mdlStatus))}</span>` : ""}
+      ${profile.bailStatus ? `<span class="detail-label">Bail</span><span class="detail-value">${esc(formatBail(profile))}</span>` : ""}
       ${profile.hbf ? `<span class="detail-label">Home Address</span><span class="detail-value">${esc(formatIntelAddress(profile.hbf))}</span>` : ""}
       ${prevHtml("hbf") ? `<span style="grid-column:1/-1">${prevHtml("hbf")}</span>` : ""}
       ${
@@ -279,17 +291,30 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   }
 
   ${
-    profile.registryAssociates.length
+    RA_res.length
+      ? `
+  <div class="section">
+    <div class="section-title">Other Home Address Residents</div>
+    <div style="border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">
+      ${RA_res.map(
+        a =>
+          `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(a.name)}${a.isIndicesOnly ? `<span class="indices-tag-light">INDICES</span>` : ""}</span><span style="color:#64748b">${esc(a.hbf ?? "")}</span></div>`
+      ).join("")}
+    </div>
+  </div>`
+      : ""
+  }
+
+  ${
+    RA_ass.length
       ? `
   <div class="section">
     <div class="section-title">Registered Associates</div>
     <div style="border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">
-      ${profile.registryAssociates
-        .map(
-          a =>
-            `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(a.name)}${a.isIndicesOnly ? `<span class="indices-tag-light">INDICES</span>` : ""}</span><span style="color:#64748b">${esc(a.hbf ?? "")}</span></div>`
-        )
-        .join("")}
+      ${RA_ass.map(
+        a =>
+          `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(a.name)}${a.isIndicesOnly ? `<span class="indices-tag-light">INDICES</span>` : ""}</span><span style="color:#64748b">${esc(a.hbf ?? "")}</span></div>`
+      ).join("")}
     </div>
   </div>`
       : ""
@@ -421,6 +446,12 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
   // registered vehicle/address with a different target there. See
   // getCrossOperationExtras.
   const crossOpExtras = profile ? getCrossOperationExtras(profile) : [];
+  const residents = (profile?.registryAssociates ?? []).filter(
+    a => a.relationship === "resident"
+  );
+  const associatesOnly = (profile?.registryAssociates ?? []).filter(
+    a => a.relationship !== "resident"
+  );
   const totalOperationsCount = profile
     ? profile.operations.length + crossOpExtras.length
     : 0;
@@ -652,7 +683,9 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
             profile.v1f ||
             profile.v2f ||
             profile.extraVehicles ||
-            profile.extraAddresses) &&
+            profile.extraAddresses ||
+            profile.mdlStatus ||
+            profile.bailStatus) &&
             (() => {
               const extraVehicleList: Array<{ full?: string; short?: string }> =
                 (() => {
@@ -689,6 +722,26 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                     count={totalCount}
                   />
                   <div className="grid grid-cols-1 gap-2 text-sm">
+                    {profile.mdlStatus && (
+                      <div className="flex gap-3 items-start">
+                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
+                          MDL
+                        </span>
+                        <span className="text-xs text-foreground">
+                          {mdlLabel(profile.mdlStatus)}
+                        </span>
+                      </div>
+                    )}
+                    {profile.bailStatus && (
+                      <div className="flex gap-3 items-start">
+                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
+                          Bail
+                        </span>
+                        <span className="text-xs text-foreground">
+                          {formatBail(profile)}
+                        </span>
+                      </div>
+                    )}
                     {profile.hbf && (
                       <div className="flex gap-3 items-start">
                         <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
@@ -824,21 +877,56 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
             </div>
           )}
 
+          {/* Other Home Address Residents — recorded directly on this target in the
+              Target Registry, a guaranteed link rather than inferred from
+              observation-text co-occurrence. */}
+          {residents.length > 0 && (
+            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Other Home Address Residents
+                </p>
+                <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+                  {residents.length}
+                </span>
+              </div>
+              <div className="flex flex-col gap-2">
+                {residents.map(a => (
+                  <button
+                    key={a.id}
+                    onClick={() =>
+                      navigate(
+                        `/intelligence/associate/${encodeURIComponent(a.name)}`
+                      )
+                    }
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
+                  >
+                    <Users className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                    <span className="text-xs font-medium text-foreground flex-1 truncate">
+                      {a.name}
+                    </span>
+                    {a.isIndicesOnly && <IndicesBadge />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Registered Associates — recorded directly on this target in the
               Target Registry, a guaranteed link rather than inferred from
               observation-text co-occurrence. */}
-          {profile.registryAssociates.length > 0 && (
+          {associatesOnly.length > 0 && (
             <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
               <div className="flex items-center gap-2 mb-3">
                 <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Registered Associates
                 </p>
                 <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                  {profile.registryAssociates.length}
+                  {associatesOnly.length}
                 </span>
               </div>
               <div className="flex flex-col gap-2">
-                {profile.registryAssociates.map(a => (
+                {associatesOnly.map(a => (
                   <button
                     key={a.id}
                     onClick={() =>

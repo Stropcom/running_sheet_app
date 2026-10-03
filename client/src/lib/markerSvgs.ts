@@ -582,14 +582,12 @@ m2697 -148 c14 -14 15 -105 13 -803 -2 -769 -2 -788 -22 -819 -11 -17 -37 -44
 
     case "person_foot":
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
-        <circle cx="24" cy="24" r="21" fill="${c}" stroke="${dark}" stroke-width="2"/>
-        <text x="24" y="33" text-anchor="middle" font-size="26">🚶</text>
+        <text x="24" y="38" text-anchor="middle" font-size="40">🚶</text>
       </svg>`;
 
     case "person_standing":
       return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
-        <circle cx="24" cy="24" r="21" fill="${c}" stroke="${dark}" stroke-width="2"/>
-        <text x="24" y="33" text-anchor="middle" font-size="26">🧍</text>
+        <text x="24" y="38" text-anchor="middle" font-size="40">🧍</text>
       </svg>`;
 
     default:

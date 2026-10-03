@@ -487,6 +487,17 @@ const structuredTargetFieldsSchema = {
   extraAddresses: z.string().optional().nullable(), // JSON array of {label?,unitNo,houseNo,streetName,streetType,suburb,state,full,short}
 };
 
+// Person-target status fields — Motor Drivers Licence and bail. Kept out of
+// structuredTargetFieldsSchema because that's also spread into the
+// associate.* procedures, and associates don't carry these. Values are
+// free-text varchars in the DB for forward-compat, but constrained here.
+const targetStatusFieldsSchema = {
+  mdlStatus: z.enum(["active", "none", "suspended"]).optional().nullable(),
+  bailStatus: z.enum(["yes", "no"]).optional().nullable(),
+  bailConditions: z.enum(["yes", "no"]).optional().nullable(),
+  bailConditionsText: z.string().optional().nullable(),
+};
+
 const smeacTeamSlotSchema = z.object({
   name: z.string(),
   cin: z.string().optional().nullable(),
@@ -3355,6 +3366,7 @@ export const appRouter = router({
           extraVehicles: z.string().optional().nullable(), // JSON array of {full,short,...structured}
           wildFields: z.string().optional().nullable(), // JSON array of {label,value}
           ...structuredTargetFieldsSchema,
+          ...targetStatusFieldsSchema,
         })
       )
       .mutation(async ({ ctx, input }) => {
@@ -3379,6 +3391,7 @@ export const appRouter = router({
           extraVehicles: z.string().optional().nullable(),
           wildFields: z.string().optional().nullable(),
           ...structuredTargetFieldsSchema,
+          ...targetStatusFieldsSchema,
         })
       )
       .mutation(async ({ input }) => {
@@ -3471,6 +3484,7 @@ export const appRouter = router({
             documentSourceFileBase64: z.string().optional().nullable(),
             documentSourceFileMimeType: z.string().optional().nullable(),
             ...structuredTargetFieldsSchema,
+            ...targetStatusFieldsSchema,
           })
         )
         .mutation(async ({ input, ctx }) => {
@@ -3549,6 +3563,7 @@ export const appRouter = router({
             documentSourceFileMimeType: z.string().optional().nullable(),
             existingAssociateId: z.number(),
             ...structuredTargetFieldsSchema,
+            ...targetStatusFieldsSchema,
           })
         )
         .mutation(async ({ input, ctx }) => {
@@ -3621,6 +3636,7 @@ export const appRouter = router({
             newExtraAddressIds: z.array(z.string()).optional(),
             newExtraVehicleIds: z.array(z.string()).optional(),
             ...structuredTargetFieldsSchema,
+            ...targetStatusFieldsSchema,
           })
         )
         .mutation(async ({ input, ctx }) => {
@@ -4029,6 +4045,10 @@ export const appRouter = router({
           v1f: z.string().optional().nullable(),
           v1: z.string().optional().nullable(),
           extraVehicles: z.string().optional().nullable(),
+          // "associate" (default) or "resident" — an "Other Home Address
+          // Resident" is filed in the same table, same shape, but shown in
+          // its own section on the target. See associates.relationship.
+          relationship: z.enum(["associate", "resident"]).optional(),
           ...structuredTargetFieldsSchema,
         })
       )
@@ -4054,6 +4074,7 @@ export const appRouter = router({
           v1: z.string().optional().nullable(),
           extraVehicles: z.string().optional().nullable(),
           existingTargetId: z.number(),
+          relationship: z.enum(["associate", "resident"]).optional(),
           ...structuredTargetFieldsSchema,
         })
       )

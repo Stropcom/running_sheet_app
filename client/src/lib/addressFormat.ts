@@ -163,6 +163,47 @@ const STREET_TYPE_MAP: Record<string, string> = {
   parkway: "Parkway",
 };
 
+/**
+ * True when two structured addresses are the same household: same house
+ * number, street name and suburb, AND the same unit (so 3/12 Smith St and
+ * 5/12 Smith St — or a unit and the bare house — are different households).
+ * Street type is compared leniently ("St" = "Street") and ignored when one
+ * side lacks it; anything without a house number, street name and suburb on
+ * both sides never matches, so a half-parsed address can't pull someone in
+ * by accident. Used to file an imported associate living at the target's
+ * home address under "Other Home Address Residents".
+ */
+export function isSameHomeAddress(
+  a: Pick<
+    StructuredAddressParts,
+    "unitNo" | "houseNo" | "streetName" | "streetType" | "suburb"
+  >,
+  b: Pick<
+    StructuredAddressParts,
+    "unitNo" | "houseNo" | "streetName" | "streetType" | "suburb"
+  >
+): boolean {
+  const norm = (v: string) => v.trim().toLowerCase().replace(/\s+/g, " ");
+  const unit = (v: string) => norm(v).replace(/^(unit|apt|apartment)\s*/, "");
+  const type = (v: string) => {
+    const t = norm(v);
+    return (STREET_TYPE_MAP[t] ?? t).toLowerCase();
+  };
+  for (const x of [a, b]) {
+    if (!norm(x.houseNo) || !norm(x.streetName) || !norm(x.suburb)) {
+      return false;
+    }
+  }
+  if (norm(a.houseNo) !== norm(b.houseNo)) return false;
+  if (norm(a.streetName) !== norm(b.streetName)) return false;
+  if (norm(a.suburb) !== norm(b.suburb)) return false;
+  if (unit(a.unitNo) !== unit(b.unitNo)) return false;
+  if (norm(a.streetType) && norm(b.streetType)) {
+    return type(a.streetType) === type(b.streetType);
+  }
+  return true;
+}
+
 /** Full-word street type options for a dropdown (Street, Road, Avenue, …), deduped and sorted. */
 export const STREET_TYPE_OPTIONS: string[] = Array.from(
   new Set(Object.values(STREET_TYPE_MAP))

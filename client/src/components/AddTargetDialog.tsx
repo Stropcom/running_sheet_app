@@ -52,9 +52,15 @@ import {
   EMPTY_NAME_PARTS,
   EMPTY_ADDRESS_PARTS,
   EMPTY_VEHICLE_PARTS,
+  EMPTY_STATUS_PARTS,
   makeExtraId,
+  parseExtraAddresses,
+  parseExtraVehicles,
+  mdlMissing,
+  statusPartsToPayload,
   type ExtraAddress,
   type ExtraVehicle,
+  type TargetStatusParts,
 } from "@/components/TargetStructuredFields";
 import {
   composeTargetName,
@@ -64,6 +70,7 @@ import {
   composeVehicleTargetName,
   composeLocationTargetName,
   ddMmYyyyToIso,
+  isoToDdMmYyyy,
   type StructuredNameParts,
   type StructuredAddressParts,
   type StructuredVehicleParts,
@@ -125,6 +132,10 @@ export interface RegistryCreatePayload {
   firstNames: string | null;
   surname: string | null;
   bornDate: string | null;
+  mdlStatus?: "active" | "none" | "suspended" | null;
+  bailStatus?: "yes" | "no" | null;
+  bailConditions?: "yes" | "no" | null;
+  bailConditionsText?: string | null;
   addrUnitNo: string | null;
   addrHouseNo: string | null;
   addrStreetName: string | null;
@@ -152,9 +163,31 @@ export interface RegistryCreatePayload {
 // the target's own fields, reusing the identical field components.
 export interface StagedAssociate {
   key: string;
+  /** "associate" (default) or "resident" — an Other Home Address Resident,
+   * staged in its own section above Associates but saved through the same
+   * associate.create mutation (see associates.relationship). */
+  relationship?: "associate" | "resident";
   identity: StructuredNameParts;
   address: StructuredAddressParts;
   vehicle: StructuredVehicleParts & { vehicleType: string };
+  /** "Add Address" / "Add Vehicle" entries beyond the primary ones, same
+   * shape as the target's own extras. */
+  extraAddresses?: ExtraAddress[];
+  extraVehicles?: ExtraVehicle[];
+  /** Residents only: while true, the Home Address shown and saved is the
+   * target's own (live, as it's typed). Editing the resident's address
+   * flips this off so it can differ. */
+  addressFollowsTarget?: boolean;
+  /** Set when the officer confirmed the Surname-blur match is the same
+   * person as this existing Target — saved via createLinkedFromTarget. */
+  linkedTargetId?: number | null;
+  /** Mined-mention matches the officer confirmed as the same person —
+   * folded in as aliases (intelligence.mergeEntities) once saved. */
+  aliasMerges?: Array<{
+    type: "person" | "vehicle" | "address";
+    winnerLabel: string;
+    loserLabel: string;
+  }>;
 }
 
 // composeAddress/composeVehicle are all-or-nothing — a document import (or
@@ -342,6 +375,9 @@ export function AddTargetDialog({
   const [identity, setIdentity] = useState<StructuredNameParts>(
     () => initialIdentity ?? EMPTY_NAME_PARTS
   );
+  // MDL (compulsory for a person target) and bail — blank until picked.
+  const [status, setStatus] = useState<TargetStatusParts>(EMPTY_STATUS_PARTS);
+  const [showMdlError, setShowMdlError] = useState(false);
   const [address, setAddress] = useState<StructuredAddressParts>(
     () => initialAddress ?? EMPTY_ADDRESS_PARTS
   );
@@ -363,6 +399,8 @@ export function AddTargetDialog({
   const [linking, setLinking] = useState(false);
   const utils = trpc.useUtils();
   const associateCreateMut = trpc.associate.create.useMutation();
+  const associateCreateLinkedMut =
+    trpc.associate.createLinkedFromTarget.useMutation();
   const uploadImageMut = trpc.attachment.uploadManual.useMutation();
   const confirmEntityFaceMut = trpc.attachment.confirmEntityFace.useMutation();
   const linkToEntityMut = trpc.attachment.linkToEntity.useMutation();
@@ -546,6 +584,8 @@ export function AddTargetDialog({
     setOperation(initialOperation ?? null);
     setTargetType("person");
     setIdentity(EMPTY_NAME_PARTS);
+    setStatus(EMPTY_STATUS_PARTS);
+    setShowMdlError(false);
     setAddress(EMPTY_ADDRESS_PARTS);
     setVehicle(EMPTY_VEHICLE_PARTS);
     setDep("");
@@ -553,6 +593,8 @@ export function AddTargetDialog({
     setExtraAddresses([]);
     setExtraVehicles([]);
     setAssociates([]);
+    setStagedWarn(null);
+    stagedCheckedRef.current = {};
     setManualImages([]);
     setManualImageTarget(null);
     setDupMatch(null);
@@ -625,6 +667,7 @@ export function AddTargetDialog({
       firstNames: identity.firstNames || null,
       surname: identity.surname || null,
       bornDate: ddMmYyyyToIso(identity.bornDate) || null,
+      ...(targetType === "person" ? statusPartsToPayload(status) : {}),
       addrUnitNo: address.unitNo || null,
       addrHouseNo: address.houseNo || null,
       addrStreetName: address.streetName || null,
@@ -659,7 +702,8 @@ export function AddTargetDialog({
     targetId: number
   ): Promise<Record<string, number>> => {
     const toCreate = associates
-      .map(a => {
+      .map(rawAssoc => {
+        const a = effectiveStaged(rawAssoc);
         const { name, tgt } = composeAssociateName(
           a.identity,
           a.address.businessName
@@ -667,10 +711,25 @@ export function AddTargetDialog({
         if (!name) return null;
         const { full: hbf, short: hb } = composeAddress(a.address);
         const { full: v1f, short: v1 } = composeVehicle(a.vehicle);
+        // Extras that composed to nothing (left blank, or only partly
+        // filled in) are dropped rather than saved as empty entries.
+        const extraAddrs = (a.extraAddresses ?? [])
+          .map(ea => ({ ...ea, ...composeAddress(ea) }))
+          .filter(ea => ea.full);
+        const extraVehs = (a.extraVehicles ?? [])
+          .map(ev => ({ ...ev, ...composeVehicle(ev) }))
+          .filter(ev => ev.full);
         return {
           key: a.key,
+          linkedTargetId: a.linkedTargetId ?? null,
+          aliasMerges: a.aliasMerges ?? [],
           payload: {
             targetId,
+            relationship: a.relationship ?? ("associate" as const),
+            extraAddresses: extraAddrs.length
+              ? JSON.stringify(extraAddrs)
+              : null,
+            extraVehicles: extraVehs.length ? JSON.stringify(extraVehs) : null,
             name,
             tgt: tgt || null,
             hbf: hbf || null,
@@ -699,17 +758,29 @@ export function AddTargetDialog({
       .filter((x): x is NonNullable<typeof x> => x !== null);
     if (toCreate.length === 0) return {};
     const results = await Promise.allSettled(
-      toCreate.map(item => associateCreateMut.mutateAsync(item.payload))
+      toCreate.map(item =>
+        item.linkedTargetId
+          ? associateCreateLinkedMut.mutateAsync({
+              ...item.payload,
+              existingTargetId: item.linkedTargetId,
+            })
+          : associateCreateMut.mutateAsync(item.payload)
+      )
     );
     const idByKey: Record<string, number> = {};
     let failed = 0;
+    const aliasJobs: Promise<unknown>[] = [];
     results.forEach((r, i) => {
       if (r.status === "fulfilled") {
         idByKey[toCreate[i].key] = r.value.id;
+        for (const m of toCreate[i].aliasMerges) {
+          aliasJobs.push(mergeEntitiesMutation.mutateAsync(m).catch(() => {}));
+        }
       } else {
         failed++;
       }
     });
+    await Promise.all(aliasJobs);
     if (failed > 0) {
       toast.error(
         `Target saved, but ${failed} associate${failed > 1 ? "s" : ""} failed to save — add ${failed > 1 ? "them" : "it"} from the target's card in the registry.`
@@ -942,6 +1013,9 @@ export function AddTargetDialog({
     firstNames: associate.firstNames,
     surname: associate.surname,
     bornDate: associate.bornDate,
+    // MDL/bail aren't shared with the Associate record — they come from
+    // what the officer entered here.
+    ...statusPartsToPayload(status),
     addrUnitNo: associate.addrUnitNo,
     addrHouseNo: associate.addrHouseNo,
     addrStreetName: associate.addrStreetName,
@@ -1016,6 +1090,13 @@ export function AddTargetDialog({
           : targetType === "location"
             ? "Enter House No, Street Name, Street Type and Suburb."
             : "Enter both First Name/s and Surname."
+      );
+      return;
+    }
+    if (targetType === "person" && mdlMissing(status)) {
+      setShowMdlError(true);
+      toast.error(
+        "Select the target's MDL status (Active, None or Suspended)."
       );
       return;
     }
@@ -1459,6 +1540,425 @@ export function AddTargetDialog({
     </>
   );
 
+  // A staged resident that still follows the target takes the target's
+  // current Home Address (business name excluded — on an associate card it
+  // stands in for the person's name, see composeAssociateName).
+  const effectiveStaged = (a: StagedAssociate): StagedAssociate =>
+    a.addressFollowsTarget
+      ? { ...a, address: { ...address, businessName: "" } }
+      : a;
+
+  // ── Possible-duplicate check for staged associates / residents ──
+  // Same trigger as the target's own Surname field: fires the moment a
+  // staged person's Surname loses focus, searching targets, associates and
+  // mined people already in the app. Kept separate from the target's own
+  // warnQueue since the answers mean different things (see below).
+  const [stagedWarn, setStagedWarn] = useState<{
+    key: string;
+    queue: DuplicateWarning[];
+    index: number;
+  } | null>(null);
+  const [stagedLinking, setStagedLinking] = useState(false);
+  const stagedCheckedRef = useRef<Record<string, string>>({});
+
+  const checkStagedNameOnBlur = async (key: string) => {
+    const a = associates.find(x => x.key === key);
+    if (!a) return;
+    const { name } = composeAssociateName(a.identity, a.address.businessName);
+    if (!name || stagedCheckedRef.current[key] === name) return;
+    stagedCheckedRef.current[key] = name;
+    try {
+      const warnings = await runDuplicateChecks(utils, [
+        { kind: "target", label: name },
+        { kind: "person", label: name },
+      ]);
+      if (warnings.length > 0)
+        setStagedWarn({ key, queue: warnings, index: 0 });
+    } catch {
+      // Silent — an early heads-up only; staged people are created after
+      // the target saves and can be merged from the registry afterwards.
+    }
+  };
+
+  const advanceStagedWarn = () =>
+    setStagedWarn(w =>
+      w && w.index + 1 < w.queue.length ? { ...w, index: w.index + 1 } : null
+    );
+
+  const handleStagedWarnContinue = () => {
+    const current = stagedWarn?.queue[stagedWarn.index];
+    if (current) {
+      notDuplicateMutation.mutate({
+        type: current.kind === "target" ? "person" : current.kind,
+        labelA: current.candidateLabel,
+        labelB: current.existingLabel,
+      });
+    }
+    advanceStagedWarn();
+  };
+
+  // "Yes — same person": an existing Target is copied into the staged card
+  // and linked on save (same outcome as AssociateCard's link-and-copy); a
+  // mined mention is folded in as an alias on save; another Associate has
+  // no link concept (associates link to Targets, not each other), so it
+  // simply carries on as entered.
+  const handleStagedWarnYes = async (warning: DuplicateWarning) => {
+    const key = stagedWarn?.key;
+    if (!key) return;
+    setStagedLinking(true);
+    try {
+      if (warning.linkable?.recordType === "target") {
+        const t = await utils.target.getById.fetch({ id: warning.linkable.id });
+        if (!t) {
+          toast.error("Couldn't load the matched target.");
+          return;
+        }
+        patchStaged(key, {
+          linkedTargetId: t.id,
+          identity: {
+            firstNames: t.firstNames ?? "",
+            surname: t.surname ?? "",
+            bornDate: isoToDdMmYyyy(t.bornDate),
+          },
+          address: {
+            unitNo: t.addrUnitNo ?? "",
+            houseNo: t.addrHouseNo ?? "",
+            streetName: t.addrStreetName ?? "",
+            streetType: t.addrStreetType ?? "",
+            suburb: t.addrSuburb ?? "",
+            state: t.addrState ?? "WA",
+            businessName: t.addrBusinessName ?? "",
+          },
+          addressFollowsTarget: false,
+          vehicle: {
+            registration: t.vehRegistration ?? "",
+            state: t.vehState ?? "WA",
+            colour: t.vehColour ?? "",
+            make: t.vehMake ?? "",
+            model: t.vehModel ?? "",
+            vehicleType: t.vehType ?? "",
+          },
+          extraAddresses: parseExtraAddresses(t.extraAddresses),
+          extraVehicles: parseExtraVehicles(t.extraVehicles),
+        });
+        toast.success(
+          `Copied from ${t.name} — will be linked as the same person when saved.`
+        );
+        // The copied name now matches that Target exactly; don't re-ask.
+        stagedCheckedRef.current[key] = t.name;
+        setStagedWarn(null);
+        return;
+      }
+      if (warning.kind !== "target") {
+        const a = associates.find(x => x.key === key);
+        patchStaged(key, {
+          aliasMerges: [
+            ...(a?.aliasMerges ?? []),
+            {
+              type: warning.kind,
+              winnerLabel: warning.candidateLabel,
+              loserLabel: warning.existingLabel,
+            },
+          ],
+        });
+      }
+      advanceStagedWarn();
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to copy the matched record.");
+    } finally {
+      setStagedLinking(false);
+    }
+  };
+
+  // ── Staged associates / residents ──
+  // Both kinds live in the one `associates` array (distinguished by
+  // `relationship`) and render through the same card, so a resident is
+  // exactly the associate format under a different heading and colour.
+  const patchStaged = (key: string, patch: Partial<StagedAssociate>) =>
+    setAssociates(list =>
+      list.map(item => (item.key === key ? { ...item, ...patch } : item))
+    );
+  const removeStaged = (key: string) => {
+    setAssociates(v => v.filter(item => item.key !== key));
+    setManualImages(v =>
+      v.filter(
+        img =>
+          !(img.linkTo.type === "associate" && img.linkTo.associateKey === key)
+      )
+    );
+  };
+
+  const STAGED_KINDS = {
+    associate: {
+      heading: "Associates",
+      cardLabel: "Associate",
+      addLabel: "Add Associate",
+      section: "border-violet-500/30 border-l-violet-500 bg-violet-500/5",
+      headingText: "text-violet-700 dark:text-violet-400",
+      photoBorder: "border-violet-500",
+    },
+    resident: {
+      heading: "Other Home Address Residents",
+      cardLabel: "Resident",
+      addLabel: "Add Resident",
+      section: "border-rose-500/30 border-l-rose-500 bg-rose-500/5",
+      headingText: "text-rose-700 dark:text-rose-400",
+      photoBorder: "border-rose-500",
+    },
+  } as const;
+
+  function renderStagedSection(kind: "associate" | "resident") {
+    const cfg = STAGED_KINDS[kind];
+    const inSection = associates.filter(
+      a => (a.relationship ?? "associate") === kind
+    );
+    // A resident section with nothing staged still shows (with its Add
+    // button) so the option is discoverable, same as Associates.
+    return (
+      <div
+        className={`mt-2 rounded-lg border border-l-4 ${cfg.section} p-3 flex flex-col gap-2`}
+      >
+        <p
+          className={`text-xs font-bold ${cfg.headingText} uppercase tracking-wide flex items-center gap-1.5`}
+        >
+          <Users className="w-3.5 h-3.5" /> {cfg.heading}
+        </p>
+        {inSection.map((assoc, i) => {
+          const extraAddrs = assoc.extraAddresses ?? [];
+          const extraVehs = assoc.extraVehicles ?? [];
+          return (
+            <div
+              key={assoc.key}
+              className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-3"
+            >
+              <div className="flex items-center justify-between">
+                <span
+                  className={`text-xs font-bold ${cfg.headingText} uppercase tracking-wide flex items-center gap-1.5`}
+                >
+                  <Users className="w-3 h-3" /> {cfg.cardLabel} {i + 1}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs"
+                    onClick={() =>
+                      patchStaged(assoc.key, {
+                        relationship:
+                          kind === "resident" ? "associate" : "resident",
+                      })
+                    }
+                  >
+                    {kind === "resident"
+                      ? "Move to Associates"
+                      : "Move to Residents"}
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6 text-destructive hover:text-destructive"
+                    onClick={() => removeStaged(assoc.key)}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              </div>
+              <TargetIdentityFields
+                value={assoc.identity}
+                onChange={v => patchStaged(assoc.key, { identity: v })}
+                onSurnameBlur={() => checkStagedNameOnBlur(assoc.key)}
+              />
+              {manualImageUploadSection(
+                { type: "associate", associateKey: assoc.key },
+                cfg.photoBorder
+              )}
+              <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+                <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                  <Home className="w-3 h-3" /> Home Address
+                </p>
+                {assoc.addressFollowsTarget && (
+                  <p className="text-xs text-muted-foreground italic mb-2">
+                    Same as the target's Home Address — edit below to change it
+                    for this person only.
+                  </p>
+                )}
+                <TargetAddressFields
+                  value={effectiveStaged(assoc).address}
+                  onChange={v =>
+                    patchStaged(assoc.key, {
+                      address: v,
+                      addressFollowsTarget: false,
+                    })
+                  }
+                />
+              </div>
+              {extraAddrs.map((ea, ai) => (
+                <div
+                  key={ea.id}
+                  className="rounded-lg border border-border/60 bg-muted/10 p-3 flex flex-col gap-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                      <Home className="w-3 h-3" /> Additional Address {ai + 2}
+                    </span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 text-destructive hover:text-destructive"
+                      onClick={() =>
+                        patchStaged(assoc.key, {
+                          extraAddresses: extraAddrs.filter(
+                            x => x.id !== ea.id
+                          ),
+                        })
+                      }
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  </div>
+                  <TargetAddressFields
+                    value={ea}
+                    onChange={v =>
+                      patchStaged(assoc.key, {
+                        extraAddresses: extraAddrs.map(x =>
+                          x.id === ea.id ? { ...x, ...v } : x
+                        ),
+                      })
+                    }
+                    label={ea.label}
+                    onLabelChange={v =>
+                      patchStaged(assoc.key, {
+                        extraAddresses: extraAddrs.map(x =>
+                          x.id === ea.id ? { ...x, label: v } : x
+                        ),
+                      })
+                    }
+                  />
+                  {isPartialAddress(ea) && (
+                    <p className="text-xs text-destructive">
+                      Missing a house number, street type or suburb — this
+                      address won't save until every field is filled in.
+                    </p>
+                  )}
+                </div>
+              ))}
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 self-start"
+                onClick={() =>
+                  patchStaged(assoc.key, {
+                    extraAddresses: [
+                      ...extraAddrs,
+                      {
+                        ...EMPTY_ADDRESS_PARTS,
+                        id: makeExtraId(),
+                        label: "",
+                        full: "",
+                        short: "",
+                      },
+                    ],
+                  })
+                }
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Address
+              </Button>
+              <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+                <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+                  <Car className="w-3 h-3" /> Vehicle 1
+                </p>
+                <TargetVehicleFields
+                  value={assoc.vehicle}
+                  onChange={v => patchStaged(assoc.key, { vehicle: v })}
+                />
+              </div>
+              {extraVehs.map((ev, vi) => (
+                <div
+                  key={ev.id}
+                  className="rounded-lg border border-border/60 bg-muted/10 p-3 flex flex-col gap-2"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                      <Car className="w-3 h-3" /> Vehicle {vi + 2}
+                    </span>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 text-destructive hover:text-destructive"
+                      onClick={() =>
+                        patchStaged(assoc.key, {
+                          extraVehicles: extraVehs.filter(x => x.id !== ev.id),
+                        })
+                      }
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  </div>
+                  <TargetVehicleFields
+                    value={ev}
+                    onChange={v =>
+                      patchStaged(assoc.key, {
+                        extraVehicles: extraVehs.map(x =>
+                          x.id === ev.id ? { ...x, ...v } : x
+                        ),
+                      })
+                    }
+                  />
+                  {isPartialVehicle(ev) && (
+                    <p className="text-xs text-destructive">
+                      Missing a colour, make or model — this vehicle won't save
+                      until every field is filled in.
+                    </p>
+                  )}
+                </div>
+              ))}
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 self-start"
+                onClick={() =>
+                  patchStaged(assoc.key, {
+                    extraVehicles: [
+                      ...extraVehs,
+                      {
+                        ...EMPTY_VEHICLE_PARTS,
+                        id: makeExtraId(),
+                        full: "",
+                        short: "",
+                      },
+                    ],
+                  })
+                }
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Vehicle
+              </Button>
+            </div>
+          );
+        })}
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5 self-start"
+          onClick={() =>
+            setAssociates(v => [
+              ...v,
+              {
+                key: makeExtraId(),
+                relationship: kind,
+                addressFollowsTarget: kind === "resident",
+                identity: EMPTY_NAME_PARTS,
+                address: EMPTY_ADDRESS_PARTS,
+                vehicle: EMPTY_VEHICLE_PARTS,
+              },
+            ])
+          }
+        >
+          <Plus className="w-3.5 h-3.5" /> {cfg.addLabel}
+        </Button>
+      </div>
+    );
+  }
+
   // Upload Image control shared by Person Identity and each associate's
   // identity box — stages the picked file into manualImages (linked by
   // "target" or that associate's staged key) and shows what's staged so
@@ -1608,6 +2108,9 @@ export function AddTargetDialog({
                   value={identity}
                   onChange={setIdentity}
                   onSurnameBlur={checkNameOnBlur}
+                  status={status}
+                  onStatusChange={setStatus}
+                  showMdlError={showMdlError}
                 />
                 <div className="mt-3 pt-3 border-t border-sky-500/20">
                   {manualImageUploadSection(
@@ -1634,108 +2137,18 @@ export function AddTargetDialog({
               </>
             )}
 
+            {/* Other Home Address Residents — people living at the target's
+                home address who aren't associates. Same staged shape as an
+                associate (and saved through the same mutation, tagged
+                relationship = "resident"), just its own rose section above
+                Associates so the two groups read as separate lists. */}
+            {renderStagedSection("resident")}
+
             {/* Associates — same position as AssociatesSection on the
                 saved target's own card (server/db.ts requires a real
                 targetId, so these are staged here and created right after
                 the target itself saves). */}
-            <div className="mt-2 rounded-lg border border-l-4 border-violet-500/30 border-l-violet-500 bg-violet-500/5 p-3 flex flex-col gap-2">
-              <p className="text-xs font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5" /> Associates
-              </p>
-              {associates.map((assoc, i) => (
-                <div
-                  key={assoc.key}
-                  className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
-                      <Users className="w-3 h-3" /> Associate {i + 1}
-                    </span>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 text-destructive hover:text-destructive"
-                      onClick={() => {
-                        setAssociates(v => v.filter((_, idx) => idx !== i));
-                        setManualImages(v =>
-                          v.filter(
-                            img =>
-                              !(
-                                img.linkTo.type === "associate" &&
-                                img.linkTo.associateKey === assoc.key
-                              )
-                          )
-                        );
-                      }}
-                    >
-                      <X className="w-3 h-3" />
-                    </Button>
-                  </div>
-                  <TargetIdentityFields
-                    value={assoc.identity}
-                    onChange={v =>
-                      setAssociates(list =>
-                        list.map((item, idx) =>
-                          idx === i ? { ...item, identity: v } : item
-                        )
-                      )
-                    }
-                  />
-                  {manualImageUploadSection(
-                    { type: "associate", associateKey: assoc.key },
-                    "border-violet-500"
-                  )}
-                  <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-                    <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                      <Home className="w-3 h-3" /> Home Address
-                    </p>
-                    <TargetAddressFields
-                      value={assoc.address}
-                      onChange={v =>
-                        setAssociates(list =>
-                          list.map((item, idx) =>
-                            idx === i ? { ...item, address: v } : item
-                          )
-                        )
-                      }
-                    />
-                  </div>
-                  <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-                    <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                      <Car className="w-3 h-3" /> Vehicle 1
-                    </p>
-                    <TargetVehicleFields
-                      value={assoc.vehicle}
-                      onChange={v =>
-                        setAssociates(list =>
-                          list.map((item, idx) =>
-                            idx === i ? { ...item, vehicle: v } : item
-                          )
-                        )
-                      }
-                    />
-                  </div>
-                </div>
-              ))}
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 self-start"
-                onClick={() =>
-                  setAssociates(v => [
-                    ...v,
-                    {
-                      key: makeExtraId(),
-                      identity: EMPTY_NAME_PARTS,
-                      address: EMPTY_ADDRESS_PARTS,
-                      vehicle: EMPTY_VEHICLE_PARTS,
-                    },
-                  ])
-                }
-              >
-                <Plus className="w-3.5 h-3.5" /> Add Associate
-              </Button>
-            </div>
+            {renderStagedSection("associate")}
 
             {/* Photos — staged from a document import (see
                 ImportTargetDocumentDialog.tsx). Duplicate-photo detection
@@ -1889,6 +2302,18 @@ export function AddTargetDialog({
         onReview={handleWarnReview}
         onLinkAndCopy={handleWarnLinkAndCopy}
         linking={linking}
+      />
+
+      {/* Possible-duplicate prompt for a staged associate/resident's name */}
+      <PossibleDuplicateAlert
+        warning={
+          stagedWarn ? (stagedWarn.queue[stagedWarn.index] ?? null) : null
+        }
+        creates="associate"
+        onContinue={handleStagedWarnContinue}
+        onReview={() => setStagedWarn(null)}
+        onLinkAndCopy={handleStagedWarnYes}
+        linking={stagedLinking}
       />
 
       {/* Field-level merge into the existing target */}

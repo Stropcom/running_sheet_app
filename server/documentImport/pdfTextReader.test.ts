@@ -10,6 +10,14 @@ import { readPdfText } from "./pdfTextReader";
 // two-column table row with no colon at all (the shape a .docx's own
 // Label/Value table template produces once flattened onto one PDF text
 // line by printing/exporting it).
+// A real training PDF (Operation TIDEMARK) laid out as a tall "Associates:"
+// cell (headshots, then one block of details per person) to the LEFT of a tall
+// "SUMMARY" narrative cell, both continuing across a page break. The reader
+// used to merge the two cells line by line wherever their heights lined up.
+const SIDE_BY_SIDE_FIXTURE = join(
+  __dirname,
+  "__fixtures__/target-profile-pdf-side-by-side-associates.pdf"
+);
 const COLON_FIXTURE = join(
   __dirname,
   "__fixtures__/target-profile-pdf-colon.pdf"
@@ -373,8 +381,12 @@ describe("readPdfText", () => {
     it("keeps a space between two wrapped sentences instead of treating an ordinarily-packed line as a forced mid-word break", async () => {
       const result = await readPdfText(readFileSync(WIDE_COLUMN_GLUE_FIXTURE));
       const joined = result.paragraphs.join("\n");
-      expect(joined).toContain(
-        "1RJM17 (WA) 2020 silver Ford Everest wagon. Mobile: 0491 570 161"
+      // The point is that two adjacent facts are never glued together. Since
+      // the side-by-side flow split, an associate's cell reads one field per
+      // line ("...wagon." then "Mobile: ...") rather than fused into a single
+      // run-on line, so accept either a space or a line break between them.
+      expect(joined).toMatch(
+        /1RJM17 \(WA\) 2020 silver Ford Everest wagon\.\s+Mobile: 0491 570 161/
       );
       expect(joined).not.toContain("wagon.Mobile:");
     });
@@ -653,6 +665,60 @@ describe("readPdfText", () => {
       expect(result.paragraphs).toContain(
         "1PEN22 (WA) 2018 silver Toyota Corolla sedan. Office Address: Suite 3/116 Canning Highway, SOUTH PERTH WA 6151."
       );
+    });
+  });
+  describe("side-by-side flows (Operation TIDEMARK fixture)", () => {
+    it("reads the right-hand narrative in its own order, not interleaved with the left-hand associates cell", async () => {
+      const { paragraphs } = await readPdfText(
+        readFileSync(SIDE_BY_SIDE_FIXTURE)
+      );
+      const joined = paragraphs.join("\n");
+      const at = (needle: string) => {
+        const i = joined.indexOf(needle);
+        expect(i, `"${needle}" missing`).toBeGreaterThanOrEqual(0);
+        return i;
+      };
+      // Source order of the SUMMARY cell: identity notes, address/vehicle
+      // notes, then the observation log (10, 13, 17 September, and 21
+      // September carried over onto page 2).
+      expect(at("IDENTITY / DOCUMENT NOTES")).toBeLessThan(
+        at("ADDRESS / VEHICLE NOTES")
+      );
+      expect(at("ADDRESS / VEHICLE NOTES")).toBeLessThan(at("OBSERVATION LOG"));
+      expect(at("10 September 2026")).toBeLessThan(at("13 September 2026"));
+      expect(at("13 September 2026")).toBeLessThan(at("17 September 2026"));
+      expect(at("17 September 2026")).toBeLessThan(at("21 September 2026"));
+    });
+
+    it("never fuses an associate's photo caption with the neighbouring column's heading", async () => {
+      const { paragraphs } = await readPdfText(
+        readFileSync(SIDE_BY_SIDE_FIXTURE)
+      );
+      const joined = paragraphs.join("\n");
+      expect(joined).not.toContain("Sophia Marie OBSERVATION");
+      expect(joined).not.toContain("Associates: IDENTITY");
+      expect(joined).toContain("Sophia Marie D'ANGELO");
+    });
+
+    it("keeps an associate's own 'DOB:' line as text instead of reading it as an identity-table row for the target", async () => {
+      const { tables, paragraphs } = await readPdfText(
+        readFileSync(SIDE_BY_SIDE_FIXTURE)
+      );
+      const dobRows = tables[0].rows.filter(r => r[0] === "DOB");
+      expect(dobRows).toEqual([["DOB", "14/04/1988"]]);
+      const joined = paragraphs.join("\n");
+      expect(joined).toContain("DOB: 03/11/1981");
+      expect(joined).toContain("16 Olive Street, SUBIACO WA 6008.");
+      expect(joined).toContain("DOB: 29/08/1985");
+    });
+
+    it("reads a photo's own printed caption name, and nothing for the uncaptioned target photo", async () => {
+      const { images } = await readPdfText(readFileSync(SIDE_BY_SIDE_FIXTURE));
+      expect(images.map(i => i.captionName)).toEqual([
+        undefined,
+        "Karim Elias NAJJAR",
+        "Sophia Marie D'ANGELO",
+      ]);
     });
   });
 });

@@ -57,6 +57,7 @@ interface OperationTarget {
     v1f: string | null;
     v1: string | null;
     isIndicesOnly: boolean;
+    relationship?: string;
   }>;
   assocPersons: IntelProfileEntity[];
   assocVehicles: IntelProfileEntity[];
@@ -533,35 +534,84 @@ export function OperationProfileContent({
                             </div>
                           );
                         })()}
-                      {target.registryAssociates.length > 0 && (
+                      {target.registryAssociates.filter(
+                        a => a.relationship === "resident"
+                      ).length > 0 && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                              Other Home Address Residents
+                            </p>
+                            <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+                              {
+                                target.registryAssociates.filter(
+                                  a => a.relationship === "resident"
+                                ).length
+                              }
+                            </span>
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            {target.registryAssociates
+                              .filter(a => a.relationship === "resident")
+                              .map(a => (
+                                <button
+                                  key={a.id}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    navigate(
+                                      `/intelligence/associate/${encodeURIComponent(a.name)}`
+                                    );
+                                  }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
+                                >
+                                  <Users className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                  <span className="text-xs font-medium text-foreground flex-1 truncate">
+                                    {a.name}
+                                  </span>
+                                  {a.isIndicesOnly && <IndicesBadge />}
+                                </button>
+                              ))}
+                          </div>
+                          <Separator className="mt-3" />
+                        </div>
+                      )}
+                      {target.registryAssociates.filter(
+                        a => a.relationship !== "resident"
+                      ).length > 0 && (
                         <div>
                           <div className="flex items-center gap-2 mb-2">
                             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                               Registered Associates
                             </p>
                             <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                              {target.registryAssociates.length}
+                              {
+                                target.registryAssociates.filter(
+                                  a => a.relationship !== "resident"
+                                ).length
+                              }
                             </span>
                           </div>
                           <div className="flex flex-col gap-2">
-                            {target.registryAssociates.map(a => (
-                              <button
-                                key={a.id}
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  navigate(
-                                    `/intelligence/associate/${encodeURIComponent(a.name)}`
-                                  );
-                                }}
-                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
-                              >
-                                <Users className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                                <span className="text-xs font-medium text-foreground flex-1 truncate">
-                                  {a.name}
-                                </span>
-                                {a.isIndicesOnly && <IndicesBadge />}
-                              </button>
-                            ))}
+                            {target.registryAssociates
+                              .filter(a => a.relationship !== "resident")
+                              .map(a => (
+                                <button
+                                  key={a.id}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    navigate(
+                                      `/intelligence/associate/${encodeURIComponent(a.name)}`
+                                    );
+                                  }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
+                                >
+                                  <Users className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                  <span className="text-xs font-medium text-foreground flex-1 truncate">
+                                    {a.name}
+                                  </span>
+                                  {a.isIndicesOnly && <IndicesBadge />}
+                                </button>
+                              ))}
                           </div>
                           <Separator className="mt-3" />
                         </div>

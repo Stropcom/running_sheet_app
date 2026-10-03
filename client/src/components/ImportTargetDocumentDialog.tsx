@@ -69,6 +69,7 @@ import { reflowNarrativeText } from "@/lib/textFormat";
 import {
   composeAddress,
   composeVehicle,
+  isSameHomeAddress,
   type StructuredAddressParts,
   type StructuredNameParts,
   type StructuredVehicleParts,
@@ -282,6 +283,12 @@ export function ImportTargetDocumentDialog({
   const [associateChoices, setAssociateChoices] = useState<
     Record<string, AssociateChoice>
   >({});
+  // Associate candidate key → true (file under Other Home Address Residents)
+  // or false (file under Associates), overriding the automatic same-address
+  // classification below. Absent === use the automatic one.
+  const [residentOverrides, setResidentOverrides] = useState<
+    Record<string, boolean>
+  >({});
   // Keyed by image key, kept-by-default (absent === kept) so a fresh parse
   // needs no separate init effect the way associateChoices does.
   const [imageChoices, setImageChoices] = useState<Record<string, boolean>>({});
@@ -358,6 +365,19 @@ export function ImportTargetDocumentDialog({
     return [...blocks, ...bare];
   }, [result]);
 
+  // A document only has "associates" — there's no residents section to read
+  // — so anyone listed at the target's own Home Address (the document's
+  // first address; see isSameHomeAddress for what counts as the same) is
+  // filed as an Other Home Address Resident instead. The officer can flip
+  // any one with the Move button on its review card, or later from the Add
+  // Target dialog.
+  const isResidentCandidate = (a: AssociateCandidate): boolean => {
+    const override = residentOverrides[a.key];
+    if (override !== undefined) return override;
+    const home = result?.addresses[0];
+    return !!home && !!a.address && isSameHomeAddress(a.address, home);
+  };
+
   // Business/place blocks pulled out of associateBlocks above — see the
   // comment on associateCandidates for why these don't belong there. Kept
   // as their own memo (rather than computed inline in handleContinue) so
@@ -385,17 +405,45 @@ export function ImportTargetDocumentDialog({
   // Every extracted photo the parser found, with a stable key for the
   // keep/discard toggle and the eventual save — same one-memo-per-result
   // pattern as associateCandidates above.
-  const imageCandidates: StagedImage[] = useMemo(() => {
-    if (!result) return [];
-    return result.images.map(img => ({
-      key: makeExtraId(),
-      dataBase64: img.dataBase64,
-      mimeType: img.mimeType,
-      width: img.width,
-      height: img.height,
-      linkTo: { type: "target" as const },
-    }));
-  }, [result]);
+  const imageCandidates: (StagedImage & { captionName?: string })[] =
+    useMemo(() => {
+      if (!result) return [];
+      return result.images.map(img => ({
+        key: makeExtraId(),
+        dataBase64: img.dataBase64,
+        mimeType: img.mimeType,
+        width: img.width,
+        height: img.height,
+        linkTo: { type: "target" as const },
+        // A name printed under the photo in the source PDF — a hint for who it's
+        // of (see defaultLinkKeyFor), not part of what gets saved.
+        captionName: img.captionName,
+      }));
+    }, [result]);
+
+  // Who an untouched photo defaults to: the associate whose full name exactly
+  // matches the caption printed under it in the source document, otherwise the
+  // target (the long-standing default). Exact-match only — a near miss falls
+  // back to "target" rather than guessing — and an associate the officer has
+  // chosen to skip is never a default, since the photo would then point at
+  // someone who won't be saved. Always overridable with the "Who is this?"
+  // chips; this only changes what's pre-selected.
+  const defaultLinkKeyFor = (img: { captionName?: string }): string => {
+    if (!img.captionName) return "target";
+    const norm = (t: string) =>
+      t
+        .toLowerCase()
+        .replace(/[^a-z' -]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const caption = norm(img.captionName);
+    const match = associateCandidates.find(
+      a =>
+        norm(`${a.firstNames} ${a.surname}`) === caption &&
+        (associateChoices[a.key] ?? "create") !== "skip"
+    );
+    return match ? match.key : "target";
+  };
 
   const reset = () => {
     setFileName("");
@@ -404,6 +452,7 @@ export function ImportTargetDocumentDialog({
     setPrimaryMatch(null);
     setAssociateMatches({});
     setAssociateChoices({});
+    setResidentOverrides({});
     setImageChoices({});
     setImageLinkChoices({});
     setSourceFile(null);
@@ -604,10 +653,17 @@ export function ImportTargetDocumentDialog({
       // Everything else the officer left as "Create as new" (the default
       // for anything with no match) stages into AddTargetDialog exactly as
       // before — "skip" and "update" are excluded here.
+      const [primaryAddress, ...restAddresses] = result.addresses;
+
+      // Same classification the review screen showed (see
+      // isResidentCandidate) — so what the officer saw is what gets staged.
       const associates: StagedAssociate[] = associateCandidates
         .filter(a => (associateChoices[a.key] ?? "create") === "create")
         .map(a => ({
           key: a.key,
+          relationship: isResidentCandidate(a)
+            ? ("resident" as const)
+            : ("associate" as const),
           identity: {
             firstNames: a.firstNames,
             surname: a.surname,
@@ -617,7 +673,6 @@ export function ImportTargetDocumentDialog({
           vehicle: a.vehicle ?? EMPTY_VEHICLE_PARTS,
         }));
 
-      const [primaryAddress, ...restAddresses] = result.addresses;
       const [primaryVehicle, ...restVehicles] = result.vehicles;
 
       // Content the document clearly intended as an address/vehicle but
@@ -720,7 +775,7 @@ export function ImportTargetDocumentDialog({
         images: imageCandidates
           .filter(img => imageChoices[img.key] ?? true)
           .map(img => {
-            const linkKey = imageLinkChoices[img.key];
+            const linkKey = imageLinkChoices[img.key] ?? defaultLinkKeyFor(img);
             const candidate = linkKey
               ? associateCandidates.find(a => a.key === linkKey)
               : undefined;
@@ -761,6 +816,103 @@ export function ImportTargetDocumentDialog({
     } finally {
       setApplying(false);
     }
+  };
+
+  // One review card per associate candidate — shared by the Residents and
+  // Associates groups below.
+  const renderAssociateCard = (a: AssociateCandidate) => {
+    const match = associateMatches[a.key];
+    const choice = associateChoices[a.key] ?? "create";
+    const colours = ASSOCIATE_CHOICE_CLASSES[choice];
+    return (
+      <div
+        key={a.key}
+        className="rounded-md bg-background/70 border border-border/60 p-2.5 flex flex-col gap-1"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-medium">
+            {a.firstNames} {a.surname}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-xs"
+            onClick={() =>
+              setResidentOverrides(prev => ({
+                ...prev,
+                [a.key]: !isResidentCandidate(a),
+              }))
+            }
+          >
+            {isResidentCandidate(a)
+              ? "Move to Associates"
+              : "Move to Residents"}
+          </Button>
+        </div>
+        {a.address && (
+          <span className="text-muted-foreground text-xs">
+            {[
+              a.address.unitNo && `${a.address.unitNo}/`,
+              a.address.houseNo,
+              a.address.streetName,
+              a.address.streetType,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            , {a.address.suburb} {a.address.state}
+          </span>
+        )}
+        {a.vehicle && (
+          <span className="text-muted-foreground text-xs">
+            {a.vehicle.registration} ({a.vehicle.state}) — {a.vehicle.colour}{" "}
+            {a.vehicle.make} {a.vehicle.model}
+          </span>
+        )}
+        {match ? (
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <Badge
+              variant="outline"
+              className={`gap-1 font-normal text-[10px] w-full max-w-full justify-start text-left whitespace-normal break-words items-start py-1 [&>svg]:mt-0.5 [&>svg]:shrink-0 ${colours.badge}`}
+            >
+              <Link2 className="w-3 h-3" />
+              Matches existing {match.type}: {match.name}
+            </Badge>
+            <Select
+              value={choice}
+              onValueChange={v =>
+                setAssociateChoices(prev => ({
+                  ...prev,
+                  [a.key]: v as AssociateChoice,
+                }))
+              }
+            >
+              <SelectTrigger
+                className={`h-7 w-auto text-xs gap-1.5 font-semibold border ${colours.select}`}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {match.type === "associate" && (
+                  <SelectItem value="update">
+                    Update existing associate
+                  </SelectItem>
+                )}
+                <SelectItem value="create">Create as new anyway</SelectItem>
+                <SelectItem value="skip">Skip — don't add</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <Badge
+            variant="outline"
+            className={`gap-1 font-normal text-[10px] mt-1 w-fit ${ASSOCIATE_CHOICE_CLASSES.create.badge}`}
+          >
+            New — no match found
+          </Badge>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -990,7 +1142,8 @@ export function ImportTargetDocumentDialog({
                       <div className="flex flex-col gap-2">
                         {imageCandidates.map(img => {
                           const kept = imageChoices[img.key] ?? true;
-                          const linkKey = imageLinkChoices[img.key] ?? "target";
+                          const linkKey =
+                            imageLinkChoices[img.key] ?? defaultLinkKeyFor(img);
                           const linkedAssociate = linkableAssociates.find(
                             a => a.key === linkKey
                           );
@@ -1138,94 +1291,46 @@ export function ImportTargetDocumentDialog({
                 </div>
               )}
 
-              {associateCandidates.length > 0 && (
-                <div className="rounded-lg border border-l-4 border-violet-500/30 border-l-violet-500 bg-violet-500/5 p-3 flex flex-col gap-2.5">
-                  <p className="text-xs font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide">
-                    Associates found ({associateCandidates.length})
-                  </p>
-                  {associateCandidates.map(a => {
-                    const match = associateMatches[a.key];
-                    const choice = associateChoices[a.key] ?? "create";
-                    const colours = ASSOCIATE_CHOICE_CLASSES[choice];
-                    return (
-                      <div
-                        key={a.key}
-                        className="rounded-md bg-background/70 border border-border/60 p-2.5 flex flex-col gap-1"
+              {associateCandidates.length > 0 &&
+                [
+                  {
+                    kind: "resident",
+                    title: "Other Home Address Residents found",
+                    note: "Listed at the target's own home address, so filed here rather than as associates.",
+                    box: "border-rose-500/30 border-l-rose-500 bg-rose-500/5",
+                    heading: "text-rose-700 dark:text-rose-400",
+                    people: associateCandidates.filter(isResidentCandidate),
+                  },
+                  {
+                    kind: "associate",
+                    title: "Associates found",
+                    note: "",
+                    box: "border-violet-500/30 border-l-violet-500 bg-violet-500/5",
+                    heading: "text-violet-700 dark:text-violet-400",
+                    people: associateCandidates.filter(
+                      a => !isResidentCandidate(a)
+                    ),
+                  },
+                ]
+                  .filter(g => g.people.length > 0)
+                  .map(g => (
+                    <div
+                      key={g.kind}
+                      className={`rounded-lg border border-l-4 ${g.box} p-3 flex flex-col gap-2.5`}
+                    >
+                      <p
+                        className={`text-xs font-bold ${g.heading} uppercase tracking-wide`}
                       >
-                        <span className="text-sm font-medium">
-                          {a.firstNames} {a.surname}
-                        </span>
-                        {a.address && (
-                          <span className="text-muted-foreground text-xs">
-                            {[
-                              a.address.unitNo && `${a.address.unitNo}/`,
-                              a.address.houseNo,
-                              a.address.streetName,
-                              a.address.streetType,
-                            ]
-                              .filter(Boolean)
-                              .join(" ")}
-                            , {a.address.suburb} {a.address.state}
-                          </span>
-                        )}
-                        {a.vehicle && (
-                          <span className="text-muted-foreground text-xs">
-                            {a.vehicle.registration} ({a.vehicle.state}) —{" "}
-                            {a.vehicle.colour} {a.vehicle.make}{" "}
-                            {a.vehicle.model}
-                          </span>
-                        )}
-                        {match ? (
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <Badge
-                              variant="outline"
-                              className={`gap-1 font-normal text-[10px] w-full max-w-full justify-start text-left whitespace-normal break-words items-start py-1 [&>svg]:mt-0.5 [&>svg]:shrink-0 ${colours.badge}`}
-                            >
-                              <Link2 className="w-3 h-3" />
-                              Matches existing {match.type}: {match.name}
-                            </Badge>
-                            <Select
-                              value={choice}
-                              onValueChange={v =>
-                                setAssociateChoices(prev => ({
-                                  ...prev,
-                                  [a.key]: v as AssociateChoice,
-                                }))
-                              }
-                            >
-                              <SelectTrigger
-                                className={`h-7 w-auto text-xs gap-1.5 font-semibold border ${colours.select}`}
-                              >
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {match.type === "associate" && (
-                                  <SelectItem value="update">
-                                    Update existing associate
-                                  </SelectItem>
-                                )}
-                                <SelectItem value="create">
-                                  Create as new anyway
-                                </SelectItem>
-                                <SelectItem value="skip">
-                                  Skip — don't add
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        ) : (
-                          <Badge
-                            variant="outline"
-                            className={`gap-1 font-normal text-[10px] mt-1 w-fit ${ASSOCIATE_CHOICE_CLASSES.create.badge}`}
-                          >
-                            New — no match found
-                          </Badge>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                        {g.title} ({g.people.length})
+                      </p>
+                      {g.note && (
+                        <p className="text-[11px] text-muted-foreground">
+                          {g.note}
+                        </p>
+                      )}
+                      {g.people.map(renderAssociateCard)}
+                    </div>
+                  ))}
 
               {result.freeText.trim() && (
                 <div className="rounded-lg border border-l-4 border-slate-400/40 border-l-slate-400 bg-slate-500/5 p-3 flex flex-col gap-1">

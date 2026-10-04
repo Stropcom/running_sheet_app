@@ -1,3 +1,4 @@
+import { RegistryPersonRow } from "@/components/RegistryPersonRow";
 import {
   sharedLinkChipText,
   sharedLinkSentence,
@@ -589,22 +590,12 @@ export function OperationProfileContent({
                             {target.registryAssociates
                               .filter(a => a.relationship === "resident")
                               .map(a => (
-                                <button
+                                <RegistryPersonRow
                                   key={a.id}
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    navigate(
-                                      `/intelligence/associate/${encodeURIComponent(a.name)}`
-                                    );
-                                  }}
-                                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
-                                >
-                                  <Users className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                                  <span className="text-xs font-medium text-foreground flex-1 truncate">
-                                    {a.name}
-                                  </span>
-                                  {a.isIndicesOnly && <IndicesBadge />}
-                                </button>
+                                  name={a.name}
+                                  isIndicesOnly={a.isIndicesOnly}
+                                  kind="resident"
+                                />
                               ))}
                           </div>
                           <Separator className="mt-3" />
@@ -630,22 +621,12 @@ export function OperationProfileContent({
                             {target.registryAssociates
                               .filter(a => a.relationship !== "resident")
                               .map(a => (
-                                <button
+                                <RegistryPersonRow
                                   key={a.id}
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    navigate(
-                                      `/intelligence/associate/${encodeURIComponent(a.name)}`
-                                    );
-                                  }}
-                                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
-                                >
-                                  <Users className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                                  <span className="text-xs font-medium text-foreground flex-1 truncate">
-                                    {a.name}
-                                  </span>
-                                  {a.isIndicesOnly && <IndicesBadge />}
-                                </button>
+                                  name={a.name}
+                                  isIndicesOnly={a.isIndicesOnly}
+                                  kind="associate"
+                                />
                               ))}
                           </div>
                           <Separator className="mt-3" />

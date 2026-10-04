@@ -36,6 +36,7 @@ import {
   type IntelAssocEntity,
 } from "@/components/IntelEntityChip";
 import { IndicesBadge } from "@/components/IndicesBadge";
+import { RegistryPersonRow } from "@/components/RegistryPersonRow";
 import {
   ImportedDocumentCard,
   isParsedDocumentImport,
@@ -965,21 +966,12 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
               </div>
               <div className="flex flex-col gap-2">
                 {residents.map(a => (
-                  <button
+                  <RegistryPersonRow
                     key={a.id}
-                    onClick={() =>
-                      navigate(
-                        `/intelligence/associate/${encodeURIComponent(a.name)}`
-                      )
-                    }
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
-                  >
-                    <Users className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                    <span className="text-xs font-medium text-foreground flex-1 truncate">
-                      {a.name}
-                    </span>
-                    {a.isIndicesOnly && <IndicesBadge />}
-                  </button>
+                    name={a.name}
+                    isIndicesOnly={a.isIndicesOnly}
+                    kind="resident"
+                  />
                 ))}
               </div>
             </div>
@@ -1000,21 +992,12 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
               </div>
               <div className="flex flex-col gap-2">
                 {associatesOnly.map(a => (
-                  <button
+                  <RegistryPersonRow
                     key={a.id}
-                    onClick={() =>
-                      navigate(
-                        `/intelligence/associate/${encodeURIComponent(a.name)}`
-                      )
-                    }
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
-                  >
-                    <Users className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    <span className="text-xs font-medium text-foreground flex-1 truncate">
-                      {a.name}
-                    </span>
-                    {a.isIndicesOnly && <IndicesBadge />}
-                  </button>
+                    name={a.name}
+                    isIndicesOnly={a.isIndicesOnly}
+                    kind="associate"
+                  />
                 ))}
               </div>
             </div>

@@ -204,9 +204,14 @@ export function Map3DView({
 
         const buildMarker = (m: FlyMarker): HTMLElement | null => {
           if (!MarkerCtor) return null;
+          // Sit a little above whatever is there (roof, tree), and keep
+          // drawing when something is in front — at ground level the 3D
+          // buildings and trees hid the marker once the camera came close.
           const marker = new MarkerCtor({
-            position: { lat: m.lat, lng: m.lng, altitude: 0 },
-            altitudeMode: "CLAMP_TO_GROUND",
+            position: { lat: m.lat, lng: m.lng, altitude: 12 },
+            altitudeMode: "RELATIVE_TO_MESH",
+            drawsWhenOccluded: true,
+            sizePreserved: true,
             ...(m.label ? { label: m.label } : {}),
           }) as HTMLElement;
           const size = m.size ?? 48;

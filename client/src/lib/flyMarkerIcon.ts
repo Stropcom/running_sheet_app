@@ -52,6 +52,45 @@ function roundRect(
   ctx.closePath();
 }
 
+/** Portrait glyph (head and shoulders in a frame) centred on (cx, cy). */
+function drawPortrait(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  ctx.save();
+  ctx.strokeStyle = "#fff";
+  ctx.fillStyle = "#fff";
+  ctx.lineWidth = 1.4;
+  roundRect(ctx, cx - 6, cy - 6, 12, 12, 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy - 1.5, 2.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx - 4, cy + 5);
+  ctx.quadraticCurveTo(cx, cy, cx + 4, cy + 5);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Photo glyph (landscape in a frame) centred on (cx, cy). */
+function drawPhoto(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  ctx.save();
+  ctx.strokeStyle = "#fff";
+  ctx.fillStyle = "#fff";
+  ctx.lineWidth = 1.4;
+  roundRect(ctx, cx - 6.5, cy - 5, 13, 10, 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx - 2.5, cy - 1.5, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx - 5.5, cy + 4);
+  ctx.lineTo(cx - 1.5, cy);
+  ctx.lineTo(cx + 1, cy + 2.5);
+  ctx.lineTo(cx + 3, cy + 0.5);
+  ctx.lineTo(cx + 5.5, cy + 4);
+  ctx.stroke();
+  ctx.restore();
+}
+
 export async function composeFlyIcon(spec: FlyIconSpec): Promise<string> {
   const key = JSON.stringify(spec);
   const cached = dataUrlCache.get(key);
@@ -98,30 +137,31 @@ export async function composeFlyIcon(spec: FlyIconSpec): Promise<string> {
   }
 
   if (spec.runningSheetPhotos || spec.profilePhotos) {
-    const w = spec.runningSheetPhotos && spec.profilePhotos ? 30 : 20;
-    const h = 14;
+    const both = spec.runningSheetPhotos && spec.profilePhotos;
+    const h = 18;
+    const w = both ? 40 : 24;
     const x = cx - w / 2;
-    const y = SIZE - h - 2;
+    const y = SIZE - h - 1;
+    const half = both ? w / 2 : w;
     ctx.save();
-    roundRect(ctx, x, y, w, h, 7);
+    roundRect(ctx, x, y, w, h, 9);
     ctx.clip();
+    let hx = x;
     if (spec.profilePhotos) {
       ctx.fillStyle = "#2563eb";
-      ctx.fillRect(x, y, spec.runningSheetPhotos ? w / 2 : w, h);
+      ctx.fillRect(hx, y, half, h);
+      drawPortrait(ctx, hx + half / 2, y + h / 2);
+      hx += half;
     }
     if (spec.runningSheetPhotos) {
       ctx.fillStyle = "#10b981";
-      ctx.fillRect(
-        spec.profilePhotos ? x + w / 2 : x,
-        y,
-        spec.profilePhotos ? w / 2 : w,
-        h
-      );
+      ctx.fillRect(hx, y, half, h);
+      drawPhoto(ctx, hx + half / 2, y + h / 2);
     }
     ctx.restore();
     ctx.strokeStyle = "#fff";
     ctx.lineWidth = 1.5;
-    roundRect(ctx, x, y, w, h, 7);
+    roundRect(ctx, x, y, w, h, 9);
     ctx.stroke();
   }
 

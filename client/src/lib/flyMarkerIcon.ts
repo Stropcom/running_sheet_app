@@ -256,7 +256,9 @@ export interface FlyTeamPinSpec {
   faceEast: boolean;
 }
 
-const TEAM_SCALE = 2; // draw at 2× for sharpness
+// The 3D map shows a picture at its own pixel size, so this is drawn at the
+// real on-screen size (the same size as the flat map's pill and marker).
+const TEAM_SCALE = 1;
 const POLYGON_SHAPES: Record<string, string> = {
   arrow: "12 2 19 21 12 17 5 21 12 2",
   dart: "12 1 20 22 12 16 4 22",
@@ -284,7 +286,8 @@ export function composeFlyTeamPin(spec: FlyTeamPinSpec): {
   const pillH = 22;
   const indH = 28;
   const gap = 3;
-  const cssH = pillH + gap + indH;
+  const tail = 20;
+  const cssH = pillH + gap + indH + tail;
   const canvas = document.createElement("canvas");
   const measure = canvas.getContext("2d");
   if (!measure) return { url: "", width: 40, height: cssH };
@@ -378,6 +381,32 @@ export function composeFlyTeamPin(spec: FlyTeamPinSpec): {
     ctx.fill();
     ctx.restore();
   }
+
+  // Tail down to the true ground position: a stem ending in a dot at the
+  // very bottom edge, which is where the member really is.
+  const tailTop = pillH + gap + indH - 1;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 4.5;
+  ctx.beginPath();
+  ctx.moveTo(cx, tailTop);
+  ctx.lineTo(cx, cssH - 5);
+  ctx.stroke();
+  ctx.strokeStyle = spec.colour;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, tailTop);
+  ctx.lineTo(cx, cssH - 5);
+  ctx.stroke();
+  ctx.fillStyle = spec.colour;
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.arc(cx, cssH - 4, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
 
   let out = "";
   try {

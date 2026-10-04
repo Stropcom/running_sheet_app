@@ -3829,6 +3829,7 @@ export default function IntelligenceMapping() {
         iconUrl: pin.url,
         width: pin.width,
         height: pin.height,
+        onGround: true,
       });
     }
 

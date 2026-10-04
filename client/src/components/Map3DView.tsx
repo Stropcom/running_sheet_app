@@ -30,6 +30,9 @@ export interface FlyMarker {
    * aren't the standard marker shape. */
   width?: number;
   height?: number;
+  /** Pin the bottom point exactly on the ground (team members), instead of
+   * resting just above the roof or tree surface there. */
+  onGround?: boolean;
   /** Optional text under the marker (custom marker captions, team names). */
   label?: string;
 }
@@ -395,8 +398,8 @@ export function Map3DView({
           // a marker buried under a rooftop is drawn faded by the 3D map,
           // which is what made markers fade out as the camera came close.
           const marker = new MarkerCtor({
-            position: { lat: m.lat, lng: m.lng, altitude: 3 },
-            altitudeMode: "RELATIVE_TO_MESH",
+            position: { lat: m.lat, lng: m.lng, altitude: m.onGround ? 0 : 3 },
+            altitudeMode: m.onGround ? "CLAMP_TO_GROUND" : "RELATIVE_TO_MESH",
             drawsWhenOccluded: true,
             sizePreserved: true,
             ...(m.label ? { label: m.label } : {}),

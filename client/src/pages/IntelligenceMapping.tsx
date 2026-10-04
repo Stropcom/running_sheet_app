@@ -3814,12 +3814,10 @@ export default function IntelligenceMapping() {
       jobs.push(
         composeFlyIcon({
           iconUrl: getMarkerIconUrl(iconName, colourName as MarkerColour),
-          // Glued to the compass like the flat map: turning the 3D view
-          // doesn't turn where the icon points. A rotation being dragged on
-          // the card shows straight away, ahead of the saved value.
-          rotation:
-            (flyRotOverrideRef.current.get(id) ?? rotation) -
-            flyHeadingRef.current,
+          // Drawn as saved, not turned with the 3D view. A rotation being
+          // dragged on the card shows straight away, ahead of the saved
+          // value.
+          rotation: flyRotOverrideRef.current.get(id) ?? rotation,
           count,
           countColour,
           runningSheetPhotos: rs,

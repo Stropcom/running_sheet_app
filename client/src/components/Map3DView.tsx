@@ -40,10 +40,27 @@ export interface FlyShape {
   opacity: number;
 }
 
+/** Where the 3D camera was. Kept for the rest of the browser session so
+ * reopening Fly returns to where it was left. */
+export interface FlyCamera {
+  center: { lat: number; lng: number };
+  range: number;
+  tilt: number;
+  heading: number;
+}
+let lastFlyCamera: FlyCamera | null = null;
+export function getLastFlyCamera(): FlyCamera | null {
+  return lastFlyCamera;
+}
+
 interface Map3DViewProps {
   center: { lat: number; lng: number };
   /** Camera distance from the centre, metres. */
   range: number;
+  /** Degrees; 0 = looking straight down. */
+  tilt?: number;
+  /** Degrees; 0 = north up. */
+  heading?: number;
   markers: FlyMarker[];
   shapes: FlyShape[];
   onMarkerClick: (id: string) => void;
@@ -72,6 +89,8 @@ function hexToRgba(hex: string, alpha: number): string {
 export function Map3DView({
   center,
   range,
+  tilt = 0,
+  heading = 0,
   markers,
   shapes,
   onMarkerClick,
@@ -109,7 +128,7 @@ export function Map3DView({
   };
   // Latest props for the one-time camera setup below (re-running it would
   // restart the camera) — markers and shapes are applied by the sync effect.
-  const initialRef = useRef({ center, range });
+  const initialRef = useRef({ center, range, tilt, heading });
   const latestRef = useRef({ markers, shapes });
   latestRef.current = { markers, shapes };
   // Set by the setup effect once the 3D element exists; (re)applies the
@@ -146,8 +165,8 @@ export function Map3DView({
         const el = new Map3DElement({
           center: { lat: init.center.lat, lng: init.center.lng, altitude: 0 },
           range: init.range,
-          tilt: 65,
-          heading: 0,
+          tilt: init.tilt,
+          heading: init.heading,
           mode: lib.MapMode?.HYBRID ?? "HYBRID",
         }) as HTMLElement & { center?: any };
         map3d = el;
@@ -184,29 +203,47 @@ export function Map3DView({
         el.addEventListener("gmp-error", onErr);
         cleanups.push(() => el.removeEventListener("gmp-error", onErr));
 
-        // Tilt the camera and fly it in. Set as properties as well as via the
-        // constructor options and flyCameraTo — a top-down camera is the
-        // flat-satellite look, so make sure the oblique view really applies.
-        const endCamera = {
-          center: { lat: init.center.lat, lng: init.center.lng, altitude: 0 },
-          tilt: 67,
-          heading: 20,
-          range: Math.min(init.range, 3000),
-        };
+        // Set the camera as properties as well as via the constructor
+        // options, so the requested tilt and heading really apply.
         try {
-          (el as any).tilt = endCamera.tilt;
-          (el as any).heading = endCamera.heading;
-          (el as any).range = endCamera.range;
+          (el as any).tilt = init.tilt;
+          (el as any).heading = init.heading;
+          (el as any).range = init.range;
         } catch {
           /* property not settable on this version */
         }
-        if (typeof (el as any).flyCameraTo === "function") {
-          try {
-            (el as any).flyCameraTo({ endCamera, durationMillis: 2500 });
-          } catch {
-            /* fall back to the properties set above */
+
+        // Remember the camera so reopening Fly later in this session returns
+        // to where it was left.
+        const rememberCamera = () => {
+          const e = el as any;
+          const c = e.center;
+          if (
+            c &&
+            typeof c.lat === "number" &&
+            typeof c.lng === "number" &&
+            typeof e.range === "number" &&
+            typeof e.tilt === "number" &&
+            typeof e.heading === "number"
+          ) {
+            lastFlyCamera = {
+              center: { lat: c.lat, lng: c.lng },
+              range: e.range,
+              tilt: e.tilt,
+              heading: e.heading,
+            };
           }
+        };
+        for (const evt of [
+          "gmp-centerchange",
+          "gmp-rangechange",
+          "gmp-tiltchange",
+          "gmp-headingchange",
+        ]) {
+          el.addEventListener(evt, rememberCamera);
+          cleanups.push(() => el.removeEventListener(evt, rememberCamera));
         }
+        cleanups.push(rememberCamera);
 
         // Camera centre → flat map position on exit.
         const onCenter = () => {

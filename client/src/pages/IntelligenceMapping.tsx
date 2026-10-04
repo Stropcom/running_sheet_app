@@ -56,6 +56,7 @@ import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
 import { StreetViewPip } from "@/components/StreetViewPip";
 import {
   Map3DView,
+  getLastFlyCamera,
   type FlyMarker,
   type FlyShape,
 } from "@/components/Map3DView";
@@ -2422,6 +2423,8 @@ export default function IntelligenceMapping() {
   const [flyView, setFlyView] = useState<{
     center: { lat: number; lng: number };
     range: number;
+    tilt: number;
+    heading: number;
     markers: FlyMarker[];
     shapes: FlyShape[];
   } | null>(null);
@@ -3884,10 +3887,17 @@ export default function IntelligenceMapping() {
     setFlySelectedId(null);
     infoWindowRef.current?.close();
     const snap = await buildFlySnapshot();
+    // First open of the session: straight down, north up, over the flat
+    // map's view. After that, reopen exactly where Fly was left.
+    const saved = getLastFlyCamera();
     setFlyView({
-      center: { lat: c.lat(), lng: c.lng() },
+      center: saved?.center ?? { lat: c.lat(), lng: c.lng() },
       // About 5 km of camera distance at zoom 15, doubling per zoom level out.
-      range: Math.min(2_000_000, Math.max(200, 163_840_000 / 2 ** zoom)),
+      range:
+        saved?.range ??
+        Math.min(2_000_000, Math.max(200, 163_840_000 / 2 ** zoom)),
+      tilt: saved?.tilt ?? 0,
+      heading: saved?.heading ?? 0,
       ...snap,
     });
   };
@@ -7724,6 +7734,8 @@ export default function IntelligenceMapping() {
                 className="absolute inset-0 z-30"
                 center={flyView.center}
                 range={flyView.range}
+                tilt={flyView.tilt}
+                heading={flyView.heading}
                 markers={flyMarkers}
                 shapes={flyView.shapes}
                 onMarkerClick={id => {

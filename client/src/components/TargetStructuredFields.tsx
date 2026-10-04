@@ -225,6 +225,12 @@ export function TargetStatusFields({
   const bailYes = value.bailStatus === "yes";
   const conditionsYes = bailYes && value.bailConditions === "yes";
   const mdlError = !!showMdlError && mdlMissing(value);
+  // MDL and Bail stand out in red until they're answered, so they get
+  // noticed and completed (not only after a failed save).
+  const UNANSWERED =
+    "border-red-500 bg-red-50 ring-1 ring-red-400/60 dark:bg-red-950/30";
+  const mdlUnanswered = !disabled && mdlMissing(value);
+  const bailUnanswered = !disabled && !value.bailStatus;
   const projects = parseSpecialProjects(value.specialProjects);
   const writeProjects = (next: { key: string; detail: string }[]) =>
     onChange({
@@ -256,7 +262,9 @@ export function TargetStatusFields({
           >
             <SelectTrigger
               title="Motor Drivers Licence"
-              className={`w-full ${mdlError ? "border-destructive" : ""}`}
+              className={`w-full ${mdlError ? "border-destructive" : ""} ${
+                mdlUnanswered ? UNANSWERED : ""
+              }`}
             >
               <SelectValue placeholder="Licence status…" />
             </SelectTrigger>
@@ -288,7 +296,9 @@ export function TargetStatusFields({
             }
             disabled={disabled}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger
+              className={`w-full ${bailUnanswered ? UNANSWERED : ""}`}
+            >
               <SelectValue placeholder="Select…" />
             </SelectTrigger>
             <SelectContent>

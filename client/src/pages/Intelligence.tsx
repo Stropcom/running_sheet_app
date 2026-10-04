@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -62,6 +62,55 @@ type TabView =
   | "patternOfLife"
   | "egonet"
   | "packages";
+
+// ── Remembering the list view ────────────────────────────────────────────
+// Opening a profile and pressing Back used to land on a freshly-mounted
+// Intelligence page — Operations tab, filters cleared, scrolled to the top.
+// The list view's choices are kept in sessionStorage (this browser tab only)
+// and restored when the page is opened again.
+const INTEL_VIEW_KEY = "runlog.intelligence.view";
+const INTEL_EXPANDED_OP_KEY = "runlog.intelligence.expandedOp";
+const INTEL_TABS: readonly string[] = [
+  "operations",
+  "targets",
+  "associates",
+  "vehicle",
+  "locations",
+  "all",
+  "heatmap",
+  "patternOfLife",
+  "egonet",
+  "packages",
+];
+interface SavedIntelView {
+  tab?: string;
+  search?: string;
+  datePreset?: string;
+  customFrom?: string;
+  customTo?: string;
+  sortOrder?: string;
+  opSortOrder?: string;
+  filterOperationId?: number | null;
+  scroll?: Record<string, number>;
+}
+function readIntelView(): SavedIntelView {
+  try {
+    const raw = sessionStorage.getItem(INTEL_VIEW_KEY);
+    return raw ? (JSON.parse(raw) as SavedIntelView) : {};
+  } catch {
+    return {};
+  }
+}
+function writeIntelView(patch: SavedIntelView) {
+  try {
+    sessionStorage.setItem(
+      INTEL_VIEW_KEY,
+      JSON.stringify({ ...readIntelView(), ...patch })
+    );
+  } catch {
+    /* storage unavailable — the view just isn't remembered */
+  }
+}
 
 interface Occurrence {
   sheetId: number;
@@ -986,7 +1035,24 @@ function OperationsTab({
   sortOrder?: "az" | "recent";
   tileView?: boolean;
 }) {
-  const [expandedOpId, setExpandedOpId] = useState<number | null>(null);
+  const [expandedOpId, setExpandedOpId] = useState<number | null>(() => {
+    try {
+      const raw = sessionStorage.getItem(INTEL_EXPANDED_OP_KEY);
+      const n = raw ? parseInt(raw, 10) : NaN;
+      return Number.isFinite(n) ? n : null;
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (expandedOpId == null)
+        sessionStorage.removeItem(INTEL_EXPANDED_OP_KEY);
+      else sessionStorage.setItem(INTEL_EXPANDED_OP_KEY, String(expandedOpId));
+    } catch {
+      /* ignore */
+    }
+  }, [expandedOpId]);
   const [, navigate] = useLocation();
 
   const operations = useMemo<OperationSummary[]>(() => {
@@ -1496,7 +1562,6 @@ export default function IntelligencePage() {
   };
   const [, navigate] = useLocation();
   const isMobile = useIsMobile();
-  const [search, setSearch] = useState("");
   // Deep link support for "View on Ego Network" (e.g. from a Running Sheet
   // page): ?tab=egonet&operationId=X&sheetId=Y opens straight into the Ego
   // Network tab, pre-scoped. Read once on mount via the lazy initializers
@@ -1516,9 +1581,21 @@ export default function IntelligencePage() {
     const n = raw ? parseInt(raw, 10) : NaN;
     return Number.isFinite(n) ? n : null;
   });
-  const [activeTab, setActiveTab] = useState<TabView>(
-    deepLinkTab === "egonet" ? "egonet" : "operations"
+  // Where the officer left the list last time (ignored for a deep link,
+  // which says exactly where to open).
+  const savedView = useMemo<SavedIntelView>(
+    () => (deepLinkTab ? {} : readIntelView()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
   );
+  const [activeTab, setActiveTab] = useState<TabView>(
+    deepLinkTab === "egonet"
+      ? "egonet"
+      : savedView.tab && INTEL_TABS.includes(savedView.tab)
+        ? (savedView.tab as TabView)
+        : "operations"
+  );
+  const [search, setSearch] = useState(savedView.search ?? "");
   // The map tabs render a full-bleed canvas with their own filter chrome and
   // their own data fetch — none of the entity-list scaffolding (search/sort
   // bar, skeleton loader, entity grid) applies to them. Kept as one derived
@@ -1534,9 +1611,13 @@ export default function IntelligencePage() {
   const [selected, setSelected] = useState<Entity | null>(null);
 
   // Date filter state
-  const [datePreset, setDatePreset] = useState<DatePreset>("all");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+  const [datePreset, setDatePreset] = useState<DatePreset>(
+    (["all", "1w", "1m", "3m", "6m", "custom"] as const).find(
+      d => d === savedView.datePreset
+    ) ?? "all"
+  );
+  const [customFrom, setCustomFrom] = useState(savedView.customFrom ?? "");
+  const [customTo, setCustomTo] = useState(savedView.customTo ?? "");
 
   // Sort order (entity tabs) — "operation"/"surname" apply to Targets and
   // Associates, "make" to Vehicles, "suburb" to Locations (see the sort pill
@@ -1551,16 +1632,93 @@ export default function IntelligencePage() {
     | "surname"
     | "make"
     | "suburb";
-  const [sortOrder, setSortOrder] = useState<SortOrder>("recent");
+  const [sortOrder, setSortOrder] = useState<SortOrder>(
+    (
+      [
+        "frequency",
+        "az",
+        "za",
+        "recent",
+        "oldest",
+        "operation",
+        "surname",
+        "make",
+        "suburb",
+      ] as const
+    ).find(o => o === savedView.sortOrder) ?? "recent"
+  );
 
   // Sort order (operations tab)
   type OpSortOrder = "az" | "recent";
-  const [opSortOrder, setOpSortOrder] = useState<OpSortOrder>("recent");
+  const [opSortOrder, setOpSortOrder] = useState<OpSortOrder>(
+    savedView.opSortOrder === "az" ? "az" : "recent"
+  );
 
   // Operation filter (Targets/Associates/Vehicles/Locations tabs) — null = all operations.
   const [filterOperationId, setFilterOperationId] = useState<number | null>(
-    null
+    typeof savedView.filterOperationId === "number"
+      ? savedView.filterOperationId
+      : null
   );
+
+  // Keep the saved view in step, and the scroll position per tab (the page
+  // scrolls inside <main class="app-canvas">).
+  useEffect(() => {
+    writeIntelView({
+      tab: activeTab,
+      search,
+      datePreset,
+      customFrom,
+      customTo,
+      sortOrder,
+      opSortOrder,
+      filterOperationId,
+    });
+  }, [
+    activeTab,
+    search,
+    datePreset,
+    customFrom,
+    customTo,
+    sortOrder,
+    opSortOrder,
+    filterOperationId,
+  ]);
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  useEffect(() => {
+    const main = document.querySelector("main.app-canvas");
+    if (!main) return;
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        writeIntelView({
+          scroll: {
+            ...readIntelView().scroll,
+            [activeTabRef.current]: main.scrollTop,
+          },
+        });
+      });
+    };
+    main.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      main.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+  // Back at the saved scroll position once the list has loaded.
+  const scrollRestoredRef = useRef(false);
+  useEffect(() => {
+    if (scrollRestoredRef.current || isLoading) return;
+    scrollRestoredRef.current = true;
+    const top = savedView.scroll?.[activeTabRef.current];
+    if (!top) return;
+    requestAnimationFrame(() => {
+      document.querySelector("main.app-canvas")?.scrollTo({ top });
+    });
+  }, [isLoading, savedView]);
 
   const dateRange = useMemo(
     () => presetToRange(datePreset, customFrom, customTo),

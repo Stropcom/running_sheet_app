@@ -7872,6 +7872,13 @@ export default function IntelligenceMapping() {
                 centerRequest={flyCentreReq}
                 onMarkerClick={id => {
                   setFlyPick(null);
+                  // Your own pill opens "Customise my pointer", as on the
+                  // flat map.
+                  if (user && id === `team:${user.id}_${deviceIdRef.current}`) {
+                    setFlySelectedId(null);
+                    setOnFootPopupOpen(true);
+                    return;
+                  }
                   setFlySelectedId(id);
                 }}
                 onLocationAction={flyOpenActionChooser}

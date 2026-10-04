@@ -3,9 +3,8 @@
  * intelligence to another agency's system as plain JSON/CSV data files
  * (never PDF — the point is another database can parse this, not a human
  * reading it). Deliberately independent of the Court module: nothing here
- * is built from Statement/Witness List/WIPC output, and any CIN that
- * matches a registered WIPC member is redacted server-side before this
- * page ever sees it (see getIntelExportData in server/db.ts).
+ * is built from Statement/Witness List/WIPC output (see getIntelExportData
+ * in server/db.ts).
  *
  * Same Operation → Running Sheet(s) picker pattern as WitnessListPage, plus
  * two more selections: which document(s) to include (Running Sheet /
@@ -336,8 +335,7 @@ export default function IntelExportPage() {
 
         <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
           Nothing from the Court module (Statements, Witness Lists, WIPC
-          requests) is included. Any CIN registered for WIPC protection is
-          redacted wherever it appears.
+          requests) is included.
         </div>
 
         {/* Step 1: Operation */}

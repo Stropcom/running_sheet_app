@@ -3146,7 +3146,7 @@ export const appRouter = router({
 
     /** Structured JSON-ready data for Administration → Intel Export: the
      * selected running sheet(s) verbatim, and the intelligence mined from
-     * them — nothing from the Court module, WIPC-protected CINs redacted.
+     * them — nothing from the Court module.
      * Admin-only: this is data meant to leave the organisation. */
     intelExportData: adminProcedure
       .input(z.object({ sheetIds: z.array(z.number()).min(1) }))

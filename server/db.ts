@@ -11136,29 +11136,13 @@ export async function listWipcMembers() {
   );
 }
 
-/** CINs (uppercased) currently registered for WIPC protection. Used only to
- * redact protected identities from data meant to leave the app (e.g. Intel
- * Export) — never to gate normal in-app display, which already shows CINs
- * freely to authenticated users. */
-export async function getWipcProtectedCins(): Promise<Set<string>> {
-  const members = await listWipcMembers();
-  const cins = new Set<string>();
-  for (const m of members) {
-    const cin = (m as any).cinNumber as string | undefined;
-    if (cin && cin.trim()) cins.add(cin.trim().toUpperCase());
-  }
-  return cins;
-}
-
 // ─── Intel Export ───────────────────────────────────────────────────────────
 // Structured JSON/CSV data for handing running-sheet content and its mined
 // intelligence to another agency's system — Administration → Intel Export.
 // Deliberately independent of the Court module (Statement/Witness List/
 // WIPC generators) — this reads straight from running sheets and the
 // Intelligence entity index, nothing here is ever built from Court output.
-// Any CIN that matches a registered WIPC member is redacted, since WIPC
-// exists specifically to keep that identity from appearing in material that
-// could leave the organisation.
+// CINs are exported as recorded (no WIPC redaction).
 
 export interface IntelExportRunningSheet {
   operation: {
@@ -11207,17 +11191,11 @@ export interface IntelExportEntity {
 /** Builds both Intel Export documents (the running sheet(s) themselves, and
  * the intelligence mined from them) for a set of running sheets — the
  * caller decides which of the two, and in which format(s), to actually
- * download. Redacts any WIPC-protected CIN wherever a CIN appears. */
+ * download. */
 export async function getIntelExportData(sheetIds: number[]): Promise<{
   runningSheets: IntelExportRunningSheet[];
   intelEntities: IntelExportEntity[];
 }> {
-  const protectedCins = await getWipcProtectedCins();
-  const redactCin = (cin: string | null | undefined): string => {
-    if (!cin) return "";
-    return protectedCins.has(cin.trim().toUpperCase()) ? "WIPC-PROTECTED" : cin;
-  };
-
   const runningSheets: IntelExportRunningSheet[] = [];
   const rowMetaById = new Map<
     number,
@@ -11248,7 +11226,7 @@ export async function getIntelExportData(sheetIds: number[]): Promise<{
         sheet.sheetCins ?? "[]"
       );
       roster = raw.map(c => ({
-        cin: redactCin(c.cin),
+        cin: c.cin,
         isTeamLeader: !!c.isTeamLeader,
       }));
     } catch {
@@ -11280,7 +11258,7 @@ export async function getIntelExportData(sheetIds: number[]): Promise<{
         sheetDate: sheet.sheetDate,
         status: sheet.closedAt ? "closed" : "open",
         closedAt: sheet.closedAt ?? null,
-        closedByCIN: sheet.closedByCIN ? redactCin(sheet.closedByCIN) : null,
+        closedByCIN: sheet.closedByCIN ?? null,
         targetId: sheet.targetId ?? null,
         targetName: sheet.targetName ?? null,
         roster,
@@ -11292,11 +11270,11 @@ export async function getIntelExportData(sheetIds: number[]): Promise<{
         observation: row.observation,
         membersPresent: members
           .filter(m => m.rowId === row.id)
-          .map(m => redactCin(m.memberName)),
+          .map(m => m.memberName),
         certifications: certs
           .filter(c => c.rowId === row.id && c.isActive)
           .map(c => ({
-            cin: redactCin(c.certifiedByCIN),
+            cin: c.certifiedByCIN,
             certifiedAt: new Date(c.certifiedAt).toISOString(),
           })),
         isLocked: row.isLocked,

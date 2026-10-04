@@ -50,6 +50,7 @@ import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useIsMobile } from "@/hooks/useMobile";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
 import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
@@ -265,9 +266,11 @@ function addressesMatch(a: string, b: string): boolean {
 function NorthUpButton({
   map,
   isMapActuallyVector,
+  top = 130,
 }: {
   map: google.maps.Map | null;
   isMapActuallyVector: boolean;
+  top?: number;
 }) {
   const [heading, setHeading] = useState(0);
 
@@ -289,7 +292,7 @@ function NorthUpButton({
       }}
       disabled={!isMapActuallyVector || heading === 0}
       className="absolute z-20 pointer-events-auto flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-      style={{ top: "130px", right: "10px" }}
+      style={{ top: `${top}px`, right: "10px" }}
       aria-label="Reset map rotation to North Up"
       title={
         !isMapActuallyVector
@@ -2067,6 +2070,11 @@ export default function IntelligenceMapping() {
   const isMobile =
     typeof navigator !== "undefined" &&
     /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+
+  // On a phone the Map | Sat | Fly toggle becomes an L — Fly drops below Sat —
+  // so the column of map buttons under it shifts down by one row.
+  const narrowScreen = useIsMobile();
+  const rightColShift = narrowScreen ? 42 : 0;
 
   // Quick-link state
   const [quickLinks, setQuickLinks] = useState<QuickLink[]>(() => {
@@ -7435,42 +7443,71 @@ export default function IntelligenceMapping() {
               wider "Map"/"Satellite" control, which doesn't shrink or
               relabel and collided with the search bar on narrow screens. */}
             <div
-              className={`absolute ${flyView ? "z-40" : "z-20"} pointer-events-auto flex items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden`}
-              style={{ top: "10px", right: "10px", height: "36px" }}
+              className={`absolute ${flyView ? "z-40" : "z-20"} pointer-events-auto flex ${
+                narrowScreen
+                  ? "flex-col items-end gap-1"
+                  : "items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
+              }`}
+              style={
+                narrowScreen
+                  ? { top: "10px", right: "10px" }
+                  : { top: "10px", right: "10px", height: "36px" }
+              }
               onClick={e => e.stopPropagation()}
             >
-              {(
-                [
+              {(() => {
+                const renderOpt = (
+                  opt: { id: "roadmap" | "hybrid" | "fly"; label: string },
+                  divider: boolean
+                ) => {
+                  const active =
+                    opt.id === "fly"
+                      ? !!flyView
+                      : !flyView && mapInitialTypeId === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => {
+                        if (opt.id === "fly") {
+                          if (!flyView) openFly();
+                          return;
+                        }
+                        closeFly();
+                        mapRef.current?.setMapTypeId(opt.id);
+                      }}
+                      className={`h-full text-xs font-semibold transition-colors ${
+                        narrowScreen ? "w-11" : "px-3"
+                      } ${
+                        active
+                          ? "bg-sky-600 text-white"
+                          : "text-gray-600 hover:bg-gray-50"
+                      } ${divider ? "border-r border-gray-200" : ""}`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                };
+                const opts = [
                   { id: "roadmap", label: "Map" },
                   { id: "hybrid", label: "Sat" },
                   { id: "fly", label: "Fly" },
-                ] as const
-              ).map((opt, i) => {
-                const active =
-                  opt.id === "fly"
-                    ? !!flyView
-                    : !flyView && mapInitialTypeId === opt.id;
+                ] as const;
+                if (!narrowScreen)
+                  return opts.map((o, i) => renderOpt(o, i < 2));
+                // Phone: Map | Sat on top, Fly under Sat — an L, each piece
+                // the same button width.
+                const pill =
+                  "flex h-9 items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden";
                 return (
-                  <button
-                    key={opt.id}
-                    onClick={() => {
-                      if (opt.id === "fly") {
-                        if (!flyView) openFly();
-                        return;
-                      }
-                      closeFly();
-                      mapRef.current?.setMapTypeId(opt.id);
-                    }}
-                    className={`h-full px-3 text-xs font-semibold transition-colors ${
-                      active
-                        ? "bg-sky-600 text-white"
-                        : "text-gray-600 hover:bg-gray-50"
-                    } ${i < 2 ? "border-r border-gray-200" : ""}`}
-                  >
-                    {opt.label}
-                  </button>
+                  <>
+                    <div className={pill}>
+                      {renderOpt(opts[0], true)}
+                      {renderOpt(opts[1], false)}
+                    </div>
+                    <div className={pill}>{renderOpt(opts[2], false)}</div>
+                  </>
                 );
-              })}
+              })()}
             </div>
 
             {/* Refresh map data — right below the Map/Sat toggle. A pin can
@@ -7485,7 +7522,7 @@ export default function IntelligenceMapping() {
               }}
               disabled={mapRefreshing}
               className="absolute z-20 pointer-events-auto flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-gray-600 hover:bg-gray-50 disabled:opacity-60 transition-colors"
-              style={{ top: "52px", right: "10px" }}
+              style={{ top: `${52 + rightColShift}px`, right: "10px" }}
               aria-label="Refresh map data"
               title="Refresh map data"
             >
@@ -7512,7 +7549,7 @@ export default function IntelligenceMapping() {
                   ? "bg-sky-600 border-sky-600 text-white"
                   : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
               }`}
-              style={{ top: "94px", right: "10px" }}
+              style={{ top: `${94 + rightColShift}px`, right: "10px" }}
               aria-label="Toggle 3D view"
               title={
                 isMapActuallyVector
@@ -7536,6 +7573,7 @@ export default function IntelligenceMapping() {
             <NorthUpButton
               map={mapRef.current}
               isMapActuallyVector={isMapActuallyVector}
+              top={130 + rightColShift}
             />
 
             {/* Nearmap aerial overlay — right below North Up. Adds/removes
@@ -7581,7 +7619,7 @@ export default function IntelligenceMapping() {
                   ? "bg-sky-600 border-sky-600 text-white"
                   : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
               }`}
-              style={{ top: "166px", right: "10px" }}
+              style={{ top: `${166 + rightColShift}px`, right: "10px" }}
               aria-label="Toggle Nearmap aerial imagery"
               title={
                 nearmapActive

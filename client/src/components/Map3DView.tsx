@@ -277,7 +277,13 @@ export function Map3DView({
             }
           }, ms + 100);
         };
+        // A click on a marker also reaches the map's own click listener, as a
+        // click "on the ground" — so a marker click is noted here and the map
+        // listener ignores it (otherwise selecting a marker offers to add one).
+        const markerClick = { at: 0 };
         const onMapClick = (ev: any) => {
+          if (Date.now() - markerClick.at < 500) return;
+          if (ev?.target && ev.target !== el) return;
           const pos = ev?.position;
           const lat = typeof pos?.lat === "function" ? pos.lat() : pos?.lat;
           const lng = typeof pos?.lng === "function" ? pos.lng() : pos?.lng;
@@ -377,9 +383,11 @@ export function Map3DView({
           img.height = size;
           tpl.content.append(img);
           marker.append(tpl);
-          marker.addEventListener("gmp-click", () =>
-            onMarkerClickRef.current(m.id)
-          );
+          marker.addEventListener("gmp-click", (e: Event) => {
+            markerClick.at = Date.now();
+            e.stopPropagation();
+            onMarkerClickRef.current(m.id);
+          });
           return marker;
         };
 

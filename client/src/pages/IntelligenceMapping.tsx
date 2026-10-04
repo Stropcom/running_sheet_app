@@ -2446,6 +2446,13 @@ export default function IntelligenceMapping() {
     null
   );
   const flyCenterRef = useRef<{ lat: number; lng: number } | null>(null);
+  // Fly's North up / 0° tilt buttons (tilt reported by the 3D map).
+  const [flyTilt, setFlyTilt] = useState(0);
+  const [flyCameraReq, setFlyCameraReq] = useState<{
+    heading?: number;
+    tilt?: number;
+    n: number;
+  } | null>(null);
   // Fly's Centre on me / Follow me buttons.
   const [flyFollow, setFlyFollow] = useState(false);
   const [flyCentreReq, setFlyCentreReq] = useState<{
@@ -3959,6 +3966,8 @@ export default function IntelligenceMapping() {
     // map's view. After that, reopen exactly where Fly was left.
     const saved = getLastFlyCamera();
     flyHeadingRef.current = Math.round((saved?.heading ?? 0) / 10) * 10;
+    setFlyHeadingQ(((flyHeadingRef.current % 360) + 360) % 360);
+    setFlyTilt(Math.round((saved?.tilt ?? 0) / 5) * 5);
     setFlyView({
       center: saved?.center ?? { lat: c.lat(), lng: c.lng() },
       // About 5 km of camera distance at zoom 15, doubling per zoom level out.
@@ -7864,6 +7873,8 @@ export default function IntelligenceMapping() {
                 }}
                 markers={flyMarkers}
                 shapes={flyView.shapes}
+                onTiltChange={setFlyTilt}
+                cameraRequest={flyCameraReq}
                 followId={
                   flyFollow && user
                     ? `team:${user.id}_${deviceIdRef.current}`
@@ -7896,6 +7907,51 @@ export default function IntelligenceMapping() {
                   flyCenterRef.current = c;
                 }}
               />
+              {/* North up and 0° tilt — under the Map | Sat | Fly toggle */}
+              <div
+                className="absolute z-40 pointer-events-auto flex flex-col gap-1"
+                style={{ top: `${52 + rightColShift}px`, right: "10px" }}
+              >
+                <button
+                  title={
+                    flyHeadingQ === 0 ? "Already North Up" : "Turn to North Up"
+                  }
+                  disabled={flyHeadingQ === 0}
+                  onClick={e => {
+                    e.stopPropagation();
+                    setFlyCameraReq(prev => ({
+                      heading: 0,
+                      n: (prev?.n ?? 0) + 1,
+                    }));
+                  }}
+                  className="flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  aria-label="Turn the 3D view to North Up"
+                >
+                  <Navigation2
+                    className="w-4 h-4 text-sky-600 transition-transform"
+                    style={{ transform: `rotate(${-flyHeadingQ}deg)` }}
+                  />
+                </button>
+                <button
+                  title={
+                    flyTilt === 0
+                      ? "Already looking straight down"
+                      : "Look straight down (0° tilt)"
+                  }
+                  disabled={flyTilt === 0}
+                  onClick={e => {
+                    e.stopPropagation();
+                    setFlyCameraReq(prev => ({
+                      tilt: 0,
+                      n: (prev?.n ?? 0) + 1,
+                    }));
+                  }}
+                  className="flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-[11px] font-bold text-sky-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  aria-label="Look straight down, 0 degree tilt"
+                >
+                  0°
+                </button>
+              </div>
               {/* Centre on me / Follow me — same two buttons as the flat map */}
               <div
                 className="absolute z-40 pointer-events-auto flex gap-1"

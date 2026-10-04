@@ -95,6 +95,11 @@ interface Map3DViewProps {
   /** The camera's heading, rounded to 10°, whenever that rounded value
    * changes — pictures that point somewhere are redrawn for it. */
   onHeadingChange?: (heading: number) => void;
+  /** The camera's tilt, rounded to 5°, whenever that rounded value changes. */
+  onTiltChange?: (tilt: number) => void;
+  /** Turn the camera to a heading and/or tilt (North up, 0° tilt) once per
+   * change of `n`, keeping the centre and range. */
+  cameraRequest?: { heading?: number; tilt?: number; n: number } | null;
   /** Keep the camera centred on this marker as it moves (Follow me). */
   followId?: string | null;
   /** Fly the camera to a spot once per change of `n` (Centre on me). */
@@ -158,6 +163,8 @@ export function Map3DView({
   onGroundClick,
   onActionUnavailable,
   onHeadingChange,
+  onTiltChange,
+  cameraRequest,
   followId,
   centerRequest,
   className,
@@ -202,6 +209,11 @@ export function Map3DView({
   // Set by the setup effect: (re)starts the per-frame loop, and flies the
   // camera to a spot while holding Follow off for a moment so the two don't
   // fight.
+  const onTiltChangeRef = useRef(onTiltChange);
+  onTiltChangeRef.current = onTiltChange;
+  const turnToRef = useRef<
+    ((o: { heading?: number; tilt?: number }) => void) | null
+  >(null);
   const kickRef = useRef<(() => void) | null>(null);
   const flyToRef = useRef<((lat: number, lng: number) => void) | null>(null);
   const markerPosRef = useRef<
@@ -330,6 +342,51 @@ export function Map3DView({
         cleanups.push(() =>
           el.removeEventListener("gmp-headingchange", reportHeading)
         );
+        let lastTiltQ = Math.round(init.tilt / 5) * 5;
+        const reportTilt = () => {
+          const t = (el as any).tilt;
+          if (typeof t !== "number") return;
+          const q = Math.round(t / 5) * 5;
+          if (q !== lastTiltQ) {
+            lastTiltQ = q;
+            onTiltChangeRef.current?.(q);
+          }
+        };
+        el.addEventListener("gmp-tiltchange", reportTilt);
+        cleanups.push(() =>
+          el.removeEventListener("gmp-tiltchange", reportTilt)
+        );
+        turnToRef.current = o => {
+          const e = el as any;
+          const c = e.center;
+          if (!c) return;
+          let heading = e.heading;
+          if (typeof o.heading === "number" && typeof heading === "number") {
+            // The short way round, not a full spin.
+            heading += ((o.heading - heading + 540) % 360) - 180;
+          }
+          try {
+            e.flyCameraTo({
+              endCamera: {
+                center: { lat: c.lat, lng: c.lng, altitude: c.altitude ?? 0 },
+                tilt: typeof o.tilt === "number" ? o.tilt : e.tilt,
+                heading,
+                range: e.range,
+              },
+              durationMillis: 700,
+            });
+          } catch {
+            try {
+              if (typeof o.heading === "number") e.heading = o.heading;
+              if (typeof o.tilt === "number") e.tilt = o.tilt;
+            } catch {
+              /* nothing more to try */
+            }
+          }
+        };
+        cleanups.push(() => {
+          turnToRef.current = null;
+        });
         cleanups.push(rememberCamera);
 
         // Camera centre → flat map position on exit.
@@ -804,6 +861,15 @@ export function Map3DView({
     const at = markerPosRef.current?.(followId);
     if (at) flyToRef.current?.(at.lat, at.lng);
   }, [followId]);
+
+  // North up / 0° tilt.
+  useEffect(() => {
+    if (!cameraRequest) return;
+    turnToRef.current?.({
+      heading: cameraRequest.heading,
+      tilt: cameraRequest.tilt,
+    });
+  }, [cameraRequest?.n]);
 
   // Centre on me: fly to the requested spot.
   useEffect(() => {

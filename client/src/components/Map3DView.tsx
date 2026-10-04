@@ -390,6 +390,9 @@ export function Map3DView({
               strokeColor: hexToRgba(s.colour, 0.95),
               strokeWidth: 4,
               altitudeMode: "CLAMP_TO_GROUND",
+              // Keep drawing the outline where a building or tree is in front
+              // of it — otherwise the edge shows as broken dashes.
+              drawsOccludedSegments: true,
             }) as HTMLElement;
           }
           if (s.kind === "line" && PolylineCtor) {
@@ -398,6 +401,7 @@ export function Map3DView({
               strokeColor: hexToRgba(s.colour, 0.95),
               strokeWidth: 6,
               altitudeMode: "CLAMP_TO_GROUND",
+              drawsOccludedSegments: true,
             }) as HTMLElement;
           }
           return null;

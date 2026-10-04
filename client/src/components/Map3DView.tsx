@@ -211,7 +211,7 @@ export function Map3DView({
   }, []);
 
   return (
-    <div className={`relative ${className ?? ""}`}>
+    <div className={className ?? "relative h-full w-full"}>
       <div ref={hostRef} className="absolute inset-0 bg-black" />
       {status === "ready" && debug && (
         <div className="absolute left-2 top-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white/90 pointer-events-none max-w-[70%] truncate">

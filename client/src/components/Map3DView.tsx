@@ -26,6 +26,10 @@ export interface FlyMarker {
   iconUrl: string;
   /** Pixel size of the picture (default 48). */
   size?: number;
+  /** Exact picture size in pixels (overrides `size`) — for pictures that
+   * aren't the standard marker shape. */
+  width?: number;
+  height?: number;
   /** Optional text under the marker (custom marker captions, team names). */
   label?: string;
 }
@@ -83,6 +87,9 @@ interface Map3DViewProps {
   onGroundClick?: (lat: number, lng: number) => void;
   /** The 3D map never reported a location for a right-click / hold. */
   onActionUnavailable?: () => void;
+  /** The camera's heading, rounded to 10°, whenever that rounded value
+   * changes — pictures that point somewhere are redrawn for it. */
+  onHeadingChange?: (heading: number) => void;
   className?: string;
 }
 
@@ -106,6 +113,7 @@ export function Map3DView({
   onPlaceClick,
   onGroundClick,
   onActionUnavailable,
+  onHeadingChange,
   className,
 }: Map3DViewProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -121,6 +129,8 @@ export function Map3DView({
   onMarkerClickRef.current = onMarkerClick;
   const onCenterChangeRef = useRef(onCenterChange);
   onCenterChangeRef.current = onCenterChange;
+  const onHeadingChangeRef = useRef(onHeadingChange);
+  onHeadingChangeRef.current = onHeadingChange;
   const gestureRef = useRef({
     onLocationAction,
     onPlaceClick,
@@ -250,6 +260,20 @@ export function Map3DView({
           el.addEventListener(evt, rememberCamera);
           cleanups.push(() => el.removeEventListener(evt, rememberCamera));
         }
+        let lastHeadingQ = Math.round(init.heading / 10) * 10;
+        const reportHeading = () => {
+          const h = (el as any).heading;
+          if (typeof h !== "number") return;
+          const q = (Math.round(h / 10) * 10 + 360) % 360;
+          if (q !== lastHeadingQ) {
+            lastHeadingQ = q;
+            onHeadingChangeRef.current?.(q);
+          }
+        };
+        el.addEventListener("gmp-headingchange", reportHeading);
+        cleanups.push(() =>
+          el.removeEventListener("gmp-headingchange", reportHeading)
+        );
         cleanups.push(rememberCamera);
 
         // Camera centre → flat map position on exit.
@@ -381,8 +405,8 @@ export function Map3DView({
           const tpl = document.createElement("template");
           const img = document.createElement("img");
           img.src = m.iconUrl;
-          img.width = size;
-          img.height = Math.round(size * FLY_ICON_ASPECT);
+          img.width = m.width ?? size;
+          img.height = m.height ?? Math.round(size * FLY_ICON_ASPECT);
           tpl.content.append(img);
           marker.append(tpl);
           marker.addEventListener("gmp-click", (e: Event) => {

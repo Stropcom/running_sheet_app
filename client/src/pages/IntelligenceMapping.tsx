@@ -60,7 +60,11 @@ import {
   type FlyMarker,
   type FlyShape,
 } from "@/components/Map3DView";
-import { composeFlyIcon, composeFlyTeamIcon } from "@/lib/flyMarkerIcon";
+import {
+  composeFlyIcon,
+  composeFlyTeamIcon,
+  composeFlyTeamPin,
+} from "@/lib/flyMarkerIcon";
 import { ImagesPip } from "@/components/ImagesPip";
 import { addressMatchKey } from "@shared/addressMatchKey";
 import { shortPersonDisplayName } from "@shared/addressFormat";
@@ -3794,13 +3798,37 @@ export default function IntelligenceMapping() {
       if (isThisDevice && !showOwnLocation) continue;
       if (hiddenTeams.has(u.team ?? "null")) continue;
       if (hiddenUsers.has(u.userId)) continue;
+      // Same look as the flat map: name pill, with the state marker (heading
+      // shape / green dot / red dot / walking figure) resting on the spot.
+      const pinKey = `${u.userId}_${u.deviceId}`;
+      const speedKmh = (u.speed ?? 0) * 3.6;
+      const state: "moving" | "short" | "long" =
+        u.speed != null && u.speed > 0.5
+          ? "moving"
+          : (motionStateRef.current.get(pinKey)?.state ?? "short") === "long"
+            ? "long"
+            : "short";
+      const heading = u.heading ?? 0;
+      const pin = composeFlyTeamPin({
+        name: u.name.toUpperCase(),
+        colour: u.pinColor ?? getTeamColour(u.team, u.role),
+        state,
+        onFoot: u.onFoot,
+        speedKmh,
+        rotation:
+          heading -
+          flyHeadingRef.current +
+          (HEADING_SHAPE_ROTATION_OFFSET_DEG[u.pinVehicleIcon] ?? 0),
+        shape: u.pinVehicleIcon,
+        faceEast: Math.sin((heading * Math.PI) / 180) > 0,
+      });
       markers.push({
-        id: `team:${u.userId}_${u.deviceId}`,
+        id: `team:${pinKey}`,
         lat: u.lat,
         lng: u.lng,
-        iconUrl: composeFlyTeamIcon(u.pinColor ?? "#2563eb"),
-        size: 48,
-        label: u.name.toUpperCase(),
+        iconUrl: pin.url,
+        width: pin.width,
+        height: pin.height,
       });
     }
 
@@ -3907,6 +3935,7 @@ export default function IntelligenceMapping() {
     // First open of the session: straight down, north up, over the flat
     // map's view. After that, reopen exactly where Fly was left.
     const saved = getLastFlyCamera();
+    flyHeadingRef.current = Math.round((saved?.heading ?? 0) / 10) * 10;
     setFlyView({
       center: saved?.center ?? { lat: c.lat(), lng: c.lng() },
       // About 5 km of camera distance at zoom 15, doubling per zoom level out.
@@ -3921,6 +3950,10 @@ export default function IntelligenceMapping() {
   // While in Fly, pick up changes (new pins, moved team members, edited
   // shapes) every few seconds without restarting the camera.
   const flyOpen = !!flyView;
+  // The 3D camera's heading (to 10°), so team arrows point the right way on
+  // screen however the view is turned.
+  const flyHeadingRef = useRef(0);
+  const [flyHeadingQ, setFlyHeadingQ] = useState(0);
   const flyMarkers = useMemo<FlyMarker[]>(() => {
     if (!flyView) return [];
     if (!flyPick) return flyView.markers;
@@ -3953,11 +3986,13 @@ export default function IntelligenceMapping() {
       });
     };
     const timer = window.setInterval(tick, 5000);
+    // Redraw the pointing pictures straight away when the view is turned.
+    void tick();
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [flyOpen]);
+  }, [flyOpen, flyHeadingQ]);
   // Fly's "add here" gestures open the same sheets the flat map does.
   const flyOpenActionChooser = (lat: number, lng: number) => {
     setFlyPick(null);
@@ -7753,6 +7788,10 @@ export default function IntelligenceMapping() {
                 range={flyView.range}
                 tilt={flyView.tilt}
                 heading={flyView.heading}
+                onHeadingChange={h => {
+                  flyHeadingRef.current = h;
+                  setFlyHeadingQ(h);
+                }}
                 markers={flyMarkers}
                 shapes={flyView.shapes}
                 onMarkerClick={id => {

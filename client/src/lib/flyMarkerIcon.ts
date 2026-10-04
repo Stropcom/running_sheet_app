@@ -239,3 +239,152 @@ export function composeFlyTeamIcon(colour: string): string {
   dataUrlCache.set(key, out);
   return out;
 }
+
+// ── Team member pin (option B): name pill above, state marker on the spot ──
+
+export interface FlyTeamPinSpec {
+  name: string;
+  colour: string;
+  state: "moving" | "short" | "long";
+  onFoot: boolean;
+  speedKmh: number;
+  /** Rotation of the heading shape on screen, degrees clockwise from up. */
+  rotation: number;
+  /** Heading shape chosen by the officer (arrow, dart, cursor, emoji…). */
+  shape: string;
+  /** On foot: the figure faces east (mirrored). */
+  faceEast: boolean;
+}
+
+const TEAM_SCALE = 2; // draw at 2× for sharpness
+const POLYGON_SHAPES: Record<string, string> = {
+  arrow: "12 2 19 21 12 17 5 21 12 2",
+  dart: "12 1 20 22 12 16 4 22",
+  cursor: "5 2 5 20 9.5 15.5 12.5 22 15.5 20.5 12.5 14 19 14",
+};
+const EMOJI_SHAPES: Record<string, { glyph: string; offset: number }> = {
+  finger: { glyph: "☝️", offset: 0 },
+  up_arrow_emoji: { glyph: "⬆️", offset: 0 },
+  rocket: { glyph: "🚀", offset: 0 },
+  airplane: { glyph: "✈️", offset: 0 },
+  pizza: { glyph: "🍕", offset: 0 },
+};
+
+/** The team pin as one picture, with its true position at the bottom edge:
+ * the officer's name pill on top, and underneath the state marker the flat
+ * map shows — the heading shape while moving, a green dot just after
+ * stopping, a red dot after ten seconds, a walking figure on foot. */
+export function composeFlyTeamPin(spec: FlyTeamPinSpec): {
+  url: string;
+  width: number;
+  height: number;
+} {
+  const key = `teampin:${JSON.stringify(spec)}`;
+  const S = TEAM_SCALE;
+  const pillH = 22;
+  const indH = 28;
+  const gap = 3;
+  const cssH = pillH + gap + indH;
+  const canvas = document.createElement("canvas");
+  const measure = canvas.getContext("2d");
+  if (!measure) return { url: "", width: 40, height: cssH };
+  measure.font = `800 ${10 * S}px Arial, sans-serif`;
+  const textW = measure.measureText(spec.name).width / S;
+  const pillW = Math.ceil(textW + 22);
+  const cssW = Math.max(pillW, 44);
+  const cached = dataUrlCache.get(key);
+  if (cached) return { url: cached, width: cssW, height: cssH };
+
+  canvas.width = cssW * S;
+  canvas.height = cssH * S;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { url: "", width: cssW, height: cssH };
+  ctx.scale(S, S);
+
+  // Name pill
+  const px = (cssW - pillW) / 2;
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.4)";
+  ctx.shadowBlur = 5;
+  ctx.shadowOffsetY = 2;
+  roundRect(ctx, px, 1, pillW, pillH - 2, (pillH - 2) / 2);
+  ctx.fillStyle = spec.colour;
+  ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = "rgba(255,255,255,0.6)";
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, px, 1, pillW, pillH - 2, (pillH - 2) / 2);
+  ctx.stroke();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "800 10px Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(spec.name, cssW / 2, pillH / 2 + 0.5);
+
+  // State marker, resting on the true position (the bottom edge)
+  const cx = cssW / 2;
+  const cy = pillH + gap + indH / 2;
+  if (spec.onFoot) {
+    const glyph =
+      spec.state === "long" ? "🧍" : spec.speedKmh > 5 ? "🏃" : "🚶";
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(spec.faceEast ? -1 : 1, 1);
+    ctx.font = "24px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,0.35)";
+    ctx.shadowBlur = 2;
+    ctx.fillText(glyph, 0, 1);
+    ctx.restore();
+  } else if (spec.state === "moving") {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate((spec.rotation * Math.PI) / 180);
+    const emoji = EMOJI_SHAPES[spec.shape];
+    ctx.shadowColor = "rgba(0,0,0,0.45)";
+    ctx.shadowBlur = 2;
+    ctx.shadowOffsetY = 1;
+    if (emoji) {
+      ctx.font = "20px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(emoji.glyph, 0, 1);
+    } else {
+      const pts = (POLYGON_SHAPES[spec.shape] ?? POLYGON_SHAPES.arrow)
+        .split(" ")
+        .map(Number);
+      const k = 25 / 24;
+      ctx.beginPath();
+      for (let i = 0; i < pts.length; i += 2) {
+        const x = (pts[i] - 12) * k;
+        const y = (pts[i + 1] - 12) * k;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = "#16a34a";
+      ctx.fill();
+    }
+    ctx.restore();
+  } else {
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.45)";
+    ctx.shadowBlur = 3;
+    ctx.shadowOffsetY = 1;
+    ctx.fillStyle = spec.state === "short" ? "#22c55e" : "#dc2626";
+    ctx.beginPath();
+    ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  let out = "";
+  try {
+    out = canvas.toDataURL("image/png");
+  } catch {
+    out = "";
+  }
+  dataUrlCache.set(key, out);
+  return { url: out, width: cssW, height: cssH };
+}

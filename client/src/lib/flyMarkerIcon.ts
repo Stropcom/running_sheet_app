@@ -272,29 +272,34 @@ const EMOJI_SHAPES: Record<string, { glyph: string; offset: number }> = {
   pizza: { glyph: "🍕", offset: 0 },
 };
 
-/** The team pin as one picture, with its true position at the bottom edge:
- * the officer's name pill on top, and underneath the state marker the flat
- * map shows — the heading shape while moving, a green dot just after
- * stopping, a red dot after ten seconds, a walking figure on foot. */
+/** The team pin as one picture, laid out like the flat map's: the state
+ * marker (heading shape / green dot / red dot / walking figure) sits over the
+ * left end of the officer's name pill. A tail runs down from the marker to a
+ * dot at the very bottom of the picture, which is the officer's true ground
+ * position. The picture is padded on the left so the marker — and so the
+ * tail — is at its horizontal centre, because the 3D map pins a picture by
+ * its bottom centre. */
 export function composeFlyTeamPin(spec: FlyTeamPinSpec): {
   url: string;
   width: number;
   height: number;
 } {
-  const key = `teampin:${JSON.stringify(spec)}`;
+  const key = `teampin2:${JSON.stringify(spec)}`;
   const S = TEAM_SCALE;
-  const pillH = 22;
-  const indH = 28;
-  const gap = 3;
-  const tail = 20;
-  const cssH = pillH + gap + indH + tail;
+  const pillH = 20; // 10px text + 3px padding top and bottom + 1.5px border
+  const rowH = 28; // tall enough for the biggest state marker
+  const topPad = 3;
+  const tail = 24;
+  const cssH = topPad + rowH + tail;
   const canvas = document.createElement("canvas");
   const measure = canvas.getContext("2d");
   if (!measure) return { url: "", width: 40, height: cssH };
-  measure.font = `800 ${10 * S}px Arial, sans-serif`;
-  const textW = measure.measureText(spec.name).width / S;
-  const pillW = Math.ceil(textW + 22);
-  const cssW = Math.max(pillW, 44);
+  measure.font = `800 10px Arial, sans-serif`;
+  // Flat map pill: padding 3px 10px 3px 17px, left edge 9px left of the marker
+  const textW = measure.measureText(spec.name).width + spec.name.length * 0.6;
+  const pillW = Math.ceil(textW + 17 + 10 + 3);
+  const right = Math.max(pillW - 9, 22);
+  const cssW = Math.ceil(right * 2 + 6);
   const cached = dataUrlCache.get(key);
   if (cached) return { url: cached, width: cssW, height: cssH };
 
@@ -304,29 +309,55 @@ export function composeFlyTeamPin(spec: FlyTeamPinSpec): {
   if (!ctx) return { url: "", width: cssW, height: cssH };
   ctx.scale(S, S);
 
-  // Name pill
-  const px = (cssW - pillW) / 2;
+  const cx = cssW / 2; // marker centre = true position's x
+  const cy = topPad + rowH / 2;
+
+  // Name pill, starting 9px left of the marker's centre
+  const px = cx - 9;
+  const py = cy - pillH / 2;
   ctx.save();
   ctx.shadowColor = "rgba(0,0,0,0.4)";
   ctx.shadowBlur = 5;
   ctx.shadowOffsetY = 2;
-  roundRect(ctx, px, 1, pillW, pillH - 2, (pillH - 2) / 2);
+  roundRect(ctx, px, py, pillW, pillH, pillH / 2);
   ctx.fillStyle = spec.colour;
   ctx.fill();
   ctx.restore();
   ctx.strokeStyle = "rgba(255,255,255,0.6)";
   ctx.lineWidth = 1.5;
-  roundRect(ctx, px, 1, pillW, pillH - 2, (pillH - 2) / 2);
+  roundRect(ctx, px, py, pillW, pillH, pillH / 2);
   ctx.stroke();
   ctx.fillStyle = "#ffffff";
   ctx.font = "800 10px Arial, sans-serif";
-  ctx.textAlign = "center";
+  ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.fillText(spec.name, cssW / 2, pillH / 2 + 0.5);
+  ctx.fillText(spec.name, px + 17, cy + 0.5);
 
-  // State marker, resting on the true position (the bottom edge)
-  const cx = cssW / 2;
-  const cy = pillH + gap + indH / 2;
+  // Tail first (so the marker draws over its top): stem down to the ground dot
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 4.5;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + 6);
+  ctx.lineTo(cx, cssH - 5);
+  ctx.stroke();
+  ctx.strokeStyle = spec.colour;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + 6);
+  ctx.lineTo(cx, cssH - 5);
+  ctx.stroke();
+  ctx.fillStyle = spec.colour;
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.arc(cx, cssH - 4, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  // State marker over the left end of the pill
   if (spec.onFoot) {
     const glyph =
       spec.state === "long" ? "🧍" : spec.speedKmh > 5 ? "🏃" : "🚶";
@@ -381,32 +412,6 @@ export function composeFlyTeamPin(spec: FlyTeamPinSpec): {
     ctx.fill();
     ctx.restore();
   }
-
-  // Tail down to the true ground position: a stem ending in a dot at the
-  // very bottom edge, which is where the member really is.
-  const tailTop = pillH + gap + indH - 1;
-  ctx.save();
-  ctx.lineCap = "round";
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 4.5;
-  ctx.beginPath();
-  ctx.moveTo(cx, tailTop);
-  ctx.lineTo(cx, cssH - 5);
-  ctx.stroke();
-  ctx.strokeStyle = spec.colour;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(cx, tailTop);
-  ctx.lineTo(cx, cssH - 5);
-  ctx.stroke();
-  ctx.fillStyle = spec.colour;
-  ctx.strokeStyle = "#ffffff";
-  ctx.lineWidth = 1.8;
-  ctx.beginPath();
-  ctx.arc(cx, cssH - 4, 3.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
 
   let out = "";
   try {

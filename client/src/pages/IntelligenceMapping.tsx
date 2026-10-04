@@ -2438,6 +2438,13 @@ export default function IntelligenceMapping() {
     null
   );
   const flyCenterRef = useRef<{ lat: number; lng: number } | null>(null);
+  // Fly's Centre on me / Follow me buttons.
+  const [flyFollow, setFlyFollow] = useState(false);
+  const [flyCentreReq, setFlyCentreReq] = useState<{
+    lat: number;
+    lng: number;
+    n: number;
+  } | null>(null);
   // Photos picture-in-picture panel, opened from a marker popup's Images
   // button (only shown when that address already has linked photos).
   const [imagesPip, setImagesPip] = useState<{ label: string } | null>(null);
@@ -3814,11 +3821,17 @@ export default function IntelligenceMapping() {
         colour: u.pinColor ?? getTeamColour(u.team, u.role),
         state,
         onFoot: u.onFoot,
-        speedKmh,
+        // Walk or run is all the picture needs from the speed, and the
+        // rotation is rounded to 10°: a picture that changed with every GPS
+        // wobble would be rebuilt on every refresh instead of just gliding.
+        speedKmh: speedKmh > 5 ? 10 : 0,
         rotation:
-          heading -
-          flyHeadingRef.current +
-          (HEADING_SHAPE_ROTATION_OFFSET_DEG[u.pinVehicleIcon] ?? 0),
+          Math.round(
+            (heading -
+              flyHeadingRef.current +
+              (HEADING_SHAPE_ROTATION_OFFSET_DEG[u.pinVehicleIcon] ?? 0)) /
+              10
+          ) * 10,
         shape: u.pinVehicleIcon,
         faceEast: Math.sin((heading * Math.PI) / 180) > 0,
       });
@@ -3830,6 +3843,7 @@ export default function IntelligenceMapping() {
         width: pin.width,
         height: pin.height,
         onGround: true,
+        glide: true,
       });
     }
 
@@ -3969,31 +3983,47 @@ export default function IntelligenceMapping() {
       },
     ];
   }, [flyView, flyPick]);
+  const flyTickRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (!flyOpen) return;
     let cancelled = false;
+    let busy = false;
     const tick = async () => {
-      const snap = await buildFlySnapshotRef.current();
-      if (cancelled) return;
-      setFlyView(prev => {
-        if (!prev) return prev;
-        const sig = (x: unknown) => JSON.stringify(x);
-        if (
-          sig(prev.markers) === sig(snap.markers) &&
-          sig(prev.shapes) === sig(snap.shapes)
-        )
-          return prev;
-        return { ...prev, ...snap };
-      });
+      if (busy) return;
+      busy = true;
+      try {
+        const snap = await buildFlySnapshotRef.current();
+        if (cancelled) return;
+        setFlyView(prev => {
+          if (!prev) return prev;
+          const sig = (x: unknown) => JSON.stringify(x);
+          if (
+            sig(prev.markers) === sig(snap.markers) &&
+            sig(prev.shapes) === sig(snap.shapes)
+          )
+            return prev;
+          return { ...prev, ...snap };
+        });
+      } finally {
+        busy = false;
+      }
     };
+    flyTickRef.current = () => void tick();
     const timer = window.setInterval(tick, 5000);
     // Redraw the pointing pictures straight away when the view is turned.
     void tick();
     return () => {
       cancelled = true;
+      flyTickRef.current = null;
       window.clearInterval(timer);
     };
   }, [flyOpen, flyHeadingQ]);
+  // Team positions arrive about once a second — pass each fix on to the 3D
+  // map as it lands so the pins glide continuously, instead of waiting for
+  // the 5-second sweep above.
+  useEffect(() => {
+    if (flyOpen) flyTickRef.current?.();
+  }, [liveUsers, flyOpen]);
   // Fly's "add here" gestures open the same sheets the flat map does.
   const flyOpenActionChooser = (lat: number, lng: number) => {
     setFlyPick(null);
@@ -4031,6 +4061,7 @@ export default function IntelligenceMapping() {
     setFlyView(null);
     setFlySelectedId(null);
     setFlyPick(null);
+    setFlyFollow(false);
   };
 
   const handleMapAreaClick = useCallback(() => {
@@ -7795,6 +7826,12 @@ export default function IntelligenceMapping() {
                 }}
                 markers={flyMarkers}
                 shapes={flyView.shapes}
+                followId={
+                  flyFollow && user
+                    ? `team:${user.id}_${deviceIdRef.current}`
+                    : null
+                }
+                centerRequest={flyCentreReq}
                 onMarkerClick={id => {
                   setFlyPick(null);
                   setFlySelectedId(id);
@@ -7814,6 +7851,60 @@ export default function IntelligenceMapping() {
                   flyCenterRef.current = c;
                 }}
               />
+              {/* Centre on me / Follow me — same two buttons as the flat map */}
+              <div
+                className="absolute z-40 pointer-events-auto flex gap-1"
+                style={{ top: "60px", left: "10px" }}
+              >
+                <button
+                  title="Centre on my location"
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (!ownLiveEntry || !showOwnLocation) {
+                      toast.error(
+                        "Location not available — enable location sharing first"
+                      );
+                      return;
+                    }
+                    setFlyCentreReq(prev => ({
+                      lat: ownLiveEntry.lat,
+                      lng: ownLiveEntry.lng,
+                      n: (prev?.n ?? 0) + 1,
+                    }));
+                  }}
+                  className="flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 hover:bg-gray-50 transition-colors"
+                  style={{ width: "40px", height: "40px" }}
+                >
+                  <LocateFixed className="w-5 h-5 text-sky-600" />
+                </button>
+                <button
+                  title={
+                    flyFollow
+                      ? "Stop following my location"
+                      : "Follow my location"
+                  }
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (!flyFollow && (!ownLiveEntry || !showOwnLocation)) {
+                      toast.error(
+                        "Location not available — enable location sharing first"
+                      );
+                      return;
+                    }
+                    setFlyFollow(f => !f);
+                  }}
+                  className={`flex items-center justify-center rounded-lg shadow-md border transition-colors ${
+                    flyFollow
+                      ? "bg-sky-600 border-sky-700 hover:bg-sky-700"
+                      : "bg-white border-gray-200 hover:bg-gray-50"
+                  }`}
+                  style={{ width: "40px", height: "40px" }}
+                >
+                  <Navigation2
+                    className={`w-5 h-5 ${flyFollow ? "text-white" : "text-sky-600"}`}
+                  />
+                </button>
+              </div>
               {(() => {
                 if (!flySelectedId) return null;
                 const kind = flySelectedId.slice(0, flySelectedId.indexOf(":"));

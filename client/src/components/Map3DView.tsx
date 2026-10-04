@@ -35,6 +35,8 @@ export interface FlyMarker {
   onGround?: boolean;
   /** Optional text under the marker (custom marker captions, team names). */
   label?: string;
+  /** Moves smoothly to a new position instead of jumping (live team pins). */
+  glide?: boolean;
 }
 
 /** A drawn area or line on the 3D map. */
@@ -93,7 +95,46 @@ interface Map3DViewProps {
   /** The camera's heading, rounded to 10°, whenever that rounded value
    * changes — pictures that point somewhere are redrawn for it. */
   onHeadingChange?: (heading: number) => void;
+  /** Keep the camera centred on this marker as it moves (Follow me). */
+  followId?: string | null;
+  /** Fly the camera to a spot once per change of `n` (Centre on me). */
+  centerRequest?: { lat: number; lng: number; n: number } | null;
   className?: string;
+}
+
+/** One marker on the 3D map, with the state that lets it glide. */
+interface MarkerEntry {
+  el: HTMLElement;
+  /** Everything about the marker except where it is — a change here means
+   * the picture changed, and the element is rebuilt. */
+  sig: string;
+  /** Where it is drawn right now (mid-glide this lags the target). */
+  cur: { lat: number; lng: number };
+  anim: {
+    from: { lat: number; lng: number };
+    to: { lat: number; lng: number };
+    start: number;
+    dur: number;
+  } | null;
+  lastMoveAt: number;
+  glide: boolean;
+  onGround: boolean;
+}
+
+/** A jump bigger than this snaps instead of gliding (a reconnect, a corrected
+ * fix) — gliding that far would look like teleporting in slow motion. */
+const GLIDE_SNAP_M = 150;
+
+function distanceM(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number }
+): number {
+  const dLat = (b.lat - a.lat) * 111_320;
+  const dLng =
+    (b.lng - a.lng) *
+    111_320 *
+    Math.cos(((a.lat + b.lat) / 2) * (Math.PI / 180));
+  return Math.hypot(dLat, dLng);
 }
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -117,6 +158,8 @@ export function Map3DView({
   onGroundClick,
   onActionUnavailable,
   onHeadingChange,
+  followId,
+  centerRequest,
   className,
 }: Map3DViewProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -154,6 +197,16 @@ export function Map3DView({
   // Set by the setup effect once the 3D element exists; (re)applies the
   // markers and shapes in latestRef, touching only what changed.
   const syncRef = useRef<(() => void) | null>(null);
+  const followIdRef = useRef<string | null>(followId ?? null);
+  followIdRef.current = followId ?? null;
+  // Set by the setup effect: (re)starts the per-frame loop, and flies the
+  // camera to a spot while holding Follow off for a moment so the two don't
+  // fight.
+  const kickRef = useRef<(() => void) | null>(null);
+  const flyToRef = useRef<((lat: number, lng: number) => void) | null>(null);
+  const markerPosRef = useRef<
+    ((id: string) => { lat: number; lng: number } | null) | null
+  >(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -388,17 +441,24 @@ export function Map3DView({
           lib.Marker3DInteractiveElement ?? lib.Marker3DElement;
         const PolygonCtor = lib.Polygon3DElement;
         const PolylineCtor = lib.Polyline3DElement;
-        const markerEls = new Map<string, { el: HTMLElement; sig: string }>();
+        const markerEls = new Map<string, MarkerEntry>();
         const shapeEls = new Map<string, { el: HTMLElement; sig: string }>();
 
-        const buildMarker = (m: FlyMarker): HTMLElement | null => {
+        const buildMarker = (
+          m: FlyMarker,
+          at: { lat: number; lng: number }
+        ): HTMLElement | null => {
           if (!MarkerCtor) return null;
           // The picture's tail-end dot marks the exact spot. It rests just
           // above the surface there (roof, tree or ground), not under it:
           // a marker buried under a rooftop is drawn faded by the 3D map,
           // which is what made markers fade out as the camera came close.
           const marker = new MarkerCtor({
-            position: { lat: m.lat, lng: m.lng, altitude: m.onGround ? 0 : 3 },
+            position: {
+              lat: at.lat,
+              lng: at.lng,
+              altitude: m.onGround ? 0 : 3,
+            },
             altitudeMode: m.onGround ? "CLAMP_TO_GROUND" : "RELATIVE_TO_MESH",
             drawsWhenOccluded: true,
             sizePreserved: true,
@@ -496,14 +556,225 @@ export function Map3DView({
           }
         };
 
+        // ── Gliding and following ────────────────────────────────────────
+        // One animation-frame loop moves every gliding marker toward its
+        // latest fix at constant speed, over the time since the previous fix
+        // (so it arrives just as the next one lands — no stop-start), and
+        // keeps the camera on the followed marker.
+        let raf = 0;
+        let interacting = false;
+        let interactTimer: number | null = null;
+        let holdFollowUntil = 0;
+        let lastFollowed: { lat: number; lng: number } | null = null;
+        const placeMarker = (
+          e: MarkerEntry,
+          p: { lat: number; lng: number }
+        ) => {
+          e.cur = p;
+          try {
+            (e.el as any).position = {
+              lat: p.lat,
+              lng: p.lng,
+              altitude: e.onGround ? 0 : 3,
+            };
+          } catch {
+            /* position not settable on this version */
+          }
+        };
+        const frame = (now: number) => {
+          raf = 0;
+          let moving = false;
+          for (const e of Array.from(markerEls.values())) {
+            const a = e.anim;
+            if (!a) continue;
+            const t = Math.min(1, (now - a.start) / a.dur);
+            placeMarker(e, {
+              lat: a.from.lat + (a.to.lat - a.from.lat) * t,
+              lng: a.from.lng + (a.to.lng - a.from.lng) * t,
+            });
+            if (t < 1) moving = true;
+            else e.anim = null;
+          }
+          const fid = followIdRef.current;
+          if (fid) {
+            const e = markerEls.get(fid);
+            if (e && !interacting && Date.now() >= holdFollowUntil) {
+              if (
+                !lastFollowed ||
+                lastFollowed.lat !== e.cur.lat ||
+                lastFollowed.lng !== e.cur.lng
+              ) {
+                lastFollowed = { lat: e.cur.lat, lng: e.cur.lng };
+                try {
+                  (el as any).center = {
+                    lat: e.cur.lat,
+                    lng: e.cur.lng,
+                    altitude: 0,
+                  };
+                } catch {
+                  /* centre not settable on this version */
+                }
+              }
+            }
+          }
+          if (moving || followIdRef.current) raf = requestAnimationFrame(frame);
+        };
+        const kick = () => {
+          if (!raf) raf = requestAnimationFrame(frame);
+        };
+        kickRef.current = kick;
+        markerPosRef.current = id => markerEls.get(id)?.cur ?? null;
+        flyToRef.current = (lat, lng) => {
+          holdFollowUntil = Date.now() + 1100;
+          lastFollowed = null;
+          const c = { lat, lng, altitude: 0 };
+          const e = el as any;
+          try {
+            e.flyCameraTo({
+              endCamera: {
+                center: c,
+                tilt: e.tilt,
+                heading: e.heading,
+                range: e.range,
+              },
+              durationMillis: 900,
+            });
+          } catch {
+            try {
+              e.center = c;
+            } catch {
+              /* nothing more to try */
+            }
+          }
+          kick();
+        };
+        // A finger or mouse on the map suspends Follow (and lets go a moment
+        // after) so dragging and pinching aren't fought frame by frame.
+        const holdInteract = (ms: number) => {
+          interacting = true;
+          if (interactTimer != null) window.clearTimeout(interactTimer);
+          interactTimer = window.setTimeout(() => {
+            interacting = false;
+            interactTimer = null;
+            lastFollowed = null;
+          }, ms);
+        };
+        const onPress = () => holdInteract(1_000_000);
+        const onRelease = () => holdInteract(700);
+        const onWheel = () => holdInteract(700);
+        if (host) {
+          host.addEventListener("pointerdown", onPress, true);
+          host.addEventListener("pointerup", onRelease, true);
+          host.addEventListener("pointercancel", onRelease, true);
+          host.addEventListener("wheel", onWheel, true);
+        }
+        cleanups.push(() => {
+          if (raf) cancelAnimationFrame(raf);
+          raf = 0;
+          if (interactTimer != null) window.clearTimeout(interactTimer);
+          kickRef.current = null;
+          flyToRef.current = null;
+          markerPosRef.current = null;
+          host?.removeEventListener("pointerdown", onPress, true);
+          host?.removeEventListener("pointerup", onRelease, true);
+          host?.removeEventListener("pointercancel", onRelease, true);
+          host?.removeEventListener("wheel", onWheel, true);
+        });
+
+        const syncMarkers = (wanted: FlyMarker[]) => {
+          const keep = new Set(wanted.map(w => w.id));
+          for (const [id, entry] of Array.from(markerEls)) {
+            if (!keep.has(id)) {
+              entry.el.remove();
+              markerEls.delete(id);
+            }
+          }
+          const now = performance.now();
+          for (const m of wanted) {
+            const { lat, lng, ...rest } = m;
+            const sig = JSON.stringify(rest);
+            const target = { lat, lng };
+            const prev = markerEls.get(m.id);
+            if (prev && prev.sig === sig) {
+              // Same picture — only the position may have moved.
+              if (prev.cur.lat === lat && prev.cur.lng === lng && !prev.anim)
+                continue;
+              const last = prev.anim?.to ?? prev.cur;
+              if (last.lat === lat && last.lng === lng) continue;
+              if (!m.glide || distanceM(prev.cur, target) > GLIDE_SNAP_M) {
+                prev.anim = null;
+                placeMarker(prev, target);
+              } else {
+                prev.anim = {
+                  from: { ...prev.cur },
+                  to: target,
+                  start: now,
+                  dur: Math.min(Math.max(now - prev.lastMoveAt, 400), 3000),
+                };
+                kick();
+              }
+              prev.lastMoveAt = now;
+              continue;
+            }
+            // New marker, or its picture changed: build it at the spot it's
+            // drawn at now (so it carries on gliding), then let go of the old.
+            const at = prev ? prev.cur : target;
+            try {
+              const built = buildMarker(m, at);
+              if (built) {
+                el.append(built);
+                if (prev) {
+                  const old = prev.el;
+                  window.setTimeout(() => old.remove(), 150);
+                }
+                const entry: MarkerEntry = {
+                  el: built,
+                  sig,
+                  cur: { ...at },
+                  anim: null,
+                  lastMoveAt: prev?.lastMoveAt ?? now,
+                  glide: !!m.glide,
+                  onGround: !!m.onGround,
+                };
+                markerEls.set(m.id, entry);
+                if (at.lat !== lat || at.lng !== lng) {
+                  const far = distanceM(at, target) > GLIDE_SNAP_M;
+                  if (!m.glide || far) placeMarker(entry, target);
+                  else {
+                    entry.anim = {
+                      from: { ...at },
+                      to: target,
+                      start: now,
+                      dur: Math.min(
+                        Math.max(now - entry.lastMoveAt, 400),
+                        3000
+                      ),
+                    };
+                    entry.lastMoveAt = now;
+                    kick();
+                  }
+                }
+              } else {
+                prev?.el.remove();
+                markerEls.delete(m.id);
+              }
+            } catch {
+              // One item failing shouldn't lose the rest.
+              prev?.el.remove();
+              markerEls.delete(m.id);
+            }
+          }
+        };
+
         syncRef.current = () => {
           syncItems(latestRef.current.shapes, shapeEls, buildShape);
-          syncItems(latestRef.current.markers, markerEls, buildMarker);
+          syncMarkers(latestRef.current.markers);
         };
         syncRef.current();
         cleanups.push(() => {
           syncRef.current = null;
         });
+        if (followIdRef.current) kick();
 
         setStatus("ready");
       } catch (err) {
@@ -524,6 +795,21 @@ export function Map3DView({
   useEffect(() => {
     syncRef.current?.();
   }, [markers, shapes]);
+
+  // Follow me: fly to the marker once, then the frame loop keeps the camera
+  // on it.
+  useEffect(() => {
+    kickRef.current?.();
+    if (!followId) return;
+    const at = markerPosRef.current?.(followId);
+    if (at) flyToRef.current?.(at.lat, at.lng);
+  }, [followId]);
+
+  // Centre on me: fly to the requested spot.
+  useEffect(() => {
+    if (!centerRequest) return;
+    flyToRef.current?.(centerRequest.lat, centerRequest.lng);
+  }, [centerRequest?.n]);
 
   return (
     <div className={className ?? "relative h-full w-full"}>

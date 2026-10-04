@@ -46,6 +46,37 @@ export interface FlyShape {
 
 /** Height of the shading sheet above the ground, metres. */
 const FILL_SHEET_HEIGHT_M = 45;
+/** Lines and outlines follow the top of whatever is there (roof, tree,
+ * overpass), this many metres above it, so nothing hides them. */
+const LINE_CLEARANCE_M = 3;
+/** Points are added along a line this often (metres), so each one rides the
+ * surface instead of cutting straight across a gap. */
+const LINE_STEP_M = 10;
+
+/** Adds points along a path so no segment is longer than `stepMeters`. */
+function densify(
+  coords: { lat: number; lng: number }[],
+  closed: boolean,
+  stepMeters: number
+): { lat: number; lng: number }[] {
+  const spherical = window.google?.maps?.geometry?.spherical;
+  if (!spherical || coords.length < 2) return coords;
+  const out: { lat: number; lng: number }[] = [];
+  const n = closed ? coords.length : coords.length - 1;
+  for (let i = 0; i < n; i++) {
+    const a = new google.maps.LatLng(coords[i].lat, coords[i].lng);
+    const b = coords[(i + 1) % coords.length];
+    const bb = new google.maps.LatLng(b.lat, b.lng);
+    const dist = spherical.computeDistanceBetween(a, bb);
+    const steps = Math.min(400, Math.max(1, Math.ceil(dist / stepMeters)));
+    for (let k = 0; k < steps; k++) {
+      const p = spherical.interpolate(a, bb, k / steps);
+      out.push({ lat: p.lat(), lng: p.lng() });
+    }
+  }
+  if (!closed) out.push(coords[coords.length - 1]);
+  return out;
+}
 
 /** Where the 3D camera was. Kept for the rest of the browser session so
  * reopening Fly returns to where it was left. */
@@ -405,11 +436,14 @@ export function Map3DView({
               }) as HTMLElement;
             }
             return new PolygonCtor({
-              outerCoordinates: coords,
+              outerCoordinates: densify(s.coords, true, LINE_STEP_M).map(c => ({
+                ...c,
+                altitude: LINE_CLEARANCE_M,
+              })),
               fillColor: "rgba(0, 0, 0, 0)",
               strokeColor: hexToRgba(s.colour, 0.95),
               strokeWidth: 4,
-              altitudeMode: "CLAMP_TO_GROUND",
+              altitudeMode: "RELATIVE_TO_MESH",
               // Keep drawing the outline where a building or tree is in front
               // of it — otherwise the edge shows as broken dashes.
               drawsOccludedSegments: true,
@@ -417,10 +451,13 @@ export function Map3DView({
           }
           if (s.kind === "line" && PolylineCtor) {
             return new PolylineCtor({
-              coordinates: coords,
+              coordinates: densify(s.coords, false, LINE_STEP_M).map(c => ({
+                ...c,
+                altitude: LINE_CLEARANCE_M,
+              })),
               strokeColor: hexToRgba(s.colour, 0.95),
               strokeWidth: 6,
-              altitudeMode: "CLAMP_TO_GROUND",
+              altitudeMode: "RELATIVE_TO_MESH",
               drawsOccludedSegments: true,
             }) as HTMLElement;
           }

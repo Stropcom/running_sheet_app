@@ -50,6 +50,10 @@ export function Map3DView({
     "loading"
   );
   const [errorText, setErrorText] = useState("");
+  // Small read-out of what the 3D camera is actually doing (and any error the
+  // 3D element reports), so a flat-looking result can be diagnosed from a
+  // screenshot instead of guessed at.
+  const [debug, setDebug] = useState("");
   const onPinClickRef = useRef(onPinClick);
   onPinClickRef.current = onPinClick;
   const onCenterChangeRef = useRef(onCenterChange);
@@ -96,6 +100,60 @@ export function Map3DView({
         map3d = el;
         el.style.cssText = "display:block;width:100%;height:100%;";
         hostRef.current?.appendChild(el);
+
+        const apiVersion =
+          (window.google?.maps as unknown as { version?: string })?.version ??
+          "?";
+        const describe = (note = "") => {
+          const e = el as any;
+          const r = typeof e.range === "number" ? Math.round(e.range) : "?";
+          const t = typeof e.tilt === "number" ? Math.round(e.tilt) : "?";
+          const h = typeof e.heading === "number" ? Math.round(e.heading) : "?";
+          setDebug(
+            `3D · tilt ${t}° · heading ${h}° · range ${r} m · API ${apiVersion}${note ? ` · ${note}` : ""}`
+          );
+        };
+        describe();
+        for (const evt of [
+          "gmp-tiltchange",
+          "gmp-headingchange",
+          "gmp-rangechange",
+          "gmp-steadychange",
+        ]) {
+          const fn = () => describe();
+          el.addEventListener(evt, fn);
+          cleanups.push(() => el.removeEventListener(evt, fn));
+        }
+        const onErr = (ev: Event) => {
+          const detail = (ev as CustomEvent).detail;
+          describe(`error: ${detail?.message ?? ev.type}`);
+        };
+        el.addEventListener("gmp-error", onErr);
+        cleanups.push(() => el.removeEventListener("gmp-error", onErr));
+
+        // Tilt the camera and fly it in. Set as properties as well as via the
+        // constructor options and flyCameraTo — a top-down camera is the
+        // flat-satellite look, so make sure the oblique view really applies.
+        const endCamera = {
+          center: { lat: init.center.lat, lng: init.center.lng, altitude: 0 },
+          tilt: 67,
+          heading: 20,
+          range: Math.min(init.range, 3000),
+        };
+        try {
+          (el as any).tilt = endCamera.tilt;
+          (el as any).heading = endCamera.heading;
+          (el as any).range = endCamera.range;
+        } catch {
+          /* property not settable on this version */
+        }
+        if (typeof (el as any).flyCameraTo === "function") {
+          try {
+            (el as any).flyCameraTo({ endCamera, durationMillis: 2500 });
+          } catch {
+            /* fall back to the properties set above */
+          }
+        }
 
         // Camera centre → flat map position on exit.
         const onCenter = () => {
@@ -155,6 +213,11 @@ export function Map3DView({
   return (
     <div className={`relative ${className ?? ""}`}>
       <div ref={hostRef} className="absolute inset-0 bg-black" />
+      {status === "ready" && debug && (
+        <div className="absolute left-2 top-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white/90 pointer-events-none max-w-[70%] truncate">
+          {debug}
+        </div>
+      )}
       {status === "loading" && (
         <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/60 text-white text-sm pointer-events-none">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading 3D terrain…

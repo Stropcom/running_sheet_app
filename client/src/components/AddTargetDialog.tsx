@@ -2081,7 +2081,7 @@ export function AddTargetDialog({
         }}
       >
         <DialogContent
-          className="md:max-w-2xl lg:max-w-5xl max-h-[90vh] overflow-y-auto"
+          className="md:max-w-2xl lg:max-w-5xl max-h-[90vh] overflow-y-auto wide-scrollbar"
           onInteractOutside={e => e.preventDefault()}
         >
           <DialogHeader>

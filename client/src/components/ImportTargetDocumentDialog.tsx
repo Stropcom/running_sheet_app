@@ -1021,7 +1021,7 @@ export function ImportTargetDocumentDialog({
   return (
     <Dialog open={open} onOpenChange={o => !o && handleClose()}>
       <DialogContent
-        className="max-w-lg max-h-[90vh] overflow-y-auto"
+        className="max-w-lg max-h-[90vh] overflow-y-auto wide-scrollbar"
         onInteractOutside={e => e.preventDefault()}
       >
         <DialogHeader>

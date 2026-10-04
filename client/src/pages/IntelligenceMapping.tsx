@@ -55,6 +55,8 @@ import { MapView } from "@/components/Map";
 import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
 import { StreetViewPip } from "@/components/StreetViewPip";
 import { ImagesPip } from "@/components/ImagesPip";
+import { addressMatchKey } from "@shared/addressMatchKey";
+import { shortPersonDisplayName } from "@shared/addressFormat";
 import { StreetHeadingBar } from "@/components/StreetHeadingBar";
 import { UcoGuideMapOverlay } from "@/components/UcoGuideMapOverlay";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
@@ -144,6 +146,7 @@ import {
   PieChart,
   Route,
   Compass,
+  Hash,
   Pencil,
 } from "lucide-react";
 
@@ -350,6 +353,12 @@ interface IntelMapLocation {
   }>;
   assocPersons: string[];
   assocVehicles: string[];
+  /** Only what running-sheet observations recorded here (see server
+   * IntelMapLocation) — the popup's OBSERVATIONS block. Optional so an older
+   * server response still renders. */
+  observedTargets?: string[];
+  observedPersons?: string[];
+  observedVehicles?: string[];
   linkCount: number;
   lat?: number;
   lng?: number;
@@ -984,19 +993,92 @@ const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
 // scrolls on its own — the target details and the associated entities can be
 // scrolled independently of each other. `overscroll-behavior:contain` stops a
 // flick that reaches the end of a list from carrying on into a map pan.
-const POPUP_SCROLL =
-  "max-height:150px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;";
-
 /** Vehicle mentions arrive either as a raw target-card V1F ("White Toyota
  * Corolla, bearing WA registration 5IND123 (Vehicle 5IND123)") or already as
  * an entity short form — both go through the same formatter the Intelligence
  * folder uses, so a vehicle reads identically in both places. */
 function popupVehicleLines(vehicles: string[], fontSize: string): string {
-  return vehicles
+  // "rego colour make model type" — formatIntelVehicle drops the "bearing WA
+  // registration" wording — and one line per vehicle even when the same one
+  // is listed twice.
+  return Array.from(new Set(vehicles.map(v => formatIntelVehicle(v))))
     .map(
       v =>
-        `<div style="font-size:${fontSize};color:#111;padding:1px 0;">${formatIntelVehicle(v)}</div>`
+        `<div style="font-size:${fontSize};color:#111;padding:1px 0;">${v}</div>`
     )
+    .join("");
+}
+
+/** A person's name as shown in map popups: "Min Jae KIM" — no ", born …"
+ * date and no trailing "(KIM)" surname bracket, to keep the popup compact. */
+const shortPopupName = shortPersonDisplayName;
+
+/** One registered person (target, associate or other home address resident)
+ * with every vehicle on their registry record. */
+interface MapPerson {
+  name: string;
+  role: "target" | "resident" | "associate";
+  addressKey: string;
+  vehicles: string[];
+}
+interface MapPeopleLookup {
+  byName: Map<string, MapPerson>;
+  byAddress: Map<string, MapPerson[]>;
+}
+
+function buildMapPeopleLookup(people: MapPerson[]): MapPeopleLookup {
+  const byName = new Map<string, MapPerson>();
+  const byAddress = new Map<string, MapPerson[]>();
+  for (const p of people) {
+    const key = p.name.toLowerCase();
+    const prev = byName.get(key);
+    // The same person can be on more than one target — pool their vehicles.
+    byName.set(
+      key,
+      prev
+        ? {
+            ...prev,
+            vehicles: Array.from(new Set([...prev.vehicles, ...p.vehicles])),
+          }
+        : p
+    );
+    if (p.addressKey)
+      byAddress.set(p.addressKey, [...(byAddress.get(p.addressKey) ?? []), p]);
+  }
+  return { byName, byAddress };
+}
+
+/** The Persons list for an address, each name followed by ALL the vehicles on
+ * their registry record, plus any registered associate / resident whose
+ * address this is but who isn't already listed. Without registry data it is
+ * the plain name list. */
+function popupPeopleLines(
+  persons: string[],
+  addressLabel: string,
+  registry: MapPeopleLookup | undefined,
+  fontSize: string
+): string {
+  if (!registry) return popupPersonLines(persons, fontSize);
+  const seen = new Set<string>();
+  const names: string[] = [];
+  const add = (n: string) => {
+    const key = n.toLowerCase();
+    if (!n || seen.has(key)) return;
+    seen.add(key);
+    names.push(n);
+  };
+  persons.map(shortPopupName).forEach(add);
+  for (const p of registry.byAddress.get(addressMatchKey(addressLabel)) ?? [])
+    if (p.role !== "target") add(p.name);
+  return names
+    .map(n => {
+      const vehicles = registry.byName.get(n.toLowerCase())?.vehicles ?? [];
+      return `<div style="padding:1px 0;"><div style="font-size:${fontSize};color:#111;">${n}</div>${
+        vehicles.length
+          ? `<div style="padding-left:10px;">${popupVehicleLines(vehicles, "11px")}</div>`
+          : ""
+      }</div>`;
+    })
     .join("");
 }
 
@@ -1004,12 +1086,70 @@ function popupVehicleLines(vehicles: string[], fontSize: string): string {
  * a comma-joined paragraph reads as a single run-on line in the popup's
  * narrow width instead of a scannable list. */
 function popupPersonLines(persons: string[], fontSize: string): string {
+  const seen = new Set<string>();
   return persons
+    .map(shortPopupName)
+    .filter(p => {
+      const key = p.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .map(
       p =>
         `<div style="font-size:${fontSize};color:#111;padding:1px 0;">${p}</div>`
     )
     .join("");
+}
+
+/** A vehicle's identity for de-duplication: its registration when the line
+ * leads with one ("1NAV48 Charcoal Mazda …"), else the whole line. */
+function vehicleDedupeKey(v: string): string {
+  const shown = formatIntelVehicle(v).trim();
+  const first = shown.split(/\s+/)[0] ?? "";
+  return /\d/.test(first) && /^[A-Za-z0-9-]{3,8}$/.test(first)
+    ? first.toUpperCase()
+    : shown.toLowerCase();
+}
+
+/** Total distinct entities linked to a map marker, for its count badge: the
+ * people (linked targets, people seen there, and registered residents /
+ * associates at the address) plus every vehicle (seen there, or on the
+ * registry record of anyone counted) — each person and each vehicle once. */
+function markerEntityCount(
+  loc: {
+    label: string;
+    linkedTargets: Array<{
+      name: string;
+      v1f?: string | null;
+      v2f?: string | null;
+    }>;
+    assocPersons: string[];
+    assocVehicles: string[];
+  },
+  registry: MapPeopleLookup | undefined
+): number {
+  const people = new Set<string>();
+  const vehicles = new Set<string>();
+  const addVehicle = (v?: string | null) => {
+    if (v && v.trim()) vehicles.add(vehicleDedupeKey(v));
+  };
+  const addPerson = (name: string) => {
+    const key = shortPopupName(name).toLowerCase();
+    if (!key) return;
+    people.add(key);
+    registry?.byName.get(key)?.vehicles.forEach(addVehicle);
+  };
+  for (const t of loc.linkedTargets) {
+    addPerson(t.name);
+    addVehicle(t.v1f);
+    addVehicle(t.v2f);
+  }
+  loc.assocPersons.forEach(addPerson);
+  loc.assocVehicles.forEach(addVehicle);
+  for (const p of registry?.byAddress.get(addressMatchKey(loc.label)) ?? [])
+    addPerson(p.name);
+  return people.size + vehicles.size;
 }
 
 // Mirrors server/db.ts's normalizeEntityLabel exactly — the map needs the
@@ -1047,6 +1187,183 @@ function openInfoWindowDeferred(
   });
 }
 
+/** The popup body for one address: the people REGISTERED there (target,
+ * other home address residents, associates — each with every registry
+ * vehicle), then an OBSERVATIONS block of what running sheets recorded at
+ * the location. The registered part is the same before and after an
+ * observation; an address with nobody registered shows OBSERVED LOCATION and
+ * the address instead. */
+function entityBlocksHtml(
+  loc: IntelMapLocation,
+  registry: MapPeopleLookup | undefined,
+  compact = false
+): string {
+  const nameSize = compact ? "12px" : "13px";
+  const addrSize = compact ? "11px" : "12px";
+  const vehSize = compact ? "10px" : "11px";
+  const badge = (label: string, bg: string) =>
+    `<span style="display:inline-block;background:${bg};color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">${label}</span>`;
+  const subHeading = (t: string) =>
+    `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:5px;">${t}</div>`;
+  const address = formatIntelAddress(loc.label);
+
+  interface Block {
+    label: string;
+    bg: string;
+    name: string;
+    vehicles: string[];
+    showAddress: boolean;
+  }
+  const blocks: Block[] = [];
+  const have = new Set<string>();
+  const vehiclesFor = (name: string, fallback: string[]) =>
+    registry?.byName.get(name.toLowerCase())?.vehicles ?? fallback;
+  const addBlock = (
+    label: string,
+    bg: string,
+    rawName: string,
+    fallbackVehicles: string[],
+    showAddress: boolean
+  ) => {
+    const name = shortPopupName(rawName);
+    const key = `${label}|${name.toLowerCase()}`;
+    if (!name || have.has(key)) return;
+    have.add(key);
+    blocks.push({
+      label,
+      bg,
+      name,
+      vehicles: vehiclesFor(name, fallbackVehicles),
+      showAddress,
+    });
+  };
+
+  const registered = registry?.byAddress.get(addressMatchKey(loc.label)) ?? [];
+  const roleOrder = { target: 0, resident: 1, associate: 2 } as const;
+  if (registered.length > 0) {
+    for (const p of [...registered].sort(
+      (a, b) => roleOrder[a.role] - roleOrder[b.role]
+    )) {
+      if (p.role === "target")
+        addBlock("TARGET ADDRESS", "#dc2626", p.name, p.vehicles, true);
+      else if (p.role === "resident")
+        addBlock("OTHER RESIDENT", "#e11d48", p.name, p.vehicles, false);
+      else addBlock("ASSOCIATE ADDRESS", "#7c3aed", p.name, p.vehicles, true);
+    }
+  } else if (loc.type === "target_address") {
+    for (const t of loc.linkedTargets)
+      if (!t.addressLabel)
+        addBlock(
+          "TARGET ADDRESS",
+          "#dc2626",
+          t.name,
+          [t.v1f, t.v2f].filter((v): v is string => !!v),
+          true
+        );
+  } else if (loc.type === "associate_address") {
+    for (const n of loc.assocPersons)
+      addBlock("ASSOCIATE ADDRESS", "#7c3aed", n, [], true);
+  }
+  // A target's additional (non-home) registered address.
+  for (const t of loc.linkedTargets)
+    if (t.addressLabel)
+      addBlock(
+        "ADDITIONAL ADDRESS",
+        "#7c3aed",
+        t.name,
+        [t.v1f, t.v2f].filter((v): v is string => !!v),
+        true
+      );
+
+  const html: string[] = [];
+  blocks.forEach((b, i) => {
+    html.push(
+      `<div style="${i > 0 ? "margin-top:9px;" : ""}">${badge(b.label, b.bg)}<div style="font-size:${nameSize};font-weight:700;color:#111;line-height:1.35;margin-top:3px;">${b.name}</div>${
+        b.showAddress || i === 0
+          ? `<div style="font-size:${addrSize};color:#111;line-height:1.35;">${address}</div>`
+          : ""
+      }${b.vehicles.length ? popupVehicleLines(b.vehicles, vehSize) : ""}</div>`
+    );
+  });
+  if (blocks.length === 0)
+    html.push(
+      `${badge("OBSERVED LOCATION", "#7c3aed")}<strong style="font-size:${nameSize};color:#111;line-height:1.35;display:block;margin-top:3px;">${address}</strong>`
+    );
+
+  // What running sheets recorded here (older servers: an observation pin's
+  // own lists ARE its observations).
+  const legacy = loc.type === "observation";
+  const dedupe = (names: string[]) => {
+    const seen = new Set<string>();
+    return names
+      .map(shortPopupName)
+      .filter(
+        n => n && !seen.has(n.toLowerCase()) && !!seen.add(n.toLowerCase())
+      );
+  };
+  const obsTargets = dedupe(
+    loc.observedTargets ?? (legacy ? loc.linkedTargets.map(t => t.name) : [])
+  );
+  const obsPersons = dedupe(
+    loc.observedPersons ?? (legacy ? loc.assocPersons : [])
+  );
+  const obsVehicles = loc.observedVehicles ?? (legacy ? loc.assocVehicles : []);
+  const obs: string[] = [];
+  const list = (names: string[]) =>
+    names
+      .map(
+        n =>
+          `<div style="font-size:${addrSize};color:#111;padding:1px 0;">${n}</div>`
+      )
+      .join("");
+  if (obsTargets.length) obs.push(subHeading("Targets") + list(obsTargets));
+  if (obsPersons.length) obs.push(subHeading("Associates") + list(obsPersons));
+  if (obsVehicles.length)
+    obs.push(subHeading("Vehicles") + popupVehicleLines(obsVehicles, addrSize));
+  if (obs.length)
+    html.push(
+      `<div style="border-top:1px solid #e5e7eb;margin-top:10px;padding-top:8px;">${badge("OBSERVATIONS", "#0f766e")}${obs.join("")}</div>`
+    );
+
+  return `<div style="${compact ? "max-height:170px;" : "max-height:240px;"}overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;">${html.join("")}</div>`;
+}
+
+/** Photo indicator across the bottom edge of a marker: one small pill, blue
+ * half (portrait icon) for profile / baseball-card photos of the people at the
+ * address, green half (photo icon) for running-sheet photos. Only one kind
+ * present shows a single solid-colour pill. Returns null when neither. */
+function createPhotoPill(
+  runningSheet: boolean,
+  profile: boolean
+): HTMLDivElement | null {
+  if (!runningSheet && !profile) return null;
+  const photoIcon =
+    '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6" fill="#fff"/><path d="M4 18l5-5 4 4 3-3 4 4"/></svg>';
+  const portraitIcon =
+    '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="10" r="3.2" fill="#fff"/><path d="M6 19c1-3.4 3.2-5 6-5s5 1.6 6 5"/></svg>';
+  const half = (bg: string, icon: string) =>
+    `<span style="display:inline-flex;align-items:center;justify-content:center;padding:0 4px;background:${bg};">${icon}</span>`;
+  const pill = document.createElement("div");
+  pill.title =
+    runningSheet && profile
+      ? "Running-sheet photos and profile photos"
+      : runningSheet
+        ? "Running-sheet photos"
+        : "Profile photos of people at this address";
+  pill.style.cssText = `
+    position:absolute;left:50%;top:100%;transform:translate(-50%,-9px);
+    display:inline-flex;align-items:stretch;height:15px;
+    border-radius:9px;overflow:hidden;
+    border:1.5px solid #fff;box-sizing:content-box;
+    box-shadow:0 1px 3px rgba(0,0,0,0.35);
+    pointer-events:none;
+  `;
+  pill.innerHTML =
+    (profile ? half("#2563eb", portraitIcon) : "") +
+    (runningSheet ? half("#10b981", photoIcon) : "");
+  return pill;
+}
+
 function buildInfoWindowContent(
   loc: IntelMapLocation,
   override?: {
@@ -1056,20 +1373,10 @@ function buildInfoWindowContent(
     customLabel?: string | null;
     note?: string | null;
   },
-  hasPhotos = false
+  hasPhotos = false,
+  registry?: MapPeopleLookup
 ): string {
   const isTarget = loc.type === "target_address";
-  const isAdditionalTargetAddress =
-    !isTarget && loc.linkedTargets.some(t => t.addressLabel);
-  const accentColor = isTarget ? "#dc2626" : "#7c3aed";
-  const typeLabel = isTarget
-    ? "TARGET ADDRESS"
-    : isAdditionalTargetAddress
-      ? "ADDITIONAL ADDRESS"
-      : loc.type === "associate_address"
-        ? "ASSOCIATE ADDRESS"
-        : "OBSERVED LOCATION";
-  const displayLabel = formatIntelAddress(loc.label);
   const encodedLabel = encodeURIComponent(loc.label);
 
   // Persisted appearance for this intel pin (server-saved override — see
@@ -1081,92 +1388,21 @@ function buildInfoWindowContent(
 
   const lines: string[] = [];
 
-  // Type badge + label
-  lines.push(`
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-      <span style="background:${accentColor};color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">${typeLabel}</span>
-    </div>
-    <strong style="font-size:13px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${displayLabel}</strong>
-  `);
+  // Registered people (with all their vehicles) then OBSERVATIONS — see
+  // entityBlocksHtml.
+  lines.push(entityBlocksHtml(loc, registry));
 
   // Officer-added caption + note (see intelPinOverrides.customLabel/note —
   // same two fields a custom map marker has, added here for parity with
-  // that dialog). This pin's real name/address is already the heading
-  // above, so the custom label renders as a secondary line, same visual
-  // weight as a custom marker's own label/note split.
+  // that dialog), shown as a secondary line under the entity blocks.
   if (override?.customLabel)
     lines.push(
-      `<div style="font-size:12px;color:#7c3aed;font-weight:600;margin-bottom:2px;">${override.customLabel}</div>`
+      `<div style="font-size:12px;color:#7c3aed;font-weight:600;margin-top:6px;">${override.customLabel}</div>`
     );
   if (override?.note)
     lines.push(
       `<div style="margin-top:4px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Notes</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${override.note}</p></div>`
     );
-
-  // Linked target details (for target_address).
-  // The TGT alias and HBF are deliberately not repeated here: the alias is
-  // already inside the target's own name, and the address is the pop-up's
-  // heading directly above. Vehicles show in the Intelligence folder's form
-  // rather than the raw V1F/V2F card text.
-  if (isTarget && loc.linkedTargets.length > 0) {
-    lines.push(`<div style="margin-top:6px;${POPUP_SCROLL}">`);
-    for (const t of loc.linkedTargets) {
-      lines.push(
-        `<div style="margin-bottom:5px;padding:6px 8px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:0 4px 4px 0;">`
-      );
-      lines.push(
-        `<div style="font-size:12px;font-weight:700;color:#111;margin-bottom:2px;">${t.name}</div>`
-      );
-      const tVehicles = [t.v1f, t.v2f].filter((v): v is string => !!v);
-      if (tVehicles.length) lines.push(popupVehicleLines(tVehicles, "11px"));
-      if (t.operationName)
-        lines.push(
-          `<div style="font-size:10px;color:#888;margin-top:2px;">Op: ${t.operationName}</div>`
-        );
-      lines.push(`</div>`);
-    }
-    lines.push(`</div>`);
-  }
-
-  // ── Associated entities ──────────────────────────────────────────────────
-  // Linked targets (observation pins only), persons and vehicles share one
-  // scroll container, so this list scrolls independently of the target
-  // details above it.
-  {
-    const entityLines: string[] = [];
-
-    if (!isTarget && loc.linkedTargets.length > 0) {
-      entityLines.push(
-        `<span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`
-      );
-      for (const t of loc.linkedTargets) {
-        entityLines.push(
-          `<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}${
-            t.addressLabel
-              ? `<span style="color:#7c3aed;font-weight:600;"> · ${t.addressLabel}</span>`
-              : ""
-          }</div>`
-        );
-      }
-    }
-
-    if (loc.assocPersons.length > 0) {
-      entityLines.push(
-        `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Persons</span><div style="margin-top:2px">${popupPersonLines(loc.assocPersons, "12px")}</div></div>`
-      );
-    }
-
-    if (loc.assocVehicles.length > 0) {
-      entityLines.push(
-        `<div style="margin-top:6px"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Vehicles</span><div style="margin-top:2px">${popupVehicleLines(loc.assocVehicles, "12px")}</div></div>`
-      );
-    }
-
-    if (entityLines.length)
-      lines.push(
-        `<div style="margin-top:6px;${POPUP_SCROLL}">${entityLines.join("")}</div>`
-      );
-  }
 
   // ── Action buttons (observed location only — same layout as custom marker popup) ──
   if (!isTarget) {
@@ -1308,33 +1544,9 @@ function buildInfoWindowContent(
     // so repeating it per address here would just be the same names again.
     if (loc.secondaryLocs && loc.secondaryLocs.length > 0) {
       for (const sec of loc.secondaryLocs) {
-        const secLabel = formatIntelAddress(sec.label);
-        const secTypeLabel =
-          sec.type === "associate_address"
-            ? "ASSOCIATE ADDRESS"
-            : "OBSERVED LOCATION";
         lines.push(
-          `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">`
+          `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e5e7eb;">${entityBlocksHtml(sec, registry, true)}</div>`
         );
-        lines.push(`
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-            <span style="background:#7c3aed;color:#fff;border-radius:4px;font-size:9px;font-weight:700;padding:2px 6px;letter-spacing:0.07em;white-space:nowrap;">${secTypeLabel}</span>
-          </div>
-          <strong style="font-size:12px;color:#111;line-height:1.35;display:block;margin-bottom:2px;">${secLabel}</strong>
-        `);
-        if (sec.linkedTargets.length > 0) {
-          const secLinkedLines = [
-            `<span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em">Linked Targets</span>`,
-            ...sec.linkedTargets.map(
-              t =>
-                `<div style="font-size:12px;color:#111;padding:1px 0;">${t.name}</div>`
-            ),
-          ];
-          lines.push(
-            `<div style="margin-top:4px;">${secLinkedLines.join("")}</div>`
-          );
-        }
-        lines.push(`</div>`);
       }
     }
 
@@ -1758,6 +1970,21 @@ export default function IntelligenceMapping() {
     }
     return false;
   });
+  // Count badge on the house markers (total distinct entities linked to the
+  // marker) — on by default, switchable from Map Settings.
+  const [showMarkerEntityCount, setShowMarkerEntityCount] = useState<boolean>(
+    () => {
+      try {
+        const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+        if (s) return JSON.parse(s).showMarkerEntityCount ?? true;
+      } catch {
+        /* ignore */
+      }
+      return true;
+    }
+  );
+  const showMarkerEntityCountRef = useRef(showMarkerEntityCount);
+  showMarkerEntityCountRef.current = showMarkerEntityCount;
   // Bottom-of-screen bar showing the officer's own current street + heading
   // (see StreetHeadingBar) — a display preference like mapDarkMode, not tied
   // to GPS sharing itself, so it follows the same local-only persistence.
@@ -2664,6 +2891,7 @@ export default function IntelligenceMapping() {
           panelWidthNormal,
           panelWidthProfile,
           showStreetHeadingBar,
+          showMarkerEntityCount,
         })
       );
     } catch {
@@ -2683,6 +2911,7 @@ export default function IntelligenceMapping() {
     panelWidthNormal,
     panelWidthProfile,
     showStreetHeadingBar,
+    showMarkerEntityCount,
   ]);
 
   // Save map center/zoom to localStorage whenever the map stops moving (idle event)
@@ -2950,6 +3179,41 @@ export default function IntelligenceMapping() {
     }
     photoKeysRef.current = keys;
   }, [entityLinkCounts]);
+  // Hand-uploaded profile / baseball-card photos of the people living at each
+  // address, for the operation(s) selected in the right-hand pane — makes the
+  // popup's Images button appear (and open them after the running-sheet
+  // photos) without touching the running-sheet photo links above.
+  const personPhotoOpIds = effectiveOpIdsForMarkers ?? [];
+  const { data: personPhotoData } =
+    trpc.attachment.personPhotosByAddress.useQuery(
+      { operationIds: personPhotoOpIds },
+      { enabled: personPhotoOpIds.length > 0 }
+    );
+  const personPhotosByKey = useMemo(
+    () => new Map((personPhotoData ?? []).map(g => [g.addressKey, g.photos])),
+    [personPhotoData]
+  );
+  // Everyone registered against those operations' targets, with all their
+  // registry vehicles — the marker popups list these under each person.
+  const { data: registeredPeopleData } =
+    trpc.intelligence.registeredPeopleForMap.useQuery(
+      { operationIds: personPhotoOpIds },
+      { enabled: personPhotoOpIds.length > 0 }
+    );
+  const registeredPeopleLookupRef = useRef<MapPeopleLookup | undefined>(
+    undefined
+  );
+  registeredPeopleLookupRef.current = useMemo(
+    () =>
+      registeredPeopleData
+        ? buildMapPeopleLookup(registeredPeopleData)
+        : undefined,
+    [registeredPeopleData]
+  );
+  const personPhotosByKeyRef = useRef(personPhotosByKey);
+  useEffect(() => {
+    personPhotosByKeyRef.current = personPhotosByKey;
+  }, [personPhotosByKey]);
   const savePinOverrideMut = trpc.intelligence.savePinOverride.useMutation({
     onMutate: async () => {
       await utils.intelligence.getPinOverrides.cancel();
@@ -3457,7 +3721,9 @@ export default function IntelligenceMapping() {
 
   const createPinElement = useCallback((loc: IntelMapLocation) => {
     const isTarget = loc.type === "target_address";
-    const count = loc.linkCount;
+    const count = showMarkerEntityCountRef.current
+      ? markerEntityCount(loc, registeredPeopleLookupRef.current)
+      : 0;
 
     // Apply any saved appearance override (icon/colour/rotation) — server-
     // persisted (see intelPinOverrides), same override the popup's rotation
@@ -3505,25 +3771,15 @@ export default function IntelligenceMapping() {
       el.appendChild(badge);
     }
 
-    // Small camera badge — bottom-right, opposite the count badge — when
-    // this address already has photos linked (see photoKeysRef). Purely
-    // informational at a glance; the popup's own Images button is what
-    // actually opens them.
-    if (photoKeysRef.current.has(normalizeEntityLabelClient(loc.label))) {
-      const photoBadge = document.createElement("div");
-      photoBadge.style.cssText = `
-        position:absolute;bottom:-4px;right:-4px;
-        background:#10b981;
-        width:16px;height:16px;
-        border-radius:50%;
-        display:flex;align-items:center;justify-content:center;
-        border:1.5px solid #fff;
-        box-shadow:0 1px 3px rgba(0,0,0,0.3);
-      `;
-      photoBadge.innerHTML =
-        '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.2"/><path d="M8 6l1.5-2.3h5L16 6"/></svg>';
-      el.appendChild(photoBadge);
-    }
+    // Photo pill across the bottom edge — running-sheet photos (green half,
+    // see photoKeysRef) and/or profile photos of the people living here
+    // (blue half). Purely informational at a glance; the popup's own Images
+    // button is what actually opens them.
+    const pinPhotoPill = createPhotoPill(
+      photoKeysRef.current.has(normalizeEntityLabelClient(loc.label)),
+      personPhotosByKeyRef.current.has(addressMatchKey(loc.label))
+    );
+    if (pinPhotoPill) el.appendChild(pinPhotoPill);
     return el;
   }, []);
 
@@ -3855,7 +4111,9 @@ export default function IntelligenceMapping() {
           buildInfoWindowContent(
             fullEnriched,
             pinOverridesRef.current.get(loc.label),
-            photoKeysRef.current.has(normalizeEntityLabelClient(loc.label))
+            photoKeysRef.current.has(normalizeEntityLabelClient(loc.label)) ||
+              personPhotosByKeyRef.current.has(addressMatchKey(loc.label)),
+            registeredPeopleLookupRef.current
           )
         );
         infoWindowRef.current.setPosition({
@@ -4036,6 +4294,35 @@ export default function IntelligenceMapping() {
       renderLocations(locations);
     }
   }, [locations, renderLocations, mapReady]);
+
+  // Re-draw location pins once the profile-photo lookup arrives or changes, so
+  // the blue half of the photo pill appears without waiting for another refresh.
+  // Re-draw the count badges when the toggle flips or the registry data they
+  // are built from arrives or changes.
+  const entityCountDrawnRef = useRef(false);
+  useEffect(() => {
+    if (!entityCountDrawnRef.current) {
+      entityCountDrawnRef.current = true;
+      return;
+    }
+    if (locations && mapRef.current && geocoderRef.current) {
+      mergedIntelRef.current.clear();
+      renderLocations(locations);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showMarkerEntityCount, registeredPeopleData]);
+
+  const hadPersonPhotosRef = useRef(false);
+  useEffect(() => {
+    // Nothing to draw (and nothing to undo) while there are no profile photos.
+    if (personPhotosByKey.size === 0 && !hadPersonPhotosRef.current) return;
+    hadPersonPhotosRef.current = personPhotosByKey.size > 0;
+    if (locations && mapRef.current && geocoderRef.current) {
+      mergedIntelRef.current.clear();
+      renderLocations(locations);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personPhotosByKey]);
 
   // Re-render pins when a pin override changes on ANOTHER device (a move or
   // appearance edit synced in by the poll above). The pinOverridesRef effect
@@ -4616,34 +4903,19 @@ export default function IntelligenceMapping() {
         iconBox.appendChild(img);
         // Store direct img ref for live rotation
         customMarkerImgRefs.current.set(outerCm.id, img);
-        // Camera badge — same "has linked photos" check as the intel pin
-        // badge (see photoKeysRef), purely informational at a glance.
-        // Keyed on the marker's ADDRESS, not its (often empty, free-text)
-        // label — photoKeysRef only ever holds "location" category keys,
-        // i.e. formatted addresses (see its own build effect above), which
-        // is what a photo actually gets linked to, not whatever caption an
-        // officer may or may not have typed for this marker. Checking
-        // .label here meant a marker with no label (icon-only, like a
-        // plain Tactical pin) could never show the badge even when its
-        // address plainly had photos on file.
-        if (
-          outerCm.address &&
-          photoKeysRef.current.has(normalizeEntityLabelClient(outerCm.address))
-        ) {
-          const photoBadge = document.createElement("div");
-          photoBadge.style.cssText = `
-            position:absolute;bottom:-4px;right:-4px;
-            background:#10b981;
-            width:16px;height:16px;
-            border-radius:50%;
-            display:flex;align-items:center;justify-content:center;
-            border:1.5px solid #fff;
-            box-shadow:0 1px 3px rgba(0,0,0,0.3);
-          `;
-          photoBadge.innerHTML =
-            '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.2"/><path d="M8 6l1.5-2.3h5L16 6"/></svg>';
-          iconBox.appendChild(photoBadge);
-        }
+        // Photo pill — same checks as the intel pin (see photoKeysRef /
+        // personPhotosByKeyRef). Keyed on the marker's ADDRESS, not its
+        // (often empty, free-text) label — photos link to formatted
+        // addresses, so an icon-only marker (e.g. a plain Tactical pin)
+        // still shows it when its address has photos on file.
+        const cmPhotoPill = createPhotoPill(
+          !!outerCm.address &&
+            photoKeysRef.current.has(
+              normalizeEntityLabelClient(outerCm.address)
+            ),
+          personPhotosByKeyRef.current.has(addressMatchKey(outerCm.address))
+        );
+        if (cmPhotoPill) iconBox.appendChild(cmPhotoPill);
         wrapper.appendChild(iconBox);
         if (labelText) {
           wrapper.appendChild(
@@ -4729,81 +5001,30 @@ export default function IntelligenceMapping() {
               );
 
             // Persons (from custom marker)
-            if (cm.assocPersons?.length)
-              lines.push(
-                `<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Persons</span><div style="margin-top:2px">${popupPersonLines(cm.assocPersons as string[], "12px")}</div></div>`
+            {
+              const cmPeopleHtml = popupPeopleLines(
+                (cm.assocPersons ?? []) as string[],
+                cm.address ?? "",
+                registeredPeopleLookupRef.current,
+                "12px"
               );
+              if (cmPeopleHtml)
+                lines.push(
+                  `<div style="margin-top:6px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Persons</span><div style="margin-top:2px">${cmPeopleHtml}</div></div>`
+                );
+            }
 
             // Vehicles (from custom marker)
             if (cm.assocVehicles?.length)
               lines.push(
-                `<div style="margin-top:4px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Vehicles</span><p style="font-size:12px;color:#111;margin:2px 0 0;">${(cm.assocVehicles as string[]).join(", ")}</p></div>`
+                `<div style="margin-top:4px;"><span style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Vehicles</span><div style="margin-top:2px">${popupVehicleLines(cm.assocVehicles as string[], "12px")}</div></div>`
               );
 
             // ── Merged intel section: render each merged entry (target_address first) ──
             for (const intel of mergedIntelList) {
-              const isTarget = intel.type === "target_address";
-              const accentColor = isTarget ? "#dc2626" : "#7c3aed";
-              const typeLabel = isTarget
-                ? "TARGET ADDRESS"
-                : intel.type === "associate_address"
-                  ? "ASSOCIATE ADDRESS"
-                  : "OBSERVED LOCATION";
-              lines.push(`
-                <div style="margin-top:8px;padding:8px;background:${isTarget ? "#fff5f5" : "#f8fafc"};border:1px solid ${isTarget ? "#fca5a5" : "#e2e8f0"};border-radius:6px;">
-                  <div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;">
-                    <span style="background:${accentColor};color:#fff;border-radius:3px;font-size:9px;font-weight:700;padding:1px 5px;letter-spacing:0.07em;">${typeLabel}</span>
-                  </div>
-                  <div style="font-size:12px;font-weight:700;color:#111;margin-bottom:3px;">${formatIntelAddress(intel.label)}</div>
-              `);
-              // Linked target details — same treatment as the standalone
-              // target pin: no repeated TGT alias or HBF, vehicles in the
-              // Intelligence folder's form, capped and scrollable.
-              if (isTarget && intel.linkedTargets.length > 0) {
-                lines.push(`<div style="${POPUP_SCROLL}">`);
-                for (const t of intel.linkedTargets) {
-                  lines.push(
-                    `<div style="padding:4px 6px;background:#fef2f2;border-left:2px solid #dc2626;border-radius:0 3px 3px 0;margin-bottom:3px;">`
-                  );
-                  lines.push(
-                    `<div style="font-size:11px;font-weight:700;color:#111;">${t.name}</div>`
-                  );
-                  const tVehicles = [t.v1f, t.v2f].filter(
-                    (v): v is string => !!v
-                  );
-                  if (tVehicles.length)
-                    lines.push(popupVehicleLines(tVehicles, "10px"));
-                  lines.push(`</div>`);
-                }
-                lines.push(`</div>`);
-              }
-
-              const intelEntityLines: string[] = [];
-              if (!isTarget && intel.linkedTargets.length > 0) {
-                intelEntityLines.push(
-                  `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;">Linked Targets</div>`
-                );
-                for (const t of intel.linkedTargets) {
-                  intelEntityLines.push(
-                    `<div style="font-size:11px;color:#111;">${t.name}</div>`
-                  );
-                }
-              }
-              if (intel.assocPersons.length > 0) {
-                intelEntityLines.push(
-                  `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:3px;">Intel Persons</div><div>${popupPersonLines(intel.assocPersons, "11px")}</div>`
-                );
-              }
-              if (intel.assocVehicles.length > 0) {
-                intelEntityLines.push(
-                  `<div style="font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;">Intel Vehicles</div><div>${popupVehicleLines(intel.assocVehicles, "11px")}</div>`
-                );
-              }
-              if (intelEntityLines.length)
-                lines.push(
-                  `<div style="${POPUP_SCROLL}">${intelEntityLines.join("")}</div>`
-                );
-              lines.push(`</div>`);
+              lines.push(
+                `<div style="margin-top:8px;padding:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;">${entityBlocksHtml(intel, registeredPeopleLookupRef.current, true)}</div>`
+              );
             }
             // ─────────────────────────────────────────────────────────────────────────
 
@@ -4879,9 +5100,21 @@ export default function IntelligenceMapping() {
                 knownPhotoKeys: Array.from(photoKeysRef.current),
               });
             }
-            if (cmHasLinkedPhotos) {
+            // Profile / baseball-card photos of the people living here — an
+            // address on the marker itself, else on a merged target/location.
+            const personPhotoAddress = [
+              cm.address,
+              ...mergedIntelList.map((m: any) => m.label),
+            ].find(
+              (a): a is string =>
+                !!a && personPhotosByKeyRef.current.has(addressMatchKey(a))
+            );
+            const imagesAddress = cmHasLinkedPhotos
+              ? safeAddress
+              : (personPhotoAddress ?? "").replace(/'/g, "\\'");
+            if (cmHasLinkedPhotos || personPhotoAddress) {
               sections.push(
-                `<div style="margin-top:5px;"><button onclick="window.__mapOpenImagesPip('${safeAddress}')" style="${btnBase}background:#10b981;color:#fff;border:none;font-size:13px;padding:9px 0;">Images</button></div>`
+                `<div style="margin-top:5px;"><button onclick="window.__mapOpenImagesPip('${imagesAddress}')" style="${btnBase}background:#10b981;color:#fff;border:none;font-size:13px;padding:9px 0;">Images</button></div>`
               );
             }
 
@@ -4924,7 +5157,7 @@ export default function IntelligenceMapping() {
         existing.set(outerCm.id, marker);
       }
     });
-  }, [customMarkers, mapReady, createLabelPillElement]);
+  }, [customMarkers, mapReady, createLabelPillElement, personPhotosByKey]);
 
   // ── Map shape rendering (persisted shapes) ───────────────────────────────────
   const shapesRef = useRef<
@@ -6817,6 +7050,7 @@ export default function IntelligenceMapping() {
               initialZoom={mapInitialZoom}
               initialMapTypeId={mapInitialTypeId}
               hideMapTypeControl
+              showStreetViewControl
             />
 
             {/* Map / Sat toggle — top-right, replaces Google's native
@@ -7191,18 +7425,18 @@ export default function IntelligenceMapping() {
             </div>
           </div>
 
-          {streetViewPip && (
-            <StreetViewPip
-              lat={streetViewPip.lat}
-              lng={streetViewPip.lng}
-              label={streetViewPip.label}
-              onClose={() => setStreetViewPip(null)}
-            />
-          )}
+          <StreetViewPip
+            map={mapReady ? mapRef.current : null}
+            request={streetViewPip}
+            onClose={() => setStreetViewPip(null)}
+          />
 
           {imagesPip && (
             <ImagesPip
               label={imagesPip.label}
+              personPhotos={personPhotosByKey.get(
+                addressMatchKey(imagesPip.label)
+              )}
               onClose={() => setImagesPip(null)}
             />
           )}
@@ -8158,6 +8392,51 @@ export default function IntelligenceMapping() {
                 </button>
               </div>
               {/* end Street & Heading */}
+
+              {/* ── MARKER ENTITY COUNT — same on/off pattern as Street &
+                Heading: the number on a house marker is the total distinct
+                people and vehicles linked to it. ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Marker Entity Count
+                </span>
+                <button
+                  onClick={() =>
+                    setShowMarkerEntityCount(!showMarkerEntityCount)
+                  }
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+                    showMarkerEntityCount
+                      ? "border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20"
+                      : "border-border bg-card hover:bg-accent/40"
+                  }`}
+                  aria-pressed={showMarkerEntityCount}
+                >
+                  <Hash
+                    className={`h-3.5 w-3.5 flex-shrink-0 ${
+                      showMarkerEntityCount
+                        ? "text-sky-500"
+                        : "text-muted-foreground"
+                    }`}
+                  />
+                  <span
+                    className={`text-xs font-semibold truncate flex-1 text-left ${
+                      showMarkerEntityCount ? "text-sky-500" : "text-foreground"
+                    }`}
+                  >
+                    Entity count on markers
+                  </span>
+                  <span
+                    className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                      showMarkerEntityCount
+                        ? "text-sky-500"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {showMarkerEntityCount ? "On" : "Off"}
+                  </span>
+                </button>
+              </div>
+              {/* end Marker Entity Count */}
             </div>
           )}
           {/* end Pane Body */}

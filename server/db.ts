@@ -18,6 +18,7 @@ import { vaultEncrypt, vaultDecrypt, fingerprintVaultKey } from "./wipcVault";
 import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
 import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
+import { addressMatchKey } from "@shared/addressMatchKey";
 import {
   applyTargetProjectsToSummary,
   sanitizeTargetSpecialProjects,
@@ -27,6 +28,7 @@ import {
   formatIntelVehicle,
   bracketCodeFromRegisteredName,
   nameWithoutBornClause,
+  shortPersonDisplayName,
 } from "@shared/addressFormat";
 import {
   VEHICLE_DEPART_PATTERN,
@@ -2239,6 +2241,329 @@ export async function getAttachmentsForEntity(params: {
   }));
 }
 
+/** Photos of the people who live at each address, for the map's "Images"
+ * button — only photos that were uploaded by hand (profile / baseball-card
+ * imports, "Upload Image" on a target or associate), never the running-sheet
+ * row photos, which the location link already covers. Scoped to the targets
+ * linked to `operationIds` and their associates / residents.
+ *
+ * Each person counts at ONE address: a target's home address; an associate's
+ * or resident's home address, else the first of their other addresses. Keyed
+ * by shared/addressMatchKey so the client can look up a pin's address. */
+export async function getPersonPhotosByAddress(operationIds: number[]): Promise<
+  Array<{
+    addressKey: string;
+    photos: Array<{
+      id: number;
+      url: string;
+      personLabel: string;
+      createdAt: Date | null;
+    }>;
+  }>
+> {
+  const db = await getDb();
+  if (!db || operationIds.length === 0) return [];
+
+  const targetRows = await db
+    .selectDistinct({
+      id: targets.id,
+      name: targets.name,
+      firstNames: targets.firstNames,
+      surname: targets.surname,
+      hbf: targets.hbf,
+      hb: targets.hb,
+    })
+    .from(operationTargetLinks)
+    .innerJoin(targets, eq(operationTargetLinks.targetId, targets.id))
+    .where(
+      and(
+        inArray(operationTargetLinks.operationId, operationIds),
+        isNull(targets.deletedAt)
+      )
+    );
+  if (targetRows.length === 0) return [];
+  const targetIds = targetRows.map(t => t.id);
+
+  const associateRows = await db
+    .select({
+      name: associates.name,
+      firstNames: associates.firstNames,
+      surname: associates.surname,
+      hbf: associates.hbf,
+      hb: associates.hb,
+      extraAddresses: associates.extraAddresses,
+    })
+    .from(associates)
+    .where(
+      and(inArray(associates.targetId, targetIds), isNull(associates.deletedAt))
+    );
+
+  const shortName = (
+    firstNames: string | null,
+    surname: string | null,
+    fallback: string
+  ) => {
+    const first = (firstNames ?? "").trim().split(/\s+/)[0] ?? "";
+    if (first && surname) return `${first} ${surname.trim()}`;
+    return (
+      fallback
+        .replace(/\s*\([^()]*\)\s*$/, "")
+        .split(/,\s*born\b/i)[0]
+        .split(",")[0]
+        .trim() || fallback
+    );
+  };
+  const firstExtraAddress = (json: string | null): string => {
+    try {
+      const eas: Array<{ full?: string; short?: string }> = JSON.parse(
+        json ?? "[]"
+      );
+      for (const ea of eas) {
+        const v = ea.full || ea.short;
+        if (v) return v;
+      }
+    } catch {
+      /* malformed JSON — no address */
+    }
+    return "";
+  };
+
+  type Person = { addressKey: string; label: string };
+  const targetPeople = new Map<number, Person>();
+  for (const t of targetRows) {
+    const addressKey = addressMatchKey(t.hbf || t.hb);
+    if (addressKey)
+      targetPeople.set(t.id, {
+        addressKey,
+        label: shortName(t.firstNames, t.surname, t.name),
+      });
+  }
+  // associate photos link by the normalized associate name (see
+  // linkAttachmentToEntity's entityKey)
+  const associatePeople = new Map<string, Person>();
+  for (const a of associateRows) {
+    const addressKey = addressMatchKey(
+      a.hbf || a.hb || firstExtraAddress(a.extraAddresses)
+    );
+    if (addressKey)
+      associatePeople.set(normalizeEntityLabel(a.name), {
+        addressKey,
+        label: shortName(a.firstNames, a.surname, a.name),
+      });
+  }
+  if (targetPeople.size === 0 && associatePeople.size === 0) return [];
+
+  const links = await db
+    .select({
+      attachmentId: attachmentEntityLinks.attachmentId,
+      category: attachmentEntityLinks.category,
+      targetId: attachmentEntityLinks.targetId,
+      entityKey: attachmentEntityLinks.entityKey,
+    })
+    .from(attachmentEntityLinks)
+    .where(
+      or(
+        and(
+          eq(attachmentEntityLinks.category, "target"),
+          inArray(attachmentEntityLinks.targetId, targetIds)
+        ),
+        associatePeople.size > 0
+          ? and(
+              eq(attachmentEntityLinks.category, "associate"),
+              inArray(
+                attachmentEntityLinks.entityKey,
+                Array.from(associatePeople.keys())
+              )
+            )
+          : undefined
+      )
+    );
+  if (links.length === 0) return [];
+
+  const photoRows = await db
+    .select({
+      id: rowAttachments.id,
+      url: rowAttachments.url,
+      createdAt: rowAttachments.createdAt,
+    })
+    .from(rowAttachments)
+    .where(
+      and(
+        inArray(
+          rowAttachments.id,
+          links.map(l => l.attachmentId)
+        ),
+        eq(rowAttachments.isManualUpload, true),
+        isNull(rowAttachments.deletedAt)
+      )
+    )
+    .orderBy(desc(rowAttachments.createdAt));
+  const photoById = new Map(photoRows.map(p => [p.id, p]));
+
+  const byAddress = new Map<
+    string,
+    Map<
+      number,
+      { id: number; url: string; personLabel: string; createdAt: Date | null }
+    >
+  >();
+  for (const l of links) {
+    const photo = photoById.get(l.attachmentId);
+    if (!photo) continue;
+    const person =
+      l.category === "target"
+        ? targetPeople.get(l.targetId ?? -1)
+        : associatePeople.get(l.entityKey ?? "");
+    if (!person) continue;
+    const forAddress =
+      byAddress.get(person.addressKey) ??
+      new Map<
+        number,
+        { id: number; url: string; personLabel: string; createdAt: Date | null }
+      >();
+    // One photo linked to a target AND the same person as an associate shows
+    // once.
+    if (!forAddress.has(photo.id))
+      forAddress.set(photo.id, {
+        id: photo.id,
+        url: photo.url,
+        personLabel: person.label,
+        createdAt: photo.createdAt ?? null,
+      });
+    byAddress.set(person.addressKey, forAddress);
+  }
+  return Array.from(byAddress, ([addressKey, photos]) => ({
+    addressKey,
+    photos: Array.from(photos.values()).sort(
+      (a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)
+    ),
+  }));
+}
+
+/** Every person registered against the selected operations' targets — the
+ * targets themselves plus their associates and other home address residents
+ * — with ALL the vehicles on their registry record, for the map popups. Each
+ * carries the key of the one address they count at (see
+ * getPersonPhotosByAddress) so a pin can find the people living there. */
+export async function getRegisteredPeopleForMap(
+  operationIds: number[]
+): Promise<
+  Array<{
+    name: string;
+    role: "target" | "resident" | "associate";
+    addressKey: string;
+    vehicles: string[];
+  }>
+> {
+  const db = await getDb();
+  if (!db || operationIds.length === 0) return [];
+
+  const targetRows = await db
+    .selectDistinct({
+      id: targets.id,
+      name: targets.name,
+      hbf: targets.hbf,
+      hb: targets.hb,
+      v1f: targets.v1f,
+      v1: targets.v1,
+      v2f: targets.v2f,
+      v2: targets.v2,
+      extraVehicles: targets.extraVehicles,
+    })
+    .from(operationTargetLinks)
+    .innerJoin(targets, eq(operationTargetLinks.targetId, targets.id))
+    .where(
+      and(
+        inArray(operationTargetLinks.operationId, operationIds),
+        isNull(targets.deletedAt)
+      )
+    );
+  if (targetRows.length === 0) return [];
+
+  const associateRows = await db
+    .select({
+      name: associates.name,
+      relationship: associates.relationship,
+      hbf: associates.hbf,
+      hb: associates.hb,
+      v1f: associates.v1f,
+      v1: associates.v1,
+      extraVehicles: associates.extraVehicles,
+      extraAddresses: associates.extraAddresses,
+    })
+    .from(associates)
+    .where(
+      and(
+        inArray(
+          associates.targetId,
+          targetRows.map(t => t.id)
+        ),
+        isNull(associates.deletedAt)
+      )
+    );
+
+  const vehiclesOf = (r: {
+    v1f?: string | null;
+    v1?: string | null;
+    v2f?: string | null;
+    v2?: string | null;
+    extraVehicles?: string | null;
+  }): string[] => {
+    const out: string[] = [];
+    const add = (v?: string | null) => {
+      const t = v?.trim();
+      if (!t) return;
+      const shown = formatIntelVehicle(t);
+      if (shown && !out.includes(shown)) out.push(shown);
+    };
+    add(r.v1f || r.v1);
+    add(r.v2f || r.v2);
+    try {
+      const extras: Array<{ full?: string; short?: string }> = JSON.parse(
+        r.extraVehicles ?? "[]"
+      );
+      for (const ev of extras) add(ev.full || ev.short);
+    } catch {
+      /* malformed JSON — no extra vehicles */
+    }
+    return out;
+  };
+  const firstExtraAddress = (json: string | null): string => {
+    try {
+      const eas: Array<{ full?: string; short?: string }> = JSON.parse(
+        json ?? "[]"
+      );
+      for (const ea of eas) {
+        const v = ea.full || ea.short;
+        if (v) return v;
+      }
+    } catch {
+      /* malformed JSON — no address */
+    }
+    return "";
+  };
+
+  return [
+    ...targetRows.map(t => ({
+      name: shortPersonDisplayName(t.name),
+      role: "target" as const,
+      addressKey: addressMatchKey(t.hbf || t.hb),
+      vehicles: vehiclesOf(t),
+    })),
+    ...associateRows.map(a => ({
+      name: shortPersonDisplayName(a.name),
+      role:
+        a.relationship === "resident"
+          ? ("resident" as const)
+          : ("associate" as const),
+      addressKey: addressMatchKey(
+        a.hbf || a.hb || firstExtraAddress(a.extraAddresses)
+      ),
+      vehicles: vehiclesOf(a),
+    })),
+  ];
+}
+
 export interface OperationEntityPhoto {
   id: number;
   url: string;
@@ -3390,6 +3715,7 @@ export async function updateAssociate(
       | "vehType"
       | "extraAddresses"
       | "extraVehicles"
+      | "relationship"
     >
   >
 ) {
@@ -10810,29 +11136,13 @@ export async function listWipcMembers() {
   );
 }
 
-/** CINs (uppercased) currently registered for WIPC protection. Used only to
- * redact protected identities from data meant to leave the app (e.g. Intel
- * Export) — never to gate normal in-app display, which already shows CINs
- * freely to authenticated users. */
-export async function getWipcProtectedCins(): Promise<Set<string>> {
-  const members = await listWipcMembers();
-  const cins = new Set<string>();
-  for (const m of members) {
-    const cin = (m as any).cinNumber as string | undefined;
-    if (cin && cin.trim()) cins.add(cin.trim().toUpperCase());
-  }
-  return cins;
-}
-
 // ─── Intel Export ───────────────────────────────────────────────────────────
 // Structured JSON/CSV data for handing running-sheet content and its mined
 // intelligence to another agency's system — Administration → Intel Export.
 // Deliberately independent of the Court module (Statement/Witness List/
 // WIPC generators) — this reads straight from running sheets and the
 // Intelligence entity index, nothing here is ever built from Court output.
-// Any CIN that matches a registered WIPC member is redacted, since WIPC
-// exists specifically to keep that identity from appearing in material that
-// could leave the organisation.
+// CINs are exported as recorded (no WIPC redaction).
 
 export interface IntelExportRunningSheet {
   operation: {
@@ -10881,17 +11191,11 @@ export interface IntelExportEntity {
 /** Builds both Intel Export documents (the running sheet(s) themselves, and
  * the intelligence mined from them) for a set of running sheets — the
  * caller decides which of the two, and in which format(s), to actually
- * download. Redacts any WIPC-protected CIN wherever a CIN appears. */
+ * download. */
 export async function getIntelExportData(sheetIds: number[]): Promise<{
   runningSheets: IntelExportRunningSheet[];
   intelEntities: IntelExportEntity[];
 }> {
-  const protectedCins = await getWipcProtectedCins();
-  const redactCin = (cin: string | null | undefined): string => {
-    if (!cin) return "";
-    return protectedCins.has(cin.trim().toUpperCase()) ? "WIPC-PROTECTED" : cin;
-  };
-
   const runningSheets: IntelExportRunningSheet[] = [];
   const rowMetaById = new Map<
     number,
@@ -10922,7 +11226,7 @@ export async function getIntelExportData(sheetIds: number[]): Promise<{
         sheet.sheetCins ?? "[]"
       );
       roster = raw.map(c => ({
-        cin: redactCin(c.cin),
+        cin: c.cin,
         isTeamLeader: !!c.isTeamLeader,
       }));
     } catch {
@@ -10954,7 +11258,7 @@ export async function getIntelExportData(sheetIds: number[]): Promise<{
         sheetDate: sheet.sheetDate,
         status: sheet.closedAt ? "closed" : "open",
         closedAt: sheet.closedAt ?? null,
-        closedByCIN: sheet.closedByCIN ? redactCin(sheet.closedByCIN) : null,
+        closedByCIN: sheet.closedByCIN ?? null,
         targetId: sheet.targetId ?? null,
         targetName: sheet.targetName ?? null,
         roster,
@@ -10966,11 +11270,11 @@ export async function getIntelExportData(sheetIds: number[]): Promise<{
         observation: row.observation,
         membersPresent: members
           .filter(m => m.rowId === row.id)
-          .map(m => redactCin(m.memberName)),
+          .map(m => m.memberName),
         certifications: certs
           .filter(c => c.rowId === row.id && c.isActive)
           .map(c => ({
-            cin: redactCin(c.certifiedByCIN),
+            cin: c.certifiedByCIN,
             certifiedAt: new Date(c.certifiedAt).toISOString(),
           })),
         isLocked: row.isLocked,
@@ -13699,6 +14003,12 @@ export interface IntelMapLocation {
   assocVehicles: string[];
   /** Total link count (targets + assocPersons + assocVehicles) */
   linkCount: number;
+  /** Only what running-sheet observations recorded at this location (the
+   * fields above also carry registry-derived entries): target names, other
+   * people, and vehicles. The map popup's OBSERVATIONS block. */
+  observedTargets: string[];
+  observedPersons: string[];
+  observedVehicles: string[];
 }
 
 export async function getIntelMappingLocations(
@@ -13824,6 +14134,9 @@ export async function getIntelMappingLocations(
         assocPersons: [],
         assocVehicles: [],
         linkCount: 0,
+        observedTargets: [],
+        observedPersons: [],
+        observedVehicles: [],
       });
     }
     return locationMap.get(key)!;
@@ -13986,6 +14299,8 @@ export async function getIntelMappingLocations(
         if (co.isTarget) {
           // Add to linkedTargets if not already there
           const tData = relevantTargets.find(t => t.id === co.targetId);
+          if (tData && !loc.observedTargets.includes(tData.name))
+            loc.observedTargets.push(tData.name);
           if (
             tData &&
             !loc.linkedTargets.find(lt => lt.targetId === co.targetId)
@@ -14008,9 +14323,15 @@ export async function getIntelMappingLocations(
           if (!loc.assocPersons.includes(co.shortForm)) {
             loc.assocPersons.push(co.shortForm);
           }
+          if (!loc.observedPersons.includes(co.shortForm)) {
+            loc.observedPersons.push(co.shortForm);
+          }
         } else if (co.type === "vehicle") {
           if (!loc.assocVehicles.includes(co.shortForm)) {
             loc.assocVehicles.push(co.shortForm);
+          }
+          if (!loc.observedVehicles.includes(co.shortForm)) {
+            loc.observedVehicles.push(co.shortForm);
           }
         }
       }

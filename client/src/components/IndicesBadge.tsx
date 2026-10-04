@@ -29,14 +29,21 @@ export function IndicesBadge({
   const sizing =
     size === "header"
       ? "gap-1.5 px-2.5 py-1 rounded-full text-xs"
-      : "gap-1 px-1.5 py-0.5 rounded text-[10px]";
+      : "gap-0 sm:gap-1 px-1.5 py-0.5 rounded text-[10px]";
   return (
     <span
       title="Indices — recorded from a source other than a running sheet observation; not yet corroborated in the field"
       className={`inline-flex items-center font-semibold border shrink-0 ${sizing} ${colors} ${className}`}
     >
-      <Database className="w-2.5 h-2.5" />
-      Indices
+      <Database
+        className={
+          size === "header" ? "w-2.5 h-2.5" : "w-3 h-3 sm:w-2.5 sm:h-2.5"
+        }
+      />
+      {/* Compact lists: icon only on a phone to leave room for the name. */}
+      <span className={size === "header" ? "" : "sr-only sm:not-sr-only"}>
+        Indices
+      </span>
     </span>
   );
 }

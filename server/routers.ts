@@ -311,6 +311,8 @@ import {
   getEntityLinksByAttachmentId,
   getEntityLinkCounts,
   getAttachmentsForEntity,
+  getPersonPhotosByAddress,
+  getRegisteredPeopleForMap,
   getLinkedOperationsForEntity,
   createPersonDetection,
   findSimilarFaces,
@@ -1918,6 +1920,15 @@ export const appRouter = router({
         return getAttachmentsForEntity(input);
       }),
 
+    // Hand-uploaded photos (profiles / baseball cards) of the people living
+    // at each address, for the selected operations — feeds the map's "Images"
+    // button alongside the running-sheet photos. See getPersonPhotosByAddress.
+    personPhotosByAddress: protectedProcedure
+      .input(z.object({ operationIds: z.array(z.number()).max(200) }))
+      .query(async ({ input }) => {
+        return getPersonPhotosByAddress(input.operationIds);
+      }),
+
     // Operations a given entity is already linked to — used to restrict the
     // manual-upload "link to operation" dropdown for a known Target/Vehicle/
     // Associate/Location. Unidentified Person has no linked operations (it's
@@ -3135,7 +3146,7 @@ export const appRouter = router({
 
     /** Structured JSON-ready data for Administration → Intel Export: the
      * selected running sheet(s) verbatim, and the intelligence mined from
-     * them — nothing from the Court module, WIPC-protected CINs redacted.
+     * them — nothing from the Court module.
      * Admin-only: this is data meant to leave the organisation. */
     intelExportData: adminProcedure
       .input(z.object({ sheetIds: z.array(z.number()).min(1) }))
@@ -4113,6 +4124,8 @@ export const appRouter = router({
           v1f: z.string().optional().nullable(),
           v1: z.string().optional().nullable(),
           extraVehicles: z.string().optional().nullable(),
+          // Re-file between Associates and Other Home Address Residents.
+          relationship: z.enum(["associate", "resident"]).optional(),
           ...structuredTargetFieldsSchema,
         })
       )
@@ -4186,6 +4199,16 @@ export const appRouter = router({
   }),
   /** Intelligence Folder */
   intelligence: router({
+    /** Everyone registered against the selected operations' targets (targets,
+     * associates, other home address residents) with all their registry
+     * vehicles — feeds the map marker popups. Registry data only; running-sheet
+     * observations are not involved. */
+    registeredPeopleForMap: protectedProcedure
+      .input(z.object({ operationIds: z.array(z.number()).max(200) }))
+      .query(async ({ input }) => {
+        return getRegisteredPeopleForMap(input.operationIds);
+      }),
+
     /**
      * Returns a stable device token for this browser, creating one if it doesn't exist.
      * The token is stored in an httpOnly cookie so it survives localStorage clears.

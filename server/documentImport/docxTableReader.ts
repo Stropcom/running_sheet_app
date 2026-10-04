@@ -12,7 +12,10 @@ import { XMLParser } from "fast-xml-parser";
 import sharp from "sharp";
 import { createHash } from "crypto";
 import type { ExtractedDocumentImage } from "./documentReadResult";
-import { matchWholeLinePersonName } from "./freeTextEntityScan";
+import {
+  matchWholeLinePersonName,
+  stripPhotoCaptionLabel,
+} from "./freeTextEntityScan";
 import { isLikelyPhoto } from "./imagePhotoFilter";
 
 export interface DocxTable {
@@ -110,7 +113,9 @@ async function findBodyImageRefs(zip: JSZip, xml: string): Promise<ImageRef[]> {
  * ("Associate of Target\nNadia Elise KOVACS" — the owner, not the person) is
  * deliberately not a match. */
 function leadingCellName(cell: string | undefined): string {
-  const first = (cell ?? "").split("\n")[0]?.trim() ?? "";
+  const first = stripPhotoCaptionLabel(
+    (cell ?? "").split("\n")[0]?.trim() ?? ""
+  );
   return first && matchWholeLinePersonName(first) ? first : "";
 }
 

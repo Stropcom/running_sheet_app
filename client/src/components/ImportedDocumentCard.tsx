@@ -245,6 +245,12 @@ export function ImportedDocumentCard({
       )
   );
 
+  const versionPillClass = `text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full shrink-0 ${
+    !notParsed && isCurrent
+      ? "bg-violet-500/15 text-violet-600 dark:text-violet-400"
+      : "bg-muted text-muted-foreground"
+  }`;
+
   return (
     <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
       <button
@@ -257,22 +263,35 @@ export function ImportedDocumentCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <p className="text-sm font-semibold text-foreground truncate min-w-0">
-              Imported for{" "}
+              {/* Phones: just the name; the prefix is for larger screens. */}
+              <span className="hidden sm:inline">Imported for </span>
               {subject || name || row.targetName || "Unknown target"}
             </p>
-            <span
-              className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full shrink-0 ${
-                !notParsed && isCurrent
-                  ? "bg-violet-500/15 text-violet-600 dark:text-violet-400"
-                  : "bg-muted text-muted-foreground"
-              }`}
-            >
+            <span className={`hidden sm:inline-flex ${versionPillClass}`}>
               {notParsed
                 ? "Attached"
                 : `Version ${version}${isCurrent ? " · Current" : ""}`}
             </span>
           </div>
-          <p className="text-xs text-muted-foreground truncate">
+          {/* Phone: version marker and upload date only (no CIN / file name). */}
+          <p className="sm:hidden flex items-center gap-2 text-xs text-muted-foreground">
+            <span className={versionPillClass}>
+              {notParsed
+                ? "Attached"
+                : `V${version}${isCurrent ? " · Current" : ""}`}
+            </span>
+            <span className="truncate">
+              {formatImportDate(row.uploadedAt)}
+              {changeCount > 0 && (
+                <span className="text-emerald-700 dark:text-emerald-400 font-medium">
+                  {" "}
+                  · {changeCount} change{changeCount !== 1 ? "s" : ""} since V
+                  {version - 1}
+                </span>
+              )}
+            </span>
+          </p>
+          <p className="hidden sm:block text-xs text-muted-foreground truncate">
             Uploaded {formatImportDate(row.uploadedAt)}
             {row.uploadedByCIN ? ` · CIN ${row.uploadedByCIN}` : ""}
             {row.sourceFileName ? ` · ${row.sourceFileName}` : ""}

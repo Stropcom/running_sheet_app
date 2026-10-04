@@ -896,16 +896,14 @@ export default function RSMapping() {
             initialCenter={PERTH_CENTER}
             initialZoom={13}
             onMapReady={handleMapReady}
+            showStreetViewControl
           />
 
-          {streetViewPip && (
-            <StreetViewPip
-              lat={streetViewPip.lat}
-              lng={streetViewPip.lng}
-              label={streetViewPip.label}
-              onClose={() => setStreetViewPip(null)}
-            />
-          )}
+          <StreetViewPip
+            map={mapReady ? mapRef.current : null}
+            request={streetViewPip}
+            onClose={() => setStreetViewPip(null)}
+          />
 
           {imagesPip && (
             <ImagesPip

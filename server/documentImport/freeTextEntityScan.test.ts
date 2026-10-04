@@ -6,6 +6,7 @@ import {
   findCandidatePhones,
   matchWholeLinePersonName,
   scanFreeText,
+  stripPhotoCaptionLabel,
 } from "./freeTextEntityScan";
 
 // The real SUMMARY cell text from the training fixture (see
@@ -262,5 +263,23 @@ describe("scanFreeText", () => {
     const result = scanFreeText(SUMMARY_TEXT);
     const types = new Set(result.map(c => c.type));
     expect(types).toEqual(new Set(["person", "business", "email", "phone"]));
+  });
+});
+
+describe("stripPhotoCaptionLabel", () => {
+  it("removes a leading photo label so the caption reads as the name", () => {
+    expect(stripPhotoCaptionLabel("Photograph: Youssef Karim MANSOUR")).toBe(
+      "Youssef Karim MANSOUR"
+    );
+    expect(stripPhotoCaptionLabel("Photo of Jane SMITH")).toBe("Jane SMITH");
+    expect(stripPhotoCaptionLabel("Image - Jane SMITH")).toBe("Jane SMITH");
+    expect(stripPhotoCaptionLabel("Mugshot: Jane SMITH")).toBe("Jane SMITH");
+  });
+
+  it("leaves a plain name (or a name starting with a label-like word) alone", () => {
+    expect(stripPhotoCaptionLabel("Jane SMITH")).toBe("Jane SMITH");
+    expect(stripPhotoCaptionLabel("Pickett Jane SMITH")).toBe(
+      "Pickett Jane SMITH"
+    );
   });
 });

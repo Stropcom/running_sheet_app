@@ -684,6 +684,18 @@ button:active:not(:disabled) {
   scrollbar-width: auto;
 }
 
+/* Add Target form: whatever has been filled in reads bold, so it's easy to
+   tell which fields are done and which are still empty (empty fields show
+   their placeholder, which stays regular weight). */
+.bold-entered
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(
+    :placeholder-shown
+  ),
+.bold-entered textarea:not(:placeholder-shown),
+.bold-entered [data-slot="select-trigger"]:not([data-placeholder]) {
+  font-weight: 600;
+}
+
 /* Table refinements */
 .running-sheet-table {
   border-collapse: separate;

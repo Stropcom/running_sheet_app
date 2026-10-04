@@ -50,6 +50,15 @@ interface Map3DViewProps {
   /** Reports the camera's centre as it moves, so leaving 3D can put the flat
    * map where the officer ended up. */
   onCenterChange: (center: { lat: number; lng: number }) => void;
+  /** Right-click (desktop) or press-and-hold (touch) at a spot — the same
+   * gesture the flat map uses to open its "add here" chooser. */
+  onLocationAction?: (lat: number, lng: number) => void;
+  /** A click on a business / street number. */
+  onPlaceClick?: (lat: number, lng: number, placeId: string) => void;
+  /** A plain click on the ground or a building. */
+  onGroundClick?: (lat: number, lng: number) => void;
+  /** The 3D map never reported a location for a right-click / hold. */
+  onActionUnavailable?: () => void;
   className?: string;
 }
 
@@ -67,6 +76,10 @@ export function Map3DView({
   shapes,
   onMarkerClick,
   onCenterChange,
+  onLocationAction,
+  onPlaceClick,
+  onGroundClick,
+  onActionUnavailable,
   className,
 }: Map3DViewProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -82,6 +95,18 @@ export function Map3DView({
   onMarkerClickRef.current = onMarkerClick;
   const onCenterChangeRef = useRef(onCenterChange);
   onCenterChangeRef.current = onCenterChange;
+  const gestureRef = useRef({
+    onLocationAction,
+    onPlaceClick,
+    onGroundClick,
+    onActionUnavailable,
+  });
+  gestureRef.current = {
+    onLocationAction,
+    onPlaceClick,
+    onGroundClick,
+    onActionUnavailable,
+  };
   // Latest props for the one-time camera setup below (re-running it would
   // restart the camera) — markers and shapes are applied by the sync effect.
   const initialRef = useRef({ center, range });
@@ -193,6 +218,93 @@ export function Map3DView({
         cleanups.push(() =>
           el.removeEventListener("gmp-centerchange", onCenter)
         );
+
+        // ── Clicks and the "add here" gestures ───────────────────────────
+        // The 3D element reports where a click landed (gmp-click) but has no
+        // pixel→position lookup, so right-click and press-and-hold are
+        // recognised on the page and then matched with the 3D element's own
+        // click report for that same gesture.
+        const intent = { until: 0, handled: false };
+        const armIntent = (ms: number) => {
+          intent.until = Date.now() + ms;
+          intent.handled = false;
+          window.setTimeout(() => {
+            if (!intent.handled && Date.now() >= intent.until) {
+              gestureRef.current.onActionUnavailable?.();
+            }
+          }, ms + 100);
+        };
+        const onMapClick = (ev: any) => {
+          const pos = ev?.position;
+          const lat = typeof pos?.lat === "function" ? pos.lat() : pos?.lat;
+          const lng = typeof pos?.lng === "function" ? pos.lng() : pos?.lng;
+          if (typeof lat !== "number" || typeof lng !== "number") return;
+          if (Date.now() < intent.until) {
+            intent.until = 0;
+            intent.handled = true;
+            gestureRef.current.onLocationAction?.(lat, lng);
+            return;
+          }
+          if (ev.placeId) {
+            gestureRef.current.onPlaceClick?.(lat, lng, ev.placeId);
+            return;
+          }
+          gestureRef.current.onGroundClick?.(lat, lng);
+        };
+        el.addEventListener("gmp-click", onMapClick);
+        cleanups.push(() => el.removeEventListener("gmp-click", onMapClick));
+
+        const host = hostRef.current;
+        if (host) {
+          let holdTimer: number | null = null;
+          let startX = 0;
+          let startY = 0;
+          const clearHold = () => {
+            if (holdTimer != null) {
+              window.clearTimeout(holdTimer);
+              holdTimer = null;
+            }
+          };
+          const onDown = (e: PointerEvent) => {
+            startX = e.clientX;
+            startY = e.clientY;
+            if (e.pointerType === "touch" || e.pointerType === "pen") {
+              clearHold();
+              holdTimer = window.setTimeout(() => {
+                holdTimer = null;
+                navigator.vibrate?.(30);
+                // Wait for the lift-off click report, which comes after the hold.
+                armIntent(4000);
+              }, 600);
+            } else if (e.button === 2) {
+              armIntent(900);
+            }
+          };
+          const onMove = (e: PointerEvent) => {
+            if (
+              holdTimer != null &&
+              Math.hypot(e.clientX - startX, e.clientY - startY) > 10
+            )
+              clearHold();
+          };
+          const onContextMenu = (e: Event) => {
+            e.preventDefault();
+            if (Date.now() >= intent.until) armIntent(900);
+          };
+          host.addEventListener("pointerdown", onDown, true);
+          host.addEventListener("pointermove", onMove, true);
+          host.addEventListener("pointerup", clearHold, true);
+          host.addEventListener("pointercancel", clearHold, true);
+          host.addEventListener("contextmenu", onContextMenu, true);
+          cleanups.push(() => {
+            clearHold();
+            host.removeEventListener("pointerdown", onDown, true);
+            host.removeEventListener("pointermove", onMove, true);
+            host.removeEventListener("pointerup", clearHold, true);
+            host.removeEventListener("pointercancel", clearHold, true);
+            host.removeEventListener("contextmenu", onContextMenu, true);
+          });
+        }
 
         // ── Markers and shapes, kept in step with the props ──────────────
         const MarkerCtor =

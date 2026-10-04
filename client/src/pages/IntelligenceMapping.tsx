@@ -2426,6 +2426,10 @@ export default function IntelligenceMapping() {
     shapes: FlyShape[];
   } | null>(null);
   const [flySelectedId, setFlySelectedId] = useState<string | null>(null);
+  // A spot picked with a plain click in Fly — offers "Add here…".
+  const [flyPick, setFlyPick] = useState<{ lat: number; lng: number } | null>(
+    null
+  );
   const flyCenterRef = useRef<{ lat: number; lng: number } | null>(null);
   // Photos picture-in-picture panel, opened from a marker popup's Images
   // button (only shown when that address already has linked photos).
@@ -3890,6 +3894,20 @@ export default function IntelligenceMapping() {
   // While in Fly, pick up changes (new pins, moved team members, edited
   // shapes) every few seconds without restarting the camera.
   const flyOpen = !!flyView;
+  const flyMarkers = useMemo<FlyMarker[]>(() => {
+    if (!flyView) return [];
+    if (!flyPick) return flyView.markers;
+    return [
+      ...flyView.markers,
+      {
+        id: "pick:spot",
+        lat: flyPick.lat,
+        lng: flyPick.lng,
+        iconUrl: composeFlyTeamIcon("#f59e0b"),
+        size: 36,
+      },
+    ];
+  }, [flyView, flyPick]);
   useEffect(() => {
     if (!flyOpen) return;
     let cancelled = false;
@@ -3913,10 +3931,43 @@ export default function IntelligenceMapping() {
       window.clearInterval(timer);
     };
   }, [flyOpen]);
+  // Fly's "add here" gestures open the same sheets the flat map does.
+  const flyOpenActionChooser = (lat: number, lng: number) => {
+    setFlyPick(null);
+    new google.maps.Geocoder().geocode(
+      { location: { lat, lng } },
+      (results, status) => {
+        const addr =
+          status === "OK" && results && results[0]
+            ? results[0].formatted_address
+            : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        setActionChooser({ lat, lng, address: convertGoogleAddresses(addr) });
+      }
+    );
+  };
+  const flyOpenPlace = (lat: number, lng: number, placeId: string) => {
+    if (!mapRef.current) return;
+    setFlyPick(null);
+    new google.maps.places.PlacesService(mapRef.current).getDetails(
+      { placeId, fields: ["name", "formatted_address"] },
+      (place, status) => {
+        if (status === google.maps.places.PlacesServiceStatus.OK && place) {
+          setPoiTap({
+            lat,
+            lng,
+            name: place.name ?? "",
+            address:
+              place.formatted_address ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+          });
+        }
+      }
+    );
+  };
   const closeFly = () => {
     if (flyCenterRef.current) mapRef.current?.setCenter(flyCenterRef.current);
     setFlyView(null);
     setFlySelectedId(null);
+    setFlyPick(null);
   };
 
   const handleMapAreaClick = useCallback(() => {
@@ -7673,9 +7724,23 @@ export default function IntelligenceMapping() {
                 className="absolute inset-0 z-30"
                 center={flyView.center}
                 range={flyView.range}
-                markers={flyView.markers}
+                markers={flyMarkers}
                 shapes={flyView.shapes}
-                onMarkerClick={setFlySelectedId}
+                onMarkerClick={id => {
+                  setFlyPick(null);
+                  setFlySelectedId(id);
+                }}
+                onLocationAction={flyOpenActionChooser}
+                onPlaceClick={flyOpenPlace}
+                onGroundClick={(lat, lng) => {
+                  setFlySelectedId(null);
+                  setFlyPick({ lat, lng });
+                }}
+                onActionUnavailable={() =>
+                  toast.info(
+                    "The 3D map didn't report that spot. Tap the spot once, then choose Add here."
+                  )
+                }
                 onCenterChange={c => {
                   flyCenterRef.current = c;
                 }}
@@ -7831,6 +7896,26 @@ export default function IntelligenceMapping() {
                   </div>
                 );
               })()}
+              {flyPick && !flySelectedId && (
+                <div className="absolute z-40 left-1/2 -translate-x-1/2 bottom-3 flex items-center gap-2 rounded-lg bg-white text-gray-900 shadow-xl border border-gray-200 px-3 py-2">
+                  <span className="text-xs text-gray-600">Selected spot</span>
+                  <button
+                    className="rounded-md bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5"
+                    onClick={() =>
+                      flyOpenActionChooser(flyPick.lat, flyPick.lng)
+                    }
+                  >
+                    Add here…
+                  </button>
+                  <button
+                    onClick={() => setFlyPick(null)}
+                    className="h-6 w-6 flex items-center justify-center rounded text-gray-500 hover:bg-gray-100"
+                    aria-label="Dismiss"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
             </>
           )}
 
@@ -9133,6 +9218,16 @@ export default function IntelligenceMapping() {
               {/* Add Shape Here — full-width below the grid */}
               <button
                 onClick={() => {
+                  // Shapes are drawn and edited on the flat map, so Fly steps
+                  // back to it, centred on this spot, first.
+                  if (flyView) {
+                    flyCenterRef.current = {
+                      lat: actionChooser.lat,
+                      lng: actionChooser.lng,
+                    };
+                    mapRef.current?.setZoom(17);
+                    closeFly();
+                  }
                   setShapeTypePicker({
                     lat: actionChooser.lat,
                     lng: actionChooser.lng,

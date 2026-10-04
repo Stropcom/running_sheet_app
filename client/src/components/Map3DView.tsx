@@ -16,32 +16,56 @@ import { loadGoogleMaps } from "@/lib/googleMaps";
 // CLAUDE.md's note on divIconOverlay.ts) — everything here runs inside an
 // effect after the Maps script has loaded.
 
-export interface FlyPin {
+/** A marker on the 3D map: a picture (the flat map's own icon, with its badges
+ * drawn on — see lib/flyMarkerIcon.ts) at a position. */
+export interface FlyMarker {
   id: string;
-  label: string;
   lat: number;
   lng: number;
-  /** CSS colour for the pin. */
+  iconUrl: string;
+  /** Pixel size of the picture (default 48). */
+  size?: number;
+  /** Optional text under the marker (custom marker captions, team names). */
+  label?: string;
+}
+
+/** A drawn area or line on the 3D map. */
+export interface FlyShape {
+  id: string;
+  kind: "polygon" | "line";
+  coords: { lat: number; lng: number }[];
+  /** Hex colour, e.g. "#2563eb". */
   colour: string;
+  /** Fill opacity 0..1 (polygons). */
+  opacity: number;
 }
 
 interface Map3DViewProps {
   center: { lat: number; lng: number };
   /** Camera distance from the centre, metres. */
   range: number;
-  pins: FlyPin[];
-  onPinClick: (id: string) => void;
+  markers: FlyMarker[];
+  shapes: FlyShape[];
+  onMarkerClick: (id: string) => void;
   /** Reports the camera's centre as it moves, so leaving 3D can put the flat
    * map where the officer ended up. */
   onCenterChange: (center: { lat: number; lng: number }) => void;
   className?: string;
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
 export function Map3DView({
   center,
   range,
-  pins,
-  onPinClick,
+  markers,
+  shapes,
+  onMarkerClick,
   onCenterChange,
   className,
 }: Map3DViewProps) {
@@ -54,14 +78,18 @@ export function Map3DView({
   // 3D element reports), so a flat-looking result can be diagnosed from a
   // screenshot instead of guessed at.
   const [debug, setDebug] = useState("");
-  const onPinClickRef = useRef(onPinClick);
-  onPinClickRef.current = onPinClick;
+  const onMarkerClickRef = useRef(onMarkerClick);
+  onMarkerClickRef.current = onMarkerClick;
   const onCenterChangeRef = useRef(onCenterChange);
   onCenterChangeRef.current = onCenterChange;
-  // Latest props for the one-time setup below (re-running it would restart
-  // the camera, so pins/center are read once at open — close and reopen
-  // Fly to refresh them).
-  const initialRef = useRef({ center, range, pins });
+  // Latest props for the one-time camera setup below (re-running it would
+  // restart the camera) — markers and shapes are applied by the sync effect.
+  const initialRef = useRef({ center, range });
+  const latestRef = useRef({ markers, shapes });
+  latestRef.current = { markers, shapes };
+  // Set by the setup effect once the 3D element exists; (re)applies the
+  // markers and shapes in latestRef, touching only what changed.
+  const syncRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -166,35 +194,102 @@ export function Map3DView({
           el.removeEventListener("gmp-centerchange", onCenter)
         );
 
-        // Pins (when this version of the library has 3D markers).
-        const Marker = lib.Marker3DInteractiveElement ?? lib.Marker3DElement;
-        const PinElement = (window.google.maps as any).marker?.PinElement;
-        if (Marker) {
-          for (const p of init.pins) {
-            try {
-              const marker = new Marker({
-                position: { lat: p.lat, lng: p.lng, altitude: 0 },
-                altitudeMode: "RELATIVE_TO_GROUND",
-                extruded: true,
-                label: p.label,
-              }) as HTMLElement;
-              if (PinElement) {
-                const pin = new PinElement({
-                  background: p.colour,
-                  borderColor: "#ffffff",
-                  glyphColor: "#ffffff",
-                  scale: 1.2,
-                });
-                marker.append(pin.element ?? pin);
-              }
-              const onClick = () => onPinClickRef.current(p.id);
-              marker.addEventListener("gmp-click", onClick);
-              el.append(marker);
-            } catch {
-              // One pin failing shouldn't lose the rest.
+        // ── Markers and shapes, kept in step with the props ──────────────
+        const MarkerCtor =
+          lib.Marker3DInteractiveElement ?? lib.Marker3DElement;
+        const PolygonCtor = lib.Polygon3DElement;
+        const PolylineCtor = lib.Polyline3DElement;
+        const markerEls = new Map<string, { el: HTMLElement; sig: string }>();
+        const shapeEls = new Map<string, { el: HTMLElement; sig: string }>();
+
+        const buildMarker = (m: FlyMarker): HTMLElement | null => {
+          if (!MarkerCtor) return null;
+          const marker = new MarkerCtor({
+            position: { lat: m.lat, lng: m.lng, altitude: 0 },
+            altitudeMode: "CLAMP_TO_GROUND",
+            ...(m.label ? { label: m.label } : {}),
+          }) as HTMLElement;
+          const size = m.size ?? 48;
+          const tpl = document.createElement("template");
+          const img = document.createElement("img");
+          img.src = m.iconUrl;
+          img.width = size;
+          img.height = size;
+          tpl.content.append(img);
+          marker.append(tpl);
+          marker.addEventListener("gmp-click", () =>
+            onMarkerClickRef.current(m.id)
+          );
+          return marker;
+        };
+
+        const buildShape = (s: FlyShape): HTMLElement | null => {
+          const coords = s.coords.map(c => ({
+            lat: c.lat,
+            lng: c.lng,
+            altitude: 0,
+          }));
+          if (s.kind === "polygon" && PolygonCtor) {
+            return new PolygonCtor({
+              outerCoordinates: coords,
+              fillColor: hexToRgba(s.colour, s.opacity),
+              strokeColor: hexToRgba(s.colour, 0.95),
+              strokeWidth: 4,
+              altitudeMode: "CLAMP_TO_GROUND",
+            }) as HTMLElement;
+          }
+          if (s.kind === "line" && PolylineCtor) {
+            return new PolylineCtor({
+              coordinates: coords,
+              strokeColor: hexToRgba(s.colour, 0.95),
+              strokeWidth: 6,
+              altitudeMode: "CLAMP_TO_GROUND",
+            }) as HTMLElement;
+          }
+          return null;
+        };
+
+        const syncItems = <T extends { id: string }>(
+          wanted: T[],
+          have: Map<string, { el: HTMLElement; sig: string }>,
+          build: (item: T) => HTMLElement | null
+        ) => {
+          const keep = new Set(wanted.map(w => w.id));
+          for (const [id, entry] of Array.from(have)) {
+            if (!keep.has(id)) {
+              entry.el.remove();
+              have.delete(id);
             }
           }
-        }
+          for (const item of wanted) {
+            const sig = JSON.stringify(item);
+            const prev = have.get(item.id);
+            if (prev && prev.sig === sig) continue;
+            prev?.el.remove();
+            try {
+              const built = build(item);
+              if (built) {
+                el.append(built);
+                have.set(item.id, { el: built, sig });
+              } else {
+                have.delete(item.id);
+              }
+            } catch {
+              // One item failing shouldn't lose the rest.
+              have.delete(item.id);
+            }
+          }
+        };
+
+        syncRef.current = () => {
+          syncItems(latestRef.current.shapes, shapeEls, buildShape);
+          syncItems(latestRef.current.markers, markerEls, buildMarker);
+        };
+        syncRef.current();
+        cleanups.push(() => {
+          syncRef.current = null;
+        });
+
         setStatus("ready");
       } catch (err) {
         if (cancelled) return;
@@ -209,6 +304,11 @@ export function Map3DView({
       map3d?.remove();
     };
   }, []);
+
+  // Apply new markers/shapes (refresh while in Fly) once the 3D map exists.
+  useEffect(() => {
+    syncRef.current?.();
+  }, [markers, shapes]);
 
   return (
     <div className={className ?? "relative h-full w-full"}>

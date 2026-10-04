@@ -54,7 +54,12 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
 import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
 import { StreetViewPip } from "@/components/StreetViewPip";
-import { Map3DView, type FlyPin } from "@/components/Map3DView";
+import {
+  Map3DView,
+  type FlyMarker,
+  type FlyShape,
+} from "@/components/Map3DView";
+import { composeFlyIcon, composeFlyTeamIcon } from "@/lib/flyMarkerIcon";
 import { ImagesPip } from "@/components/ImagesPip";
 import { addressMatchKey } from "@shared/addressMatchKey";
 import { shortPersonDisplayName } from "@shared/addressFormat";
@@ -2417,7 +2422,8 @@ export default function IntelligenceMapping() {
   const [flyView, setFlyView] = useState<{
     center: { lat: number; lng: number };
     range: number;
-    pins: FlyPin[];
+    markers: FlyMarker[];
+    shapes: FlyShape[];
   } | null>(null);
   const [flySelectedId, setFlySelectedId] = useState<string | null>(null);
   const flyCenterRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -3699,42 +3705,214 @@ export default function IntelligenceMapping() {
   // stays open until its own back arrow / X is used. Without this guard, a
   // stray tap on the visible slice of map beside the pane would silently
   // discard whatever the officer was viewing or editing.
-  const openFly = () => {
+  // Everything the 3D view shows, built from the same data as the flat map:
+  // each marker is the flat map's own icon (with the entity-count badge and
+  // photo pill drawn on), plus drawn shapes and the live team.
+  const buildFlySnapshot = async (): Promise<{
+    markers: FlyMarker[];
+    shapes: FlyShape[];
+  }> => {
+    const markers: FlyMarker[] = [];
+    const jobs: Promise<void>[] = [];
+    const registry = registeredPeopleLookupRef.current;
+    const addIcon = (
+      id: string,
+      lat: number,
+      lng: number,
+      iconName: string,
+      colourName: string,
+      rotation: number,
+      count: number,
+      countColour: string,
+      rs: boolean,
+      profile: boolean,
+      label?: string
+    ) => {
+      jobs.push(
+        composeFlyIcon({
+          iconUrl: getMarkerIconUrl(iconName, colourName as MarkerColour),
+          rotation,
+          count,
+          countColour,
+          runningSheetPhotos: rs,
+          profilePhotos: profile,
+        }).then(iconUrl => {
+          markers.push({ id, lat, lng, iconUrl, size: 56, label });
+        })
+      );
+    };
+
+    geocodedIntelRef.current.forEach((entry, label) => {
+      const override = pinOverridesRef.current.get(label);
+      const isTarget = entry.loc.type === "target_address";
+      addIcon(
+        `intel:${label}`,
+        entry.position.lat,
+        entry.position.lng,
+        override?.markerIcon ?? "house_filled",
+        override?.markerColour ?? (isTarget ? "red" : "purple"),
+        override?.rotation ?? 0,
+        showMarkerEntityCountRef.current
+          ? markerEntityCount(entry.loc, registry)
+          : 0,
+        isTarget ? "#dc2626" : "#7c3aed",
+        photoKeysRef.current.has(normalizeEntityLabelClient(label)),
+        personPhotosByKeyRef.current.has(addressMatchKey(label))
+      );
+    });
+
+    for (const cm of customMarkersDataRef.current) {
+      if (typeof cm?.lat !== "number" || typeof cm?.lng !== "number") continue;
+      addIcon(
+        `cm:${cm.id}`,
+        cm.lat,
+        cm.lng,
+        cm.markerIcon ?? "pin",
+        cm.markerColour ?? "blue",
+        cm.rotation ?? 0,
+        0,
+        "#0f766e",
+        !!cm.address &&
+          photoKeysRef.current.has(normalizeEntityLabelClient(cm.address)),
+        !!cm.address &&
+          personPhotosByKeyRef.current.has(addressMatchKey(cm.address)),
+        cm.labelOnly || cm.label ? (cm.label ?? undefined) : undefined
+      );
+    }
+
+    // Live team members, with the same hide/show choices as the flat map.
+    for (const u of (liveUsers as LiveUser[] | undefined) ?? []) {
+      const isThisDevice =
+        u.userId === user?.id && u.deviceId === deviceIdRef.current;
+      if (isThisDevice && !showOwnLocation) continue;
+      if (hiddenTeams.has(u.team ?? "null")) continue;
+      if (hiddenUsers.has(u.userId)) continue;
+      markers.push({
+        id: `team:${u.userId}_${u.deviceId}`,
+        lat: u.lat,
+        lng: u.lng,
+        iconUrl: composeFlyTeamIcon(u.pinColor ?? "#2563eb"),
+        size: 40,
+        label: u.name.toUpperCase(),
+      });
+    }
+
+    await Promise.all(jobs);
+    markers.sort((a, b) => a.id.localeCompare(b.id));
+
+    // Drawn shapes → 3D polygons and lines.
+    const shapes: FlyShape[] = [];
+    for (const sh of mapShapesDataRef.current) {
+      const colour =
+        MARKER_COLOURS[sh.colour as MarkerColour] ?? MARKER_COLOURS.blue;
+      const opacity = (sh.opacity ?? 30) / 100;
+      const centre = { lat: sh.centerLat, lng: sh.centerLng };
+      if (sh.shapeType === "circle") {
+        const c = new google.maps.LatLng(centre.lat, centre.lng);
+        const coords = Array.from({ length: 72 }, (_, i) => {
+          const pt = google.maps.geometry.spherical.computeOffset(
+            c,
+            sh.radiusMeters,
+            i * 5
+          );
+          return { lat: pt.lat(), lng: pt.lng() };
+        });
+        shapes.push({
+          id: `shape:${sh.id}`,
+          kind: "polygon",
+          coords,
+          colour,
+          opacity,
+        });
+      } else if (sh.shapeType === "rectangle") {
+        shapes.push({
+          id: `shape:${sh.id}`,
+          kind: "polygon",
+          coords: rectanglePolygonPath(
+            sh.neLat,
+            sh.neLng,
+            sh.swLat,
+            sh.swLng,
+            sh.rotation ?? 0
+          ),
+          colour,
+          opacity,
+        });
+      } else if (sh.shapeType === "sector") {
+        shapes.push({
+          id: `shape:${sh.id}`,
+          kind: "polygon",
+          coords: sectorPolygonPath(
+            centre,
+            sh.radiusMeters,
+            sh.startAngle,
+            sh.endAngle,
+            sh.innerRadiusMeters ?? 0
+          ),
+          colour,
+          opacity,
+        });
+      } else {
+        const pts = (sh.points ?? []) as { lat: number; lng: number }[];
+        if (pts.length >= 2)
+          shapes.push({
+            id: `shape:${sh.id}`,
+            kind: "line",
+            coords: pts,
+            colour,
+            opacity,
+          });
+      }
+    }
+    return { markers, shapes };
+  };
+  // Latest builder for the refresh timer below (it closes over current state).
+  const buildFlySnapshotRef = useRef(buildFlySnapshot);
+  buildFlySnapshotRef.current = buildFlySnapshot;
+
+  const openFly = async () => {
     const map = mapRef.current;
     if (!map) return;
     const c = map.getCenter();
     if (!c) return;
     const zoom = map.getZoom() ?? 15;
-    const pins: FlyPin[] = [];
-    geocodedIntelRef.current.forEach((entry, label) => {
-      pins.push({
-        id: `intel:${label}`,
-        label: formatIntelAddress(label),
-        lat: entry.position.lat,
-        lng: entry.position.lng,
-        colour: entry.loc.type === "target_address" ? "#dc2626" : "#7c3aed",
-      });
-    });
-    for (const cm of customMarkersDataRef.current) {
-      if (typeof cm?.lat !== "number" || typeof cm?.lng !== "number") continue;
-      pins.push({
-        id: `cm:${cm.id}`,
-        label: cm.label || cm.address || "Marker",
-        lat: cm.lat,
-        lng: cm.lng,
-        colour: "#0f766e",
-      });
-    }
     flyCenterRef.current = null;
     setFlySelectedId(null);
     infoWindowRef.current?.close();
+    const snap = await buildFlySnapshot();
     setFlyView({
       center: { lat: c.lat(), lng: c.lng() },
       // About 5 km of camera distance at zoom 15, doubling per zoom level out.
       range: Math.min(2_000_000, Math.max(200, 163_840_000 / 2 ** zoom)),
-      pins,
+      ...snap,
     });
   };
+  // While in Fly, pick up changes (new pins, moved team members, edited
+  // shapes) every few seconds without restarting the camera.
+  const flyOpen = !!flyView;
+  useEffect(() => {
+    if (!flyOpen) return;
+    let cancelled = false;
+    const tick = async () => {
+      const snap = await buildFlySnapshotRef.current();
+      if (cancelled) return;
+      setFlyView(prev => {
+        if (!prev) return prev;
+        const sig = (x: unknown) => JSON.stringify(x);
+        if (
+          sig(prev.markers) === sig(snap.markers) &&
+          sig(prev.shapes) === sig(snap.shapes)
+        )
+          return prev;
+        return { ...prev, ...snap };
+      });
+    };
+    const timer = window.setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [flyOpen]);
   const closeFly = () => {
     if (flyCenterRef.current) mapRef.current?.setCenter(flyCenterRef.current);
     setFlyView(null);
@@ -7495,27 +7673,42 @@ export default function IntelligenceMapping() {
                 className="absolute inset-0 z-30"
                 center={flyView.center}
                 range={flyView.range}
-                pins={flyView.pins}
-                onPinClick={setFlySelectedId}
+                markers={flyView.markers}
+                shapes={flyView.shapes}
+                onMarkerClick={setFlySelectedId}
                 onCenterChange={c => {
                   flyCenterRef.current = c;
                 }}
               />
               {(() => {
                 if (!flySelectedId) return null;
-                const isIntel = flySelectedId.startsWith("intel:");
+                const kind = flySelectedId.slice(0, flySelectedId.indexOf(":"));
                 const key = flySelectedId.slice(flySelectedId.indexOf(":") + 1);
-                const entry = isIntel
-                  ? geocodedIntelRef.current.get(key)
-                  : null;
-                const cm = isIntel
-                  ? null
-                  : customMarkersDataRef.current.find(
-                      (c: any) => String(c.id) === key
-                    );
-                if (!entry && !cm) return null;
-                const lat = entry ? entry.position.lat : cm.lat;
-                const lng = entry ? entry.position.lng : cm.lng;
+                const entry =
+                  kind === "intel" ? geocodedIntelRef.current.get(key) : null;
+                const cm =
+                  kind === "cm"
+                    ? customMarkersDataRef.current.find(
+                        (c: any) => String(c.id) === key
+                      )
+                    : null;
+                const member =
+                  kind === "team"
+                    ? ((liveUsers as LiveUser[] | undefined) ?? []).find(
+                        u => `${u.userId}_${u.deviceId}` === key
+                      )
+                    : null;
+                if (!entry && !cm && !member) return null;
+                const lat = entry
+                  ? entry.position.lat
+                  : cm
+                    ? cm.lat
+                    : member!.lat;
+                const lng = entry
+                  ? entry.position.lng
+                  : cm
+                    ? cm.lng
+                    : member!.lng;
                 const photoLabel = entry
                   ? entry.loc.label
                   : (cm?.address ?? "");
@@ -7532,18 +7725,32 @@ export default function IntelligenceMapping() {
                       entry.loc,
                       registeredPeopleLookupRef.current
                     )
-                  : `<strong style="font-size:13px">${cm.label ?? "Marker"}</strong>${
-                      cm.address
-                        ? `<div style="font-size:12px">${cm.address}</div>`
-                        : ""
-                    }${
-                      cm.note
-                        ? `<div style="font-size:12px;margin-top:4px">${cm.note}</div>`
-                        : ""
-                    }`;
+                  : member
+                    ? `<strong style="font-size:13px">${member.name}</strong><div style="font-size:12px;color:#555">${member.team ?? "Team member"}</div>`
+                    : `<strong style="font-size:13px">${cm.label ?? "Marker"}</strong>${
+                        cm.address
+                          ? `<div style="font-size:12px">${cm.address}</div>`
+                          : ""
+                      }${
+                        cm.note
+                          ? `<div style="font-size:12px;margin-top:4px">${cm.note}</div>`
+                          : ""
+                      }`;
                 const bridge = window as any;
                 const btn =
                   "flex-1 text-center text-xs font-semibold rounded-md py-2 text-white";
+                const streetLabel = entry
+                  ? formatIntelAddress(entry.loc.label)
+                  : (cm?.label ?? member?.name ?? "Street View");
+                // Edit / Move work on the flat map: Edit opens its dialog
+                // here; Move returns to the flat map and starts the move.
+                const startMove = () => {
+                  closeFly();
+                  window.setTimeout(() => {
+                    if (entry) bridge.__intelStartMove?.(entry.loc.label);
+                    else if (cm) bridge.__cmStartMove?.(cm.id);
+                  }, 400);
+                };
                 return (
                   <div className="absolute z-40 left-3 bottom-3 w-[min(22rem,calc(100%-1.5rem))] rounded-lg bg-white text-gray-900 shadow-xl border border-gray-200 p-3">
                     <button
@@ -7554,38 +7761,72 @@ export default function IntelligenceMapping() {
                       <X className="h-4 w-4" />
                     </button>
                     <div
-                      className="pr-6"
+                      className="pr-6 max-h-48 overflow-y-auto"
                       dangerouslySetInnerHTML={{ __html: html }}
                     />
-                    <div className="mt-2 flex gap-1.5">
-                      <button
-                        className={`${btn} bg-indigo-500`}
-                        onClick={() =>
-                          entry
-                            ? bridge.__intelRsQuickEntry?.(entry.loc.label)
-                            : bridge.__cmRsQuickEntry?.(cm.id)
-                        }
-                      >
-                        RS Quick Entry
-                      </button>
-                      {hasPhotos && (
+                    {!member && (
+                      <div className="mt-2 flex gap-1.5">
                         <button
-                          className={`${btn} bg-emerald-500`}
+                          className={`${btn} bg-indigo-500`}
                           onClick={() =>
-                            bridge.__mapOpenImagesPip?.(photoLabel)
+                            entry
+                              ? bridge.__intelRsQuickEntry?.(entry.loc.label)
+                              : bridge.__cmRsQuickEntry?.(cm.id)
                           }
                         >
-                          Images
+                          RS Quick Entry
                         </button>
-                      )}
-                      <a
-                        className={`${btn} bg-cyan-500`}
-                        href={`https://waze.com/ul?ll=${lat},${lng}&navigate=yes`}
-                        target="_blank"
-                        rel="noreferrer"
+                        {hasPhotos && (
+                          <button
+                            className={`${btn} bg-emerald-500`}
+                            onClick={() =>
+                              bridge.__mapOpenImagesPip?.(photoLabel)
+                            }
+                          >
+                            Images
+                          </button>
+                        )}
+                        <a
+                          className={`${btn} bg-cyan-500`}
+                          href={`https://waze.com/ul?ll=${lat},${lng}&navigate=yes`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Waze
+                        </a>
+                      </div>
+                    )}
+                    <div className="mt-1.5 flex gap-1.5">
+                      <button
+                        className={`${btn} bg-blue-500`}
+                        onClick={() =>
+                          setStreetViewPip({ lat, lng, label: streetLabel })
+                        }
                       >
-                        Waze
-                      </a>
+                        Street View
+                      </button>
+                      {!member && (
+                        <>
+                          <button
+                            className={`${btn} bg-green-600`}
+                            onClick={() =>
+                              entry
+                                ? bridge.__intelOpenEditDialog?.(
+                                    entry.loc.label
+                                  )
+                                : bridge.__editCustomMarker?.(cm.id)
+                            }
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className={`${btn} bg-sky-700`}
+                            onClick={startMove}
+                          >
+                            Move…
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 );

@@ -310,6 +310,52 @@ function NorthUpButton({
   );
 }
 
+// Rotation slider for the Fly marker card — the same control the flat map's
+// marker popup has (preview picture, degrees, 0–359 slider).
+function FlyRotationSlider({
+  initial,
+  iconUrl,
+  onChange,
+}: {
+  initial: number;
+  iconUrl: string;
+  onChange: (rotation: number) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  return (
+    <div className="mt-2 flex items-center gap-2 border-t border-gray-200 pt-2">
+      <img
+        src={iconUrl}
+        alt=""
+        className="h-6 w-6 shrink-0 object-contain transition-transform"
+        style={{ transform: `rotate(${value}deg)` }}
+      />
+      <div className="flex-1">
+        <div className="mb-0.5 flex justify-between text-[10px] font-bold uppercase tracking-wider text-gray-600">
+          <span>Rotation</span>
+          <span className="font-semibold normal-case tracking-normal text-gray-700">
+            {value}°
+          </span>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={359}
+          step={1}
+          value={value}
+          onChange={e => {
+            const v = Number(e.target.value);
+            setValue(v);
+            onChange(v);
+          }}
+          className="w-full cursor-pointer accent-indigo-500"
+          aria-label="Marker rotation"
+        />
+      </div>
+    </div>
+  );
+}
+
 // ── Perth date helpers (shared with SheetDetail logic) ───────────────────────
 const _PERTH_OFFSET_SUFFIX = "T00:00:00+08:00";
 const _PERTH_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -2446,6 +2492,10 @@ export default function IntelligenceMapping() {
     null
   );
   const flyCenterRef = useRef<{ lat: number; lng: number } | null>(null);
+  // Rotations being dragged on Fly's marker card, by marker id, until the
+  // saved value has caught up.
+  const flyRotOverrideRef = useRef<Map<string, number>>(new Map());
+  const flyRotSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Fly's North up / 0° tilt buttons (tilt reported by the 3D map).
   const [flyTilt, setFlyTilt] = useState(0);
   const [flyCameraReq, setFlyCameraReq] = useState<{
@@ -3764,7 +3814,12 @@ export default function IntelligenceMapping() {
       jobs.push(
         composeFlyIcon({
           iconUrl: getMarkerIconUrl(iconName, colourName as MarkerColour),
-          rotation,
+          // Glued to the compass like the flat map: turning the 3D view
+          // doesn't turn where the icon points. A rotation being dragged on
+          // the card shows straight away, ahead of the saved value.
+          rotation:
+            (flyRotOverrideRef.current.get(id) ?? rotation) -
+            flyHeadingRef.current,
           count,
           countColour,
           runningSheetPhotos: rs,
@@ -8090,6 +8145,56 @@ export default function IntelligenceMapping() {
                       className="pr-6 max-h-48 overflow-y-auto"
                       dangerouslySetInnerHTML={{ __html: html }}
                     />
+                    {(cm || (entry && entry.loc.type !== "target_address")) &&
+                      (() => {
+                        const override = entry
+                          ? pinOverridesRef.current.get(entry.loc.label)
+                          : null;
+                        const iconName = entry
+                          ? (override?.markerIcon ?? "house_filled")
+                          : (cm.markerIcon ?? "pin");
+                        const colourName = entry
+                          ? (override?.markerColour ?? "purple")
+                          : (cm.markerColour ?? "blue");
+                        return (
+                          <FlyRotationSlider
+                            key={flySelectedId}
+                            initial={
+                              flyRotOverrideRef.current.get(flySelectedId) ??
+                              (entry ? override?.rotation : cm.rotation) ??
+                              0
+                            }
+                            iconUrl={getMarkerIconUrl(
+                              iconName,
+                              colourName as MarkerColour
+                            )}
+                            onChange={rotation => {
+                              const id = flySelectedId;
+                              flyRotOverrideRef.current.set(id, rotation);
+                              flyTickRef.current?.();
+                              if (flyRotSaveTimerRef.current)
+                                clearTimeout(flyRotSaveTimerRef.current);
+                              flyRotSaveTimerRef.current = setTimeout(() => {
+                                const done = () =>
+                                  window.setTimeout(() => {
+                                    flyRotOverrideRef.current.delete(id);
+                                    flyTickRef.current?.();
+                                  }, 1500);
+                                if (entry)
+                                  savePinOverrideMut.mutate(
+                                    { label: entry.loc.label, rotation },
+                                    { onSettled: done }
+                                  );
+                                else
+                                  updateCustomMarkerMut.mutate(
+                                    { id: cm.id, rotation },
+                                    { onSettled: done }
+                                  );
+                              }, 400);
+                            }}
+                          />
+                        );
+                      })()}
                     {!member && (
                       <div className="mt-2 flex gap-1.5">
                         <button

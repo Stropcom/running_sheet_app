@@ -1,5 +1,10 @@
 import { RegistryPersonRow } from "@/components/RegistryPersonRow";
 import {
+  formatBail,
+  formatSpecialProjects,
+  mdlLabel,
+} from "@shared/targetStatus";
+import {
   sharedLinkChipText,
   sharedLinkSentence,
   type CrossLinkVia,
@@ -54,6 +59,11 @@ interface OperationTarget {
   dep: string | null;
   arr: string | null;
   linkedSheets: Array<{ id: number; title: string }>;
+  mdlStatus: string | null;
+  bailStatus: string | null;
+  bailConditions: string | null;
+  bailConditionsText: string | null;
+  specialProjects: string | null;
   registryAssociates: Array<{
     id: number;
     name: string;
@@ -570,6 +580,48 @@ export function OperationProfileContent({
                             </div>
                           );
                         })()}
+                      {/* Status — MDL, bail and special projects, as on the
+                          target's own profile. */}
+                      {(target.mdlStatus ||
+                        target.bailStatus ||
+                        formatSpecialProjects(target.specialProjects)) && (
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                            Status
+                          </p>
+                          <div className="space-y-1 text-xs">
+                            {target.mdlStatus && (
+                              <div className="flex gap-2">
+                                <span className="text-muted-foreground w-28 shrink-0">
+                                  MDL
+                                </span>
+                                <span>{mdlLabel(target.mdlStatus)}</span>
+                              </div>
+                            )}
+                            {target.bailStatus && (
+                              <div className="flex gap-2">
+                                <span className="text-muted-foreground w-28 shrink-0">
+                                  Bail
+                                </span>
+                                <span>{formatBail(target)}</span>
+                              </div>
+                            )}
+                            {formatSpecialProjects(target.specialProjects) && (
+                              <div className="flex gap-2">
+                                <span className="text-muted-foreground w-28 shrink-0">
+                                  Special Projects
+                                </span>
+                                <span>
+                                  {formatSpecialProjects(
+                                    target.specialProjects
+                                  )}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <Separator className="mt-3" />
+                        </div>
+                      )}
                       {target.registryAssociates.filter(
                         a => a.relationship === "resident"
                       ).length > 0 && (

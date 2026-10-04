@@ -12079,6 +12079,13 @@ export interface IntelOperationProfile {
     isIndicesOnly: boolean;
     /** Associates recorded directly on this target in the Target Registry —
      * same guaranteed (not inferred) link as IntelTargetProfile.registryAssociates. */
+    /** Person-target status from the registry — null until an officer sets it. */
+    mdlStatus: string | null;
+    bailStatus: string | null;
+    bailConditions: string | null;
+    bailConditionsText: string | null;
+    /** JSON [{key, detail}] — TI / LBS / SEEK / CAD. */
+    specialProjects: string | null;
     registryAssociates: Array<{
       id: number;
       name: string;
@@ -13242,6 +13249,11 @@ export async function getIntelOperationProfile(
         arr: target.arr,
         linkedSheets: targetSheets.map(s => ({ id: s.id, title: s.title })),
         registryAssociates,
+        mdlStatus: target.mdlStatus ?? null,
+        bailStatus: target.bailStatus ?? null,
+        bailConditions: target.bailConditions ?? null,
+        bailConditionsText: target.bailConditionsText ?? null,
+        specialProjects: target.specialProjects ?? null,
         assocPersons,
         assocVehicles,
         assocLocations,

@@ -38,7 +38,14 @@ export interface FlyShape {
   colour: string;
   /** Fill opacity 0..1 (polygons). */
   opacity: number;
+  /** Polygons are drawn as two parts: the "fill" is a flat translucent sheet
+   * held above the rooftops and trees, so the shading is even whatever stands
+   * on the ground; the "edge" is the outline laid on the ground. */
+  part?: "fill" | "edge";
 }
+
+/** Height of the shading sheet above the ground, metres. */
+const FILL_SHEET_HEIGHT_M = 45;
 
 /** Where the 3D camera was. Kept for the rest of the browser session so
  * reopening Fly returns to where it was left. */
@@ -384,9 +391,22 @@ export function Map3DView({
             altitude: 0,
           }));
           if (s.kind === "polygon" && PolygonCtor) {
+            if (s.part === "fill") {
+              return new PolygonCtor({
+                outerCoordinates: coords.map(c => ({
+                  ...c,
+                  altitude: FILL_SHEET_HEIGHT_M,
+                })),
+                fillColor: hexToRgba(s.colour, s.opacity),
+                strokeColor: "rgba(0, 0, 0, 0)",
+                strokeWidth: 0,
+                altitudeMode: "RELATIVE_TO_GROUND",
+                drawsOccludedSegments: true,
+              }) as HTMLElement;
+            }
             return new PolygonCtor({
               outerCoordinates: coords,
-              fillColor: hexToRgba(s.colour, s.opacity),
+              fillColor: "rgba(0, 0, 0, 0)",
               strokeColor: hexToRgba(s.colour, 0.95),
               strokeWidth: 4,
               altitudeMode: "CLAMP_TO_GROUND",

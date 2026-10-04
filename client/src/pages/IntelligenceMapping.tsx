@@ -3809,6 +3809,31 @@ export default function IntelligenceMapping() {
 
     // Drawn shapes → 3D polygons and lines.
     const shapes: FlyShape[] = [];
+    // A polygon is two 3D parts: an even shading sheet above the roofs, and
+    // the outline on the ground.
+    const pushPolygon = (
+      id: string,
+      coords: { lat: number; lng: number }[],
+      colour: string,
+      opacity: number
+    ) => {
+      shapes.push({
+        id: `${id}#fill`,
+        kind: "polygon",
+        part: "fill",
+        coords,
+        colour,
+        opacity,
+      });
+      shapes.push({
+        id: `${id}#edge`,
+        kind: "polygon",
+        part: "edge",
+        coords,
+        colour,
+        opacity,
+      });
+    };
     for (const sh of mapShapesDataRef.current) {
       const colour =
         MARKER_COLOURS[sh.colour as MarkerColour] ?? MARKER_COLOURS.blue;
@@ -3824,18 +3849,11 @@ export default function IntelligenceMapping() {
           );
           return { lat: pt.lat(), lng: pt.lng() };
         });
-        shapes.push({
-          id: `shape:${sh.id}`,
-          kind: "polygon",
-          coords,
-          colour,
-          opacity,
-        });
+        pushPolygon(`shape:${sh.id}`, coords, colour, opacity);
       } else if (sh.shapeType === "rectangle") {
-        shapes.push({
-          id: `shape:${sh.id}`,
-          kind: "polygon",
-          coords: rectanglePolygonPath(
+        pushPolygon(
+          `shape:${sh.id}`,
+          rectanglePolygonPath(
             sh.neLat,
             sh.neLng,
             sh.swLat,
@@ -3843,13 +3861,12 @@ export default function IntelligenceMapping() {
             sh.rotation ?? 0
           ),
           colour,
-          opacity,
-        });
+          opacity
+        );
       } else if (sh.shapeType === "sector") {
-        shapes.push({
-          id: `shape:${sh.id}`,
-          kind: "polygon",
-          coords: sectorPolygonPath(
+        pushPolygon(
+          `shape:${sh.id}`,
+          sectorPolygonPath(
             centre,
             sh.radiusMeters,
             sh.startAngle,
@@ -3857,8 +3874,8 @@ export default function IntelligenceMapping() {
             sh.innerRadiusMeters ?? 0
           ),
           colour,
-          opacity,
-        });
+          opacity
+        );
       } else {
         const pts = (sh.points ?? []) as { lat: number; lng: number }[];
         if (pts.length >= 2)

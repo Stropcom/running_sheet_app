@@ -519,7 +519,6 @@ export function Map3DView({
             altitudeMode: m.onGround ? "CLAMP_TO_GROUND" : "RELATIVE_TO_MESH",
             drawsWhenOccluded: true,
             sizePreserved: true,
-            ...(m.label ? { label: m.label } : {}),
           }) as HTMLElement;
           const size = m.size ?? 48;
           const tpl = document.createElement("template");

@@ -14,6 +14,19 @@ export interface FlyIconSpec {
   /** Photo pill (bottom centre): green half running-sheet, blue half profile. */
   runningSheetPhotos?: boolean;
   profilePhotos?: boolean;
+  /** Caption pill under the icon — same look as the flat map's marker label
+   * (white bold text on the marker's colour, rounded, white edge). */
+  label?: string;
+  labelColour?: string;
+  /** "Label only" marker: just the pill (no icon), standing on the tail. */
+  labelOnly?: boolean;
+}
+
+/** A finished picture and the size it should be shown at, in pixels. */
+export interface FlyIconPicture {
+  url: string;
+  width: number;
+  height: number;
 }
 
 const SIZE = 64;
@@ -27,29 +40,86 @@ const HEIGHT = SIZE + TAIL;
 export const FLY_ICON_ASPECT = HEIGHT / SIZE;
 
 /** Stem and dot at the bottom of the picture, marking the exact spot. */
-function drawTail(ctx: CanvasRenderingContext2D, colour: string) {
-  const x = SIZE / 2;
+function drawTail(
+  ctx: CanvasRenderingContext2D,
+  colour: string,
+  x: number = SIZE / 2,
+  height: number = HEIGHT,
+  from: number = SIZE - 2
+) {
   ctx.save();
   ctx.lineCap = "round";
   ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 5;
   ctx.beginPath();
-  ctx.moveTo(x, SIZE - 2);
-  ctx.lineTo(x, HEIGHT - 6);
+  ctx.moveTo(x, from);
+  ctx.lineTo(x, height - 6);
   ctx.stroke();
   ctx.strokeStyle = colour;
   ctx.lineWidth = 2.5;
   ctx.beginPath();
-  ctx.moveTo(x, SIZE - 2);
-  ctx.lineTo(x, HEIGHT - 6);
+  ctx.moveTo(x, from);
+  ctx.lineTo(x, height - 6);
   ctx.stroke();
   ctx.fillStyle = colour;
   ctx.strokeStyle = "#ffffff";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(x, HEIGHT - 5, 4, 0, Math.PI * 2);
+  ctx.arc(x, height - 5, 4, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  ctx.restore();
+}
+
+const LABEL_FONT =
+  '700 11px system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
+const LABEL_H = 19;
+const LABEL_MAX_W = 200;
+
+/** Measures a caption and trims it with an ellipsis to the flat map's 200 px
+ * pill limit. */
+function fitLabel(ctx: CanvasRenderingContext2D, text: string) {
+  ctx.font = LABEL_FONT;
+  let t = text;
+  let w = ctx.measureText(t).width;
+  const maxText = LABEL_MAX_W - 18;
+  if (w > maxText) {
+    while (t.length > 1 && ctx.measureText(t + "…").width > maxText)
+      t = t.slice(0, -1);
+    t += "…";
+    w = ctx.measureText(t).width;
+  }
+  return { text: t, pillW: Math.ceil(w) + 18 };
+}
+
+/** The flat map's label pill: marker-coloured, white bold text, white edge. */
+function drawLabelPill(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  pillW: number,
+  cx: number,
+  y: number,
+  colour: string
+) {
+  const x = cx - pillW / 2;
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.35)";
+  ctx.shadowBlur = 5;
+  ctx.shadowOffsetY = 2;
+  ctx.fillStyle = colour;
+  roundRect(ctx, x, y, pillW, LABEL_H, LABEL_H / 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,0.7)";
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, x + 0.75, y + 0.75, pillW - 1.5, LABEL_H - 1.5, LABEL_H / 2);
+  ctx.stroke();
+  ctx.fillStyle = "#fff";
+  ctx.font = LABEL_FONT;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, cx, y + LABEL_H / 2 + 0.5);
   ctx.restore();
 }
 const dataUrlCache = new Map<string, string>();
@@ -126,91 +196,120 @@ function drawPhoto(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
   ctx.restore();
 }
 
-export async function composeFlyIcon(spec: FlyIconSpec): Promise<string> {
+const pictureCache = new Map<string, FlyIconPicture>();
+
+export async function composeFlyIcon(
+  spec: FlyIconSpec
+): Promise<FlyIconPicture> {
   const key = JSON.stringify(spec);
-  const cached = dataUrlCache.get(key);
+  const cached = pictureCache.get(key);
   if (cached) return cached;
 
+  const measure = document.createElement("canvas").getContext("2d");
+  const hasLabel = !!spec.label?.trim() && !!measure;
+  const fitted = hasLabel ? fitLabel(measure!, spec.label!.trim()) : null;
+  const labelColour = spec.labelColour ?? spec.countColour ?? "#2563eb";
+
+  // Wide enough for the caption pill (and its shadow), centred on the
+  // anchor so the bottom-centre dot still marks the exact spot.
+  const W = fitted ? Math.max(SIZE, fitted.pillW + 12) : SIZE;
+  const iconH = spec.labelOnly ? 0 : SIZE;
+  const labelBlock = fitted ? LABEL_H + 4 : 0;
+  const H = iconH + labelBlock + TAIL + (spec.labelOnly ? 4 : 0);
   const canvas = document.createElement("canvas");
-  canvas.width = SIZE;
-  canvas.height = HEIGHT;
+  canvas.width = W;
+  canvas.height = H;
   const ctx = canvas.getContext("2d");
-  if (!ctx) return spec.iconUrl;
+  const fallback = (): FlyIconPicture => ({
+    url: spec.iconUrl,
+    width: SIZE,
+    height: HEIGHT,
+  });
+  if (!ctx) return fallback();
 
-  const img = await loadImage(spec.iconUrl);
-  const box = 44;
-  const cx = SIZE / 2;
-  const cy = SIZE / 2 - 1;
-  if (img) {
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(((spec.rotation ?? 0) * Math.PI) / 180);
-    ctx.drawImage(img, -box / 2, -box / 2, box, box);
-    ctx.restore();
-  } else {
-    ctx.fillStyle = spec.countColour ?? "#7c3aed";
-    ctx.beginPath();
-    ctx.arc(cx, cy, 14, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  const cx = W / 2;
+  // Stem first (the caption pill is drawn over it), from under the icon.
+  drawTail(ctx, spec.countColour ?? labelColour, cx, H, iconH ? SIZE - 2 : 2);
 
-  if (spec.count && spec.count > 0) {
-    const bx = SIZE - 12;
-    const by = 12;
-    ctx.fillStyle = spec.countColour ?? "#7c3aed";
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(bx, by, 10, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 12px Arial, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(String(spec.count), bx, by + 0.5);
-  }
-
-  if (spec.runningSheetPhotos || spec.profilePhotos) {
-    const both = spec.runningSheetPhotos && spec.profilePhotos;
-    const h = 18;
-    const w = both ? 40 : 24;
-    const x = cx - w / 2;
-    const y = SIZE - h - 1;
-    const half = both ? w / 2 : w;
-    ctx.save();
-    roundRect(ctx, x, y, w, h, 9);
-    ctx.clip();
-    let hx = x;
-    if (spec.profilePhotos) {
-      ctx.fillStyle = "#2563eb";
-      ctx.fillRect(hx, y, half, h);
-      drawPortrait(ctx, hx + half / 2, y + h / 2);
-      hx += half;
+  if (!spec.labelOnly) {
+    const img = await loadImage(spec.iconUrl);
+    const box = 44;
+    const cy = SIZE / 2 - 1;
+    if (img) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(((spec.rotation ?? 0) * Math.PI) / 180);
+      ctx.drawImage(img, -box / 2, -box / 2, box, box);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = spec.countColour ?? "#7c3aed";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+      ctx.fill();
     }
-    if (spec.runningSheetPhotos) {
-      ctx.fillStyle = "#10b981";
-      ctx.fillRect(hx, y, half, h);
-      drawPhoto(ctx, hx + half / 2, y + h / 2);
+
+    if (spec.count && spec.count > 0) {
+      const bx = cx + SIZE / 2 - 12;
+      const by = 12;
+      ctx.fillStyle = spec.countColour ?? "#7c3aed";
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(bx, by, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 12px Arial, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(spec.count), bx, by + 0.5);
     }
-    ctx.restore();
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 1.5;
-    roundRect(ctx, x, y, w, h, 9);
-    ctx.stroke();
+
+    if (spec.runningSheetPhotos || spec.profilePhotos) {
+      const both = spec.runningSheetPhotos && spec.profilePhotos;
+      const h = 18;
+      const w = both ? 40 : 24;
+      const x = cx - w / 2;
+      const y = SIZE - h - 1;
+      const half = both ? w / 2 : w;
+      ctx.save();
+      roundRect(ctx, x, y, w, h, 9);
+      ctx.clip();
+      let hx = x;
+      if (spec.profilePhotos) {
+        ctx.fillStyle = "#2563eb";
+        ctx.fillRect(hx, y, half, h);
+        drawPortrait(ctx, hx + half / 2, y + h / 2);
+        hx += half;
+      }
+      if (spec.runningSheetPhotos) {
+        ctx.fillStyle = "#10b981";
+        ctx.fillRect(hx, y, half, h);
+        drawPhoto(ctx, hx + half / 2, y + h / 2);
+      }
+      ctx.restore();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, x, y, w, h, 9);
+      ctx.stroke();
+    }
   }
 
-  drawTail(ctx, spec.countColour ?? "#7c3aed");
+  if (fitted) {
+    drawLabelPill(ctx, fitted.text, fitted.pillW, cx, iconH + 2, labelColour);
+  }
 
-  let out: string;
+  let url: string;
   try {
-    out = canvas.toDataURL("image/png");
+    url = canvas.toDataURL("image/png");
   } catch {
     // Tainted canvas (cross-origin icon without CORS) — fall back to the
     // plain icon rather than losing the marker.
-    out = spec.iconUrl;
+    pictureCache.set(key, fallback());
+    return fallback();
   }
-  dataUrlCache.set(key, out);
+  const out = { url, width: W, height: H };
+  pictureCache.set(key, out);
   return out;
 }
 

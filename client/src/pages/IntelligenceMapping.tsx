@@ -3810,7 +3810,8 @@ export default function IntelligenceMapping() {
       countColour: string,
       rs: boolean,
       profile: boolean,
-      label?: string
+      label?: string,
+      labelOnly?: boolean
     ) => {
       jobs.push(
         composeFlyIcon({
@@ -3827,8 +3828,19 @@ export default function IntelligenceMapping() {
           countColour,
           runningSheetPhotos: rs,
           profilePhotos: profile,
-        }).then(iconUrl => {
-          markers.push({ id, lat, lng, iconUrl, size: 64, label });
+          // The flat map's caption pill: marker-coloured, under the icon.
+          label,
+          labelColour: label ? countColour : undefined,
+          labelOnly: !!label && !!labelOnly,
+        }).then(pic => {
+          markers.push({
+            id,
+            lat,
+            lng,
+            iconUrl: pic.url,
+            width: pic.width,
+            height: pic.height,
+          });
         })
       );
     };
@@ -3862,12 +3874,15 @@ export default function IntelligenceMapping() {
         cm.markerColour ?? "blue",
         cm.rotation ?? 0,
         0,
-        "#0f766e",
+        // The marker's own colour — the same fill the flat map's caption
+        // pill uses — for the pill and the tail.
+        MARKER_COLOURS[cm.markerColour as MarkerColour] ?? MARKER_COLOURS.red,
         !!cm.address &&
           photoKeysRef.current.has(normalizeEntityLabelClient(cm.address)),
         !!cm.address &&
           personPhotosByKeyRef.current.has(addressMatchKey(cm.address)),
-        cm.labelOnly || cm.label ? (cm.label ?? undefined) : undefined
+        (cm.label ?? "").trim() || (cm.labelOnly ? "(no label)" : undefined),
+        !!cm.labelOnly
       );
     }
 

@@ -377,7 +377,9 @@ export function TargetStatusFields({
                 <Input
                   value={p.detail}
                   disabled={disabled}
-                  onChange={e => setProjectDetail(p.key, e.target.value)}
+                  onChange={e =>
+                    setProjectDetail(p.key, e.target.value.toUpperCase())
+                  }
                   placeholder="AFP or WAPOL"
                   className="text-sm"
                 />

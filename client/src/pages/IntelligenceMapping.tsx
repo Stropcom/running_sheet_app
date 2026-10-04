@@ -3744,7 +3744,7 @@ export default function IntelligenceMapping() {
           runningSheetPhotos: rs,
           profilePhotos: profile,
         }).then(iconUrl => {
-          markers.push({ id, lat, lng, iconUrl, size: 56, label });
+          markers.push({ id, lat, lng, iconUrl, size: 64, label });
         })
       );
     };
@@ -3799,7 +3799,7 @@ export default function IntelligenceMapping() {
         lat: u.lat,
         lng: u.lng,
         iconUrl: composeFlyTeamIcon(u.pinColor ?? "#2563eb"),
-        size: 40,
+        size: 48,
         label: u.name.toUpperCase(),
       });
     }
@@ -3931,7 +3931,7 @@ export default function IntelligenceMapping() {
         lat: flyPick.lat,
         lng: flyPick.lng,
         iconUrl: composeFlyTeamIcon("#f59e0b"),
-        size: 36,
+        size: 44,
       },
     ];
   }, [flyView, flyPick]);

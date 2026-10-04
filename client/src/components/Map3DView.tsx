@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { loadGoogleMaps } from "@/lib/googleMaps";
+import { FLY_ICON_ASPECT } from "@/lib/flyMarkerIcon";
 
 // Full 3D "fly-over" map (Google's photorealistic 3D imagery) — a separate
 // map component from the flat google.maps.Map, switched in by the "Fly"
@@ -365,12 +366,12 @@ export function Map3DView({
 
         const buildMarker = (m: FlyMarker): HTMLElement | null => {
           if (!MarkerCtor) return null;
-          // Sit a little above whatever is there (roof, tree), and keep
-          // drawing when something is in front — at ground level the 3D
-          // buildings and trees hid the marker once the camera came close.
+          // The picture's tail-end dot sits exactly on the spot (on the
+          // ground), and the marker keeps drawing when a building or tree is
+          // in front of it — at ground level they hid it up close.
           const marker = new MarkerCtor({
-            position: { lat: m.lat, lng: m.lng, altitude: 12 },
-            altitudeMode: "RELATIVE_TO_MESH",
+            position: { lat: m.lat, lng: m.lng, altitude: 0 },
+            altitudeMode: "CLAMP_TO_GROUND",
             drawsWhenOccluded: true,
             sizePreserved: true,
             ...(m.label ? { label: m.label } : {}),
@@ -380,7 +381,7 @@ export function Map3DView({
           const img = document.createElement("img");
           img.src = m.iconUrl;
           img.width = size;
-          img.height = size;
+          img.height = Math.round(size * FLY_ICON_ASPECT);
           tpl.content.append(img);
           marker.append(tpl);
           marker.addEventListener("gmp-click", (e: Event) => {

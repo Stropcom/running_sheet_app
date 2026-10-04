@@ -17,6 +17,41 @@ export interface FlyIconSpec {
 }
 
 const SIZE = 64;
+/** The picture is taller than the icon: a short tail ends in a dot at the very
+ * bottom. The 3D map pins an image by its bottom centre, so that dot is the
+ * true position — the icon floats above it by a fixed number of pixels, and
+ * nothing appears to slide off the spot as the camera zooms. */
+const TAIL = 36;
+const HEIGHT = SIZE + TAIL;
+/** Height ÷ width of every picture made here. */
+export const FLY_ICON_ASPECT = HEIGHT / SIZE;
+
+/** Stem and dot at the bottom of the picture, marking the exact spot. */
+function drawTail(ctx: CanvasRenderingContext2D, colour: string) {
+  const x = SIZE / 2;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(x, SIZE - 2);
+  ctx.lineTo(x, HEIGHT - 6);
+  ctx.stroke();
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(x, SIZE - 2);
+  ctx.lineTo(x, HEIGHT - 6);
+  ctx.stroke();
+  ctx.fillStyle = colour;
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, HEIGHT - 5, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
 const dataUrlCache = new Map<string, string>();
 const imageCache = new Map<string, Promise<HTMLImageElement | null>>();
 
@@ -98,7 +133,7 @@ export async function composeFlyIcon(spec: FlyIconSpec): Promise<string> {
 
   const canvas = document.createElement("canvas");
   canvas.width = SIZE;
-  canvas.height = SIZE;
+  canvas.height = HEIGHT;
   const ctx = canvas.getContext("2d");
   if (!ctx) return spec.iconUrl;
 
@@ -165,6 +200,8 @@ export async function composeFlyIcon(spec: FlyIconSpec): Promise<string> {
     ctx.stroke();
   }
 
+  drawTail(ctx, spec.countColour ?? "#7c3aed");
+
   let out: string;
   try {
     out = canvas.toDataURL("image/png");
@@ -184,7 +221,7 @@ export function composeFlyTeamIcon(colour: string): string {
   if (cached) return cached;
   const canvas = document.createElement("canvas");
   canvas.width = SIZE;
-  canvas.height = SIZE;
+  canvas.height = HEIGHT;
   const ctx = canvas.getContext("2d");
   if (!ctx) return "";
   ctx.shadowColor = "rgba(0,0,0,0.4)";
@@ -193,9 +230,11 @@ export function composeFlyTeamIcon(colour: string): string {
   ctx.strokeStyle = "#fff";
   ctx.lineWidth = 4;
   ctx.beginPath();
-  ctx.arc(SIZE / 2, SIZE / 2, 15, 0, Math.PI * 2);
+  ctx.arc(SIZE / 2, SIZE / 2 - 4, 15, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  ctx.shadowBlur = 0;
+  drawTail(ctx, colour);
   const out = canvas.toDataURL("image/png");
   dataUrlCache.set(key, out);
   return out;

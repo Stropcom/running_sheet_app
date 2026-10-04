@@ -1166,20 +1166,25 @@ function OperationsTab({
                   {op.sheetCount} {op.sheetCount === 1 ? "sheet" : "sheets"}
                 </p>
               </div>
-              <button
-                onClick={e => {
-                  e.stopPropagation();
-                  navigate(`/intelligence/operation/${op.operationId}`);
-                }}
-                title="View Operation Profile"
-                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 border border-blue-500/20 hover:bg-blue-500/20 transition-colors shrink-0"
-              >
-                <FileText className="w-3 h-3" />
-                <span className="hidden sm:inline">Profile</span>
-              </button>
               <ChevronRight
                 className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
               />
+            </button>
+
+            {/* Full-width Profile link, directly under the header and above the
+                entities — shown whether the panel is open or closed. */}
+            <button
+              onClick={() =>
+                navigate(`/intelligence/operation/${op.operationId}`)
+              }
+              title="View Operation Profile"
+              className="w-full flex items-center gap-2 px-4 py-2.5 border-t border-blue-500/20 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-bold uppercase tracking-wider text-left transition-colors"
+            >
+              <FileText className="w-3.5 h-3.5 shrink-0" />
+              <span className="flex-1 min-w-0 truncate">
+                Profile {op.operationName}
+              </span>
+              <ChevronRight className="w-4 h-4 shrink-0" />
             </button>
 
             {isExpanded && (

@@ -66,6 +66,7 @@ import {
   composeFlyTeamIcon,
   composeFlyTeamPin,
 } from "@/lib/flyMarkerIcon";
+import { FLY_COMPASS_FIXED_ICONS } from "@/lib/flyCompassFixed";
 import { ImagesPip } from "@/components/ImagesPip";
 import { addressMatchKey } from "@shared/addressMatchKey";
 import { shortPersonDisplayName } from "@shared/addressFormat";
@@ -3814,10 +3815,14 @@ export default function IntelligenceMapping() {
       jobs.push(
         composeFlyIcon({
           iconUrl: getMarkerIconUrl(iconName, colourName as MarkerColour),
-          // Drawn as saved, not turned with the 3D view. A rotation being
-          // dragged on the card shows straight away, ahead of the saved
-          // value.
-          rotation: flyRotOverrideRef.current.get(id) ?? rotation,
+          // Most icons are drawn upright as saved. The few that must keep a
+          // fixed compass heading (FLY_COMPASS_FIXED_ICONS) are counter-
+          // turned by the 3D view's heading, as on the flat map. A rotation
+          // being dragged on the card shows straight away, ahead of the
+          // saved value.
+          rotation:
+            (flyRotOverrideRef.current.get(id) ?? rotation) -
+            (FLY_COMPASS_FIXED_ICONS.has(iconName) ? flyHeadingRef.current : 0),
           count,
           countColour,
           runningSheetPhotos: rs,

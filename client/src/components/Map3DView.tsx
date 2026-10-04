@@ -366,12 +366,13 @@ export function Map3DView({
 
         const buildMarker = (m: FlyMarker): HTMLElement | null => {
           if (!MarkerCtor) return null;
-          // The picture's tail-end dot sits exactly on the spot (on the
-          // ground), and the marker keeps drawing when a building or tree is
-          // in front of it — at ground level they hid it up close.
+          // The picture's tail-end dot marks the exact spot. It rests just
+          // above the surface there (roof, tree or ground), not under it:
+          // a marker buried under a rooftop is drawn faded by the 3D map,
+          // which is what made markers fade out as the camera came close.
           const marker = new MarkerCtor({
-            position: { lat: m.lat, lng: m.lng, altitude: 0 },
-            altitudeMode: "CLAMP_TO_GROUND",
+            position: { lat: m.lat, lng: m.lng, altitude: 3 },
+            altitudeMode: "RELATIVE_TO_MESH",
             drawsWhenOccluded: true,
             sizePreserved: true,
             ...(m.label ? { label: m.label } : {}),

@@ -21,7 +21,7 @@ const SIZE = 64;
  * bottom. The 3D map pins an image by its bottom centre, so that dot is the
  * true position — the icon floats above it by a fixed number of pixels, and
  * nothing appears to slide off the spot as the camera zooms. */
-const TAIL = 36;
+const TAIL = 22;
 const HEIGHT = SIZE + TAIL;
 /** Height ÷ width of every picture made here. */
 export const FLY_ICON_ASPECT = HEIGHT / SIZE;

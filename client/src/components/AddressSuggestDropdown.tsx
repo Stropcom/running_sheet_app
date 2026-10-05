@@ -10,7 +10,7 @@
  * The caller owns keyboard handling and the textarea; this file owns the data
  * (`useAddressSuggestions`) and the list (`AddressSuggestDropdown`).
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MapPin, Globe, WifiOff } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { loadGoogleMaps } from "@/lib/googleMaps";
@@ -238,12 +238,19 @@ export function AddressSuggestDropdown({
   onActiveIndexChange: (i: number) => void;
   onPick: (item: AddressSuggestItem) => void;
 }) {
-  if (items.length === 0 && !offlineNoKnown) return null;
+  // Hooks must run before any early return.
+  const elRef = useRef<HTMLDivElement>(null);
+  // Self-calibration: `anchor` comes from getBoundingClientRect, but a
+  // position:fixed box is placed in the layout viewport, and the two can
+  // differ on iOS while the keyboard has panned the page. So after each
+  // render the list measures where it actually landed and nudges itself by
+  // the difference — it ends up directly under the caret whatever the cause.
+  const [nudge, setNudge] = useState({ x: 0, y: 0 });
+  const empty = items.length === 0 && !offlineNoKnown;
 
-  // Always sits directly below the line being typed — on phone, tablet and
-  // laptop alike. Squeezed between the caret and the on-screen keyboard it
-  // shrinks and scrolls rather than flipping over the text; the caller
-  // scrolls the row up to make room (see the effect in EditableCell).
+  // The list always sits directly below the line being typed, on every
+  // device. It never moves the row or flips above the text: if the keyboard
+  // covers part of it, so be it — the officer's own text stays visible.
   const vv = typeof window !== "undefined" ? window.visualViewport : null;
   const viewW = vv?.width ?? window.innerWidth;
   const viewH = vv?.height ?? window.innerHeight;
@@ -251,15 +258,32 @@ export function AddressSuggestDropdown({
   const width = Math.min(340, viewW - 16);
   const left = Math.max(8, Math.min(anchor.left, viewW - width - 8));
   const spaceBelow = viewTop + viewH - anchor.top - 8;
+  const wantTop = anchor.top + 2;
+
+  useLayoutEffect(() => {
+    const el = elRef.current;
+    if (!el || empty) return;
+    const r = el.getBoundingClientRect();
+    const dx = left - r.left;
+    const dy = wantTop - r.top;
+    if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+      setNudge(n => ({ x: n.x + dx, y: n.y + dy }));
+    }
+  });
+
+  if (empty) return null;
+
   const style: React.CSSProperties = {
-    top: anchor.top + 2,
+    top: wantTop,
     left,
     width,
-    maxHeight: Math.max(96, Math.min(260, spaceBelow)),
+    maxHeight: Math.max(130, Math.min(260, spaceBelow)),
+    transform: `translate(${nudge.x}px, ${nudge.y}px)`,
   };
 
   return (
     <div
+      ref={elRef}
       className="fixed z-50 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg"
       style={style}
       role="listbox"

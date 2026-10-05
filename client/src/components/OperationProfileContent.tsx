@@ -72,6 +72,7 @@ interface OperationTarget {
     hb: string | null;
     v1f: string | null;
     v1: string | null;
+    extraAddresses?: string | null;
     isIndicesOnly: boolean;
     relationship?: string;
   }>;

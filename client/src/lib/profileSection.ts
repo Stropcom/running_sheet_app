@@ -47,6 +47,7 @@ export interface ProfileTargetBlock {
     id: number;
     name: string;
     hbf: string | null;
+    extraAddresses?: string | null;
     isIndicesOnly: boolean;
     relationship?: string;
   }>;
@@ -77,6 +78,24 @@ const detailGrid = (rows: Array<[string, string]>) =>
     )
     .join("")}</div>`;
 
+/** Every address on an associate / resident registry record, main first. */
+export function registryPersonAddresses(
+  hbf: string | null | undefined,
+  extraAddresses: string | null | undefined
+): string[] {
+  let extras: string[] = [];
+  if (extraAddresses) {
+    try {
+      const list: Array<{ full?: string; short?: string }> =
+        JSON.parse(extraAddresses);
+      extras = list.map(x => x.full?.trim() || x.short?.trim() || "");
+    } catch {
+      extras = [];
+    }
+  }
+  return [hbf?.trim() || "", ...extras].filter(Boolean);
+}
+
 const parseExtras = (json: string | null | undefined): string[] => {
   if (!json) return [];
   try {
@@ -93,7 +112,7 @@ const registryList = (
   `<div style="border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">${people
     .map(
       a =>
-        `<div style="display:flex;gap:8px;align-items:center;padding:4px 9px;font-size:10px;border-bottom:1px solid ${GREY_BORDER}"><span style="flex:1">${esc(a.name)}${a.isIndicesOnly ? ` <span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:0.04em;background:#e0e7ff;border:1px solid #c7d2fe;color:#4338ca">INDICES</span>` : ""}</span><span style="color:#64748b">${esc(a.hbf ?? "")}</span></div>`
+        `<div style="display:flex;gap:8px;align-items:center;padding:4px 9px;font-size:10px;border-bottom:1px solid ${GREY_BORDER}"><span style="flex:1">${esc(a.name)}${a.isIndicesOnly ? ` <span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:0.04em;background:#e0e7ff;border:1px solid #c7d2fe;color:#4338ca">INDICES</span>` : ""}</span><span style="color:#64748b;text-align:right">${registryPersonAddresses(a.hbf, a.extraAddresses).map(esc).join("<br>")}</span></div>`
     )
     .join("")}</div>`;
 

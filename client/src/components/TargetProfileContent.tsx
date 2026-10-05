@@ -37,6 +37,7 @@ import {
 } from "@/components/IntelEntityChip";
 import { IndicesBadge } from "@/components/IndicesBadge";
 import { RegistryPersonRow } from "@/components/RegistryPersonRow";
+import { registryPersonAddresses } from "@/lib/profileSection";
 import {
   ImportedDocumentCard,
   isParsedDocumentImport,
@@ -339,7 +340,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     <div style="border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">
       ${RA_res.map(
         a =>
-          `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(a.name)}${a.isIndicesOnly ? `<span class="indices-tag-light">INDICES</span>` : ""}</span><span style="color:#64748b">${esc(a.hbf ?? "")}</span></div>`
+          `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(a.name)}${a.isIndicesOnly ? `<span class="indices-tag-light">INDICES</span>` : ""}</span><span style="color:#64748b;text-align:right">${registryPersonAddresses(a.hbf, a.extraAddresses).map(esc).join("<br>")}</span></div>`
       ).join("")}
     </div>
   </div>`
@@ -354,7 +355,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     <div style="border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">
       ${RA_ass.map(
         a =>
-          `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(a.name)}${a.isIndicesOnly ? `<span class="indices-tag-light">INDICES</span>` : ""}</span><span style="color:#64748b">${esc(a.hbf ?? "")}</span></div>`
+          `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(a.name)}${a.isIndicesOnly ? `<span class="indices-tag-light">INDICES</span>` : ""}</span><span style="color:#64748b;text-align:right">${registryPersonAddresses(a.hbf, a.extraAddresses).map(esc).join("<br>")}</span></div>`
       ).join("")}
     </div>
   </div>`

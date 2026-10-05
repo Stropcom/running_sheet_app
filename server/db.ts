@@ -12031,6 +12031,8 @@ export interface IntelTargetProfile {
     hb: string | null;
     v1f: string | null;
     v1: string | null;
+    /** JSON [{full, short}] — the registry record's further addresses. */
+    extraAddresses: string | null;
     isIndicesOnly: boolean;
     /** "associate" or "resident" (Other Home Address Resident). */
     relationship: string;
@@ -12094,6 +12096,7 @@ export interface IntelOperationProfile {
       hb: string | null;
       v1f: string | null;
       v1: string | null;
+      extraAddresses: string | null;
       isIndicesOnly: boolean;
       relationship: string;
     }>;
@@ -13118,6 +13121,7 @@ export async function getIntelTargetProfile(
       hb: a.hb,
       v1f: a.v1f,
       v1: a.v1,
+      extraAddresses: a.extraAddresses ?? null,
       isIndicesOnly: associateEntityById.get(a.id)?.isIndicesOnly ?? false,
       relationship: a.relationship,
     })),
@@ -13236,6 +13240,7 @@ export async function getIntelOperationProfile(
         hb: a.hb,
         v1f: a.v1f,
         v1: a.v1,
+        extraAddresses: a.extraAddresses ?? null,
         isIndicesOnly: associateEntityById.get(a.id)?.isIndicesOnly ?? false,
         relationship: a.relationship,
       }));

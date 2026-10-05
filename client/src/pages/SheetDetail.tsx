@@ -4953,6 +4953,12 @@ export default function SheetDetail({
               rego: a.rego,
               text: `${shortenAlreadyMentionedNames(extractOccupantNames(a.occupantDesc), usedBracketCodes)} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
             }));
+            // Direct form — no route clause, for when they simply walked in.
+            const walkedInDirectChips = (pendingArrivals ?? []).map(a => ({
+              key: `wid-${a.rego}`,
+              rego: a.rego,
+              text: `${shortenAlreadyMentionedNames(extractOccupantNames(a.occupantDesc), usedBracketCodes)} exited the vehicle, entered ${a.address} and continued out of sight.`,
+            }));
             const walkedOutChips = (pendingWalkIns ?? []).flatMap(w => {
               const arrivalsHere = (pendingArrivals ?? []).filter(
                 a =>
@@ -4979,6 +4985,7 @@ export default function SheetDetail({
               vehicleArrivingChips.length > 0 ||
               vehicleDepartingChips.length > 0 ||
               walkedInChips.length > 0 ||
+              walkedInDirectChips.length > 0 ||
               walkedOutChips.length > 0;
             const insertAtFocused = (text: string) => {
               const el = focusedTextareaRef.current;
@@ -5306,6 +5313,10 @@ export default function SheetDetail({
                             <ContinuityChipGroup
                               label="Walked in"
                               chips={walkedInChips}
+                            />
+                            <ContinuityChipGroup
+                              label="Walked in direct"
+                              chips={walkedInDirectChips}
                             />
                             <ContinuityChipGroup
                               label="Walked out"

@@ -58,6 +58,16 @@ describe("WALK_IN_PATTERN", () => {
     expect(match![3].trim()).toBe("Sapore Espresso Bar");
   });
 
+  it("matches the direct form with no 'walked <route>' clause", () => {
+    const text =
+      "Vehicle 1HIB84, BAIG driver, JORDAN front passenger, arrived at 193B Stock Road, PALMYRA WA (193b Stock Road) and parked in the driveway.\n\nBAIG and JORDAN exited the vehicle, entered 193b Stock Road and continued out of sight.";
+    const match = text.match(WALK_IN_PATTERN);
+    expect(match).not.toBeNull();
+    expect(match![1].trim()).toBe("BAIG and JORDAN");
+    expect(match![2]).toBeUndefined();
+    expect(match![3].trim()).toBe("193b Stock Road");
+  });
+
   it("does not match a plain vehicle arrival with no walking", () => {
     const text =
       "Vehicle 1MGR73, KENNEDY driver and sole occupant, arrived at Sapore Espresso Bar, 4/275 Belmont Avenue, CLOVERDALE WA (Sapore Espresso Bar) parked in the car park.";

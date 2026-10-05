@@ -5847,7 +5847,7 @@ export async function getPendingWalkIns(
     const inMatch = row.observation.match(WALK_IN_PATTERN);
     if (inMatch) {
       const names = inMatch[1].trim();
-      const route = inMatch[2].trim();
+      const route = inMatch[2]?.trim() ?? "";
       const location = inMatch[3].trim();
       const key = location.toLowerCase();
       lastWalkInByLocationKey.set(key, {

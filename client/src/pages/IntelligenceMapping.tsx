@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { RS_CANONICAL_CHIP_ORDER } from "@/lib/rsChipOrder";
 import {
   matchVehicleArrival,
@@ -12137,18 +12144,35 @@ export default function IntelligenceMapping() {
                                             rsUsedBracketCodes
                                           );
                                         const text = `${names} exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`;
+                                        // Direct form — no route clause.
+                                        const directText = `${names} exited the vehicle, entered ${shortAddr} and continued out of sight.`;
+                                        const chipClass =
+                                          "px-2 py-0.5 rounded text-[10px] font-bold border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md";
                                         return (
-                                          <button
-                                            key={a.rego}
-                                            onClick={() => appendText(text)}
-                                            title={text}
-                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                          >
-                                            On foot{" "}
-                                            <span className="font-mono normal-case">
-                                              ({a.rego})
-                                            </span>
-                                          </button>
+                                          <Fragment key={a.rego}>
+                                            <button
+                                              onClick={() => appendText(text)}
+                                              title={text}
+                                              className={chipClass}
+                                            >
+                                              On foot{" "}
+                                              <span className="font-mono normal-case">
+                                                ({a.rego})
+                                              </span>
+                                            </button>
+                                            <button
+                                              onClick={() =>
+                                                appendText(directText)
+                                              }
+                                              title={directText}
+                                              className={chipClass}
+                                            >
+                                              Direct{" "}
+                                              <span className="font-mono normal-case">
+                                                ({a.rego})
+                                              </span>
+                                            </button>
+                                          </Fragment>
                                         );
                                       })}
                                     </div>

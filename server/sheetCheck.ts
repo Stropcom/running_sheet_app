@@ -58,6 +58,7 @@ import {
 } from "./db";
 import { scanIntelligenceEntities } from "./intelligenceScan";
 import { findFuzzyMatches, DEFAULT_FUZZY_THRESHOLD } from "./fuzzyMatch";
+import { aliasMentionCompatible } from "./personAliasMatch";
 
 export type SheetCheckCategory =
   | "formatting"
@@ -1310,6 +1311,71 @@ function checkBracketBalance(
   return findings;
 }
 
+// ── Two different people sharing one surname bracket ───────────────────
+
+/**
+ * Flags a sheet that introduces two DIFFERENT people under the same surname
+ * bracket — "Grace TAN (TAN)" and "Lawrence TAN (TAN)". A bare "TAN" later on
+ * can't be attributed to either of them, so the app's own convention for
+ * family members sharing a surname applies: give each their own initial in
+ * the bracket ("(G.TAN)", "(L.TAN)"). Names that don't contradict each other
+ * ("Grace TAN" / "G TAN" / "Grace Olivia TAN") are the same person and are
+ * not flagged.
+ */
+export function findSharedBracketPeople(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
+  type Seen = {
+    name: string;
+    rowId: number;
+    timeMinutes: number | null;
+    snippet: string;
+  };
+  const byAlias = new Map<string, Seen[]>();
+  const findings: SheetCheckFinding[] = [];
+  for (const row of rows) {
+    if (!row.observation) continue;
+    for (const e of extractEntitiesFromText(row.observation)) {
+      if (e.type !== "person") continue;
+      const alias = (e.rawShortForm ?? "").trim();
+      // Only a name written out beside its bracket can say who it is.
+      if (!alias || e.shortForm.trim().toUpperCase() === alias.toUpperCase())
+        continue;
+      const key = alias.toUpperCase();
+      const people = byAlias.get(key) ?? [];
+      byAlias.set(key, people);
+      const sameAsKnown = people.some(p =>
+        aliasMentionCompatible(e.shortForm, alias, p.name)
+      );
+      if (sameAsKnown) continue;
+      const seen: Seen = {
+        name: e.shortForm,
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        snippet:
+          row.observation.length > 140
+            ? `${row.observation.slice(0, 140)}…`
+            : row.observation,
+      };
+      if (people.length > 0) {
+        const first = people[0];
+        findings.push({
+          ruleId: "same-bracket-different-people",
+          category: "consistency",
+          reason: `"(${alias})" is used for both ${first.name} and ${e.shortForm}. They look like different people, so a later bare "${alias}" can't be told apart — give each their own initial in the bracket, e.g. "(${first.name.trim()[0]}.${alias})" and "(${e.shortForm.trim()[0]}.${alias})".`,
+          rowId: first.rowId,
+          otherRowId: row.rowId,
+          timeMinutes: first.timeMinutes,
+          snippet: first.snippet,
+          findingKey: `BRACKET_${key}::${first.name.toUpperCase()}|${e.shortForm.toUpperCase()}`,
+        });
+      }
+      people.push(seen);
+    }
+  }
+  return findings;
+}
+
 // ── Orchestrator ────────────────────────────────────────────────────────
 
 export async function checkRunningSheet(
@@ -1340,6 +1406,7 @@ export async function checkRunningSheet(
 
   const spelling = checkSpelling(rows);
   const bracketBalance = checkBracketBalance(rows);
+  const sharedBracketPeople = findSharedBracketPeople(rows);
   const bareAddressConsistency = checkBareAddressConsistency(rows);
   const punctuationSpacing = checkPunctuationSpacing(rows);
   const bareVehicleEntities = findSheetBareVehicleEntities(
@@ -1364,6 +1431,7 @@ export async function checkRunningSheet(
     ...formattingAndRegistry,
     ...targetNameTypos,
     ...bracketBalance,
+    ...sharedBracketPeople,
     ...punctuationSpacing,
     ...consistency,
     ...bareAddressConsistency,

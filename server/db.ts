@@ -8540,6 +8540,11 @@ export async function getAllIntelligenceEntities(): Promise<
     // The same registered name, looked up by the dictionary entry itself
     // (Pass B below needs it when it scans text for the alias).
     const preseededEntryName = new WeakMap<DictEntry, string>();
+    // Surname aliases this sheet uses for TWO different people ("Grace TAN
+    // (TAN)" and "Lawrence TAN (TAN)"). A bare "TAN" on such a sheet can't be
+    // attributed to either, so Pass B doesn't search for the bare alias — each
+    // person is still found by their full name — and Check Sheet flags it.
+    const ambiguousAliasKeys = new Set<string>();
     const registerDictEntry = (key: string, entry: DictEntry) => {
       const preseedName = preseededAliasName.get(key);
       if (
@@ -8558,8 +8563,25 @@ export async function getAllIntelligenceEntities(): Promise<
       if (!sheetDict.has(key)) {
         sheetDict.set(key, entry);
       } else {
-        // Upgrade to longer shortForm if available
         const existing = sheetDict.get(key)!;
+        // Same surname bracket, different given names → two different
+        // people. Never fold one into the other (that would rewrite the
+        // first person's entry as the second).
+        if (
+          entry.type === "person" &&
+          existing.type === "person" &&
+          existing !== entry &&
+          key === entry.rawShortForm.toLowerCase() &&
+          !aliasMentionCompatible(
+            entry.shortForm,
+            entry.rawShortForm,
+            existing.shortForm
+          )
+        ) {
+          ambiguousAliasKeys.add(key);
+          return;
+        }
+        // Upgrade to longer shortForm if available
         if (entry.shortForm.length > existing.shortForm.length) {
           existing.shortForm = entry.shortForm;
           existing.fullDescription = entry.fullDescription;
@@ -8679,7 +8701,11 @@ export async function getAllIntelligenceEntities(): Promise<
         // suburb every time: "returned to 54 Terrace Road"), and searching
         // only the full enriched form would miss those, undercounting visits.
         const searchTerms: string[] = [entry.shortForm];
+        const aliasIsAmbiguous =
+          entry.type === "person" &&
+          ambiguousAliasKeys.has(entry.rawShortForm.toLowerCase());
         if (
+          !aliasIsAmbiguous &&
           (entry.type === "person" ||
             entry.type === "address" ||
             entry.type === "business" ||

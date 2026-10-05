@@ -1,5 +1,17 @@
+import { IMAGERY_PHRASE_PATTERN, cinsWithImagery } from "@shared/rowImagery";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import {
+  AddressSuggestDropdown,
+  addressSuggestInsertText,
+  useAddressSuggestions,
+  type AddressSuggestItem,
+  type AddressSuggestMode,
+} from "@/components/AddressSuggestDropdown";
+import {
+  detectAddressSuggestTrigger,
+  detectPlaceSuggestTrigger,
+} from "@shared/addressSuggestTrigger";
 import { RS_CANONICAL_CHIP_ORDER } from "@/lib/rsChipOrder";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -199,12 +211,9 @@ type SheetRow = {
   attachments: RowAttachment[];
 };
 
-// Same phrase list stripImageryPhraseForExport() drops from the exported
-// text — used here to decide whether to show the "attach photo" affordance
-// on an observation cell (kept live for that and for the Governance imagery
-// check; only the export drops the phrase itself).
-const IMAGERY_PHRASE_PATTERN =
-  /(PHOTOGRAPHS TAKEN|PHOTOGRAPH\/S TAKEN|PHOTOGRAPH TAKEN|VIDEO FOOTAGE TAKEN|VIDEO TAKEN|PHOTOS TAKEN|PHOTO TAKEN)/i;
+// The imagery phrase list lives in shared/rowImagery.ts (also used for the
+// automatic camera in the TEAM strip and the Governance imagery check); it's
+// the same list stripImageryPhraseForExport() drops from the exported text.
 
 // ─── Export Helpers ─────────────────────────────────────────────────────────
 
@@ -1984,6 +1993,91 @@ function EditableCell({
       clearTimeout(vehicleMentionDebounceRef.current);
   }
 
+  // ── Inline address suggestions ──────────────────────────────────────────
+  // Typing a street number + the start of a street ("13 Den") lists known
+  // addresses; once none are known, Google addresses (see
+  // AddressSuggestDropdown). Takes precedence over the name trigger, which
+  // would otherwise also fire on the capitalised street word.
+  const [addressWord, setAddressWord] = useState<{
+    text: string;
+    start: number;
+    end: number;
+  } | null>(null);
+  const [addressAnchor, setAddressAnchor] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+  const [addressActiveIndex, setAddressActiveIndex] = useState(0);
+  const [addressQuery, setAddressQuery] = useState("");
+  const addressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [addressMode, setAddressMode] = useState<AddressSuggestMode>("address");
+  const addressSuggest = useAddressSuggestions(addressQuery, addressMode);
+  const addressItems = addressWord ? addressSuggest.items : [];
+  const addressOpen =
+    !!addressWord &&
+    !!addressAnchor &&
+    (addressItems.length > 0 || addressSuggest.offlineNoKnown);
+
+  // While the list is open, keep it glued under the caret as the row or page
+  // scrolls and as the on-screen keyboard resizes the visible area.
+  useEffect(() => {
+    if (!addressOpen) return;
+    let raf = 0;
+    const update = () => {
+      const t = textareaRef.current;
+      if (!t) return;
+      setAddressAnchor(
+        getCaretPixelPosition(t, t.selectionStart ?? t.value.length)
+      );
+    };
+    // Deferred two frames: when the keyboard opens or the visible area pans,
+    // the app shell (DashboardLayout's setVh) re-positions itself in its own
+    // viewport listener, which runs after this one — measuring straight away
+    // reads the caret from the old layout and leaves the list misplaced.
+    const refresh = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        raf = requestAnimationFrame(update);
+      });
+    };
+    window.addEventListener("scroll", refresh, true);
+    window.visualViewport?.addEventListener("resize", refresh);
+    window.visualViewport?.addEventListener("scroll", refresh);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", refresh, true);
+      window.visualViewport?.removeEventListener("resize", refresh);
+      window.visualViewport?.removeEventListener("scroll", refresh);
+    };
+  }, [addressOpen]);
+
+  function closeAddressDropdown() {
+    setAddressWord(null);
+    setAddressAnchor(null);
+    setAddressQuery("");
+    setAddressActiveIndex(0);
+    if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+  }
+
+  async function selectAddressSuggestion(
+    item: AddressSuggestItem,
+    textarea: HTMLTextAreaElement
+  ) {
+    if (!addressWord) return;
+    const { start, end } = addressWord;
+    addressSuggest.endSession();
+    closeAddressDropdown();
+    const insertText = await addressSuggestInsertText(item);
+    // A Google business needs a moment to resolve its street address, so
+    // splice into whatever the draft is by then rather than a stale copy.
+    setDraft(d => d.slice(0, start) + insertText + d.slice(end));
+    const newPos = start + insertText.length;
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(newPos, newPos);
+    });
+  }
+
   function handleObservationInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const val = e.target.value;
     setDraft(val);
@@ -2012,6 +2106,32 @@ function EditableCell({
         return;
       }
       closeVehicleMentionDropdown();
+    }
+
+    if (usedAddressLabels) {
+      // "@" asks for a place/business by name; otherwise a street number
+      // plus the start of a street asks for an address.
+      const placeTrigger = detectPlaceSuggestTrigger(val, cursorPos);
+      const addrTrigger =
+        placeTrigger ?? detectAddressSuggestTrigger(val, cursorPos);
+      if (addrTrigger) {
+        closeMentionDropdown();
+        setAddressMode(placeTrigger ? "place" : "address");
+        setAddressWord({
+          text: addrTrigger.text,
+          start: addrTrigger.start,
+          end: cursorPos,
+        });
+        setAddressActiveIndex(0);
+        setAddressAnchor(getCaretPixelPosition(e.target, cursorPos));
+        if (addressDebounceRef.current)
+          clearTimeout(addressDebounceRef.current);
+        addressDebounceRef.current = setTimeout(() => {
+          setAddressQuery(addrTrigger.text);
+        }, 150);
+        return;
+      }
+      closeAddressDropdown();
     }
 
     if (!usedBracketCodes) return;
@@ -2244,6 +2364,7 @@ function EditableCell({
               // should just close rather than block the save.
               closeMentionDropdown();
               closeVehicleMentionDropdown();
+              closeAddressDropdown();
               notifyObservationBlur();
               const conv = convertGoogleAddresses(draft);
               if (conv !== draft) {
@@ -2254,6 +2375,35 @@ function EditableCell({
               }
             }}
             onKeyDown={e => {
+              if (addressOpen && addressItems.length > 0) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setAddressActiveIndex(i => (i + 1) % addressItems.length);
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setAddressActiveIndex(
+                    i => (i - 1 + addressItems.length) % addressItems.length
+                  );
+                  return;
+                }
+                if (e.key === "Enter" || e.key === "Tab") {
+                  e.preventDefault();
+                  selectAddressSuggestion(
+                    addressItems[
+                      Math.min(addressActiveIndex, addressItems.length - 1)
+                    ],
+                    e.currentTarget
+                  );
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  closeAddressDropdown();
+                  return;
+                }
+              }
               if (vehicleMentionWord && vehicleMentionSuggestions.length > 0) {
                 if (e.key === "ArrowDown") {
                   e.preventDefault();
@@ -2327,6 +2477,21 @@ function EditableCell({
             className="text-sm min-h-[60px] resize-none"
             placeholder={placeholder}
           />
+          {addressOpen && addressAnchor && (
+            <AddressSuggestDropdown
+              anchor={addressAnchor}
+              items={addressItems}
+              source={addressSuggest.source}
+              offlineNoKnown={addressSuggest.offlineNoKnown}
+              mode={addressMode}
+              activeIndex={addressActiveIndex}
+              onActiveIndexChange={setAddressActiveIndex}
+              onPick={item => {
+                if (textareaRef.current)
+                  selectAddressSuggestion(item, textareaRef.current);
+              }}
+            />
+          )}
           {mentionWord && mentionAnchor && mentionSuggestions.length > 0 && (
             <div
               className="fixed z-50 w-64 rounded-lg border border-border bg-popover shadow-lg overflow-hidden"
@@ -3728,6 +3893,9 @@ export default function SheetDetail({
   autoSortRef.current = autoSortRowMembers;
 
   // Compute which CINs have ALL their rows certified
+  // CINs on a row with images — an imagery phrase or an attached image — get
+  // the camera automatically; no need to tick it in Edit TEAM.
+  const autoImageCins = useMemo(() => cinsWithImagery(rows ?? []), [rows]);
   const cinFullyCertified = useMemo(() => {
     if (!rows || rows.length === 0) return new Set<string>();
     const certified = new Set<string>();
@@ -4673,7 +4841,7 @@ export default function SheetDetail({
                           </span>
                         )}
                         {entry.cin}
-                        {entry.hasImages && (
+                        {(entry.hasImages || autoImageCins.has(entry.cin)) && (
                           <Camera className="w-3 h-3 text-amber-400" />
                         )}
                       </button>
@@ -4785,6 +4953,12 @@ export default function SheetDetail({
               rego: a.rego,
               text: `${shortenAlreadyMentionedNames(extractOccupantNames(a.occupantDesc), usedBracketCodes)} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
             }));
+            // Direct form — no route clause, for when they simply walked in.
+            const walkedInDirectChips = (pendingArrivals ?? []).map(a => ({
+              key: `wid-${a.rego}`,
+              rego: a.rego,
+              text: `${shortenAlreadyMentionedNames(extractOccupantNames(a.occupantDesc), usedBracketCodes)} exited the vehicle, entered ${a.address} and continued out of sight.`,
+            }));
             const walkedOutChips = (pendingWalkIns ?? []).flatMap(w => {
               const arrivalsHere = (pendingArrivals ?? []).filter(
                 a =>
@@ -4811,6 +4985,7 @@ export default function SheetDetail({
               vehicleArrivingChips.length > 0 ||
               vehicleDepartingChips.length > 0 ||
               walkedInChips.length > 0 ||
+              walkedInDirectChips.length > 0 ||
               walkedOutChips.length > 0;
             const insertAtFocused = (text: string) => {
               const el = focusedTextareaRef.current;
@@ -5138,6 +5313,10 @@ export default function SheetDetail({
                             <ContinuityChipGroup
                               label="Walked in"
                               chips={walkedInChips}
+                            />
+                            <ContinuityChipGroup
+                              label="Walked in direct"
+                              chips={walkedInDirectChips}
                             />
                             <ContinuityChipGroup
                               label="Walked out"
@@ -6065,7 +6244,8 @@ export default function SheetDetail({
           <div className="flex flex-col gap-4 py-2">
             <p className="text-xs text-muted-foreground">
               Add or remove CINs from today’s team. Mark the Team Leader and
-              Running Sheet Author. Tick the camera icon if images were taken by
+              Running Sheet Author. The camera is added automatically for anyone
+              on a row with a photo or video, or tick it if images were taken by
               that member.
             </p>
             <div className="flex gap-2 items-start">
@@ -6185,7 +6365,15 @@ export default function SheetDetail({
                     {/* Images */}
                     <div className="flex items-center justify-center">
                       <Checkbox
-                        checked={entry.hasImages}
+                        checked={
+                          entry.hasImages || autoImageCins.has(entry.cin)
+                        }
+                        disabled={autoImageCins.has(entry.cin)}
+                        title={
+                          autoImageCins.has(entry.cin)
+                            ? "Added automatically — on a row with images"
+                            : "Images taken"
+                        }
                         onCheckedChange={() =>
                           setRosterList(prev =>
                             prev.map(c =>

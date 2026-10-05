@@ -186,6 +186,7 @@ import {
   rejectPersonNameMatch,
   searchIntelligenceEntities,
   searchRegisteredPersonMentions,
+  searchKnownAddresses,
   listShortcuts,
   createShortcut,
   updateShortcut,
@@ -4823,6 +4824,14 @@ export const appRouter = router({
       .input(z.object({ query: z.string() }))
       .query(async ({ input }) => {
         return searchRegisteredPersonMentions(input.query);
+      }),
+
+    /** Live suggestions for the observation field's address autocomplete —
+     * addresses/businesses Intelligence already knows. */
+    searchKnownAddresses: protectedProcedure
+      .input(z.object({ query: z.string(), places: z.boolean().optional() }))
+      .query(async ({ input }) => {
+        return searchKnownAddresses(input.query, input.places);
       }),
   }),
 

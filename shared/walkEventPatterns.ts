@@ -22,8 +22,13 @@
 // free-text names of any length. getPendingWalkIns reuses this captured
 // text verbatim for the "Walked out" chip, on the same names-reuse basis
 // VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN already reuses occupantDesc.
+//
+// The "walked <route>," clause is optional: officers also write the direct
+// form with no route at all — "BAIG and JORDAN exited the vehicle, entered
+// 193b Stock Road and continued out of sight." Group 2 (the route) is then
+// undefined, and the "Walked out" chip simply omits its route.
 export const WALK_IN_PATTERN =
-  /([A-Za-z][^.\n]*?)\s*exited the vehicle,?\s*walked\s+(.+?),?\s*entered\s+(.+?)\s+and continued out of sight/i;
+  /([A-Za-z][^.\n]*?)\s*exited the vehicle,?\s*(?:walked\s+(.+?),?\s*)?entered\s+(.+?)\s+and continued out of sight/i;
 
 // Alternate walk-in phrasing with no separate "entered <location>" clause —
 // the destination is folded straight into the route text instead ("...

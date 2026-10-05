@@ -2142,6 +2142,9 @@ export default function IntelligenceMapping() {
 
   // RS Actions pane state — persisted in localStorage
   const [rsActionsPaneOpen, setRsActionsPaneOpen] = useState(false);
+  // On phones and tablets the right pane covers the map; Fly's own controls
+  // sit above the 3D view, so they're tucked away while the pane is open.
+  const flyChromeHidden = isMobile && rsActionsPaneOpen;
   // Target/Operation profile sub-views shown inline within the right pane
   // (null = normal pane content). Mutually exclusive — opening one clears
   // the other, since both occupy the same pane body.
@@ -7533,7 +7536,7 @@ export default function IntelligenceMapping() {
               wider "Map"/"Satellite" control, which doesn't shrink or
               relabel and collided with the search bar on narrow screens. */}
             <div
-              className={`absolute ${flyView ? "z-40" : "z-20"} pointer-events-auto flex ${
+              className={`absolute ${flyView && !flyChromeHidden ? "z-40" : "z-20"} pointer-events-auto flex ${
                 narrowScreen
                   ? "flex-col items-end gap-1"
                   : "items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
@@ -7990,7 +7993,7 @@ export default function IntelligenceMapping() {
               />
               {/* North up and 0° tilt — under the Map | Sat | Fly toggle */}
               <div
-                className="absolute z-40 pointer-events-auto flex flex-col gap-1"
+                className={`absolute z-40 pointer-events-auto flex flex-col gap-1 ${flyChromeHidden ? "hidden" : ""}`}
                 style={{ top: `${52 + rightColShift}px`, right: "10px" }}
               >
                 <button
@@ -8035,7 +8038,7 @@ export default function IntelligenceMapping() {
               </div>
               {/* Centre on me / Follow me — same two buttons as the flat map */}
               <div
-                className="absolute z-40 pointer-events-auto flex gap-1"
+                className={`absolute z-40 pointer-events-auto flex gap-1 ${flyChromeHidden ? "hidden" : ""}`}
                 style={{ top: "60px", left: "10px" }}
               >
                 <button
@@ -8159,7 +8162,9 @@ export default function IntelligenceMapping() {
                   }, 400);
                 };
                 return (
-                  <div className="absolute z-40 left-3 bottom-3 w-[min(22rem,calc(100%-1.5rem))] rounded-lg bg-white text-gray-900 shadow-xl border border-gray-200 p-3">
+                  <div
+                    className={`absolute z-40 left-3 bottom-3 w-[min(22rem,calc(100%-1.5rem))] rounded-lg bg-white text-gray-900 shadow-xl border border-gray-200 p-3 ${flyChromeHidden ? "hidden" : ""}`}
+                  >
                     <button
                       onClick={() => setFlySelectedId(null)}
                       className="absolute top-1.5 right-1.5 h-6 w-6 flex items-center justify-center rounded text-gray-500 hover:bg-gray-100"
@@ -8289,7 +8294,9 @@ export default function IntelligenceMapping() {
                 );
               })()}
               {flyPick && !flySelectedId && (
-                <div className="absolute z-40 left-1/2 -translate-x-1/2 bottom-3 flex items-center gap-2 rounded-lg bg-white text-gray-900 shadow-xl border border-gray-200 px-3 py-2">
+                <div
+                  className={`absolute z-40 left-1/2 -translate-x-1/2 bottom-3 flex items-center gap-2 rounded-lg bg-white text-gray-900 shadow-xl border border-gray-200 px-3 py-2 ${flyChromeHidden ? "hidden" : ""}`}
+                >
                   <span className="text-xs text-gray-600">Selected spot</span>
                   <button
                     className="rounded-md bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5"

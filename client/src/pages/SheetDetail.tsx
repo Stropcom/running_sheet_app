@@ -1,6 +1,13 @@
 import { IMAGERY_PHRASE_PATTERN, cinsWithImagery } from "@shared/rowImagery";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
+import {
+  AddressSuggestDropdown,
+  addressSuggestInsertText,
+  useAddressSuggestions,
+  type AddressSuggestItem,
+} from "@/components/AddressSuggestDropdown";
+import { detectAddressSuggestTrigger } from "@shared/addressSuggestTrigger";
 import { RS_CANONICAL_CHIP_ORDER } from "@/lib/rsChipOrder";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -1982,6 +1989,61 @@ function EditableCell({
       clearTimeout(vehicleMentionDebounceRef.current);
   }
 
+  // ── Inline address suggestions ──────────────────────────────────────────
+  // Typing a street number + the start of a street ("13 Den") lists known
+  // addresses; once none are known, Google addresses (see
+  // AddressSuggestDropdown). Takes precedence over the name trigger, which
+  // would otherwise also fire on the capitalised street word.
+  const [addressWord, setAddressWord] = useState<{
+    text: string;
+    start: number;
+    end: number;
+  } | null>(null);
+  const [addressAnchor, setAddressAnchor] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+  const [addressActiveIndex, setAddressActiveIndex] = useState(0);
+  const [addressQuery, setAddressQuery] = useState("");
+  const addressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addressSuggest = useAddressSuggestions(addressQuery);
+  const addressItems = addressWord ? addressSuggest.items : [];
+  const addressOpen =
+    !!addressWord &&
+    !!addressAnchor &&
+    (addressItems.length > 0 || addressSuggest.offlineNoKnown);
+
+  function closeAddressDropdown() {
+    setAddressWord(null);
+    setAddressAnchor(null);
+    setAddressQuery("");
+    setAddressActiveIndex(0);
+    if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+  }
+
+  function selectAddressSuggestion(
+    item: AddressSuggestItem,
+    textarea: HTMLTextAreaElement
+  ) {
+    if (!addressWord) return;
+    const insertText = addressSuggestInsertText(
+      item,
+      usedAddressLabels ?? new Set<string>()
+    );
+    const newDraft =
+      draft.slice(0, addressWord.start) +
+      insertText +
+      draft.slice(addressWord.end);
+    setDraft(newDraft);
+    addressSuggest.endSession();
+    const newPos = addressWord.start + insertText.length;
+    closeAddressDropdown();
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(newPos, newPos);
+    });
+  }
+
   function handleObservationInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const val = e.target.value;
     setDraft(val);
@@ -2010,6 +2072,27 @@ function EditableCell({
         return;
       }
       closeVehicleMentionDropdown();
+    }
+
+    if (usedAddressLabels) {
+      const addrTrigger = detectAddressSuggestTrigger(val, cursorPos);
+      if (addrTrigger) {
+        closeMentionDropdown();
+        setAddressWord({
+          text: addrTrigger.text,
+          start: addrTrigger.start,
+          end: addrTrigger.start + addrTrigger.text.length,
+        });
+        setAddressActiveIndex(0);
+        setAddressAnchor(getCaretPixelPosition(e.target, cursorPos));
+        if (addressDebounceRef.current)
+          clearTimeout(addressDebounceRef.current);
+        addressDebounceRef.current = setTimeout(() => {
+          setAddressQuery(addrTrigger.text);
+        }, 150);
+        return;
+      }
+      closeAddressDropdown();
     }
 
     if (!usedBracketCodes) return;
@@ -2242,6 +2325,7 @@ function EditableCell({
               // should just close rather than block the save.
               closeMentionDropdown();
               closeVehicleMentionDropdown();
+              closeAddressDropdown();
               notifyObservationBlur();
               const conv = convertGoogleAddresses(draft);
               if (conv !== draft) {
@@ -2252,6 +2336,35 @@ function EditableCell({
               }
             }}
             onKeyDown={e => {
+              if (addressOpen && addressItems.length > 0) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setAddressActiveIndex(i => (i + 1) % addressItems.length);
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setAddressActiveIndex(
+                    i => (i - 1 + addressItems.length) % addressItems.length
+                  );
+                  return;
+                }
+                if (e.key === "Enter" || e.key === "Tab") {
+                  e.preventDefault();
+                  selectAddressSuggestion(
+                    addressItems[
+                      Math.min(addressActiveIndex, addressItems.length - 1)
+                    ],
+                    e.currentTarget
+                  );
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  closeAddressDropdown();
+                  return;
+                }
+              }
               if (vehicleMentionWord && vehicleMentionSuggestions.length > 0) {
                 if (e.key === "ArrowDown") {
                   e.preventDefault();
@@ -2325,6 +2438,20 @@ function EditableCell({
             className="text-sm min-h-[60px] resize-none"
             placeholder={placeholder}
           />
+          {addressOpen && addressAnchor && (
+            <AddressSuggestDropdown
+              anchor={addressAnchor}
+              items={addressItems}
+              source={addressSuggest.source}
+              offlineNoKnown={addressSuggest.offlineNoKnown}
+              activeIndex={addressActiveIndex}
+              onActiveIndexChange={setAddressActiveIndex}
+              onPick={item => {
+                if (textareaRef.current)
+                  selectAddressSuggestion(item, textareaRef.current);
+              }}
+            />
+          )}
           {mentionWord && mentionAnchor && mentionSuggestions.length > 0 && (
             <div
               className="fixed z-50 w-64 rounded-lg border border-border bg-popover shadow-lg overflow-hidden"

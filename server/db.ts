@@ -31,6 +31,7 @@ import {
   nameWithoutBornClause,
   shortPersonDisplayName,
 } from "@shared/addressFormat";
+import { knownAddressMatches, parseKnownAddress } from "@shared/knownAddress";
 import {
   VEHICLE_DEPART_PATTERN,
   VEHICLE_ARRIVE_PATTERN,
@@ -9482,6 +9483,52 @@ export async function searchRegisteredPersonMentions(
     }))
     .sort((a, b) => b.rowCount - a.rowCount)
     .slice(0, 8);
+}
+
+export interface KnownAddressSuggestion {
+  key: string;
+  /** Intelligence display form, e.g. "13 Denford Street, KENWICK". */
+  label: string;
+  businessName: string;
+  street: string;
+  suburb: string;
+  rowCount: number;
+}
+
+/**
+ * Live "as you type" suggestions for addresses the app already knows —
+ * every address/business entity Intelligence has seen (observations plus
+ * Target/Associate registry cards) whose street starts with what the officer
+ * has typed ("13 Den" → "13 Denford Street, KENWICK"). Deterministic string
+ * matching only; the Google fallback for addresses the app doesn't know yet
+ * runs in the browser against the map service.
+ */
+export async function searchKnownAddresses(
+  query: string
+): Promise<KnownAddressSuggestion[]> {
+  const q = query.trim();
+  if (q.length < 3) return [];
+  const allEntities = await getAllIntelligenceEntities();
+  const seen = new Set<string>();
+  const out: KnownAddressSuggestion[] = [];
+  for (const e of allEntities) {
+    if (e.type !== "address" && e.type !== "business") continue;
+    if (!knownAddressMatches(q, e.shortForm)) continue;
+    const parts = parseKnownAddress(e.shortForm);
+    if (!parts) continue;
+    const dedupe = `${parts.street}|${parts.suburb}`.toLowerCase();
+    if (seen.has(dedupe)) continue;
+    seen.add(dedupe);
+    out.push({
+      key: computeEntityKey(e.type, e.shortForm),
+      label: e.shortForm,
+      businessName: parts.businessName,
+      street: parts.street,
+      suburb: parts.suburb,
+      rowCount: e.occurrences.filter(o => o.rowId > 0).length,
+    });
+  }
+  return out.sort((a, b) => b.rowCount - a.rowCount).slice(0, 6);
 }
 
 // ─── Association Graph ───────────────────────────────────────────────────────

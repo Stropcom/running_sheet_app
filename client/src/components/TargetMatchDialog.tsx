@@ -120,40 +120,27 @@ export function TargetMatchDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserCheck className="w-4 h-4 text-primary shrink-0" />
-            Possible match to existing Target
+            Possible match to existing {match.targetId ? "Target" : "Associate"}
           </DialogTitle>
           <DialogDescription>
-            "{spelling}" looks like it could be existing{" "}
-            {match.targetId ? "Target" : "Associate"}{" "}
-            <strong>{match.name}</strong> ({match.reason.toLowerCase()}).
+            "{spelling}" looks like the same person as an existing{" "}
+            {match.targetId ? "Target" : "Associate"}:{" "}
+            <strong className="text-foreground">{match.name}</strong>
           </DialogDescription>
         </DialogHeader>
 
         {correctSpelling.toUpperCase() !== spelling.trim().toUpperCase() && (
-          <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-              Suggested change to this row
-            </p>
-            <p className="text-foreground">
-              "…({correctSpelling})…" — instead of what you typed, "…(
-              {spelling})…"
-            </p>
-          </div>
+          <p className="text-xs text-muted-foreground">
+            This row will change "({spelling})" to "({correctSpelling})".
+          </p>
         )}
-
-        <p className="text-xs text-muted-foreground italic">
-          Accepting only fixes this row's spelling, before it's certified — but
-          it also means "{spelling}" auto-links to {match.name} on every future
-          row, without asking again. Choose "Continue as entered" if this is
-          actually a different person.
-        </p>
 
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={handleNo} disabled={busy}>
-            Continue as entered
+            No - it's a different person
           </Button>
           <Button onClick={handleYes} disabled={busy}>
-            Accept suggested change
+            Yes - it's the same person
           </Button>
         </DialogFooter>
       </DialogContent>

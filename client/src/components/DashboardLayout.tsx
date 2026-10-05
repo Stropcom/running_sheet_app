@@ -1507,6 +1507,21 @@ export default function DashboardLayout({
       // visualViewport excludes browser chrome; innerHeight is the fallback.
       const h = Math.round(vv?.height ?? window.innerHeight);
       if (h > 0) root.style.setProperty("--app-vh", `${h}px`);
+      // With the on-screen keyboard up, iOS pans the visible area down the
+      // page to keep the typing field in view (visualViewport.offsetTop > 0)
+      // without resizing the page itself. The shell, sized only to the
+      // visible HEIGHT, then ends offsetTop short of the keyboard — a blank
+      // band between the content and the keyboard (phones and iPads). While
+      // that's the case, the shell is moved down to start exactly where the
+      // visible area does, so it fills the space above the keyboard.
+      const top = Math.round(vv?.offsetTop ?? 0);
+      if (top > 1) {
+        root.style.setProperty("--app-vv-top", `${top}px`);
+        document.body.classList.add("app-vv-shifted");
+      } else {
+        document.body.classList.remove("app-vv-shifted");
+        root.style.removeProperty("--app-vv-top");
+      }
     };
     setVh();
     root.classList.add("app-no-scroll");
@@ -1515,13 +1530,16 @@ export default function DashboardLayout({
     window.addEventListener("resize", setVh);
     window.addEventListener("orientationchange", setVh);
     window.visualViewport?.addEventListener("resize", setVh);
+    window.visualViewport?.addEventListener("scroll", setVh);
     return () => {
       window.removeEventListener("resize", setVh);
       window.removeEventListener("orientationchange", setVh);
       window.visualViewport?.removeEventListener("resize", setVh);
+      window.visualViewport?.removeEventListener("scroll", setVh);
       root.classList.remove("app-no-scroll");
-      document.body.classList.remove("app-no-scroll");
+      document.body.classList.remove("app-no-scroll", "app-vv-shifted");
       root.style.removeProperty("--app-vh");
+      root.style.removeProperty("--app-vv-top");
     };
   }, []);
 

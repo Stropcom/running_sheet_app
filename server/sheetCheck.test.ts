@@ -11,6 +11,7 @@ import {
   findTargetNameTypos,
   findSpaceBeforePunctuation,
   COMMON_MISSPELLINGS,
+  findSharedBracketPeople,
 } from "./sheetCheck";
 import type { IntelligenceEntity, ObservationTextForSheet } from "./db";
 
@@ -786,5 +787,41 @@ describe("stableDismissKey", () => {
     expect(stableDismissKey("  15 marbella avenue , SEVILLE GROVE")).toBe(
       "15 MARBELLA AVENUE"
     );
+  });
+});
+
+describe("findSharedBracketPeople", () => {
+  const row = (rowId: number, observation: string) => ({
+    rowId,
+    timeMinutes: 600 + rowId,
+    observation,
+  });
+
+  it("flags two different people sharing one surname bracket", () => {
+    const f = findSharedBracketPeople([
+      row(1, "Target met Grace TAN (TAN) at the cafe."),
+      row(2, "Later spoke to Lawrence TAN (TAN) outside."),
+    ]);
+    expect(f).toHaveLength(1);
+    expect(f[0].ruleId).toBe("same-bracket-different-people");
+    expect(f[0].otherRowId).toBe(2);
+    expect(f[0].reason).toContain("(G.TAN)");
+    expect(f[0].reason).toContain("(L.TAN)");
+  });
+
+  it("does not flag the same person written different ways", () => {
+    const f = findSharedBracketPeople([
+      row(1, "Target met Grace Olivia TAN (TAN) at the cafe."),
+      row(2, "Then Grace TAN (TAN) left."),
+    ]);
+    expect(f).toHaveLength(0);
+  });
+
+  it("does not flag people who already use initial brackets", () => {
+    const f = findSharedBracketPeople([
+      row(1, "Target met Grace TAN (G.TAN) at the cafe."),
+      row(2, "Later spoke to Lawrence TAN (L.TAN) outside."),
+    ]);
+    expect(f).toHaveLength(0);
   });
 });

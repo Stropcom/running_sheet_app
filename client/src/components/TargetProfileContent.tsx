@@ -37,6 +37,10 @@ import {
 } from "@/components/IntelEntityChip";
 import { IndicesBadge } from "@/components/IndicesBadge";
 import { RegistryPersonRow } from "@/components/RegistryPersonRow";
+import {
+  RegisteredDetailPanels,
+  targetDetailEntries,
+} from "@/components/RegisteredDetailPanels";
 import { registryPersonAddresses } from "@/lib/profileSection";
 import {
   ImportedDocumentCard,
@@ -725,115 +729,26 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
             })}
 
           {/* Registered Details */}
-          {(profile.hbf ||
-            profile.v1f ||
-            profile.v2f ||
-            profile.extraVehicles ||
-            profile.extraAddresses) &&
-            (() => {
-              const extraVehicleList: Array<{ full?: string; short?: string }> =
-                (() => {
-                  try {
-                    return profile.extraVehicles
-                      ? JSON.parse(profile.extraVehicles)
-                      : [];
-                  } catch {
-                    return [];
+          {(() => {
+            const entries = targetDetailEntries(profile);
+            if (!entries.length) return null;
+            return (
+              <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+                <SectionHeading
+                  label="Registered Details"
+                  count={entries.length}
+                />
+                <RegisteredDetailPanels
+                  entries={entries}
+                  after={e =>
+                    e.id === "hbf" || e.id === "v1f" ? (
+                      <PreviousNotes items={historyFor(e.id)} />
+                    ) : null
                   }
-                })();
-              const extraAddressList: Array<{ full?: string; short?: string }> =
-                (() => {
-                  try {
-                    return profile.extraAddresses
-                      ? JSON.parse(profile.extraAddresses)
-                      : [];
-                  } catch {
-                    return [];
-                  }
-                })();
-              const totalCount =
-                [profile.hbf, profile.v1f, profile.v2f].filter(Boolean).length +
-                extraVehicleList.filter(
-                  ev => ev.full?.trim() || ev.short?.trim()
-                ).length +
-                extraAddressList.filter(
-                  ea => ea.full?.trim() || ea.short?.trim()
-                ).length;
-              return (
-                <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
-                  <SectionHeading
-                    label="Registered Details"
-                    count={totalCount}
-                  />
-                  <div className="grid grid-cols-1 gap-2 text-sm">
-                    {profile.hbf && (
-                      <div className="flex gap-3 items-start">
-                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
-                          Home Address
-                        </span>
-                        <div className="min-w-0">
-                          <span className="font-mono text-xs text-foreground">
-                            {formatIntelAddress(profile.hbf)}
-                          </span>
-                          <PreviousNotes items={historyFor("hbf")} />
-                        </div>
-                      </div>
-                    )}
-                    {extraAddressList.map((ea, idx) => {
-                      const val = ea.full?.trim() || ea.short?.trim() || "";
-                      if (!val) return null;
-                      return (
-                        <div key={idx} className="flex gap-3 items-start">
-                          <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
-                            Address {idx + 2}
-                          </span>
-                          <span className="font-mono text-xs text-foreground">
-                            {formatIntelAddress(val)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                    {profile.v1f && (
-                      <div className="flex gap-3 items-start">
-                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
-                          Vehicle 1
-                        </span>
-                        <div className="min-w-0">
-                          <span className="font-mono text-xs text-foreground">
-                            {formatIntelVehicle(profile.v1f)}
-                          </span>
-                          <PreviousNotes items={historyFor("v1f")} />
-                        </div>
-                      </div>
-                    )}
-                    {profile.v2f && (
-                      <div className="flex gap-3 items-start">
-                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
-                          Vehicle 2
-                        </span>
-                        <span className="font-mono text-xs text-foreground">
-                          {formatIntelVehicle(profile.v2f)}
-                        </span>
-                      </div>
-                    )}
-                    {extraVehicleList.map((ev, idx) => {
-                      const val = ev.full?.trim() || ev.short?.trim() || "";
-                      if (!val) return null;
-                      return (
-                        <div key={idx} className="flex gap-3 items-start">
-                          <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
-                            Vehicle {idx + 2}
-                          </span>
-                          <span className="font-mono text-xs text-foreground">
-                            {formatIntelVehicle(val)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
+                />
+              </div>
+            );
+          })()}
 
           {/* Status — MDL, bail and special projects, in their own section
               below Registered Details. */}

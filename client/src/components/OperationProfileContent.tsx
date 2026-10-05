@@ -1,5 +1,9 @@
 import { RegistryPersonRow } from "@/components/RegistryPersonRow";
 import {
+  RegisteredDetailPanels,
+  targetDetailEntries,
+} from "@/components/RegisteredDetailPanels";
+import {
   formatBail,
   formatSpecialProjects,
   mdlLabel,
@@ -480,107 +484,19 @@ export function OperationProfileContent({
                           <Separator className="mt-3" />
                         </div>
                       )}
-                      {(target.hbf ||
-                        target.v1f ||
-                        target.v2f ||
-                        target.extraAddresses ||
-                        target.extraVehicles) &&
-                        (() => {
-                          const extraAddressList: Array<{
-                            full?: string;
-                            short?: string;
-                          }> = (() => {
-                            try {
-                              return target.extraAddresses
-                                ? JSON.parse(target.extraAddresses)
-                                : [];
-                            } catch {
-                              return [];
-                            }
-                          })();
-                          const extraVehicleList: Array<{
-                            full?: string;
-                            short?: string;
-                          }> = (() => {
-                            try {
-                              return target.extraVehicles
-                                ? JSON.parse(target.extraVehicles)
-                                : [];
-                            } catch {
-                              return [];
-                            }
-                          })();
-                          return (
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                                Registered Details
-                              </p>
-                              <div className="space-y-1 text-xs">
-                                {target.hbf && (
-                                  <div className="flex gap-2">
-                                    <span className="text-muted-foreground w-20 shrink-0">
-                                      Home
-                                    </span>
-                                    <span className="font-mono">
-                                      {formatIntelAddress(target.hbf)}
-                                    </span>
-                                  </div>
-                                )}
-                                {extraAddressList.map((ea, idx) => {
-                                  const val =
-                                    ea.full?.trim() || ea.short?.trim() || "";
-                                  if (!val) return null;
-                                  return (
-                                    <div key={idx} className="flex gap-2">
-                                      <span className="text-muted-foreground w-20 shrink-0">
-                                        Address {idx + 2}
-                                      </span>
-                                      <span className="font-mono">
-                                        {formatIntelAddress(val)}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                                {target.v1f && (
-                                  <div className="flex gap-2">
-                                    <span className="text-muted-foreground w-20 shrink-0">
-                                      Vehicle 1
-                                    </span>
-                                    <span className="font-mono">
-                                      {formatIntelVehicle(target.v1f)}
-                                    </span>
-                                  </div>
-                                )}
-                                {target.v2f && (
-                                  <div className="flex gap-2">
-                                    <span className="text-muted-foreground w-20 shrink-0">
-                                      Vehicle 2
-                                    </span>
-                                    <span className="font-mono">
-                                      {formatIntelVehicle(target.v2f)}
-                                    </span>
-                                  </div>
-                                )}
-                                {extraVehicleList.map((ev, idx) => {
-                                  const val =
-                                    ev.full?.trim() || ev.short?.trim() || "";
-                                  if (!val) return null;
-                                  return (
-                                    <div key={idx} className="flex gap-2">
-                                      <span className="text-muted-foreground w-20 shrink-0">
-                                        Vehicle {idx + 2}
-                                      </span>
-                                      <span className="font-mono">
-                                        {formatIntelVehicle(val)}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                              <Separator className="mt-3" />
-                            </div>
-                          );
-                        })()}
+                      {(() => {
+                        const entries = targetDetailEntries(target);
+                        if (!entries.length) return null;
+                        return (
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                              Registered Details
+                            </p>
+                            <RegisteredDetailPanels entries={entries} />
+                            <Separator className="mt-3" />
+                          </div>
+                        );
+                      })()}
                       {/* Status — MDL, bail and special projects, as on the
                           target's own profile. */}
                       {(target.mdlStatus ||

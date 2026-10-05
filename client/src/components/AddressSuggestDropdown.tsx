@@ -258,7 +258,7 @@ export function AddressSuggestDropdown({
   const width = Math.min(340, viewW - 16);
   const left = Math.max(8, Math.min(anchor.left, viewW - width - 8));
   const spaceBelow = viewTop + viewH - anchor.top - 8;
-  const wantTop = anchor.top + 2;
+  const wantTop = anchor.top + 10;
 
   useLayoutEffect(() => {
     const el = elRef.current;

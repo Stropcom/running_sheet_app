@@ -33,13 +33,9 @@ export const INTEL_CHIP_CLASSES: Record<string, string> = {
   target: "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:text-blue-400",
 };
 
-export function IntelEntityChip({
-  item,
-  onClick,
-}: {
-  item: IntelAssocEntity;
-  onClick?: () => void;
-}) {
+/** The chip's colours, icon and display text — shared by the plain chip and
+ * the drop-down version. */
+export function intelEntityChipLook(item: IntelAssocEntity) {
   const cls =
     INTEL_CHIP_CLASSES[item.type] ??
     "bg-muted text-muted-foreground border-border";
@@ -57,6 +53,17 @@ export function IntelEntityChip({
       : item.type === "address" || item.type === "business"
         ? formatIntelAddress(item.label)
         : item.label;
+  return { cls, icon, label };
+}
+
+export function IntelEntityChip({
+  item,
+  onClick,
+}: {
+  item: IntelAssocEntity;
+  onClick?: () => void;
+}) {
+  const { cls, icon, label } = intelEntityChipLook(item);
   return (
     <button
       onClick={onClick}

@@ -24,12 +24,13 @@ import {
   buildEntityListWithPhotosHtml,
   type RowAttachmentLike,
 } from "@/lib/attachmentBanner";
-import {
-  IntelEntityWithPhotos,
-  type IntelAssocEntity,
-} from "@/components/IntelEntityChip";
+import { type IntelAssocEntity } from "@/components/IntelEntityChip";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { IndicesBadge } from "@/components/IndicesBadge";
+import {
+  ProfileDropdownRow,
+  IntelEntityDropdown,
+} from "@/components/ProfileDropdown";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
@@ -396,21 +397,19 @@ export function AssociateProfileContent({
               )}
               <div className="space-y-1">
                 {profile.linkedTargets.map(t => (
-                  <button
+                  <ProfileDropdownRow
                     key={`${t.targetId}-${t.operationId}`}
-                    onClick={() =>
-                      navigate(`/intelligence/target/${t.targetId}`)
-                    }
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
+                    kind="target"
+                    refId={t.targetId}
                   >
                     <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                    <span className="text-xs font-medium text-foreground flex-1 truncate">
+                    <span className="text-xs font-medium text-foreground flex-1 min-w-0 break-words">
                       {t.name}
                     </span>
                     <span className="text-xs text-muted-foreground shrink-0">
                       {t.operationName}
                     </span>
-                  </button>
+                  </ProfileDropdownRow>
                 ))}
               </div>
               {profile.sharedEntityLinks.length > 0 && (
@@ -418,26 +417,27 @@ export function AssociateProfileContent({
                   <p className="text-xs text-muted-foreground mb-1">
                     Shared vehicle / address
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="space-y-2">
                     {profile.sharedEntityLinks.map(l => (
-                      <button
+                      <ProfileDropdownRow
                         key={`${l.targetId ?? "sighted"}-${l.operationId}-${l.via}`}
-                        onClick={() =>
-                          navigate(`/intelligence/operation/${l.operationId}`)
-                        }
+                        kind="operation"
+                        refId={l.operationId}
+                        headerClassName="inline-flex w-full items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 transition-colors text-left"
                         title={
                           l.targetName
                             ? `Not formally linked — ${l.targetName} ${sharedLinkSentence(l.via, l.sharedValue)}`
                             : `This ${l.via} (${sharedLinkSubject(l.via, l.sharedValue)}) was also sighted on this operation`
                         }
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 transition-colors"
                       >
-                        <Folder className="w-3 h-3" />
-                        {l.operationName}
-                        <span className="text-[9px] uppercase tracking-wide opacity-70">
+                        <Folder className="w-3 h-3 shrink-0" />
+                        <span className="min-w-0 break-words">
+                          {l.operationName}
+                        </span>
+                        <span className="text-[9px] uppercase tracking-wide opacity-70 flex-1 min-w-0">
                           {sharedLinkChipText(l.via, l.sharedValue)}
                         </span>
-                      </button>
+                      </ProfileDropdownRow>
                     ))}
                   </div>
                 </div>
@@ -485,15 +485,7 @@ export function AssociateProfileContent({
                   <p className="text-xs text-muted-foreground mb-1">Vehicles</p>
                   <div className="flex flex-col gap-2">
                     {profile.assocVehicles.map(v => (
-                      <IntelEntityWithPhotos
-                        key={v.id}
-                        item={v}
-                        onClick={() =>
-                          navigate(
-                            `/intelligence/vehicle/${encodeURIComponent(v.label)}`
-                          )
-                        }
-                      />
+                      <IntelEntityDropdown key={v.id} item={v} />
                     ))}
                   </div>
                 </div>
@@ -505,15 +497,7 @@ export function AssociateProfileContent({
                   </p>
                   <div className="flex flex-col gap-2">
                     {profile.assocLocations.map(l => (
-                      <IntelEntityWithPhotos
-                        key={l.id}
-                        item={l}
-                        onClick={() =>
-                          navigate(
-                            `/intelligence/location/${encodeURIComponent(l.label)}`
-                          )
-                        }
-                      />
+                      <IntelEntityDropdown key={l.id} item={l} />
                     ))}
                   </div>
                 </div>

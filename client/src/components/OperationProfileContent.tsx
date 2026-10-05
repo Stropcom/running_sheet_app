@@ -1,3 +1,7 @@
+import {
+  ProfileDropdownRow,
+  IntelEntityDropdown,
+} from "@/components/ProfileDropdown";
 import { RegistryPersonRow } from "@/components/RegistryPersonRow";
 import {
   RegisteredDetailPanels,
@@ -27,6 +31,7 @@ import {
   ChevronRight,
   AlertTriangle,
   Folder,
+  ExternalLink,
 } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
@@ -37,7 +42,6 @@ import {
 } from "@/lib/attachmentBanner";
 import { buildProfileTargetBlockHtml } from "@/lib/profileSection";
 import {
-  IntelEntityWithPhotos,
   IntelPhotoStrip,
   type IntelAssocEntity,
 } from "@/components/IntelEntityChip";
@@ -254,8 +258,12 @@ function ImportedDocumentsSection({ operationId }: { operationId: number }) {
  */
 export function OperationProfileContent({
   operationId,
+  embedded = false,
 }: {
   operationId: number;
+  /** Inside a drop-down on another profile: no banner, and an "Open full
+   * profile" button at the end. */
+  embedded?: boolean;
 }) {
   const [, navigate] = useLocation();
   const { data: profile, isLoading, error } = useOperationProfile(operationId);
@@ -274,7 +282,7 @@ export function OperationProfileContent({
   const typedProfile = profile as IntelOperationProfile | undefined;
 
   return (
-    <div className="px-6 lg:px-8 py-6">
+    <div className={embedded ? "pt-1" : "px-6 lg:px-8 py-6"}>
       {isLoading && (
         <div className="space-y-3">
           {[...Array(5)].map((_, i) => (
@@ -292,68 +300,70 @@ export function OperationProfileContent({
       {typedProfile && (
         <>
           {/* Header */}
-          <div className="rounded-xl border border-border/60 bg-card overflow-hidden mb-5">
-            <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30 mb-3">
-                    Operation
-                  </span>
-                  <h1 className="text-2xl font-bold tracking-tight">
-                    {typedProfile.operationName}
-                  </h1>
-                  <div className="flex flex-wrap gap-3 mt-2 text-sm opacity-75">
-                    {typedProfile.promisNumber && (
-                      <span>PROMIS: {typedProfile.promisNumber}</span>
-                    )}
-                    {typedProfile.imsNumber && (
-                      <span>IMS: {typedProfile.imsNumber}</span>
-                    )}
-                    {typedProfile.investigationUnit && (
-                      <span>Unit: {typedProfile.investigationUnit}</span>
-                    )}
+          {!embedded && (
+            <div className="rounded-xl border border-border/60 bg-card overflow-hidden mb-5">
+              <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30 mb-3">
+                      Operation
+                    </span>
+                    <h1 className="text-2xl font-bold tracking-tight">
+                      {typedProfile.operationName}
+                    </h1>
+                    <div className="flex flex-wrap gap-3 mt-2 text-sm opacity-75">
+                      {typedProfile.promisNumber && (
+                        <span>PROMIS: {typedProfile.promisNumber}</span>
+                      )}
+                      {typedProfile.imsNumber && (
+                        <span>IMS: {typedProfile.imsNumber}</span>
+                      )}
+                      {typedProfile.investigationUnit && (
+                        <span>Unit: {typedProfile.investigationUnit}</span>
+                      )}
+                    </div>
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={exportPdf}
+                    className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0"
+                  >
+                    <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
+                  </Button>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exportPdf}
-                  className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0"
-                >
-                  <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
-                </Button>
+              </div>
+              <div className="grid grid-cols-3 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
+                {[
+                  { label: "Targets", value: typedProfile.targets.length },
+                  {
+                    label: "Running Sheets",
+                    value: typedProfile.linkedSheets.length,
+                  },
+                  {
+                    label: "Total Associations",
+                    value: typedProfile.targets.reduce(
+                      (s, t) =>
+                        s +
+                        t.assocPersons.length +
+                        t.assocVehicles.length +
+                        t.assocLocations.length,
+                      0
+                    ),
+                  },
+                ].map(stat => (
+                  <div key={stat.label} className="px-4 py-3 text-center">
+                    <p className="text-xl font-bold text-blue-900 dark:text-blue-300">
+                      {stat.value}
+                    </p>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">
+                      {stat.label}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
-            <div className="grid grid-cols-3 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
-              {[
-                { label: "Targets", value: typedProfile.targets.length },
-                {
-                  label: "Running Sheets",
-                  value: typedProfile.linkedSheets.length,
-                },
-                {
-                  label: "Total Associations",
-                  value: typedProfile.targets.reduce(
-                    (s, t) =>
-                      s +
-                      t.assocPersons.length +
-                      t.assocVehicles.length +
-                      t.assocLocations.length,
-                    0
-                  ),
-                },
-              ].map(stat => (
-                <div key={stat.label} className="px-4 py-3 text-center">
-                  <p className="text-xl font-bold text-blue-900 dark:text-blue-300">
-                    {stat.value}
-                  </p>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider">
-                    {stat.label}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
 
           {typedProfile.crossOperationLinks.length > 0 && (
             <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
@@ -368,15 +378,13 @@ export function OperationProfileContent({
               </div>
               <div className="space-y-1">
                 {typedProfile.crossOperationLinks.map(l => (
-                  <button
+                  <ProfileDropdownRow
                     key={`${l.targetId}-${l.otherOperationId}-${l.via}`}
-                    onClick={() =>
-                      navigate(`/intelligence/target/${l.targetId}`)
-                    }
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
+                    kind="target"
+                    refId={l.targetId}
                   >
                     <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                    <span className="text-xs font-medium text-foreground flex-1 truncate">
+                    <span className="text-xs font-medium text-foreground flex-1 min-w-0 break-words">
                       {l.targetName}
                     </span>
                     <span className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400 shrink-0">
@@ -386,7 +394,7 @@ export function OperationProfileContent({
                         {sharedLinkChipText(l.via, l.sharedValue)}
                       </span>
                     </span>
-                  </button>
+                  </ProfileDropdownRow>
                 ))}
               </div>
             </div>
@@ -634,15 +642,7 @@ export function OperationProfileContent({
                               </p>
                               <div className="flex flex-col gap-2">
                                 {target.assocPersons.map(p => (
-                                  <IntelEntityWithPhotos
-                                    key={p.id}
-                                    item={p}
-                                    onClick={() =>
-                                      navigate(
-                                        `/intelligence/associate/${encodeURIComponent(p.label)}`
-                                      )
-                                    }
-                                  />
+                                  <IntelEntityDropdown key={p.id} item={p} />
                                 ))}
                               </div>
                             </div>
@@ -654,15 +654,7 @@ export function OperationProfileContent({
                               </p>
                               <div className="flex flex-col gap-2">
                                 {target.assocVehicles.map(v => (
-                                  <IntelEntityWithPhotos
-                                    key={v.id}
-                                    item={v}
-                                    onClick={() =>
-                                      navigate(
-                                        `/intelligence/vehicle/${encodeURIComponent(v.label)}`
-                                      )
-                                    }
-                                  />
+                                  <IntelEntityDropdown key={v.id} item={v} />
                                 ))}
                               </div>
                             </div>
@@ -674,15 +666,7 @@ export function OperationProfileContent({
                               </p>
                               <div className="flex flex-col gap-2">
                                 {target.assocLocations.map(l => (
-                                  <IntelEntityWithPhotos
-                                    key={l.id}
-                                    item={l}
-                                    onClick={() =>
-                                      navigate(
-                                        `/intelligence/location/${encodeURIComponent(l.label)}`
-                                      )
-                                    }
-                                  />
+                                  <IntelEntityDropdown key={l.id} item={l} />
                                 ))}
                               </div>
                             </div>
@@ -695,6 +679,16 @@ export function OperationProfileContent({
               );
             })}
           </div>
+          {embedded && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate(`/intelligence/operation/${operationId}`)}
+              className="text-xs"
+            >
+              <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Open full profile
+            </Button>
+          )}
         </>
       )}
     </div>

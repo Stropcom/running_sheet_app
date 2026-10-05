@@ -50,10 +50,23 @@ import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useIsMobile } from "@/hooks/useMobile";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
 import { SmeacMapOverlay } from "@/components/SmeacMapOverlay";
 import { StreetViewPip } from "@/components/StreetViewPip";
+import {
+  Map3DView,
+  getLastFlyCamera,
+  type FlyMarker,
+  type FlyShape,
+} from "@/components/Map3DView";
+import {
+  composeFlyIcon,
+  composeFlyTeamIcon,
+  composeFlyTeamPin,
+} from "@/lib/flyMarkerIcon";
+import { FLY_COMPASS_FIXED_ICONS } from "@/lib/flyCompassFixed";
 import { ImagesPip } from "@/components/ImagesPip";
 import { addressMatchKey } from "@shared/addressMatchKey";
 import { shortPersonDisplayName } from "@shared/addressFormat";
@@ -254,9 +267,11 @@ function addressesMatch(a: string, b: string): boolean {
 function NorthUpButton({
   map,
   isMapActuallyVector,
+  top = 130,
 }: {
   map: google.maps.Map | null;
   isMapActuallyVector: boolean;
+  top?: number;
 }) {
   const [heading, setHeading] = useState(0);
 
@@ -278,7 +293,7 @@ function NorthUpButton({
       }}
       disabled={!isMapActuallyVector || heading === 0}
       className="absolute z-20 pointer-events-auto flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-      style={{ top: "130px", right: "10px" }}
+      style={{ top: `${top}px`, right: "10px" }}
       aria-label="Reset map rotation to North Up"
       title={
         !isMapActuallyVector
@@ -293,6 +308,52 @@ function NorthUpButton({
         style={{ transform: `rotate(${-heading}deg)` }}
       />
     </button>
+  );
+}
+
+// Rotation slider for the Fly marker card — the same control the flat map's
+// marker popup has (preview picture, degrees, 0–359 slider).
+function FlyRotationSlider({
+  initial,
+  iconUrl,
+  onChange,
+}: {
+  initial: number;
+  iconUrl: string;
+  onChange: (rotation: number) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  return (
+    <div className="mt-2 flex items-center gap-2 border-t border-gray-200 pt-2">
+      <img
+        src={iconUrl}
+        alt=""
+        className="h-6 w-6 shrink-0 object-contain transition-transform"
+        style={{ transform: `rotate(${value}deg)` }}
+      />
+      <div className="flex-1">
+        <div className="mb-0.5 flex justify-between text-[10px] font-bold uppercase tracking-wider text-gray-600">
+          <span>Rotation</span>
+          <span className="font-semibold normal-case tracking-normal text-gray-700">
+            {value}°
+          </span>
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={359}
+          step={1}
+          value={value}
+          onChange={e => {
+            const v = Number(e.target.value);
+            setValue(v);
+            onChange(v);
+          }}
+          className="w-full cursor-pointer accent-indigo-500"
+          aria-label="Marker rotation"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -2057,6 +2118,11 @@ export default function IntelligenceMapping() {
     typeof navigator !== "undefined" &&
     /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
+  // On a phone the Map | Sat | Fly toggle becomes an L — Fly drops below Sat —
+  // so the column of map buttons under it shifts down by one row.
+  const narrowScreen = useIsMobile();
+  const rightColShift = narrowScreen ? 42 : 0;
+
   // Quick-link state
   const [quickLinks, setQuickLinks] = useState<QuickLink[]>(() => {
     try {
@@ -2409,6 +2475,41 @@ export default function IntelligenceMapping() {
     lat: number;
     lng: number;
     label: string;
+  } | null>(null);
+  // "Fly" — the full 3D terrain view (see components/Map3DView.tsx), switched
+  // in over the flat map from the Map / Sat / Fly toggle. The flat map stays
+  // mounted underneath so leaving Fly puts everything back as it was.
+  const [flyView, setFlyView] = useState<{
+    center: { lat: number; lng: number };
+    range: number;
+    tilt: number;
+    heading: number;
+    markers: FlyMarker[];
+    shapes: FlyShape[];
+  } | null>(null);
+  const [flySelectedId, setFlySelectedId] = useState<string | null>(null);
+  // A spot picked with a plain click in Fly — offers "Add here…".
+  const [flyPick, setFlyPick] = useState<{ lat: number; lng: number } | null>(
+    null
+  );
+  const flyCenterRef = useRef<{ lat: number; lng: number } | null>(null);
+  // Rotations being dragged on Fly's marker card, by marker id, until the
+  // saved value has caught up.
+  const flyRotOverrideRef = useRef<Map<string, number>>(new Map());
+  const flyRotSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Fly's North up / 0° tilt buttons (tilt reported by the 3D map).
+  const [flyTilt, setFlyTilt] = useState(0);
+  const [flyCameraReq, setFlyCameraReq] = useState<{
+    heading?: number;
+    tilt?: number;
+    n: number;
+  } | null>(null);
+  // Fly's Centre on me / Follow me buttons.
+  const [flyFollow, setFlyFollow] = useState(false);
+  const [flyCentreReq, setFlyCentreReq] = useState<{
+    lat: number;
+    lng: number;
+    n: number;
   } | null>(null);
   // Photos picture-in-picture panel, opened from a marker popup's Images
   // button (only shown when that address already has linked photos).
@@ -3688,6 +3789,371 @@ export default function IntelligenceMapping() {
   // stays open until its own back arrow / X is used. Without this guard, a
   // stray tap on the visible slice of map beside the pane would silently
   // discard whatever the officer was viewing or editing.
+  // Everything the 3D view shows, built from the same data as the flat map:
+  // each marker is the flat map's own icon (with the entity-count badge and
+  // photo pill drawn on), plus drawn shapes and the live team.
+  const buildFlySnapshot = async (): Promise<{
+    markers: FlyMarker[];
+    shapes: FlyShape[];
+  }> => {
+    const markers: FlyMarker[] = [];
+    const jobs: Promise<void>[] = [];
+    const registry = registeredPeopleLookupRef.current;
+    const addIcon = (
+      id: string,
+      lat: number,
+      lng: number,
+      iconName: string,
+      colourName: string,
+      rotation: number,
+      count: number,
+      countColour: string,
+      rs: boolean,
+      profile: boolean,
+      label?: string,
+      labelOnly?: boolean
+    ) => {
+      jobs.push(
+        composeFlyIcon({
+          iconUrl: getMarkerIconUrl(iconName, colourName as MarkerColour),
+          // Most icons are drawn upright as saved. The few that must keep a
+          // fixed compass heading (FLY_COMPASS_FIXED_ICONS) are counter-
+          // turned by the 3D view's heading, as on the flat map. A rotation
+          // being dragged on the card shows straight away, ahead of the
+          // saved value.
+          rotation:
+            (flyRotOverrideRef.current.get(id) ?? rotation) -
+            (FLY_COMPASS_FIXED_ICONS.has(iconName) ? flyHeadingRef.current : 0),
+          count,
+          countColour,
+          runningSheetPhotos: rs,
+          profilePhotos: profile,
+          // The flat map's caption pill: marker-coloured, under the icon.
+          label,
+          labelColour: label ? countColour : undefined,
+          labelOnly: !!label && !!labelOnly,
+        }).then(pic => {
+          markers.push({
+            id,
+            lat,
+            lng,
+            iconUrl: pic.url,
+            width: pic.width,
+            height: pic.height,
+          });
+        })
+      );
+    };
+
+    geocodedIntelRef.current.forEach((entry, label) => {
+      const override = pinOverridesRef.current.get(label);
+      const isTarget = entry.loc.type === "target_address";
+      addIcon(
+        `intel:${label}`,
+        entry.position.lat,
+        entry.position.lng,
+        override?.markerIcon ?? "house_filled",
+        override?.markerColour ?? (isTarget ? "red" : "purple"),
+        override?.rotation ?? 0,
+        showMarkerEntityCountRef.current
+          ? markerEntityCount(entry.loc, registry)
+          : 0,
+        isTarget ? "#dc2626" : "#7c3aed",
+        photoKeysRef.current.has(normalizeEntityLabelClient(label)),
+        personPhotosByKeyRef.current.has(addressMatchKey(label))
+      );
+    });
+
+    for (const cm of customMarkersDataRef.current) {
+      if (typeof cm?.lat !== "number" || typeof cm?.lng !== "number") continue;
+      addIcon(
+        `cm:${cm.id}`,
+        cm.lat,
+        cm.lng,
+        cm.markerIcon ?? "pin",
+        cm.markerColour ?? "blue",
+        cm.rotation ?? 0,
+        0,
+        // The marker's own colour — the same fill the flat map's caption
+        // pill uses — for the pill and the tail.
+        MARKER_COLOURS[cm.markerColour as MarkerColour] ?? MARKER_COLOURS.red,
+        !!cm.address &&
+          photoKeysRef.current.has(normalizeEntityLabelClient(cm.address)),
+        !!cm.address &&
+          personPhotosByKeyRef.current.has(addressMatchKey(cm.address)),
+        (cm.label ?? "").trim() || (cm.labelOnly ? "(no label)" : undefined),
+        !!cm.labelOnly
+      );
+    }
+
+    // Live team members, with the same hide/show choices as the flat map.
+    for (const u of (liveUsers as LiveUser[] | undefined) ?? []) {
+      const isThisDevice =
+        u.userId === user?.id && u.deviceId === deviceIdRef.current;
+      if (isThisDevice && !showOwnLocation) continue;
+      if (hiddenTeams.has(u.team ?? "null")) continue;
+      if (hiddenUsers.has(u.userId)) continue;
+      // Same look as the flat map: name pill, with the state marker (heading
+      // shape / green dot / red dot / walking figure) resting on the spot.
+      const pinKey = `${u.userId}_${u.deviceId}`;
+      const speedKmh = (u.speed ?? 0) * 3.6;
+      const state: "moving" | "short" | "long" =
+        u.speed != null && u.speed > 0.5
+          ? "moving"
+          : (motionStateRef.current.get(pinKey)?.state ?? "short") === "long"
+            ? "long"
+            : "short";
+      const heading = u.heading ?? 0;
+      const pin = composeFlyTeamPin({
+        name: u.name.toUpperCase(),
+        colour: u.pinColor ?? getTeamColour(u.team, u.role),
+        state,
+        onFoot: u.onFoot,
+        // Walk or run is all the picture needs from the speed, and the
+        // rotation is rounded to 10°: a picture that changed with every GPS
+        // wobble would be rebuilt on every refresh instead of just gliding.
+        speedKmh: speedKmh > 5 ? 10 : 0,
+        rotation:
+          Math.round(
+            (heading -
+              flyHeadingRef.current +
+              (HEADING_SHAPE_ROTATION_OFFSET_DEG[u.pinVehicleIcon] ?? 0)) /
+              10
+          ) * 10,
+        shape: u.pinVehicleIcon,
+        faceEast: Math.sin((heading * Math.PI) / 180) > 0,
+      });
+      markers.push({
+        id: `team:${pinKey}`,
+        lat: u.lat,
+        lng: u.lng,
+        iconUrl: pin.url,
+        width: pin.width,
+        height: pin.height,
+        onGround: true,
+        glide: true,
+      });
+    }
+
+    await Promise.all(jobs);
+    markers.sort((a, b) => a.id.localeCompare(b.id));
+
+    // Drawn shapes → 3D polygons and lines.
+    const shapes: FlyShape[] = [];
+    // A polygon is two 3D parts: an even shading sheet above the roofs, and
+    // the outline on the ground.
+    const pushPolygon = (
+      id: string,
+      coords: { lat: number; lng: number }[],
+      colour: string,
+      opacity: number
+    ) => {
+      shapes.push({
+        id: `${id}#fill`,
+        kind: "polygon",
+        part: "fill",
+        coords,
+        colour,
+        opacity,
+      });
+      shapes.push({
+        id: `${id}#edge`,
+        kind: "polygon",
+        part: "edge",
+        coords,
+        colour,
+        opacity,
+      });
+    };
+    for (const sh of mapShapesDataRef.current) {
+      const colour =
+        MARKER_COLOURS[sh.colour as MarkerColour] ?? MARKER_COLOURS.blue;
+      const opacity = (sh.opacity ?? 30) / 100;
+      const centre = { lat: sh.centerLat, lng: sh.centerLng };
+      if (sh.shapeType === "circle") {
+        const c = new google.maps.LatLng(centre.lat, centre.lng);
+        const coords = Array.from({ length: 72 }, (_, i) => {
+          const pt = google.maps.geometry.spherical.computeOffset(
+            c,
+            sh.radiusMeters,
+            i * 5
+          );
+          return { lat: pt.lat(), lng: pt.lng() };
+        });
+        pushPolygon(`shape:${sh.id}`, coords, colour, opacity);
+      } else if (sh.shapeType === "rectangle") {
+        pushPolygon(
+          `shape:${sh.id}`,
+          rectanglePolygonPath(
+            sh.neLat,
+            sh.neLng,
+            sh.swLat,
+            sh.swLng,
+            sh.rotation ?? 0
+          ),
+          colour,
+          opacity
+        );
+      } else if (sh.shapeType === "sector") {
+        pushPolygon(
+          `shape:${sh.id}`,
+          sectorPolygonPath(
+            centre,
+            sh.radiusMeters,
+            sh.startAngle,
+            sh.endAngle,
+            sh.innerRadiusMeters ?? 0
+          ),
+          colour,
+          opacity
+        );
+      } else {
+        const pts = (sh.points ?? []) as { lat: number; lng: number }[];
+        if (pts.length >= 2)
+          shapes.push({
+            id: `shape:${sh.id}`,
+            kind: "line",
+            coords: pts,
+            colour,
+            opacity,
+          });
+      }
+    }
+    return { markers, shapes };
+  };
+  // Latest builder for the refresh timer below (it closes over current state).
+  const buildFlySnapshotRef = useRef(buildFlySnapshot);
+  buildFlySnapshotRef.current = buildFlySnapshot;
+
+  const openFly = async () => {
+    const map = mapRef.current;
+    if (!map) return;
+    const c = map.getCenter();
+    if (!c) return;
+    const zoom = map.getZoom() ?? 15;
+    flyCenterRef.current = null;
+    setFlySelectedId(null);
+    infoWindowRef.current?.close();
+    const snap = await buildFlySnapshot();
+    // First open of the session: straight down, north up, over the flat
+    // map's view. After that, reopen exactly where Fly was left.
+    const saved = getLastFlyCamera();
+    flyHeadingRef.current = Math.round((saved?.heading ?? 0) / 10) * 10;
+    setFlyHeadingQ(((flyHeadingRef.current % 360) + 360) % 360);
+    setFlyTilt(Math.round((saved?.tilt ?? 0) / 5) * 5);
+    setFlyView({
+      center: saved?.center ?? { lat: c.lat(), lng: c.lng() },
+      // About 5 km of camera distance at zoom 15, doubling per zoom level out.
+      range:
+        saved?.range ??
+        Math.min(2_000_000, Math.max(200, 163_840_000 / 2 ** zoom)),
+      tilt: saved?.tilt ?? 0,
+      heading: saved?.heading ?? 0,
+      ...snap,
+    });
+  };
+  // While in Fly, pick up changes (new pins, moved team members, edited
+  // shapes) every few seconds without restarting the camera.
+  const flyOpen = !!flyView;
+  // The 3D camera's heading (to 10°), so team arrows point the right way on
+  // screen however the view is turned.
+  const flyHeadingRef = useRef(0);
+  const [flyHeadingQ, setFlyHeadingQ] = useState(0);
+  const flyMarkers = useMemo<FlyMarker[]>(() => {
+    if (!flyView) return [];
+    if (!flyPick) return flyView.markers;
+    return [
+      ...flyView.markers,
+      {
+        id: "pick:spot",
+        lat: flyPick.lat,
+        lng: flyPick.lng,
+        iconUrl: composeFlyTeamIcon("#f59e0b"),
+        size: 44,
+      },
+    ];
+  }, [flyView, flyPick]);
+  const flyTickRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (!flyOpen) return;
+    let cancelled = false;
+    let busy = false;
+    const tick = async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const snap = await buildFlySnapshotRef.current();
+        if (cancelled) return;
+        setFlyView(prev => {
+          if (!prev) return prev;
+          const sig = (x: unknown) => JSON.stringify(x);
+          if (
+            sig(prev.markers) === sig(snap.markers) &&
+            sig(prev.shapes) === sig(snap.shapes)
+          )
+            return prev;
+          return { ...prev, ...snap };
+        });
+      } finally {
+        busy = false;
+      }
+    };
+    flyTickRef.current = () => void tick();
+    const timer = window.setInterval(tick, 5000);
+    // Redraw the pointing pictures straight away when the view is turned.
+    void tick();
+    return () => {
+      cancelled = true;
+      flyTickRef.current = null;
+      window.clearInterval(timer);
+    };
+  }, [flyOpen, flyHeadingQ]);
+  // Team positions arrive about once a second — pass each fix on to the 3D
+  // map as it lands so the pins glide continuously, instead of waiting for
+  // the 5-second sweep above.
+  useEffect(() => {
+    if (flyOpen) flyTickRef.current?.();
+  }, [liveUsers, flyOpen]);
+  // Fly's "add here" gestures open the same sheets the flat map does.
+  const flyOpenActionChooser = (lat: number, lng: number) => {
+    setFlyPick(null);
+    new google.maps.Geocoder().geocode(
+      { location: { lat, lng } },
+      (results, status) => {
+        const addr =
+          status === "OK" && results && results[0]
+            ? results[0].formatted_address
+            : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        setActionChooser({ lat, lng, address: convertGoogleAddresses(addr) });
+      }
+    );
+  };
+  const flyOpenPlace = (lat: number, lng: number, placeId: string) => {
+    if (!mapRef.current) return;
+    setFlyPick(null);
+    new google.maps.places.PlacesService(mapRef.current).getDetails(
+      { placeId, fields: ["name", "formatted_address"] },
+      (place, status) => {
+        if (status === google.maps.places.PlacesServiceStatus.OK && place) {
+          setPoiTap({
+            lat,
+            lng,
+            name: place.name ?? "",
+            address:
+              place.formatted_address ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+          });
+        }
+      }
+    );
+  };
+  const closeFly = () => {
+    if (flyCenterRef.current) mapRef.current?.setCenter(flyCenterRef.current);
+    setFlyView(null);
+    setFlySelectedId(null);
+    setFlyPick(null);
+    setFlyFollow(false);
+  };
+
   const handleMapAreaClick = useCallback(() => {
     if (
       rsActionsPaneOpen &&
@@ -7059,31 +7525,71 @@ export default function IntelligenceMapping() {
               wider "Map"/"Satellite" control, which doesn't shrink or
               relabel and collided with the search bar on narrow screens. */}
             <div
-              className="absolute z-20 pointer-events-auto flex items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
-              style={{ top: "10px", right: "10px", height: "36px" }}
+              className={`absolute ${flyView ? "z-40" : "z-20"} pointer-events-auto flex ${
+                narrowScreen
+                  ? "flex-col items-end gap-1"
+                  : "items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden"
+              }`}
+              style={
+                narrowScreen
+                  ? { top: "10px", right: "10px" }
+                  : { top: "10px", right: "10px", height: "36px" }
+              }
               onClick={e => e.stopPropagation()}
             >
-              {(
-                [
+              {(() => {
+                const renderOpt = (
+                  opt: { id: "roadmap" | "hybrid" | "fly"; label: string },
+                  divider: boolean
+                ) => {
+                  const active =
+                    opt.id === "fly"
+                      ? !!flyView
+                      : !flyView && mapInitialTypeId === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => {
+                        if (opt.id === "fly") {
+                          if (!flyView) openFly();
+                          return;
+                        }
+                        closeFly();
+                        mapRef.current?.setMapTypeId(opt.id);
+                      }}
+                      className={`h-full text-xs font-semibold transition-colors ${
+                        narrowScreen ? "w-11" : "px-3"
+                      } ${
+                        active
+                          ? "bg-sky-600 text-white"
+                          : "text-gray-600 hover:bg-gray-50"
+                      } ${divider ? "border-r border-gray-200" : ""}`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                };
+                const opts = [
                   { id: "roadmap", label: "Map" },
                   { id: "hybrid", label: "Sat" },
-                ] as const
-              ).map((opt, i) => {
-                const active = mapInitialTypeId === opt.id;
+                  { id: "fly", label: "Fly" },
+                ] as const;
+                if (!narrowScreen)
+                  return opts.map((o, i) => renderOpt(o, i < 2));
+                // Phone: Map | Sat on top, Fly under Sat — an L, each piece
+                // the same button width.
+                const pill =
+                  "flex h-9 items-center bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden";
                 return (
-                  <button
-                    key={opt.id}
-                    onClick={() => mapRef.current?.setMapTypeId(opt.id)}
-                    className={`h-full px-3 text-xs font-semibold transition-colors ${
-                      active
-                        ? "bg-sky-600 text-white"
-                        : "text-gray-600 hover:bg-gray-50"
-                    } ${i === 0 ? "border-r border-gray-200" : ""}`}
-                  >
-                    {opt.label}
-                  </button>
+                  <>
+                    <div className={pill}>
+                      {renderOpt(opts[0], true)}
+                      {renderOpt(opts[1], false)}
+                    </div>
+                    <div className={pill}>{renderOpt(opts[2], false)}</div>
+                  </>
                 );
-              })}
+              })()}
             </div>
 
             {/* Refresh map data — right below the Map/Sat toggle. A pin can
@@ -7098,7 +7604,7 @@ export default function IntelligenceMapping() {
               }}
               disabled={mapRefreshing}
               className="absolute z-20 pointer-events-auto flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-gray-600 hover:bg-gray-50 disabled:opacity-60 transition-colors"
-              style={{ top: "52px", right: "10px" }}
+              style={{ top: `${52 + rightColShift}px`, right: "10px" }}
               aria-label="Refresh map data"
               title="Refresh map data"
             >
@@ -7125,7 +7631,7 @@ export default function IntelligenceMapping() {
                   ? "bg-sky-600 border-sky-600 text-white"
                   : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
               }`}
-              style={{ top: "94px", right: "10px" }}
+              style={{ top: `${94 + rightColShift}px`, right: "10px" }}
               aria-label="Toggle 3D view"
               title={
                 isMapActuallyVector
@@ -7149,6 +7655,7 @@ export default function IntelligenceMapping() {
             <NorthUpButton
               map={mapRef.current}
               isMapActuallyVector={isMapActuallyVector}
+              top={130 + rightColShift}
             />
 
             {/* Nearmap aerial overlay — right below North Up. Adds/removes
@@ -7194,7 +7701,7 @@ export default function IntelligenceMapping() {
                   ? "bg-sky-600 border-sky-600 text-white"
                   : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
               }`}
-              style={{ top: "166px", right: "10px" }}
+              style={{ top: `${166 + rightColShift}px`, right: "10px" }}
               aria-label="Toggle Nearmap aerial imagery"
               title={
                 nearmapActive
@@ -7424,6 +7931,377 @@ export default function IntelligenceMapping() {
               </div>
             </div>
           </div>
+
+          {flyView && (
+            <>
+              <Map3DView
+                className="absolute inset-0 z-30"
+                center={flyView.center}
+                range={flyView.range}
+                tilt={flyView.tilt}
+                heading={flyView.heading}
+                onHeadingChange={h => {
+                  flyHeadingRef.current = h;
+                  setFlyHeadingQ(h);
+                }}
+                markers={flyMarkers}
+                shapes={flyView.shapes}
+                onTiltChange={setFlyTilt}
+                cameraRequest={flyCameraReq}
+                followId={
+                  flyFollow && user
+                    ? `team:${user.id}_${deviceIdRef.current}`
+                    : null
+                }
+                centerRequest={flyCentreReq}
+                onMarkerClick={id => {
+                  setFlyPick(null);
+                  // Your own pill opens "Customise my pointer", as on the
+                  // flat map.
+                  if (user && id === `team:${user.id}_${deviceIdRef.current}`) {
+                    setFlySelectedId(null);
+                    setOnFootPopupOpen(true);
+                    return;
+                  }
+                  setFlySelectedId(id);
+                }}
+                onLocationAction={flyOpenActionChooser}
+                onPlaceClick={flyOpenPlace}
+                onGroundClick={(lat, lng) => {
+                  setFlySelectedId(null);
+                  setFlyPick({ lat, lng });
+                }}
+                onActionUnavailable={() =>
+                  toast.info(
+                    "The 3D map didn't report that spot. Tap the spot once, then choose Add here."
+                  )
+                }
+                onCenterChange={c => {
+                  flyCenterRef.current = c;
+                }}
+              />
+              {/* North up and 0° tilt — under the Map | Sat | Fly toggle */}
+              <div
+                className="absolute z-40 pointer-events-auto flex flex-col gap-1"
+                style={{ top: `${52 + rightColShift}px`, right: "10px" }}
+              >
+                <button
+                  title={
+                    flyHeadingQ === 0 ? "Already North Up" : "Turn to North Up"
+                  }
+                  disabled={flyHeadingQ === 0}
+                  onClick={e => {
+                    e.stopPropagation();
+                    setFlyCameraReq(prev => ({
+                      heading: 0,
+                      n: (prev?.n ?? 0) + 1,
+                    }));
+                  }}
+                  className="flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  aria-label="Turn the 3D view to North Up"
+                >
+                  <Navigation2
+                    className="w-4 h-4 text-sky-600 transition-transform"
+                    style={{ transform: `rotate(${-flyHeadingQ}deg)` }}
+                  />
+                </button>
+                <button
+                  title={
+                    flyTilt === 0
+                      ? "Already looking straight down"
+                      : "Look straight down (0° tilt)"
+                  }
+                  disabled={flyTilt === 0}
+                  onClick={e => {
+                    e.stopPropagation();
+                    setFlyCameraReq(prev => ({
+                      tilt: 0,
+                      n: (prev?.n ?? 0) + 1,
+                    }));
+                  }}
+                  className="flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 h-9 w-9 text-[11px] font-bold text-sky-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  aria-label="Look straight down, 0 degree tilt"
+                >
+                  0°
+                </button>
+              </div>
+              {/* Centre on me / Follow me — same two buttons as the flat map */}
+              <div
+                className="absolute z-40 pointer-events-auto flex gap-1"
+                style={{ top: "60px", left: "10px" }}
+              >
+                <button
+                  title="Centre on my location"
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (!ownLiveEntry || !showOwnLocation) {
+                      toast.error(
+                        "Location not available — enable location sharing first"
+                      );
+                      return;
+                    }
+                    setFlyCentreReq(prev => ({
+                      lat: ownLiveEntry.lat,
+                      lng: ownLiveEntry.lng,
+                      n: (prev?.n ?? 0) + 1,
+                    }));
+                  }}
+                  className="flex items-center justify-center bg-white rounded-lg shadow-md border border-gray-200 hover:bg-gray-50 transition-colors"
+                  style={{ width: "40px", height: "40px" }}
+                >
+                  <LocateFixed className="w-5 h-5 text-sky-600" />
+                </button>
+                <button
+                  title={
+                    flyFollow
+                      ? "Stop following my location"
+                      : "Follow my location"
+                  }
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (!flyFollow && (!ownLiveEntry || !showOwnLocation)) {
+                      toast.error(
+                        "Location not available — enable location sharing first"
+                      );
+                      return;
+                    }
+                    setFlyFollow(f => !f);
+                  }}
+                  className={`flex items-center justify-center rounded-lg shadow-md border transition-colors ${
+                    flyFollow
+                      ? "bg-sky-600 border-sky-700 hover:bg-sky-700"
+                      : "bg-white border-gray-200 hover:bg-gray-50"
+                  }`}
+                  style={{ width: "40px", height: "40px" }}
+                >
+                  <Navigation2
+                    className={`w-5 h-5 ${flyFollow ? "text-white" : "text-sky-600"}`}
+                  />
+                </button>
+              </div>
+              {(() => {
+                if (!flySelectedId) return null;
+                const kind = flySelectedId.slice(0, flySelectedId.indexOf(":"));
+                const key = flySelectedId.slice(flySelectedId.indexOf(":") + 1);
+                const entry =
+                  kind === "intel" ? geocodedIntelRef.current.get(key) : null;
+                const cm =
+                  kind === "cm"
+                    ? customMarkersDataRef.current.find(
+                        (c: any) => String(c.id) === key
+                      )
+                    : null;
+                const member =
+                  kind === "team"
+                    ? ((liveUsers as LiveUser[] | undefined) ?? []).find(
+                        u => `${u.userId}_${u.deviceId}` === key
+                      )
+                    : null;
+                if (!entry && !cm && !member) return null;
+                const lat = entry
+                  ? entry.position.lat
+                  : cm
+                    ? cm.lat
+                    : member!.lat;
+                const lng = entry
+                  ? entry.position.lng
+                  : cm
+                    ? cm.lng
+                    : member!.lng;
+                const photoLabel = entry
+                  ? entry.loc.label
+                  : (cm?.address ?? "");
+                const hasPhotos =
+                  !!photoLabel &&
+                  (photoKeysRef.current.has(
+                    normalizeEntityLabelClient(photoLabel)
+                  ) ||
+                    personPhotosByKeyRef.current.has(
+                      addressMatchKey(photoLabel)
+                    ));
+                const html = entry
+                  ? entityBlocksHtml(
+                      entry.loc,
+                      registeredPeopleLookupRef.current
+                    )
+                  : member
+                    ? `<strong style="font-size:13px">${member.name}</strong><div style="font-size:12px;color:#555">${member.team ?? "Team member"}</div>`
+                    : `<strong style="font-size:13px">${cm.label ?? "Marker"}</strong>${
+                        cm.address
+                          ? `<div style="font-size:12px">${cm.address}</div>`
+                          : ""
+                      }${
+                        cm.note
+                          ? `<div style="font-size:12px;margin-top:4px">${cm.note}</div>`
+                          : ""
+                      }`;
+                const bridge = window as any;
+                const btn =
+                  "flex-1 text-center text-xs font-semibold rounded-md py-2 text-white";
+                const streetLabel = entry
+                  ? formatIntelAddress(entry.loc.label)
+                  : (cm?.label ?? member?.name ?? "Street View");
+                // Edit / Move work on the flat map: Edit opens its dialog
+                // here; Move returns to the flat map and starts the move.
+                const startMove = () => {
+                  closeFly();
+                  window.setTimeout(() => {
+                    if (entry) bridge.__intelStartMove?.(entry.loc.label);
+                    else if (cm) bridge.__cmStartMove?.(cm.id);
+                  }, 400);
+                };
+                return (
+                  <div className="absolute z-40 left-3 bottom-3 w-[min(22rem,calc(100%-1.5rem))] rounded-lg bg-white text-gray-900 shadow-xl border border-gray-200 p-3">
+                    <button
+                      onClick={() => setFlySelectedId(null)}
+                      className="absolute top-1.5 right-1.5 h-6 w-6 flex items-center justify-center rounded text-gray-500 hover:bg-gray-100"
+                      aria-label="Close details"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                    <div
+                      className="pr-6 max-h-48 overflow-y-auto"
+                      dangerouslySetInnerHTML={{ __html: html }}
+                    />
+                    {(cm || (entry && entry.loc.type !== "target_address")) &&
+                      (() => {
+                        const override = entry
+                          ? pinOverridesRef.current.get(entry.loc.label)
+                          : null;
+                        const iconName = entry
+                          ? (override?.markerIcon ?? "house_filled")
+                          : (cm.markerIcon ?? "pin");
+                        const colourName = entry
+                          ? (override?.markerColour ?? "purple")
+                          : (cm.markerColour ?? "blue");
+                        return (
+                          <FlyRotationSlider
+                            key={flySelectedId}
+                            initial={
+                              flyRotOverrideRef.current.get(flySelectedId) ??
+                              (entry ? override?.rotation : cm.rotation) ??
+                              0
+                            }
+                            iconUrl={getMarkerIconUrl(
+                              iconName,
+                              colourName as MarkerColour
+                            )}
+                            onChange={rotation => {
+                              const id = flySelectedId;
+                              flyRotOverrideRef.current.set(id, rotation);
+                              flyTickRef.current?.();
+                              if (flyRotSaveTimerRef.current)
+                                clearTimeout(flyRotSaveTimerRef.current);
+                              flyRotSaveTimerRef.current = setTimeout(() => {
+                                const done = () =>
+                                  window.setTimeout(() => {
+                                    flyRotOverrideRef.current.delete(id);
+                                    flyTickRef.current?.();
+                                  }, 1500);
+                                if (entry)
+                                  savePinOverrideMut.mutate(
+                                    { label: entry.loc.label, rotation },
+                                    { onSettled: done }
+                                  );
+                                else
+                                  updateCustomMarkerMut.mutate(
+                                    { id: cm.id, rotation },
+                                    { onSettled: done }
+                                  );
+                              }, 400);
+                            }}
+                          />
+                        );
+                      })()}
+                    {!member && (
+                      <div className="mt-2 flex gap-1.5">
+                        <button
+                          className={`${btn} bg-indigo-500`}
+                          onClick={() =>
+                            entry
+                              ? bridge.__intelRsQuickEntry?.(entry.loc.label)
+                              : bridge.__cmRsQuickEntry?.(cm.id)
+                          }
+                        >
+                          RS Quick Entry
+                        </button>
+                        {hasPhotos && (
+                          <button
+                            className={`${btn} bg-emerald-500`}
+                            onClick={() =>
+                              bridge.__mapOpenImagesPip?.(photoLabel)
+                            }
+                          >
+                            Images
+                          </button>
+                        )}
+                        <a
+                          className={`${btn} bg-cyan-500`}
+                          href={`https://waze.com/ul?ll=${lat},${lng}&navigate=yes`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Waze
+                        </a>
+                      </div>
+                    )}
+                    <div className="mt-1.5 flex gap-1.5">
+                      <button
+                        className={`${btn} bg-blue-500`}
+                        onClick={() =>
+                          setStreetViewPip({ lat, lng, label: streetLabel })
+                        }
+                      >
+                        Street View
+                      </button>
+                      {!member && (
+                        <>
+                          <button
+                            className={`${btn} bg-green-600`}
+                            onClick={() =>
+                              entry
+                                ? bridge.__intelOpenEditDialog?.(
+                                    entry.loc.label
+                                  )
+                                : bridge.__editCustomMarker?.(cm.id)
+                            }
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className={`${btn} bg-sky-700`}
+                            onClick={startMove}
+                          >
+                            Move…
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+              {flyPick && !flySelectedId && (
+                <div className="absolute z-40 left-1/2 -translate-x-1/2 bottom-3 flex items-center gap-2 rounded-lg bg-white text-gray-900 shadow-xl border border-gray-200 px-3 py-2">
+                  <span className="text-xs text-gray-600">Selected spot</span>
+                  <button
+                    className="rounded-md bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5"
+                    onClick={() =>
+                      flyOpenActionChooser(flyPick.lat, flyPick.lng)
+                    }
+                  >
+                    Add here…
+                  </button>
+                  <button
+                    onClick={() => setFlyPick(null)}
+                    className="h-6 w-6 flex items-center justify-center rounded text-gray-500 hover:bg-gray-100"
+                    aria-label="Dismiss"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+            </>
+          )}
 
           <StreetViewPip
             map={mapReady ? mapRef.current : null}
@@ -8724,6 +9602,16 @@ export default function IntelligenceMapping() {
               {/* Add Shape Here — full-width below the grid */}
               <button
                 onClick={() => {
+                  // Shapes are drawn and edited on the flat map, so Fly steps
+                  // back to it, centred on this spot, first.
+                  if (flyView) {
+                    flyCenterRef.current = {
+                      lat: actionChooser.lat,
+                      lng: actionChooser.lng,
+                    };
+                    mapRef.current?.setZoom(17);
+                    closeFly();
+                  }
                   setShapeTypePicker({
                     lat: actionChooser.lat,
                     lng: actionChooser.lng,

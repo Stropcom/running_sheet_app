@@ -22,6 +22,7 @@ import {
   Users,
   AlertTriangle,
   Link2,
+  ExternalLink,
 } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
@@ -31,11 +32,18 @@ import {
   buildEntityListWithPhotosHtml,
   type RowAttachmentLike,
 } from "@/lib/attachmentBanner";
-import {
-  IntelEntityWithPhotos,
-  type IntelAssocEntity,
-} from "@/components/IntelEntityChip";
+import { type IntelAssocEntity } from "@/components/IntelEntityChip";
 import { IndicesBadge } from "@/components/IndicesBadge";
+import {
+  ProfileDropdownRow,
+  IntelEntityDropdown,
+} from "@/components/ProfileDropdown";
+import { RegistryPersonRow } from "@/components/RegistryPersonRow";
+import {
+  RegisteredDetailPanels,
+  targetDetailEntries,
+} from "@/components/RegisteredDetailPanels";
+import { registryPersonAddresses } from "@/lib/profileSection";
 import {
   ImportedDocumentCard,
   isParsedDocumentImport,
@@ -338,7 +346,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     <div style="border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">
       ${RA_res.map(
         a =>
-          `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(a.name)}${a.isIndicesOnly ? `<span class="indices-tag-light">INDICES</span>` : ""}</span><span style="color:#64748b">${esc(a.hbf ?? "")}</span></div>`
+          `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(a.name)}${a.isIndicesOnly ? `<span class="indices-tag-light">INDICES</span>` : ""}</span><span style="color:#64748b;text-align:right">${registryPersonAddresses(a.hbf, a.extraAddresses).map(esc).join("<br>")}</span></div>`
       ).join("")}
     </div>
   </div>`
@@ -353,7 +361,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     <div style="border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">
       ${RA_ass.map(
         a =>
-          `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(a.name)}${a.isIndicesOnly ? `<span class="indices-tag-light">INDICES</span>` : ""}</span><span style="color:#64748b">${esc(a.hbf ?? "")}</span></div>`
+          `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(a.name)}${a.isIndicesOnly ? `<span class="indices-tag-light">INDICES</span>` : ""}</span><span style="color:#64748b;text-align:right">${registryPersonAddresses(a.hbf, a.extraAddresses).map(esc).join("<br>")}</span></div>`
       ).join("")}
     </div>
   </div>`
@@ -456,7 +464,15 @@ function useTargetProfile(targetId: number) {
  * Self-contained target profile document — fetches its own data by targetId and
  * renders identically wherever it's mounted (standalone page or embedded pane view).
  */
-export function TargetProfileContent({ targetId }: { targetId: number }) {
+export function TargetProfileContent({
+  targetId,
+  embedded = false,
+}: {
+  targetId: number;
+  /** Inside a drop-down on another profile: no banner, and an "Open full
+   * profile" button at the end. */
+  embedded?: boolean;
+}) {
   const [, navigate] = useLocation();
   const { data: profile, isLoading, error } = useTargetProfile(targetId);
   // Every document import for this target, across all its operations —
@@ -507,7 +523,7 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
   }
 
   return (
-    <div className="px-4 py-6">
+    <div className={embedded ? "pt-1" : "px-4 py-6"}>
       {isLoading && (
         <div className="space-y-3">
           {[...Array(5)].map((_, i) => (
@@ -525,72 +541,74 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
       {profile && (
         <>
           {/* Header */}
-          <div className="rounded-xl border border-border/60 bg-card overflow-hidden mb-5">
-            <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
-                      <User className="w-3 h-3" /> Person — Target
-                    </span>
-                    {profile.isIndicesOnly && (
-                      <IndicesBadge variant="on-dark" size="header" />
+          {!embedded && (
+            <div className="rounded-xl border border-border/60 bg-card overflow-hidden mb-5">
+              <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
+                        <User className="w-3 h-3" /> Person — Target
+                      </span>
+                      {profile.isIndicesOnly && (
+                        <IndicesBadge variant="on-dark" size="header" />
+                      )}
+                    </div>
+                    <h1 className="text-lg sm:text-2xl leading-snug font-bold tracking-tight break-words">
+                      {profile.name}
+                    </h1>
+                    {profile.tgt && (
+                      <p className="text-sm opacity-75 mt-1">
+                        TGT Alias: {profile.tgt}
+                      </p>
                     )}
+                    <PreviousNotes items={historyFor("name")} variant="dark" />
+                    <PreviousNotes items={historyFor("tgt")} variant="dark" />
                   </div>
-                  <h1 className="text-2xl font-bold tracking-tight">
-                    {profile.name}
-                  </h1>
-                  {profile.tgt && (
-                    <p className="text-sm opacity-75 mt-1">
-                      TGT Alias: {profile.tgt}
-                    </p>
-                  )}
-                  <PreviousNotes items={historyFor("name")} variant="dark" />
-                  <PreviousNotes items={historyFor("tgt")} variant="dark" />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={exportPdf}
+                    className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0"
+                  >
+                    <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
+                  </Button>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exportPdf}
-                  className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0"
-                >
-                  <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
-                </Button>
+              </div>
+              {/* Stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
+                {[
+                  {
+                    label: "Operations",
+                    value: totalOperationsCount,
+                  },
+                  {
+                    label: "Running Sheets",
+                    value:
+                      profile.linkedSheets.length +
+                      profile.mentionedSheets.length,
+                  },
+                  {
+                    label: "Associations",
+                    value:
+                      profile.assocPersons.length +
+                      profile.assocVehicles.length +
+                      profile.assocLocations.length,
+                  },
+                  { label: "Observations", value: profile.observationCount },
+                ].map(stat => (
+                  <div key={stat.label} className="px-4 py-3 text-center">
+                    <p className="text-xl font-bold text-blue-900 dark:text-blue-300">
+                      {stat.value}
+                    </p>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">
+                      {stat.label}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
-            {/* Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
-              {[
-                {
-                  label: "Operations",
-                  value: totalOperationsCount,
-                },
-                {
-                  label: "Running Sheets",
-                  value:
-                    profile.linkedSheets.length +
-                    profile.mentionedSheets.length,
-                },
-                {
-                  label: "Associations",
-                  value:
-                    profile.assocPersons.length +
-                    profile.assocVehicles.length +
-                    profile.assocLocations.length,
-                },
-                { label: "Observations", value: profile.observationCount },
-              ].map(stat => (
-                <div key={stat.label} className="px-4 py-3 text-center">
-                  <p className="text-xl font-bold text-blue-900 dark:text-blue-300">
-                    {stat.value}
-                  </p>
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider">
-                    {stat.label}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
 
           <EntityPhotosSection category="target" targetId={targetId} />
 
@@ -630,38 +648,37 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                 </p>
               </div>
             )}
-            <div className="flex flex-wrap gap-2">
+            <div className="space-y-2">
               {profile.operations.map(op => (
-                <button
-                  key={op.id}
-                  onClick={() => navigate(`/intelligence/operation/${op.id}`)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 transition-colors"
-                >
-                  <Folder className="w-3 h-3" />
-                  {op.name}
-                </button>
+                <ProfileDropdownRow key={op.id} kind="operation" refId={op.id}>
+                  <Folder className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                  <span className="text-xs font-medium text-foreground flex-1 min-w-0 break-words">
+                    {op.name}
+                  </span>
+                </ProfileDropdownRow>
               ))}
               {crossOpExtras.map(op => (
-                <button
+                <ProfileDropdownRow
                   key={`cross-${op.id}`}
-                  onClick={() => navigate(`/intelligence/operation/${op.id}`)}
+                  kind="operation"
+                  refId={op.id}
+                  headerClassName="inline-flex w-full items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 transition-colors text-left"
                   title={
                     op.kind === "shared"
                       ? sharedLinksTooltip(op.links)
                       : `Not formally linked — ${shortPersonName(profile.name)} was named in an observation on this operation`
                   }
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 transition-colors"
                 >
-                  <Folder className="w-3 h-3" />
-                  {op.name}
-                  <span className="text-[9px] uppercase tracking-wide opacity-70">
+                  <Folder className="w-3 h-3 shrink-0" />
+                  <span className="min-w-0 break-words">{op.name}</span>
+                  <span className="text-[9px] uppercase tracking-wide opacity-70 flex-1 min-w-0">
                     {op.kind === "shared"
                       ? op.links
                           .map(l => sharedLinkChipText(l.via, l.sharedValue))
                           .join(" · ")
                       : `${shortPersonName(profile.name)} mentioned`}
                   </span>
-                </button>
+                </ProfileDropdownRow>
               ))}
             </div>
           </div>
@@ -723,115 +740,26 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
             })}
 
           {/* Registered Details */}
-          {(profile.hbf ||
-            profile.v1f ||
-            profile.v2f ||
-            profile.extraVehicles ||
-            profile.extraAddresses) &&
-            (() => {
-              const extraVehicleList: Array<{ full?: string; short?: string }> =
-                (() => {
-                  try {
-                    return profile.extraVehicles
-                      ? JSON.parse(profile.extraVehicles)
-                      : [];
-                  } catch {
-                    return [];
+          {(() => {
+            const entries = targetDetailEntries(profile);
+            if (!entries.length) return null;
+            return (
+              <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+                <SectionHeading
+                  label="Registered Details"
+                  count={entries.length}
+                />
+                <RegisteredDetailPanels
+                  entries={entries}
+                  after={e =>
+                    e.id === "hbf" || e.id === "v1f" ? (
+                      <PreviousNotes items={historyFor(e.id)} />
+                    ) : null
                   }
-                })();
-              const extraAddressList: Array<{ full?: string; short?: string }> =
-                (() => {
-                  try {
-                    return profile.extraAddresses
-                      ? JSON.parse(profile.extraAddresses)
-                      : [];
-                  } catch {
-                    return [];
-                  }
-                })();
-              const totalCount =
-                [profile.hbf, profile.v1f, profile.v2f].filter(Boolean).length +
-                extraVehicleList.filter(
-                  ev => ev.full?.trim() || ev.short?.trim()
-                ).length +
-                extraAddressList.filter(
-                  ea => ea.full?.trim() || ea.short?.trim()
-                ).length;
-              return (
-                <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
-                  <SectionHeading
-                    label="Registered Details"
-                    count={totalCount}
-                  />
-                  <div className="grid grid-cols-1 gap-2 text-sm">
-                    {profile.hbf && (
-                      <div className="flex gap-3 items-start">
-                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
-                          Home Address
-                        </span>
-                        <div className="min-w-0">
-                          <span className="font-mono text-xs text-foreground">
-                            {formatIntelAddress(profile.hbf)}
-                          </span>
-                          <PreviousNotes items={historyFor("hbf")} />
-                        </div>
-                      </div>
-                    )}
-                    {extraAddressList.map((ea, idx) => {
-                      const val = ea.full?.trim() || ea.short?.trim() || "";
-                      if (!val) return null;
-                      return (
-                        <div key={idx} className="flex gap-3 items-start">
-                          <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
-                            Address {idx + 2}
-                          </span>
-                          <span className="font-mono text-xs text-foreground">
-                            {formatIntelAddress(val)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                    {profile.v1f && (
-                      <div className="flex gap-3 items-start">
-                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
-                          Vehicle 1
-                        </span>
-                        <div className="min-w-0">
-                          <span className="font-mono text-xs text-foreground">
-                            {formatIntelVehicle(profile.v1f)}
-                          </span>
-                          <PreviousNotes items={historyFor("v1f")} />
-                        </div>
-                      </div>
-                    )}
-                    {profile.v2f && (
-                      <div className="flex gap-3 items-start">
-                        <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
-                          Vehicle 2
-                        </span>
-                        <span className="font-mono text-xs text-foreground">
-                          {formatIntelVehicle(profile.v2f)}
-                        </span>
-                      </div>
-                    )}
-                    {extraVehicleList.map((ev, idx) => {
-                      const val = ev.full?.trim() || ev.short?.trim() || "";
-                      if (!val) return null;
-                      return (
-                        <div key={idx} className="flex gap-3 items-start">
-                          <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
-                            Vehicle {idx + 2}
-                          </span>
-                          <span className="font-mono text-xs text-foreground">
-                            {formatIntelVehicle(val)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
+                />
+              </div>
+            );
+          })()}
 
           {/* Status — MDL, bail and special projects, in their own section
               below Registered Details. */}
@@ -965,21 +893,12 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
               </div>
               <div className="flex flex-col gap-2">
                 {residents.map(a => (
-                  <button
+                  <RegistryPersonRow
                     key={a.id}
-                    onClick={() =>
-                      navigate(
-                        `/intelligence/associate/${encodeURIComponent(a.name)}`
-                      )
-                    }
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
-                  >
-                    <Users className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                    <span className="text-xs font-medium text-foreground flex-1 truncate">
-                      {a.name}
-                    </span>
-                    {a.isIndicesOnly && <IndicesBadge />}
-                  </button>
+                    name={a.name}
+                    isIndicesOnly={a.isIndicesOnly}
+                    kind="resident"
+                  />
                 ))}
               </div>
             </div>
@@ -1000,21 +919,12 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
               </div>
               <div className="flex flex-col gap-2">
                 {associatesOnly.map(a => (
-                  <button
+                  <RegistryPersonRow
                     key={a.id}
-                    onClick={() =>
-                      navigate(
-                        `/intelligence/associate/${encodeURIComponent(a.name)}`
-                      )
-                    }
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
-                  >
-                    <Users className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    <span className="text-xs font-medium text-foreground flex-1 truncate">
-                      {a.name}
-                    </span>
-                    {a.isIndicesOnly && <IndicesBadge />}
-                  </button>
+                    name={a.name}
+                    isIndicesOnly={a.isIndicesOnly}
+                    kind="associate"
+                  />
                 ))}
               </div>
             </div>
@@ -1048,17 +958,7 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                   />
                   <div className="flex flex-col gap-2">
                     {profile.assocPersons.map(p => (
-                      <IntelEntityWithPhotos
-                        key={p.id}
-                        item={p}
-                        onClick={() =>
-                          navigate(
-                            p.type === "target" && p.id.includes("target")
-                              ? `/intelligence/target/${p.id.split("::")[1]}`
-                              : `/intelligence/associate/${encodeURIComponent(p.label)}`
-                          )
-                        }
-                      />
+                      <IntelEntityDropdown key={p.id} item={p} />
                     ))}
                   </div>
                 </div>
@@ -1072,15 +972,7 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                   />
                   <div className="flex flex-col gap-2">
                     {profile.assocVehicles.map(v => (
-                      <IntelEntityWithPhotos
-                        key={v.id}
-                        item={v}
-                        onClick={() =>
-                          navigate(
-                            `/intelligence/vehicle/${encodeURIComponent(v.label)}`
-                          )
-                        }
-                      />
+                      <IntelEntityDropdown key={v.id} item={v} />
                     ))}
                   </div>
                 </div>
@@ -1094,20 +986,22 @@ export function TargetProfileContent({ targetId }: { targetId: number }) {
                   />
                   <div className="flex flex-col gap-2">
                     {profile.assocLocations.map(l => (
-                      <IntelEntityWithPhotos
-                        key={l.id}
-                        item={l}
-                        onClick={() =>
-                          navigate(
-                            `/intelligence/location/${encodeURIComponent(l.label)}`
-                          )
-                        }
-                      />
+                      <IntelEntityDropdown key={l.id} item={l} />
                     ))}
                   </div>
                 </div>
               )}
             </div>
+          )}
+          {embedded && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate(`/intelligence/target/${targetId}`)}
+              className="text-xs"
+            >
+              <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Open full profile
+            </Button>
           )}
         </>
       )}

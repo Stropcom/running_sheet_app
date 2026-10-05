@@ -206,10 +206,14 @@ function useIsTouchDevice(): boolean {
 function useVisualViewportInset(): {
   visibleHeight: number;
   keyboardInset: number;
+  /** How far down the page the visible area has been panned (iOS pans it to
+   * keep a focused field in view when the keyboard opens). */
+  offsetTop: number;
 } {
   const [state, setState] = useState(() => ({
     visibleHeight: typeof window !== "undefined" ? window.innerHeight : 800,
     keyboardInset: 0,
+    offsetTop: 0,
   }));
   useEffect(() => {
     const vv = typeof window !== "undefined" ? window.visualViewport : null;
@@ -221,6 +225,7 @@ function useVisualViewportInset(): {
           0,
           window.innerHeight - vv.height - vv.offsetTop
         ),
+        offsetTop: vv.offsetTop,
       });
     };
     update();
@@ -2266,8 +2271,11 @@ export default function IntelligenceMapping() {
   const [rsEditPeriod, setRsEditPeriod] = useState("AM");
   const rsUpdateRow = trpc.row.update.useMutation();
   const isTouchDevice = useIsTouchDevice();
-  const { visibleHeight: vvVisibleHeight, keyboardInset: vvKeyboardInset } =
-    useVisualViewportInset();
+  const {
+    visibleHeight: vvVisibleHeight,
+    keyboardInset: vvKeyboardInset,
+    offsetTop: vvOffsetTop,
+  } = useVisualViewportInset();
 
   // Inline observation field state
   const [rsInlineLabel, setRsInlineLabel] = useState<string | null>(null); // null = closed
@@ -10806,6 +10814,16 @@ export default function IntelligenceMapping() {
             style={{
               background: "rgba(0,0,0,0.55)",
               backdropFilter: "blur(3px)",
+              // Keyboard open and the visible area panned down the page: fit
+              // the overlay to exactly the visible area above the keyboard,
+              // so the card isn't left floating with a blank band beneath it.
+              ...(vvKeyboardInset > 0 || vvOffsetTop > 1
+                ? {
+                    top: vvOffsetTop,
+                    bottom: "auto",
+                    height: vvVisibleHeight,
+                  }
+                : {}),
             }}
             onClick={() => {
               setMapQeOpen(false);

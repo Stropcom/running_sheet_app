@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { detectAddressSuggestTrigger } from "@shared/addressSuggestTrigger";
+import {
+  detectAddressSuggestTrigger,
+  detectPlaceSuggestTrigger,
+} from "@shared/addressSuggestTrigger";
 
 const at = (s: string) => detectAddressSuggestTrigger(s, s.length);
 
@@ -38,5 +41,22 @@ describe("detectAddressSuggestTrigger", () => {
 
   it("trims a prose word off the end", () => {
     expect(at("went to 12 Smith and")?.text).toBe("12 Smith");
+  });
+});
+
+describe("detectPlaceSuggestTrigger", () => {
+  it("fires on @ plus a few letters", () => {
+    expect(detectPlaceSuggestTrigger("went to @Bunnings Ken", 21)).toEqual({
+      text: "Bunnings Ken",
+      start: 8,
+    });
+  });
+  it("needs at least two characters and a leading @", () => {
+    expect(detectPlaceSuggestTrigger("went to @B", 10)).toBeNull();
+    expect(detectPlaceSuggestTrigger("went to Bunnings", 16)).toBeNull();
+  });
+  it("does not fire inside an open bracket or mid-word", () => {
+    expect(detectPlaceSuggestTrigger("(at @Bunn", 9)).toBeNull();
+    expect(detectPlaceSuggestTrigger("email a@bunn", 12)).toBeNull();
   });
 });

@@ -31,7 +31,11 @@ import {
   nameWithoutBornClause,
   shortPersonDisplayName,
 } from "@shared/addressFormat";
-import { knownAddressMatches, parseKnownAddress } from "@shared/knownAddress";
+import {
+  knownAddressMatches,
+  knownPlaceMatches,
+  parseKnownAddress,
+} from "@shared/knownAddress";
 import {
   VEHICLE_DEPART_PATTERN,
   VEHICLE_ARRIVE_PATTERN,
@@ -9504,16 +9508,22 @@ export interface KnownAddressSuggestion {
  * runs in the browser against the map service.
  */
 export async function searchKnownAddresses(
-  query: string
+  query: string,
+  places = false
 ): Promise<KnownAddressSuggestion[]> {
   const q = query.trim();
-  if (q.length < 3) return [];
+  if (q.length < (places ? 2 : 3)) return [];
   const allEntities = await getAllIntelligenceEntities();
   const seen = new Set<string>();
   const out: KnownAddressSuggestion[] = [];
   for (const e of allEntities) {
     if (e.type !== "address" && e.type !== "business") continue;
-    if (!knownAddressMatches(q, e.shortForm)) continue;
+    if (
+      places
+        ? !knownPlaceMatches(q, e.shortForm)
+        : !knownAddressMatches(q, e.shortForm)
+    )
+      continue;
     const parts = parseKnownAddress(e.shortForm);
     if (!parts) continue;
     const dedupe = `${parts.street}|${parts.suburb}`.toLowerCase();

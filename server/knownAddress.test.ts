@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildSheetAddressText,
   knownAddressMatches,
+  knownPlaceMatches,
   parseKnownAddress,
 } from "@shared/knownAddress";
 
@@ -61,5 +62,18 @@ describe("buildSheetAddressText", () => {
     expect(buildSheetAddressText(biz)).toBe(
       "Blend Cafe, 1 Smith Street, MELVILLE WA (Blend Cafe)"
     );
+  });
+});
+
+describe("knownPlaceMatches", () => {
+  it("finds a business by name, street or suburb fragment", () => {
+    const sf = "Bunnings, 1 Welshpool Road, KENWICK";
+    expect(knownPlaceMatches("bunn", sf)).toBe(true);
+    expect(knownPlaceMatches("kenw", sf)).toBe(true);
+    expect(knownPlaceMatches("welshpool", sf)).toBe(true);
+    expect(knownPlaceMatches("officeworks", sf)).toBe(false);
+  });
+  it("ignores places with no street, which can't be written in full", () => {
+    expect(knownPlaceMatches("blend", "Blend Cafe")).toBe(false);
   });
 });

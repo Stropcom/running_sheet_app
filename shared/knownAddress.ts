@@ -46,6 +46,15 @@ export function knownAddressMatches(typed: string, shortForm: string): boolean {
   return !!parts && norm(parts.street).startsWith(q);
 }
 
+/** True when what's been typed after "@" appears anywhere in this known
+ * place — its business name, street or suburb ("kenw" → "Bunnings, …,
+ * KENWICK"). Only places with a street can be written out in full. */
+export function knownPlaceMatches(typed: string, shortForm: string): boolean {
+  const q = norm(typed);
+  if (!q || !parseKnownAddress(shortForm)) return false;
+  return norm(shortForm).includes(q);
+}
+
 /** The text written into the observation for a chosen known address, in the
  * sheet convention "13 Denford Street, KENWICK WA (13 Denford Street)" —
  * or "Blend Cafe, 1 Smith Street, MELVILLE WA (Blend Cafe)" for a business.

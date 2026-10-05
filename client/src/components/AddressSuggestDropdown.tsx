@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { MapPin, Globe, WifiOff } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { loadGoogleMaps } from "@/lib/googleMaps";
-import { convertGoogleAddresses } from "@/lib/addressFormat";
+import { buildPoiAddress, convertGoogleAddresses } from "@/lib/addressFormat";
 import {
   buildSheetAddressText,
   parseKnownAddress,
@@ -36,20 +36,46 @@ export type AddressSuggestItem =
       main: string;
       secondary: string;
       description: string;
+      /** A business/landmark rather than a street address. */
+      isPlace: boolean;
     };
 
 /** The text to write into the observation for a picked suggestion — always
- * the full sheet form, "street, SUBURB WA (street)". */
-export function addressSuggestInsertText(item: AddressSuggestItem): string {
+ * the full sheet form, "street, SUBURB WA (street)" or, for a business,
+ * "Name, street, SUBURB WA (Name)". A Google business needs one geocode to
+ * learn its street address, hence async. */
+export async function addressSuggestInsertText(
+  item: AddressSuggestItem
+): Promise<string> {
   if (item.kind === "known") return buildSheetAddressText(item.parts);
-  return convertGoogleAddresses(item.description);
+  if (!item.isPlace) return convertGoogleAddresses(item.description);
+  const fallback = buildPoiAddress(
+    item.main,
+    item.secondary || item.description
+  );
+  try {
+    await loadGoogleMaps();
+    const formatted = await new Promise<string | null>(resolve => {
+      new google.maps.Geocoder().geocode({ placeId: item.key }, (r, status) =>
+        resolve(status === "OK" && r?.[0] ? r[0].formatted_address : null)
+      );
+    });
+    return formatted ? buildPoiAddress(item.main, formatted) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
-export function useAddressSuggestions(typed: string) {
+export type AddressSuggestMode = "address" | "place";
+
+export function useAddressSuggestions(
+  typed: string,
+  mode: AddressSuggestMode = "address"
+) {
   const query = typed.trim();
-  const enabled = query.length >= 3;
+  const enabled = query.length >= (mode === "place" ? 2 : 3);
   const known = trpc.intelligence.searchKnownAddresses.useQuery(
-    { query },
+    { query, places: mode === "place" },
     { enabled }
   );
   // `data` is undefined until the current query's own result is in, so this
@@ -137,7 +163,9 @@ export function useAddressSuggestions(typed: string) {
         {
           input: query,
           componentRestrictions: { country: "au" },
-          types: ["address"],
+          // A street address is searched as an address; "@" place searches
+          // leave the type open so businesses and landmarks come back too.
+          ...(mode === "address" ? { types: ["address"] } : {}),
           sessionToken: tokenRef.current,
           locationBias: new google.maps.Circle({
             center: gpsRef.current ?? PERTH_FALLBACK,
@@ -158,6 +186,7 @@ export function useAddressSuggestions(typed: string) {
                 main: p.structured_formatting?.main_text ?? p.description,
                 secondary: p.structured_formatting?.secondary_text ?? "",
                 description: p.description,
+                isPlace: p.types?.includes("establishment") ?? false,
               }))
             );
           } else {
@@ -167,7 +196,7 @@ export function useAddressSuggestions(typed: string) {
       );
     }, 120);
     return () => clearTimeout(t);
-  }, [needGoogle, online, query]);
+  }, [needGoogle, online, query, mode]);
 
   /** Call when a suggestion is picked or the lookup is abandoned — a Places
    * session is one typing-to-pick, so the next address starts a fresh one. */
@@ -194,6 +223,7 @@ export function AddressSuggestDropdown({
   items,
   source,
   offlineNoKnown,
+  mode,
   activeIndex,
   onActiveIndexChange,
   onPick,
@@ -203,6 +233,7 @@ export function AddressSuggestDropdown({
   items: AddressSuggestItem[];
   source: "known" | "google";
   offlineNoKnown: boolean;
+  mode: AddressSuggestMode;
   activeIndex: number;
   onActiveIndexChange: (i: number) => void;
   onPick: (item: AddressSuggestItem) => void;
@@ -246,7 +277,7 @@ export function AddressSuggestDropdown({
         {source === "known" ? (
           <>
             <MapPin className="h-3 w-3" />
-            Known addresses
+            {mode === "place" ? "Known places" : "Known addresses"}
           </>
         ) : (
           <>

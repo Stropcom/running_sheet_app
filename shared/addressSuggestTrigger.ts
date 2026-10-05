@@ -114,3 +114,22 @@ export function detectAddressSuggestTrigger(
   if (firstWord.length < 1) return null;
   return { text: typed, start };
 }
+
+/**
+ * Explicit place/business trigger: "@" followed by what's being typed
+ * ("@bunnings kenw", "@Blend Cafe"). A business or landmark has no street
+ * number to recognise it by, and guessing from capitalised words would
+ * collide with people's names — so the officer asks for a place with "@".
+ * `start` is the position of the "@", so picking a result replaces it too.
+ */
+export function detectPlaceSuggestTrigger(
+  text: string,
+  cursorPos: number
+): AddressSuggestTrigger | null {
+  const before = text.slice(0, cursorPos);
+  const m = before.match(/(?:^|\s)@([A-Za-z0-9][A-Za-z0-9'&.\- ]{1,39})$/);
+  if (!m) return null;
+  const start = before.length - m[1].length - 1;
+  if (/\([^)]*$/.test(before.slice(0, start))) return null;
+  return { text: m[1].trimStart(), start };
+}

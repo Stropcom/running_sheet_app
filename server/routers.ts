@@ -4829,9 +4829,9 @@ export const appRouter = router({
     /** Live suggestions for the observation field's address autocomplete —
      * addresses/businesses Intelligence already knows. */
     searchKnownAddresses: protectedProcedure
-      .input(z.object({ query: z.string() }))
+      .input(z.object({ query: z.string(), places: z.boolean().optional() }))
       .query(async ({ input }) => {
-        return searchKnownAddresses(input.query);
+        return searchKnownAddresses(input.query, input.places);
       }),
   }),
 

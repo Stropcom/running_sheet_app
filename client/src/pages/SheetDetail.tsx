@@ -6,8 +6,12 @@ import {
   addressSuggestInsertText,
   useAddressSuggestions,
   type AddressSuggestItem,
+  type AddressSuggestMode,
 } from "@/components/AddressSuggestDropdown";
-import { detectAddressSuggestTrigger } from "@shared/addressSuggestTrigger";
+import {
+  detectAddressSuggestTrigger,
+  detectPlaceSuggestTrigger,
+} from "@shared/addressSuggestTrigger";
 import { RS_CANONICAL_CHIP_ORDER } from "@/lib/rsChipOrder";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -2006,7 +2010,8 @@ function EditableCell({
   const [addressActiveIndex, setAddressActiveIndex] = useState(0);
   const [addressQuery, setAddressQuery] = useState("");
   const addressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const addressSuggest = useAddressSuggestions(addressQuery);
+  const [addressMode, setAddressMode] = useState<AddressSuggestMode>("address");
+  const addressSuggest = useAddressSuggestions(addressQuery, addressMode);
   const addressItems = addressWord ? addressSuggest.items : [];
   const addressOpen =
     !!addressWord &&
@@ -2021,20 +2026,19 @@ function EditableCell({
     if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
   }
 
-  function selectAddressSuggestion(
+  async function selectAddressSuggestion(
     item: AddressSuggestItem,
     textarea: HTMLTextAreaElement
   ) {
     if (!addressWord) return;
-    const insertText = addressSuggestInsertText(item);
-    const newDraft =
-      draft.slice(0, addressWord.start) +
-      insertText +
-      draft.slice(addressWord.end);
-    setDraft(newDraft);
+    const { start, end } = addressWord;
     addressSuggest.endSession();
-    const newPos = addressWord.start + insertText.length;
     closeAddressDropdown();
+    const insertText = await addressSuggestInsertText(item);
+    // A Google business needs a moment to resolve its street address, so
+    // splice into whatever the draft is by then rather than a stale copy.
+    setDraft(d => d.slice(0, start) + insertText + d.slice(end));
+    const newPos = start + insertText.length;
     requestAnimationFrame(() => {
       textarea.focus();
       textarea.setSelectionRange(newPos, newPos);
@@ -2072,13 +2076,18 @@ function EditableCell({
     }
 
     if (usedAddressLabels) {
-      const addrTrigger = detectAddressSuggestTrigger(val, cursorPos);
+      // "@" asks for a place/business by name; otherwise a street number
+      // plus the start of a street asks for an address.
+      const placeTrigger = detectPlaceSuggestTrigger(val, cursorPos);
+      const addrTrigger =
+        placeTrigger ?? detectAddressSuggestTrigger(val, cursorPos);
       if (addrTrigger) {
         closeMentionDropdown();
+        setAddressMode(placeTrigger ? "place" : "address");
         setAddressWord({
           text: addrTrigger.text,
           start: addrTrigger.start,
-          end: addrTrigger.start + addrTrigger.text.length,
+          end: cursorPos,
         });
         setAddressActiveIndex(0);
         setAddressAnchor(getCaretPixelPosition(e.target, cursorPos));
@@ -2441,6 +2450,7 @@ function EditableCell({
               items={addressItems}
               source={addressSuggest.source}
               offlineNoKnown={addressSuggest.offlineNoKnown}
+              mode={addressMode}
               activeIndex={addressActiveIndex}
               onActiveIndexChange={setAddressActiveIndex}
               onPick={item => {

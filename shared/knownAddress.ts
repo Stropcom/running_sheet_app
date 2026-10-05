@@ -49,16 +49,13 @@ export function knownAddressMatches(typed: string, shortForm: string): boolean {
 /** The text written into the observation for a chosen known address, in the
  * sheet convention "13 Denford Street, KENWICK WA (13 Denford Street)" —
  * or "Blend Cafe, 1 Smith Street, MELVILLE WA (Blend Cafe)" for a business.
- * When the address's bracket has already been introduced on this sheet
- * (`alreadyIntroduced`), just the bare label is written — the convention is
- * to introduce once and refer to it bare afterwards. */
+ * Always the full form, even when the bracket was already introduced earlier
+ * on the sheet: the officer picked a specific address, so write all of it. */
 export function buildSheetAddressText(
   parts: KnownAddressParts,
-  alreadyIntroduced: boolean,
   state = "WA"
 ): string {
   const label = parts.businessName || parts.street;
-  if (alreadyIntroduced) return label;
   if (!parts.suburb) return parts.street;
   const lead = parts.businessName ? `${parts.businessName}, ` : "";
   return `${lead}${parts.street}, ${parts.suburb.toUpperCase()} ${state} (${label})`;

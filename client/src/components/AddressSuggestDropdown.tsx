@@ -38,24 +38,11 @@ export type AddressSuggestItem =
       description: string;
     };
 
-/** The text to write into the observation for a picked suggestion. */
-export function addressSuggestInsertText(
-  item: AddressSuggestItem,
-  usedAddressLabels: Set<string>
-): string {
-  if (item.kind === "known") {
-    const label = item.parts.businessName || item.parts.street;
-    return buildSheetAddressText(
-      item.parts,
-      usedAddressLabels.has(label.toUpperCase())
-    );
-  }
-  const converted = convertGoogleAddresses(item.description);
-  const bracket = converted.match(/\(([^()]+)\)\s*$/);
-  if (bracket && usedAddressLabels.has(bracket[1].trim().toUpperCase())) {
-    return bracket[1].trim();
-  }
-  return converted;
+/** The text to write into the observation for a picked suggestion — always
+ * the full sheet form, "street, SUBURB WA (street)". */
+export function addressSuggestInsertText(item: AddressSuggestItem): string {
+  if (item.kind === "known") return buildSheetAddressText(item.parts);
+  return convertGoogleAddresses(item.description);
 }
 
 export function useAddressSuggestions(typed: string) {

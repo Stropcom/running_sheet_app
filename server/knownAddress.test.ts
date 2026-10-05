@@ -54,16 +54,12 @@ describe("knownAddressMatches", () => {
 describe("buildSheetAddressText", () => {
   const plain = parseKnownAddress("13 Denford Street, KENWICK")!;
   const biz = parseKnownAddress("Blend Cafe, 1 Smith Street, MELVILLE")!;
-  it("introduces the address with its bracket the first time", () => {
-    expect(buildSheetAddressText(plain, false)).toBe(
+  it("writes the full sheet form with its bracket", () => {
+    expect(buildSheetAddressText(plain)).toBe(
       "13 Denford Street, KENWICK WA (13 Denford Street)"
     );
-    expect(buildSheetAddressText(biz, false)).toBe(
+    expect(buildSheetAddressText(biz)).toBe(
       "Blend Cafe, 1 Smith Street, MELVILLE WA (Blend Cafe)"
     );
-  });
-  it("writes the bare label once it has been introduced", () => {
-    expect(buildSheetAddressText(plain, true)).toBe("13 Denford Street");
-    expect(buildSheetAddressText(biz, true)).toBe("Blend Cafe");
   });
 });

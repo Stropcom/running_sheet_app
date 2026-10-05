@@ -2026,10 +2026,7 @@ function EditableCell({
     textarea: HTMLTextAreaElement
   ) {
     if (!addressWord) return;
-    const insertText = addressSuggestInsertText(
-      item,
-      usedAddressLabels ?? new Set<string>()
-    );
+    const insertText = addressSuggestInsertText(item);
     const newDraft =
       draft.slice(0, addressWord.start) +
       insertText +

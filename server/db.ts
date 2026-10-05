@@ -12155,6 +12155,9 @@ export interface IntelAssociateProfile {
   hb?: string | null;
   v1f?: string | null;
   v1?: string | null;
+  /** JSON [{full, short}] — the registry record's further addresses / vehicles. */
+  extraAddresses?: string | null;
+  extraVehicles?: string | null;
 }
 
 export interface IntelVehicleProfile {
@@ -13605,6 +13608,8 @@ export async function getIntelAssociateProfile(
     hb: registryAssociate?.hb ?? null,
     v1f: registryAssociate?.v1f ?? null,
     v1: registryAssociate?.v1 ?? null,
+    extraAddresses: registryAssociate?.extraAddresses ?? null,
+    extraVehicles: registryAssociate?.extraVehicles ?? null,
   };
 }
 

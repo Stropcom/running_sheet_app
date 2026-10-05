@@ -72,6 +72,41 @@ export interface IntelAssociateProfile {
   hb?: string | null;
   v1f?: string | null;
   v1?: string | null;
+  /** JSON [{full, short}] — further addresses / vehicles on the registry record. */
+  extraAddresses?: string | null;
+  extraVehicles?: string | null;
+}
+
+/** Every registered address and vehicle on an associate's registry record —
+ * the main one first, then any extras, in the order they were entered. */
+function registeredDetailRows(p: IntelAssociateProfile) {
+  const parse = (json: string | null | undefined): string[] => {
+    if (!json) return [];
+    try {
+      const list: Array<{ full?: string; short?: string }> = JSON.parse(json);
+      return list
+        .map(x => x.full?.trim() || x.short?.trim() || "")
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  };
+  const addresses = [p.hbf?.trim() || "", ...parse(p.extraAddresses)].filter(
+    Boolean
+  );
+  const vehicles = [p.v1f?.trim() || "", ...parse(p.extraVehicles)].filter(
+    Boolean
+  );
+  return [
+    ...addresses.map((v, i) => ({
+      label: i === 0 ? "Home Address" : `Address ${i + 1}`,
+      value: v,
+    })),
+    ...vehicles.map((v, i) => ({
+      label: vehicles.length > 1 ? `Vehicle ${i + 1}` : "Vehicle",
+      value: v,
+    })),
+  ];
 }
 
 function SectionHeading({ label, count }: { label: string; count: number }) {
@@ -139,10 +174,14 @@ function buildAssociateProfileHtml(
 <div class="content">
   ${photos.length ? `<div style="margin-bottom:16px"><div class="section-title">Photos (${photos.length})</div>${buildPhotoGridHtml(photos)}</div>` : ""}
   ${
-    profile.registryAssociateId
+    profile.registryAssociateId && registeredDetailRows(profile).length
       ? `<div style="margin-bottom:16px"><div class="section-title">Registered Details</div>
-    ${profile.hbf ? `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>Home Address</strong> — ${esc(profile.hbf)}</p>` : ""}
-    ${profile.v1f ? `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>Vehicle</strong> — ${esc(profile.v1f)}</p>` : ""}
+    ${registeredDetailRows(profile)
+      .map(
+        r =>
+          `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(r.label)}</strong> — ${esc(r.value)}</p>`
+      )
+      .join("")}
   </div>`
       : ""
   }
@@ -314,32 +353,28 @@ export function AssociateProfileContent({
             </div>
           )}
 
-          {profile.registryAssociateId && (profile.hbf || profile.v1f) && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
-              <SectionHeading
-                label="Registered Details"
-                count={[profile.hbf, profile.v1f].filter(Boolean).length}
-              />
-              <div className="space-y-2">
-                {profile.hbf && (
-                  <div className="px-3 py-2 rounded-lg border border-border/60 bg-muted/20">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">
-                      Home Address
-                    </p>
-                    <p className="text-sm text-foreground">{profile.hbf}</p>
-                  </div>
-                )}
-                {profile.v1f && (
-                  <div className="px-3 py-2 rounded-lg border border-border/60 bg-muted/20">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">
-                      Vehicle
-                    </p>
-                    <p className="text-sm text-foreground">{profile.v1f}</p>
-                  </div>
-                )}
+          {profile.registryAssociateId &&
+            registeredDetailRows(profile).length > 0 && (
+              <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+                <SectionHeading
+                  label="Registered Details"
+                  count={registeredDetailRows(profile).length}
+                />
+                <div className="space-y-2">
+                  {registeredDetailRows(profile).map(r => (
+                    <div
+                      key={r.label}
+                      className="px-3 py-2 rounded-lg border border-border/60 bg-muted/20"
+                    >
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">
+                        {r.label}
+                      </p>
+                      <p className="text-sm text-foreground">{r.value}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
           {(profile.linkedTargets.length > 0 || sharedOnlyOps.length > 0) && (
             <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">

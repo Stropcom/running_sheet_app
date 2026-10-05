@@ -217,15 +217,23 @@ function ImportedDocumentsSection({ operationId }: { operationId: number }) {
   }
 
   return (
-    <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
-      <p className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wide mb-1">
-        Imported Documents
-      </p>
-      <p className="text-[11px] text-muted-foreground mb-3">
-        Every target-profile document uploaded for this operation, verbatim as
-        parsed.
-      </p>
-      <div className="space-y-2">
+    <div className="mb-4 flex flex-col gap-2">
+      {/* Full-width heading bar; each document is its own full-width card. */}
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-violet-300/70 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 px-4 py-2.5">
+        <div className="min-w-0">
+          <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300 uppercase tracking-wider">
+            Imported Documents
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            Every target-profile document uploaded for this operation, verbatim
+            as parsed.
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-[11px] font-bold text-violet-700 dark:text-violet-300 tabular-nums">
+          {imports.length}
+        </span>
+      </div>
+      <div className="flex flex-col gap-2">
         {Array.from(byTarget.values()).flatMap(rows => {
           const totalParsed = rows.filter(isParsedDocumentImport).length;
           let parsedCount = 0;
@@ -402,8 +410,19 @@ export function OperationProfileContent({
 
           <ImportedDocumentsSection operationId={operationId} />
 
-          {/* Target profiles */}
-          <div className="space-y-3">
+          {/* Target profiles — a full-width heading bar, then each target as
+              its own full-width card. */}
+          {typedProfile.targets.length > 0 && (
+            <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-blue-300/70 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/30 px-4 py-2.5">
+              <p className="text-xs font-extrabold text-blue-800 dark:text-blue-300 uppercase tracking-wider">
+                Targets
+              </p>
+              <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-[11px] font-bold text-blue-800 dark:text-blue-300 tabular-nums">
+                {typedProfile.targets.length}
+              </span>
+            </div>
+          )}
+          <div className="space-y-2">
             {typedProfile.targets.map(target => {
               const isExpanded = expandedTargetId === target.targetId;
               const totalAssoc =

@@ -2022,17 +2022,29 @@ function EditableCell({
   // scrolls and as the on-screen keyboard resizes the visible area.
   useEffect(() => {
     if (!addressOpen) return;
-    const refresh = () => {
+    let raf = 0;
+    const update = () => {
       const t = textareaRef.current;
       if (!t) return;
       setAddressAnchor(
         getCaretPixelPosition(t, t.selectionStart ?? t.value.length)
       );
     };
+    // Deferred two frames: when the keyboard opens or the visible area pans,
+    // the app shell (DashboardLayout's setVh) re-positions itself in its own
+    // viewport listener, which runs after this one — measuring straight away
+    // reads the caret from the old layout and leaves the list misplaced.
+    const refresh = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        raf = requestAnimationFrame(update);
+      });
+    };
     window.addEventListener("scroll", refresh, true);
     window.visualViewport?.addEventListener("resize", refresh);
     window.visualViewport?.addEventListener("scroll", refresh);
     return () => {
+      cancelAnimationFrame(raf);
       window.removeEventListener("scroll", refresh, true);
       window.visualViewport?.removeEventListener("resize", refresh);
       window.visualViewport?.removeEventListener("scroll", refresh);

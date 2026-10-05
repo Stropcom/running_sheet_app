@@ -233,7 +233,7 @@ export function LocationProfileContent({
                         <IndicesBadge variant="on-dark" size="header" />
                       )}
                     </div>
-                    <h1 className="text-2xl font-bold tracking-tight">
+                    <h1 className="text-lg sm:text-2xl leading-snug font-bold tracking-tight break-words">
                       {displayLabel}
                     </h1>
                     {profile.isPrevious && (

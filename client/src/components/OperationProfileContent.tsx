@@ -308,7 +308,7 @@ export function OperationProfileContent({
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30 mb-3">
                       Operation
                     </span>
-                    <h1 className="text-2xl font-bold tracking-tight">
+                    <h1 className="text-lg sm:text-2xl leading-snug font-bold tracking-tight break-words">
                       {typedProfile.operationName}
                     </h1>
                     <div className="flex flex-wrap gap-3 mt-2 text-sm opacity-75">

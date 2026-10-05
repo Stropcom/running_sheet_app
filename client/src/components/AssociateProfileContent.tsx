@@ -17,6 +17,7 @@ import {
   Folder,
   Link2,
 } from "lucide-react";
+import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
 import {
   buildPhotoGridHtml,
@@ -97,14 +98,16 @@ function registeredDetailRows(p: IntelAssociateProfile) {
   const vehicles = [p.v1f?.trim() || "", ...parse(p.extraVehicles)].filter(
     Boolean
   );
+  // Shown in the Intelligence format (rego, colour, make, model, type), the
+  // same as on a target's profile — not the long registry description.
   return [
     ...addresses.map((v, i) => ({
       label: i === 0 ? "Home Address" : `Address ${i + 1}`,
-      value: v,
+      value: formatIntelAddress(v),
     })),
     ...vehicles.map((v, i) => ({
       label: vehicles.length > 1 ? `Vehicle ${i + 1}` : "Vehicle",
-      value: v,
+      value: formatIntelVehicle(v),
     })),
   ];
 }

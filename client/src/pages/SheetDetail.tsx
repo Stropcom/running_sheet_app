@@ -2018,6 +2018,54 @@ function EditableCell({
     !!addressAnchor &&
     (addressItems.length > 0 || addressSuggest.offlineNoKnown);
 
+  // While the list is open, keep it glued under the caret as the row or page
+  // scrolls and as the on-screen keyboard resizes the visible area.
+  useEffect(() => {
+    if (!addressOpen) return;
+    const refresh = () => {
+      const t = textareaRef.current;
+      if (!t) return;
+      setAddressAnchor(
+        getCaretPixelPosition(t, t.selectionStart ?? t.value.length)
+      );
+    };
+    window.addEventListener("scroll", refresh, true);
+    window.visualViewport?.addEventListener("resize", refresh);
+    window.visualViewport?.addEventListener("scroll", refresh);
+    return () => {
+      window.removeEventListener("scroll", refresh, true);
+      window.visualViewport?.removeEventListener("resize", refresh);
+      window.visualViewport?.removeEventListener("scroll", refresh);
+    };
+  }, [addressOpen]);
+
+  // On a short visible area (phone with keyboard up) there may be no room
+  // below the caret for the list. Scroll the row up once, as the list opens,
+  // so it can sit below the line being typed rather than over it.
+  useEffect(() => {
+    if (!addressOpen || !addressAnchor) return;
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const vv = window.visualViewport;
+    const visibleBottom =
+      (vv?.offsetTop ?? 0) + (vv?.height ?? window.innerHeight) - 56;
+    const short = addressAnchor.top + 200 - visibleBottom;
+    if (short <= 0) return;
+    let el: HTMLElement | null = ta.parentElement;
+    while (el) {
+      const oy = getComputedStyle(el).overflowY;
+      if (
+        (oy === "auto" || oy === "scroll") &&
+        el.scrollHeight > el.clientHeight
+      )
+        break;
+      el = el.parentElement;
+    }
+    if (el) el.scrollBy({ top: short });
+    else window.scrollBy({ top: short });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addressOpen]);
+
   function closeAddressDropdown() {
     setAddressWord(null);
     setAddressAnchor(null);

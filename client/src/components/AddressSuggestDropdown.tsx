@@ -240,9 +240,10 @@ export function AddressSuggestDropdown({
 }) {
   if (items.length === 0 && !offlineNoKnown) return null;
 
-  // Keep the list on screen: within the visual viewport horizontally, and —
-  // when the on-screen keyboard leaves no room below the caret — flipped to
-  // sit just above the line being typed.
+  // Always sits directly below the line being typed — on phone, tablet and
+  // laptop alike. Squeezed between the caret and the on-screen keyboard it
+  // shrinks and scrolls rather than flipping over the text; the caller
+  // scrolls the row up to make room (see the effect in EditableCell).
   const vv = typeof window !== "undefined" ? window.visualViewport : null;
   const viewW = vv?.width ?? window.innerWidth;
   const viewH = vv?.height ?? window.innerHeight;
@@ -250,21 +251,12 @@ export function AddressSuggestDropdown({
   const width = Math.min(340, viewW - 16);
   const left = Math.max(8, Math.min(anchor.left, viewW - width - 8));
   const spaceBelow = viewTop + viewH - anchor.top - 8;
-  const wanted = Math.min(260, 52 + items.length * 52);
-  const flip = spaceBelow < Math.min(wanted, 160);
-  const style: React.CSSProperties = flip
-    ? {
-        bottom: window.innerHeight - (anchor.top - 24),
-        left,
-        width,
-        maxHeight: Math.max(120, anchor.top - 24 - viewTop - 8),
-      }
-    : {
-        top: anchor.top + 2,
-        left,
-        width,
-        maxHeight: Math.max(120, Math.min(260, spaceBelow)),
-      };
+  const style: React.CSSProperties = {
+    top: anchor.top + 2,
+    left,
+    width,
+    maxHeight: Math.max(96, Math.min(260, spaceBelow)),
+  };
 
   return (
     <div

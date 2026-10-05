@@ -830,6 +830,16 @@ html.app-no-scroll body {
   margin: 0;
 }
 
+/* On-screen keyboard open and the visible area panned down the page (see
+   DashboardLayout's setVh): start the shell where the visible area starts, so
+   it fills the space above the keyboard instead of leaving a blank band. */
+html.app-no-scroll body.app-vv-shifted {
+  position: fixed;
+  top: var(--app-vv-top, 0px);
+  left: 0;
+  right: 0;
+}
+
 /* ── Page ground wash ─────────────────────────────────────────────────────────
    Two large, very soft radial gradients on the app canvas so the light theme
    doesn't read as one flat sheet of white. Deliberately not a repeating

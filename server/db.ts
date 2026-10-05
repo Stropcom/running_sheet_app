@@ -12369,6 +12369,66 @@ export function targetVehicleRegos(t: {
   return regos;
 }
 
+/**
+ * Every key a vehicle's text can be matched on, computed the same way on both
+ * sides of a registry-to-vehicle link. The vehicle entity is keyed on the
+ * rego of its Intelligence-format text (rego first — see formatIntelVehicle),
+ * so a registry field is run through that same pipeline before comparing.
+ * Reading the raw registry text for the first plate-shaped token instead
+ * (what targetVehicleRegos does) picks up a model name that comes before the
+ * rego ("blue Volvo XC90, bearing WA registration 1ABC123" → "XC90"), and
+ * finds nothing at all for a hyphenated plate ("CW-1212"), so those vehicles
+ * ended up with no registered target or associate on their profile.
+ */
+export function vehicleLinkKeys(text: string | null | undefined): Set<string> {
+  const keys = new Set<string>();
+  const raw = (text ?? "").trim();
+  if (!raw) return keys;
+  const stripped = raw.replace(/\s*\([^)]{1,40}\)\s*$/, "").trim();
+  if (!stripped) return keys;
+  const formatted = formatIntelVehicle(stripped) || stripped;
+  keys.add(vehicleRegoKey(formatted).toUpperCase());
+  // The plate as typed — covers hyphenated and other non-standard plates
+  // that the rego pattern can't pick out. Needs a digit and a letter, so a
+  // plain colour or make can never stand in for a plate.
+  const first = formatted.split(/\s+/)[0] ?? "";
+  if (/\d/.test(first) && /[A-Za-z]/.test(first))
+    keys.add(first.replace(/[^A-Za-z0-9]/g, "").toUpperCase());
+  return keys;
+}
+
+/** All keys a registry record's vehicles can match on: every vehicle field
+ * (v1, v2 and each extra) via vehicleLinkKeys, plus targetVehicleRegos. */
+export function registryVehicleLinkKeys(t: {
+  v1f?: string | null;
+  v1?: string | null;
+  v2f?: string | null;
+  v2?: string | null;
+  extraVehicles?: string | null;
+  vehRegistration?: string | null;
+  vehModel?: string | null;
+}): Set<string> {
+  const keys = targetVehicleRegos(t);
+  const add = (v?: string | null) =>
+    vehicleLinkKeys(v).forEach(k => keys.add(k));
+  add(t.v1f);
+  add(t.v1);
+  add(t.v2f);
+  add(t.v2);
+  try {
+    const extras: Array<{ full?: string; short?: string }> = JSON.parse(
+      t.extraVehicles ?? "[]"
+    );
+    for (const ev of extras) {
+      add(ev.full);
+      add(ev.short);
+    }
+  } catch {
+    /* malformed JSON — skip */
+  }
+  return keys;
+}
+
 /** Every address this target/associate record has registered — hbf/hb,
  * dep, arr, and each entry in extraAddresses — normalized via
  * addressCoreLower so formatting differences don't stop a real match. */
@@ -13644,6 +13704,8 @@ export async function getIntelVehicleProfile(
       v2f: targets.v2f,
       v2: targets.v2,
       extraVehicles: targets.extraVehicles,
+      vehRegistration: targets.vehRegistration,
+      vehModel: targets.vehModel,
     })
     .from(targets)
     .where(isNull(targets.deletedAt));
@@ -13656,15 +13718,24 @@ export async function getIntelVehicleProfile(
   // in assocPersons below, not here — "registered target" should mean
   // exactly what the Target Registry says, not an inferred association.
   const selfRegoForMatch = extractRegoUpper(label);
+  // This vehicle's own keys, built the same way as each registry record's
+  // (see vehicleLinkKeys) so the two sides always agree.
+  const selfLinkKeys = vehicleLinkKeys(entity.shortForm);
+  vehicleLinkKeys(label).forEach(k => selfLinkKeys.add(k));
+  if (selfRegoForMatch) selfLinkKeys.add(selfRegoForMatch);
+  const matchesThisVehicle = (
+    rec: Parameters<typeof registryVehicleLinkKeys>[0]
+  ) => {
+    const keys = registryVehicleLinkKeys(rec);
+    return Array.from(selfLinkKeys).some(k => keys.has(k));
+  };
   const linkedTargetsMap = new Map<
     number,
     { targetId: number; name: string }
   >();
-  if (selfRegoForMatch) {
-    for (const t of allTargets) {
-      if (targetVehicleRegos(t).has(selfRegoForMatch)) {
-        linkedTargetsMap.set(t.id, { targetId: t.id, name: t.name });
-      }
+  for (const t of allTargets) {
+    if (matchesThisVehicle(t)) {
+      linkedTargetsMap.set(t.id, { targetId: t.id, name: t.name });
     }
   }
   const linkedTargets = Array.from(linkedTargetsMap.values());
@@ -13684,6 +13755,8 @@ export async function getIntelVehicleProfile(
       v1f: associates.v1f,
       v1: associates.v1,
       extraVehicles: associates.extraVehicles,
+      vehRegistration: associates.vehRegistration,
+      vehModel: associates.vehModel,
     })
     .from(associates)
     .innerJoin(targets, eq(associates.targetId, targets.id))
@@ -13692,16 +13765,14 @@ export async function getIntelVehicleProfile(
     number,
     { associateId: number; name: string; targetId: number; targetName: string }
   >();
-  if (selfRegoForMatch) {
-    for (const a of allAssociatesForVehicle) {
-      if (targetVehicleRegos(a).has(selfRegoForMatch)) {
-        linkedAssociatesMap.set(a.id, {
-          associateId: a.id,
-          name: a.name,
-          targetId: a.targetId,
-          targetName: a.targetName,
-        });
-      }
+  for (const a of allAssociatesForVehicle) {
+    if (matchesThisVehicle(a)) {
+      linkedAssociatesMap.set(a.id, {
+        associateId: a.id,
+        name: a.name,
+        targetId: a.targetId,
+        targetName: a.targetName,
+      });
     }
   }
   const linkedAssociates = Array.from(linkedAssociatesMap.values());

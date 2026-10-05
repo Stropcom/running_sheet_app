@@ -1,3 +1,4 @@
+import { rowHasImagery } from "@shared/rowImagery";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -159,13 +160,6 @@ function SectionHeader({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-// Photo-trigger phrases
-const PHOTO_PHRASES = [
-  "PHOTOGRAPHS TAKEN",
-  "PHOTOGRAPH TAKEN",
-  "PHOTOGRAPH/S TAKEN",
-];
-
 export default function GovernancePage() {
   const params = useParams<{ sheetId: string }>();
   const sheetId = parseInt(params.sheetId ?? "0", 10);
@@ -295,14 +289,18 @@ export default function GovernancePage() {
     const photoCins = new Set<string>();
     for (const row of rows) {
       const obs = (row.observation ?? "").toUpperCase();
-      const hasPhrase = PHOTO_PHRASES.some(p => obs.includes(p));
-      if (!hasPhrase) continue;
+      // An imagery phrase in the text, or an image attached to the row.
+      if (!rowHasImagery(row)) continue;
       const rowCins = (row.members ?? []).map(
         (m: { memberName: string }) => m.memberName
       );
       const time = row.time ?? "";
       // Detect video vs photo
-      const isVideo = obs.includes("VIDEO");
+      const isVideo =
+        obs.includes("VIDEO") ||
+        (row.attachments ?? []).some((a: { mimeType?: string }) =>
+          (a.mimeType ?? "").startsWith("video/")
+        );
       const type: "photo" | "video" = isVideo ? "video" : "photo";
       if (rowCins.length === 0) {
         // No CIN on row — record under "Unknown"
@@ -448,7 +446,11 @@ export default function GovernancePage() {
   }
 
   // Derive imageryTaken from team details (hasImages flag) — not a stored boolean
-  const hasAnyImagery = sheetCins.some(c => c.hasImages);
+  // A row with images (phrase or attached image) counts without anyone
+  // having to tick the camera in Edit TEAM.
+  const hasAnyImagery =
+    sheetCins.some(c => c.hasImages) ||
+    (exportData?.rows ?? []).some(r => rowHasImagery(r));
 
   // ── Completion percentages ──
   // TL section: 2 items

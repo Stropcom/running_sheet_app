@@ -1,3 +1,4 @@
+import { IMAGERY_PHRASE_PATTERN, cinsWithImagery } from "@shared/rowImagery";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { RS_CANONICAL_CHIP_ORDER } from "@/lib/rsChipOrder";
@@ -199,12 +200,9 @@ type SheetRow = {
   attachments: RowAttachment[];
 };
 
-// Same phrase list stripImageryPhraseForExport() drops from the exported
-// text — used here to decide whether to show the "attach photo" affordance
-// on an observation cell (kept live for that and for the Governance imagery
-// check; only the export drops the phrase itself).
-const IMAGERY_PHRASE_PATTERN =
-  /(PHOTOGRAPHS TAKEN|PHOTOGRAPH\/S TAKEN|PHOTOGRAPH TAKEN|VIDEO FOOTAGE TAKEN|VIDEO TAKEN|PHOTOS TAKEN|PHOTO TAKEN)/i;
+// The imagery phrase list lives in shared/rowImagery.ts (also used for the
+// automatic camera in the TEAM strip and the Governance imagery check); it's
+// the same list stripImageryPhraseForExport() drops from the exported text.
 
 // ─── Export Helpers ─────────────────────────────────────────────────────────
 
@@ -3728,6 +3726,9 @@ export default function SheetDetail({
   autoSortRef.current = autoSortRowMembers;
 
   // Compute which CINs have ALL their rows certified
+  // CINs on a row with images — an imagery phrase or an attached image — get
+  // the camera automatically; no need to tick it in Edit TEAM.
+  const autoImageCins = useMemo(() => cinsWithImagery(rows ?? []), [rows]);
   const cinFullyCertified = useMemo(() => {
     if (!rows || rows.length === 0) return new Set<string>();
     const certified = new Set<string>();
@@ -4673,7 +4674,7 @@ export default function SheetDetail({
                           </span>
                         )}
                         {entry.cin}
-                        {entry.hasImages && (
+                        {(entry.hasImages || autoImageCins.has(entry.cin)) && (
                           <Camera className="w-3 h-3 text-amber-400" />
                         )}
                       </button>
@@ -6065,7 +6066,8 @@ export default function SheetDetail({
           <div className="flex flex-col gap-4 py-2">
             <p className="text-xs text-muted-foreground">
               Add or remove CINs from today’s team. Mark the Team Leader and
-              Running Sheet Author. Tick the camera icon if images were taken by
+              Running Sheet Author. The camera is added automatically for anyone
+              on a row with a photo or video, or tick it if images were taken by
               that member.
             </p>
             <div className="flex gap-2 items-start">
@@ -6185,7 +6187,15 @@ export default function SheetDetail({
                     {/* Images */}
                     <div className="flex items-center justify-center">
                       <Checkbox
-                        checked={entry.hasImages}
+                        checked={
+                          entry.hasImages || autoImageCins.has(entry.cin)
+                        }
+                        disabled={autoImageCins.has(entry.cin)}
+                        title={
+                          autoImageCins.has(entry.cin)
+                            ? "Added automatically — on a row with images"
+                            : "Images taken"
+                        }
                         onCheckedChange={() =>
                           setRosterList(prev =>
                             prev.map(c =>

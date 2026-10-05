@@ -19,6 +19,7 @@ import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
 import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 import { addressMatchKey } from "@shared/addressMatchKey";
+import { aliasMentionCompatible } from "./personAliasMatch";
 import {
   applyTargetProjectsToSummary,
   sanitizeTargetSpecialProjects,
@@ -8362,11 +8363,27 @@ export async function getAllIntelligenceEntities(): Promise<
     // We must check BOTH because name-recovery may expand "HOTA" → "G HOTA",
     // but the tgtAliasToFullName map is keyed by the raw alias ("HOTA").
     if (e.type === "person") {
-      const canonicalName =
+      // A bracket alias is only a SURNAME — "Lawrence TAN (TAN)" must not be
+      // folded into the registered "Grace Olivia TAN (TAN)" just because the
+      // surname matches. The redirect below only happens when the mention's
+      // given names don't contradict the registered person's (a bare alias,
+      // an initial, or a shortened name all still match).
+      const aliasUsedForTarget = tgtAliasToFullName.has(
+        e.shortForm.toUpperCase()
+      )
+        ? e.shortForm
+        : (e.rawShortForm ?? e.shortForm);
+      let canonicalName =
         tgtAliasToFullName.get(e.shortForm.toUpperCase()) ??
         (e.rawShortForm
           ? tgtAliasToFullName.get(e.rawShortForm.toUpperCase())
           : undefined);
+      if (
+        canonicalName &&
+        !aliasMentionCompatible(e.shortForm, aliasUsedForTarget, canonicalName)
+      ) {
+        canonicalName = undefined;
+      }
       if (canonicalName) {
         const targetKey = `target::${canonicalName}`;
         if (entityMap.has(targetKey)) {
@@ -8387,12 +8404,25 @@ export async function getAllIntelligenceEntities(): Promise<
         }
       }
       // Same idea, but for a registry associate's bracket surname (e.g. "P.HILL").
+      const aliasUsedForAssoc = associateAliasToKey.has(
+        e.shortForm.toUpperCase()
+      )
+        ? e.shortForm
+        : (e.rawShortForm ?? e.shortForm);
       const canonicalAssocKey =
         associateAliasToKey.get(e.shortForm.toUpperCase()) ??
         (e.rawShortForm
           ? associateAliasToKey.get(e.rawShortForm.toUpperCase())
           : undefined);
-      if (canonicalAssocKey && entityMap.has(canonicalAssocKey)) {
+      if (
+        canonicalAssocKey &&
+        entityMap.has(canonicalAssocKey) &&
+        aliasMentionCompatible(
+          e.shortForm,
+          aliasUsedForAssoc,
+          entityMap.get(canonicalAssocKey)!.shortForm
+        )
+      ) {
         const snippet =
           row.observation.slice(0, 80) +
           (row.observation.length > 80 ? "…" : "");
@@ -8502,7 +8532,29 @@ export async function getAllIntelligenceEntities(): Promise<
     };
     const sheetDict = new Map<string, DictEntry>();
 
+    // Keys pre-seeded from the target registry (see below) → that target's
+    // full name. A person introduced in this sheet's own text under the same
+    // surname alias but with a different given name is someone else, and the
+    // sheet's own introduction wins for bare mentions on this sheet.
+    const preseededAliasName = new Map<string, string>();
+    // The same registered name, looked up by the dictionary entry itself
+    // (Pass B below needs it when it scans text for the alias).
+    const preseededEntryName = new WeakMap<DictEntry, string>();
     const registerDictEntry = (key: string, entry: DictEntry) => {
+      const preseedName = preseededAliasName.get(key);
+      if (
+        preseedName !== undefined &&
+        entry.type === "person" &&
+        !aliasMentionCompatible(
+          entry.shortForm,
+          entry.rawShortForm,
+          preseedName
+        )
+      ) {
+        sheetDict.set(key, entry);
+        preseededAliasName.delete(key);
+        return;
+      }
       if (!sheetDict.has(key)) {
         sheetDict.set(key, entry);
       } else {
@@ -8525,12 +8577,15 @@ export async function getAllIntelligenceEntities(): Promise<
     )) {
       const aliasKey = alias.toLowerCase();
       if (!sheetDict.has(aliasKey)) {
-        sheetDict.set(aliasKey, {
+        const seeded: DictEntry = {
           shortForm: canonicalName, // display as full canonical name
           rawShortForm: alias, // raw alias is the search token
           fullDescription: `Target: ${canonicalName}`,
           type: "person",
-        });
+        };
+        sheetDict.set(aliasKey, seeded);
+        preseededAliasName.set(aliasKey, canonicalName);
+        preseededEntryName.set(seeded, canonicalName);
       }
     }
 
@@ -8673,6 +8728,28 @@ export async function getAllIntelligenceEntities(): Promise<
             const mEnd = mStart + tokenMatch[0].length;
             // Only count this occurrence if it is NOT inside a paren
             if (!isInsideParenContent(mStart, mEnd)) {
+              // A bare surname alias that follows a different given name
+              // mid-sentence ("met Lawrence TAN") is someone else, not the
+              // registered "Grace Olivia TAN". At the start of a sentence a
+              // capitalised word is as likely to be ordinary text ("Then
+              // TAN left"), so that case still counts as before.
+              const registeredName = preseededEntryName.get(entry);
+              if (registeredName && term === entry.rawShortForm) {
+                const before = row.observation.slice(0, mStart);
+                const prev = before.match(
+                  /([^.!?\n]\s+)([A-Z][a-z]{2,}(?:[-'][A-Za-z]+)?)\s+$/
+                );
+                if (
+                  prev &&
+                  !aliasMentionCompatible(
+                    `${prev[2]} ${term}`,
+                    term,
+                    registeredName
+                  )
+                ) {
+                  continue;
+                }
+              }
               found = true;
               break;
             }

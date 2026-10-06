@@ -363,7 +363,7 @@ export function splitPeopleNames(names: string): string[] {
 /** The surname-style tokens of a name: the sheet convention writes surnames
  * in capitals ("BAIG", "Denise HOLLY (HOLLY)"), so matching on those avoids
  * confusing two people who share a first name. */
-function surnameTokens(name: string): string[] {
+export function surnameTokens(name: string): string[] {
   return name.match(/\b[A-Z][A-Z'-]+\b/g) ?? [];
 }
 

@@ -59,7 +59,13 @@ import { trpc } from "@/lib/trpc";
 import {
   occupantsStillInVehicle,
   splitPeopleNames,
+  surnameTokens,
 } from "@shared/walkEventPatterns";
+import {
+  companionsOf,
+  pickTargetCardKey,
+  targetTokenFromTitle,
+} from "@shared/targetCard";
 import {
   ContinuityCards,
   type ContinuityCardData,
@@ -11945,6 +11951,14 @@ export default function IntelligenceMapping() {
                                     extractOccupantNames(d.occupantDesc) ||
                                     d.occupantDesc,
                                   state: "Departed",
+                                  holds: surnameTokens(d.occupantDesc),
+                                  people: splitPeopleNames(
+                                    extractOccupantNames(d.occupantDesc)
+                                  ),
+                                  locus: {
+                                    headline: `Moving in ${d.rego}`,
+                                    sub: "Departed",
+                                  },
                                   actions: [
                                     {
                                       key: `arr-${d.rego}`,
@@ -12096,6 +12110,26 @@ export default function IntelligenceMapping() {
                                     v.rowId,
                                     ...insideHere.map(w => w.rowId)
                                   ),
+                                  holds: [
+                                    ...occupants,
+                                    ...insideHere.map(w => w.names),
+                                  ].flatMap(n => surnameTokens(n)),
+                                  people: inside
+                                    ? insideHere.flatMap(w =>
+                                        splitPeopleNames(w.names)
+                                      )
+                                    : occupants,
+                                  locus: inside
+                                    ? {
+                                        headline: `Inside ${shortAddr}`,
+                                        sub: "On foot",
+                                      }
+                                    : {
+                                        headline: inCar
+                                          ? `In ${v.rego}`
+                                          : `${v.rego} unattended`,
+                                        sub: `Parked at ${shortAddr}`,
+                                      },
                                 });
                               });
 
@@ -12109,6 +12143,12 @@ export default function IntelligenceMapping() {
                                     pill: "Inside",
                                     who: `Inside ${w.location}`,
                                     state: "On foot",
+                                    holds: surnameTokens(w.names),
+                                    people: splitPeopleNames(w.names),
+                                    locus: {
+                                      headline: `Inside ${w.location}`,
+                                      sub: "On foot",
+                                    },
                                     actions: [
                                       {
                                         key: `la-${w.location}`,
@@ -12142,6 +12182,14 @@ export default function IntelligenceMapping() {
                                       ? "On foot"
                                       : `Walking to ${h.destination}`,
                                     state: `Left ${h.from}`,
+                                    holds: surnameTokens(h.names),
+                                    people: splitPeopleNames(h.names),
+                                    locus: {
+                                      headline: h.destination.includes("[")
+                                        ? "Walking"
+                                        : `Walking to ${h.destination}`,
+                                      sub: `Left ${h.from}`,
+                                    },
                                     actions: [
                                       {
                                         key: `en-${h.destination}`,
@@ -12165,9 +12213,33 @@ export default function IntelligenceMapping() {
                                   })
                                 );
 
+                              // The card holding the target leads, as his
+                              // tracker (a person target only).
+                              const popupTitle = (
+                                rsSheetsData as any[] | undefined
+                              )?.find((x: any) => x.id === rsSelectedSheetId)
+                                ?.title as string | undefined;
+                              const targetCode =
+                                targetTokenFromTitle(popupTitle);
+                              if (targetCode) {
+                                const tKey = pickTargetCardKey(
+                                  cards,
+                                  targetCode
+                                );
+                                const held = cards.find(c => c.key === tKey);
+                                if (held) {
+                                  held.isTarget = true;
+                                  held.companions = companionsOf(
+                                    held.people ?? [],
+                                    targetCode
+                                  ).join(", ");
+                                }
+                              }
+
                               if (cards.length === 0) return null;
                               return (
                                 <ContinuityCards
+                                  targetCode={targetCode ?? undefined}
                                   cards={cards}
                                   dismissed={rsContinuityDismissed}
                                   onDismiss={(key, rowId) =>

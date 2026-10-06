@@ -7,6 +7,11 @@
  * continuity chips; the pending data and the sentences they insert are the
  * same, only the layout differs.
  *
+ * The card holding the TARGET (isTarget) leads the band, larger, as a
+ * tracker: where he is now, who is with him, and his next steps as actions.
+ * Everything else sits under it as "Others on the sheet". Continuity exists to
+ * track the target, so he is never hidden by a dismissal.
+ *
  * Layout adapts to the room the band actually has (container queries, not
  * device sniffing): one or two cards on a wide band go panoramic, three or
  * more sit side by side, and on a narrow band they swipe sideways.
@@ -49,6 +54,19 @@ export interface ContinuityCardData {
   /** Highest row id that contributed to this card — a newer one revives a
    * dismissed card. */
   latestRowId: number;
+  /** Capitalised surname tokens of the people this card is about — used to
+   * find the card that holds the target. */
+  holds?: string[];
+  /** Display names of those people. */
+  people?: string[];
+  /** Where whoever is in this card is, for when it leads the band as the
+   * target's tracker: a headline ("Inside Melville Fish & Chips") and a
+   * supporting line ("On foot · since 10:41 AM"). */
+  locus?: { headline: string; sub: string };
+  /** This card holds the target. */
+  isTarget?: boolean;
+  /** Others with the target, e.g. "JORDAN". */
+  companions?: string;
 }
 
 // Whether the band is folded away is a per-person view preference, unlike
@@ -56,6 +74,7 @@ export interface ContinuityCardData {
 const COLLAPSE_KEY = "runsheet_continuity_cards_collapsed";
 
 export function ContinuityCards({
+  targetCode,
   cards,
   dismissed,
   onDismiss,
@@ -63,6 +82,8 @@ export function ContinuityCards({
   onAction,
   busy = false,
 }: {
+  /** The target's code, e.g. "BAIG". */
+  targetCode?: string;
   cards: ContinuityCardData[];
   /** { cardKey: rowIdAtDismissal } for this sheet, shared by everyone. */
   dismissed: Record<string, number>;
@@ -84,9 +105,13 @@ export function ContinuityCards({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const isHidden = (c: ContinuityCardData) =>
-    dismissed[c.key] !== undefined && c.latestRowId <= dismissed[c.key];
+    !c.isTarget &&
+    dismissed[c.key] !== undefined &&
+    c.latestRowId <= dismissed[c.key];
   const live = cards.filter(c => !isHidden(c));
   const gone = cards.filter(isHidden);
+  const targetCard = live.find(c => c.isTarget);
+  const others = live.filter(c => !c.isTarget);
 
   if (live.length === 0 && gone.length === 0) return null;
 
@@ -115,7 +140,8 @@ export function ContinuityCards({
 
   // Panoramic when there is room: a lone card from a medium-wide band, two
   // cards from a wide one. Static class strings so Tailwind can see them.
-  const pano = live.length === 1 ? "one" : live.length === 2 ? "two" : "none";
+  const pano =
+    others.length === 1 ? "one" : others.length === 2 ? "two" : "none";
   const gridCls =
     pano === "one"
       ? "grid gap-2 grid-cols-1"
@@ -184,7 +210,68 @@ export function ContinuityCards({
         </button>
       </div>
 
-      {!collapsed && (
+      {!collapsed && targetCard && (
+        <div
+          className={`overflow-hidden rounded-xl border border-l-[6px] ${
+            targetCard.attn
+              ? "border-amber-500/40 border-l-amber-500 bg-amber-500/10"
+              : "border-border border-l-emerald-500 bg-card"
+          }`}
+        >
+          <div className="grid gap-x-4 gap-y-1 p-3 @lg:grid-cols-[auto_1fr]">
+            <div className="flex flex-col">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                Target
+              </span>
+              <span className="font-mono text-[15px] font-semibold tracking-wide">
+                {targetCode ?? targetCard.title}
+              </span>
+            </div>
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <div className="break-words text-lg font-semibold leading-tight">
+                {targetCard.locus?.headline ?? targetCard.who}
+              </div>
+              {(targetCard.locus?.sub || targetCard.state) && (
+                <div className="text-xs text-muted-foreground">
+                  {targetCard.locus?.sub ?? targetCard.state}
+                </div>
+              )}
+              {targetCard.companions && (
+                <div className="text-xs">With {targetCard.companions}</div>
+              )}
+            </div>
+          </div>
+          {targetCard.actions.length > 0 && (
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-1.5 border-t border-border/60 p-3">
+              {targetCard.actions.map((a, i) => (
+                <button
+                  key={a.key}
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => onAction(a.text, a.mode)}
+                  disabled={busy}
+                  title={a.text}
+                  className={`cursor-pointer rounded-md border px-2.5 py-2 text-left font-mono text-xs font-semibold transition-all active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 ${
+                    i === 0
+                      ? "border-pink-500 bg-pink-500 text-white hover:bg-pink-500/90"
+                      : "border-pink-500/30 bg-pink-500/5 text-pink-500 hover:bg-pink-500/15"
+                  }`}
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!collapsed && targetCard && others.length > 0 && (
+        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+          Others on the sheet
+        </span>
+      )}
+
+      {!collapsed && others.length > 0 && (
         <>
           <div
             ref={scrollRef}
@@ -200,7 +287,7 @@ export function ContinuityCards({
             }}
             className={`${gridCls} @max-md:flex @max-md:snap-x @max-md:snap-mandatory @max-md:overflow-x-auto @max-md:pb-1`}
           >
-            {live.map(c => (
+            {others.map(c => (
               <div
                 key={c.key}
                 className={`relative flex min-w-0 flex-col gap-2 rounded-lg border p-2.5 @max-md:shrink-0 @max-md:basis-[84%] @max-md:snap-start ${
@@ -263,12 +350,12 @@ export function ContinuityCards({
               </div>
             ))}
           </div>
-          {live.length > 1 && (
+          {others.length > 1 && (
             <div
               className="hidden justify-center gap-1.5 @max-md:flex"
               aria-hidden
             >
-              {live.map((c, i) => (
+              {others.map((c, i) => (
                 <i
                   key={c.key}
                   className={`h-1.5 w-1.5 rounded-full ${

@@ -43,6 +43,7 @@ import {
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
 import { scanWalkEvents } from "@shared/walkEventPatterns";
+import { expandRowSegments } from "@shared/rowSegments";
 import {
   classifyVisitDirection,
   timeBucketLabels,
@@ -5702,7 +5703,16 @@ export interface PendingVehicleDeparture {
 export async function getPendingVehicleDepartures(
   sheetId: number
 ): Promise<PendingVehicleDeparture[]> {
-  const rows = await getRowsBySheetId(sheetId);
+  return computePendingVehicleDepartures(await getRowsBySheetId(sheetId));
+}
+
+/** The pure part of getPendingVehicleDepartures — over any list of rows, so a
+ * draft being typed can be read as the newest row. Each line of a row is its
+ * own event (see expandRowSegments). */
+export function computePendingVehicleDepartures(
+  allRows: { id: number; sheetId: number; observation: string | null }[]
+): PendingVehicleDeparture[] {
+  const rows = expandRowSegments(allRows);
 
   const lastDepartByRego = new Map<
     string,
@@ -5761,7 +5771,15 @@ export interface PendingVehicleArrival {
 export async function getPendingVehicleArrivals(
   sheetId: number
 ): Promise<PendingVehicleArrival[]> {
-  const rows = await getRowsBySheetId(sheetId);
+  return computePendingVehicleArrivals(await getRowsBySheetId(sheetId));
+}
+
+/** The pure part of getPendingVehicleArrivals — see
+ * computePendingVehicleDepartures. */
+export function computePendingVehicleArrivals(
+  allRows: { id: number; sheetId: number; observation: string | null }[]
+): PendingVehicleArrival[] {
+  const rows = expandRowSegments(allRows);
 
   const lastArrivalByRego = new Map<
     string,
@@ -5862,6 +5880,44 @@ export async function getPendingHeadingTo(
 ): Promise<PendingHeadingTo[]> {
   const rows = await getRowsBySheetId(sheetId);
   return scanWalkEvents(rows).headingTo;
+}
+
+/**
+ * All four pending lists (vehicles that left with no arrival, vehicles parked,
+ * people inside, people walking) with `draft` — text still being typed and not
+ * saved — read as the newest row. This is what lets the continuity cards move
+ * on as each sentence is written: once "BAIG exited A and walked towards
+ * Vehicle X." is in the box, the next options already treat him as back in the
+ * vehicle. `excludeRowId` leaves out the saved version of a row whose edit is
+ * the draft, so it isn't counted twice.
+ */
+export async function getPendingContinuityWithDraft(
+  sheetId: number,
+  draft: string,
+  excludeRowId?: number | null
+) {
+  const saved = (await getRowsBySheetId(sheetId)).filter(
+    r => excludeRowId == null || r.id !== excludeRowId
+  );
+  const rows = draft.trim()
+    ? [
+        ...saved,
+        // A stand-in row id that sorts after every real one, so anything the
+        // draft produces is also the newest for dismissal purposes.
+        {
+          id: Number.MAX_SAFE_INTEGER,
+          sheetId,
+          observation: draft,
+        } as (typeof saved)[number],
+      ]
+    : saved;
+  const walk = scanWalkEvents(rows);
+  return {
+    departures: computePendingVehicleDepartures(rows),
+    arrivals: computePendingVehicleArrivals(rows),
+    walkIns: walk.walkIns,
+    headingTo: walk.headingTo,
+  };
 }
 
 // ─── Missing Location Prompt (Vehicle Presence Rows) ───────────────────────

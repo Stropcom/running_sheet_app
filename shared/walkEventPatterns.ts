@@ -31,6 +31,7 @@ import {
   VEHICLE_DEPART_PATTERN,
   matchVehicleArrival,
 } from "./vehicleEventPatterns";
+import { expandRowSegments } from "./rowSegments";
 
 export const WALK_IN_PATTERN =
   /([A-Za-z][^.\n]*?)\s*exited the vehicle,?\s*(?:walked\s+(.+?),?\s*)?entered\s+(.+?)\s+and continued out of sight/i;
@@ -263,7 +264,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     }
   };
 
-  rows.forEach((row, idx) => {
+  expandRowSegments(rows).forEach((row, idx) => {
     const text = row.observation;
     if (!text) return;
     const where = { sheetId: row.sheetId, rowId: row.id, orderIdx: idx };

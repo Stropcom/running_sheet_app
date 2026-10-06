@@ -135,6 +135,7 @@ import {
   getPendingVehicleArrivals,
   getPendingWalkIns,
   getPendingHeadingTo,
+  getPendingContinuityWithDraft,
   isAddressAlreadyMentioned,
   findMissingLocationSuggestion,
   findVagueVehicleMatch,
@@ -1500,6 +1501,25 @@ export const appRouter = router({
       .input(z.object({ sheetId: z.number() }))
       .query(async ({ input }) => {
         return getPendingHeadingTo(input.sheetId);
+      }),
+
+    // The four pending lists above, read with text still being typed (not
+    // saved) as the newest row — so the continuity cards follow each sentence
+    // as it is written. See getPendingContinuityWithDraft.
+    pendingWithDraft: protectedProcedure
+      .input(
+        z.object({
+          sheetId: z.number(),
+          draft: z.string().max(20000),
+          excludeRowId: z.number().nullable().optional(),
+        })
+      )
+      .query(async ({ input }) => {
+        return getPendingContinuityWithDraft(
+          input.sheetId,
+          input.draft,
+          input.excludeRowId
+        );
       }),
 
     // Whether an address has already been mentioned (in its full bracketed

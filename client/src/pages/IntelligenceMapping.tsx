@@ -3446,7 +3446,7 @@ export default function IntelligenceMapping() {
   // Entry so the officer doesn't have to retype the occupant description.
   // Deliberately scoped to just this sheet, not the whole operation — these
   // are one-shift, one-use chips that don't carry over to the next sheet.
-  const { data: rsPendingDepartures } =
+  const { data: rsPendingDeparturesBase } =
     trpc.row.pendingVehicleDepartures.useQuery(
       { sheetId: rsSelectedSheetId ?? 0 },
       { enabled: mapQeOpen && !!rsSelectedSheetId }
@@ -3454,22 +3454,23 @@ export default function IntelligenceMapping() {
   // Vehicles that arrived somewhere on this sheet and haven't since
   // departed again — surfaced as a "Vehicle departing" chip so the officer
   // doesn't have to retype the occupant description from the last arrival.
-  const { data: rsPendingArrivals } = trpc.row.pendingVehicleArrivals.useQuery(
-    { sheetId: rsSelectedSheetId ?? 0 },
-    { enabled: mapQeOpen && !!rsSelectedSheetId }
-  );
+  const { data: rsPendingArrivalsBase } =
+    trpc.row.pendingVehicleArrivals.useQuery(
+      { sheetId: rsSelectedSheetId ?? 0 },
+      { enabled: mapQeOpen && !!rsSelectedSheetId }
+    );
   // Locations someone walked into on foot on this sheet and hasn't since
   // walked back out of — surfaced as a "Walked out" chip so the officer
   // doesn't have to retype the route back to the vehicle. See
   // getPendingWalkIns.
-  const { data: rsPendingWalkIns } = trpc.row.pendingWalkIns.useQuery(
+  const { data: rsPendingWalkInsBase } = trpc.row.pendingWalkIns.useQuery(
     { sheetId: rsSelectedSheetId ?? 0 },
     { enabled: mapQeOpen && !!rsSelectedSheetId }
   );
   // People who left a location saying where they were going and haven't
   // been logged entering it — the "Entered" card's source (see
   // getPendingHeadingTo).
-  const { data: rsPendingHeadingTo } = trpc.row.pendingHeadingTo.useQuery(
+  const { data: rsPendingHeadingToBase } = trpc.row.pendingHeadingTo.useQuery(
     { sheetId: rsSelectedSheetId ?? 0 },
     { enabled: mapQeOpen && !!rsSelectedSheetId }
   );
@@ -3491,6 +3492,38 @@ export default function IntelligenceMapping() {
       void utils.sheet.get.invalidate();
     },
   });
+  // The same four lists, read with the text being typed in the observation box
+  // (not yet saved) counted as the newest row — so the cards below follow each
+  // sentence as it is written: type "BAIG exited A and walked towards Vehicle
+  // X." and the next options already have him back in the vehicle. Falls back
+  // to the saved-only lists until the first answer arrives.
+  const [rsDraftDebounced, setRsDraftDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setRsDraftDebounced(rsInlineText), 250);
+    return () => clearTimeout(t);
+  }, [rsInlineText]);
+  const { data: rsDraftPending } = trpc.row.pendingWithDraft.useQuery(
+    { sheetId: rsSelectedSheetId ?? 0, draft: rsDraftDebounced },
+    {
+      enabled: mapQeOpen && !!rsSelectedSheetId && !!rsDraftDebounced.trim(),
+      // Keep the previous answer while the next one loads so the cards don't
+      // flicker back to the saved-only state on every keystroke.
+      placeholderData: prev => prev,
+    }
+  );
+  const draftActive = !!rsDraftDebounced.trim() && !!rsDraftPending;
+  const rsPendingDepartures = draftActive
+    ? rsDraftPending!.departures
+    : rsPendingDeparturesBase;
+  const rsPendingArrivals = draftActive
+    ? rsDraftPending!.arrivals
+    : rsPendingArrivalsBase;
+  const rsPendingWalkIns = draftActive
+    ? rsDraftPending!.walkIns
+    : rsPendingWalkInsBase;
+  const rsPendingHeadingTo = draftActive
+    ? rsDraftPending!.headingTo
+    : rsPendingHeadingToBase;
   // Short-form of the quick-entry address (mirrors the extraction the
   // "Address chips" section below already does) — used only to check
   // whether this address has already been mentioned in the sheet, for the

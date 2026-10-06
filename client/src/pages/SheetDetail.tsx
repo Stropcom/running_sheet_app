@@ -1912,6 +1912,9 @@ function EditableCell({
   usedBracketCodes,
   usedVehicleRegos,
   usedAddressLabels,
+  rowId,
+  autoEdit,
+  onAutoEdited,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   value: string | null;
@@ -1929,8 +1932,27 @@ function EditableCell({
   /** Address labels already used elsewhere in this sheet — enables the
    * deterministic address-bracket auto-insert (multiline only). */
   usedAddressLabels?: Set<string>;
+  /** This cell's row id — tagged onto the textarea so the continuity cards
+   * can tell which saved row an open edit replaces. */
+  rowId?: number;
+  /** Open this cell for editing as soon as it appears (a continuity card has
+   * just created the row), so the next tap adds to it as the next paragraph.
+   * Opened without the on-screen keyboard until the officer taps into it. */
+  autoEdit?: boolean;
+  onAutoEdited?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  // Opened by a card tap: focus it without raising the on-screen keyboard
+  // (inputMode "none") until the officer actually taps into the text.
+  const [noKeyboard, setNoKeyboard] = useState(false);
+  useEffect(() => {
+    if (autoEdit && !locked && multiline) {
+      setNoKeyboard(true);
+      setEditing(true);
+      onAutoEdited?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoEdit]);
   const [draft, setDraft] = useState(value ?? "");
   const { notifyObservationFocus, notifyObservationBlur } =
     useObservationFocus();
@@ -2354,6 +2376,21 @@ function EditableCell({
           <Textarea
             ref={textareaRef}
             autoFocus
+            data-obs-cell="true"
+            data-row-id={rowId}
+            inputMode={noKeyboard ? "none" : undefined}
+            // Tapping into the text is the officer choosing to type, so the
+            // keyboard is allowed again.
+            onPointerDown={() => setNoKeyboard(false)}
+            onFocus={e => {
+              notifyObservationFocus();
+              // A cell opened by a card tap starts with the caret at the end,
+              // ready for the next paragraph.
+              if (noKeyboard) {
+                const len = e.currentTarget.value.length;
+                e.currentTarget.setSelectionRange(len, len);
+              }
+            }}
             value={draft}
             onChange={handleObservationInput}
             onPaste={e => {
@@ -2370,7 +2407,6 @@ function EditableCell({
                 setDraft(newText);
               }
             }}
-            onFocus={notifyObservationFocus}
             onBlur={() => {
               // A click on a suggestion fires its own onMouseDown (which
               // preventDefault's) before this blur — so by the time blur
@@ -2809,7 +2845,7 @@ export default function SheetDetail({
   // the full sheet table has no such single-address context, so it shows
   // every pending entry across the sheet instead — see the render block
   // below for how each chip type's text is derived without it.
-  const { data: pendingDepartures } =
+  const { data: pendingDeparturesBase } =
     trpc.row.pendingVehicleDepartures.useQuery(
       { sheetId },
       {
@@ -2817,14 +2853,15 @@ export default function SheetDetail({
         refetchInterval: isOnline ? 10000 : false,
       }
     );
-  const { data: pendingArrivals } = trpc.row.pendingVehicleArrivals.useQuery(
-    { sheetId },
-    {
-      enabled: isAuthenticated && !!sheetId && isOnline,
-      refetchInterval: isOnline ? 10000 : false,
-    }
-  );
-  const { data: pendingWalkIns } = trpc.row.pendingWalkIns.useQuery(
+  const { data: pendingArrivalsBase } =
+    trpc.row.pendingVehicleArrivals.useQuery(
+      { sheetId },
+      {
+        enabled: isAuthenticated && !!sheetId && isOnline,
+        refetchInterval: isOnline ? 10000 : false,
+      }
+    );
+  const { data: pendingWalkInsBase } = trpc.row.pendingWalkIns.useQuery(
     { sheetId },
     {
       enabled: isAuthenticated && !!sheetId && isOnline,
@@ -2832,7 +2869,7 @@ export default function SheetDetail({
     }
   );
 
-  const { data: pendingHeadingTo } = trpc.row.pendingHeadingTo.useQuery(
+  const { data: pendingHeadingToBase } = trpc.row.pendingHeadingTo.useQuery(
     { sheetId },
     {
       enabled: isAuthenticated && !!sheetId && isOnline,
@@ -2853,6 +2890,50 @@ export default function SheetDetail({
   const setContinuityDismissal = trpc.sheet.setContinuityDismissal.useMutation({
     onSuccess: () => utils.sheet.get.invalidate({ id: sheetId }),
   });
+
+  // The text in an observation cell that is open for editing (not yet saved),
+  // so the continuity cards can read it as the newest row and follow each
+  // sentence as it is written. `rowId` is the saved row it replaces.
+  const [openDraft, setOpenDraft] = useState<{
+    rowId: number | null;
+    text: string;
+  } | null>(null);
+  const [openDraftDebounced, setOpenDraftDebounced] = useState(openDraft);
+  useEffect(() => {
+    const t = setTimeout(() => setOpenDraftDebounced(openDraft), 250);
+    return () => clearTimeout(t);
+  }, [openDraft]);
+  const { data: draftPending } = trpc.row.pendingWithDraft.useQuery(
+    {
+      sheetId,
+      draft: openDraftDebounced?.text ?? "",
+      excludeRowId: openDraftDebounced?.rowId ?? null,
+    },
+    {
+      enabled:
+        isAuthenticated &&
+        !!sheetId &&
+        isOnline &&
+        !!openDraftDebounced?.text.trim(),
+      placeholderData: prev => prev,
+    }
+  );
+  const draftActive = !!openDraftDebounced?.text.trim() && !!draftPending;
+  const pendingDepartures = draftActive
+    ? draftPending!.departures
+    : pendingDeparturesBase;
+  const pendingArrivals = draftActive
+    ? draftPending!.arrivals
+    : pendingArrivalsBase;
+  const pendingWalkIns = draftActive
+    ? draftPending!.walkIns
+    : pendingWalkInsBase;
+  const pendingHeadingTo = draftActive
+    ? draftPending!.headingTo
+    : pendingHeadingToBase;
+  // A row just created by tapping a continuity card: its observation opens
+  // for editing so the next tap adds to it (see EditableCell autoEdit).
+  const [justAddedRowId, setJustAddedRowId] = useState<number | null>(null);
 
   const invalidateRows = useCallback(() => {
     utils.row.list.invalidate({ sheetId });
@@ -4062,6 +4143,41 @@ export default function SheetDetail({
     };
     document.addEventListener("focusin", handler, true);
     return () => document.removeEventListener("focusin", handler, true);
+  }, []);
+
+  // Mirror the open observation cell's text into state (see openDraft).
+  useEffect(() => {
+    const onInput = (e: Event) => {
+      const el = e.target as HTMLElement;
+      if (el.tagName !== "TEXTAREA" || !el.dataset.obsCell) return;
+      const ta = el as HTMLTextAreaElement;
+      const id = ta.dataset.rowId ? Number(ta.dataset.rowId) : null;
+      setOpenDraft({ rowId: Number.isFinite(id) ? id : null, text: ta.value });
+    };
+    const onFocusIn = (e: Event) => {
+      const el = e.target as HTMLElement;
+      if (el.tagName !== "TEXTAREA" || !el.dataset.obsCell) return;
+      const ta = el as HTMLTextAreaElement;
+      const id = ta.dataset.rowId ? Number(ta.dataset.rowId) : null;
+      setOpenDraft({ rowId: Number.isFinite(id) ? id : null, text: ta.value });
+    };
+    const onFocusOut = (e: Event) => {
+      const el = e.target as HTMLElement;
+      if (el.tagName !== "TEXTAREA" || !el.dataset.obsCell) return;
+      // Cleared when focus has really left observation cells.
+      setTimeout(() => {
+        const active = document.activeElement as HTMLElement | null;
+        if (!active || !active.dataset?.obsCell) setOpenDraft(null);
+      }, 0);
+    };
+    document.addEventListener("input", onInput, true);
+    document.addEventListener("focusin", onFocusIn, true);
+    document.addEventListener("focusout", onFocusOut, true);
+    return () => {
+      document.removeEventListener("input", onInput, true);
+      document.removeEventListener("focusin", onFocusIn, true);
+      document.removeEventListener("focusout", onFocusOut, true);
+    };
   }, []);
 
   // Persist sort preference in localStorage so it survives navigation
@@ -5451,6 +5567,12 @@ export default function SheetDetail({
                   observation: text,
                 })
                 .then(created => {
+                  // Leave the new row open, so the next tap adds to it as the
+                  // next paragraph.
+                  setJustAddedRowId(created.id);
+                  // If the row never appears to open (e.g. it is locked), do
+                  // not leave the request lying in wait.
+                  setTimeout(() => setJustAddedRowId(null), 6000);
                   toast.success(`Added ${timeStr}`, {
                     description: "Edit it any time from the row.",
                     duration: 9000,
@@ -6096,6 +6218,9 @@ export default function SheetDetail({
                               ) : (
                                 <EditableCell
                                   value={row.observation}
+                                  rowId={row.id}
+                                  autoEdit={justAddedRowId === row.id}
+                                  onAutoEdited={() => setJustAddedRowId(null)}
                                   locked={row.isLocked || !canEdit}
                                   multiline
                                   placeholder="Enter observation…"

@@ -3,6 +3,7 @@ import {
   cleanWalkerNames,
   extractExitDestination,
   isReadAsMovement,
+  matchPresenceInside,
   scanWalkEvents,
 } from "@shared/walkEventPatterns";
 
@@ -319,5 +320,60 @@ describe("leaving a parked vehicle and walking away", () => {
     expect(r.headingTo).toMatchObject([
       { names: "BAIG", destination: "[location]", from: "the vehicle" },
     ]);
+  });
+});
+
+describe("sightings: where someone is, with no movement sentence", () => {
+  it("reads the real row", () => {
+    expect(
+      matchPresenceInside(
+        "BAIG seated at a table having a meal inside Bull Creek Tavern."
+      )
+    ).toEqual({ names: "BAIG", place: "Bull Creek Tavern" });
+  });
+
+  it("reads other phrasings, and more than one person", () => {
+    expect(
+      matchPresenceInside("BAIG and JORDAN observed inside Bull Creek Tavern.")
+    ).toEqual({ names: "BAIG and JORDAN", place: "Bull Creek Tavern" });
+    expect(
+      matchPresenceInside("BAIG remains inside Bull Creek Tavern.")
+    ).toEqual({ names: "BAIG", place: "Bull Creek Tavern" });
+    expect(
+      matchPresenceInside("BAIG seen in the beer garden of Bull Creek Tavern.")
+    ).toEqual({ names: "BAIG", place: "Bull Creek Tavern" });
+    expect(
+      matchPresenceInside(
+        "BAIG remains inside Bull Creek Tavern, 52-54 Benningfield Road, BULL CREEK WA (Bull Creek Tavern) with JORDAN."
+      )
+    ).toEqual({ names: "BAIG", place: "Bull Creek Tavern" });
+  });
+
+  it("does not read streets, car parks, vehicles or negations as a place", () => {
+    for (const t of [
+      "BAIG seen in the car park.",
+      "BAIG observed walking in Marmion Street.",
+      "BAIG seen in Vehicle 1ORB419.",
+      "BAIG not observed inside Bull Creek Tavern.",
+      "Vehicle 1HIB84, occupant/s not observed, arrived at Bull Creek Tavern and parked.",
+    ]) {
+      expect(matchPresenceInside(t)).toBeNull();
+    }
+  });
+
+  it("puts them inside, and out of the place they were last inside", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG entered Melville Fish & Chips and continued out of sight.",
+        "BAIG seated at a table having a meal inside Bull Creek Tavern."
+      )
+    );
+    expect(r.walkIns).toMatchObject([
+      { names: "BAIG", location: "Bull Creek Tavern" },
+    ]);
+    expect(r.walkIns).toHaveLength(1);
+    expect(isReadAsMovement("BAIG remains inside Bull Creek Tavern.")).toBe(
+      true
+    );
   });
 });

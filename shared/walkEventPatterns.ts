@@ -223,6 +223,41 @@ export function extractExitDestination(rest: string): string | null {
 export const PERSON_ENTER_BARE_PATTERN =
   /\bentered\s+(?:it\s+)?and\s+continued\s+out\s+of\s+sight/i;
 
+// ─── Sightings: "BAIG seated at a table having a meal inside Bull Creek Tavern."
+// A row that says where someone IS, with no sentence about how they got there:
+// "seated inside", "observed inside", "remains inside", "seen in the beer
+// garden of <Place>". Read as being inside that place, the same as having
+// walked in. Only "inside"/"within" a named place, or "in the <area> of/at
+// <Place>", counts — a bare "seen in Marmion Street" names a street, not a
+// building, and "seen in the car park" names no place at all.
+
+const PRESENCE_VERB_RE =
+  /\b(?:remains?|remained|remaining|seated|sitting|standing|observed|seen|sighted|present|waiting|dining|eating|drinking|located|having\s+(?:a\s+)?(?:meal|drink|coffee|lunch|dinner|breakfast))\b/i;
+const INSIDE_PLACE_RE =
+  /\b(?:inside|within)\s+(?:the\s+)?([A-Z0-9][^.;\n]*)|\bin\s+the\s+[a-z][a-z ]{1,40}?\s+(?:of|at)\s+(?:the\s+)?([A-Z0-9][^.;\n]*)/;
+
+/** Who is where, from a presence sentence; null when it isn't one. */
+export function matchPresenceInside(
+  text: string
+): { names: string; place: string } | null {
+  const verb = text.match(PRESENCE_VERB_RE);
+  if (!verb || verb.index === undefined) return null;
+  const names = cleanWalkerNames(text.slice(0, verb.index).trim());
+  // Needs someone named by a capitalised surname (BAIG), and not a
+  // negation ("BAIG not observed ...").
+  if (!names || surnameTokens(names).length === 0) return null;
+  if (/\b(?:not|never|nil|unable)\s*$/i.test(names)) return null;
+  const rest = text.slice(verb.index + verb[0].length);
+  const m = rest.match(INSIDE_PLACE_RE);
+  if (!m) return null;
+  const raw = (m[1] ?? m[2] ?? "").trim();
+  if (!raw || /^\(?Vehicle\b/i.test(raw)) return null;
+  const place = placeName(raw)
+    .replace(/\s+(?:with|and|while|who|as|when)\b.*$/i, "")
+    .trim();
+  return place ? { names, place } : null;
+}
+
 export interface WalkScanRow {
   id: number;
   sheetId: number;
@@ -409,6 +444,22 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       }
     }
 
+    // A sighting: "BAIG seated ... inside <Place>." — inside that place now,
+    // and so no longer wherever they were last logged.
+    const presence = matchPresenceInside(text);
+    if (presence) {
+      const who = new Set(surnameTokens(presence.names));
+      for (const [k, v] of Array.from(lastWalkIn.entries())) {
+        if (k === key(presence.place)) continue;
+        const tokens = surnameTokens(v.names);
+        if (tokens.length > 0 && tokens.every(t => who.has(t))) {
+          lastWalkIn.delete(k);
+        }
+      }
+      record(presence.names, presence.place, "");
+      return;
+    }
+
     // A plain exit with no "walked" after it (see PERSON_EXIT_ANY_PATTERN).
     if (!exitMatch) {
       const anyExit = text.match(PERSON_EXIT_ANY_PATTERN);
@@ -492,5 +543,6 @@ export function isReadAsMovement(text: string): boolean {
   if (enter && !/^\(?Vehicle\b/i.test(enter[2])) return true;
   const exit = text.match(PERSON_EXIT_ANY_PATTERN);
   if (exit && !/^\(?Vehicle\b/i.test(exit[2])) return true;
+  if (matchPresenceInside(text)) return true;
   return false;
 }

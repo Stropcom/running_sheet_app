@@ -5421,7 +5421,7 @@ export default function SheetDetail({
                         !!r.observation &&
                         targetRe.test(r.observation) &&
                         !isReadAsMovement(r.observation) &&
-                        /\b(entered|exited|walked|left|arrived|departed|drove|travelled|stopped|parked)\b/i.test(
+                        /\b(entered|exited|walked|left|arrived|departed|drove|travelled|stopped|parked|inside|seated|sitting|standing|seen|sighted|remains|remained)\b/i.test(
                           r.observation
                         )
                     )

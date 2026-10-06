@@ -5161,7 +5161,14 @@ export default function SheetDetail({
                 c => c.key === `en-${h.destination}`
               );
               if (!chip) return;
+              const walkers = shortenAlreadyMentionedNames(
+                h.names,
+                usedBracketCodes
+              );
               const destKnown = !h.destination.includes("[");
+              // On foot, the next step is one of: enter where they were
+              // heading, walk on to somewhere else, or walk back towards a
+              // vehicle that is parked.
               continuityCards.push({
                 key: `head-${h.destination}`,
                 title: h.names,
@@ -5169,7 +5176,22 @@ export default function SheetDetail({
                 attn: true,
                 who: destKnown ? `Walking to ${h.destination}` : "On foot",
                 state: `Left ${h.from}${sinceText(h.rowId)}`,
-                actions: cardAction(chip, "Entered"),
+                actions: [
+                  ...cardAction(
+                    chip,
+                    destKnown ? "Entered" : "Entered a location"
+                  ),
+                  {
+                    key: `wk-${h.destination}`,
+                    label: "Walked to another location",
+                    text: `${walkers} walked [route] towards [location].`,
+                  },
+                  ...(pendingArrivals ?? []).map(a => ({
+                    key: `wv-${a.rego}`,
+                    label: `Walked to ${a.rego}`,
+                    text: `${walkers} walked towards Vehicle ${a.rego}.`,
+                  })),
+                ],
                 latestRowId: h.rowId,
               });
             });

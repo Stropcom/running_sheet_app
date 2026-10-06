@@ -132,6 +132,12 @@ export const PERSON_ENTER_PATTERN =
 export const PERSON_EXIT_PATTERN =
   /([A-Za-z][^.\n]*?)\s*\bexited\s+(?!the\s+vehicle\b)(.+?)\s*,?\s*(?:and\s+)?walked\b([^.\n]*)/i;
 
+// A walker already on foot: "BAIG walked [route] towards 13 Denford Street."
+// or "BAIG walked towards Vehicle 1ORB419." — no "exited" clause. A vehicle
+// destination ends the walk (they are going back to the car); any other
+// destination re-points where they are heading.
+export const PERSON_WALK_PATTERN = /([A-Za-z][^.\n]*?)\s*\bwalked\b([^.\n]*)/i;
+
 /** The walkers' names, with anything from an "exited"/"walked" clause on
  * cut off — a lazy capture can otherwise swallow the start of the same
  * sentence ("BAIG exited A, walked across the road,"). */
@@ -203,6 +209,15 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   const lastWalkIn = new Map<string, ScannedWalkIn & { orderIdx: number }>();
   const walkedOut = new Set<string>();
   const heading = new Map<string, ScannedHeadingTo & { orderIdx: number }>();
+  // Drops any "heading to" entry belonging to these people — they have
+  // since gone somewhere else or got back to a vehicle.
+  const clearHeadingFor = (names: string) => {
+    const who = new Set(surnameTokens(names));
+    if (who.size === 0) return;
+    for (const [k, v] of Array.from(heading.entries())) {
+      if (surnameTokens(v.names).some(t => who.has(t))) heading.delete(k);
+    }
+  };
 
   rows.forEach((row, idx) => {
     const text = row.observation;
@@ -237,6 +252,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       lastWalkIn.set(k, { names, location, route, ...where });
       walkedOut.delete(k);
       heading.delete(k);
+      clearHeadingFor(names);
     };
 
     const inMatch = text.match(WALK_IN_PATTERN);
@@ -254,6 +270,31 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       );
       return;
     }
+    // Already on foot (no "exited" in the row): back to a vehicle, or on to
+    // another place.
+    if (!exitMatch) {
+      const walkMatch = text.match(PERSON_WALK_PATTERN);
+      if (walkMatch) {
+        const walkers = cleanWalkerNames(walkMatch[1]);
+        const toVehicle = /\btowards\s+\(?Vehicle\s+[A-Za-z0-9]{5,8}/i.test(
+          walkMatch[2]
+        );
+        const dest = toVehicle ? null : extractExitDestination(walkMatch[2]);
+        const previous = Array.from(heading.values()).find(h =>
+          surnameTokens(h.names).some(t => surnameTokens(walkers).includes(t))
+        );
+        clearHeadingFor(walkers);
+        if (dest) {
+          heading.set(key(dest), {
+            names: walkers,
+            destination: dest,
+            from: previous?.from ?? "",
+            ...where,
+          });
+        }
+      }
+    }
+
     const directMatch = text.match(PERSON_ENTER_PATTERN);
     if (directMatch) {
       record(

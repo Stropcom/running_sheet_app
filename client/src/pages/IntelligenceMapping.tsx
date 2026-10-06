@@ -12139,9 +12139,21 @@ export default function IntelligenceMapping() {
                                     actions: [
                                       {
                                         key: `en-${h.destination}`,
-                                        label: "Entered",
+                                        label: h.destination.includes("[")
+                                          ? "Entered a location"
+                                          : "Entered",
                                         text: `${names(h.names)} entered ${h.destination} and continued out of sight.`,
                                       },
+                                      {
+                                        key: `wk-${h.destination}`,
+                                        label: "Walked to another location",
+                                        text: `${names(h.names)} walked [route] towards [location].`,
+                                      },
+                                      ...(rsPendingArrivals ?? []).map(a => ({
+                                        key: `wv-${a.rego}`,
+                                        label: `Walked to ${a.rego}`,
+                                        text: `${names(h.names)} walked towards Vehicle ${a.rego}.`,
+                                      })),
                                     ],
                                     latestRowId: h.rowId,
                                   })

@@ -101,4 +101,40 @@ describe("scanWalkEvents — people on foot, no vehicle", () => {
       scanWalkEvents(rows("Vehicle 1HIB84 arrived at 193b Stock Road."))
     ).toEqual({ walkIns: [], headingTo: [] });
   });
+
+  it("ends the walk when they walk back towards a vehicle", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG entered Melville Heights Meat Supply and continued out of sight.",
+        "BAIG exited Melville Heights Meat Supply and walked [route] towards [location].",
+        "BAIG walked towards Vehicle 1ORB419."
+      )
+    );
+    expect(r.headingTo).toEqual([]);
+    expect(r.walkIns).toEqual([]);
+  });
+
+  it("re-points where they are heading when they walk on to another place", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG exited Melville Heights Meat Supply and walked [route] towards [location].",
+        "BAIG walked across the road towards 13 Denford Street."
+      )
+    );
+    expect(r.headingTo).toMatchObject([
+      { names: "BAIG", destination: "13 Denford Street" },
+    ]);
+    expect(r.headingTo).toHaveLength(1);
+  });
+
+  it("clears a heading when they enter somewhere other than the destination", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG exited A and walked towards B.",
+        "BAIG entered C and continued out of sight."
+      )
+    );
+    expect(r.headingTo).toEqual([]);
+    expect(r.walkIns).toMatchObject([{ location: "C" }]);
+  });
 });

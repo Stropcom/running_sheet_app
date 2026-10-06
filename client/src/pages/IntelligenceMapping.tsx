@@ -12257,37 +12257,24 @@ export default function IntelligenceMapping() {
                                       rowId: null,
                                     })
                                   }
-                                  busy={rsAddingRow}
-                                  // Adds the sentence straight to the sheet
-                                  // as its own row at the current time (the
-                                  // "Last Entry" banner then offers editing),
-                                  // with whichever CINs are selected below.
+                                  hint="Tap adds to the observation — review it, then Submit"
+                                  // Puts the sentence into the observation box
+                                  // for the officer to review and edit; nothing
+                                  // is saved until Submit. With text already
+                                  // there it goes in as the next paragraph.
                                   onAction={text => {
-                                    // Rule 1: the observation box already has
-                                    // text being written → add this as its
-                                    // next paragraph at the end of it.
-                                    if (rsInlineText.trim()) {
-                                      pushInlineUndo(rsInlineText);
-                                      const lead = rsInlineText.endsWith("\n\n")
+                                    pushInlineUndo(rsInlineText);
+                                    setRsInlineText(prev => {
+                                      if (!prev.trim()) return text;
+                                      const lead = prev.endsWith("\n\n")
                                         ? ""
-                                        : rsInlineText.endsWith("\n")
+                                        : prev.endsWith("\n")
                                           ? "\n"
                                           : "\n\n";
-                                      setRsInlineText(
-                                        `${rsInlineText}${lead}${text}`
-                                      );
-                                      resetInlineTimer();
-                                      rsInlineInputRef.current?.focus();
-                                      return;
-                                    }
-                                    // Rule 2: nothing written → its own row,
-                                    // vehicles as plain "Vehicle REGO".
-                                    addQuickRsEntry(
-                                      text,
-                                      new Set(rsInlineCinsRef.current),
-                                      null,
-                                      mapQeRowDate
-                                    );
+                                      return `${prev}${lead}${text}`;
+                                    });
+                                    resetInlineTimer();
+                                    rsInlineInputRef.current?.focus();
                                   }}
                                 />
                               );

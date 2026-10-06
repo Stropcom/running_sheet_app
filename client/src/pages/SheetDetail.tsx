@@ -37,6 +37,7 @@ import {
   occupantsStillInVehicle,
   splitPeopleNames,
   surnameTokens,
+  isReadAsMovement,
 } from "@shared/walkEventPatterns";
 import {
   companionsOf,
@@ -5278,9 +5279,12 @@ export default function SheetDetail({
                 ? null
                 : targetTokenFromTitle(sheet?.title);
             // Safety net for phrasing the position logic doesn't read: the
-            // newest row that names the target alongside a movement word.
-            // If it is newer than what the tracker is based on, the position
-            // shown may be stale, so say so rather than state it plainly.
+            // newest row that names the target alongside a movement word
+            // but matched none of the known movement phrasings. If it is
+            // newer than what the tracker is based on, the position shown
+            // may be stale, so say so rather than state it plainly. A row the
+            // logic DID read (even one that doesn't change the card, such as
+            // walking back towards a vehicle) never triggers this.
             const targetRe = targetCode
               ? new RegExp(`\\b${targetCode}\\b`, "i")
               : null;
@@ -5291,6 +5295,7 @@ export default function SheetDetail({
                       r =>
                         !!r.observation &&
                         targetRe.test(r.observation) &&
+                        !isReadAsMovement(r.observation) &&
                         /\b(entered|exited|walked|left|arrived|departed|drove|travelled|stopped|parked)\b/i.test(
                           r.observation
                         )

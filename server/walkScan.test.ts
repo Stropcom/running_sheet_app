@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cleanWalkerNames,
   extractExitDestination,
+  isReadAsMovement,
   scanWalkEvents,
 } from "@shared/walkEventPatterns";
 
@@ -198,5 +199,23 @@ describe("scanWalkEvents — people on foot, no vehicle", () => {
       )
     );
     expect(r.walkIns).toEqual([]);
+  });
+});
+
+describe("isReadAsMovement", () => {
+  it("recognises the rows from a real sheet", () => {
+    for (const t of [
+      "Vehicle 1ORB419, BAIG driver and sole occupant, arrived at 15 Leach Avenue, RIVERTON WA (15 Leach Ave) parked in the car park.",
+      "BAIG exited the vehicle, entered 15 Leach Avenue and continued out of sight.",
+      "BAIG exited 15 Leach Avenue, walked to and entered 21 Leach Avenue, RIVERTON WA (21 Leach Avenue) and continued out of sight.",
+      "BAIG exited 21 Leach Avenue and walked towards Vehicle 1ORB419.",
+      "BAIG exited Melville Heights Meat Supply and walked to and entered Melville Fish & Chips, 362 Marmion Street, MELVILLE WA (Melville Fish & Chips)",
+    ]) {
+      expect(isReadAsMovement(t)).toBe(true);
+    }
+  });
+  it("is false for a phrasing it does not know", () => {
+    expect(isReadAsMovement("BAIG seen pacing outside the shop.")).toBe(false);
+    expect(isReadAsMovement("BAIG went inside.")).toBe(false);
   });
 });

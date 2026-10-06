@@ -27,6 +27,11 @@
 // form with no route at all — "BAIG and JORDAN exited the vehicle, entered
 // 193b Stock Road and continued out of sight." Group 2 (the route) is then
 // undefined, and the "Walked out" chip simply omits its route.
+import {
+  VEHICLE_DEPART_PATTERN,
+  matchVehicleArrival,
+} from "./vehicleEventPatterns";
+
 export const WALK_IN_PATTERN =
   /([A-Za-z][^.\n]*?)\s*exited the vehicle,?\s*(?:walked\s+(.+?),?\s*)?entered\s+(.+?)\s+and continued out of sight/i;
 
@@ -420,4 +425,34 @@ export function occupantsStillInVehicle(
   return splitPeopleNames(occupantNames).filter(
     p => !surnameTokens(p).some(t => onFoot.has(t))
   );
+}
+
+/**
+ * True when a row's text is one the continuity logic reads as a movement —
+ * a vehicle arriving/departing, someone entering, exiting or walking
+ * somewhere. Used to tell a row the position logic UNDERSTOOD (so the
+ * position it produced is trustworthy) from one that names the target
+ * alongside a movement word but matched none of the known phrasings (so the
+ * position may be stale).
+ */
+export function isReadAsMovement(text: string): boolean {
+  if (!text) return false;
+  if (matchVehicleArrival(text) || VEHICLE_DEPART_PATTERN.test(text)) {
+    return true;
+  }
+  if (
+    WALK_OUT_PATTERN.test(text) ||
+    WALK_IN_PATTERN.test(text) ||
+    WALK_IN_TOWARDS_PATTERN.test(text) ||
+    PERSON_ENTER_PATTERN.test(text) ||
+    PERSON_EXIT_PATTERN.test(text) ||
+    PERSON_WALK_PATTERN.test(text)
+  ) {
+    return true;
+  }
+  const enter = text.match(PERSON_ENTER_ANY_PATTERN);
+  if (enter && !/^\(?Vehicle\b/i.test(enter[2])) return true;
+  const exit = text.match(PERSON_EXIT_ANY_PATTERN);
+  if (exit && !/^\(?Vehicle\b/i.test(exit[2])) return true;
+  return false;
 }

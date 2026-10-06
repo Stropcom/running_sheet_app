@@ -5104,10 +5104,10 @@ export default function SheetDetail({
               continuityCards.push({
                 key: `dep-${d.rego}`,
                 title: d.rego,
-                pill: "No arrival",
+                pill: "Moving",
                 attn: true,
                 who: `${extractOccupantNames(d.occupantDesc) || d.occupantDesc}`,
-                state: `Departed${sinceText(d.rowId).replace(" · since", "")} · destination not logged`,
+                state: `Departed${sinceText(d.rowId).replace(" · since", "")}`,
                 actions: cardAction(chip, "Vehicle arriving"),
                 latestRowId: d.rowId,
               });

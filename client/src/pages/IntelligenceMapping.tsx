@@ -11935,12 +11935,12 @@ export default function IntelligenceMapping() {
                                 cards.push({
                                   key: `dep-${d.rego}`,
                                   title: d.rego,
-                                  pill: "No arrival",
+                                  pill: "Moving",
                                   attn: true,
                                   who:
                                     extractOccupantNames(d.occupantDesc) ||
                                     d.occupantDesc,
-                                  state: "Departed · destination not logged",
+                                  state: "Departed",
                                   actions: [
                                     {
                                       key: `arr-${d.rego}`,

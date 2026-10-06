@@ -5144,6 +5144,71 @@ export default function SheetDetail({
                 latestRowId: h.rowId,
               });
             });
+            // Tapping a card action adds the sentence as its own row, stamped
+            // with the current (Perth) time — so the time of the event is
+            // captured the moment it happens — and it can be edited like any
+            // other row afterwards. Falls back to inserting the text (the
+            // old behaviour) when that would be wrong: offline (the offline
+            // queue doesn't carry observation text) or on a sheet dated for
+            // a different day than today.
+            const addContinuityEntry = (text: string) => {
+              const perth = (opts: Intl.DateTimeFormatOptions) =>
+                new Intl.DateTimeFormat("en-GB", {
+                  timeZone: "Australia/Perth",
+                  ...opts,
+                }).formatToParts(new Date());
+              const part = (
+                parts: Intl.DateTimeFormatPart[],
+                type: string
+              ): string => parts.find(p => p.type === type)?.value ?? "";
+              const d = perth({
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+              });
+              const todayYmd = `${part(d, "year")}-${part(d, "month")}-${part(d, "day")}`;
+              const forToday =
+                !sheet?.sheetDate || sheet.sheetDate === todayYmd;
+              if (!isOnline || !forToday) {
+                insertAtFocused(text);
+                if (!forToday) {
+                  toast.info(
+                    "This sheet is dated for another day, so the text was added to the row you're editing instead."
+                  );
+                }
+                return;
+              }
+              const t = perth({
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              });
+              const h24 = parseInt(part(t, "hour"), 10) % 24;
+              const min = parseInt(part(t, "minute"), 10);
+              const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+              const timeStr = `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
+              _addRowOnline
+                .mutateAsync({
+                  sheetId,
+                  time: timeStr,
+                  timeMinutes: h24 * 60 + min,
+                  observation: text,
+                })
+                .then(created => {
+                  toast.success(`Added ${timeStr}`, {
+                    description: "Edit it any time from the row.",
+                    duration: 9000,
+                    action: {
+                      label: "Undo",
+                      onClick: () =>
+                        _deleteRowOnline.mutate({ id: created.id }),
+                    },
+                  });
+                })
+                .catch(() => {
+                  /* the mutation's own onError already showed the message */
+                });
+            };
             const hasContinuityChips = continuityCards.length > 0;
             const insertAtFocused = (text: string) => {
               const el = focusedTextareaRef.current;
@@ -5459,6 +5524,7 @@ export default function SheetDetail({
                 {hasContinuityChips && (
                   <div className={showTargetPanel ? "mb-4 -mt-2" : "mb-4"}>
                     <ContinuityCards
+                      busy={_addRowOnline.isPending}
                       cards={continuityCards}
                       dismissed={continuityDismissed}
                       onDismiss={(key, rowId) =>
@@ -5471,7 +5537,7 @@ export default function SheetDetail({
                           rowId: null,
                         })
                       }
-                      onInsert={insertAtFocused}
+                      onAction={addContinuityEntry}
                     />
                   </div>
                 )}

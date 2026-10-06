@@ -11,6 +11,11 @@
  * device sniffing): one or two cards on a wide band go panoramic, three or
  * more sit side by side, and on a narrow band they swipe sideways.
  *
+ * Tapping an action does not just fill in text: the caller adds it to the
+ * running sheet as a new row stamped with the current time, which can be
+ * edited like any other row (see onAction). Buttons are disabled while one is
+ * being saved so a double tap cannot log it twice.
+ *
  * A card can be dismissed with ×. That is purely a display choice, shared by
  * everyone on the sheet (stored on the sheet, see
  * sheet.setContinuityDismissal) — it never touches row text — and the card
@@ -23,9 +28,9 @@ export interface ContinuityAction {
   key: string;
   label: string;
   text: string;
-  /** How the sentence goes into the observation: "inline" appends to the
-   * current text, "paragraph" opens its own paragraph. Surfaces that only
-   * have one way to insert ignore it. */
+  /** Kept for callers that fall back to inserting text instead of adding a
+   * row (offline, or a sheet that isn't for today): "inline" appends to the
+   * current text, "paragraph" opens its own paragraph. */
   mode?: "inline" | "paragraph";
 }
 
@@ -55,14 +60,18 @@ export function ContinuityCards({
   dismissed,
   onDismiss,
   onRestore,
-  onInsert,
+  onAction,
+  busy = false,
 }: {
   cards: ContinuityCardData[];
   /** { cardKey: rowIdAtDismissal } for this sheet, shared by everyone. */
   dismissed: Record<string, number>;
   onDismiss: (key: string, rowId: number) => void;
   onRestore: (key: string) => void;
-  onInsert: (text: string, mode?: "inline" | "paragraph") => void;
+  /** Called when an action is tapped — adds the sentence to the sheet. */
+  onAction: (text: string, mode?: "inline" | "paragraph") => void;
+  /** True while an action is being saved. */
+  busy?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -152,6 +161,9 @@ export function ContinuityCards({
           <span className="rounded-full bg-pink-500 px-1.5 text-[10px] font-semibold text-white">
             {live.length}
           </span>
+          <span className="text-[10px] text-muted-foreground">
+            Tap adds a row at the current time
+          </span>
         </div>
         <button
           type="button"
@@ -223,9 +235,10 @@ export function ContinuityCards({
                       key={a.key}
                       type="button"
                       onMouseDown={e => e.preventDefault()}
-                      onClick={() => onInsert(a.text, a.mode)}
+                      onClick={() => onAction(a.text, a.mode)}
+                      disabled={busy}
                       title={a.text}
-                      className="cursor-pointer rounded-md border border-pink-500/30 bg-pink-500/5 px-2.5 py-1.5 text-left font-mono text-[11px] font-semibold text-pink-500 transition-all hover:bg-pink-500/15 active:scale-[0.98] @max-xl:py-2 @max-xl:text-xs"
+                      className="cursor-pointer disabled:cursor-wait disabled:opacity-60 rounded-md border border-pink-500/30 bg-pink-500/5 px-2.5 py-1.5 text-left font-mono text-[11px] font-semibold text-pink-500 transition-all hover:bg-pink-500/15 active:scale-[0.98] @max-xl:py-2 @max-xl:text-xs"
                     >
                       {a.label}
                     </button>

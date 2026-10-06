@@ -11898,45 +11898,10 @@ export default function IntelligenceMapping() {
                           (plus one whose arrival is typed in the unsaved
                           observation), people inside or heading here, and
                           any vehicle that left somewhere with no arrival
-                          logged yet. Always requires an explicit tap —
-                          these write into the record. */}
+                          logged yet. A tap adds the row straight away
+                          (see onAction below) — it writes into the record. */}
                           {mapQeAddress &&
                             (() => {
-                              const appendInline = (text: string) => {
-                                pushInlineUndo(rsInlineText);
-                                setRsInlineText(prev =>
-                                  prev ? `${prev} ${text}` : text
-                                );
-                                resetInlineTimer();
-                                rsInlineInputRef.current?.focus();
-                              };
-                              // Insert at the caret in its own paragraph, so
-                              // the officer's place in the text is kept.
-                              const appendParagraph = (text: string) => {
-                                pushInlineUndo(rsInlineText);
-                                const textarea = rsInlineInputRef.current;
-                                const pos =
-                                  textarea?.selectionStart ??
-                                  rsInlineText.length;
-                                const selEnd = textarea?.selectionEnd ?? pos;
-                                const before = rsInlineText.slice(0, pos);
-                                const after = rsInlineText.slice(selEnd);
-                                const lead = before
-                                  ? before.endsWith("\n\n")
-                                    ? ""
-                                    : before.endsWith("\n")
-                                      ? "\n"
-                                      : "\n\n"
-                                  : "";
-                                const inserted = `${before}${lead}${text}`;
-                                setRsInlineText(`${inserted}${after}`);
-                                resetInlineTimer();
-                                requestAnimationFrame(() => {
-                                  textarea?.focus();
-                                  const cursor = inserted.length;
-                                  textarea?.setSelectionRange(cursor, cursor);
-                                });
-                              };
                               const bracketMatch = mapQeAddress.match(
                                 /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
                               );
@@ -12173,10 +12138,19 @@ export default function IntelligenceMapping() {
                                       rowId: null,
                                     })
                                   }
-                                  onInsert={(text, mode) =>
-                                    mode === "paragraph"
-                                      ? appendParagraph(text)
-                                      : appendInline(text)
+                                  busy={rsAddingRow}
+                                  // Adds the sentence straight to the sheet
+                                  // as its own row at the current time (the
+                                  // "Last Entry" banner then offers editing),
+                                  // with whichever CINs are selected below.
+                                  // The unsaved text in the box is untouched.
+                                  onAction={text =>
+                                    addQuickRsEntry(
+                                      text,
+                                      new Set(rsInlineCinsRef.current),
+                                      null,
+                                      mapQeRowDate
+                                    )
                                   }
                                 />
                               );

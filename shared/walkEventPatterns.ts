@@ -138,6 +138,28 @@ export const PERSON_EXIT_PATTERN =
 // destination re-points where they are heading.
 export const PERSON_WALK_PATTERN = /([A-Za-z][^.\n]*?)\s*\bwalked\b([^.\n]*)/i;
 
+// Looser forms for the many ways officers phrase an entry or exit. Both
+// need the place to start with a capital or a number (a named place or a
+// street address), so "entered the front passenger seat" or "exited the
+// premises" never register as a location, and neither matches a vehicle.
+//   "BAIG exited A and walked to and entered Melville Fish & Chips, 362
+//    Marmion Street, MELVILLE WA (Melville Fish & Chips)"
+export const PERSON_ENTER_ANY_PATTERN =
+  /([A-Za-z][^.\n]*?)\s*\bentered\s+([A-Z0-9][^.\n]*?)\s*(?:\s+and\s+continued\s+out\s+of\s+sight|$)/;
+//   "BAIG exited Melville Fish & Chips." / "... and entered Vehicle ..."
+export const PERSON_EXIT_ANY_PATTERN =
+  /([A-Za-z][^.\n]*?)\s*\bexited\s+([A-Z0-9][^.\n]*?)(?:\s+and\s+(?:walked|entered|continued|got|returned|drove|left)\b|[,.]|$)/;
+
+/** A place as written inside a longer sentence, reduced to the name later
+ * mentions use: its bracket label if it has one, else its first
+ * comma-separated segment ("Melville Fish & Chips, 362 Marmion Street,
+ * MELVILLE WA" → "Melville Fish & Chips"). */
+function placeName(raw: string): string {
+  const b = raw.match(/\(([^)]{1,80})\)/);
+  if (b) return b[1].trim();
+  return raw.split(",")[0].trim();
+}
+
 /** The walkers' names, with anything from an "exited"/"walked" clause on
  * cut off — a lazy capture can otherwise swallow the start of the same
  * sentence ("BAIG exited A, walked across the road,"). */
@@ -335,6 +357,22 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         bracketLabelOrSelf(directMatch[2]),
         ""
       );
+      return;
+    }
+
+    // Any other "entered <Place>" (see PERSON_ENTER_ANY_PATTERN).
+    const anyEnter = text.match(PERSON_ENTER_ANY_PATTERN);
+    if (anyEnter && !/^\(?Vehicle\b/i.test(anyEnter[2])) {
+      record(cleanWalkerNames(anyEnter[1]), placeName(anyEnter[2]), "");
+      return;
+    }
+
+    // A plain exit with no "walked" after it (see PERSON_EXIT_ANY_PATTERN).
+    if (!exitMatch) {
+      const anyExit = text.match(PERSON_EXIT_ANY_PATTERN);
+      if (anyExit && !/^\(?Vehicle\b/i.test(anyExit[2])) {
+        walkedOut.add(key(placeName(anyExit[2])));
+      }
     }
   });
 

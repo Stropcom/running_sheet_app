@@ -67,6 +67,9 @@ export interface ContinuityCardData {
   isTarget?: boolean;
   /** Others with the target, e.g. "JORDAN". */
   companions?: string;
+  /** A caution shown on the target's tracker, e.g. when a later row names
+   * him but wasn't read as a move, so the position above may be stale. */
+  warn?: string;
 }
 
 // Whether the band is folded away is a per-person view preference, unlike
@@ -238,6 +241,11 @@ export function ContinuityCards({
               )}
               {targetCard.companions && (
                 <div className="text-xs">With {targetCard.companions}</div>
+              )}
+              {targetCard.warn && (
+                <div className="mt-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-700 dark:text-amber-400">
+                  {targetCard.warn}
+                </div>
               )}
             </div>
           </div>

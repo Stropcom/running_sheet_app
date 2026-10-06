@@ -157,4 +157,46 @@ describe("scanWalkEvents — people on foot, no vehicle", () => {
     ).toBe("Melville Fish & Chips");
     expect(extractExitDestination(" back to the car park")).toBeNull();
   });
+
+  it("reads 'walked to and entered <Place>' (no 'continued out of sight')", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG entered Melville Heights Meat Supply and continued out of sight.",
+        "BAIG exited Melville Heights Meat Supply and walked to and entered Melville Fish & Chips, 362 Marmion Street, MELVILLE WA (Melville Fish & Chips)"
+      )
+    );
+    expect(r.headingTo).toEqual([]);
+    expect(r.walkIns).toMatchObject([
+      { names: "BAIG", location: "Melville Fish & Chips" },
+    ]);
+  });
+
+  it("falls back to the first address segment when there is no bracket", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG entered Melville Fish & Chips, 362 Marmion Street, MELVILLE WA"
+      )
+    );
+    expect(r.walkIns).toMatchObject([{ location: "Melville Fish & Chips" }]);
+  });
+
+  it("does not treat a seat or a vehicle as a place", () => {
+    expect(
+      scanWalkEvents(rows("BAIG entered the front passenger seat.")).walkIns
+    ).toEqual([]);
+    expect(
+      scanWalkEvents(rows("BAIG entered Vehicle 1ORB419 and drove off."))
+        .walkIns
+    ).toEqual([]);
+  });
+
+  it("registers a plain exit so someone is no longer inside", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG entered Melville Fish & Chips and continued out of sight.",
+        "BAIG exited Melville Fish & Chips."
+      )
+    );
+    expect(r.walkIns).toEqual([]);
+  });
 });

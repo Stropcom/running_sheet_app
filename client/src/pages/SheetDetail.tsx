@@ -5277,11 +5277,38 @@ export default function SheetDetail({
                 "person"
                 ? null
                 : targetTokenFromTitle(sheet?.title);
+            // Safety net for phrasing the position logic doesn't read: the
+            // newest row that names the target alongside a movement word.
+            // If it is newer than what the tracker is based on, the position
+            // shown may be stale, so say so rather than state it plainly.
+            const targetRe = targetCode
+              ? new RegExp(`\\b${targetCode}\\b`, "i")
+              : null;
+            const latestMove =
+              targetRe && rows
+                ? rows
+                    .filter(
+                      r =>
+                        !!r.observation &&
+                        targetRe.test(r.observation) &&
+                        /\b(entered|exited|walked|left|arrived|departed|drove|travelled|stopped|parked)\b/i.test(
+                          r.observation
+                        )
+                    )
+                    .reduce<
+                      NonNullable<typeof rows>[number] | null
+                    >((a, b) => (!a || b.id > a.id ? b : a), null)
+                : null;
+            const staleWarn = (basedOnRowId: number) =>
+              latestMove && latestMove.id > basedOnRowId
+                ? `The ${latestMove.time ?? "latest"} row names ${targetCode} after this, but wasn't read as a move — check where he is.`
+                : undefined;
             if (targetCode && continuityCards.length > 0) {
               const targetKey = pickTargetCardKey(continuityCards, targetCode);
               const held = continuityCards.find(c => c.key === targetKey);
               if (held) {
                 held.isTarget = true;
+                held.warn = staleWarn(held.latestRowId);
                 held.companions = companionsOf(
                   held.people ?? [],
                   targetCode
@@ -5299,6 +5326,7 @@ export default function SheetDetail({
                   actions: [],
                   latestRowId: Number.MAX_SAFE_INTEGER,
                   isTarget: true,
+                  warn: staleWarn(0),
                   locus: {
                     headline: "Position not logged",
                     sub: `No logged movement names ${targetCode} yet`,

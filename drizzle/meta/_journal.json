@@ -778,6 +778,13 @@
       "when": 1790800000000,
       "tag": "0110_map_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "5",
+      "when": 1791249619315,
+      "tag": "0111_clumsy_black_knight",
+      "breakpoints": true
     }
   ]
 }

@@ -187,6 +187,11 @@ export const runningSheets = mysqlTable("running_sheets", {
   // Soft-delete
   deletedAt: bigint("deletedAt", { mode: "number" }),
   deletedByCIN: varchar("deletedByCIN", { length: 64 }),
+  // JSON object { [continuityCardKey]: rowId } — continuity cards (parked
+  // vehicle, people on foot, ...) that officers have stopped tracking on this
+  // sheet, with the newest relevant row id at the time. Display-only: it
+  // never touches row text, and a card returns if a newer row is logged.
+  continuityDismissed: text("continuityDismissed"),
 });
 
 export type RunningSheet = typeof runningSheets.$inferSelect;

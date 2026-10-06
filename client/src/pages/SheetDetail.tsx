@@ -33,6 +33,10 @@ import {
   type FaceMatchSuggestion,
 } from "@/components/SuggestedFaceMatchDialog";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
+import {
+  ContinuityCards,
+  type ContinuityCardData,
+} from "@/components/ContinuityCards";
 import { DeletePhotoButton } from "@/components/DeletePhotoButton";
 import {
   EntityDuplicateDialog,
@@ -2825,6 +2829,20 @@ export default function SheetDetail({
     }
   );
 
+  // Continuity cards the team has stopped tracking on this sheet (shared).
+  const continuityDismissed = useMemo<Record<string, number>>(() => {
+    try {
+      return sheet?.continuityDismissed
+        ? (JSON.parse(sheet.continuityDismissed) as Record<string, number>)
+        : {};
+    } catch {
+      return {};
+    }
+  }, [sheet?.continuityDismissed]);
+  const setContinuityDismissal = trpc.sheet.setContinuityDismissal.useMutation({
+    onSuccess: () => utils.sheet.get.invalidate({ id: sheetId }),
+  });
+
   const invalidateRows = useCallback(() => {
     utils.row.list.invalidate({ sheetId });
     utils.row.entityChips.invalidate({ sheetId });
@@ -4870,7 +4888,11 @@ export default function SheetDetail({
             chips mined from this sheet's own observations, in one panel so
             officers see every quick-insert chip together. */}
         {((sheet?.targetId && assignedTarget) ||
-          (entityChips && entityChips.length > 0)) &&
+          (entityChips && entityChips.length > 0) ||
+          (pendingArrivals && pendingArrivals.length > 0) ||
+          (pendingDepartures && pendingDepartures.length > 0) ||
+          (pendingWalkIns && pendingWalkIns.length > 0) ||
+          (pendingHeadingTo && pendingHeadingTo.length > 0)) &&
           (() => {
             const t = assignedTarget;
             const hasTarget = !!(sheet?.targetId && t);
@@ -5007,14 +5029,122 @@ export default function SheetDetail({
               label: h.destination,
               text: `${shortenAlreadyMentionedNames(h.names, usedBracketCodes)} entered ${h.destination} and continued out of sight.`,
             }));
-            const hasContinuityChips =
-              vehicleArrivingChips.length > 0 ||
-              vehicleDepartingChips.length > 0 ||
-              walkedInChips.length > 0 ||
-              walkedInDirectChips.length > 0 ||
-              walkedOutChips.length > 0 ||
-              leftAddressChips.length > 0 ||
-              enteredChips.length > 0;
+            // ── Continuity cards ────────────────────────────────────────
+            // Same pending data and sentences as the chips above, grouped
+            // per vehicle / group of people (see ContinuityCards).
+            const rowTime = (id: number) =>
+              rows?.find(r => r.id === id)?.time ?? null;
+            const sinceText = (id: number) => {
+              const t = rowTime(id);
+              return t ? ` · since ${t}` : "";
+            };
+            const sameAddr = (a: string, b: string) =>
+              a.trim().toLowerCase() === b.trim().toLowerCase();
+            const cardAction = (
+              chip: { key: string; text: string } | undefined,
+              label: string
+            ) => (chip ? [{ key: chip.key, label, text: chip.text }] : []);
+            const continuityCards: ContinuityCardData[] = [];
+            const walkInsAtVehicle = new Set<string>();
+            (pendingArrivals ?? []).forEach(a => {
+              const insideHere = (pendingWalkIns ?? []).filter(w =>
+                sameAddr(w.location, a.address)
+              );
+              insideHere.forEach(w => walkInsAtVehicle.add(w.location));
+              const rego = a.rego;
+              const inside = insideHere.length > 0;
+              const actions = [
+                ...(inside
+                  ? []
+                  : [
+                      ...cardAction(
+                        walkedInDirectChips.find(c => c.rego === rego),
+                        "Walked in direct"
+                      ),
+                      ...cardAction(
+                        walkedInChips.find(c => c.rego === rego),
+                        "Walked in via route"
+                      ),
+                    ]),
+                ...cardAction(
+                  vehicleDepartingChips.find(c => c.rego === rego),
+                  "Vehicle departing"
+                ),
+                ...walkedOutChips
+                  .filter(c =>
+                    insideHere.some(w => c.key === `wo-${w.location}-${rego}`)
+                  )
+                  .map(c => ({
+                    key: c.key,
+                    label: "Walked out to vehicle",
+                    text: c.text,
+                  })),
+                ...insideHere.flatMap(w =>
+                  cardAction(
+                    leftAddressChips.find(c => c.key === `la-${w.location}`),
+                    "Left address"
+                  )
+                ),
+              ];
+              continuityCards.push({
+                key: `veh-${rego}`,
+                title: rego,
+                pill: "Parked",
+                who: inside
+                  ? `${insideHere.map(w => w.names).join("; ")} inside the address`
+                  : `${extractOccupantNames(a.occupantDesc) || "Occupants"} in the vehicle`,
+                state: `${a.address}${sinceText(a.rowId)}`,
+                actions,
+                latestRowId: Math.max(a.rowId, ...insideHere.map(w => w.rowId)),
+              });
+            });
+            (pendingDepartures ?? []).forEach(d => {
+              const chip = vehicleArrivingChips.find(c => c.rego === d.rego);
+              if (!chip) return;
+              continuityCards.push({
+                key: `dep-${d.rego}`,
+                title: d.rego,
+                pill: "No arrival",
+                attn: true,
+                who: `${extractOccupantNames(d.occupantDesc) || d.occupantDesc}`,
+                state: `Departed${sinceText(d.rowId).replace(" · since", "")} · destination not logged`,
+                actions: cardAction(chip, "Vehicle arriving"),
+                latestRowId: d.rowId,
+              });
+            });
+            (pendingWalkIns ?? [])
+              .filter(w => !walkInsAtVehicle.has(w.location))
+              .forEach(w => {
+                const chip = leftAddressChips.find(
+                  c => c.key === `la-${w.location}`
+                );
+                continuityCards.push({
+                  key: `foot-${w.location}`,
+                  title: w.names,
+                  pill: "Inside",
+                  who: `Inside ${w.location}`,
+                  state: `On foot${sinceText(w.rowId)}`,
+                  actions: cardAction(chip, "Left address"),
+                  latestRowId: w.rowId,
+                });
+              });
+            (pendingHeadingTo ?? []).forEach(h => {
+              const chip = enteredChips.find(
+                c => c.key === `en-${h.destination}`
+              );
+              if (!chip) return;
+              continuityCards.push({
+                key: `head-${h.destination}`,
+                title: h.names,
+                pill: "Heading",
+                attn: true,
+                who: `Heading to ${h.destination}`,
+                state: `Left ${h.from}${sinceText(h.rowId)}`,
+                actions: cardAction(chip, "Entered"),
+                latestRowId: h.rowId,
+              });
+            });
+            const hasContinuityChips = continuityCards.length > 0;
             const insertAtFocused = (text: string) => {
               const el = focusedTextareaRef.current;
               if (!el) return;
@@ -5043,332 +5173,309 @@ export default function SheetDetail({
                 }
               }
             };
-            const ContinuityChipGroup = ({
-              label,
-              chips,
-            }: {
-              label: string;
-              chips: {
-                key: string;
-                rego: string;
-                label?: string;
-                text: string;
-              }[];
-            }) =>
-              chips.length === 0 ? null : (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[9px] font-bold uppercase tracking-wide text-pink-500/70 shrink-0">
-                    {label}
-                  </span>
-                  {chips.map(chip => (
-                    <button
-                      key={chip.key}
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={() => insertAtFocused(chip.text)}
-                      title={chip.text}
-                      className="inline-flex items-center px-2 py-0.5 rounded border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none cursor-pointer"
-                    >
-                      <span className="text-[10px] font-mono font-bold">
-                        {chip.label ?? chip.rego}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              );
+            const showTargetPanel = !!(
+              (sheet?.targetId && assignedTarget) ||
+              (entityChips && entityChips.length > 0)
+            );
             return (
-              <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
-                {/* Header — always visible. Tapping the main area toggles collapse; pencil navigates to edit */}
-                <div className="flex items-center">
-                  <button
-                    className="flex-1 flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left min-w-0"
-                    onClick={() =>
-                      setTargetPanelExpanded(v => {
-                        const next = !v;
-                        try {
-                          localStorage.setItem(
-                            "runsheet_target_panel_expanded",
-                            String(next)
-                          );
-                        } catch {}
-                        return next;
-                      })
-                    }
-                  >
-                    {hasTarget ? (
-                      <Target className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    ) : (
-                      <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    )}
-                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">
-                      {hasTarget ? `TARGET — ${t!.name}` : "SHORTCUTS"}
-                    </span>
-                    <ChevronDown
-                      className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${targetPanelExpanded ? "" : "-rotate-90"}`}
-                    />
-                  </button>
-                  {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
-                  {hasTarget && (
-                    <button
-                      className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30 rounded-tr-lg"
-                      onClick={() =>
-                        navigate(
-                          `/operation/${sheet!.operationId}?tab=target&targetId=${t!.id}&fromSheet=${sheetId}`
-                        )
-                      }
-                      title="Edit Target"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-                {/* Collapsible details */}
-                {targetPanelExpanded &&
-                  (() => {
-                    // Apply saved order to the fields list
-                    const visibleFields = fields.filter(f => f.value);
-                    const isWildcard = (lbl: string) => /^#\d+$/.test(lbl);
-                    const nonWildVisible = visibleFields.filter(
-                      f => !isWildcard(f.label)
-                    );
-                    const wildcardVisible = visibleFields.filter(f =>
-                      isWildcard(f.label)
-                    );
-                    const orderedNonWild =
-                      targetFieldOrder.length > 0
-                        ? [
-                            ...(targetFieldOrder
-                              .filter(lbl => !isWildcard(lbl))
-                              .map(lbl =>
-                                nonWildVisible.find(f => f.label === lbl)
-                              )
-                              .filter(Boolean) as typeof visibleFields),
-                            ...nonWildVisible.filter(
-                              f => !targetFieldOrder.includes(f.label)
-                            ),
-                          ]
-                        : nonWildVisible;
-                    // Wildcards always at the end, in their saved order
-                    const orderedWild =
-                      targetFieldOrder.length > 0
-                        ? [
-                            ...(targetFieldOrder
-                              .filter(isWildcard)
-                              .map(lbl =>
-                                wildcardVisible.find(f => f.label === lbl)
-                              )
-                              .filter(Boolean) as typeof visibleFields),
-                            ...wildcardVisible.filter(
-                              f => !targetFieldOrder.includes(f.label)
-                            ),
-                          ]
-                        : wildcardVisible;
-                    const orderedFields = [...orderedNonWild, ...orderedWild];
-                    return (
-                      <div className="px-4 pb-3 border-t border-border/40">
-                        {hasAnyField &&
-                          (() => {
-                            const shortcutFolderLabels = new Set(
-                              (shortcutsData ?? []).map(s =>
-                                s.trigger.toUpperCase()
-                              )
-                            );
-                            const TRIGGER_ONLY_LABELS = new Set([
-                              "TGT",
-                              "HBF",
-                              "HB",
-                              "V1F",
-                              "V2F",
-                              "DEP",
-                              "ARR",
-                            ]);
-                            return (
-                              <DndContext
-                                sensors={chipSensors}
-                                collisionDetection={closestCenter}
-                                onDragEnd={handleChipDragEnd}
-                              >
-                                <SortableContext
-                                  items={orderedFields.map(f => f.label)}
-                                  strategy={horizontalListSortingStrategy}
-                                >
-                                  <div className="flex flex-wrap gap-1.5 pt-2">
-                                    {orderedFields.map(f => {
-                                      const insertIntoFocused = () => {
-                                        const el = focusedTextareaRef.current;
-                                        if (el) {
-                                          el.focus();
-                                          const start =
-                                            el.selectionStart ??
-                                            el.value.length;
-                                          const end =
-                                            el.selectionEnd ?? el.value.length;
-                                          const before = el.value.slice(
-                                            0,
-                                            start
-                                          );
-                                          const after = el.value.slice(end);
-                                          const insert =
-                                            before && !before.endsWith(" ")
-                                              ? ` ${f.value!}`
-                                              : f.value!;
-                                          try {
-                                            document.execCommand(
-                                              "insertText",
-                                              false,
-                                              insert
-                                            );
-                                          } catch {
-                                            const nativeInputValueSetter =
-                                              Object.getOwnPropertyDescriptor(
-                                                window.HTMLTextAreaElement
-                                                  .prototype,
-                                                "value"
-                                              )?.set ||
-                                              Object.getOwnPropertyDescriptor(
-                                                window.HTMLInputElement
-                                                  .prototype,
-                                                "value"
-                                              )?.set;
-                                            if (nativeInputValueSetter) {
-                                              nativeInputValueSetter.call(
-                                                el,
-                                                before + insert + after
+              <>
+                {showTargetPanel && (
+                  <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
+                    {/* Header — always visible. Tapping the main area toggles collapse; pencil navigates to edit */}
+                    <div className="flex items-center">
+                      <button
+                        className="flex-1 flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left min-w-0"
+                        onClick={() =>
+                          setTargetPanelExpanded(v => {
+                            const next = !v;
+                            try {
+                              localStorage.setItem(
+                                "runsheet_target_panel_expanded",
+                                String(next)
+                              );
+                            } catch {}
+                            return next;
+                          })
+                        }
+                      >
+                        {hasTarget ? (
+                          <Target className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        ) : (
+                          <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        )}
+                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">
+                          {hasTarget ? `TARGET — ${t!.name}` : "SHORTCUTS"}
+                        </span>
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${targetPanelExpanded ? "" : "-rotate-90"}`}
+                        />
+                      </button>
+                      {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
+                      {hasTarget && (
+                        <button
+                          className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30 rounded-tr-lg"
+                          onClick={() =>
+                            navigate(
+                              `/operation/${sheet!.operationId}?tab=target&targetId=${t!.id}&fromSheet=${sheetId}`
+                            )
+                          }
+                          title="Edit Target"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    {/* Collapsible details */}
+                    {targetPanelExpanded &&
+                      (() => {
+                        // Apply saved order to the fields list
+                        const visibleFields = fields.filter(f => f.value);
+                        const isWildcard = (lbl: string) => /^#\d+$/.test(lbl);
+                        const nonWildVisible = visibleFields.filter(
+                          f => !isWildcard(f.label)
+                        );
+                        const wildcardVisible = visibleFields.filter(f =>
+                          isWildcard(f.label)
+                        );
+                        const orderedNonWild =
+                          targetFieldOrder.length > 0
+                            ? [
+                                ...(targetFieldOrder
+                                  .filter(lbl => !isWildcard(lbl))
+                                  .map(lbl =>
+                                    nonWildVisible.find(f => f.label === lbl)
+                                  )
+                                  .filter(Boolean) as typeof visibleFields),
+                                ...nonWildVisible.filter(
+                                  f => !targetFieldOrder.includes(f.label)
+                                ),
+                              ]
+                            : nonWildVisible;
+                        // Wildcards always at the end, in their saved order
+                        const orderedWild =
+                          targetFieldOrder.length > 0
+                            ? [
+                                ...(targetFieldOrder
+                                  .filter(isWildcard)
+                                  .map(lbl =>
+                                    wildcardVisible.find(f => f.label === lbl)
+                                  )
+                                  .filter(Boolean) as typeof visibleFields),
+                                ...wildcardVisible.filter(
+                                  f => !targetFieldOrder.includes(f.label)
+                                ),
+                              ]
+                            : wildcardVisible;
+                        const orderedFields = [
+                          ...orderedNonWild,
+                          ...orderedWild,
+                        ];
+                        return (
+                          <div className="px-4 pb-3 border-t border-border/40">
+                            {hasAnyField &&
+                              (() => {
+                                const shortcutFolderLabels = new Set(
+                                  (shortcutsData ?? []).map(s =>
+                                    s.trigger.toUpperCase()
+                                  )
+                                );
+                                const TRIGGER_ONLY_LABELS = new Set([
+                                  "TGT",
+                                  "HBF",
+                                  "HB",
+                                  "V1F",
+                                  "V2F",
+                                  "DEP",
+                                  "ARR",
+                                ]);
+                                return (
+                                  <DndContext
+                                    sensors={chipSensors}
+                                    collisionDetection={closestCenter}
+                                    onDragEnd={handleChipDragEnd}
+                                  >
+                                    <SortableContext
+                                      items={orderedFields.map(f => f.label)}
+                                      strategy={horizontalListSortingStrategy}
+                                    >
+                                      <div className="flex flex-wrap gap-1.5 pt-2">
+                                        {orderedFields.map(f => {
+                                          const insertIntoFocused = () => {
+                                            const el =
+                                              focusedTextareaRef.current;
+                                            if (el) {
+                                              el.focus();
+                                              const start =
+                                                el.selectionStart ??
+                                                el.value.length;
+                                              const end =
+                                                el.selectionEnd ??
+                                                el.value.length;
+                                              const before = el.value.slice(
+                                                0,
+                                                start
                                               );
-                                              el.dispatchEvent(
-                                                new Event("input", {
-                                                  bubbles: true,
-                                                })
-                                              );
+                                              const after = el.value.slice(end);
+                                              const insert =
+                                                before && !before.endsWith(" ")
+                                                  ? ` ${f.value!}`
+                                                  : f.value!;
+                                              try {
+                                                document.execCommand(
+                                                  "insertText",
+                                                  false,
+                                                  insert
+                                                );
+                                              } catch {
+                                                const nativeInputValueSetter =
+                                                  Object.getOwnPropertyDescriptor(
+                                                    window.HTMLTextAreaElement
+                                                      .prototype,
+                                                    "value"
+                                                  )?.set ||
+                                                  Object.getOwnPropertyDescriptor(
+                                                    window.HTMLInputElement
+                                                      .prototype,
+                                                    "value"
+                                                  )?.set;
+                                                if (nativeInputValueSetter) {
+                                                  nativeInputValueSetter.call(
+                                                    el,
+                                                    before + insert + after
+                                                  );
+                                                  el.dispatchEvent(
+                                                    new Event("input", {
+                                                      bubbles: true,
+                                                    })
+                                                  );
+                                                }
+                                              }
                                             }
-                                          }
-                                        }
-                                      };
-                                      const isVnShort = /^V\d+$/.test(f.label);
-                                      const isVnFull = /^V\d+F$/.test(f.label);
-                                      const isStandard =
-                                        !isVnShort &&
-                                        (shortcutFolderLabels.has(f.label) ||
-                                          TRIGGER_ONLY_LABELS.has(f.label) ||
-                                          isVnFull);
-                                      return (
-                                        <SortableChip
-                                          key={f.label}
-                                          id={f.label}
-                                          label={f.label}
-                                          value={f.value}
-                                          showValue={isVnShort || !isStandard}
-                                          onInsert={insertIntoFocused}
-                                        />
-                                      );
-                                    })}
-                                  </div>
-                                </SortableContext>
-                              </DndContext>
-                            );
-                          })()}
-                        {/* Entity chips — quick-insert shortcuts mined from this sheet's own
+                                          };
+                                          const isVnShort = /^V\d+$/.test(
+                                            f.label
+                                          );
+                                          const isVnFull = /^V\d+F$/.test(
+                                            f.label
+                                          );
+                                          const isStandard =
+                                            !isVnShort &&
+                                            (shortcutFolderLabels.has(
+                                              f.label
+                                            ) ||
+                                              TRIGGER_ONLY_LABELS.has(
+                                                f.label
+                                              ) ||
+                                              isVnFull);
+                                          return (
+                                            <SortableChip
+                                              key={f.label}
+                                              id={f.label}
+                                              label={f.label}
+                                              value={f.value}
+                                              showValue={
+                                                isVnShort || !isStandard
+                                              }
+                                              onInsert={insertIntoFocused}
+                                            />
+                                          );
+                                        })}
+                                      </div>
+                                    </SortableContext>
+                                  </DndContext>
+                                );
+                              })()}
+                            {/* Entity chips — quick-insert shortcuts mined from this sheet's own
                         observations (surname / short address / vehicle rego), one line
                         under the fixed chips above, shared across every officer viewing
                         the sheet since they come from the server, not a per-device setting. */}
-                        {hasEntityChips && (
-                          <div className="flex flex-wrap gap-1.5 pt-2">
-                            {entityChips!.map(chip => {
-                              const insertIntoFocused = () => {
-                                const el = focusedTextareaRef.current;
-                                if (!el) return;
-                                el.focus();
-                                const start =
-                                  el.selectionStart ?? el.value.length;
-                                const end = el.selectionEnd ?? el.value.length;
-                                const before = el.value.slice(0, start);
-                                const after = el.value.slice(end);
-                                const insert =
-                                  before && !before.endsWith(" ")
-                                    ? ` ${chip.insertValue}`
-                                    : chip.insertValue;
-                                try {
-                                  document.execCommand(
-                                    "insertText",
-                                    false,
-                                    insert
+                            {hasEntityChips && (
+                              <div className="flex flex-wrap gap-1.5 pt-2">
+                                {entityChips!.map(chip => {
+                                  const insertIntoFocused = () => {
+                                    const el = focusedTextareaRef.current;
+                                    if (!el) return;
+                                    el.focus();
+                                    const start =
+                                      el.selectionStart ?? el.value.length;
+                                    const end =
+                                      el.selectionEnd ?? el.value.length;
+                                    const before = el.value.slice(0, start);
+                                    const after = el.value.slice(end);
+                                    const insert =
+                                      before && !before.endsWith(" ")
+                                        ? ` ${chip.insertValue}`
+                                        : chip.insertValue;
+                                    try {
+                                      document.execCommand(
+                                        "insertText",
+                                        false,
+                                        insert
+                                      );
+                                    } catch {
+                                      const nativeInputValueSetter =
+                                        Object.getOwnPropertyDescriptor(
+                                          window.HTMLTextAreaElement.prototype,
+                                          "value"
+                                        )?.set ||
+                                        Object.getOwnPropertyDescriptor(
+                                          window.HTMLInputElement.prototype,
+                                          "value"
+                                        )?.set;
+                                      if (nativeInputValueSetter) {
+                                        nativeInputValueSetter.call(
+                                          el,
+                                          before + insert + after
+                                        );
+                                        el.dispatchEvent(
+                                          new Event("input", { bubbles: true })
+                                        );
+                                      }
+                                    }
+                                  };
+                                  return (
+                                    <button
+                                      key={chip.key}
+                                      onMouseDown={e => e.preventDefault()}
+                                      onClick={insertIntoFocused}
+                                      title={`Insert: ${chip.insertValue}`}
+                                      className="inline-flex items-center px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
+                                    >
+                                      <span className="text-[10px] font-mono font-bold max-w-[140px] truncate">
+                                        {chip.insertValue}
+                                      </span>
+                                    </button>
                                   );
-                                } catch {
-                                  const nativeInputValueSetter =
-                                    Object.getOwnPropertyDescriptor(
-                                      window.HTMLTextAreaElement.prototype,
-                                      "value"
-                                    )?.set ||
-                                    Object.getOwnPropertyDescriptor(
-                                      window.HTMLInputElement.prototype,
-                                      "value"
-                                    )?.set;
-                                  if (nativeInputValueSetter) {
-                                    nativeInputValueSetter.call(
-                                      el,
-                                      before + insert + after
-                                    );
-                                    el.dispatchEvent(
-                                      new Event("input", { bubbles: true })
-                                    );
-                                  }
-                                }
-                              };
-                              return (
-                                <button
-                                  key={chip.key}
-                                  onMouseDown={e => e.preventDefault()}
-                                  onClick={insertIntoFocused}
-                                  title={`Insert: ${chip.insertValue}`}
-                                  className="inline-flex items-center px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
-                                >
-                                  <span className="text-[10px] font-mono font-bold max-w-[140px] truncate">
-                                    {chip.insertValue}
-                                  </span>
-                                </button>
-                              );
-                            })}
+                                })}
+                              </div>
+                            )}
                           </div>
-                        )}
-                        {/* Continuity chips — vehicle arriving/departing,
-                        walked in/out. See ContinuityChipGroup/the chip
-                        arrays above for how these mirror the RS Quick Entry
-                        map popup's own continuity chips. */}
-                        {hasContinuityChips && (
-                          <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-2">
-                            <ContinuityChipGroup
-                              label="Vehicle arriving"
-                              chips={vehicleArrivingChips}
-                            />
-                            <ContinuityChipGroup
-                              label="Vehicle departing"
-                              chips={vehicleDepartingChips}
-                            />
-                            <ContinuityChipGroup
-                              label="Walked in"
-                              chips={walkedInChips}
-                            />
-                            <ContinuityChipGroup
-                              label="Walked in direct"
-                              chips={walkedInDirectChips}
-                            />
-                            <ContinuityChipGroup
-                              label="Walked out"
-                              chips={walkedOutChips}
-                            />
-                            <ContinuityChipGroup
-                              label="Left address"
-                              chips={leftAddressChips}
-                            />
-                            <ContinuityChipGroup
-                              label="Entered"
-                              chips={enteredChips}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-              </div>
+                        );
+                      })()}
+                  </div>
+                )}
+                {/* Continuity cards sit between the chip panel and the rows,
+                    and show whether or not the panel above is expanded. */}
+                {hasContinuityChips && (
+                  <div className={showTargetPanel ? "mb-4 -mt-2" : "mb-4"}>
+                    <ContinuityCards
+                      cards={continuityCards}
+                      dismissed={continuityDismissed}
+                      onDismiss={(key, rowId) =>
+                        setContinuityDismissal.mutate({ sheetId, key, rowId })
+                      }
+                      onRestore={key =>
+                        setContinuityDismissal.mutate({
+                          sheetId,
+                          key,
+                          rowId: null,
+                        })
+                      }
+                      onInsert={insertAtFocused}
+                    />
+                  </div>
+                )}
+              </>
             );
           })()}
 

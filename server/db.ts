@@ -769,6 +769,31 @@ export async function updateRunningSheet(
   await db.update(runningSheets).set(data).where(eq(runningSheets.id, id));
 }
 
+/** Stops (rowId given) or resumes (rowId null) tracking one continuity card
+ * on a sheet. Shared by everyone on the sheet. Returns the new map. */
+export async function setContinuityDismissal(
+  sheetId: number,
+  key: string,
+  rowId: number | null
+): Promise<Record<string, number>> {
+  const sheet = await getRunningSheetById(sheetId);
+  if (!sheet) throw new Error("Sheet not found");
+  let map: Record<string, number> = {};
+  try {
+    map = sheet.continuityDismissed
+      ? (JSON.parse(sheet.continuityDismissed) as Record<string, number>)
+      : {};
+  } catch {
+    map = {};
+  }
+  if (rowId === null) delete map[key];
+  else map[key] = rowId;
+  await updateRunningSheet(sheetId, {
+    continuityDismissed: JSON.stringify(map),
+  });
+  return map;
+}
+
 /** Recomputes and overwrites a sheet's auto-generated title from its
  * current date/author/operation/target — call this after anything that
  * feeds the title changes (sheetDate, sheetCins/author, targetId, or the

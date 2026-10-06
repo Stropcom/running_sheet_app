@@ -139,6 +139,7 @@ import {
   findMissingLocationSuggestion,
   findVagueVehicleMatch,
   getRunningSheetById,
+  setContinuityDismissal,
   computeWitnessListData,
   getRunningSheets,
   addDaysISO,
@@ -995,6 +996,20 @@ export const appRouter = router({
       .input(z.object({ operationIds: z.array(z.number()) }))
       .query(async ({ input }) => {
         return getRunningSheetsByOperations(input.operationIds);
+      }),
+
+    /** Stops or resumes tracking one continuity card ("Where now" band) on
+     * a sheet — shared by everyone on it. rowId null resumes. */
+    setContinuityDismissal: protectedProcedure
+      .input(
+        z.object({
+          sheetId: z.number(),
+          key: z.string().min(1).max(200),
+          rowId: z.number().nullable(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        return setContinuityDismissal(input.sheetId, input.key, input.rowId);
       }),
 
     get: protectedProcedure

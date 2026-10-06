@@ -113,3 +113,166 @@ export function extractWalkInTowardsRoute(route: string): string {
 // existing sheets first — this is a legal record, not just app state.
 export const WALK_OUT_PATTERN =
   /exited\s+(.+?)\s*,?\s*(?:and\s+)?walked\s+(.+?)\s*,?\s*(?:to|towards)\s+Vehicle\s+([A-Za-z0-9]{5,8})/i;
+
+// ─── People entering and leaving addresses (no vehicle involved) ───────────
+// The patterns above are all anchored on a vehicle ("exited the vehicle",
+// "towards Vehicle REGO"). Surveillance of an address with no vehicle, or
+// people moving from one address to another, never matches them. These add
+// the plain forms:
+//   "BAIG entered 13 Denford Street and continued out of sight."
+//   "BAIG exited 193b Stock Road and walked across the road towards
+//    13 Denford Street."
+// scanWalkEvents below is the one place that reads all of them (vehicle and
+// non-vehicle) over a sheet's rows, so getPendingWalkIns and the "heading
+// to" list can never disagree about who is where.
+
+export const PERSON_ENTER_PATTERN =
+  /([A-Za-z][^.\n]*?)\s*\bentered\s+(?!the\s+vehicle\b)(.+?)\s+and continued out of sight/i;
+
+export const PERSON_EXIT_PATTERN =
+  /([A-Za-z][^.\n]*?)\s*\bexited\s+(?!the\s+vehicle\b)(.+?)\s*,?\s*(?:and\s+)?walked\b([^.\n]*)/i;
+
+/** The walkers' names, with anything from an "exited"/"walked" clause on
+ * cut off — a lazy capture can otherwise swallow the start of the same
+ * sentence ("BAIG exited A, walked across the road,"). */
+export function cleanWalkerNames(raw: string): string {
+  return raw
+    .replace(/\s*,?\s*(?:and\s+)?(?:then\s+)?\b(?:exited|walked)\b.*$/i, "")
+    .replace(/[\s,]+$/, "")
+    .trim();
+}
+
+/** A location written as a full address ("13 Denford Street, KENWICK WA
+ * (13 Denford Street)") is reduced to its bracket label, which is what later
+ * mentions and the other continuity logic use. */
+function bracketLabelOrSelf(location: string): string {
+  const b = location.match(/\(([^)]{1,80})\)/);
+  return (b ? b[1] : location).trim();
+}
+
+/** Where an "exited X and walked ..." clause says the walkers were heading,
+ * or null when it names no destination or the destination is a vehicle
+ * (that case is WALK_OUT_PATTERN's). `rest` is the text after "walked". */
+export function extractExitDestination(rest: string): string | null {
+  const m = rest.match(/\btowards\s+(.+)$/i);
+  if (!m) return null;
+  const dest = bracketLabelOrSelf(
+    extractWalkInTowardsLocation(
+      m[1].replace(/\s+and\s+continued\b.*$/i, "").replace(/[\s,]+$/, "")
+    )
+  );
+  if (!dest || /^Vehicle\b/i.test(dest)) return null;
+  return dest;
+}
+
+export interface WalkScanRow {
+  id: number;
+  sheetId: number;
+  observation: string | null;
+}
+
+export interface ScannedWalkIn {
+  names: string;
+  location: string;
+  route: string;
+  sheetId: number;
+  rowId: number;
+}
+
+export interface ScannedHeadingTo {
+  names: string;
+  /** Where they said they were heading, e.g. "13 Denford Street". */
+  destination: string;
+  /** Where they left, e.g. "193b Stock Road". */
+  from: string;
+  sheetId: number;
+  rowId: number;
+}
+
+/**
+ * Reads a sheet's rows in order and returns, most recent first:
+ *  - walkIns: people who went into a location and have not since left it
+ *  - headingTo: people who left a location saying where they were going and
+ *    have not since been logged entering it
+ */
+export function scanWalkEvents(rows: WalkScanRow[]): {
+  walkIns: ScannedWalkIn[];
+  headingTo: ScannedHeadingTo[];
+} {
+  const key = (s: string) => s.trim().toLowerCase();
+  const lastWalkIn = new Map<string, ScannedWalkIn & { orderIdx: number }>();
+  const walkedOut = new Set<string>();
+  const heading = new Map<string, ScannedHeadingTo & { orderIdx: number }>();
+
+  rows.forEach((row, idx) => {
+    const text = row.observation;
+    if (!text) return;
+    const where = { sheetId: row.sheetId, rowId: row.id, orderIdx: idx };
+
+    const outMatch = text.match(WALK_OUT_PATTERN);
+    if (outMatch) {
+      walkedOut.add(key(outMatch[1]));
+      return;
+    }
+
+    // A non-vehicle exit. Not a `return`: the same row can go on to say
+    // where they entered next.
+    const exitMatch = text.match(PERSON_EXIT_PATTERN);
+    if (exitMatch) {
+      const from = exitMatch[2].trim();
+      walkedOut.add(key(from));
+      const dest = extractExitDestination(exitMatch[3]);
+      if (dest) {
+        heading.set(key(dest), {
+          names: cleanWalkerNames(exitMatch[1]),
+          destination: dest,
+          from,
+          ...where,
+        });
+      }
+    }
+
+    const record = (names: string, location: string, route: string) => {
+      const k = key(location);
+      lastWalkIn.set(k, { names, location, route, ...where });
+      walkedOut.delete(k);
+      heading.delete(k);
+    };
+
+    const inMatch = text.match(WALK_IN_PATTERN);
+    if (inMatch) {
+      record(inMatch[1].trim(), inMatch[3].trim(), inMatch[2]?.trim() ?? "");
+      return;
+    }
+    const towardsMatch = text.match(WALK_IN_TOWARDS_PATTERN);
+    if (towardsMatch) {
+      const rawRoute = towardsMatch[2].trim();
+      record(
+        towardsMatch[1].trim(),
+        extractWalkInTowardsLocation(rawRoute),
+        extractWalkInTowardsRoute(rawRoute)
+      );
+      return;
+    }
+    const directMatch = text.match(PERSON_ENTER_PATTERN);
+    if (directMatch) {
+      record(
+        cleanWalkerNames(directMatch[1]),
+        bracketLabelOrSelf(directMatch[2]),
+        ""
+      );
+    }
+  });
+
+  const byRecent = <T extends { orderIdx: number }>(a: T, b: T) =>
+    b.orderIdx - a.orderIdx;
+  const walkIns = Array.from(lastWalkIn.entries())
+    .filter(([k]) => !walkedOut.has(k))
+    .map(([, v]) => v)
+    .sort(byRecent)
+    .map(({ orderIdx: _o, ...rest }) => rest);
+  const headingTo = Array.from(heading.values())
+    .sort(byRecent)
+    .map(({ orderIdx: _o, ...rest }) => rest);
+  return { walkIns, headingTo };
+}

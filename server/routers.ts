@@ -134,6 +134,7 @@ import {
   getPendingVehicleDepartures,
   getPendingVehicleArrivals,
   getPendingWalkIns,
+  getPendingHeadingTo,
   isAddressAlreadyMentioned,
   findMissingLocationSuggestion,
   findVagueVehicleMatch,
@@ -1475,6 +1476,15 @@ export const appRouter = router({
       .input(z.object({ sheetId: z.number() }))
       .query(async ({ input }) => {
         return getPendingWalkIns(input.sheetId);
+      }),
+
+    // People who left a location saying where they were going and haven't
+    // been logged entering it yet — the "Entered" chip's source. See
+    // getPendingHeadingTo.
+    pendingHeadingTo: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        return getPendingHeadingTo(input.sheetId);
       }),
 
     // Whether an address has already been mentioned (in its full bracketed

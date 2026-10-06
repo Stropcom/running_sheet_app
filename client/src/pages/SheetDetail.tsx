@@ -2817,12 +2817,21 @@ export default function SheetDetail({
     }
   );
 
+  const { data: pendingHeadingTo } = trpc.row.pendingHeadingTo.useQuery(
+    { sheetId },
+    {
+      enabled: isAuthenticated && !!sheetId && isOnline,
+      refetchInterval: isOnline ? 10000 : false,
+    }
+  );
+
   const invalidateRows = useCallback(() => {
     utils.row.list.invalidate({ sheetId });
     utils.row.entityChips.invalidate({ sheetId });
     utils.row.pendingVehicleDepartures.invalidate({ sheetId });
     utils.row.pendingVehicleArrivals.invalidate({ sheetId });
     utils.row.pendingWalkIns.invalidate({ sheetId });
+    utils.row.pendingHeadingTo.invalidate({ sheetId });
   }, [utils, sheetId]);
 
   // Cache sheet data to IndexedDB whenever we have fresh data online
@@ -4981,12 +4990,31 @@ export default function SheetDetail({
                   : `${names} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
               }));
             });
+            // People on foot with no vehicle: someone who walked into a
+            // location and hasn't left it can be logged leaving it for
+            // another address ("[location]" and "[route]" are literal text
+            // to type over, as with "Vehicle arriving"), and someone logged
+            // as heading for an address can be logged entering it.
+            const leftAddressChips = (pendingWalkIns ?? []).map(w => ({
+              key: `la-${w.location}`,
+              rego: "",
+              label: w.location,
+              text: `${shortenAlreadyMentionedNames(w.names, usedBracketCodes)} exited ${w.location} and walked [route] towards [location].`,
+            }));
+            const enteredChips = (pendingHeadingTo ?? []).map(h => ({
+              key: `en-${h.destination}`,
+              rego: "",
+              label: h.destination,
+              text: `${shortenAlreadyMentionedNames(h.names, usedBracketCodes)} entered ${h.destination} and continued out of sight.`,
+            }));
             const hasContinuityChips =
               vehicleArrivingChips.length > 0 ||
               vehicleDepartingChips.length > 0 ||
               walkedInChips.length > 0 ||
               walkedInDirectChips.length > 0 ||
-              walkedOutChips.length > 0;
+              walkedOutChips.length > 0 ||
+              leftAddressChips.length > 0 ||
+              enteredChips.length > 0;
             const insertAtFocused = (text: string) => {
               const el = focusedTextareaRef.current;
               if (!el) return;
@@ -5020,7 +5048,12 @@ export default function SheetDetail({
               chips,
             }: {
               label: string;
-              chips: { key: string; rego: string; text: string }[];
+              chips: {
+                key: string;
+                rego: string;
+                label?: string;
+                text: string;
+              }[];
             }) =>
               chips.length === 0 ? null : (
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -5036,7 +5069,7 @@ export default function SheetDetail({
                       className="inline-flex items-center px-2 py-0.5 rounded border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none cursor-pointer"
                     >
                       <span className="text-[10px] font-mono font-bold">
-                        {chip.rego}
+                        {chip.label ?? chip.rego}
                       </span>
                     </button>
                   ))}
@@ -5321,6 +5354,14 @@ export default function SheetDetail({
                             <ContinuityChipGroup
                               label="Walked out"
                               chips={walkedOutChips}
+                            />
+                            <ContinuityChipGroup
+                              label="Left address"
+                              chips={leftAddressChips}
+                            />
+                            <ContinuityChipGroup
+                              label="Entered"
+                              chips={enteredChips}
                             />
                           </div>
                         )}

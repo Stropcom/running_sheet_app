@@ -42,13 +42,7 @@ import {
   matchVehicleArrival,
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
-import {
-  WALK_IN_PATTERN,
-  WALK_IN_TOWARDS_PATTERN,
-  WALK_OUT_PATTERN,
-  extractWalkInTowardsLocation,
-  extractWalkInTowardsRoute,
-} from "@shared/walkEventPatterns";
+import { scanWalkEvents } from "@shared/walkEventPatterns";
 import {
   classifyVisitDirection,
   timeBucketLabels,
@@ -5823,80 +5817,26 @@ export async function getPendingWalkIns(
   sheetId: number
 ): Promise<PendingWalkIn[]> {
   const rows = await getRowsBySheetId(sheetId);
+  return scanWalkEvents(rows).walkIns;
+}
 
-  const lastWalkInByLocationKey = new Map<
-    string,
-    {
-      names: string;
-      location: string;
-      route: string;
-      sheetId: number;
-      rowId: number;
-      orderIdx: number;
-    }
-  >();
-  const walkedOutLocationKeys = new Set<string>();
+export interface PendingHeadingTo {
+  names: string;
+  destination: string;
+  from: string;
+  sheetId: number;
+  rowId: number;
+}
 
-  rows.forEach((row, idx) => {
-    if (!row.observation) return;
-    const outMatch = row.observation.match(WALK_OUT_PATTERN);
-    if (outMatch) {
-      walkedOutLocationKeys.add(outMatch[1].trim().toLowerCase());
-      return;
-    }
-    const inMatch = row.observation.match(WALK_IN_PATTERN);
-    if (inMatch) {
-      const names = inMatch[1].trim();
-      const route = inMatch[2]?.trim() ?? "";
-      const location = inMatch[3].trim();
-      const key = location.toLowerCase();
-      lastWalkInByLocationKey.set(key, {
-        names,
-        location,
-        route,
-        sheetId: row.sheetId,
-        rowId: row.id,
-        orderIdx: idx,
-      });
-      walkedOutLocationKeys.delete(key);
-      return;
-    }
-    // Fallback for the "walked towards <location> and continued out of
-    // sight" phrasing — no separate "entered <location>" clause for
-    // WALK_IN_PATTERN to anchor on, see WALK_IN_TOWARDS_PATTERN.
-    const towardsMatch = row.observation.match(WALK_IN_TOWARDS_PATTERN);
-    if (towardsMatch) {
-      const names = towardsMatch[1].trim();
-      const rawRoute = towardsMatch[2].trim();
-      const location = extractWalkInTowardsLocation(rawRoute);
-      // NOT the raw captured clause — that still contains the destination
-      // ("towards the front of 64 Matheson Road"), and reusing it verbatim
-      // in a "Walked out" chip (which also states `location`) duplicated
-      // the address. This is just whatever route content came before
-      // "towards", if any — empty when the clause was pure destination.
-      const route = extractWalkInTowardsRoute(rawRoute);
-      const key = location.toLowerCase();
-      lastWalkInByLocationKey.set(key, {
-        names,
-        location,
-        route,
-        sheetId: row.sheetId,
-        rowId: row.id,
-        orderIdx: idx,
-      });
-      walkedOutLocationKeys.delete(key);
-    }
-  });
-
-  const pending: (PendingWalkIn & { orderIdx: number })[] = [];
-  for (const key of Array.from(lastWalkInByLocationKey.keys())) {
-    if (walkedOutLocationKeys.has(key)) continue;
-    pending.push(lastWalkInByLocationKey.get(key)!);
-  }
-  // Most recently walked in first.
-  return pending
-    .sort((a, b) => b.orderIdx - a.orderIdx)
-    .map(({ orderIdx, ...rest }) => rest);
+// People who left a location saying where they were going ("exited 193b
+// Stock Road and walked towards 13 Denford Street") and haven't yet been
+// logged entering it — the "Entered" chip's source. Same single-sheet
+// scoping as getPendingWalkIns.
+export async function getPendingHeadingTo(
+  sheetId: number
+): Promise<PendingHeadingTo[]> {
+  const rows = await getRowsBySheetId(sheetId);
+  return scanWalkEvents(rows).headingTo;
 }
 
 // ─── Missing Location Prompt (Vehicle Presence Rows) ───────────────────────

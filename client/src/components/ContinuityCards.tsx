@@ -162,7 +162,7 @@ export function ContinuityCards({
             {live.length}
           </span>
           <span className="text-[10px] text-muted-foreground">
-            Tap adds a row at the current time
+            Tap adds to the open cell, or as a new row now
           </span>
         </div>
         <button

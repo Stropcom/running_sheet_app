@@ -56,6 +56,7 @@ import { MissingLocationAlert } from "@/components/MissingLocationAlert";
 import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { bracketVehicleReferences } from "@shared/vehicleEventPatterns";
 import {
   ContinuityCards,
   type ContinuityCardData,
@@ -12143,15 +12144,34 @@ export default function IntelligenceMapping() {
                                   // as its own row at the current time (the
                                   // "Last Entry" banner then offers editing),
                                   // with whichever CINs are selected below.
-                                  // The unsaved text in the box is untouched.
-                                  onAction={text =>
+                                  onAction={text => {
+                                    // Rule 1: the observation box already has
+                                    // text being written → add this as its
+                                    // next paragraph at the end of it.
+                                    if (rsInlineText.trim()) {
+                                      pushInlineUndo(rsInlineText);
+                                      const lead = rsInlineText.endsWith("\n\n")
+                                        ? ""
+                                        : rsInlineText.endsWith("\n")
+                                          ? "\n"
+                                          : "\n\n";
+                                      setRsInlineText(
+                                        `${rsInlineText}${lead}${text}`
+                                      );
+                                      resetInlineTimer();
+                                      rsInlineInputRef.current?.focus();
+                                      return;
+                                    }
+                                    // Rule 2: nothing written → its own row,
+                                    // with vehicles in the raw bracket form
+                                    // (no earlier text introduces them).
                                     addQuickRsEntry(
-                                      text,
+                                      bracketVehicleReferences(text),
                                       new Set(rsInlineCinsRef.current),
                                       null,
                                       mapQeRowDate
-                                    )
-                                  }
+                                    );
+                                  }}
                                 />
                               );
                             })()}

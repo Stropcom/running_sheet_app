@@ -8,6 +8,7 @@ import {
   type AddressSuggestItem,
   type AddressSuggestMode,
 } from "@/components/AddressSuggestDropdown";
+import { bracketVehicleReferences } from "@shared/vehicleEventPatterns";
 import {
   detectAddressSuggestTrigger,
   detectPlaceSuggestTrigger,
@@ -5151,7 +5152,69 @@ export default function SheetDetail({
             // old behaviour) when that would be wrong: offline (the offline
             // queue doesn't carry observation text) or on a sheet dated for
             // a different day than today.
+            // Types text into a controlled textarea so React sees it (same
+            // execCommand / native-setter approach insertAtFocused uses).
+            const typeInto = (
+              el: HTMLTextAreaElement | HTMLInputElement,
+              insert: string
+            ) => {
+              const start = el.selectionStart ?? el.value.length;
+              const end = el.selectionEnd ?? el.value.length;
+              try {
+                document.execCommand("insertText", false, insert);
+              } catch {
+                const setter =
+                  Object.getOwnPropertyDescriptor(
+                    window.HTMLTextAreaElement.prototype,
+                    "value"
+                  )?.set ||
+                  Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype,
+                    "value"
+                  )?.set;
+                if (setter) {
+                  setter.call(
+                    el,
+                    el.value.slice(0, start) + insert + el.value.slice(end)
+                  );
+                  el.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+              }
+            };
+            // The observation cell that is open for editing right now, if
+            // any. focusedTextareaRef also remembers cells that have since
+            // closed, so it must still be attached and the active element.
+            const openObservationCell = (): HTMLTextAreaElement | null => {
+              const el = focusedTextareaRef.current;
+              return el &&
+                el.tagName === "TEXTAREA" &&
+                el.isConnected &&
+                document.activeElement === el
+                ? (el as HTMLTextAreaElement)
+                : null;
+            };
             const addContinuityEntry = (text: string) => {
+              // Rule 1: a cell is open → the sentence goes into it as the
+              // next paragraph, at the end of what's already written.
+              const open = openObservationCell();
+              if (open) {
+                const v = open.value;
+                const lead = !v
+                  ? ""
+                  : v.endsWith("\n\n")
+                    ? ""
+                    : v.endsWith("\n")
+                      ? "\n"
+                      : "\n\n";
+                open.focus();
+                open.setSelectionRange(v.length, v.length);
+                typeInto(open, lead + text);
+                return;
+              }
+              // Rule 2: no cell open → it becomes its own row. It has no
+              // earlier text in the cell to introduce the vehicle, so every
+              // vehicle reference is written in the raw bracket form.
+              text = bracketVehicleReferences(text);
               const perth = (opts: Intl.DateTimeFormatOptions) =>
                 new Intl.DateTimeFormat("en-GB", {
                   timeZone: "Australia/Perth",

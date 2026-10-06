@@ -246,3 +246,23 @@ export function extractArrivalAddress(text: string): string | null {
   }
   return null;
 }
+
+/**
+ * Rewrites each bare "Vehicle 1ORB419" reference as the raw bracket form
+ * "(Vehicle 1ORB419)" — the form the rest of the app keys a vehicle on when
+ * its sentence stands alone in a row with no earlier text in the same cell
+ * to introduce it. The event patterns above accept either form
+ * ("(Vehicle REGO), occupants, departed ..." is the bracket-shorthand
+ * variant), so the row still counts as an arrival/departure. Already
+ * bracketed references, and the word "vehicle" with no registration after
+ * it, are left alone.
+ */
+export function bracketVehicleReferences(text: string): string {
+  return text.replace(
+    /(?<!\()\bVehicle\s+([A-Za-z0-9]{5,8})\b(?!\))/g,
+    (match, rego: string) =>
+      /[A-Za-z]/.test(rego) && /\d/.test(rego)
+        ? `(Vehicle ${rego.toUpperCase()})`
+        : match
+  );
+}

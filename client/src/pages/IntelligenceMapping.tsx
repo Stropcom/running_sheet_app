@@ -56,6 +56,7 @@ import { MissingLocationAlert } from "@/components/MissingLocationAlert";
 import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { useAddressSuggestField } from "@/components/useAddressSuggestField";
 import {
   occupantsStillInVehicle,
   splitPeopleNames,
@@ -2324,6 +2325,21 @@ export default function IntelligenceMapping() {
     null
   );
   const rsInlineInputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Address / "@" place suggestions for the observation box.
+  const rsAddressField = useAddressSuggestField();
+  // How an accepted suggestion lands in the box: as an undo step, caret after it.
+  const applyRsAddressPick = (fn: (prev: string) => string, caret: number) => {
+    setRsInlineText(prev => {
+      pushInlineUndo(prev);
+      return fn(prev);
+    });
+    resetInlineTimer();
+    requestAnimationFrame(() => {
+      const ta = rsInlineInputRef.current;
+      ta?.focus();
+      ta?.setSelectionRange(caret, caret);
+    });
+  };
   // RSQE is built for tapping shortcut chips, not typing — the observation
   // textarea starts read-only (so focusing it, including the auto-focus on
   // open, never summons the on-screen keyboard) until the user taps directly
@@ -11263,6 +11279,16 @@ export default function IntelligenceMapping() {
 
                               const cursorPos =
                                 e.target.selectionStart ?? next.length;
+                              // A street number + start of a street, or "@"
+                              // + a place name, opens the address list and
+                              // takes priority over the name/rego triggers.
+                              if (
+                                rsAddressField.onText(next, cursorPos, e.target)
+                              ) {
+                                closeRsMentionDropdown();
+                                closeRsVehicleMentionDropdown();
+                                return;
+                              }
                               const vehicleTrigger =
                                 detectVehicleMentionTrigger(
                                   next,
@@ -11324,8 +11350,13 @@ export default function IntelligenceMapping() {
                             onBlur={() => {
                               closeRsMentionDropdown();
                               closeRsVehicleMentionDropdown();
+                              rsAddressField.close();
                             }}
                             onKeyDown={e => {
+                              if (
+                                rsAddressField.onKeyDown(e, applyRsAddressPick)
+                              )
+                                return;
                               if (
                                 rsVehicleMentionWord &&
                                 rsVehicleMentionSuggestions.length > 0
@@ -11558,6 +11589,7 @@ export default function IntelligenceMapping() {
                             rows={4}
                             className={`w-full resize-none rounded-md border border-border bg-background px-2.5 py-1.5 text-[11px] placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring md:px-3 md:py-2 md:text-sm lg:min-h-[140px] ${inlineReadOnly ? "cursor-pointer" : ""}`}
                           />
+                          {rsAddressField.element(applyRsAddressPick)}
                           {rsMentionWord &&
                             rsMentionAnchor &&
                             rsMentionSuggestions.length > 0 && (
@@ -12233,10 +12265,14 @@ export default function IntelligenceMapping() {
                                 );
                               }
 
-                              // People heading to this address.
+                              // People walking whose destination is this
+                              // address, or not yet written — for those, this
+                              // pin is where they may have gone ("Entered here").
                               (rsPendingHeadingTo ?? [])
-                                .filter(h =>
-                                  addressesMatch(h.destination, shortAddr)
+                                .filter(
+                                  h =>
+                                    h.destination.includes("[") ||
+                                    addressesMatch(h.destination, shortAddr)
                                 )
                                 .forEach(h =>
                                   cards.push({
@@ -12260,9 +12296,13 @@ export default function IntelligenceMapping() {
                                       {
                                         key: `en-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                                         label: h.destination.includes("[")
-                                          ? "Entered a location"
+                                          ? "Entered here"
                                           : "Entered",
-                                        text: `${names(h.names)} entered ${h.destination} and continued out of sight.`,
+                                        text: `${names(h.names)} entered ${
+                                          h.destination.includes("[")
+                                            ? arriveAddr
+                                            : h.destination
+                                        } and continued out of sight.`,
                                       },
                                       {
                                         key: `wk-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,

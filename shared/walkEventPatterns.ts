@@ -276,3 +276,36 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     .map(({ orderIdx: _o, ...rest }) => rest);
   return { walkIns, headingTo };
 }
+
+/** Splits a names string ("BAIG and JORDAN", "HOGAN, Denise HOLLY (HOLLY)")
+ * into one entry per person. */
+export function splitPeopleNames(names: string): string[] {
+  return names
+    .split(/\s*(?:,|&|\band\b)\s*/i)
+    .map(n => n.trim())
+    .filter(Boolean);
+}
+
+/** The surname-style tokens of a name: the sheet convention writes surnames
+ * in capitals ("BAIG", "Denise HOLLY (HOLLY)"), so matching on those avoids
+ * confusing two people who share a first name. */
+function surnameTokens(name: string): string[] {
+  return name.match(/\b[A-Z][A-Z'-]+\b/g) ?? [];
+}
+
+/**
+ * Of the people a vehicle's occupant description names, who is still
+ * in it? Anyone currently logged as inside an address or walking somewhere
+ * (`onFootNames`) has left the vehicle — a parked vehicle's arrival row
+ * still lists them, so without this the vehicle card keeps saying they are
+ * in the car after they have walked off.
+ */
+export function occupantsStillInVehicle(
+  occupantNames: string,
+  onFootNames: string[]
+): string[] {
+  const onFoot = new Set(onFootNames.flatMap(n => surnameTokens(n)));
+  return splitPeopleNames(occupantNames).filter(
+    p => !surnameTokens(p).some(t => onFoot.has(t))
+  );
+}

@@ -34,6 +34,10 @@ import {
 } from "@/components/SuggestedFaceMatchDialog";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import {
+  occupantsStillInVehicle,
+  splitPeopleNames,
+} from "@shared/walkEventPatterns";
+import {
   ContinuityCards,
   type ContinuityCardData,
 } from "@/components/ContinuityCards";
@@ -4979,17 +4983,6 @@ export default function SheetDetail({
               rego: a.rego,
               text: `Vehicle ${a.rego}, ${shortenAlreadyMentionedNames(a.occupantDesc, usedBracketCodes)}, departed ${a.address} and continued via:`,
             }));
-            const walkedInChips = (pendingArrivals ?? []).map(a => ({
-              key: `wi-${a.rego}`,
-              rego: a.rego,
-              text: `${shortenAlreadyMentionedNames(extractOccupantNames(a.occupantDesc), usedBracketCodes)} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
-            }));
-            // Direct form — no route clause, for when they simply walked in.
-            const walkedInDirectChips = (pendingArrivals ?? []).map(a => ({
-              key: `wid-${a.rego}`,
-              rego: a.rego,
-              text: `${shortenAlreadyMentionedNames(extractOccupantNames(a.occupantDesc), usedBracketCodes)} exited the vehicle, entered ${a.address} and continued out of sight.`,
-            }));
             const walkedOutChips = (pendingWalkIns ?? []).flatMap(w => {
               const arrivalsHere = (pendingArrivals ?? []).filter(
                 a =>
@@ -5046,6 +5039,13 @@ export default function SheetDetail({
             ) => (chip ? [{ key: chip.key, label, text: chip.text }] : []);
             const continuityCards: ContinuityCardData[] = [];
             const walkInsAtVehicle = new Set<string>();
+            // Everyone currently logged as inside an address or walking
+            // somewhere is NOT in a vehicle, whatever the vehicle's arrival
+            // row says.
+            const onFootNames = [
+              ...(pendingWalkIns ?? []).map(w => w.names),
+              ...(pendingHeadingTo ?? []).map(h => h.names),
+            ];
             (pendingArrivals ?? []).forEach(a => {
               const insideHere = (pendingWalkIns ?? []).filter(w =>
                 sameAddr(w.location, a.address)
@@ -5053,23 +5053,49 @@ export default function SheetDetail({
               insideHere.forEach(w => walkInsAtVehicle.add(w.location));
               const rego = a.rego;
               const inside = insideHere.length > 0;
+              const occupants = occupantsStillInVehicle(
+                extractOccupantNames(a.occupantDesc),
+                onFootNames
+              );
+              const inCar = occupants.length > 0;
+              const carNames = shortenAlreadyMentionedNames(
+                occupants.join(" and "),
+                usedBracketCodes
+              );
               const actions = [
-                ...(inside
-                  ? []
-                  : [
-                      ...cardAction(
-                        walkedInDirectChips.find(c => c.rego === rego),
-                        "Walked in direct"
-                      ),
-                      ...cardAction(
-                        walkedInChips.find(c => c.rego === rego),
-                        "Walked in via route"
-                      ),
-                    ]),
-                ...cardAction(
-                  vehicleDepartingChips.find(c => c.rego === rego),
-                  "Vehicle departing"
-                ),
+                ...(inCar && !inside
+                  ? [
+                      {
+                        key: `wid-${rego}`,
+                        label: "Walked in direct",
+                        text: `${carNames} exited the vehicle, entered ${a.address} and continued out of sight.`,
+                      },
+                      {
+                        key: `wi-${rego}`,
+                        label: "Walked in via route",
+                        text: `${carNames} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
+                      },
+                    ]
+                  : []),
+                {
+                  key: `dep-${rego}`,
+                  label: "Vehicle departing",
+                  // Everyone known to be in it, or "unseen occupant/s" when
+                  // nobody is — the usual wording for a departure whose
+                  // occupants weren't seen.
+                  text: `Vehicle ${rego}, ${
+                    inCar
+                      ? occupants.length ===
+                        splitPeopleNames(extractOccupantNames(a.occupantDesc))
+                          .length
+                        ? shortenAlreadyMentionedNames(
+                            a.occupantDesc,
+                            usedBracketCodes
+                          )
+                        : carNames
+                      : "unseen occupant/s"
+                  }, departed ${a.address} and continued via:`,
+                },
                 ...walkedOutChips
                   .filter(c =>
                     insideHere.some(w => c.key === `wo-${w.location}-${rego}`)
@@ -5092,7 +5118,9 @@ export default function SheetDetail({
                 pill: "Parked",
                 who: inside
                   ? `${insideHere.map(w => w.names).join("; ")} inside the address`
-                  : `${extractOccupantNames(a.occupantDesc) || "Occupants"} in the vehicle`,
+                  : inCar
+                    ? `${occupants.join(", ")} in the vehicle`
+                    : "Nobody in the vehicle",
                 state: `${a.address}${sinceText(a.rowId)}`,
                 actions,
                 latestRowId: Math.max(a.rowId, ...insideHere.map(w => w.rowId)),
@@ -5133,12 +5161,13 @@ export default function SheetDetail({
                 c => c.key === `en-${h.destination}`
               );
               if (!chip) return;
+              const destKnown = !h.destination.includes("[");
               continuityCards.push({
                 key: `head-${h.destination}`,
                 title: h.names,
-                pill: "Heading",
+                pill: "Walking",
                 attn: true,
-                who: `Heading to ${h.destination}`,
+                who: destKnown ? `Walking to ${h.destination}` : "On foot",
                 state: `Left ${h.from}${sinceText(h.rowId)}`,
                 actions: cardAction(chip, "Entered"),
                 latestRowId: h.rowId,

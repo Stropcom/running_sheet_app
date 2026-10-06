@@ -57,6 +57,10 @@ import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import {
+  occupantsStillInVehicle,
+  splitPeopleNames,
+} from "@shared/walkEventPatterns";
+import {
   ContinuityCards,
   type ContinuityCardData,
 } from "@/components/ContinuityCards";
@@ -12007,14 +12011,27 @@ export default function IntelligenceMapping() {
                                 location: string;
                               }) =>
                                 `${names(w.names)} exited ${w.location} and walked [route] towards [location].`;
+                              // Anyone logged as inside an address or walking
+                              // somewhere is NOT in a vehicle, whatever the
+                              // vehicle's arrival row says.
+                              const onFootNames = [
+                                ...(rsPendingWalkIns ?? []).map(w => w.names),
+                                ...(rsPendingHeadingTo ?? []).map(h => h.names),
+                              ];
                               Array.from(here.values()).forEach(v => {
                                 const inside = insideHere.length > 0;
-                                const occNames = names(
+                                const allOccupants = splitPeopleNames(
                                   extractOccupantNames(v.occupantDesc)
                                 );
+                                const occupants = occupantsStillInVehicle(
+                                  extractOccupantNames(v.occupantDesc),
+                                  onFootNames
+                                );
+                                const inCar = occupants.length > 0;
+                                const occNames = names(occupants.join(" and "));
                                 const actions: ContinuityCardData["actions"] =
                                   [];
-                                if (!inside) {
+                                if (inCar && !inside) {
                                   actions.push(
                                     {
                                       key: `wid-${v.rego}`,
@@ -12034,7 +12051,16 @@ export default function IntelligenceMapping() {
                                   actions.push({
                                     key: `dep-${v.rego}`,
                                     label: "Vehicle departing",
-                                    text: `Vehicle ${v.rego}, ${names(v.occupantDesc)}, departed ${shortAddr} and continued via:`,
+                                    // Everyone known to be in it, or
+                                    // "unseen occupant/s" when nobody is.
+                                    text: `Vehicle ${v.rego}, ${
+                                      inCar
+                                        ? occupants.length ===
+                                          allOccupants.length
+                                          ? names(v.occupantDesc)
+                                          : occNames
+                                        : "unseen occupant/s"
+                                    }, departed ${shortAddr} and continued via:`,
                                   });
                                 }
                                 if (inside) {
@@ -12061,7 +12087,9 @@ export default function IntelligenceMapping() {
                                   pill: "Parked",
                                   who: inside
                                     ? `${insideHere.map(w => w.names).join("; ")} inside the address`
-                                    : `${extractOccupantNames(v.occupantDesc) || "Occupants"} in the vehicle`,
+                                    : inCar
+                                      ? `${occupants.join(", ")} in the vehicle`
+                                      : "Nobody in the vehicle",
                                   state: shortAddr,
                                   actions,
                                   latestRowId: Math.max(
@@ -12102,9 +12130,11 @@ export default function IntelligenceMapping() {
                                   cards.push({
                                     key: `head-${h.destination}`,
                                     title: h.names,
-                                    pill: "Heading",
+                                    pill: "Walking",
                                     attn: true,
-                                    who: `Heading to ${h.destination}`,
+                                    who: h.destination.includes("[")
+                                      ? "On foot"
+                                      : `Walking to ${h.destination}`,
                                     state: `Left ${h.from}`,
                                     actions: [
                                       {

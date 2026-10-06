@@ -12239,7 +12239,6 @@ export default function IntelligenceMapping() {
                               if (cards.length === 0) return null;
                               return (
                                 <ContinuityCards
-                                  targetCode={targetCode ?? undefined}
                                   cards={cards}
                                   dismissed={rsContinuityDismissed}
                                   onDismiss={(key, rowId) =>

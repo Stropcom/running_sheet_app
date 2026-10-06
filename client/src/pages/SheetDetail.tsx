@@ -5321,8 +5321,8 @@ export default function SheetDetail({
                   title: targetCode,
                   pill: "Not located",
                   attn: true,
-                  who: "",
-                  state: "",
+                  who: "Position not logged",
+                  state: `No logged movement names ${targetCode} yet`,
                   actions: [],
                   latestRowId: Number.MAX_SAFE_INTEGER,
                   isTarget: true,
@@ -5775,7 +5775,6 @@ export default function SheetDetail({
                 {hasContinuityChips && (
                   <div className={showTargetPanel ? "mb-4 -mt-2" : "mb-4"}>
                     <ContinuityCards
-                      targetCode={targetCode ?? undefined}
                       busy={_addRowOnline.isPending}
                       cards={continuityCards}
                       dismissed={continuityDismissed}

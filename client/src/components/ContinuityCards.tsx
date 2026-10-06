@@ -7,10 +7,9 @@
  * continuity chips; the pending data and the sentences they insert are the
  * same, only the layout differs.
  *
- * The card holding the TARGET (isTarget) leads the band, larger, as a
- * tracker: where he is now, who is with him, and his next steps as actions.
- * Everything else sits under it as "Others on the sheet". Continuity exists to
- * track the target, so he is never hidden by a dismissal.
+ * The card holding the TARGET (isTarget) leads the band, in the same card
+ * format as the rest. Continuity exists to track the target, so that card is
+ * never hidden by a dismissal and has no ×.
  *
  * Layout adapts to the room the band actually has (container queries, not
  * device sniffing): one or two cards on a wide band go panoramic, three or
@@ -77,7 +76,6 @@ export interface ContinuityCardData {
 const COLLAPSE_KEY = "runsheet_continuity_cards_collapsed";
 
 export function ContinuityCards({
-  targetCode,
   cards,
   dismissed,
   onDismiss,
@@ -85,8 +83,6 @@ export function ContinuityCards({
   onAction,
   busy = false,
 }: {
-  /** The target's code, e.g. "BAIG". */
-  targetCode?: string;
   cards: ContinuityCardData[];
   /** { cardKey: rowIdAtDismissal } for this sheet, shared by everyone. */
   dismissed: Record<string, number>;
@@ -113,8 +109,12 @@ export function ContinuityCards({
     c.latestRowId <= dismissed[c.key];
   const live = cards.filter(c => !isHidden(c));
   const gone = cards.filter(isHidden);
-  const targetCard = live.find(c => c.isTarget);
-  const others = live.filter(c => !c.isTarget);
+  // The card holding the target leads the band; the rest follow. Same card
+  // format for all of them.
+  const others = [
+    ...live.filter(c => c.isTarget),
+    ...live.filter(c => !c.isTarget),
+  ];
 
   if (live.length === 0 && gone.length === 0) return null;
 
@@ -213,72 +213,6 @@ export function ContinuityCards({
         </button>
       </div>
 
-      {!collapsed && targetCard && (
-        <div
-          className={`overflow-hidden rounded-xl border border-l-[6px] ${
-            targetCard.attn
-              ? "border-amber-500/40 border-l-amber-500 bg-amber-500/10"
-              : "border-border border-l-emerald-500 bg-card"
-          }`}
-        >
-          <div className="grid gap-x-4 gap-y-1 p-3 @lg:grid-cols-[auto_1fr]">
-            <div className="flex flex-col">
-              <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                Target
-              </span>
-              <span className="font-mono text-[15px] font-semibold tracking-wide">
-                {targetCode ?? targetCard.title}
-              </span>
-            </div>
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <div className="break-words text-lg font-semibold leading-tight">
-                {targetCard.locus?.headline ?? targetCard.who}
-              </div>
-              {(targetCard.locus?.sub || targetCard.state) && (
-                <div className="text-xs text-muted-foreground">
-                  {targetCard.locus?.sub ?? targetCard.state}
-                </div>
-              )}
-              {targetCard.companions && (
-                <div className="text-xs">With {targetCard.companions}</div>
-              )}
-              {targetCard.warn && (
-                <div className="mt-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-700 dark:text-amber-400">
-                  {targetCard.warn}
-                </div>
-              )}
-            </div>
-          </div>
-          {targetCard.actions.length > 0 && (
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-1.5 border-t border-border/60 p-3">
-              {targetCard.actions.map((a, i) => (
-                <button
-                  key={a.key}
-                  type="button"
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={() => onAction(a.text, a.mode)}
-                  disabled={busy}
-                  title={a.text}
-                  className={`cursor-pointer rounded-md border px-2.5 py-2 text-left font-mono text-xs font-semibold transition-all active:scale-[0.98] disabled:cursor-wait disabled:opacity-60 ${
-                    i === 0
-                      ? "border-pink-500 bg-pink-500 text-white hover:bg-pink-500/90"
-                      : "border-pink-500/30 bg-pink-500/5 text-pink-500 hover:bg-pink-500/15"
-                  }`}
-                >
-                  {a.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {!collapsed && targetCard && others.length > 0 && (
-        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-          Others on the sheet
-        </span>
-      )}
-
       {!collapsed && others.length > 0 && (
         <>
           <div
@@ -323,6 +257,11 @@ export function ContinuityCards({
                 >
                   <div>{c.who}</div>
                   <div className="text-muted-foreground">{c.state}</div>
+                  {c.warn && (
+                    <div className="mt-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-amber-700 dark:text-amber-400">
+                      {c.warn}
+                    </div>
+                  )}
                 </div>
                 <div className={`mt-auto grid gap-1.5 ${actsCls}`}>
                   {c.actions.map(a => (
@@ -339,22 +278,24 @@ export function ContinuityCards({
                     </button>
                   ))}
                 </div>
-                <button
-                  type="button"
-                  onMouseDown={e => e.preventDefault()}
-                  onClick={() => onDismiss(c.key, c.latestRowId)}
-                  aria-label={`Stop tracking ${c.title}`}
-                  title={`Stop tracking ${c.title}`}
-                  className={`absolute right-1 grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground ${
-                    pano === "one"
-                      ? "top-1 @lg:top-1/2 @lg:-translate-y-1/2"
-                      : pano === "two"
-                        ? "top-1 @3xl:top-1/2 @3xl:-translate-y-1/2"
-                        : "top-1"
-                  }`}
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                {!c.isTarget && (
+                  <button
+                    type="button"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => onDismiss(c.key, c.latestRowId)}
+                    aria-label={`Stop tracking ${c.title}`}
+                    title={`Stop tracking ${c.title}`}
+                    className={`absolute right-1 grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground ${
+                      pano === "one"
+                        ? "top-1 @lg:top-1/2 @lg:-translate-y-1/2"
+                        : pano === "two"
+                          ? "top-1 @3xl:top-1/2 @3xl:-translate-y-1/2"
+                          : "top-1"
+                    }`}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             ))}
           </div>

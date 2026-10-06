@@ -5693,9 +5693,14 @@ export default function IntelligenceMapping() {
             );
 
             // Row 4: Merge | Move — same size as Edit/Delete, 2 columns
+            // A manual merge (persisted as linkedIntelLabel) can be reversed;
+            // one made automatically because a house marker sits within 40 m
+            // of the intel pin cannot, so it stays greyed out.
             const mergeBtn = !mergedIntel
               ? `<button onclick="window.__cmOpenMergePicker(${cm.id})" style="${btnBase}background:#78716c;color:#fff;border:none;">Merge…</button>`
-              : `<button disabled style="${btnBase}background:#78716c;color:#fff;border:none;opacity:0.4;cursor:default;">Merge…</button>`;
+              : cm.linkedIntelLabel
+                ? `<button onclick="window.__cmUnmerge(${cm.id})" style="${btnBase}background:#b45309;color:#fff;border:none;">Un-merge</button>`
+                : `<button disabled title="Merged automatically — a house marker is within 40 m" style="${btnBase}background:#78716c;color:#fff;border:none;opacity:0.4;cursor:default;">Merged (auto)</button>`;
             const moveBtn = `<button onclick="window.__cmStartMove(${cm.id})" style="${btnBase}background:#0369a1;color:#fff;border:none;">Move…</button>`;
             sections.push(
               `<div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px;">${mergeBtn}${moveBtn}</div>`
@@ -6474,6 +6479,32 @@ export default function IntelligenceMapping() {
       delete (window as any).__cmOpenMergePicker;
     };
   }, []);
+
+  // Global un-merge handler — reverses a manual merge: clears the saved link
+  // and rebuilds the pins so the intel pin comes back on the map.
+  useEffect(() => {
+    (window as any).__cmUnmerge = (id: number) => {
+      infoWindowRef.current?.close();
+      updateCustomMarkerMut.mutate(
+        { id, linkedIntelLabel: null },
+        {
+          onSuccess: async () => {
+            // Wait for the marker list to refresh first, so the rebuild below
+            // sees the link gone and does not simply merge it again.
+            await refetchCustomMarkers();
+            mergedIntelRef.current.clear();
+            if (locations && mapRef.current && geocoderRef.current) {
+              renderLocations(locations);
+            }
+            toast.success("Un-merged — the location pin is back on the map");
+          },
+        }
+      );
+    };
+    return () => {
+      delete (window as any).__cmUnmerge;
+    };
+  }, [locations, renderLocations, refetchCustomMarkers, updateCustomMarkerMut]);
 
   // Global move marker handler — makes the marker draggable and enters move mode
   useEffect(() => {

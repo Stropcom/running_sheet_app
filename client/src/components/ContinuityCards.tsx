@@ -82,7 +82,6 @@ export function ContinuityCards({
   onRestore,
   onAction,
   busy = false,
-  hint = "Tap adds to the open cell, or as a new row now",
 }: {
   cards: ContinuityCardData[];
   /** { cardKey: rowIdAtDismissal } for this sheet, shared by everyone. */
@@ -93,8 +92,6 @@ export function ContinuityCards({
   onAction: (text: string, mode?: "inline" | "paragraph") => void;
   /** True while an action is being saved. */
   busy?: boolean;
-  /** The line beside the heading explaining what a tap does. */
-  hint?: string;
 }) {
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -188,12 +185,11 @@ export function ContinuityCards({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-            Where now
+            Target tracker
           </span>
           <span className="rounded-full bg-pink-500 px-1.5 text-[10px] font-semibold text-white">
             {live.length}
           </span>
-          <span className="text-[10px] text-muted-foreground">{hint}</span>
         </div>
         <button
           type="button"

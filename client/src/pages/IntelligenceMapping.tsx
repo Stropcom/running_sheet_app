@@ -12290,7 +12290,6 @@ export default function IntelligenceMapping() {
                                       rowId: null,
                                     })
                                   }
-                                  hint="Tap adds to the observation — review it, then Submit"
                                   // Puts the sentence into the observation box
                                   // for the officer to review and edit; nothing
                                   // is saved until Submit. With text already

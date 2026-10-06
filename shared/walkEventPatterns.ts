@@ -288,9 +288,19 @@ export interface ScannedHeadingTo {
  *  - headingTo: people who left a location saying where they were going and
  *    have not since been logged entering it
  */
+export interface ScannedToVehicle {
+  /** The person as written, e.g. "BAIG". */
+  name: string;
+  rego: string;
+  rowId: number;
+}
+
 export function scanWalkEvents(rows: WalkScanRow[]): {
   walkIns: ScannedWalkIn[];
   headingTo: ScannedHeadingTo[];
+  /** People who walked to / got into a vehicle, so that vehicle's occupants
+   * include them even when its own rows say "occupant/s not observed". */
+  toVehicle: ScannedToVehicle[];
 } {
   const key = (s: string) => s.trim().toLowerCase();
   // Heading entries are keyed by destination — except an unwritten one
@@ -301,6 +311,16 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   const lastWalkIn = new Map<string, ScannedWalkIn & { orderIdx: number }>();
   const walkedOut = new Set<string>();
   const heading = new Map<string, ScannedHeadingTo & { orderIdx: number }>();
+  const joined = new Map<string, ScannedToVehicle>();
+  const noteJoined = (names: string, rego: string, rowId: number) => {
+    for (const p of splitPeopleNames(cleanWalkerNames(names))) {
+      const t = surnameTokens(p)[0];
+      if (t) joined.set(t, { name: p, rego: rego.toUpperCase(), rowId });
+    }
+  };
+  const noteLeftVehicle = (names: string) => {
+    for (const t of surnameTokens(names)) joined.delete(t);
+  };
   // Drops any "heading to" entry belonging to these people — they have
   // since gone somewhere else or got back to a vehicle.
   const clearHeadingFor = (names: string) => {
@@ -319,6 +339,9 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     const outMatch = text.match(WALK_OUT_PATTERN);
     if (outMatch) {
       walkedOut.add(key(outMatch[1]));
+      // They walked back to this vehicle.
+      const who = text.match(/([A-Za-z][^.\n]*?)\s*\bexited\b/);
+      if (who) noteJoined(who[1], outMatch[3], row.id);
       return;
     }
 
@@ -337,12 +360,19 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       rowDest = dest;
       rowWalkers = cleanWalkerNames(exitMatch[1]);
       if (dest) {
+        noteLeftVehicle(rowWalkers);
         heading.set(headingKey(dest, cleanWalkerNames(exitMatch[1])), {
           names: cleanWalkerNames(exitMatch[1]),
           destination: dest,
           from,
           ...where,
         });
+      } else {
+        // "... walked towards Vehicle X": heading back to the car.
+        const reg = exitMatch[3].match(
+          /\b(?:towards|to)\s+(?:and\s+entered\s+)?\(?Vehicle\s+([A-Za-z0-9]{5,8})/i
+        );
+        if (reg) noteJoined(rowWalkers, reg[1], row.id);
       }
     }
 
@@ -352,6 +382,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       walkedOut.delete(k);
       heading.delete(k);
       clearHeadingFor(names);
+      noteLeftVehicle(names);
     };
 
     const inMatch = text.match(WALK_IN_PATTERN);
@@ -376,6 +407,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       const walkers = cleanWalkerNames(vehicleWalk[1]);
       const dest = extractExitDestination(vehicleWalk[2]) ?? "[location]";
       clearHeadingFor(walkers);
+      noteLeftVehicle(walkers);
       heading.set(headingKey(dest, walkers), {
         names: walkers,
         destination: dest,
@@ -398,6 +430,13 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
             walkMatch[2]
           );
         const dest = toVehicle ? null : extractExitDestination(walkMatch[2]);
+        if (toVehicle) {
+          const reg = walkMatch[2].match(
+            /\b(?:towards|to)\s+(?:and\s+entered\s+)?\(?Vehicle\s+([A-Za-z0-9]{5,8})|\bentered\s+\(?Vehicle\s+([A-Za-z0-9]{5,8})/i
+          );
+          const rego = reg?.[1] ?? reg?.[2];
+          if (rego) noteJoined(walkers, rego, row.id);
+        }
         const previous = Array.from(heading.values()).find(h =>
           surnameTokens(h.names).some(t => surnameTokens(walkers).includes(t))
         );
@@ -405,6 +444,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         rowDest = dest;
         rowWalkers = walkers;
         if (dest) {
+          noteLeftVehicle(walkers);
           heading.set(headingKey(dest, walkers), {
             names: walkers,
             destination: dest,
@@ -438,6 +478,8 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       if (/^\(?Vehicle\b/i.test(anyEnter[2])) {
         // Back in a vehicle: no longer walking anywhere.
         clearHeadingFor(cleanWalkerNames(anyEnter[1]));
+        const reg = anyEnter[2].match(/Vehicle\s+([A-Za-z0-9]{5,8})/i);
+        if (reg) noteJoined(anyEnter[1], reg[1], row.id);
       } else {
         record(cleanWalkerNames(anyEnter[1]), placeName(anyEnter[2]), "");
         return;
@@ -479,7 +521,11 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   const headingTo = Array.from(heading.values())
     .sort(byRecent)
     .map(({ orderIdx: _o, ...rest }) => rest);
-  return { walkIns, headingTo };
+  return {
+    walkIns,
+    headingTo,
+    toVehicle: Array.from(joined.values()),
+  };
 }
 
 /** Splits a names string ("BAIG and JORDAN", "HOGAN, Denise HOLLY (HOLLY)")
@@ -511,8 +557,30 @@ export function occupantsStillInVehicle(
 ): string[] {
   const onFoot = new Set(onFootNames.flatMap(n => surnameTokens(n)));
   return splitPeopleNames(occupantNames).filter(
-    p => !surnameTokens(p).some(t => onFoot.has(t))
+    p => !isUnseenOccupants(p) && !surnameTokens(p).some(t => onFoot.has(t))
   );
+}
+
+/** "occupant/s not observed", "unseen occupant/s" — a placeholder for people
+ * who were not seen, not a person. */
+export function isUnseenOccupants(p: string): boolean {
+  return (
+    /occupant/i.test(p) && /\b(?:not\s+(?:observed|seen)|unseen)\b/i.test(p)
+  );
+}
+
+/** Merges two lists of people, dropping a second entry whose surname is
+ * already in the first. */
+export function mergePeople(a: string[], b: string[]): string[] {
+  const out = [...a];
+  const have = new Set(a.flatMap(n => surnameTokens(n)));
+  for (const p of b) {
+    const tokens = surnameTokens(p);
+    if (tokens.length > 0 && tokens.some(t => have.has(t))) continue;
+    out.push(p);
+    tokens.forEach(t => have.add(t));
+  }
+  return out;
 }
 
 /**

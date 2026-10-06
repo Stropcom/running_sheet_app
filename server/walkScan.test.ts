@@ -101,7 +101,7 @@ describe("scanWalkEvents — people on foot, no vehicle", () => {
   it("ignores rows with no walking", () => {
     expect(
       scanWalkEvents(rows("Vehicle 1HIB84 arrived at 193b Stock Road."))
-    ).toEqual({ walkIns: [], headingTo: [] });
+    ).toEqual({ walkIns: [], headingTo: [], toVehicle: [] });
   });
 
   it("ends the walk when they walk back towards a vehicle", () => {
@@ -375,5 +375,42 @@ describe("sightings: where someone is, with no movement sentence", () => {
     expect(isReadAsMovement("BAIG remains inside Bull Creek Tavern.")).toBe(
       true
     );
+  });
+});
+
+describe("people who joined a vehicle (toVehicle)", () => {
+  const sheet = (...obs: string[]) => rows(...obs);
+
+  it("a walk to a vehicle whose own rows say occupants not observed", () => {
+    const r = scanWalkEvents(
+      sheet(
+        "BAIG exited Bull Creek Tavern and walked towards Vehicle 1HIB84.\nVehicle 1HIB84, occupant/s not observed, departed Bull Creek Tavern and continued via:"
+      )
+    );
+    expect(r.toVehicle).toEqual([
+      expect.objectContaining({ name: "BAIG", rego: "1HIB84" }),
+    ]);
+    expect(r.walkIns).toEqual([]);
+    expect(r.headingTo).toEqual([]);
+  });
+
+  it("walking away from the vehicle again takes him out of it", () => {
+    const r = scanWalkEvents(
+      sheet(
+        "BAIG exited Bull Creek Tavern and walked towards Vehicle 1HIB84.",
+        "BAIG exited the vehicle and walked towards 13 Denford Street."
+      )
+    );
+    expect(r.toVehicle).toEqual([]);
+  });
+
+  it("entering a place takes him out of it", () => {
+    const r = scanWalkEvents(
+      sheet(
+        "BAIG walked to and entered Vehicle 1HIB84.",
+        "BAIG entered Melville Fish and Chips."
+      )
+    );
+    expect(r.toVehicle).toEqual([]);
   });
 });

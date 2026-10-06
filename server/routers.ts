@@ -135,6 +135,7 @@ import {
   getPendingVehicleArrivals,
   getPendingWalkIns,
   getPendingHeadingTo,
+  getPendingToVehicle,
   getPendingContinuityWithDraft,
   isAddressAlreadyMentioned,
   findMissingLocationSuggestion,
@@ -1503,7 +1504,15 @@ export const appRouter = router({
         return getPendingHeadingTo(input.sheetId);
       }),
 
-    // The four pending lists above, read with text still being typed (not
+    // People who walked to / got into a vehicle and haven't left it. See
+    // getPendingToVehicle.
+    pendingToVehicle: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        return getPendingToVehicle(input.sheetId);
+      }),
+
+    // The pending lists above, read with text still being typed (not
     // saved) as the newest row — so the continuity cards follow each sentence
     // as it is written. See getPendingContinuityWithDraft.
     pendingWithDraft: protectedProcedure

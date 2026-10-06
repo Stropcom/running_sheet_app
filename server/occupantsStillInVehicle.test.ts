@@ -36,3 +36,10 @@ describe("occupantsStillInVehicle", () => {
     ]);
   });
 });
+
+describe("unseen-occupant placeholders", () => {
+  it("are not treated as people", () => {
+    expect(occupantsStillInVehicle("Occupant/s not observed", [])).toEqual([]);
+    expect(occupantsStillInVehicle("occupants unseen", [])).toEqual([]);
+  });
+});

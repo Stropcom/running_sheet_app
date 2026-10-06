@@ -5882,6 +5882,14 @@ export async function getPendingHeadingTo(
   return scanWalkEvents(rows).headingTo;
 }
 
+// People who walked to / got into a vehicle and haven't been logged leaving
+// it — counted as that vehicle's occupants even when its own rows say
+// "occupant/s not observed".
+export async function getPendingToVehicle(sheetId: number) {
+  const rows = await getRowsBySheetId(sheetId);
+  return scanWalkEvents(rows).toVehicle;
+}
+
 /**
  * All four pending lists (vehicles that left with no arrival, vehicles parked,
  * people inside, people walking) with `draft` — text still being typed and not
@@ -5917,6 +5925,7 @@ export async function getPendingContinuityWithDraft(
     arrivals: computePendingVehicleArrivals(rows),
     walkIns: walk.walkIns,
     headingTo: walk.headingTo,
+    toVehicle: walk.toVehicle,
   };
 }
 

@@ -58,6 +58,7 @@ import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAddressSuggestField } from "@/components/useAddressSuggestField";
 import {
+  mergePeople,
   occupantsStillInVehicle,
   splitPeopleNames,
   surnameTokens,
@@ -3490,6 +3491,11 @@ export default function IntelligenceMapping() {
     { sheetId: rsSelectedSheetId ?? 0 },
     { enabled: mapQeOpen && !!rsSelectedSheetId }
   );
+  // People who walked to / got into a vehicle (see getPendingToVehicle).
+  const { data: rsPendingToVehicleBase } = trpc.row.pendingToVehicle.useQuery(
+    { sheetId: rsSelectedSheetId ?? 0 },
+    { enabled: mapQeOpen && !!rsSelectedSheetId }
+  );
   // Continuity cards the team has stopped tracking on this sheet — shared
   // with the running sheet's own "Where now" band (same keys).
   const rsContinuityDismissed = useMemo<Record<string, number>>(() => {
@@ -3540,6 +3546,9 @@ export default function IntelligenceMapping() {
   const rsPendingHeadingTo = draftActive
     ? rsDraftPending!.headingTo
     : rsPendingHeadingToBase;
+  const rsPendingToVehicle = draftActive
+    ? rsDraftPending!.toVehicle
+    : rsPendingToVehicleBase;
   // Short-form of the quick-entry address (mirrors the extraction the
   // "Address chips" section below already does) — used only to check
   // whether this address has already been mentioned in the sheet, for the
@@ -7283,6 +7292,9 @@ export default function IntelligenceMapping() {
               sheetId: rsSelectedSheetId,
             });
             void utils.row.pendingHeadingTo.invalidate({
+              sheetId: rsSelectedSheetId,
+            });
+            void utils.row.pendingToVehicle.invalidate({
               sheetId: rsSelectedSheetId,
             });
           }
@@ -12037,20 +12049,61 @@ export default function IntelligenceMapping() {
                               // Vehicles that left somewhere and have no
                               // arrival logged — any of them could be
                               // arriving here.
+                              // Anyone logged as inside an address or walking
+                              // somewhere is NOT in a vehicle, whatever the
+                              // vehicle's arrival row says.
+                              const onFootNames = [
+                                ...(rsPendingWalkIns ?? []).map(w => w.names),
+                                ...(rsPendingHeadingTo ?? []).map(h => h.names),
+                              ];
+                              // Who is in a vehicle: those its own row names,
+                              // plus anyone logged walking to / getting into
+                              // it ("occupant/s not observed" doesn't hide
+                              // the target who just got in).
+                              const vehicleOccupants = (
+                                desc: string,
+                                rego: string
+                              ) =>
+                                mergePeople(
+                                  occupantsStillInVehicle(
+                                    extractOccupantNames(desc),
+                                    onFootNames
+                                  ),
+                                  occupantsStillInVehicle(
+                                    (rsPendingToVehicle ?? [])
+                                      .filter(
+                                        j =>
+                                          j.rego.toUpperCase() ===
+                                          rego.toUpperCase()
+                                      )
+                                      .map(j => j.name)
+                                      .join(" and "),
+                                    onFootNames
+                                  )
+                                );
                               (rsPendingDepartures ?? []).forEach(d => {
+                                const movingOcc = vehicleOccupants(
+                                  d.occupantDesc,
+                                  d.rego
+                                );
                                 cards.push({
                                   key: `dep-${d.rego}`,
                                   title: d.rego,
                                   pill: "Moving",
                                   attn: true,
-                                  who:
-                                    extractOccupantNames(d.occupantDesc) ||
-                                    d.occupantDesc,
+                                  who: movingOcc.length
+                                    ? movingOcc.join(", ")
+                                    : extractOccupantNames(d.occupantDesc) ||
+                                      d.occupantDesc,
                                   state: "Departed",
-                                  holds: surnameTokens(d.occupantDesc),
-                                  people: splitPeopleNames(
-                                    extractOccupantNames(d.occupantDesc)
-                                  ),
+                                  holds: movingOcc.length
+                                    ? movingOcc.flatMap(n => surnameTokens(n))
+                                    : surnameTokens(d.occupantDesc),
+                                  people: movingOcc.length
+                                    ? movingOcc
+                                    : splitPeopleNames(
+                                        extractOccupantNames(d.occupantDesc)
+                                      ),
                                   locus: {
                                     headline: `Moving in ${d.rego}`,
                                     sub: "Departed",
@@ -12121,21 +12174,14 @@ export default function IntelligenceMapping() {
                                 location: string;
                               }) =>
                                 `${names(w.names)} exited ${w.location} and walked [route] towards [location].`;
-                              // Anyone logged as inside an address or walking
-                              // somewhere is NOT in a vehicle, whatever the
-                              // vehicle's arrival row says.
-                              const onFootNames = [
-                                ...(rsPendingWalkIns ?? []).map(w => w.names),
-                                ...(rsPendingHeadingTo ?? []).map(h => h.names),
-                              ];
                               Array.from(here.values()).forEach(v => {
                                 const inside = insideHere.length > 0;
                                 const allOccupants = splitPeopleNames(
                                   extractOccupantNames(v.occupantDesc)
                                 );
-                                const occupants = occupantsStillInVehicle(
-                                  extractOccupantNames(v.occupantDesc),
-                                  onFootNames
+                                const occupants = vehicleOccupants(
+                                  v.occupantDesc,
+                                  v.rego
                                 );
                                 const inCar = occupants.length > 0;
                                 const occNames = names(occupants.join(" and "));

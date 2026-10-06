@@ -5145,7 +5145,7 @@ export default function SheetDetail({
               text: `${shortenAlreadyMentionedNames(w.names, usedBracketCodes)} exited ${w.location} and walked [route] towards [location].`,
             }));
             const enteredChips = (pendingHeadingTo ?? []).map(h => ({
-              key: `en-${h.destination}`,
+              key: `en-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
               rego: "",
               label: h.destination,
               text: `${shortenAlreadyMentionedNames(h.names, usedBracketCodes)} entered ${h.destination} and continued out of sight.`,
@@ -5242,14 +5242,16 @@ export default function SheetDetail({
                     departingAction,
                     ...(inCar && !inside
                       ? [
+                          // Left the vehicle and walked off somewhere other
+                          // than here (a car park or street space).
                           {
-                            key: `wid-${rego}`,
-                            label: "Walked in direct",
-                            text: `${carNames} exited the vehicle, entered ${a.address} and continued out of sight.`,
+                            key: `wa-${rego}`,
+                            label: "Walked away",
+                            text: `${carNames} exited the vehicle and walked [route] towards [location].`,
                           },
                           {
                             key: `wi-${rego}`,
-                            label: "Walked in via route",
+                            label: "Walked in",
                             text: `${carNames} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
                           },
                         ]
@@ -5344,7 +5346,9 @@ export default function SheetDetail({
               });
             (pendingHeadingTo ?? []).forEach(h => {
               const chip = enteredChips.find(
-                c => c.key === `en-${h.destination}`
+                c =>
+                  c.key ===
+                  `en-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`
               );
               if (!chip) return;
               const walkers = shortenAlreadyMentionedNames(
@@ -5356,7 +5360,7 @@ export default function SheetDetail({
               // heading, walk on to somewhere else, or walk back towards a
               // vehicle that is parked.
               continuityCards.push({
-                key: `head-${h.destination}`,
+                key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                 title: h.names,
                 pill: "Walking",
                 attn: true,
@@ -5368,7 +5372,7 @@ export default function SheetDetail({
                     destKnown ? "Entered" : "Entered a location"
                   ),
                   {
-                    key: `wk-${h.destination}`,
+                    key: `wk-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                     label: "Walked to another location",
                     text: `${walkers} walked [route] towards [location].`,
                   },

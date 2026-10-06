@@ -256,3 +256,56 @@ describe("entries written as a full sentence ending in a full stop", () => {
     expect(r.walkIns).toMatchObject([{ location: "Melville Fish & Chips" }]);
   });
 });
+
+describe("leaving a parked vehicle and walking away", () => {
+  it("puts them on foot, heading for the named place", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG and JORDAN exited the vehicle and walked through the car park towards 13 Denford Street."
+      )
+    );
+    expect(r.headingTo).toMatchObject([
+      {
+        names: "BAIG and JORDAN",
+        destination: "13 Denford Street",
+        from: "the vehicle",
+      },
+    ]);
+    expect(r.walkIns).toEqual([]);
+  });
+
+  it("keeps them walking with no destination yet", () => {
+    const r = scanWalkEvents(
+      rows("BAIG exited the vehicle and walked [route] towards [location].")
+    );
+    expect(r.headingTo).toMatchObject([
+      { names: "BAIG", destination: "[location]" },
+    ]);
+  });
+
+  it("still reads a full walk-in as being inside", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG exited the vehicle, walked [route], entered 13 Denford Street and continued out of sight."
+      )
+    );
+    expect(r.headingTo).toEqual([]);
+    expect(r.walkIns).toMatchObject([{ location: "13 Denford Street" }]);
+  });
+
+  it("is read as a movement", () => {
+    expect(
+      isReadAsMovement("BAIG exited the vehicle and walked towards Blend Cafe.")
+    ).toBe(true);
+  });
+
+  it("keeps two groups walking to unwritten places separate", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG exited the vehicle and walked [route] towards [location].",
+        "YATES exited the vehicle and walked [route] towards [location]."
+      )
+    );
+    expect(r.headingTo).toHaveLength(2);
+  });
+});

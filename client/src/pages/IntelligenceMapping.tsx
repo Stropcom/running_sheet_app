@@ -12109,22 +12109,6 @@ export default function IntelligenceMapping() {
                                 const occNames = names(occupants.join(" and "));
                                 const actions: ContinuityCardData["actions"] =
                                   [];
-                                if (inCar && !inside) {
-                                  actions.push(
-                                    {
-                                      key: `wid-${v.rego}`,
-                                      label: "Walked in direct",
-                                      mode: "paragraph",
-                                      text: `${occNames} exited the vehicle, entered ${shortAddr} and continued out of sight.`,
-                                    },
-                                    {
-                                      key: `wir-${v.rego}`,
-                                      label: "Walked in via route",
-                                      mode: "paragraph",
-                                      text: `${occNames} exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`,
-                                    }
-                                  );
-                                }
                                 if (v.saved) {
                                   actions.push({
                                     key: `dep-${v.rego}`,
@@ -12140,6 +12124,24 @@ export default function IntelligenceMapping() {
                                         : "unseen occupant/s"
                                     }, departed ${shortAddr} and continued via:`,
                                   });
+                                }
+                                if (inCar && !inside) {
+                                  // Left the vehicle and walked off somewhere
+                                  // other than here, or walked in here.
+                                  actions.push(
+                                    {
+                                      key: `wa-${v.rego}`,
+                                      label: "Walked away",
+                                      mode: "paragraph",
+                                      text: `${occNames} exited the vehicle and walked [route] towards [location].`,
+                                    },
+                                    {
+                                      key: `wir-${v.rego}`,
+                                      label: "Walked in",
+                                      mode: "paragraph",
+                                      text: `${occNames} exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`,
+                                    }
+                                  );
                                 }
                                 if (inside) {
                                   const w = insideHere[0];
@@ -12238,7 +12240,7 @@ export default function IntelligenceMapping() {
                                 )
                                 .forEach(h =>
                                   cards.push({
-                                    key: `head-${h.destination}`,
+                                    key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                                     title: h.names,
                                     pill: "Walking",
                                     attn: true,
@@ -12256,14 +12258,14 @@ export default function IntelligenceMapping() {
                                     },
                                     actions: [
                                       {
-                                        key: `en-${h.destination}`,
+                                        key: `en-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                                         label: h.destination.includes("[")
                                           ? "Entered a location"
                                           : "Entered",
                                         text: `${names(h.names)} entered ${h.destination} and continued out of sight.`,
                                       },
                                       {
-                                        key: `wk-${h.destination}`,
+                                        key: `wk-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                                         label: "Walked to another location",
                                         text: `${names(h.names)} walked [route] towards [location].`,
                                       },

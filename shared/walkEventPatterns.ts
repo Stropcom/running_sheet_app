@@ -166,6 +166,13 @@ function placeName(raw: string): string {
   return raw.split(",")[0].trim();
 }
 
+// "BAIG exited the vehicle and walked towards 13 Denford Street." — they left
+// a parked vehicle and walked off (no entry yet). Same shape as an exit from an
+// address, with the vehicle as the place left. (With an "entered ..." clause
+// the row is a walk-in, handled by WALK_IN_PATTERN instead.)
+export const PERSON_EXIT_VEHICLE_WALK_PATTERN =
+  /([A-Za-z][^.\n]*?)\s*\bexited\s+the\s+vehicle\b,?\s*(?:and\s+)?walked\b([^.\n]*)/i;
+
 /** The walkers' names, with anything from an "exited"/"walked" clause on
  * cut off — a lazy capture can otherwise swallow the start of the same
  * sentence ("BAIG exited A, walked across the road,"). */
@@ -251,6 +258,11 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   headingTo: ScannedHeadingTo[];
 } {
   const key = (s: string) => s.trim().toLowerCase();
+  // Heading entries are keyed by destination — except an unwritten one
+  // ("[location]"), which several different people can share, so those are
+  // keyed by who is walking too.
+  const headingKey = (dest: string, names: string) =>
+    dest.includes("[") ? `${key(dest)}|${key(names)}` : key(dest);
   const lastWalkIn = new Map<string, ScannedWalkIn & { orderIdx: number }>();
   const walkedOut = new Set<string>();
   const heading = new Map<string, ScannedHeadingTo & { orderIdx: number }>();
@@ -290,7 +302,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       rowDest = dest;
       rowWalkers = cleanWalkerNames(exitMatch[1]);
       if (dest) {
-        heading.set(key(dest), {
+        heading.set(headingKey(dest, cleanWalkerNames(exitMatch[1])), {
           names: cleanWalkerNames(exitMatch[1]),
           destination: dest,
           from,
@@ -322,6 +334,22 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       );
       return;
     }
+    // Left a parked vehicle and walked off: they are now walking, heading
+    // for the named place, or just away ("[location]" until it is written).
+    const vehicleWalk = text.match(PERSON_EXIT_VEHICLE_WALK_PATTERN);
+    if (vehicleWalk && !/\bentered\b/i.test(vehicleWalk[2])) {
+      const walkers = cleanWalkerNames(vehicleWalk[1]);
+      const dest = extractExitDestination(vehicleWalk[2]) ?? "[location]";
+      clearHeadingFor(walkers);
+      heading.set(headingKey(dest, walkers), {
+        names: walkers,
+        destination: dest,
+        from: "the vehicle",
+        ...where,
+      });
+      return;
+    }
+
     // Already on foot (no "exited" in the row): back to a vehicle, or on to
     // another place.
     if (!exitMatch) {
@@ -342,7 +370,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         rowDest = dest;
         rowWalkers = walkers;
         if (dest) {
-          heading.set(key(dest), {
+          heading.set(headingKey(dest, walkers), {
             names: walkers,
             destination: dest,
             from: previous?.from ?? "",
@@ -455,6 +483,7 @@ export function isReadAsMovement(text: string): boolean {
     WALK_IN_TOWARDS_PATTERN.test(text) ||
     PERSON_ENTER_PATTERN.test(text) ||
     PERSON_EXIT_PATTERN.test(text) ||
+    PERSON_EXIT_VEHICLE_WALK_PATTERN.test(text) ||
     PERSON_WALK_PATTERN.test(text)
   ) {
     return true;

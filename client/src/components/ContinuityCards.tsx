@@ -260,7 +260,13 @@ export function ContinuityCards({
                     </div>
                   )}
                 </div>
-                <div className={`mt-auto grid gap-1.5 ${actsCls}`}>
+                <div
+                  className={`mt-auto grid gap-1.5 ${
+                    // A lone action is only as wide as its text (plus a small
+                    // buffer), not stretched across the card.
+                    c.actions.length === 1 ? "w-fit flex-none" : actsCls
+                  }`}
+                >
                   {c.actions.map(a => (
                     <button
                       key={a.key}

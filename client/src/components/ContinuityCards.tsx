@@ -23,6 +23,10 @@ export interface ContinuityAction {
   key: string;
   label: string;
   text: string;
+  /** How the sentence goes into the observation: "inline" appends to the
+   * current text, "paragraph" opens its own paragraph. Surfaces that only
+   * have one way to insert ignore it. */
+  mode?: "inline" | "paragraph";
 }
 
 export interface ContinuityCardData {
@@ -58,7 +62,7 @@ export function ContinuityCards({
   dismissed: Record<string, number>;
   onDismiss: (key: string, rowId: number) => void;
   onRestore: (key: string) => void;
-  onInsert: (text: string) => void;
+  onInsert: (text: string, mode?: "inline" | "paragraph") => void;
 }) {
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -208,7 +212,7 @@ export function ContinuityCards({
                       key={a.key}
                       type="button"
                       onMouseDown={e => e.preventDefault()}
-                      onClick={() => onInsert(a.text)}
+                      onClick={() => onInsert(a.text, a.mode)}
                       title={a.text}
                       className="cursor-pointer rounded-md border border-pink-500/30 bg-pink-500/5 px-2.5 py-1.5 text-left font-mono text-[11px] font-semibold text-pink-500 transition-all hover:bg-pink-500/15 active:scale-[0.98] @max-xl:py-2 @max-xl:text-xs"
                     >

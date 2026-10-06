@@ -56,6 +56,10 @@ import { MissingLocationAlert } from "@/components/MissingLocationAlert";
 import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
+import {
+  ContinuityCards,
+  type ContinuityCardData,
+} from "@/components/ContinuityCards";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useIsMobile } from "@/hooks/useMobile";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -3452,6 +3456,31 @@ export default function IntelligenceMapping() {
     { sheetId: rsSelectedSheetId ?? 0 },
     { enabled: mapQeOpen && !!rsSelectedSheetId }
   );
+  // People who left a location saying where they were going and haven't
+  // been logged entering it — the "Entered" card's source (see
+  // getPendingHeadingTo).
+  const { data: rsPendingHeadingTo } = trpc.row.pendingHeadingTo.useQuery(
+    { sheetId: rsSelectedSheetId ?? 0 },
+    { enabled: mapQeOpen && !!rsSelectedSheetId }
+  );
+  // Continuity cards the team has stopped tracking on this sheet — shared
+  // with the running sheet's own "Where now" band (same keys).
+  const rsContinuityDismissed = useMemo<Record<string, number>>(() => {
+    const sh = (rsSheetsData as any[] | undefined)?.find(
+      (x: any) => x.id === rsSelectedSheetId
+    );
+    try {
+      return sh?.continuityDismissed ? JSON.parse(sh.continuityDismissed) : {};
+    } catch {
+      return {};
+    }
+  }, [rsSheetsData, rsSelectedSheetId]);
+  const setContinuityDismissal = trpc.sheet.setContinuityDismissal.useMutation({
+    onSuccess: () => {
+      void utils.sheet.listByOperations.invalidate();
+      void utils.sheet.get.invalidate();
+    },
+  });
   // Short-form of the quick-entry address (mirrors the extraction the
   // "Address chips" section below already does) — used only to check
   // whether this address has already been mentioned in the sheet, for the
@@ -7161,6 +7190,9 @@ export default function IntelligenceMapping() {
               sheetId: rsSelectedSheetId,
             });
             void utils.row.pendingWalkIns.invalidate({
+              sheetId: rsSelectedSheetId,
+            });
+            void utils.row.pendingHeadingTo.invalidate({
               sheetId: rsSelectedSheetId,
             });
           }
@@ -11860,419 +11892,295 @@ export default function IntelligenceMapping() {
                                 </div>
                               );
                             })()}
-                          {/* Continuity chip groups — arriving/departing/
-                          walked in/out laid out side by side (each still its
-                          own label-above-chips column) rather than each
-                          taking a full-width row, since there are up to four
-                          of these and stacking them ate a lot of vertical
-                          space in the popup. */}
-                          <div className="flex flex-wrap gap-x-4 gap-y-1.5 md:gap-x-6">
-                            {/* Vehicle arriving chips — reuses the occupant
-                            description from the vehicle's last logged
-                            departure anywhere in this operation, so the
-                            officer doesn't have to retype it when the same
-                            vehicle arrives at this quick-entry location. One
-                            chip per still-pending (un-arrived) vehicle —
-                            always requires an explicit tap, never inserted
-                            automatically, since this writes into the record. */}
-                            {mapQeAddress &&
-                              rsPendingDepartures &&
-                              rsPendingDepartures.length > 0 &&
-                              (() => {
-                                const appendText = (text: string) => {
-                                  pushInlineUndo(rsInlineText);
-                                  setRsInlineText(prev =>
-                                    prev ? `${prev} ${text}` : text
-                                  );
-                                  resetInlineTimer();
-                                  rsInlineInputRef.current?.focus();
-                                };
-                                const bracketMatch = mapQeAddress.match(
-                                  /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
+                          {/* Continuity cards — the same "Where now" cards the
+                          running sheet shows (ContinuityCards), narrowed to
+                          this address: vehicles known to be parked here
+                          (plus one whose arrival is typed in the unsaved
+                          observation), people inside or heading here, and
+                          any vehicle that left somewhere with no arrival
+                          logged yet. Always requires an explicit tap —
+                          these write into the record. */}
+                          {mapQeAddress &&
+                            (() => {
+                              const appendInline = (text: string) => {
+                                pushInlineUndo(rsInlineText);
+                                setRsInlineText(prev =>
+                                  prev ? `${prev} ${text}` : text
                                 );
-                                const toTitleCase = (s: string) =>
-                                  s
-                                    .toLowerCase()
-                                    .replace(/\b\w/g, c => c.toUpperCase());
-                                const shortAddr = bracketMatch
-                                  ? toTitleCase(bracketMatch[2])
-                                  : (mapQeAddress.split(",")[0]?.trim() ??
-                                    mapQeAddress);
-                                // App-wide rule: first mention of an address in
-                                // this sheet is written in full (with its
-                                // bracket short-form, which is what Intelligence
-                                // relies on to register the location) — every
-                                // later mention just uses the short form.
-                                const arriveAddr =
-                                  rsAddressMentionedData?.mentioned
-                                    ? shortAddr
-                                    : mapQeAddress;
-                                return (
-                                  <div className="flex flex-col gap-1 md:gap-1.5">
-                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-pink-500/70">
-                                      Vehicle arriving
-                                    </span>
-                                    <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                      {rsPendingDepartures.map(d => {
-                                        const occupantDesc =
-                                          shortenAlreadyMentionedNames(
-                                            d.occupantDesc,
-                                            rsUsedBracketCodes
-                                          );
-                                        const text = `Vehicle ${d.rego}, ${occupantDesc}, arrived at ${arriveAddr}`;
-                                        return (
-                                          <button
-                                            key={d.rego}
-                                            onClick={() => appendText(text)}
-                                            title={text}
-                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                          >
-                                            <span className="font-mono normal-case">
-                                              {d.rego}
-                                            </span>{" "}
-                                            arriving
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
+                                resetInlineTimer();
+                                rsInlineInputRef.current?.focus();
+                              };
+                              // Insert at the caret in its own paragraph, so
+                              // the officer's place in the text is kept.
+                              const appendParagraph = (text: string) => {
+                                pushInlineUndo(rsInlineText);
+                                const textarea = rsInlineInputRef.current;
+                                const pos =
+                                  textarea?.selectionStart ??
+                                  rsInlineText.length;
+                                const selEnd = textarea?.selectionEnd ?? pos;
+                                const before = rsInlineText.slice(0, pos);
+                                const after = rsInlineText.slice(selEnd);
+                                const lead = before
+                                  ? before.endsWith("\n\n")
+                                    ? ""
+                                    : before.endsWith("\n")
+                                      ? "\n"
+                                      : "\n\n"
+                                  : "";
+                                const inserted = `${before}${lead}${text}`;
+                                setRsInlineText(`${inserted}${after}`);
+                                resetInlineTimer();
+                                requestAnimationFrame(() => {
+                                  textarea?.focus();
+                                  const cursor = inserted.length;
+                                  textarea?.setSelectionRange(cursor, cursor);
+                                });
+                              };
+                              const bracketMatch = mapQeAddress.match(
+                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
+                              );
+                              const toTitleCase = (s: string) =>
+                                s
+                                  .toLowerCase()
+                                  .replace(/\b\w/g, c => c.toUpperCase());
+                              const shortAddr = bracketMatch
+                                ? toTitleCase(bracketMatch[2])
+                                : (mapQeAddress.split(",")[0]?.trim() ??
+                                  mapQeAddress);
+                              // First mention of an address on this sheet is
+                              // written in full (with its bracket short-form,
+                              // which Intelligence relies on to register the
+                              // location); later mentions use the short form.
+                              const arriveAddr =
+                                rsAddressMentionedData?.mentioned
+                                  ? shortAddr
+                                  : mapQeAddress;
+                              const names = (n: string) =>
+                                shortenAlreadyMentionedNames(
+                                  n,
+                                  rsUsedBracketCodes
                                 );
-                              })()}
-                            {/* Vehicle departing chips — mirror of the arriving
-                            chips above: reuses the occupant description from
-                            the vehicle's most recent logged arrival, for when
-                            that vehicle is now departing THAT SAME location.
-                            Only shows for a vehicle whose last-known arrival
-                            address matches where this quick-entry popup is
-                            — a vehicle can't be logged departing from
-                            somewhere it isn't. Always uses the short address
-                            form (not the first-mention full form the arriving
-                            chip sometimes needs), since a departure isn't
-                            establishing a new address mention the way an
-                            arrival can be. Requires an explicit tap, same as
-                            the arriving chips. */}
-                            {mapQeAddress &&
-                              rsPendingArrivals &&
-                              rsPendingArrivals.length > 0 &&
-                              (() => {
-                                const appendText = (text: string) => {
-                                  pushInlineUndo(rsInlineText);
-                                  setRsInlineText(prev =>
-                                    prev ? `${prev} ${text}` : text
-                                  );
-                                  resetInlineTimer();
-                                  rsInlineInputRef.current?.focus();
-                                };
-                                const bracketMatch = mapQeAddress.match(
-                                  /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                                );
-                                const toTitleCase = (s: string) =>
-                                  s
-                                    .toLowerCase()
-                                    .replace(/\b\w/g, c => c.toUpperCase());
-                                const shortAddr = bracketMatch
-                                  ? toTitleCase(bracketMatch[2])
-                                  : (mapQeAddress.split(",")[0]?.trim() ??
-                                    mapQeAddress);
-                                const arrivalsHere = rsPendingArrivals.filter(
-                                  a => addressesMatch(a.address, shortAddr)
-                                );
-                                if (arrivalsHere.length === 0) return null;
-                                return (
-                                  <div className="flex flex-col gap-1 md:gap-1.5">
-                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-pink-500/70">
-                                      Vehicle departing
-                                    </span>
-                                    <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                      {arrivalsHere.map(a => {
-                                        const occupantDesc =
-                                          shortenAlreadyMentionedNames(
-                                            a.occupantDesc,
-                                            rsUsedBracketCodes
-                                          );
-                                        const text = `Vehicle ${a.rego}, ${occupantDesc}, departed ${shortAddr} and continued via:`;
-                                        return (
-                                          <button
-                                            key={a.rego}
-                                            onClick={() => appendText(text)}
-                                            title={text}
-                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                          >
-                                            <span className="font-mono normal-case">
-                                              {a.rego}
-                                            </span>{" "}
-                                            departing
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            {/* Walked in chip — for occupants who exit a
-                            parked vehicle here and continue on foot into
-                            this location ("... exited the vehicle, walked
-                            [route], entered X and continued out of sight.").
-                            Offered as soon as a vehicle is known to be at
-                            THIS address — either from an already-SAVED row
-                            on this sheet (rsPendingArrivals, same as the
-                            "Vehicle departing" chip above), OR from the
-                            vehicle-arrival sentence the officer has just
-                            typed into THIS SAME still-unsaved observation
-                            (draftVehicleArrival) — this second case is what
-                            lets the walk-in continuation appear as its own
-                            paragraph below the arrival text in the SAME
-                            row, matching how officers actually write this
-                            narrative, rather than only ever on a
-                            subsequent row after the arrival was submitted.
-                            One button per vehicle here (mirrors "Vehicle
-                            departing"), since the names each button inserts
-                            come from THAT vehicle's own occupantDesc via
-                            extractOccupantNames — if more than one vehicle
-                            is here, each offers different names. The officer
-                            can always edit the inserted names if the actual
-                            walkers differ from the vehicle's occupants,
-                            same as every other reused-text chip. The
-                            [route] placeholder is deliberately literal text
-                            to type over — unlike the occupant description
-                            or address, the route taken genuinely varies
-                            every time and can't be reused from anywhere. */}
-                            {mapQeAddress &&
-                              (() => {
-                                // Insert at the caret rather than forcing the
-                                // text to the end of the observation — the
-                                // officer may have already clicked/tabbed back
-                                // into the middle of what they've typed (e.g.
-                                // to fix a word) before tapping this chip, and
-                                // the old "always append at the end" behaviour
-                                // would silently move the walk-in text away
-                                // from where they were looking. Still opens
-                                // its own paragraph (blank line before) so it
-                                // reads as a distinct sentence, same as before.
-                                const appendText = (text: string) => {
-                                  pushInlineUndo(rsInlineText);
-                                  const textarea = rsInlineInputRef.current;
-                                  const pos =
-                                    textarea?.selectionStart ??
-                                    rsInlineText.length;
-                                  const selEnd = textarea?.selectionEnd ?? pos;
-                                  const before = rsInlineText.slice(0, pos);
-                                  const after = rsInlineText.slice(selEnd);
-                                  const lead = before
-                                    ? before.endsWith("\n\n")
-                                      ? ""
-                                      : before.endsWith("\n")
-                                        ? "\n"
-                                        : "\n\n"
-                                    : "";
-                                  const inserted = `${before}${lead}${text}`;
-                                  setRsInlineText(`${inserted}${after}`);
-                                  resetInlineTimer();
-                                  requestAnimationFrame(() => {
-                                    textarea?.focus();
-                                    const cursor = inserted.length;
-                                    textarea?.setSelectionRange(cursor, cursor);
-                                  });
-                                };
-                                const bracketMatch = mapQeAddress.match(
-                                  /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                                );
-                                const toTitleCase = (s: string) =>
-                                  s
-                                    .toLowerCase()
-                                    .replace(/\b\w/g, c => c.toUpperCase());
-                                const shortAddr = bracketMatch
-                                  ? toTitleCase(bracketMatch[2])
-                                  : (mapQeAddress.split(",")[0]?.trim() ??
-                                    mapQeAddress);
-                                const vehiclesHereByRego = new Map<
-                                  string,
-                                  { rego: string; occupantDesc: string }
-                                >();
-                                (rsPendingArrivals ?? [])
-                                  .filter(a =>
-                                    addressesMatch(a.address, shortAddr)
-                                  )
-                                  .forEach(a =>
-                                    vehiclesHereByRego.set(a.rego, a)
-                                  );
-                                // Draft: a vehicle-arrival sentence already
-                                // typed into THIS unsaved observation — mined
-                                // client-side with the same patterns the
-                                // server uses on saved rows, so a vehicle just
-                                // typed above offers the chip immediately
-                                // rather than only after this row is
-                                // submitted and the next one opened. Takes
-                                // priority over a same-rego saved entry since
-                                // it reflects what's actually on screen right
-                                // now.
-                                const draftArriveMatch =
-                                  matchVehicleArrival(rsInlineText);
-                                if (draftArriveMatch) {
-                                  const draftAddress =
-                                    extractArrivalAddress(rsInlineText);
-                                  if (
-                                    draftAddress &&
-                                    addressesMatch(draftAddress, shortAddr)
-                                  ) {
-                                    vehiclesHereByRego.set(
-                                      draftArriveMatch.rego,
-                                      {
-                                        rego: draftArriveMatch.rego,
-                                        occupantDesc:
-                                          draftArriveMatch.occupantDesc,
-                                      }
-                                    );
-                                  }
+                              const cards: ContinuityCardData[] = [];
+
+                              // Vehicles that left somewhere and have no
+                              // arrival logged — any of them could be
+                              // arriving here.
+                              (rsPendingDepartures ?? []).forEach(d => {
+                                cards.push({
+                                  key: `dep-${d.rego}`,
+                                  title: d.rego,
+                                  pill: "No arrival",
+                                  attn: true,
+                                  who:
+                                    extractOccupantNames(d.occupantDesc) ||
+                                    d.occupantDesc,
+                                  state: "Departed · destination not logged",
+                                  actions: [
+                                    {
+                                      key: `arr-${d.rego}`,
+                                      label: "Arrived here",
+                                      text: `Vehicle ${d.rego}, ${names(d.occupantDesc)}, arrived at ${arriveAddr}`,
+                                    },
+                                  ],
+                                  latestRowId: d.rowId,
+                                });
+                              });
+
+                              // Vehicles here: saved arrivals at this
+                              // address, plus a vehicle-arrival sentence
+                              // already typed into THIS unsaved observation
+                              // (so the walk-in options appear in the same
+                              // row, as officers write it).
+                              const here = new Map<
+                                string,
+                                {
+                                  rego: string;
+                                  occupantDesc: string;
+                                  rowId: number;
+                                  saved: boolean;
                                 }
-                                const vehiclesHere = Array.from(
-                                  vehiclesHereByRego.values()
-                                );
-                                if (vehiclesHere.length === 0) return null;
-                                return (
-                                  <div className="flex flex-col gap-1 md:gap-1.5">
-                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-pink-500/70">
-                                      Walked in
-                                    </span>
-                                    <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                      {vehiclesHere.map(a => {
-                                        const names =
-                                          shortenAlreadyMentionedNames(
-                                            extractOccupantNames(
-                                              a.occupantDesc
-                                            ),
-                                            rsUsedBracketCodes
-                                          );
-                                        const text = `${names} exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`;
-                                        // Direct form — no route clause.
-                                        const directText = `${names} exited the vehicle, entered ${shortAddr} and continued out of sight.`;
-                                        const chipClass =
-                                          "px-2 py-0.5 rounded text-[10px] font-bold border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md";
-                                        return (
-                                          <Fragment key={a.rego}>
-                                            <button
-                                              onClick={() => appendText(text)}
-                                              title={text}
-                                              className={chipClass}
-                                            >
-                                              On foot{" "}
-                                              <span className="font-mono normal-case">
-                                                ({a.rego})
-                                              </span>
-                                            </button>
-                                            <button
-                                              onClick={() =>
-                                                appendText(directText)
-                                              }
-                                              title={directText}
-                                              className={chipClass}
-                                            >
-                                              Direct{" "}
-                                              <span className="font-mono normal-case">
-                                                ({a.rego})
-                                              </span>
-                                            </button>
-                                          </Fragment>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            {/* Walked out chip — mirror of "Walked in": for
-                            occupants who exit this location on foot and
-                            walk back to a vehicle ("... exited X and
-                            walked [route] towards Vehicle REGO."). Reuses BOTH the
-                            names and route text captured from the matching
-                            "Walked in" row (getPendingWalkIns) rather than
-                            re-deriving from the vehicle's occupants again —
-                            it's whoever is written as having walked IN that
-                            walks back OUT, which can genuinely differ from
-                            the vehicle's occupants. This text was itself
-                            officer-typed (and already possibly edited from
-                            the vehicle's occupantDesc by the "Walked in"
-                            chip), not guessed — same trust level as reusing
-                            occupantDesc for the vehicle chips. Only offered
-                            when BOTH a pending walk-in at this address AND
-                            a vehicle known to be here exist — a walk-out
-                            always leads to a vehicle (see the
-                            vehicle<->location-only design decision), so
-                            without one there's nothing valid to insert.
-                            This also means the chip naturally disappears
-                            once that vehicle has already departed, with no
-                            extra logic needed. */}
-                            {mapQeAddress &&
-                              rsPendingWalkIns &&
-                              rsPendingWalkIns.length > 0 &&
-                              rsPendingArrivals &&
-                              (() => {
-                                const appendText = (text: string) => {
-                                  pushInlineUndo(rsInlineText);
-                                  setRsInlineText(prev =>
-                                    prev ? `${prev} ${text}` : text
-                                  );
-                                  resetInlineTimer();
-                                  rsInlineInputRef.current?.focus();
-                                };
-                                const bracketMatch = mapQeAddress.match(
-                                  /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                                );
-                                const toTitleCase = (s: string) =>
-                                  s
-                                    .toLowerCase()
-                                    .replace(/\b\w/g, c => c.toUpperCase());
-                                const shortAddr = bracketMatch
-                                  ? toTitleCase(bracketMatch[2])
-                                  : (mapQeAddress.split(",")[0]?.trim() ??
-                                    mapQeAddress);
-                                const walkInHere = rsPendingWalkIns.find(w =>
-                                  addressesMatch(w.location, shortAddr)
-                                );
-                                const regosHere = rsPendingArrivals.filter(a =>
+                              >();
+                              (rsPendingArrivals ?? [])
+                                .filter(a =>
                                   addressesMatch(a.address, shortAddr)
+                                )
+                                .forEach(a =>
+                                  here.set(a.rego, {
+                                    rego: a.rego,
+                                    occupantDesc: a.occupantDesc,
+                                    rowId: a.rowId,
+                                    saved: true,
+                                  })
                                 );
-                                if (!walkInHere || regosHere.length === 0)
-                                  return null;
-                                return (
-                                  <div className="flex flex-col gap-1 md:gap-1.5">
-                                    <span className="text-[9px] md:text-[11px] font-bold uppercase tracking-wide text-pink-500/70">
-                                      Walked out
-                                    </span>
-                                    <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                      {regosHere.map(a => {
-                                        const walkOutNames =
-                                          shortenAlreadyMentionedNames(
-                                            walkInHere.names,
-                                            rsUsedBracketCodes
-                                          );
-                                        // walkInHere.route is only ever
-                                        // genuine route/path text -- never
-                                        // the destination, which would
-                                        // duplicate shortAddr. Empty when
-                                        // the walk-in had no separate route
-                                        // content at all.
-                                        const text = walkInHere.route
-                                          ? `${walkOutNames} exited ${shortAddr} and walked ${walkInHere.route} towards Vehicle ${a.rego}.`
-                                          : `${walkOutNames} exited ${shortAddr} and walked towards Vehicle ${a.rego}.`;
-                                        return (
-                                          <button
-                                            key={a.rego}
-                                            onClick={() => appendText(text)}
-                                            title={text}
-                                            className="px-2 py-0.5 rounded text-[10px] font-bold border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                          >
-                                            To{" "}
-                                            <span className="font-mono normal-case">
-                                              {a.rego}
-                                            </span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
+                              const draftArrive =
+                                matchVehicleArrival(rsInlineText);
+                              if (draftArrive) {
+                                const draftAddress =
+                                  extractArrivalAddress(rsInlineText);
+                                if (
+                                  draftAddress &&
+                                  addressesMatch(draftAddress, shortAddr)
+                                ) {
+                                  here.set(draftArrive.rego, {
+                                    rego: draftArrive.rego,
+                                    occupantDesc: draftArrive.occupantDesc,
+                                    // A just-typed arrival is never hidden
+                                    // by an older dismissal.
+                                    rowId: Number.MAX_SAFE_INTEGER,
+                                    saved: false,
+                                  });
+                                }
+                              }
+                              const insideHere = (
+                                rsPendingWalkIns ?? []
+                              ).filter(w =>
+                                addressesMatch(w.location, shortAddr)
+                              );
+                              const leftAddressText = (w: {
+                                names: string;
+                                location: string;
+                              }) =>
+                                `${names(w.names)} exited ${w.location} and walked [route] towards [location].`;
+                              Array.from(here.values()).forEach(v => {
+                                const inside = insideHere.length > 0;
+                                const occNames = names(
+                                  extractOccupantNames(v.occupantDesc)
                                 );
-                              })()}
-                          </div>
+                                const actions: ContinuityCardData["actions"] =
+                                  [];
+                                if (!inside) {
+                                  actions.push(
+                                    {
+                                      key: `wid-${v.rego}`,
+                                      label: "Walked in direct",
+                                      mode: "paragraph",
+                                      text: `${occNames} exited the vehicle, entered ${shortAddr} and continued out of sight.`,
+                                    },
+                                    {
+                                      key: `wir-${v.rego}`,
+                                      label: "Walked in via route",
+                                      mode: "paragraph",
+                                      text: `${occNames} exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`,
+                                    }
+                                  );
+                                }
+                                if (v.saved) {
+                                  actions.push({
+                                    key: `dep-${v.rego}`,
+                                    label: "Vehicle departing",
+                                    text: `Vehicle ${v.rego}, ${names(v.occupantDesc)}, departed ${shortAddr} and continued via:`,
+                                  });
+                                }
+                                if (inside) {
+                                  const w = insideHere[0];
+                                  const walkOutNames = names(w.names);
+                                  actions.push({
+                                    key: `wo-${v.rego}`,
+                                    label: "Walked out to vehicle",
+                                    // w.route is only ever genuine route text,
+                                    // never the destination (that is shortAddr).
+                                    text: w.route
+                                      ? `${walkOutNames} exited ${shortAddr} and walked ${w.route} towards Vehicle ${v.rego}.`
+                                      : `${walkOutNames} exited ${shortAddr} and walked towards Vehicle ${v.rego}.`,
+                                  });
+                                  actions.push({
+                                    key: `la-${v.rego}`,
+                                    label: "Left address",
+                                    text: leftAddressText(w),
+                                  });
+                                }
+                                cards.push({
+                                  key: `veh-${v.rego}`,
+                                  title: v.rego,
+                                  pill: "Parked",
+                                  who: inside
+                                    ? `${insideHere.map(w => w.names).join("; ")} inside the address`
+                                    : `${extractOccupantNames(v.occupantDesc) || "Occupants"} in the vehicle`,
+                                  state: shortAddr,
+                                  actions,
+                                  latestRowId: Math.max(
+                                    v.rowId,
+                                    ...insideHere.map(w => w.rowId)
+                                  ),
+                                });
+                              });
+
+                              // People on foot inside this address with no
+                              // vehicle here.
+                              if (here.size === 0) {
+                                insideHere.forEach(w =>
+                                  cards.push({
+                                    key: `foot-${w.location}`,
+                                    title: w.names,
+                                    pill: "Inside",
+                                    who: `Inside ${w.location}`,
+                                    state: "On foot",
+                                    actions: [
+                                      {
+                                        key: `la-${w.location}`,
+                                        label: "Left address",
+                                        text: leftAddressText(w),
+                                      },
+                                    ],
+                                    latestRowId: w.rowId,
+                                  })
+                                );
+                              }
+
+                              // People heading to this address.
+                              (rsPendingHeadingTo ?? [])
+                                .filter(h =>
+                                  addressesMatch(h.destination, shortAddr)
+                                )
+                                .forEach(h =>
+                                  cards.push({
+                                    key: `head-${h.destination}`,
+                                    title: h.names,
+                                    pill: "Heading",
+                                    attn: true,
+                                    who: `Heading to ${h.destination}`,
+                                    state: `Left ${h.from}`,
+                                    actions: [
+                                      {
+                                        key: `en-${h.destination}`,
+                                        label: "Entered",
+                                        text: `${names(h.names)} entered ${h.destination} and continued out of sight.`,
+                                      },
+                                    ],
+                                    latestRowId: h.rowId,
+                                  })
+                                );
+
+                              if (cards.length === 0) return null;
+                              return (
+                                <ContinuityCards
+                                  cards={cards}
+                                  dismissed={rsContinuityDismissed}
+                                  onDismiss={(key, rowId) =>
+                                    rsSelectedSheetId &&
+                                    setContinuityDismissal.mutate({
+                                      sheetId: rsSelectedSheetId,
+                                      key,
+                                      rowId,
+                                    })
+                                  }
+                                  onRestore={key =>
+                                    rsSelectedSheetId &&
+                                    setContinuityDismissal.mutate({
+                                      sheetId: rsSelectedSheetId,
+                                      key,
+                                      rowId: null,
+                                    })
+                                  }
+                                  onInsert={(text, mode) =>
+                                    mode === "paragraph"
+                                      ? appendParagraph(text)
+                                      : appendInline(text)
+                                  }
+                                />
+                              );
+                            })()}
                           {/* CIN picker — multi-select with TEAM */}
                           {rosterCins.length > 0 && (
                             <div className="flex flex-wrap gap-1.5 md:gap-2">

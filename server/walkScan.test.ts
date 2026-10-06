@@ -219,3 +219,40 @@ describe("isReadAsMovement", () => {
     expect(isReadAsMovement("BAIG went inside.")).toBe(false);
   });
 });
+
+describe("walking back to the vehicle, however it is written", () => {
+  const out = "BAIG entered 21 Leach Avenue and continued out of sight.";
+  for (const back of [
+    "BAIG exited 21 Leach Avenue and walked towards Vehicle 1ORB419.",
+    "BAIG exited 21 Leach Avenue and walked to Vehicle 1ORB419.",
+    "BAIG exited 21 Leach Avenue and walked to and entered Vehicle 1ORB419.",
+  ]) {
+    it(`leaves him no longer inside: ${back}`, () => {
+      const r = scanWalkEvents(rows(out, back));
+      expect(r.walkIns).toEqual([]);
+      expect(r.headingTo).toEqual([]);
+      expect(isReadAsMovement(back)).toBe(true);
+    });
+  }
+
+  for (const back of [
+    "BAIG walked towards Vehicle 1ORB419.",
+    "BAIG walked to Vehicle 1ORB419.",
+    "BAIG walked to and entered Vehicle 1ORB419.",
+    "BAIG entered Vehicle 1ORB419.",
+  ]) {
+    it(`ends a walk: ${back}`, () => {
+      const r = scanWalkEvents(
+        rows("BAIG exited A and walked towards B.", back)
+      );
+      expect(r.headingTo).toEqual([]);
+    });
+  }
+});
+
+describe("entries written as a full sentence ending in a full stop", () => {
+  it("registers 'BAIG entered Melville Fish & Chips.'", () => {
+    const r = scanWalkEvents(rows("BAIG entered Melville Fish & Chips."));
+    expect(r.walkIns).toMatchObject([{ location: "Melville Fish & Chips" }]);
+  });
+});

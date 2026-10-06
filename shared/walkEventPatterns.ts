@@ -150,7 +150,7 @@ export const PERSON_WALK_PATTERN = /([A-Za-z][^.\n]*?)\s*\bwalked\b([^.\n]*)/i;
 //   "BAIG exited A and walked to and entered Melville Fish & Chips, 362
 //    Marmion Street, MELVILLE WA (Melville Fish & Chips)"
 export const PERSON_ENTER_ANY_PATTERN =
-  /([A-Za-z][^.\n]*?)\s*\bentered\s+([A-Z0-9][^.\n]*?)\s*(?:\s+and\s+continued\s+out\s+of\s+sight|$)/;
+  /([A-Za-z][^.\n]*?)\s*\bentered\s+([A-Z0-9][^.\n]*?)\s*(?:\s+and\s+continued\s+out\s+of\s+sight|(?=\.)|$)/;
 //   "BAIG exited Melville Fish & Chips." / "... and entered Vehicle ..."
 export const PERSON_EXIT_ANY_PATTERN =
   /([A-Za-z][^.\n]*?)\s*\bexited\s+([A-Z0-9][^.\n]*?)(?:\s+and\s+(?:walked|entered|continued|got|returned|drove|left)\b|[,.]|$)/;
@@ -327,9 +327,12 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       const walkMatch = text.match(PERSON_WALK_PATTERN);
       if (walkMatch) {
         const walkers = cleanWalkerNames(walkMatch[1]);
-        const toVehicle = /\btowards\s+\(?Vehicle\s+[A-Za-z0-9]{5,8}/i.test(
-          walkMatch[2]
-        );
+        // "walked towards Vehicle X", "walked to Vehicle X" and "walked to
+        // and entered Vehicle X" all mean they are back at the car.
+        const toVehicle =
+          /\b(?:towards|to)\s+(?:and\s+entered\s+)?\(?Vehicle\s+[A-Za-z0-9]{5,8}|\bentered\s+\(?Vehicle\s+[A-Za-z0-9]{5,8}/i.test(
+            walkMatch[2]
+          );
         const dest = toVehicle ? null : extractExitDestination(walkMatch[2]);
         const previous = Array.from(heading.values()).find(h =>
           surnameTokens(h.names).some(t => surnameTokens(walkers).includes(t))
@@ -367,9 +370,14 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
 
     // Any other "entered <Place>" (see PERSON_ENTER_ANY_PATTERN).
     const anyEnter = text.match(PERSON_ENTER_ANY_PATTERN);
-    if (anyEnter && !/^\(?Vehicle\b/i.test(anyEnter[2])) {
-      record(cleanWalkerNames(anyEnter[1]), placeName(anyEnter[2]), "");
-      return;
+    if (anyEnter) {
+      if (/^\(?Vehicle\b/i.test(anyEnter[2])) {
+        // Back in a vehicle: no longer walking anywhere.
+        clearHeadingFor(cleanWalkerNames(anyEnter[1]));
+      } else {
+        record(cleanWalkerNames(anyEnter[1]), placeName(anyEnter[2]), "");
+        return;
+      }
     }
 
     // A plain exit with no "walked" after it (see PERSON_EXIT_ANY_PATTERN).

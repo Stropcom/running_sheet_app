@@ -126,6 +126,15 @@ export function ContinuityCards({
         ? "@3xl:mt-0 @3xl:grid-flow-col @3xl:auto-cols-fr @3xl:flex-[2_1_340px]"
         : "";
 
+  // The info block only claims a share of the row when the card is laid out
+  // as a row (panoramic). In a stacked card a flex-basis would be read as a
+  // HEIGHT and balloon the card.
+  const infoCls =
+    pano === "one"
+      ? "@lg:flex-1 @lg:basis-[200px]"
+      : pano === "two"
+        ? "@3xl:flex-1 @3xl:basis-[200px]"
+        : "";
   const idCls =
     pano === "one"
       ? "@lg:min-w-[150px]"
@@ -202,7 +211,9 @@ export function ContinuityCards({
                     {c.pill}
                   </span>
                 </div>
-                <div className="min-w-0 flex-1 basis-[200px] text-[11.5px] leading-snug">
+                <div
+                  className={`min-w-0 text-[11.5px] leading-snug ${infoCls}`}
+                >
                   <div>{c.who}</div>
                   <div className="text-muted-foreground">{c.state}</div>
                 </div>

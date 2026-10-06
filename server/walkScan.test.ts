@@ -137,4 +137,24 @@ describe("scanWalkEvents — people on foot, no vehicle", () => {
     expect(r.headingTo).toEqual([]);
     expect(r.walkIns).toMatchObject([{ location: "C" }]);
   });
+
+  it("puts them inside the place they walked to when the row says they entered it", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG entered Melville Heights Meat Supply and continued out of sight.",
+        "BAIG exited Melville Heights Meat Supply and walked through the carpark to Melville Fish & Chips, 362 Marmion Street, MELVILLE WA (Melville Fish & Chips), entered and continued out of sight."
+      )
+    );
+    expect(r.headingTo).toEqual([]);
+    expect(r.walkIns).toMatchObject([
+      { names: "BAIG", location: "Melville Fish & Chips" },
+    ]);
+  });
+
+  it("reads a plain 'to <Place>' as a destination, but not 'to the car park'", () => {
+    expect(
+      extractExitDestination(" through the carpark to Melville Fish & Chips")
+    ).toBe("Melville Fish & Chips");
+    expect(extractExitDestination(" back to the car park")).toBeNull();
+  });
 });

@@ -5152,7 +5152,15 @@ export default function SheetDetail({
                   pill: "Inside",
                   who: `Inside ${w.location}`,
                   state: `On foot${sinceText(w.rowId)}`,
-                  actions: cardAction(chip, "Left address"),
+                  actions: [
+                    ...cardAction(chip, "Left address"),
+                    // Back to a parked vehicle from here.
+                    ...(pendingArrivals ?? []).map(a => ({
+                      key: `wov-${w.location}-${a.rego}`,
+                      label: `Walked out to ${a.rego}`,
+                      text: `${shortenAlreadyMentionedNames(w.names, usedBracketCodes)} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
+                    })),
+                  ],
                   latestRowId: w.rowId,
                 });
               });

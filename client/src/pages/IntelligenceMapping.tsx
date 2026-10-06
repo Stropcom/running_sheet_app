@@ -12115,6 +12115,12 @@ export default function IntelligenceMapping() {
                                         label: "Left address",
                                         text: leftAddressText(w),
                                       },
+                                      // Back to a parked vehicle from here.
+                                      ...(rsPendingArrivals ?? []).map(a => ({
+                                        key: `wov-${w.location}-${a.rego}`,
+                                        label: `Walked out to ${a.rego}`,
+                                        text: `${names(w.names)} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
+                                      })),
                                     ],
                                     latestRowId: w.rowId,
                                   })

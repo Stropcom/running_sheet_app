@@ -160,16 +160,33 @@ function bracketLabelOrSelf(location: string): string {
  * or null when it names no destination or the destination is a vehicle
  * (that case is WALK_OUT_PATTERN's). `rest` is the text after "walked". */
 export function extractExitDestination(rest: string): string | null {
-  const m = rest.match(/\btowards\s+(.+)$/i);
-  if (!m) return null;
+  // "... towards 13 Denford Street" — or, when the officer wrote a plain
+  // "to", "... walked through the carpark to Melville Fish & Chips, ...". A
+  // bare "to" only counts when a proper name or street number follows it
+  // ("to the car park" names no place).
+  const towards = rest.match(/\btowards\s+(.+)$/i);
+  const bareTo = towards ? null : rest.match(/\bto\s+(?=[A-Z0-9])(.+)$/);
+  const tail = (towards ?? bareTo)?.[1];
+  if (!tail) return null;
   const dest = bracketLabelOrSelf(
     extractWalkInTowardsLocation(
-      m[1].replace(/\s+and\s+continued\b.*$/i, "").replace(/[\s,]+$/, "")
+      tail
+        .replace(/[\s,]*\bentered\b.*$/i, "")
+        .replace(/\s+and\s+continued\b.*$/i, "")
+        .replace(/[\s,]+$/, "")
     )
   );
   if (!dest || /^Vehicle\b/i.test(dest)) return null;
   return dest;
 }
+
+// "... entered and continued out of sight." — an entry with no place named
+// after "entered": the place is the one the same sentence just walked to
+// ("... walked through the carpark to Melville Fish & Chips, 362 Marmion
+// Street, MELVILLE WA (Melville Fish & Chips), entered and continued out of
+// sight.").
+export const PERSON_ENTER_BARE_PATTERN =
+  /\bentered\s+(?:it\s+)?and\s+continued\s+out\s+of\s+sight/i;
 
 export interface WalkScanRow {
   id: number;
@@ -230,6 +247,11 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       return;
     }
 
+    // The place this row says they walked to, and who walked — used if the
+    // same row then says they "entered and continued out of sight".
+    let rowDest: string | null = null;
+    let rowWalkers = "";
+
     // A non-vehicle exit. Not a `return`: the same row can go on to say
     // where they entered next.
     const exitMatch = text.match(PERSON_EXIT_PATTERN);
@@ -237,6 +259,8 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       const from = exitMatch[2].trim();
       walkedOut.add(key(from));
       const dest = extractExitDestination(exitMatch[3]);
+      rowDest = dest;
+      rowWalkers = cleanWalkerNames(exitMatch[1]);
       if (dest) {
         heading.set(key(dest), {
           names: cleanWalkerNames(exitMatch[1]),
@@ -284,6 +308,8 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
           surnameTokens(h.names).some(t => surnameTokens(walkers).includes(t))
         );
         clearHeadingFor(walkers);
+        rowDest = dest;
+        rowWalkers = walkers;
         if (dest) {
           heading.set(key(dest), {
             names: walkers,
@@ -293,6 +319,13 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
           });
         }
       }
+    }
+
+    // "... walked to X, entered and continued out of sight." — they are now
+    // inside X, not merely heading there.
+    if (rowDest && PERSON_ENTER_BARE_PATTERN.test(text)) {
+      record(rowWalkers, rowDest, "");
+      return;
     }
 
     const directMatch = text.match(PERSON_ENTER_PATTERN);

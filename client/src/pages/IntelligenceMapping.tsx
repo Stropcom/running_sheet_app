@@ -56,7 +56,6 @@ import { MissingLocationAlert } from "@/components/MissingLocationAlert";
 import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { bracketVehicleReferences } from "@shared/vehicleEventPatterns";
 import {
   ContinuityCards,
   type ContinuityCardData,
@@ -12163,10 +12162,9 @@ export default function IntelligenceMapping() {
                                       return;
                                     }
                                     // Rule 2: nothing written → its own row,
-                                    // with vehicles in the raw bracket form
-                                    // (no earlier text introduces them).
+                                    // vehicles as plain "Vehicle REGO".
                                     addQuickRsEntry(
-                                      bracketVehicleReferences(text),
+                                      text,
                                       new Set(rsInlineCinsRef.current),
                                       null,
                                       mapQeRowDate

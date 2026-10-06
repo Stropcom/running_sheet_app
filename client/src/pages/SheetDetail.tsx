@@ -8,7 +8,6 @@ import {
   type AddressSuggestItem,
   type AddressSuggestMode,
 } from "@/components/AddressSuggestDropdown";
-import { bracketVehicleReferences } from "@shared/vehicleEventPatterns";
 import {
   detectAddressSuggestTrigger,
   detectPlaceSuggestTrigger,
@@ -5211,10 +5210,9 @@ export default function SheetDetail({
                 typeInto(open, lead + text);
                 return;
               }
-              // Rule 2: no cell open → it becomes its own row. It has no
-              // earlier text in the cell to introduce the vehicle, so every
-              // vehicle reference is written in the raw bracket form.
-              text = bracketVehicleReferences(text);
+              // Rule 2: no cell open → it becomes its own row. Vehicles stay
+              // written as plain "Vehicle 1ORB419", exactly as the cards
+              // phrase them.
               const perth = (opts: Intl.DateTimeFormatOptions) =>
                 new Intl.DateTimeFormat("en-GB", {
                   timeZone: "Australia/Perth",

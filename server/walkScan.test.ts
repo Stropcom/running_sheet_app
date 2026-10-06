@@ -308,4 +308,16 @@ describe("leaving a parked vehicle and walking away", () => {
     );
     expect(r.headingTo).toHaveLength(2);
   });
+
+  it("reads the real car-park row (no destination named) as walking, destination unwritten", () => {
+    const r = scanWalkEvents(
+      rows(
+        "Vehicle 1ORB419, BAIG driver and sole occupant, arrived at City of Fremantle - Parry Street Car Park 1 and parked in the car park.",
+        "BAIG exited the vehicle, walked through the car park onto Parry Street and Holdsworth Street, FREMANTLE"
+      )
+    );
+    expect(r.headingTo).toMatchObject([
+      { names: "BAIG", destination: "[location]", from: "the vehicle" },
+    ]);
+  });
 });

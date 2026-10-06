@@ -4170,13 +4170,18 @@ export default function SheetDetail({
         if (!active || !active.dataset?.obsCell) setOpenDraft(null);
       }, 0);
     };
-    document.addEventListener("input", onInput, true);
-    document.addEventListener("focusin", onFocusIn, true);
-    document.addEventListener("focusout", onFocusOut, true);
+    // Bubble phase on purpose (NOT capture): React handles a textarea's
+    // onChange from a listener on its root, below `document`. A state update
+    // from a capture listener on `document` runs first and re-renders the
+    // controlled textarea with its OLD value before onChange has seen the
+    // keystroke, wiping what was typed — typing stops working.
+    document.addEventListener("input", onInput);
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
     return () => {
-      document.removeEventListener("input", onInput, true);
-      document.removeEventListener("focusin", onFocusIn, true);
-      document.removeEventListener("focusout", onFocusOut, true);
+      document.removeEventListener("input", onInput);
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
     };
   }, []);
 

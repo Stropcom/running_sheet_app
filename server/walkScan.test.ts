@@ -507,3 +507,32 @@ describe("the Inside chip: names inside a place, no verb", () => {
     ).toBeNull();
   });
 });
+
+describe("walking back to a vehicle with no exit written", () => {
+  const inside =
+    "BAIG JONES entered Chicho Gelato Fremantle and continued out of sight.";
+  for (const back of [
+    "BAIG JONES walked towards Vehicle 1ORB419.",
+    "BAIG JONES walked to Vehicle 1ORB419.",
+    "BAIG JONES walked to and entered Vehicle 1ORB419.",
+    "BAIG JONES entered Vehicle 1ORB419.",
+  ]) {
+    it(`takes them out of the place they were inside: ${back}`, () => {
+      const r = scanWalkEvents(rows(inside, back));
+      expect(r.walkIns).toEqual([]);
+      expect(r.placements).toEqual([
+        expect.objectContaining({ rego: "1ORB419" }),
+      ]);
+    });
+  }
+
+  it("leaves other people inside", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG and SMITH entered Chicho Gelato Fremantle and continued out of sight.",
+        "BAIG walked towards Vehicle 1ORB419."
+      )
+    );
+    expect(r.walkIns).toMatchObject([{ location: "Chicho Gelato Fremantle" }]);
+  });
+});

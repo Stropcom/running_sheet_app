@@ -377,6 +377,18 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   };
   const noteJoined = (names: string, rego: string, rowId: number) =>
     placePeople(names, rego, rowId);
+  // They are on their way to / back in a vehicle, so no longer inside the
+  // place they were last logged in, whether or not the row says they left it.
+  const leaveAllPlaces = (names: string) => {
+    const who = new Set(surnameTokens(names));
+    if (who.size === 0) return;
+    for (const [k, v] of Array.from(lastWalkIn.entries())) {
+      const tokens = surnameTokens(v.names);
+      if (tokens.length > 0 && tokens.every(t => who.has(t))) {
+        lastWalkIn.delete(k);
+      }
+    }
+  };
   // Drops any "heading to" entry belonging to these people — they have
   // since gone somewhere else or got back to a vehicle.
   const clearHeadingFor = (names: string) => {
@@ -509,7 +521,10 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
             /\b(?:towards|to)\s+(?:and\s+entered\s+)?\(?Vehicle\s+([A-Za-z0-9]{5,8})|\bentered\s+\(?Vehicle\s+([A-Za-z0-9]{5,8})/i
           );
           const rego = reg?.[1] ?? reg?.[2];
-          if (rego) noteJoined(walkers, rego, row.id);
+          if (rego) {
+            noteJoined(walkers, rego, row.id);
+            leaveAllPlaces(walkers);
+          }
         }
         const previous = Array.from(heading.values()).find(h =>
           surnameTokens(h.names).some(t => surnameTokens(walkers).includes(t))
@@ -553,7 +568,10 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         // Back in a vehicle: no longer walking anywhere.
         clearHeadingFor(cleanWalkerNames(anyEnter[1]));
         const reg = anyEnter[2].match(/Vehicle\s+([A-Za-z0-9]{5,8})/i);
-        if (reg) noteJoined(anyEnter[1], reg[1], row.id);
+        if (reg) {
+          noteJoined(anyEnter[1], reg[1], row.id);
+          leaveAllPlaces(cleanWalkerNames(anyEnter[1]));
+        }
       } else {
         record(cleanWalkerNames(anyEnter[1]), placeName(anyEnter[2]), "");
         return;

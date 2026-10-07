@@ -15,6 +15,32 @@ import type { ObservationTextForScan } from "./db";
 import { findPersonMentions } from "./localNER";
 import { findFuzzyMatches, sharesSignificantWord } from "./fuzzyMatch";
 
+/**
+ * Whether a span the model tagged is worth putting in front of a person. The
+ * model works on word fragments, and names are written in capitals here
+ * ("JOHNSON"), so it sometimes reports a piece of a word — a real finding
+ * ("NS", from JOHNSON) that is no name at all. Not worth flagging:
+ *  - anything under three letters;
+ *  - anything that is not a whole word (or run of words) in the row itself,
+ *    i.e. only ever a fragment inside a longer word;
+ *  - the short names of unidentified people (UM1, UF2, UC1, UP1), which are
+ *    never recorded in the Intelligence folder.
+ */
+export function isPlausiblePersonMention(
+  mention: string,
+  observation: string
+): boolean {
+  const text = mention.replace(/^#+/, "").trim();
+  if (text.replace(/[^A-Za-z]/g, "").length < 3) return false;
+  if (/^U[MFCP]\d+$/i.test(text)) return false;
+  const escaped = text
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\s+/g, "\\s+");
+  return new RegExp(`(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`, "i").test(
+    observation
+  );
+}
+
 export interface KnownEntityName {
   id: string;
   label: string;
@@ -65,6 +91,7 @@ export async function scanForMissedPersonMentions(
     }
 
     for (const mention of mentions) {
+      if (!isPlausiblePersonMention(mention.text, obs.observation)) continue;
       const normalizedMention = mention.text.trim().toUpperCase();
       const isExactMatch = knownNames.some(
         n => n.label.trim().toUpperCase() === normalizedMention

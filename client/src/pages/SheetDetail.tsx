@@ -5432,7 +5432,8 @@ export default function SheetDetail({
                 attn: true,
                 who: vehicleOccupants(d.occupantDesc, d.rego, d.rowId).length
                   ? vehicleOccupants(d.occupantDesc, d.rego, d.rowId).join(", ")
-                  : `${extractOccupantNames(d.occupantDesc) || d.occupantDesc}`,
+                  : extractOccupantNames(d.occupantDesc) ||
+                    "Occupants not seen",
                 state: `Departed${sinceText(d.rowId).replace(" · since", "")}`,
                 actions: cardAction(chip, "Vehicle arriving"),
                 latestRowId: d.rowId,

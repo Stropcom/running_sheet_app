@@ -420,7 +420,7 @@ export function computeUsedAddressLabels(
  * table's own continuity chips. */
 export function extractOccupantNames(occupantDesc: string): string {
   const ROLE_WORD =
-    /\b(?:driver|front passenger|rear passenger|sole occupant|unseen occupants?|passenger)\b/gi;
+    /\b(?:driver|front passenger|rear passenger|sole occupant|unseen\s+occupant(?:\/s|s)?|occupant(?:\/s|s)?\s+(?:not\s+(?:observed|seen)|unseen)|passenger)\b/gi;
   return occupantDesc
     .split(",")
     .map(part =>

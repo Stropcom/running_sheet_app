@@ -12101,7 +12101,7 @@ export default function IntelligenceMapping() {
                                   who: movingOcc.length
                                     ? movingOcc.join(", ")
                                     : extractOccupantNames(d.occupantDesc) ||
-                                      d.occupantDesc,
+                                      "Occupants not seen",
                                   state: "Departed",
                                   holds: movingOcc.length
                                     ? movingOcc.flatMap(n => surnameTokens(n))

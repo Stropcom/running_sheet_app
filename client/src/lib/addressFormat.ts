@@ -30,6 +30,7 @@ import {
   format as formatDate,
 } from "date-fns";
 import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
+import { fullStreetTypes } from "@shared/streetTypes";
 
 export { formatIntelAddress, formatIntelVehicle };
 
@@ -341,7 +342,7 @@ export function convertGoogleAddresses(text: string): string {
     }
   );
 
-  return result;
+  return fullStreetTypes(result);
 }
 
 /**
@@ -461,6 +462,10 @@ export function extractShortVehicle(v1f: string): string {
  *   "Blend Cafe, 25 Mccallum Crescent, ARDROSS" → "Blend Cafe, 25 Mccallum Crescent, ARDROSS (Blend Cafe)"
  */
 export function ensureBracketCode(address: string): string {
+  return fullStreetTypes(ensureBracketCodeRaw(address));
+}
+
+function ensureBracketCodeRaw(address: string): string {
   if (!address) return address;
   // Already has a bracket code — leave it
   if (/\([^)]{1,120}\)\s*$/.test(address)) return address;

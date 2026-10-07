@@ -1,3 +1,4 @@
+import { fullStreetTypes } from "./streetTypes";
 /**
  * Address/vehicle "Intelligence short-form" rendering — pure string logic,
  * used by both the client (Intelligence folder display) and the server
@@ -74,11 +75,7 @@ export function formatIntelAddress(shortForm: string): string {
         " " +
         streetSegment.replace(/\b(\w+)/g, w => {
           if (/^\d+$/.test(w)) return w;
-          if (
-            /^(WA|NSW|VIC|QLD|SA|TAS|NT|ACT|HWY|RD|ST|AVE|DR|CT|PL|CL|CRES|BLVD|FWY|LN|TCE|PDE|CCT|GR|CNR)$/i.test(
-              w
-            )
-          )
+          if (/^(WA|NSW|VIC|QLD|SA|TAS|NT|ACT|CNR)$/i.test(w))
             return w.toUpperCase();
           return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
         });
@@ -86,7 +83,8 @@ export function formatIntelAddress(shortForm: string): string {
     }
   }
 
-  return text.trim();
+  // Street types are always shown in full ("Street", never "St").
+  return fullStreetTypes(text.trim());
 }
 
 /**

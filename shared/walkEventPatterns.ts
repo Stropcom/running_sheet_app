@@ -32,6 +32,7 @@ import {
   matchVehicleArrival,
 } from "./vehicleEventPatterns";
 import { expandRowSegments } from "./rowSegments";
+import { fullStreetTypes } from "./streetTypes";
 
 // A vehicle as the officer refers to it when someone gets out: "the vehicle",
 // or by rego — "Vehicle 1EXP123", "Vehicle 1EXP123 (Vehicle 1EXP123)".
@@ -205,8 +206,8 @@ const ENTER_VEHICLE_REGO_RE = new RegExp(
  * MELVILLE WA" → "Melville Fish & Chips"). */
 function placeName(raw: string): string {
   const b = raw.match(/\(([^)]{1,80})\)/);
-  if (b) return b[1].trim();
-  return raw.split(",")[0].trim();
+  if (b) return fullStreetTypes(b[1].trim());
+  return fullStreetTypes(raw.split(",")[0].trim());
 }
 
 // "BAIG exited the vehicle and walked towards 13 Denford Street." — they left
@@ -235,7 +236,7 @@ export function cleanWalkerNames(raw: string): string {
  * mentions and the other continuity logic use. */
 export function bracketLabelOrSelf(location: string): string {
   const b = location.match(/\(([^)]{1,80})\)/);
-  return (b ? b[1] : location).trim();
+  return fullStreetTypes((b ? b[1] : location).trim());
 }
 
 /** The place a vehicle's departure row says it left ("... departed 77
@@ -249,7 +250,7 @@ export function extractDepartureAddress(text: string): string | null {
   const place = bracketLabelOrSelf(m[1])
     .replace(/(?:\s+and)+$/i, "")
     .trim();
-  return place || null;
+  return place ? fullStreetTypes(place) : null;
 }
 
 /** Where an "exited X and walked ..." clause says the walkers were heading,
@@ -459,7 +460,9 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   };
 
   expandRowSegments(rows).forEach((row, idx) => {
-    const text = row.observation;
+    // Street types are read in full ("Robert St" = "Robert Street"), so a
+    // place written both ways across rows is still one place.
+    const text = fullStreetTypes(row.observation ?? "");
     if (!text) return;
     const where = { sheetId: row.sheetId, rowId: row.id, orderIdx: idx };
 

@@ -60,6 +60,7 @@ import { scanIntelligenceEntities } from "./intelligenceScan";
 import { findFuzzyMatches, DEFAULT_FUZZY_THRESHOLD } from "./fuzzyMatch";
 import { aliasMentionCompatible } from "./personAliasMatch";
 import { findUnidentifiedMentions } from "@shared/unidentified";
+import { findAbbreviatedStreetTypes } from "@shared/streetTypes";
 
 export type SheetCheckCategory =
   | "formatting"
@@ -1053,6 +1054,46 @@ function checkPunctuationSpacing(
   return findings;
 }
 
+// ── Abbreviated street types ("St", "Rd", "Ave") ──────────────────────────
+
+// Streets are written with the full street type everywhere in the app. Flags
+// each abbreviation left in a row with a one-tap fix to the full word. The fix
+// replaces the first occurrence of `wrong`, so it is widened with the text
+// before it until it is unique within the row.
+export function checkAbbreviatedStreetTypes(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
+  const findings: SheetCheckFinding[] = [];
+  for (const row of rows) {
+    const text = row.observation;
+    for (const hit of findAbbreviatedStreetTypes(text)) {
+      const end = hit.index + hit.abbr.length;
+      let from = hit.index;
+      let wrong = text.slice(from, end);
+      while (text.indexOf(wrong) !== text.lastIndexOf(wrong) && from > 0) {
+        from = Math.max(0, from - 6);
+        wrong = text.slice(from, end);
+      }
+      const start = Math.max(0, hit.index - 30);
+      const stop = Math.min(text.length, end + 31);
+      findings.push({
+        ruleId: "street-type-abbreviated",
+        category: "formatting",
+        reason: `"${hit.abbr}" should be written in full — "${hit.full}".`,
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        snippet: `${start > 0 ? "…" : ""}${text.slice(start, stop)}${stop < text.length ? "…" : ""}`,
+        suggestedFix: {
+          wrong,
+          correct: wrong.slice(0, hit.index - from) + hit.full,
+        },
+        findingKey: `ROW_${row.rowId}::STREET_TYPE::${hit.index}`,
+      });
+    }
+  }
+  return findings;
+}
+
 // ── Double spaces between words ───────────────────────────────────────────
 
 // Two or more spaces in a row in the middle of a line ("entered  Kinky Lizard")
@@ -1519,6 +1560,7 @@ export async function checkRunningSheet(
   const punctuationSpacing = checkPunctuationSpacing(rows);
   const repeatedUnidentified = checkRepeatedUnidentified(rows);
   const doubleSpaces = checkDoubleSpaces(rows);
+  const abbreviatedStreets = checkAbbreviatedStreetTypes(rows);
   const bareVehicleEntities = findSheetBareVehicleEntities(
     sheetId,
     rows,
@@ -1545,6 +1587,7 @@ export async function checkRunningSheet(
     ...punctuationSpacing,
     ...repeatedUnidentified,
     ...doubleSpaces,
+    ...abbreviatedStreets,
     ...consistency,
     ...bareAddressConsistency,
     ...spelling,

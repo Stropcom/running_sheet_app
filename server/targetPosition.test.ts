@@ -67,7 +67,7 @@ describe("locateTarget — BAIG's night", () => {
 
   it("in a parked vehicle", () => {
     expect(locate("BAIG", arrived)).toMatchObject({
-      place: "77 Reynolds Rd",
+      place: "77 Reynolds Road",
       state: "vehicle",
       rego: "1ORB419",
     });
@@ -103,7 +103,7 @@ describe("locateTarget — BAIG's night", () => {
     expect(
       locate("BAIG", arrived, tavernArrive, seated, out, back)
     ).toMatchObject({
-      place: "77 Reynolds Rd",
+      place: "77 Reynolds Road",
       state: "oos",
       rego: "1HIB84",
     });
@@ -117,7 +117,7 @@ describe("locateTarget — BAIG's night", () => {
         "BAIG exited the vehicle and walked towards 13 Denford Street."
       )
     ).toMatchObject({
-      place: "77 Reynolds Rd",
+      place: "77 Reynolds Road",
       state: "walking",
       label: "departed on foot",
     });
@@ -139,7 +139,7 @@ describe("extractDepartureAddress", () => {
       extractDepartureAddress(
         "Vehicle 1HIB84, unseen occupant/s, departed 77 Reynolds Rd and continued via:"
       )
-    ).toBe("77 Reynolds Rd");
+    ).toBe("77 Reynolds Road");
   });
 });
 
@@ -336,7 +336,7 @@ describe("some leave the vehicle, others stay (29A Robert St)", () => {
 
   it("Johnson, typed in mixed case, is the JOHNSON from the vehicle", () => {
     expect(walk.walkIns).toMatchObject([
-      { names: "Johnson", location: "29a Robert St" },
+      { names: "Johnson", location: "29a Robert Street" },
     ]);
     const occ = vehOcc(
       { rego: "1EXP123", rowId: 1, names },
@@ -372,7 +372,7 @@ describe("some leave the vehicle, others stay (29A Robert St)", () => {
     });
     expect(pos).toMatchObject({
       state: "vehicle",
-      place: "29A Robert St",
+      place: "29A Robert Street",
       rego: "1EXP123",
     });
     expect(pos?.people).toEqual(["BAIG", "UM1"]);

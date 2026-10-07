@@ -15,6 +15,7 @@ import { DivIconOverlay, wasAnyMarkerJustTapped } from "@/lib/divIconOverlay";
 import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
 import { detectUnidentifiedRepeat } from "@shared/unidentified";
 import { entryMentionsAddress } from "@shared/markerLink";
+import { fullStreetTypes } from "@shared/streetTypes";
 import {
   locateTargetFromPending,
   samePlace,
@@ -2598,7 +2599,14 @@ export default function IntelligenceMapping() {
   ); // explicit calendar date for the QE row
   const [showMapQeDateStepper, setShowMapQeDateStepper] = useState(false); // toggled by Date button
   const [mapQeSelectOpen, setMapQeSelectOpen] = useState(false);
-  const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
+  const [mapQeAddress, setMapQeAddressRaw] = useState(""); // pre-filled address for the observation
+  // Whatever sets the address, street types are written in full ("Street",
+  // never "St") — in the address, its bracket short form, and the short
+  // address shown below it.
+  const setMapQeAddress = useCallback(
+    (address: string) => setMapQeAddressRaw(fullStreetTypes(address)),
+    []
+  );
   // The custom marker an RS Quick Entry was opened from (its popup's RS Quick
   // Entry button), so the entry can stay on that marker (see
   // linkEntryToMarker). Cleared whenever the entry sheet closes.

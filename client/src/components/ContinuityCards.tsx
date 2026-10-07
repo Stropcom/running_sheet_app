@@ -151,7 +151,7 @@ export function ContinuityCards({
   const needsAttention = live.some(c => c.attn || c.warn);
   const summary =
     lead?.isTarget && lead.locus
-      ? `${(lead.people ?? []).join(", ") || lead.title} · ${lead.locus.headline} · ${lead.locus.sub.replace(/^Departed\s*/, "departed ")}`
+      ? `${(lead.people ?? []).join(", ") || lead.title} · ${lead.locus.headline} · ${lead.locus.sub}`
       : live.map(c => `${c.title} ${c.pill}`).join(" · ");
 
   // Panoramic when there is room: a lone card from a medium-wide band, two

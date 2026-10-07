@@ -77,12 +77,23 @@ describe("locateTarget — BAIG's night", () => {
     });
   });
 
-  it("moving, from the place he left", () => {
+  it("departed, from the place he left, with who is in the vehicle", () => {
     expect(locate("BAIG", arrived, tavernArrive, seated, out)).toMatchObject({
       place: "Bull Creek Tavern",
       state: "moving",
+      label: "departed in 1HIB84",
+      people: ["BAIG"],
       rego: "1HIB84",
     });
+  });
+
+  it("lists everyone in the vehicle, the target first", () => {
+    const both =
+      "BAIG and James JONES exited Bull Creek Tavern and walked towards Vehicle 1HIB84.\nVehicle 1HIB84, JONES driver, BAIG front passenger, departed Bull Creek Tavern and continued via:";
+    const r = locate("BAIG", arrived, tavernArrive, seated, both);
+    expect(r?.state).toBe("moving");
+    expect(r?.people[0]).toBe("BAIG");
+    expect(r?.people.length).toBe(2);
   });
 
   it("out of sight at the next address", () => {

@@ -5454,19 +5454,31 @@ export default function SheetDetail({
                       },
               });
             });
+            // "From <place> · 09:16 PM" for a vehicle that has left and has no
+            // arrival logged yet.
+            const departedState = (d: {
+              fromAddress?: string | null;
+              rowId: number;
+            }) =>
+              [
+                d.fromAddress ? `From ${d.fromAddress}` : "",
+                rowTime(d.rowId) ?? "",
+              ]
+                .filter(Boolean)
+                .join(" · ") || "No arrival logged yet";
             (pendingDepartures ?? []).forEach(d => {
               const chip = vehicleArrivingChips.find(c => c.rego === d.rego);
               if (!chip) return;
               continuityCards.push({
                 key: `dep-${d.rego}`,
                 title: d.rego,
-                pill: "Moving",
+                pill: "Departed",
                 attn: true,
                 who: vehicleOccupants(d.occupantDesc, d.rego, d.rowId).length
                   ? vehicleOccupants(d.occupantDesc, d.rego, d.rowId).join(", ")
                   : extractOccupantNames(d.occupantDesc) ||
                     "Occupants not seen",
-                state: `Departed${sinceText(d.rowId).replace(" · since", "")}`,
+                state: departedState(d),
                 actions: cardAction(chip, "Vehicle arriving"),
                 latestRowId: d.rowId,
                 ...(() => {
@@ -5479,8 +5491,8 @@ export default function SheetDetail({
                     holds: inCar.flatMap(n => surnameTokens(n)),
                     people: inCar,
                     locus: {
-                      headline: `Moving in ${d.rego}`,
-                      sub: `Departed${sinceText(d.rowId).replace(" · since", "")}`,
+                      headline: `Departed in ${d.rego}`,
+                      sub: departedState(d),
                     },
                   };
                 })(),

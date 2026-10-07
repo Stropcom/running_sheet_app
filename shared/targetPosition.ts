@@ -2,7 +2,11 @@
 // the sheet's address chips. This reads the same pending lists the continuity
 // cards are built from, with the same rules (see vehicleOccupants), so the
 // marker and the tracker never disagree. Deterministic: no lookups.
-import { surnameTokens, vehicleOccupants } from "./walkEventPatterns";
+import {
+  splitPeopleNames,
+  surnameTokens,
+  vehicleOccupants,
+} from "./walkEventPatterns";
 
 export type TargetState = "inside" | "vehicle" | "walking" | "moving" | "oos";
 
@@ -13,6 +17,9 @@ export interface TargetPosition {
   state: TargetState;
   /** Short wording for a flag, e.g. "inside", "in 1ORB419". */
   label: string;
+  /** Everyone with the target in that state — the vehicle's occupants, or
+   * those inside / walking with him — the target first. */
+  people: string[];
   rowId: number;
   rego?: string;
 }
@@ -52,6 +59,11 @@ export const TARGET_EMOJI: Record<TargetState, string> = {
   oos: "❔",
 };
 
+const targetFirst = (people: string[], token: string) => [
+  ...people.filter(p => has(p, token)),
+  ...people.filter(p => !has(p, token)),
+];
+
 const has = (names: string, token: string) =>
   surnameTokens(names).includes(token.toUpperCase());
 
@@ -86,6 +98,7 @@ export function locateTarget(
         place: w.location,
         state: "inside",
         label: "inside",
+        people: targetFirst(splitPeopleNames(w.names), t),
         rowId: w.rowId,
       });
     }
@@ -101,6 +114,7 @@ export function locateTarget(
       place: fromVehicle ?? null,
       state: "walking",
       label: "walking",
+      people: targetFirst(splitPeopleNames(h.names), t),
       rowId: h.rowId,
     });
   }
@@ -126,6 +140,7 @@ export function locateTarget(
       place: a.address || null,
       state: oos ? "oos" : "vehicle",
       label: oos ? "out of sight" : `in ${a.rego}`,
+      people: targetFirst(people, t),
       rowId: joinedRow,
       rego: a.rego,
     });
@@ -144,7 +159,8 @@ export function locateTarget(
     found.push({
       place: d.fromAddress || null,
       state: "moving",
-      label: `moving in ${d.rego}`,
+      label: `departed in ${d.rego}`,
+      people: targetFirst(people, t),
       rowId: joinedRow,
       rego: d.rego,
     });

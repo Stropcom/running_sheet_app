@@ -4968,7 +4968,9 @@ export default function IntelligenceMapping() {
           )?.title
         ) ?? "Target"
       ).toUpperCase();
-      label.textContent = `${who} · ${pos.label}`;
+      // Everyone with him (the vehicle's occupants, or those inside /
+      // walking with him), the target first — as on the tracker card.
+      label.textContent = `${pos.people.length ? pos.people.join(", ") : who} · ${pos.label}`;
       pill.appendChild(em);
       pill.appendChild(label);
       const stem = document.createElement("div");
@@ -12317,13 +12319,15 @@ export default function IntelligenceMapping() {
                                 cards.push({
                                   key: `dep-${d.rego}`,
                                   title: d.rego,
-                                  pill: "Moving",
+                                  pill: "Departed",
                                   attn: true,
                                   who: movingOcc.length
                                     ? movingOcc.join(", ")
                                     : extractOccupantNames(d.occupantDesc) ||
                                       "Occupants not seen",
-                                  state: "Departed",
+                                  state: d.fromAddress
+                                    ? `From ${d.fromAddress}`
+                                    : "No arrival logged yet",
                                   holds: movingOcc.length
                                     ? movingOcc.flatMap(n => surnameTokens(n))
                                     : surnameTokens(d.occupantDesc),
@@ -12333,8 +12337,10 @@ export default function IntelligenceMapping() {
                                         extractOccupantNames(d.occupantDesc)
                                       ),
                                   locus: {
-                                    headline: `Moving in ${d.rego}`,
-                                    sub: "Departed",
+                                    headline: `Departed in ${d.rego}`,
+                                    sub: d.fromAddress
+                                      ? `From ${d.fromAddress}`
+                                      : "No arrival logged yet",
                                   },
                                   actions: [
                                     {

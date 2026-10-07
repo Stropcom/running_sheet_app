@@ -12201,7 +12201,28 @@ export default function IntelligenceMapping() {
                                 // nobody can say whether anyone is still in
                                 // it until someone is seen again, so no
                                 // walked-away / walked-in options.
-                                const outOfSight = v.outOfSight && !inside;
+                                // The target is then placed at the address, out of
+                                // sight: the next steps are to walk out to the
+                                // vehicle, walk somewhere else, or leave in a
+                                // vehicle. Not once a later row has put those
+                                // people anywhere.
+                                const arrivalPeople = occupantsStillInVehicle(
+                                  extractOccupantNames(v.occupantDesc),
+                                  []
+                                );
+                                const movedOn = (
+                                  rsPendingPlacements ?? []
+                                ).some(
+                                  pl =>
+                                    pl.rowId > v.rowId &&
+                                    arrivalPeople.some(n =>
+                                      surnameTokens(n).some(t =>
+                                        surnameTokens(pl.name).includes(t)
+                                      )
+                                    )
+                                );
+                                const outOfSight =
+                                  v.outOfSight && !inside && !movedOn;
                                 const occNames = names(occupants.join(" and "));
                                 const actions: ContinuityCardData["actions"] =
                                   [];
@@ -12220,6 +12241,27 @@ export default function IntelligenceMapping() {
                                         : "unseen occupant/s"
                                     }, departed ${shortAddr} and continued via:`,
                                   });
+                                }
+                                if (outOfSight && arrivalPeople.length > 0) {
+                                  const oosNames = names(
+                                    arrivalPeople.join(" and ")
+                                  );
+                                  // Walk out to the vehicle or on elsewhere,
+                                  // ahead of Vehicle departing.
+                                  actions.unshift(
+                                    {
+                                      key: `wov-oos-${v.rego}`,
+                                      label: "Walked out to vehicle",
+                                      mode: "paragraph",
+                                      text: `${oosNames} exited ${shortAddr} and walked towards Vehicle ${v.rego}.`,
+                                    },
+                                    {
+                                      key: `la-oos-${v.rego}`,
+                                      label: "Walked away",
+                                      mode: "paragraph",
+                                      text: `${oosNames} exited ${shortAddr} and walked [route] towards [location].`,
+                                    }
+                                  );
                                 }
                                 if (inCar && !inside && !outOfSight) {
                                   // Left the vehicle and walked off somewhere
@@ -12265,7 +12307,7 @@ export default function IntelligenceMapping() {
                                     ? `${insideHere.map(w => w.names).join("; ")} inside the address`
                                     : outOfSight
                                       ? inCar
-                                        ? `${occupants.join(", ")} arrived in it, not seen since`
+                                        ? `${occupants.join(", ")} out of sight at the address`
                                         : "Out of sight since arriving"
                                       : inCar
                                         ? `${occupants.join(", ")} in the vehicle`
@@ -12292,8 +12334,8 @@ export default function IntelligenceMapping() {
                                       }
                                     : outOfSight
                                       ? {
-                                          headline: `Last seen arriving in ${v.rego}`,
-                                          sub: `Out of sight at ${shortAddr}`,
+                                          headline: `Out of sight at ${shortAddr}`,
+                                          sub: `Arrived in ${v.rego}`,
                                         }
                                       : {
                                           headline: inCar

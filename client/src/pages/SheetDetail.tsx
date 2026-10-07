@@ -5230,7 +5230,28 @@ export default function SheetDetail({
               // "... arrived and continued out of sight": nobody can say
               // whether anyone is still in it until someone is seen again,
               // so no walked-away / walked-in options are offered.
-              const outOfSight = a.outOfSight && !inside;
+              // The target is then placed at the address, out of sight: the
+              // next steps are to walk out to the vehicle, walk somewhere
+              // else, or leave in a vehicle. Not once a later row has put
+              // those people anywhere.
+              const arrivalPeople = occupantsStillInVehicle(
+                extractOccupantNames(a.occupantDesc),
+                []
+              );
+              const movedOn = (pendingPlacements ?? []).some(
+                pl =>
+                  pl.rowId > a.rowId &&
+                  arrivalPeople.some(n =>
+                    surnameTokens(n).some(t =>
+                      surnameTokens(pl.name).includes(t)
+                    )
+                  )
+              );
+              const outOfSight = a.outOfSight && !inside && !movedOn;
+              const oosNames = shortenAlreadyMentionedNames(
+                arrivalPeople.join(" and "),
+                usedBracketCodes
+              );
               const carNames = shortenAlreadyMentionedNames(
                 occupants.join(" and "),
                 usedBracketCodes
@@ -5283,25 +5304,39 @@ export default function SheetDetail({
                     ),
                     departingAction,
                   ]
-                : [
-                    departingAction,
-                    ...(inCar && !inside && !outOfSight
-                      ? [
-                          // Left the vehicle and walked off somewhere other
-                          // than here (a car park or street space).
-                          {
-                            key: `wa-${rego}`,
-                            label: "Walked away",
-                            text: `${carNames} exited the vehicle and walked [route] towards [location].`,
-                          },
-                          {
-                            key: `wi-${rego}`,
-                            label: "Walked in",
-                            text: `${carNames} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
-                          },
-                        ]
-                      : []),
-                  ];
+                : outOfSight && arrivalPeople.length > 0
+                  ? [
+                      {
+                        key: `wov-oos-${rego}`,
+                        label: "Walked out to vehicle",
+                        text: `${oosNames} exited ${a.address} and walked towards Vehicle ${rego}.`,
+                      },
+                      {
+                        key: `la-oos-${rego}`,
+                        label: "Walked away",
+                        text: `${oosNames} exited ${a.address} and walked [route] towards [location].`,
+                      },
+                      departingAction,
+                    ]
+                  : [
+                      departingAction,
+                      ...(inCar && !inside && !outOfSight
+                        ? [
+                            // Left the vehicle and walked off somewhere other
+                            // than here (a car park or street space).
+                            {
+                              key: `wa-${rego}`,
+                              label: "Walked away",
+                              text: `${carNames} exited the vehicle and walked [route] towards [location].`,
+                            },
+                            {
+                              key: `wi-${rego}`,
+                              label: "Walked in",
+                              text: `${carNames} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
+                            },
+                          ]
+                        : []),
+                    ];
               continuityCards.push({
                 key: `veh-${rego}`,
                 title: rego,
@@ -5310,7 +5345,7 @@ export default function SheetDetail({
                   ? `${insideHere.map(w => w.names).join("; ")} inside the address`
                   : outOfSight
                     ? inCar
-                      ? `${occupants.join(", ")} arrived in it, not seen since`
+                      ? `${occupants.join(", ")} out of sight at the address`
                       : "Out of sight since arriving"
                     : inCar
                       ? `${occupants.join(", ")} in the vehicle`
@@ -5331,8 +5366,8 @@ export default function SheetDetail({
                     }
                   : outOfSight
                     ? {
-                        headline: `Last seen arriving in ${rego}`,
-                        sub: `Out of sight at ${a.address}${sinceText(a.rowId)}`,
+                        headline: `Out of sight at ${a.address}`,
+                        sub: `Arrived in ${rego}${sinceText(a.rowId)}`,
                       }
                     : {
                         headline: inCar ? `In ${rego}` : `${rego} unattended`,

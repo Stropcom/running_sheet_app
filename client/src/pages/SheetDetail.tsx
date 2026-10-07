@@ -34,6 +34,12 @@ import {
 } from "@/components/SuggestedFaceMatchDialog";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import {
+  locateTargetFromPending,
+  samePlace,
+  TARGET_EMOJI,
+} from "@shared/targetPosition";
+import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
+import {
   vehicleOccupants as sharedVehicleOccupants,
   occupantsStillInVehicle,
   splitPeopleNames,
@@ -2943,6 +2949,32 @@ export default function SheetDetail({
   const pendingPlacements = draftActive
     ? draftPending!.placements
     : pendingPlacementsBase;
+  // Target Tracking switches (per device, set in the map's right-hand pane).
+  const trackingSettings = useTargetTrackingSettings();
+  // Where the target is, for marking on the sheet's address chips.
+  const targetPosition = useMemo(
+    () =>
+      trackingSettings.location
+        ? locateTargetFromPending({
+            token: targetTokenFromTitle(sheet?.title),
+            arrivals: pendingArrivals ?? [],
+            departures: pendingDepartures ?? [],
+            walkIns: pendingWalkIns ?? [],
+            headingTo: pendingHeadingTo ?? [],
+            placements: pendingPlacements ?? [],
+            extractNames: extractOccupantNames,
+          })
+        : null,
+    [
+      trackingSettings.location,
+      sheet?.title,
+      pendingArrivals,
+      pendingDepartures,
+      pendingWalkIns,
+      pendingHeadingTo,
+      pendingPlacements,
+    ]
+  );
   // A row just created by tapping a continuity card: its observation opens
   // for editing so the next tap adds to it (see EditableCell autoEdit).
   const [justAddedRowId, setJustAddedRowId] = useState<number | null>(null);
@@ -6033,6 +6065,18 @@ export default function SheetDetail({
                                       title={`Insert: ${chip.insertValue}`}
                                       className="inline-flex items-center px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
                                     >
+                                      {targetPosition?.place &&
+                                        samePlace(
+                                          chip.insertValue,
+                                          targetPosition.place
+                                        ) && (
+                                          <span
+                                            className="mr-1 text-[11px]"
+                                            title={`Target ${targetPosition.label}`}
+                                          >
+                                            {TARGET_EMOJI[targetPosition.state]}
+                                          </span>
+                                        )}
                                       <span className="text-[10px] font-mono font-bold max-w-[140px] truncate">
                                         {chip.insertValue}
                                       </span>
@@ -6048,7 +6092,7 @@ export default function SheetDetail({
                 )}
                 {/* Continuity cards sit between the chip panel and the rows,
                     and show whether or not the panel above is expanded. */}
-                {hasContinuityChips && (
+                {hasContinuityChips && trackingSettings.tracking && (
                   <div className={showTargetPanel ? "mb-4 -mt-2" : "mb-4"}>
                     <ContinuityCards
                       busy={_addRowOnline.isPending}

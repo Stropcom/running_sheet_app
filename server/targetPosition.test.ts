@@ -1,0 +1,136 @@
+import { describe, expect, it } from "vitest";
+import {
+  locateTarget,
+  samePlace,
+  type TargetPositionInput,
+} from "@shared/targetPosition";
+import {
+  extractDepartureAddress,
+  scanWalkEvents,
+} from "@shared/walkEventPatterns";
+import {
+  computePendingVehicleArrivals,
+  computePendingVehicleDepartures,
+} from "./db";
+
+// Reads a whole sheet the way the server does, then locates the target.
+function locate(token: string, ...obs: string[]) {
+  const rows = obs.map((observation, i) => ({
+    id: i + 1,
+    sheetId: 1,
+    observation,
+  }));
+  const walk = scanWalkEvents(rows);
+  const strip = (d: string) =>
+    d
+      .replace(/\b(?:driver|sole occupant|front passenger|passenger)\b/gi, "")
+      .replace(/\bunseen\s+occupant(?:\/s|s)?\b/gi, "")
+      .replace(/\band\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const input: TargetPositionInput = {
+    token,
+    arrivals: computePendingVehicleArrivals(rows).map(a => ({
+      rego: a.rego,
+      names: strip(a.occupantDesc),
+      address: a.address,
+      rowId: a.rowId,
+      outOfSight: a.outOfSight,
+    })),
+    departures: computePendingVehicleDepartures(rows).map(d => ({
+      rego: d.rego,
+      names: strip(d.occupantDesc),
+      fromAddress: d.fromAddress,
+      rowId: d.rowId,
+    })),
+    walkIns: walk.walkIns,
+    headingTo: walk.headingTo,
+    placements: walk.placements,
+  };
+  return locateTarget(input);
+}
+
+describe("locateTarget — BAIG's night", () => {
+  const arrived =
+    "Vehicle 1ORB419, BAIG driver and sole occupant, arrived at 77 Reynolds Rd and parked.";
+  const tavernArrive =
+    "Vehicle 1HIB84, occupant/s not observed, arrived at Bull Creek Tavern.";
+  const seated =
+    "BAIG seated at a table having a meal inside Bull Creek Tavern.";
+  const out =
+    "BAIG exited Bull Creek Tavern and walked towards Vehicle 1HIB84.\nVehicle 1HIB84, BAIG driver and sole occupant, departed Bull Creek Tavern and continued via:";
+  const back =
+    "Vehicle 1HIB84, BAIG driver and sole occupant, arrived at 77 Reynolds Rd and continued out of sight.";
+
+  it("in a parked vehicle", () => {
+    expect(locate("BAIG", arrived)).toMatchObject({
+      place: "77 Reynolds Rd",
+      state: "vehicle",
+      rego: "1ORB419",
+    });
+  });
+
+  it("inside a place once seen there", () => {
+    expect(locate("BAIG", arrived, tavernArrive, seated)).toMatchObject({
+      place: "Bull Creek Tavern",
+      state: "inside",
+    });
+  });
+
+  it("moving, from the place he left", () => {
+    expect(locate("BAIG", arrived, tavernArrive, seated, out)).toMatchObject({
+      place: "Bull Creek Tavern",
+      state: "moving",
+      rego: "1HIB84",
+    });
+  });
+
+  it("out of sight at the next address", () => {
+    expect(
+      locate("BAIG", arrived, tavernArrive, seated, out, back)
+    ).toMatchObject({
+      place: "77 Reynolds Rd",
+      state: "oos",
+      rego: "1HIB84",
+    });
+  });
+
+  it("walking from a vehicle names where it is parked", () => {
+    expect(
+      locate(
+        "BAIG",
+        arrived,
+        "BAIG exited the vehicle and walked towards 13 Denford Street."
+      )
+    ).toMatchObject({ place: "77 Reynolds Rd", state: "walking" });
+  });
+
+  it("null when the target is never mentioned", () => {
+    expect(locate("BAIG", "JORDAN entered 13 Denford Street.")).toBeNull();
+  });
+});
+
+describe("extractDepartureAddress", () => {
+  it("reads the place a vehicle left", () => {
+    expect(
+      extractDepartureAddress(
+        "Vehicle 1HIB84, BAIG, departed Bull Creek Tavern and continued via:"
+      )
+    ).toBe("Bull Creek Tavern");
+    expect(
+      extractDepartureAddress(
+        "Vehicle 1HIB84, unseen occupant/s, departed 77 Reynolds Rd and continued via:"
+      )
+    ).toBe("77 Reynolds Rd");
+  });
+});
+
+describe("samePlace", () => {
+  it("ignores case and punctuation, and short against full", () => {
+    expect(samePlace("Bull Creek Tavern", "bull creek tavern")).toBe(true);
+    expect(samePlace("77 Reynolds Rd", "77 Reynolds Rd, BULL CREEK WA")).toBe(
+      true
+    );
+    expect(samePlace("77 Reynolds Rd", "21 Leach Avenue")).toBe(false);
+  });
+});

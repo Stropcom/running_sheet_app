@@ -42,7 +42,10 @@ import {
   matchVehicleArrival,
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
-import { scanWalkEvents } from "@shared/walkEventPatterns";
+import {
+  scanWalkEvents,
+  extractDepartureAddress,
+} from "@shared/walkEventPatterns";
 import { expandRowSegments } from "@shared/rowSegments";
 import {
   classifyVisitDirection,
@@ -5690,6 +5693,8 @@ export interface PendingVehicleDeparture {
   occupantDesc: string;
   sheetId: number;
   rowId: number;
+  /** The place the departure row says it left, when one is written. */
+  fromAddress: string | null;
 }
 
 // Returns the most recent still-pending (not yet arrived) departure per
@@ -5716,7 +5721,13 @@ export function computePendingVehicleDepartures(
 
   const lastDepartByRego = new Map<
     string,
-    { occupantDesc: string; sheetId: number; rowId: number; orderIdx: number }
+    {
+      occupantDesc: string;
+      sheetId: number;
+      rowId: number;
+      fromAddress: string | null;
+      orderIdx: number;
+    }
   >();
   const arrivedRegos = new Set<string>();
 
@@ -5729,6 +5740,7 @@ export function computePendingVehicleDepartures(
         occupantDesc: departMatch[2].trim(),
         sheetId: row.sheetId,
         rowId: row.id,
+        fromAddress: extractDepartureAddress(row.observation),
         orderIdx: idx,
       });
       arrivedRegos.delete(rego);

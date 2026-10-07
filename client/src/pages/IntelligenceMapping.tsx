@@ -12,6 +12,12 @@ import {
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
 import { DivIconOverlay, wasAnyMarkerJustTapped } from "@/lib/divIconOverlay";
+import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
+import {
+  locateTargetFromPending,
+  samePlace,
+  TARGET_EMOJI,
+} from "@shared/targetPosition";
 import {
   getMarkerDataUrl,
   getMarkerIconUrl,
@@ -182,6 +188,7 @@ import {
   PieChart,
   Route,
   Compass,
+  Crosshair,
   Hash,
   Pencil,
 } from "lucide-react";
@@ -3458,6 +3465,12 @@ export default function IntelligenceMapping() {
     }
     return selectedOpIds.length === 1 ? selectedOpIds[0] : null;
   }, [rsSelectedSheetId, rsSheetsData, selectedOpIds]);
+  // Target Tracking switches (per device, set in this pane's Target Tracking
+  // section). The tracker's data is also loaded while the Target location
+  // marker is on, so the flag can follow the selected sheet without the
+  // quick-entry popup being open.
+  const trackingSettings = useTargetTrackingSettings();
+  const rsTrackingActive = mapQeOpen || trackingSettings.location;
   // Vehicles that departed somewhere on THIS sheet and haven't since
   // arrived anywhere — surfaced as a "Vehicle arriving" chip in RS Quick
   // Entry so the officer doesn't have to retype the occupant description.
@@ -3466,7 +3479,10 @@ export default function IntelligenceMapping() {
   const { data: rsPendingDeparturesBase } =
     trpc.row.pendingVehicleDepartures.useQuery(
       { sheetId: rsSelectedSheetId ?? 0 },
-      { enabled: mapQeOpen && !!rsSelectedSheetId }
+      {
+        enabled: rsTrackingActive && !!rsSelectedSheetId,
+        refetchInterval: trackingSettings.location ? 15000 : false,
+      }
     );
   // Vehicles that arrived somewhere on this sheet and haven't since
   // departed again — surfaced as a "Vehicle departing" chip so the officer
@@ -3474,7 +3490,10 @@ export default function IntelligenceMapping() {
   const { data: rsPendingArrivalsBase } =
     trpc.row.pendingVehicleArrivals.useQuery(
       { sheetId: rsSelectedSheetId ?? 0 },
-      { enabled: mapQeOpen && !!rsSelectedSheetId }
+      {
+        enabled: rsTrackingActive && !!rsSelectedSheetId,
+        refetchInterval: trackingSettings.location ? 15000 : false,
+      }
     );
   // Locations someone walked into on foot on this sheet and hasn't since
   // walked back out of — surfaced as a "Walked out" chip so the officer
@@ -3482,19 +3501,28 @@ export default function IntelligenceMapping() {
   // getPendingWalkIns.
   const { data: rsPendingWalkInsBase } = trpc.row.pendingWalkIns.useQuery(
     { sheetId: rsSelectedSheetId ?? 0 },
-    { enabled: mapQeOpen && !!rsSelectedSheetId }
+    {
+      enabled: rsTrackingActive && !!rsSelectedSheetId,
+      refetchInterval: trackingSettings.location ? 15000 : false,
+    }
   );
   // People who left a location saying where they were going and haven't
   // been logged entering it — the "Entered" card's source (see
   // getPendingHeadingTo).
   const { data: rsPendingHeadingToBase } = trpc.row.pendingHeadingTo.useQuery(
     { sheetId: rsSelectedSheetId ?? 0 },
-    { enabled: mapQeOpen && !!rsSelectedSheetId }
+    {
+      enabled: rsTrackingActive && !!rsSelectedSheetId,
+      refetchInterval: trackingSettings.location ? 15000 : false,
+    }
   );
   // People who walked to / got into a vehicle (see getPendingPlacements).
   const { data: rsPendingPlacementsBase } = trpc.row.pendingPlacements.useQuery(
     { sheetId: rsSelectedSheetId ?? 0 },
-    { enabled: mapQeOpen && !!rsSelectedSheetId }
+    {
+      enabled: rsTrackingActive && !!rsSelectedSheetId,
+      refetchInterval: trackingSettings.location ? 15000 : false,
+    }
   );
   // Continuity cards the team has stopped tracking on this sheet — shared
   // with the running sheet's own "Where now" band (same keys).
@@ -3549,6 +3577,32 @@ export default function IntelligenceMapping() {
   const rsPendingPlacements = draftActive
     ? rsDraftPending!.placements
     : rsPendingPlacementsBase;
+  // Where the target is on the selected sheet — marked on the map with a flag
+  // above that place's pin (see the Target location flag effect below).
+  const rsTargetPosition = useMemo(() => {
+    if (!trackingSettings.location || !rsSelectedSheetId) return null;
+    const title = (rsSheetsData as any[] | undefined)?.find(
+      (x: any) => x.id === rsSelectedSheetId
+    )?.title as string | undefined;
+    return locateTargetFromPending({
+      token: targetTokenFromTitle(title),
+      arrivals: rsPendingArrivals ?? [],
+      departures: rsPendingDepartures ?? [],
+      walkIns: rsPendingWalkIns ?? [],
+      headingTo: rsPendingHeadingTo ?? [],
+      placements: rsPendingPlacements ?? [],
+      extractNames: extractOccupantNames,
+    });
+  }, [
+    trackingSettings.location,
+    rsSelectedSheetId,
+    rsSheetsData,
+    rsPendingArrivals,
+    rsPendingDepartures,
+    rsPendingWalkIns,
+    rsPendingHeadingTo,
+    rsPendingPlacements,
+  ]);
   // Short-form of the quick-entry address (mirrors the extraction the
   // "Address chips" section below already does) — used only to check
   // whether this address has already been mentioned in the sheet, for the
@@ -4848,6 +4902,97 @@ export default function IntelligenceMapping() {
   ]);
 
   // Keep customMarkersDataRef in sync so placeMarker can access latest data without stale closure
+  // ── Target location flag ──
+  // A flag (emoji for his state, name, state, time) hovering over the pin of
+  // the place the target is at, on the selected sheet. It is its own overlay
+  // at that pin's position, so redrawing the pins never disturbs it. The
+  // place is matched to a pin by name; pins are placed as their addresses
+  // geocode, so the match is retried for a short while until one turns up.
+  // No pin for the place, no flag.
+  const targetFlagRef = useRef<DivIconOverlay | null>(null);
+  useEffect(() => {
+    const removeFlag = () => {
+      if (targetFlagRef.current) {
+        targetFlagRef.current.map = null;
+        targetFlagRef.current = null;
+      }
+    };
+    const pos = rsTargetPosition;
+    if (!mapReady || !mapRef.current || !pos?.place) {
+      removeFlag();
+      return;
+    }
+    const place = pos.place;
+    const findPin = (): google.maps.LatLngLiteral | null => {
+      const pins: any[] = [
+        ...markersRef.current,
+        ...Array.from(customMarkerMapRefs.current.values()),
+      ];
+      for (const m of pins) {
+        if (m?.title && m.position && samePlace(String(m.title), place)) {
+          return m.position as google.maps.LatLngLiteral;
+        }
+      }
+      return null;
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancelled = false;
+    const attempt = (n: number) => {
+      if (cancelled) return;
+      const at = findPin();
+      if (!at) {
+        if (n < 20) timer = setTimeout(() => attempt(n + 1), 1500);
+        return;
+      }
+      removeFlag();
+      const flag = document.createElement("div");
+      flag.style.cssText =
+        "position:absolute;left:0;top:0;transform:translate(-50%,calc(-100% - 26px));" +
+        "pointer-events:none;display:flex;flex-direction:column;align-items:center;";
+      const pill = document.createElement("div");
+      const unsure = pos.state === "oos";
+      pill.style.cssText =
+        "display:flex;align-items:center;gap:6px;white-space:nowrap;" +
+        "background:#fff;color:#14181d;border:2px " +
+        (unsure ? "dashed" : "solid") +
+        " #e0338a;border-radius:999px;padding:3px 10px 3px 7px;" +
+        "font:600 11px/1.2 system-ui,sans-serif;box-shadow:0 2px 6px rgba(0,0,0,.3);";
+      const em = document.createElement("span");
+      em.textContent = TARGET_EMOJI[pos.state];
+      em.style.cssText = "font-size:15px;";
+      const label = document.createElement("span");
+      const who = (
+        targetTokenFromTitle(
+          (rsSheetsData as any[] | undefined)?.find(
+            (x: any) => x.id === rsSelectedSheetId
+          )?.title
+        ) ?? "Target"
+      ).toUpperCase();
+      label.textContent = `${who} · ${pos.label}`;
+      pill.appendChild(em);
+      pill.appendChild(label);
+      const stem = document.createElement("div");
+      stem.style.cssText =
+        "width:2px;height:8px;background:#e0338a;border-radius:1px;";
+      flag.appendChild(pill);
+      flag.appendChild(stem);
+      targetFlagRef.current = new DivIconOverlay({
+        map: mapRef.current,
+        position: at,
+        content: flag,
+        anchor: "none",
+        zIndex: 5000,
+        title: "Target location",
+      });
+    };
+    attempt(0);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      removeFlag();
+    };
+  }, [mapReady, rsTargetPosition, rsSheetsData, rsSelectedSheetId, locations]);
+
   // NOTE: Do NOT call renderLocations here — that would create a loop:
   //   customMarkers changes → renderLocations → geocode → placeMarker stores mergedIntel
   //   → (nothing triggers re-render, but the 5s poll refetches customMarkers) → loop
@@ -9471,6 +9616,82 @@ export default function IntelligenceMapping() {
                 </button>
               </div>
               {/* end Marker Entity Count */}
+
+              {/* ── TARGET TRACKING — same on/off pattern as the sections
+                above. The first switch is the whole feature (the Target
+                tracker panel on the running sheet and in the quick-entry
+                popup); the second is the flag marking where the target is,
+                and only applies while tracking is on. Per device. ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Target Tracking
+                </span>
+                {[
+                  {
+                    key: "tracking",
+                    label: "Target tracking",
+                    on: trackingSettings.tracking,
+                    toggle: () =>
+                      trackingSettings.setTracking(!trackingSettings.tracking),
+                    disabled: false,
+                    Icon: Crosshair,
+                  },
+                  {
+                    key: "location",
+                    label: "Target location",
+                    on: trackingSettings.location,
+                    toggle: () =>
+                      trackingSettings.setLocation(
+                        !trackingSettings.locationSetting
+                      ),
+                    disabled: !trackingSettings.tracking,
+                    Icon: MapPin,
+                  },
+                ].map(({ key, label, on, toggle, disabled, Icon }) => (
+                  <button
+                    key={key}
+                    onClick={toggle}
+                    disabled={disabled}
+                    className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 disabled:opacity-50 disabled:active:scale-100 ${
+                      on
+                        ? "border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20"
+                        : "border-border bg-card hover:bg-accent/40"
+                    }`}
+                    aria-pressed={on}
+                    title={
+                      disabled
+                        ? "Turn Target tracking on to use this"
+                        : undefined
+                    }
+                  >
+                    <Icon
+                      className={`h-3.5 w-3.5 flex-shrink-0 ${
+                        on ? "text-sky-500" : "text-muted-foreground"
+                      }`}
+                    />
+                    <span
+                      className={`text-xs font-semibold truncate flex-1 text-left ${
+                        on ? "text-sky-500" : "text-foreground"
+                      }`}
+                    >
+                      {label}
+                    </span>
+                    <span
+                      className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                        on ? "text-sky-500" : "text-muted-foreground"
+                      }`}
+                    >
+                      {on ? "On" : "Off"}
+                    </span>
+                  </button>
+                ))}
+                {!trackingSettings.tracking && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Target location needs Target tracking on.
+                  </p>
+                )}
+              </div>
+              {/* end Target Tracking */}
             </div>
           )}
           {/* end Pane Body */}
@@ -12489,7 +12710,11 @@ export default function IntelligenceMapping() {
                                 }
                               }
 
-                              if (cards.length === 0) return null;
+                              if (
+                                cards.length === 0 ||
+                                !trackingSettings.tracking
+                              )
+                                return null;
                               return (
                                 <ContinuityCards
                                   cards={cards}

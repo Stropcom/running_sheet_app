@@ -186,9 +186,21 @@ export function cleanWalkerNames(raw: string): string {
 /** A location written as a full address ("13 Denford Street, KENWICK WA
  * (13 Denford Street)") is reduced to its bracket label, which is what later
  * mentions and the other continuity logic use. */
-function bracketLabelOrSelf(location: string): string {
+export function bracketLabelOrSelf(location: string): string {
   const b = location.match(/\(([^)]{1,80})\)/);
   return (b ? b[1] : location).trim();
+}
+
+/** The place a vehicle's departure row says it left ("... departed 77
+ * Reynolds Rd and continued via:"), reduced to its bracket label when written
+ * as a full address. Null when none is written. */
+export function extractDepartureAddress(text: string): string | null {
+  const m = text.match(
+    /\b(?:departed|reversed out of|reversed from)\s+(.+?)(?=\s+(?:and\s+(?:continued|travelled|headed|drove|left)|via|towards)\b|[,.:;\n]|$)/i
+  );
+  if (!m) return null;
+  const place = bracketLabelOrSelf(m[1]).trim();
+  return place || null;
 }
 
 /** Where an "exited X and walked ..." clause says the walkers were heading,

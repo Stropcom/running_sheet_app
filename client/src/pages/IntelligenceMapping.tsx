@@ -12138,6 +12138,7 @@ export default function IntelligenceMapping() {
                                   occupantDesc: string;
                                   rowId: number;
                                   saved: boolean;
+                                  outOfSight: boolean;
                                 }
                               >();
                               (rsPendingArrivals ?? [])
@@ -12150,6 +12151,7 @@ export default function IntelligenceMapping() {
                                     occupantDesc: a.occupantDesc,
                                     rowId: a.rowId,
                                     saved: true,
+                                    outOfSight: a.outOfSight,
                                   })
                                 );
                               const draftArrive =
@@ -12168,6 +12170,9 @@ export default function IntelligenceMapping() {
                                     // by an older dismissal.
                                     rowId: Number.MAX_SAFE_INTEGER,
                                     saved: false,
+                                    outOfSight: /\bout of sight\b/i.test(
+                                      rsInlineText
+                                    ),
                                   });
                                 }
                               }
@@ -12192,6 +12197,11 @@ export default function IntelligenceMapping() {
                                   v.rowId
                                 );
                                 const inCar = occupants.length > 0;
+                                // "... arrived and continued out of sight":
+                                // nobody can say whether anyone is still in
+                                // it until someone is seen again, so no
+                                // walked-away / walked-in options.
+                                const outOfSight = v.outOfSight && !inside;
                                 const occNames = names(occupants.join(" and "));
                                 const actions: ContinuityCardData["actions"] =
                                   [];
@@ -12202,7 +12212,7 @@ export default function IntelligenceMapping() {
                                     // Everyone known to be in it, or
                                     // "unseen occupant/s" when nobody is.
                                     text: `Vehicle ${v.rego}, ${
-                                      inCar
+                                      inCar && !outOfSight
                                         ? occupants.length ===
                                           allOccupants.length
                                           ? names(v.occupantDesc)
@@ -12211,7 +12221,7 @@ export default function IntelligenceMapping() {
                                     }, departed ${shortAddr} and continued via:`,
                                   });
                                 }
-                                if (inCar && !inside) {
+                                if (inCar && !inside && !outOfSight) {
                                   // Left the vehicle and walked off somewhere
                                   // other than here, or walked in here.
                                   actions.push(
@@ -12253,9 +12263,13 @@ export default function IntelligenceMapping() {
                                   pill: "Parked",
                                   who: inside
                                     ? `${insideHere.map(w => w.names).join("; ")} inside the address`
-                                    : inCar
-                                      ? `${occupants.join(", ")} in the vehicle`
-                                      : "Nobody in the vehicle",
+                                    : outOfSight
+                                      ? inCar
+                                        ? `${occupants.join(", ")} arrived in it, not seen since`
+                                        : "Out of sight since arriving"
+                                      : inCar
+                                        ? `${occupants.join(", ")} in the vehicle`
+                                        : "Nobody in the vehicle",
                                   state: shortAddr,
                                   actions,
                                   latestRowId: Math.max(
@@ -12276,12 +12290,17 @@ export default function IntelligenceMapping() {
                                         headline: `Inside ${shortAddr}`,
                                         sub: "On foot",
                                       }
-                                    : {
-                                        headline: inCar
-                                          ? `In ${v.rego}`
-                                          : `${v.rego} unattended`,
-                                        sub: `Parked at ${shortAddr}`,
-                                      },
+                                    : outOfSight
+                                      ? {
+                                          headline: `Last seen arriving in ${v.rego}`,
+                                          sub: `Out of sight at ${shortAddr}`,
+                                        }
+                                      : {
+                                          headline: inCar
+                                            ? `In ${v.rego}`
+                                            : `${v.rego} unattended`,
+                                          sub: `Parked at ${shortAddr}`,
+                                        },
                                 });
                               });
 

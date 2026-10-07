@@ -5227,6 +5227,10 @@ export default function SheetDetail({
                 a.rowId
               );
               const inCar = occupants.length > 0;
+              // "... arrived and continued out of sight": nobody can say
+              // whether anyone is still in it until someone is seen again,
+              // so no walked-away / walked-in options are offered.
+              const outOfSight = a.outOfSight && !inside;
               const carNames = shortenAlreadyMentionedNames(
                 occupants.join(" and "),
                 usedBracketCodes
@@ -5241,7 +5245,7 @@ export default function SheetDetail({
                 // nobody is — the usual wording for a departure whose
                 // occupants weren't seen.
                 text: `Vehicle ${rego}, ${
-                  inCar
+                  inCar && !outOfSight
                     ? occupants.length ===
                       splitPeopleNames(extractOccupantNames(a.occupantDesc))
                         .length
@@ -5281,7 +5285,7 @@ export default function SheetDetail({
                   ]
                 : [
                     departingAction,
-                    ...(inCar && !inside
+                    ...(inCar && !inside && !outOfSight
                       ? [
                           // Left the vehicle and walked off somewhere other
                           // than here (a car park or street space).
@@ -5304,9 +5308,13 @@ export default function SheetDetail({
                 pill: "Parked",
                 who: inside
                   ? `${insideHere.map(w => w.names).join("; ")} inside the address`
-                  : inCar
-                    ? `${occupants.join(", ")} in the vehicle`
-                    : "Nobody in the vehicle",
+                  : outOfSight
+                    ? inCar
+                      ? `${occupants.join(", ")} arrived in it, not seen since`
+                      : "Out of sight since arriving"
+                    : inCar
+                      ? `${occupants.join(", ")} in the vehicle`
+                      : "Nobody in the vehicle",
                 state: `${a.address}${sinceText(a.rowId)}`,
                 actions,
                 latestRowId: Math.max(a.rowId, ...insideHere.map(w => w.rowId)),
@@ -5321,10 +5329,15 @@ export default function SheetDetail({
                       headline: `Inside ${a.address}`,
                       sub: `On foot${sinceText(Math.max(...insideHere.map(w => w.rowId)))}`,
                     }
-                  : {
-                      headline: inCar ? `In ${rego}` : `${rego} unattended`,
-                      sub: `Parked at ${a.address}${sinceText(a.rowId)}`,
-                    },
+                  : outOfSight
+                    ? {
+                        headline: `Last seen arriving in ${rego}`,
+                        sub: `Out of sight at ${a.address}${sinceText(a.rowId)}`,
+                      }
+                    : {
+                        headline: inCar ? `In ${rego}` : `${rego} unattended`,
+                        sub: `Parked at ${a.address}${sinceText(a.rowId)}`,
+                      },
               });
             });
             (pendingDepartures ?? []).forEach(d => {

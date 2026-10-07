@@ -62,3 +62,26 @@ describe("a draft read as the newest row", () => {
     ]);
   });
 });
+
+describe("arrival rows that continue out of sight", () => {
+  it("flags an arrival that says it continued out of sight", () => {
+    const [a] = computePendingVehicleArrivals([
+      row(
+        1,
+        "Vehicle 1HIB84, BAIG driver and sole occupant, arrived at 77 Reynolds Rd and continued out of sight."
+      ),
+    ]);
+    expect(a.rego).toBe("1HIB84");
+    expect(a.outOfSight).toBe(true);
+  });
+
+  it("does not flag an ordinary arrival", () => {
+    const [a] = computePendingVehicleArrivals([
+      row(
+        1,
+        "Vehicle 1HIB84, BAIG driver and sole occupant, arrived at 77 Reynolds Rd and parked in the street."
+      ),
+    ]);
+    expect(a.outOfSight).toBe(false);
+  });
+});

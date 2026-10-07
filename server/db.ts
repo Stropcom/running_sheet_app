@@ -5760,6 +5760,9 @@ export interface PendingVehicleArrival {
   address: string;
   sheetId: number;
   rowId: number;
+  /** The arrival row says they "continued out of sight" — so nobody can say
+   * whether anyone is still in the vehicle until someone is seen again. */
+  outOfSight: boolean;
 }
 
 // Returns the most recent still-"here" (not yet re-departed) arrival per
@@ -5788,6 +5791,7 @@ export function computePendingVehicleArrivals(
       address: string;
       sheetId: number;
       rowId: number;
+      outOfSight: boolean;
       orderIdx: number;
     }
   >();
@@ -5802,6 +5806,7 @@ export function computePendingVehicleArrivals(
         address: extractArrivalAddress(row.observation) ?? "",
         sheetId: row.sheetId,
         rowId: row.id,
+        outOfSight: /\bout of sight\b/i.test(row.observation),
         orderIdx: idx,
       });
       departedRegos.delete(arriveMatch.rego);

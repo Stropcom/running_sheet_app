@@ -3470,6 +3470,19 @@ export default function IntelligenceMapping() {
   // marker is on, so the flag can follow the selected sheet without the
   // quick-entry popup being open.
   const trackingSettings = useTargetTrackingSettings();
+  // The quick-entry popup's Target panel (blue + purple chips) open/closed,
+  // remembered per device like the running sheet's own TARGET panel.
+  const [qeTargetPanelExpanded, setQeTargetPanelExpanded] = useState<boolean>(
+    () => {
+      try {
+        return (
+          localStorage.getItem("runsheet_qe_target_panel_expanded") !== "false"
+        );
+      } catch {
+        return true;
+      }
+    }
+  );
   const rsTrackingActive = mapQeOpen || trackingSettings.location;
   // Vehicles that departed somewhere on THIS sheet and haven't since
   // arrived anywhere — surfaced as a "Vehicle arriving" chip in RS Quick
@@ -11917,239 +11930,334 @@ export default function IntelligenceMapping() {
                                 ))}
                               </div>
                             )}
-                          {/* Shortcut buttons */}
-                          {(() => {
-                            // ── QE chips: exact mirror of main RS chip set, values, and order ──────────
-                            // Single source of truth: assignedTarget (target.getById) for all target fields.
-                            // Chip set matches SheetDetail exactly: TGT, HBF, HB, V1F, V1, extra vehicles, wildcards, DEP, ARR, folder shortcuts.
-                            // Order: qeChipOrder (read from RS localStorage key) with wildcards always last.
-                            const appendText = (text: string) => {
-                              pushInlineUndo(rsInlineText);
-                              setRsInlineText(prev =>
-                                prev ? `${prev} ${text}` : text
-                              );
-                              resetInlineTimer();
-                              rsInlineInputRef.current?.focus();
-                            };
-                            const t = assignedTarget as any;
-                            if (!t) return null;
-
-                            // Extra vehicle chips from JSON (V2F/V2, V3F/V3, …)
-                            const extraVehicleChips: Array<{
-                              label: string;
-                              display: string;
-                              getValue: () => string | null;
-                            }> = [];
-                            try {
-                              const evs: Array<{
-                                full: string;
-                                short: string;
-                              }> = JSON.parse(t.extraVehicles ?? "[]");
-                              evs.forEach(
-                                (
-                                  ev: { full: string; short: string },
-                                  i: number
-                                ) => {
-                                  const num = i + 2;
-                                  if (ev.full)
-                                    extraVehicleChips.push({
-                                      label: `V${num}F`,
-                                      display: `V${num}F`,
-                                      getValue: () => ev.full,
-                                    });
-                                  if (ev.short) {
-                                    extraVehicleChips.push({
-                                      label: `V${num}`,
-                                      display: ev.short
-                                        ? `V${num} ${ev.short}`
-                                        : `V${num}`,
-                                      getValue: () => ev.short,
-                                    });
-                                  }
+                          {/* Target panel — the blue shortcut chips and, right
+                          under them, the purple entity chips, in a dropdown
+                          like the running sheet's TARGET panel. Open/closed
+                          is remembered per device. The green addresses stay
+                          below it. */}
+                          {(assignedTarget ||
+                            (rsEntityChips && rsEntityChips.length > 0)) && (
+                            <div className="rounded-lg border border-border bg-card/60 overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setQeTargetPanelExpanded(v => {
+                                    const next = !v;
+                                    try {
+                                      localStorage.setItem(
+                                        "runsheet_qe_target_panel_expanded",
+                                        String(next)
+                                      );
+                                    } catch {}
+                                    return next;
+                                  })
                                 }
-                              );
-                            } catch {}
+                                aria-expanded={qeTargetPanelExpanded}
+                                className="flex w-full min-w-0 select-none items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/20 active:bg-muted/30"
+                              >
+                                <Crosshair className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                <span className="flex-1 truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                  {assignedTarget
+                                    ? `TARGET — ${(assignedTarget as any).name}`
+                                    : "SHORTCUTS"}
+                                </span>
+                                <ChevronDown
+                                  className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${
+                                    qeTargetPanelExpanded ? "" : "-rotate-90"
+                                  }`}
+                                />
+                              </button>
+                              {qeTargetPanelExpanded && (
+                                <div className="flex flex-col gap-1.5 px-3 pb-3">
+                                  {/* Shortcut buttons */}
+                                  {(() => {
+                                    // ── QE chips: exact mirror of main RS chip set, values, and order ──────────
+                                    // Single source of truth: assignedTarget (target.getById) for all target fields.
+                                    // Chip set matches SheetDetail exactly: TGT, HBF, HB, V1F, V1, extra vehicles, wildcards, DEP, ARR, folder shortcuts.
+                                    // Order: qeChipOrder (read from RS localStorage key) with wildcards always last.
+                                    const appendText = (text: string) => {
+                                      pushInlineUndo(rsInlineText);
+                                      setRsInlineText(prev =>
+                                        prev ? `${prev} ${text}` : text
+                                      );
+                                      resetInlineTimer();
+                                      rsInlineInputRef.current?.focus();
+                                    };
+                                    const t = assignedTarget as any;
+                                    if (!t) return null;
 
-                            // Wild field chips (#1, #2, …)
-                            const wildChips: Array<{
-                              label: string;
-                              display: string;
-                              getValue: () => string | null;
-                            }> = [];
-                            try {
-                              const wfs: Array<{
-                                label: string;
-                                value: string;
-                              }> = JSON.parse(t.wildFields ?? "[]");
-                              wfs.forEach(
-                                (wf: { label: string; value: string }) => {
-                                  if (wf.value)
-                                    wildChips.push({
-                                      label: wf.label,
-                                      display: wf.label,
-                                      getValue: () => wf.value,
-                                    });
-                                }
-                              );
-                            } catch {}
+                                    // Extra vehicle chips from JSON (V2F/V2, V3F/V3, …)
+                                    const extraVehicleChips: Array<{
+                                      label: string;
+                                      display: string;
+                                      getValue: () => string | null;
+                                    }> = [];
+                                    try {
+                                      const evs: Array<{
+                                        full: string;
+                                        short: string;
+                                      }> = JSON.parse(t.extraVehicles ?? "[]");
+                                      evs.forEach(
+                                        (
+                                          ev: { full: string; short: string },
+                                          i: number
+                                        ) => {
+                                          const num = i + 2;
+                                          if (ev.full)
+                                            extraVehicleChips.push({
+                                              label: `V${num}F`,
+                                              display: `V${num}F`,
+                                              getValue: () => ev.full,
+                                            });
+                                          if (ev.short) {
+                                            extraVehicleChips.push({
+                                              label: `V${num}`,
+                                              display: ev.short
+                                                ? `V${num} ${ev.short}`
+                                                : `V${num}`,
+                                              getValue: () => ev.short,
+                                            });
+                                          }
+                                        }
+                                      );
+                                    } catch {}
 
-                            // Folder shortcut chips (showInRs=true, exclude legacy 'D')
-                            const folderShortcutChips: Array<{
-                              label: string;
-                              display: string;
-                              getValue: () => string | null;
-                            }> = ((generalShortcuts as any[]) ?? [])
-                              .filter(
-                                (s: any) =>
-                                  (s.trigger as string).toUpperCase() !== "D" &&
-                                  !!s.showInRs
-                              )
-                              .map((s: any) => ({
-                                label: (s.trigger as string).toUpperCase(),
-                                display: (s.trigger as string).toUpperCase(),
-                                getValue: () => s.expansion as string,
-                              }));
+                                    // Wild field chips (#1, #2, …)
+                                    const wildChips: Array<{
+                                      label: string;
+                                      display: string;
+                                      getValue: () => string | null;
+                                    }> = [];
+                                    try {
+                                      const wfs: Array<{
+                                        label: string;
+                                        value: string;
+                                      }> = JSON.parse(t.wildFields ?? "[]");
+                                      wfs.forEach(
+                                        (wf: {
+                                          label: string;
+                                          value: string;
+                                        }) => {
+                                          if (wf.value)
+                                            wildChips.push({
+                                              label: wf.label,
+                                              display: wf.label,
+                                              getValue: () => wf.value,
+                                            });
+                                        }
+                                      );
+                                    } catch {}
 
-                            // Full chip list — identical order to SheetDetail fields array
-                            const allChips: Array<{
-                              label: string;
-                              display: string;
-                              getValue: () => string | null;
-                            }> = [
-                              {
-                                label: "TGT",
-                                display: "TGT",
-                                getValue: () => t.tgt ?? null,
-                              },
-                              {
-                                label: "HBF",
-                                display: "HBF",
-                                getValue: () => t.hbf ?? null,
-                              },
-                              {
-                                label: "HB",
-                                display: "HB",
-                                getValue: () => t.hb ?? null,
-                              },
-                              {
-                                label: "V1F",
-                                display: "V1F",
-                                getValue: () => t.v1f ?? null,
-                              },
-                              {
-                                label: "V1",
-                                display: t.v1 ? `V1 ${t.v1}` : "V1",
-                                getValue: () => t.v1 ?? null,
-                              },
-                              ...extraVehicleChips,
-                              ...wildChips,
-                              {
-                                label: "DEP",
-                                display: "DEP",
-                                getValue: () => t.dep ?? null,
-                              },
-                              {
-                                label: "ARR",
-                                display: "ARR",
-                                getValue: () => t.arr ?? null,
-                              },
-                              ...folderShortcutChips,
-                            ];
-
-                            const available = allChips.filter(
-                              s => s.getValue() !== null
-                            );
-                            if (available.length === 0) return null;
-
-                            // Apply saved RS order — wildcards always last (mirrors SheetDetail)
-                            const isWildcard = (lbl: string) =>
-                              /^#\d+$/.test(lbl);
-                            const nonWildAvail = available.filter(
-                              s => !isWildcard(s.label)
-                            );
-                            const wildAvail = available.filter(s =>
-                              isWildcard(s.label)
-                            );
-                            const orderedNonWild =
-                              qeChipOrder.length > 0
-                                ? [
-                                    ...(qeChipOrder
-                                      .filter(lbl => !isWildcard(lbl))
-                                      .map(lbl =>
-                                        nonWildAvail.find(s => s.label === lbl)
+                                    // Folder shortcut chips (showInRs=true, exclude legacy 'D')
+                                    const folderShortcutChips: Array<{
+                                      label: string;
+                                      display: string;
+                                      getValue: () => string | null;
+                                    }> = ((generalShortcuts as any[]) ?? [])
+                                      .filter(
+                                        (s: any) =>
+                                          (
+                                            s.trigger as string
+                                          ).toUpperCase() !== "D" &&
+                                          !!s.showInRs
                                       )
-                                      .filter(Boolean) as typeof available),
-                                    ...nonWildAvail.filter(
-                                      s => !qeChipOrder.includes(s.label)
-                                    ),
-                                  ]
-                                : nonWildAvail;
-                            const orderedWild =
-                              qeChipOrder.length > 0
-                                ? [
-                                    ...(qeChipOrder
-                                      .filter(isWildcard)
-                                      .map(lbl =>
-                                        wildAvail.find(s => s.label === lbl)
+                                      .map((s: any) => ({
+                                        label: (
+                                          s.trigger as string
+                                        ).toUpperCase(),
+                                        display: (
+                                          s.trigger as string
+                                        ).toUpperCase(),
+                                        getValue: () => s.expansion as string,
+                                      }));
+
+                                    // Full chip list — identical order to SheetDetail fields array
+                                    const allChips: Array<{
+                                      label: string;
+                                      display: string;
+                                      getValue: () => string | null;
+                                    }> = [
+                                      {
+                                        label: "TGT",
+                                        display: "TGT",
+                                        getValue: () => t.tgt ?? null,
+                                      },
+                                      {
+                                        label: "HBF",
+                                        display: "HBF",
+                                        getValue: () => t.hbf ?? null,
+                                      },
+                                      {
+                                        label: "HB",
+                                        display: "HB",
+                                        getValue: () => t.hb ?? null,
+                                      },
+                                      {
+                                        label: "V1F",
+                                        display: "V1F",
+                                        getValue: () => t.v1f ?? null,
+                                      },
+                                      {
+                                        label: "V1",
+                                        display: t.v1 ? `V1 ${t.v1}` : "V1",
+                                        getValue: () => t.v1 ?? null,
+                                      },
+                                      ...extraVehicleChips,
+                                      ...wildChips,
+                                      {
+                                        label: "DEP",
+                                        display: "DEP",
+                                        getValue: () => t.dep ?? null,
+                                      },
+                                      {
+                                        label: "ARR",
+                                        display: "ARR",
+                                        getValue: () => t.arr ?? null,
+                                      },
+                                      ...folderShortcutChips,
+                                    ];
+
+                                    const available = allChips.filter(
+                                      s => s.getValue() !== null
+                                    );
+                                    if (available.length === 0) return null;
+
+                                    // Apply saved RS order — wildcards always last (mirrors SheetDetail)
+                                    const isWildcard = (lbl: string) =>
+                                      /^#\d+$/.test(lbl);
+                                    const nonWildAvail = available.filter(
+                                      s => !isWildcard(s.label)
+                                    );
+                                    const wildAvail = available.filter(s =>
+                                      isWildcard(s.label)
+                                    );
+                                    const orderedNonWild =
+                                      qeChipOrder.length > 0
+                                        ? [
+                                            ...(qeChipOrder
+                                              .filter(lbl => !isWildcard(lbl))
+                                              .map(lbl =>
+                                                nonWildAvail.find(
+                                                  s => s.label === lbl
+                                                )
+                                              )
+                                              .filter(
+                                                Boolean
+                                              ) as typeof available),
+                                            ...nonWildAvail.filter(
+                                              s =>
+                                                !qeChipOrder.includes(s.label)
+                                            ),
+                                          ]
+                                        : nonWildAvail;
+                                    const orderedWild =
+                                      qeChipOrder.length > 0
+                                        ? [
+                                            ...(qeChipOrder
+                                              .filter(isWildcard)
+                                              .map(lbl =>
+                                                wildAvail.find(
+                                                  s => s.label === lbl
+                                                )
+                                              )
+                                              .filter(
+                                                Boolean
+                                              ) as typeof available),
+                                            ...wildAvail.filter(
+                                              s =>
+                                                !qeChipOrder.includes(s.label)
+                                            ),
+                                          ]
+                                        : wildAvail;
+                                    const orderedChips = [
+                                      ...orderedNonWild,
+                                      ...orderedWild,
+                                    ];
+
+                                    // Display rules — same as SheetDetail:
+                                    // Vn short (V1/V2/…): show label + rego; everything else: trigger label only
+                                    const shortcutFolderLabels = new Set(
+                                      ((generalShortcuts as any[]) ?? []).map(
+                                        (s: any) =>
+                                          (s.trigger as string).toUpperCase()
                                       )
-                                      .filter(Boolean) as typeof available),
-                                    ...wildAvail.filter(
-                                      s => !qeChipOrder.includes(s.label)
-                                    ),
-                                  ]
-                                : wildAvail;
-                            const orderedChips = [
-                              ...orderedNonWild,
-                              ...orderedWild,
-                            ];
+                                    );
+                                    const TRIGGER_ONLY = new Set([
+                                      "TGT",
+                                      "HBF",
+                                      "HB",
+                                      "V1F",
+                                      "DEP",
+                                      "ARR",
+                                    ]);
+                                    const isVnShort = (lbl: string) =>
+                                      /^V\d+$/.test(lbl);
+                                    const isVnFull = (lbl: string) =>
+                                      /^V\d+F$/.test(lbl);
+                                    const isStandard = (lbl: string) =>
+                                      !isVnShort(lbl) &&
+                                      (shortcutFolderLabels.has(lbl) ||
+                                        TRIGGER_ONLY.has(lbl) ||
+                                        isVnFull(lbl));
 
-                            // Display rules — same as SheetDetail:
-                            // Vn short (V1/V2/…): show label + rego; everything else: trigger label only
-                            const shortcutFolderLabels = new Set(
-                              ((generalShortcuts as any[]) ?? []).map(
-                                (s: any) => (s.trigger as string).toUpperCase()
-                              )
-                            );
-                            const TRIGGER_ONLY = new Set([
-                              "TGT",
-                              "HBF",
-                              "HB",
-                              "V1F",
-                              "DEP",
-                              "ARR",
-                            ]);
-                            const isVnShort = (lbl: string) =>
-                              /^V\d+$/.test(lbl);
-                            const isVnFull = (lbl: string) =>
-                              /^V\d+F$/.test(lbl);
-                            const isStandard = (lbl: string) =>
-                              !isVnShort(lbl) &&
-                              (shortcutFolderLabels.has(lbl) ||
-                                TRIGGER_ONLY.has(lbl) ||
-                                isVnFull(lbl));
-
-                            return (
-                              <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                {orderedChips.map(s => (
-                                  <button
-                                    key={s.label}
-                                    onClick={() => {
-                                      const v = s.getValue();
-                                      if (v) appendText(v);
-                                    }}
-                                    data-qe-chip={s.label}
-                                    className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                  >
-                                    {isVnShort(s.label)
-                                      ? s.display
-                                      : isStandard(s.label)
-                                        ? s.label
-                                        : s.display}
-                                  </button>
-                                ))}
-                              </div>
-                            );
-                          })()}
+                                    return (
+                                      <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                        {orderedChips.map(s => (
+                                          <button
+                                            key={s.label}
+                                            onClick={() => {
+                                              const v = s.getValue();
+                                              if (v) appendText(v);
+                                            }}
+                                            data-qe-chip={s.label}
+                                            className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                          >
+                                            {isVnShort(s.label)
+                                              ? s.display
+                                              : isStandard(s.label)
+                                                ? s.label
+                                                : s.display}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    );
+                                  })()}
+                                  {/* Entity chips — quick-insert shortcuts mined from this sheet's own
+                          observations (surname / short address / vehicle rego), shared
+                          across every officer on the sheet via the server. */}
+                                  {rsEntityChips &&
+                                    rsEntityChips.length > 0 &&
+                                    (() => {
+                                      const appendText = (text: string) => {
+                                        pushInlineUndo(rsInlineText);
+                                        setRsInlineText(prev =>
+                                          prev ? `${prev} ${text}` : text
+                                        );
+                                        resetInlineTimer();
+                                        rsInlineInputRef.current?.focus();
+                                      };
+                                      return (
+                                        <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                          {rsEntityChips.map(chip => (
+                                            <button
+                                              key={chip.key}
+                                              onClick={() =>
+                                                appendText(chip.insertValue)
+                                              }
+                                              className="px-2 py-0.5 rounded text-[10px] font-bold border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                            >
+                                              <span className="font-mono normal-case">
+                                                {chip.insertValue}
+                                              </span>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      );
+                                    })()}
+                                </div>
+                              )}
+                            </div>
+                          )}
                           {/* Address chips — full RS address and short street address */}
                           {mapQeAddress &&
                             (() => {
@@ -12198,38 +12306,6 @@ export default function IntelligenceMapping() {
                                       {shortAddr}
                                     </span>
                                   </button>
-                                </div>
-                              );
-                            })()}
-                          {/* Entity chips — quick-insert shortcuts mined from this sheet's own
-                          observations (surname / short address / vehicle rego), shared
-                          across every officer on the sheet via the server. */}
-                          {rsEntityChips &&
-                            rsEntityChips.length > 0 &&
-                            (() => {
-                              const appendText = (text: string) => {
-                                pushInlineUndo(rsInlineText);
-                                setRsInlineText(prev =>
-                                  prev ? `${prev} ${text}` : text
-                                );
-                                resetInlineTimer();
-                                rsInlineInputRef.current?.focus();
-                              };
-                              return (
-                                <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                  {rsEntityChips.map(chip => (
-                                    <button
-                                      key={chip.key}
-                                      onClick={() =>
-                                        appendText(chip.insertValue)
-                                      }
-                                      className="px-2 py-0.5 rounded text-[10px] font-bold border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                    >
-                                      <span className="font-mono normal-case">
-                                        {chip.insertValue}
-                                      </span>
-                                    </button>
-                                  ))}
                                 </div>
                               );
                             })()}

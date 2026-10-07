@@ -12249,21 +12249,12 @@ export default function IntelligenceMapping() {
                                   // Walk out to the vehicle or on elsewhere,
                                   // ahead of Vehicle departing.
                                   actions.unshift(
-                                    ...Array.from(here.values())
-                                      .sort(
-                                        (x, y) =>
-                                          Number(y.rego === v.rego) -
-                                          Number(x.rego === v.rego)
-                                      )
-                                      .map((o, _i, all) => ({
-                                        key: `wov-oos-${v.rego}-${o.rego}`,
-                                        label:
-                                          all.length > 1
-                                            ? `Walked out to ${o.rego}`
-                                            : "Walked out to vehicle",
-                                        mode: "paragraph" as const,
-                                        text: `${oosNames} exited ${shortAddr} and walked towards Vehicle ${o.rego}.`,
-                                      })),
+                                    {
+                                      key: `wov-oos-${v.rego}`,
+                                      label: "Walked out to vehicle",
+                                      mode: "paragraph",
+                                      text: `${oosNames} exited ${shortAddr} and walked towards Vehicle ${v.rego}.`,
+                                    },
                                     {
                                       key: `la-oos-${v.rego}`,
                                       label: "Walked away",
@@ -12271,6 +12262,38 @@ export default function IntelligenceMapping() {
                                       text: `${oosNames} exited ${shortAddr} and walked [route] towards [location].`,
                                     }
                                   );
+                                } else if (!inside) {
+                                  // Someone is out of sight at this address
+                                  // after arriving in another vehicle: he
+                                  // could just as well walk out to THIS one.
+                                  const otherOos = Array.from(here.values())
+                                    .filter(o => o.rego !== v.rego)
+                                    .flatMap(o => {
+                                      if (!o.outOfSight) return [];
+                                      return occupantsStillInVehicle(
+                                        extractOccupantNames(o.occupantDesc),
+                                        []
+                                      ).filter(
+                                        n =>
+                                          !(rsPendingPlacements ?? []).some(
+                                            pl =>
+                                              pl.rowId > o.rowId &&
+                                              surnameTokens(n).some(t =>
+                                                surnameTokens(pl.name).includes(
+                                                  t
+                                                )
+                                              )
+                                          )
+                                      );
+                                    });
+                                  if (otherOos.length > 0) {
+                                    actions.unshift({
+                                      key: `wov-oos-${v.rego}`,
+                                      label: "Walked out to vehicle",
+                                      mode: "paragraph",
+                                      text: `${names(otherOos.join(" and "))} exited ${shortAddr} and walked towards Vehicle ${v.rego}.`,
+                                    });
+                                  }
                                 }
                                 if (inCar && !inside && !outOfSight) {
                                   // Left the vehicle and walked off somewhere

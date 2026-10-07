@@ -12679,6 +12679,17 @@ export default function IntelligenceMapping() {
                                         } and continued out of sight.`,
                                       },
                                       {
+                                        key: `in-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
+                                        label: h.destination.includes("[")
+                                          ? "Inside here"
+                                          : "Inside",
+                                        text: `${names(h.names)} inside ${
+                                          h.destination.includes("[")
+                                            ? arriveAddr
+                                            : h.destination
+                                        } [observation].`,
+                                      },
+                                      {
                                         key: `wk-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                                         label: "Walked to another location",
                                         text: `${names(h.names)} walked [route] towards [location].`,

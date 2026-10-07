@@ -5556,6 +5556,11 @@ export default function SheetDetail({
                     destKnown ? "Entered" : "Entered a location"
                   ),
                   {
+                    key: `in-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
+                    label: "Inside",
+                    text: `${walkers} inside ${destKnown ? h.destination : "[location]"} [observation].`,
+                  },
+                  {
                     key: `wk-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                     label: "Walked to another location",
                     text: `${walkers} walked [route] towards [location].`,

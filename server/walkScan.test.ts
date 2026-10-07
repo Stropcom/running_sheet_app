@@ -424,3 +424,86 @@ describe("placements: where each person was last put", () => {
     ]);
   });
 });
+
+describe("leaving a place and walking on with no destination", () => {
+  const phrasings = [
+    "BAIG JONES exited Communicare and walked along Cantonment Street, FREMANTLE.",
+    "BAIG and JONES exited Communicare and walked on.",
+    "BAIG and JONES departed Communicare and continued via Cantonment Street.",
+    "BAIG and JONES left Communicare and continued walking via Cantonment Street.",
+    "BAIG and JONES walked out of Communicare and walked along Cantonment Street.",
+    "BAIG and JONES exited Communicare, continued walking via Cantonment Street.",
+  ];
+  for (const text of phrasings) {
+    it(`is a walking entry with the place left: ${text}`, () => {
+      const r = scanWalkEvents(
+        rows(
+          "BAIG and JONES entered Communicare and continued out of sight.",
+          text
+        )
+      );
+      expect(r.walkIns).toEqual([]);
+      expect(r.headingTo).toMatchObject([
+        { destination: "[location]", from: "Communicare" },
+      ]);
+      expect(isReadAsMovement(text)).toBe(true);
+    });
+  }
+
+  it("a vehicle's own departure is not a walk", () => {
+    const r = scanWalkEvents(
+      rows(
+        "Vehicle 1HIB84, BAIG driver, departed Bull Creek Tavern and continued via:"
+      )
+    );
+    expect(r.headingTo).toEqual([]);
+  });
+
+  it("walking towards a vehicle is still not an unknown walk", () => {
+    const r = scanWalkEvents(
+      rows("BAIG exited Communicare and walked towards Vehicle 1HIB84.")
+    );
+    expect(r.headingTo).toEqual([]);
+  });
+
+  it("a later entry ends the walk", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG and JONES exited Communicare and walked along Cantonment Street.",
+        "BAIG and JONES entered Melville Fish and Chips and continued out of sight."
+      )
+    );
+    expect(r.headingTo).toEqual([]);
+    expect(r.walkIns).toMatchObject([{ location: "Melville Fish and Chips" }]);
+  });
+});
+
+describe("the Inside chip: names inside a place, no verb", () => {
+  it("reads who is where", () => {
+    expect(
+      matchPresenceInside(
+        "BAIG and JONES inside Communicare, observed speaking to staff."
+      )
+    ).toEqual({ names: "BAIG and JONES", place: "Communicare" });
+  });
+
+  it("puts them there, ending the walk", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG and JONES exited Bull Creek Tavern and walked along Cantonment Street.",
+        "BAIG and JONES inside Communicare, observed speaking to staff."
+      )
+    );
+    expect(r.headingTo).toEqual([]);
+    expect(r.walkIns).toMatchObject([{ location: "Communicare" }]);
+  });
+
+  it("ignores an unwritten place, and sentences about movement", () => {
+    expect(
+      matchPresenceInside("BAIG inside [location] [observation].")
+    ).toBeNull();
+    expect(
+      matchPresenceInside("BAIG exited Communicare inside Fremantle.")
+    ).toBeNull();
+  });
+});

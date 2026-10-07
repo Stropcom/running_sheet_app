@@ -156,6 +156,17 @@ export const PERSON_ENTER_ANY_PATTERN =
 export const PERSON_EXIT_ANY_PATTERN =
   /([A-Za-z][^.\n]*?)\s*\bexited\s+([A-Z0-9][^.\n]*?)(?:\s+and\s+(?:walked|entered|continued|got|returned|drove|left)\b|[,.]|$)/;
 
+// Leaving a place and carrying on without saying where to — "exited
+// Communicare and walked along Cantonment Street", "departed X and continued
+// via ...", "left X and continued walking via ...", "walked out of X and
+// walked on". Anything that leaves a place followed by a walking term. The
+// walkers are on foot with no destination logged yet, so they are
+// "walking" until an entry is. (A vehicle's own departure — "Vehicle 1HIB84,
+// BAIG driver, departed X and continued via" — is excluded by the caller: its
+// names text names a Vehicle.)
+export const PERSON_EXIT_ONWARD_PATTERN =
+  /([A-Za-z][^.\n]*?)\s*\b(?:exited|departed|left|walked\s+out\s+of|came\s+out\s+of|emerged\s+from)\s+(?!the\s+vehicle\b)([A-Z0-9][^.\n]*?)\s*,?\s*(?:(?:and|then)\s+)*(?:continued|walking|walked|proceeded|headed|moved\s+on|went|on\s+foot)\b([^.\n]*)/;
+
 /** A place as written inside a longer sentence, reduced to the name later
  * mentions use: its bracket label if it has one, else its first
  * comma-separated segment ("Melville Fish & Chips, 362 Marmion Street,
@@ -252,6 +263,8 @@ const INSIDE_PLACE_RE =
 export function matchPresenceInside(
   text: string
 ): { names: string; place: string } | null {
+  const bare = matchBareInside(text);
+  if (bare) return bare;
   const verb = text.match(PRESENCE_VERB_RE);
   if (!verb || verb.index === undefined) return null;
   const names = cleanWalkerNames(text.slice(0, verb.index).trim());
@@ -268,6 +281,34 @@ export function matchPresenceInside(
     .replace(/\s+(?:with|and|while|who|as|when)\b.*$/i, "")
     .trim();
   return place ? { names, place } : null;
+}
+
+/** "BAIG and JONES inside Communicare, ..." — who is where with no verb at
+ * all, the form the "Inside" chip writes. Only when the words before "inside"
+ * are just names (no movement or vehicle words), and the place is written. */
+function matchBareInside(
+  text: string
+): { names: string; place: string } | null {
+  const m = text.match(
+    /^\s*([^.\n]*?)\s+(?:inside|within)\s+(?:the\s+)?([A-Z0-9][^.;\n]*)/
+  );
+  if (!m) return null;
+  const names = cleanWalkerNames(m[1].trim());
+  // Only names before "inside": every word capitalised (a surname, a given
+  // name, a bracket code) or "and" — never a sentence about what they did.
+  if (
+    !names ||
+    surnameTokens(names).length === 0 ||
+    !/^[A-Z][A-Za-z'\u2019()-]*(?:[\s,&]+(?:and\s+)?[A-Z][A-Za-z'\u2019()-]*)*$/.test(
+      m[1].trim()
+    )
+  )
+    return null;
+  const place = placeName(m[2].trim())
+    .replace(/\s+(?:with|and|while|who|as|when)\b.*$/i, "")
+    .trim();
+  if (!place || place.startsWith("[")) return null;
+  return { names, place };
 }
 
 export interface WalkScanRow {
@@ -366,8 +407,13 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     let rowWalkers = "";
 
     // A non-vehicle exit. Not a `return`: the same row can go on to say
-    // where they entered next.
-    const exitMatch = text.match(PERSON_EXIT_PATTERN);
+    // where they entered next. Also leaving a place and carrying on with no
+    // "walked" (see PERSON_EXIT_ONWARD_PATTERN).
+    let exitMatch: RegExpMatchArray | null = text.match(PERSON_EXIT_PATTERN);
+    if (!exitMatch) {
+      const onward = text.match(PERSON_EXIT_ONWARD_PATTERN);
+      if (onward && !/\bVehicle\b/i.test(onward[1])) exitMatch = onward;
+    }
     if (exitMatch) {
       const from = exitMatch[2].trim();
       walkedOut.add(key(from));
@@ -388,7 +434,19 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         const reg = exitMatch[3].match(
           /\b(?:towards|to)\s+(?:and\s+entered\s+)?\(?Vehicle\s+([A-Za-z0-9]{5,8})/i
         );
-        if (reg) noteJoined(rowWalkers, reg[1], row.id);
+        if (reg) {
+          noteJoined(rowWalkers, reg[1], row.id);
+        } else if (rowWalkers) {
+          // Walking on with no destination written: on foot, heading
+          // "[location]" until an entry says where.
+          clearHeadingFor(rowWalkers);
+          heading.set(headingKey("[location]", rowWalkers), {
+            names: rowWalkers,
+            destination: "[location]",
+            from,
+            ...where,
+          });
+        }
       }
     }
 
@@ -672,6 +730,8 @@ export function isReadAsMovement(text: string): boolean {
     WALK_IN_TOWARDS_PATTERN.test(text) ||
     PERSON_ENTER_PATTERN.test(text) ||
     PERSON_EXIT_PATTERN.test(text) ||
+    (PERSON_EXIT_ONWARD_PATTERN.test(text) &&
+      !/\bVehicle\b/i.test(text.split(/\b(?:exited|departed|left)\b/i)[0])) ||
     PERSON_EXIT_VEHICLE_WALK_PATTERN.test(text) ||
     PERSON_WALK_PATTERN.test(text)
   ) {

@@ -215,3 +215,64 @@ describe("vehiclesPeopleCanReach", () => {
     expect(r).toHaveLength(2);
   });
 });
+
+describe("getting into another vehicle and departing", () => {
+  const entered =
+    "BAIG entered Dôme Café - Deep Water Point, 100 The Esplanade, MOUNT PLEASANT (Dôme Café - Deep Water Point) and continued out of sight.";
+  const row =
+    "BAIG exited Dôme Café - Deep Water Point, walked into the car park and entered the front passenger seat of a red Ford Ranger, bearing WA registration 1EXP123 (Vehicle 1EXP123).\n\nVehicle 1EXP123, BAIG front passenger, unidentified male (UM1) driver, departed Dôme Café - Deep Water Point and continued via:";
+
+  it("he is not left walking", () => {
+    const r = scanWalkEvents(
+      [entered, row].map((observation, i) => ({
+        id: i + 1,
+        sheetId: 1,
+        observation,
+      }))
+    );
+    expect(r.headingTo).toEqual([]);
+    expect(r.walkIns).toEqual([]);
+    expect(r.placements).toEqual([
+      expect.objectContaining({ name: "BAIG", rego: "1EXP123" }),
+    ]);
+  });
+
+  it("the departed card has him in it, with the driver", () => {
+    const pos = locate("BAIG", entered, row);
+    expect(pos).toMatchObject({
+      state: "moving",
+      rego: "1EXP123",
+      place: "Dôme Café - Deep Water Point",
+    });
+    expect(pos?.people[0]).toBe("BAIG");
+    expect(pos?.people.length).toBe(2);
+  });
+
+  it.each([
+    "BAIG got into Vehicle 1EXP123.",
+    "BAIG boarded the front passenger seat of Vehicle 1EXP123.",
+    "BAIG climbed into a red Ford Ranger (Vehicle 1EXP123).",
+  ])("any wording for getting in: %s", text => {
+    const r = scanWalkEvents(
+      [entered, text].map((observation, i) => ({
+        id: i + 1,
+        sheetId: 1,
+        observation,
+      }))
+    );
+    expect(r.walkIns).toEqual([]);
+    expect(r.placements).toEqual([
+      expect.objectContaining({ rego: "1EXP123" }),
+    ]);
+  });
+});
+
+describe("extractDepartureAddress tolerates a doubled and", () => {
+  it("drops trailing and", () => {
+    expect(
+      extractDepartureAddress(
+        "Vehicle 1EXP123, BAIG, departed Dôme Café - Deep Water Point and and continued via:"
+      )
+    ).toBe("Dôme Café - Deep Water Point");
+  });
+});

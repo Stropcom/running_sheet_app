@@ -167,6 +167,25 @@ export const PERSON_EXIT_ANY_PATTERN =
 export const PERSON_EXIT_ONWARD_PATTERN =
   /([A-Za-z][^.\n]*?)\s*\b(?:exited|departed|left|walked\s+out\s+of|came\s+out\s+of|emerged\s+from)\s+(?!the\s+vehicle\b)([A-Z0-9][^.\n]*?)\s*,?\s*(?:(?:and|then)\s+)*(?:continued|walking|walked|proceeded|headed|moved\s+on|went|on\s+foot)\b([^.\n]*)/;
 
+// Getting into a vehicle however it is worded: "entered the front passenger
+// seat of a red Ford Ranger, bearing WA registration 1EXP123 (Vehicle
+// 1EXP123)", "got into Vehicle 1ORB419", "boarded Vehicle ...". The vehicle
+// is the one named as "Vehicle <rego>" later in the same sentence.
+const ENTER_VEHICLE_VERB =
+  "(?:entered|got\\s+(?:in|into)|boarded|climbed\\s+(?:in|into)|jumped\\s+(?:in|into))";
+export const PERSON_ENTER_VEHICLE_PATTERN = new RegExp(
+  "([A-Za-z][^.\\n]*?)\\s*\\b" +
+    ENTER_VEHICLE_VERB +
+    "\\b[^.\\n]*?\\(?Vehicle\\s+([A-Za-z0-9]{5,8})\\)?",
+  "i"
+);
+const ENTER_VEHICLE_REGO_RE = new RegExp(
+  "\\b" +
+    ENTER_VEHICLE_VERB +
+    "\\b[^.\\n]*?\\(?Vehicle\\s+([A-Za-z0-9]{5,8})\\)?",
+  "i"
+);
+
 /** A place as written inside a longer sentence, reduced to the name later
  * mentions use: its bracket label if it has one, else its first
  * comma-separated segment ("Melville Fish & Chips, 362 Marmion Street,
@@ -210,7 +229,9 @@ export function extractDepartureAddress(text: string): string | null {
     /\b(?:departed|reversed out of|reversed from)\s+(.+?)(?=\s+(?:and\s+(?:continued|travelled|headed|drove|left)|via|towards)\b|[,.:;\n]|$)/i
   );
   if (!m) return null;
-  const place = bracketLabelOrSelf(m[1]).trim();
+  const place = bracketLabelOrSelf(m[1])
+    .replace(/(?:\s+and)+$/i, "")
+    .trim();
   return place || null;
 }
 
@@ -434,30 +455,45 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       rowWalkers = cleanWalkerNames(exitMatch[1]);
       // On foot now, wherever they were (a vehicle below overrides this).
       placePeople(rowWalkers, "", row.id);
-      if (dest) {
+      // Walked back to, or got into, a vehicle: they are in it, not walking.
+      const vehReg =
+        exitMatch[3].match(ENTER_VEHICLE_REGO_RE)?.[1] ??
+        exitMatch[3].match(
+          /\b(?:towards|to)\s+(?:and\s+entered\s+)?\(?Vehicle\s+([A-Za-z0-9]{5,8})/i
+        )?.[1];
+      if (vehReg) {
+        noteJoined(rowWalkers, vehReg, row.id);
+        leaveAllPlaces(rowWalkers);
+      } else if (dest) {
         heading.set(headingKey(dest, cleanWalkerNames(exitMatch[1])), {
           names: cleanWalkerNames(exitMatch[1]),
           destination: dest,
           from,
           ...where,
         });
-      } else {
-        // "... walked towards Vehicle X": heading back to the car.
-        const reg = exitMatch[3].match(
-          /\b(?:towards|to)\s+(?:and\s+entered\s+)?\(?Vehicle\s+([A-Za-z0-9]{5,8})/i
-        );
-        if (reg) {
-          noteJoined(rowWalkers, reg[1], row.id);
-        } else if (rowWalkers) {
-          // Walking on with no destination written: on foot, heading
-          // "[location]" until an entry says where.
-          clearHeadingFor(rowWalkers);
-          heading.set(headingKey("[location]", rowWalkers), {
-            names: rowWalkers,
-            destination: "[location]",
-            from,
-            ...where,
-          });
+      } else if (rowWalkers) {
+        // Walking on with no destination written: on foot, heading
+        // "[location]" until an entry says where.
+        clearHeadingFor(rowWalkers);
+        heading.set(headingKey("[location]", rowWalkers), {
+          names: rowWalkers,
+          destination: "[location]",
+          from,
+          ...where,
+        });
+      }
+    }
+
+    // Getting into a vehicle with no exit in the row ("BAIG got into
+    // Vehicle 1ABC23").
+    if (!exitMatch) {
+      const ev = text.match(PERSON_ENTER_VEHICLE_PATTERN);
+      if (ev && !/\bVehicle\b/i.test(ev[1])) {
+        const who = cleanWalkerNames(ev[1]);
+        if (who) {
+          noteJoined(who, ev[2], row.id);
+          leaveAllPlaces(who);
+          clearHeadingFor(who);
         }
       }
     }

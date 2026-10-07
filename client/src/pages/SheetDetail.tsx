@@ -5560,7 +5560,7 @@ export default function SheetDetail({
               continuityCards.push({
                 key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                 title: h.names,
-                pill: "Walking",
+                pill: "Departed on foot",
                 attn: true,
                 who: destKnown ? `Walking to ${h.destination}` : "On foot",
                 state: `Left ${h.from}${sinceText(h.rowId)}`,
@@ -5590,8 +5590,8 @@ export default function SheetDetail({
                 people: splitPeopleNames(h.names),
                 locus: {
                   headline: destKnown
-                    ? `Walking to ${h.destination}`
-                    : "Walking",
+                    ? `Departed on foot to ${h.destination}`
+                    : "Departed on foot",
                   sub: `Left ${h.from}${sinceText(h.rowId)}`,
                 },
               });

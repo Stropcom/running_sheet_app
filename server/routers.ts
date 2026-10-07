@@ -134,10 +134,14 @@ import {
   getPendingVehicleDepartures,
   getPendingVehicleArrivals,
   getPendingWalkIns,
+  getPendingHeadingTo,
+  getPendingPlacements,
+  getPendingContinuityWithDraft,
   isAddressAlreadyMentioned,
   findMissingLocationSuggestion,
   findVagueVehicleMatch,
   getRunningSheetById,
+  setContinuityDismissal,
   computeWitnessListData,
   getRunningSheets,
   addDaysISO,
@@ -996,6 +1000,20 @@ export const appRouter = router({
         return getRunningSheetsByOperations(input.operationIds);
       }),
 
+    /** Stops or resumes tracking one continuity card ("Where now" band) on
+     * a sheet — shared by everyone on it. rowId null resumes. */
+    setContinuityDismissal: protectedProcedure
+      .input(
+        z.object({
+          sheetId: z.number(),
+          key: z.string().min(1).max(200),
+          rowId: z.number().nullable(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        return setContinuityDismissal(input.sheetId, input.key, input.rowId);
+      }),
+
     get: protectedProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
@@ -1475,6 +1493,42 @@ export const appRouter = router({
       .input(z.object({ sheetId: z.number() }))
       .query(async ({ input }) => {
         return getPendingWalkIns(input.sheetId);
+      }),
+
+    // People who left a location saying where they were going and haven't
+    // been logged entering it yet — the "Entered" chip's source. See
+    // getPendingHeadingTo.
+    pendingHeadingTo: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        return getPendingHeadingTo(input.sheetId);
+      }),
+
+    // People who walked to / got into a vehicle and haven't left it. See
+    // getPendingPlacements.
+    pendingPlacements: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        return getPendingPlacements(input.sheetId);
+      }),
+
+    // The pending lists above, read with text still being typed (not
+    // saved) as the newest row — so the continuity cards follow each sentence
+    // as it is written. See getPendingContinuityWithDraft.
+    pendingWithDraft: protectedProcedure
+      .input(
+        z.object({
+          sheetId: z.number(),
+          draft: z.string().max(20000),
+          excludeRowId: z.number().nullable().optional(),
+        })
+      )
+      .query(async ({ input }) => {
+        return getPendingContinuityWithDraft(
+          input.sheetId,
+          input.draft,
+          input.excludeRowId
+        );
       }),
 
     // Whether an address has already been mentioned (in its full bracketed

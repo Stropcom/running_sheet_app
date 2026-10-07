@@ -42,13 +42,8 @@ import {
   matchVehicleArrival,
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
-import {
-  WALK_IN_PATTERN,
-  WALK_IN_TOWARDS_PATTERN,
-  WALK_OUT_PATTERN,
-  extractWalkInTowardsLocation,
-  extractWalkInTowardsRoute,
-} from "@shared/walkEventPatterns";
+import { scanWalkEvents } from "@shared/walkEventPatterns";
+import { expandRowSegments } from "@shared/rowSegments";
 import {
   classifyVisitDirection,
   timeBucketLabels,
@@ -773,6 +768,31 @@ export async function updateRunningSheet(
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.update(runningSheets).set(data).where(eq(runningSheets.id, id));
+}
+
+/** Stops (rowId given) or resumes (rowId null) tracking one continuity card
+ * on a sheet. Shared by everyone on the sheet. Returns the new map. */
+export async function setContinuityDismissal(
+  sheetId: number,
+  key: string,
+  rowId: number | null
+): Promise<Record<string, number>> {
+  const sheet = await getRunningSheetById(sheetId);
+  if (!sheet) throw new Error("Sheet not found");
+  let map: Record<string, number> = {};
+  try {
+    map = sheet.continuityDismissed
+      ? (JSON.parse(sheet.continuityDismissed) as Record<string, number>)
+      : {};
+  } catch {
+    map = {};
+  }
+  if (rowId === null) delete map[key];
+  else map[key] = rowId;
+  await updateRunningSheet(sheetId, {
+    continuityDismissed: JSON.stringify(map),
+  });
+  return map;
 }
 
 /** Recomputes and overwrites a sheet's auto-generated title from its
@@ -5683,7 +5703,16 @@ export interface PendingVehicleDeparture {
 export async function getPendingVehicleDepartures(
   sheetId: number
 ): Promise<PendingVehicleDeparture[]> {
-  const rows = await getRowsBySheetId(sheetId);
+  return computePendingVehicleDepartures(await getRowsBySheetId(sheetId));
+}
+
+/** The pure part of getPendingVehicleDepartures — over any list of rows, so a
+ * draft being typed can be read as the newest row. Each line of a row is its
+ * own event (see expandRowSegments). */
+export function computePendingVehicleDepartures(
+  allRows: { id: number; sheetId: number; observation: string | null }[]
+): PendingVehicleDeparture[] {
+  const rows = expandRowSegments(allRows);
 
   const lastDepartByRego = new Map<
     string,
@@ -5731,6 +5760,9 @@ export interface PendingVehicleArrival {
   address: string;
   sheetId: number;
   rowId: number;
+  /** The arrival row says they "continued out of sight" — so nobody can say
+   * whether anyone is still in the vehicle until someone is seen again. */
+  outOfSight: boolean;
 }
 
 // Returns the most recent still-"here" (not yet re-departed) arrival per
@@ -5742,7 +5774,15 @@ export interface PendingVehicleArrival {
 export async function getPendingVehicleArrivals(
   sheetId: number
 ): Promise<PendingVehicleArrival[]> {
-  const rows = await getRowsBySheetId(sheetId);
+  return computePendingVehicleArrivals(await getRowsBySheetId(sheetId));
+}
+
+/** The pure part of getPendingVehicleArrivals — see
+ * computePendingVehicleDepartures. */
+export function computePendingVehicleArrivals(
+  allRows: { id: number; sheetId: number; observation: string | null }[]
+): PendingVehicleArrival[] {
+  const rows = expandRowSegments(allRows);
 
   const lastArrivalByRego = new Map<
     string,
@@ -5751,6 +5791,7 @@ export async function getPendingVehicleArrivals(
       address: string;
       sheetId: number;
       rowId: number;
+      outOfSight: boolean;
       orderIdx: number;
     }
   >();
@@ -5765,6 +5806,7 @@ export async function getPendingVehicleArrivals(
         address: extractArrivalAddress(row.observation) ?? "",
         sheetId: row.sheetId,
         rowId: row.id,
+        outOfSight: /\bout of sight\b/i.test(row.observation),
         orderIdx: idx,
       });
       departedRegos.delete(arriveMatch.rego);
@@ -5823,80 +5865,72 @@ export async function getPendingWalkIns(
   sheetId: number
 ): Promise<PendingWalkIn[]> {
   const rows = await getRowsBySheetId(sheetId);
+  return scanWalkEvents(rows).walkIns;
+}
 
-  const lastWalkInByLocationKey = new Map<
-    string,
-    {
-      names: string;
-      location: string;
-      route: string;
-      sheetId: number;
-      rowId: number;
-      orderIdx: number;
-    }
-  >();
-  const walkedOutLocationKeys = new Set<string>();
+export interface PendingHeadingTo {
+  names: string;
+  destination: string;
+  from: string;
+  sheetId: number;
+  rowId: number;
+}
 
-  rows.forEach((row, idx) => {
-    if (!row.observation) return;
-    const outMatch = row.observation.match(WALK_OUT_PATTERN);
-    if (outMatch) {
-      walkedOutLocationKeys.add(outMatch[1].trim().toLowerCase());
-      return;
-    }
-    const inMatch = row.observation.match(WALK_IN_PATTERN);
-    if (inMatch) {
-      const names = inMatch[1].trim();
-      const route = inMatch[2]?.trim() ?? "";
-      const location = inMatch[3].trim();
-      const key = location.toLowerCase();
-      lastWalkInByLocationKey.set(key, {
-        names,
-        location,
-        route,
-        sheetId: row.sheetId,
-        rowId: row.id,
-        orderIdx: idx,
-      });
-      walkedOutLocationKeys.delete(key);
-      return;
-    }
-    // Fallback for the "walked towards <location> and continued out of
-    // sight" phrasing — no separate "entered <location>" clause for
-    // WALK_IN_PATTERN to anchor on, see WALK_IN_TOWARDS_PATTERN.
-    const towardsMatch = row.observation.match(WALK_IN_TOWARDS_PATTERN);
-    if (towardsMatch) {
-      const names = towardsMatch[1].trim();
-      const rawRoute = towardsMatch[2].trim();
-      const location = extractWalkInTowardsLocation(rawRoute);
-      // NOT the raw captured clause — that still contains the destination
-      // ("towards the front of 64 Matheson Road"), and reusing it verbatim
-      // in a "Walked out" chip (which also states `location`) duplicated
-      // the address. This is just whatever route content came before
-      // "towards", if any — empty when the clause was pure destination.
-      const route = extractWalkInTowardsRoute(rawRoute);
-      const key = location.toLowerCase();
-      lastWalkInByLocationKey.set(key, {
-        names,
-        location,
-        route,
-        sheetId: row.sheetId,
-        rowId: row.id,
-        orderIdx: idx,
-      });
-      walkedOutLocationKeys.delete(key);
-    }
-  });
+// People who left a location saying where they were going ("exited 193b
+// Stock Road and walked towards 13 Denford Street") and haven't yet been
+// logged entering it — the "Entered" chip's source. Same single-sheet
+// scoping as getPendingWalkIns.
+export async function getPendingHeadingTo(
+  sheetId: number
+): Promise<PendingHeadingTo[]> {
+  const rows = await getRowsBySheetId(sheetId);
+  return scanWalkEvents(rows).headingTo;
+}
 
-  const pending: (PendingWalkIn & { orderIdx: number })[] = [];
-  for (const key of Array.from(lastWalkInByLocationKey.keys())) {
-    if (walkedOutLocationKeys.has(key)) continue;
-    pending.push(lastWalkInByLocationKey.get(key)!);
-  }
-  // Most recently walked in first.
-  return pending
-    .sort((a, b) => b.orderIdx - a.orderIdx)
-    .map(({ orderIdx, ...rest }) => rest);
+// The latest place each person was put by a row (in a vehicle, inside a
+// place, on foot) — see scanWalkEvents.
+export async function getPendingPlacements(sheetId: number) {
+  const rows = await getRowsBySheetId(sheetId);
+  return scanWalkEvents(rows).placements;
+}
+
+/**
+ * All four pending lists (vehicles that left with no arrival, vehicles parked,
+ * people inside, people walking) with `draft` — text still being typed and not
+ * saved — read as the newest row. This is what lets the continuity cards move
+ * on as each sentence is written: once "BAIG exited A and walked towards
+ * Vehicle X." is in the box, the next options already treat him as back in the
+ * vehicle. `excludeRowId` leaves out the saved version of a row whose edit is
+ * the draft, so it isn't counted twice.
+ */
+export async function getPendingContinuityWithDraft(
+  sheetId: number,
+  draft: string,
+  excludeRowId?: number | null
+) {
+  const saved = (await getRowsBySheetId(sheetId)).filter(
+    r => excludeRowId == null || r.id !== excludeRowId
+  );
+  const rows = draft.trim()
+    ? [
+        ...saved,
+        // A stand-in row id that sorts after every real one, so anything the
+        // draft produces is also the newest for dismissal purposes.
+        {
+          id: Number.MAX_SAFE_INTEGER,
+          sheetId,
+          observation: draft,
+        } as (typeof saved)[number],
+      ]
+    : saved;
+  const walk = scanWalkEvents(rows);
+  return {
+    departures: computePendingVehicleDepartures(rows),
+    arrivals: computePendingVehicleArrivals(rows),
+    walkIns: walk.walkIns,
+    headingTo: walk.headingTo,
+    placements: walk.placements,
+  };
 }
 
 // ─── Missing Location Prompt (Vehicle Presence Rows) ───────────────────────

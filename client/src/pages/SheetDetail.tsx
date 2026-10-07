@@ -33,6 +33,22 @@ import {
   type FaceMatchSuggestion,
 } from "@/components/SuggestedFaceMatchDialog";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
+import {
+  vehicleOccupants as sharedVehicleOccupants,
+  occupantsStillInVehicle,
+  splitPeopleNames,
+  surnameTokens,
+  isReadAsMovement,
+} from "@shared/walkEventPatterns";
+import {
+  companionsOf,
+  pickTargetCardKey,
+  targetTokenFromTitle,
+} from "@shared/targetCard";
+import {
+  ContinuityCards,
+  type ContinuityCardData,
+} from "@/components/ContinuityCards";
 import { DeletePhotoButton } from "@/components/DeletePhotoButton";
 import {
   EntityDuplicateDialog,
@@ -1897,6 +1913,9 @@ function EditableCell({
   usedBracketCodes,
   usedVehicleRegos,
   usedAddressLabels,
+  rowId,
+  autoEdit,
+  onAutoEdited,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   value: string | null;
@@ -1914,8 +1933,27 @@ function EditableCell({
   /** Address labels already used elsewhere in this sheet — enables the
    * deterministic address-bracket auto-insert (multiline only). */
   usedAddressLabels?: Set<string>;
+  /** This cell's row id — tagged onto the textarea so the continuity cards
+   * can tell which saved row an open edit replaces. */
+  rowId?: number;
+  /** Open this cell for editing as soon as it appears (a continuity card has
+   * just created the row), so the next tap adds to it as the next paragraph.
+   * Opened without the on-screen keyboard until the officer taps into it. */
+  autoEdit?: boolean;
+  onAutoEdited?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  // Opened by a card tap: focus it without raising the on-screen keyboard
+  // (inputMode "none") until the officer actually taps into the text.
+  const [noKeyboard, setNoKeyboard] = useState(false);
+  useEffect(() => {
+    if (autoEdit && !locked && multiline) {
+      setNoKeyboard(true);
+      setEditing(true);
+      onAutoEdited?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoEdit]);
   const [draft, setDraft] = useState(value ?? "");
   const { notifyObservationFocus, notifyObservationBlur } =
     useObservationFocus();
@@ -2339,6 +2377,21 @@ function EditableCell({
           <Textarea
             ref={textareaRef}
             autoFocus
+            data-obs-cell="true"
+            data-row-id={rowId}
+            inputMode={noKeyboard ? "none" : undefined}
+            // Tapping into the text is the officer choosing to type, so the
+            // keyboard is allowed again.
+            onPointerDown={() => setNoKeyboard(false)}
+            onFocus={e => {
+              notifyObservationFocus();
+              // A cell opened by a card tap starts with the caret at the end,
+              // ready for the next paragraph.
+              if (noKeyboard) {
+                const len = e.currentTarget.value.length;
+                e.currentTarget.setSelectionRange(len, len);
+              }
+            }}
             value={draft}
             onChange={handleObservationInput}
             onPaste={e => {
@@ -2355,7 +2408,6 @@ function EditableCell({
                 setDraft(newText);
               }
             }}
-            onFocus={notifyObservationFocus}
             onBlur={() => {
               // A click on a suggestion fires its own onMouseDown (which
               // preventDefault's) before this blur — so by the time blur
@@ -2794,7 +2846,7 @@ export default function SheetDetail({
   // the full sheet table has no such single-address context, so it shows
   // every pending entry across the sheet instead — see the render block
   // below for how each chip type's text is derived without it.
-  const { data: pendingDepartures } =
+  const { data: pendingDeparturesBase } =
     trpc.row.pendingVehicleDepartures.useQuery(
       { sheetId },
       {
@@ -2802,14 +2854,15 @@ export default function SheetDetail({
         refetchInterval: isOnline ? 10000 : false,
       }
     );
-  const { data: pendingArrivals } = trpc.row.pendingVehicleArrivals.useQuery(
-    { sheetId },
-    {
-      enabled: isAuthenticated && !!sheetId && isOnline,
-      refetchInterval: isOnline ? 10000 : false,
-    }
-  );
-  const { data: pendingWalkIns } = trpc.row.pendingWalkIns.useQuery(
+  const { data: pendingArrivalsBase } =
+    trpc.row.pendingVehicleArrivals.useQuery(
+      { sheetId },
+      {
+        enabled: isAuthenticated && !!sheetId && isOnline,
+        refetchInterval: isOnline ? 10000 : false,
+      }
+    );
+  const { data: pendingWalkInsBase } = trpc.row.pendingWalkIns.useQuery(
     { sheetId },
     {
       enabled: isAuthenticated && !!sheetId && isOnline,
@@ -2817,12 +2870,91 @@ export default function SheetDetail({
     }
   );
 
+  const { data: pendingHeadingToBase } = trpc.row.pendingHeadingTo.useQuery(
+    { sheetId },
+    {
+      enabled: isAuthenticated && !!sheetId && isOnline,
+      refetchInterval: isOnline ? 10000 : false,
+    }
+  );
+
+  const { data: pendingPlacementsBase } = trpc.row.pendingPlacements.useQuery(
+    { sheetId },
+    {
+      enabled: isAuthenticated && !!sheetId && isOnline,
+      refetchInterval: isOnline ? 10000 : false,
+    }
+  );
+
+  // Continuity cards the team has stopped tracking on this sheet (shared).
+  const continuityDismissed = useMemo<Record<string, number>>(() => {
+    try {
+      return sheet?.continuityDismissed
+        ? (JSON.parse(sheet.continuityDismissed) as Record<string, number>)
+        : {};
+    } catch {
+      return {};
+    }
+  }, [sheet?.continuityDismissed]);
+  const setContinuityDismissal = trpc.sheet.setContinuityDismissal.useMutation({
+    onSuccess: () => utils.sheet.get.invalidate({ id: sheetId }),
+  });
+
+  // The text in an observation cell that is open for editing (not yet saved),
+  // so the continuity cards can read it as the newest row and follow each
+  // sentence as it is written. `rowId` is the saved row it replaces.
+  const [openDraft, setOpenDraft] = useState<{
+    rowId: number | null;
+    text: string;
+  } | null>(null);
+  const [openDraftDebounced, setOpenDraftDebounced] = useState(openDraft);
+  useEffect(() => {
+    const t = setTimeout(() => setOpenDraftDebounced(openDraft), 250);
+    return () => clearTimeout(t);
+  }, [openDraft]);
+  const { data: draftPending } = trpc.row.pendingWithDraft.useQuery(
+    {
+      sheetId,
+      draft: openDraftDebounced?.text ?? "",
+      excludeRowId: openDraftDebounced?.rowId ?? null,
+    },
+    {
+      enabled:
+        isAuthenticated &&
+        !!sheetId &&
+        isOnline &&
+        !!openDraftDebounced?.text.trim(),
+      placeholderData: prev => prev,
+    }
+  );
+  const draftActive = !!openDraftDebounced?.text.trim() && !!draftPending;
+  const pendingDepartures = draftActive
+    ? draftPending!.departures
+    : pendingDeparturesBase;
+  const pendingArrivals = draftActive
+    ? draftPending!.arrivals
+    : pendingArrivalsBase;
+  const pendingWalkIns = draftActive
+    ? draftPending!.walkIns
+    : pendingWalkInsBase;
+  const pendingHeadingTo = draftActive
+    ? draftPending!.headingTo
+    : pendingHeadingToBase;
+  const pendingPlacements = draftActive
+    ? draftPending!.placements
+    : pendingPlacementsBase;
+  // A row just created by tapping a continuity card: its observation opens
+  // for editing so the next tap adds to it (see EditableCell autoEdit).
+  const [justAddedRowId, setJustAddedRowId] = useState<number | null>(null);
+
   const invalidateRows = useCallback(() => {
     utils.row.list.invalidate({ sheetId });
     utils.row.entityChips.invalidate({ sheetId });
     utils.row.pendingVehicleDepartures.invalidate({ sheetId });
     utils.row.pendingVehicleArrivals.invalidate({ sheetId });
     utils.row.pendingWalkIns.invalidate({ sheetId });
+    utils.row.pendingHeadingTo.invalidate({ sheetId });
+    utils.row.pendingPlacements.invalidate({ sheetId });
   }, [utils, sheetId]);
 
   // Cache sheet data to IndexedDB whenever we have fresh data online
@@ -4026,6 +4158,46 @@ export default function SheetDetail({
     return () => document.removeEventListener("focusin", handler, true);
   }, []);
 
+  // Mirror the open observation cell's text into state (see openDraft).
+  useEffect(() => {
+    const onInput = (e: Event) => {
+      const el = e.target as HTMLElement;
+      if (el.tagName !== "TEXTAREA" || !el.dataset.obsCell) return;
+      const ta = el as HTMLTextAreaElement;
+      const id = ta.dataset.rowId ? Number(ta.dataset.rowId) : null;
+      setOpenDraft({ rowId: Number.isFinite(id) ? id : null, text: ta.value });
+    };
+    const onFocusIn = (e: Event) => {
+      const el = e.target as HTMLElement;
+      if (el.tagName !== "TEXTAREA" || !el.dataset.obsCell) return;
+      const ta = el as HTMLTextAreaElement;
+      const id = ta.dataset.rowId ? Number(ta.dataset.rowId) : null;
+      setOpenDraft({ rowId: Number.isFinite(id) ? id : null, text: ta.value });
+    };
+    const onFocusOut = (e: Event) => {
+      const el = e.target as HTMLElement;
+      if (el.tagName !== "TEXTAREA" || !el.dataset.obsCell) return;
+      // Cleared when focus has really left observation cells.
+      setTimeout(() => {
+        const active = document.activeElement as HTMLElement | null;
+        if (!active || !active.dataset?.obsCell) setOpenDraft(null);
+      }, 0);
+    };
+    // Bubble phase on purpose (NOT capture): React handles a textarea's
+    // onChange from a listener on its root, below `document`. A state update
+    // from a capture listener on `document` runs first and re-renders the
+    // controlled textarea with its OLD value before onChange has seen the
+    // keystroke, wiping what was typed — typing stops working.
+    document.addEventListener("input", onInput);
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
+    return () => {
+      document.removeEventListener("input", onInput);
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
+    };
+  }, []);
+
   // Persist sort preference in localStorage so it survives navigation
   const [sortReversed, setSortReversed] = useState<boolean>(() => {
     try {
@@ -4861,7 +5033,11 @@ export default function SheetDetail({
             chips mined from this sheet's own observations, in one panel so
             officers see every quick-insert chip together. */}
         {((sheet?.targetId && assignedTarget) ||
-          (entityChips && entityChips.length > 0)) &&
+          (entityChips && entityChips.length > 0) ||
+          (pendingArrivals && pendingArrivals.length > 0) ||
+          (pendingDepartures && pendingDepartures.length > 0) ||
+          (pendingWalkIns && pendingWalkIns.length > 0) ||
+          (pendingHeadingTo && pendingHeadingTo.length > 0)) &&
           (() => {
             const t = assignedTarget;
             const hasTarget = !!(sheet?.targetId && t);
@@ -4948,17 +5124,6 @@ export default function SheetDetail({
               rego: a.rego,
               text: `Vehicle ${a.rego}, ${shortenAlreadyMentionedNames(a.occupantDesc, usedBracketCodes)}, departed ${a.address} and continued via:`,
             }));
-            const walkedInChips = (pendingArrivals ?? []).map(a => ({
-              key: `wi-${a.rego}`,
-              rego: a.rego,
-              text: `${shortenAlreadyMentionedNames(extractOccupantNames(a.occupantDesc), usedBracketCodes)} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
-            }));
-            // Direct form — no route clause, for when they simply walked in.
-            const walkedInDirectChips = (pendingArrivals ?? []).map(a => ({
-              key: `wid-${a.rego}`,
-              rego: a.rego,
-              text: `${shortenAlreadyMentionedNames(extractOccupantNames(a.occupantDesc), usedBracketCodes)} exited the vehicle, entered ${a.address} and continued out of sight.`,
-            }));
             const walkedOutChips = (pendingWalkIns ?? []).flatMap(w => {
               const arrivalsHere = (pendingArrivals ?? []).filter(
                 a =>
@@ -4981,12 +5146,560 @@ export default function SheetDetail({
                   : `${names} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
               }));
             });
-            const hasContinuityChips =
-              vehicleArrivingChips.length > 0 ||
-              vehicleDepartingChips.length > 0 ||
-              walkedInChips.length > 0 ||
-              walkedInDirectChips.length > 0 ||
-              walkedOutChips.length > 0;
+            // People on foot with no vehicle: someone who walked into a
+            // location and hasn't left it can be logged leaving it for
+            // another address ("[location]" and "[route]" are literal text
+            // to type over, as with "Vehicle arriving"), and someone logged
+            // as heading for an address can be logged entering it.
+            const leftAddressChips = (pendingWalkIns ?? []).map(w => ({
+              key: `la-${w.location}`,
+              rego: "",
+              label: w.location,
+              text: `${shortenAlreadyMentionedNames(w.names, usedBracketCodes)} exited ${w.location} and walked [route] towards [location].`,
+            }));
+            const enteredChips = (pendingHeadingTo ?? []).map(h => ({
+              key: `en-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
+              rego: "",
+              label: h.destination,
+              text: `${shortenAlreadyMentionedNames(h.names, usedBracketCodes)} entered ${h.destination} and continued out of sight.`,
+            }));
+            // ── Continuity cards ────────────────────────────────────────
+            // Same pending data and sentences as the chips above, grouped
+            // per vehicle / group of people (see ContinuityCards).
+            const rowTime = (id: number) =>
+              rows?.find(r => r.id === id)?.time ?? null;
+            const sinceText = (id: number) => {
+              const t = rowTime(id);
+              return t ? ` · since ${t}` : "";
+            };
+            const sameAddr = (a: string, b: string) =>
+              a.trim().toLowerCase() === b.trim().toLowerCase();
+            const cardAction = (
+              chip: { key: string; text: string } | undefined,
+              label: string
+            ) => (chip ? [{ key: chip.key, label, text: chip.text }] : []);
+            const continuityCards: ContinuityCardData[] = [];
+            const walkInsAtVehicle = new Set<string>();
+            // Everyone currently logged as inside an address or walking
+            // somewhere is NOT in a vehicle, whatever the vehicle's arrival
+            // row says.
+            const onFootNames = [
+              ...(pendingWalkIns ?? []).map(w => w.names),
+              ...(pendingHeadingTo ?? []).map(h => h.names),
+            ];
+            // Who is in a vehicle: those its own row names, plus anyone
+            // logged walking to / getting into it — and a person is only in
+            // the vehicle the most recent row puts them in (see
+            // vehicleOccupants).
+            const allVehicleRows = [
+              ...(pendingArrivals ?? []).map(a => ({
+                rego: a.rego,
+                rowId: a.rowId,
+                names: extractOccupantNames(a.occupantDesc),
+              })),
+              ...(pendingDepartures ?? []).map(d => ({
+                rego: d.rego,
+                rowId: d.rowId,
+                names: extractOccupantNames(d.occupantDesc),
+              })),
+            ];
+            const vehicleOccupants = (
+              desc: string,
+              rego: string,
+              rowId: number
+            ) =>
+              sharedVehicleOccupants(
+                { rego, rowId, names: extractOccupantNames(desc) },
+                onFootNames,
+                pendingPlacements ?? [],
+                allVehicleRows
+              );
+            (pendingArrivals ?? []).forEach(a => {
+              const insideHere = (pendingWalkIns ?? []).filter(w =>
+                sameAddr(w.location, a.address)
+              );
+              insideHere.forEach(w => walkInsAtVehicle.add(w.location));
+              const rego = a.rego;
+              const inside = insideHere.length > 0;
+              const occupants = vehicleOccupants(
+                a.occupantDesc,
+                a.rego,
+                a.rowId
+              );
+              const inCar = occupants.length > 0;
+              // "... arrived and continued out of sight": nobody can say
+              // whether anyone is still in it until someone is seen again,
+              // so no walked-away / walked-in options are offered.
+              // The target is then placed at the address, out of sight: the
+              // next steps are to walk out to the vehicle, walk somewhere
+              // else, or leave in a vehicle. Not once a later row has put
+              // those people anywhere.
+              const arrivalPeople = occupantsStillInVehicle(
+                extractOccupantNames(a.occupantDesc),
+                []
+              );
+              const movedOn = (pendingPlacements ?? []).some(
+                pl =>
+                  pl.rowId > a.rowId &&
+                  arrivalPeople.some(n =>
+                    surnameTokens(n).some(t =>
+                      surnameTokens(pl.name).includes(t)
+                    )
+                  )
+              );
+              const outOfSight = a.outOfSight && !inside && !movedOn;
+              const oosNames = shortenAlreadyMentionedNames(
+                arrivalPeople.join(" and "),
+                usedBracketCodes
+              );
+              const carNames = shortenAlreadyMentionedNames(
+                occupants.join(" and "),
+                usedBracketCodes
+              );
+              // Everyone known to be in it, or "unseen occupant/s" when nobody
+              // is — the usual wording for a departure whose occupants
+              // weren't seen.
+              const departingAction = {
+                key: `dep-${rego}`,
+                label: "Vehicle departing",
+                // Everyone known to be in it, or "unseen occupant/s" when
+                // nobody is — the usual wording for a departure whose
+                // occupants weren't seen.
+                text: `Vehicle ${rego}, ${
+                  inCar && !outOfSight
+                    ? occupants.length ===
+                      splitPeopleNames(extractOccupantNames(a.occupantDesc))
+                        .length
+                      ? shortenAlreadyMentionedNames(
+                          a.occupantDesc,
+                          usedBracketCodes
+                        )
+                      : carNames
+                    : "unseen occupant/s"
+                }, departed ${a.address} and continued via:`,
+              };
+              // Most likely next step first: parked with someone in it, the
+              // vehicle leaves or they walk in; with someone inside the
+              // address, they walk back out to it or on elsewhere.
+              const actions = inside
+                ? [
+                    ...walkedOutChips
+                      .filter(c =>
+                        insideHere.some(
+                          w => c.key === `wo-${w.location}-${rego}`
+                        )
+                      )
+                      .map(c => ({
+                        key: c.key,
+                        label: "Walked out to vehicle",
+                        text: c.text,
+                      })),
+                    ...insideHere.flatMap(w =>
+                      cardAction(
+                        leftAddressChips.find(
+                          c => c.key === `la-${w.location}`
+                        ),
+                        "Left address"
+                      )
+                    ),
+                    departingAction,
+                  ]
+                : outOfSight && arrivalPeople.length > 0
+                  ? [
+                      // Back to any vehicle parked at this address, this one
+                      // first.
+                      ...[
+                        a,
+                        ...(pendingArrivals ?? []).filter(
+                          o =>
+                            o.rego !== a.rego && sameAddr(o.address, a.address)
+                        ),
+                      ].map((o, _i, all) => ({
+                        key: `wov-oos-${rego}-${o.rego}`,
+                        label:
+                          all.length > 1
+                            ? `Walked out to ${o.rego}`
+                            : "Walked out to vehicle",
+                        text: `${oosNames} exited ${a.address} and walked towards Vehicle ${o.rego}.`,
+                      })),
+                      {
+                        key: `la-oos-${rego}`,
+                        label: "Walked away",
+                        text: `${oosNames} exited ${a.address} and walked [route] towards [location].`,
+                      },
+                      departingAction,
+                    ]
+                  : [
+                      departingAction,
+                      ...(inCar && !inside && !outOfSight
+                        ? [
+                            // Left the vehicle and walked off somewhere other
+                            // than here (a car park or street space).
+                            {
+                              key: `wa-${rego}`,
+                              label: "Walked away",
+                              text: `${carNames} exited the vehicle and walked [route] towards [location].`,
+                            },
+                            {
+                              key: `wi-${rego}`,
+                              label: "Walked in",
+                              text: `${carNames} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
+                            },
+                          ]
+                        : []),
+                    ];
+              continuityCards.push({
+                key: `veh-${rego}`,
+                title: rego,
+                pill: "Parked",
+                who: inside
+                  ? `${insideHere.map(w => w.names).join("; ")} inside the address`
+                  : outOfSight
+                    ? inCar
+                      ? `${occupants.join(", ")} out of sight at the address`
+                      : "Out of sight since arriving"
+                    : inCar
+                      ? `${occupants.join(", ")} in the vehicle`
+                      : "Nobody in the vehicle",
+                state: `${a.address}${sinceText(a.rowId)}`,
+                actions,
+                latestRowId: Math.max(a.rowId, ...insideHere.map(w => w.rowId)),
+                holds: [...occupants, ...insideHere.map(w => w.names)].flatMap(
+                  n => surnameTokens(n)
+                ),
+                people: inside
+                  ? insideHere.flatMap(w => splitPeopleNames(w.names))
+                  : occupants,
+                locus: inside
+                  ? {
+                      headline: `Inside ${a.address}`,
+                      sub: `On foot${sinceText(Math.max(...insideHere.map(w => w.rowId)))}`,
+                    }
+                  : outOfSight
+                    ? {
+                        headline: `Out of sight at ${a.address}`,
+                        sub: `Arrived in ${rego}${sinceText(a.rowId)}`,
+                      }
+                    : {
+                        headline: inCar ? `In ${rego}` : `${rego} unattended`,
+                        sub: `Parked at ${a.address}${sinceText(a.rowId)}`,
+                      },
+              });
+            });
+            (pendingDepartures ?? []).forEach(d => {
+              const chip = vehicleArrivingChips.find(c => c.rego === d.rego);
+              if (!chip) return;
+              continuityCards.push({
+                key: `dep-${d.rego}`,
+                title: d.rego,
+                pill: "Moving",
+                attn: true,
+                who: vehicleOccupants(d.occupantDesc, d.rego, d.rowId).length
+                  ? vehicleOccupants(d.occupantDesc, d.rego, d.rowId).join(", ")
+                  : `${extractOccupantNames(d.occupantDesc) || d.occupantDesc}`,
+                state: `Departed${sinceText(d.rowId).replace(" · since", "")}`,
+                actions: cardAction(chip, "Vehicle arriving"),
+                latestRowId: d.rowId,
+                ...(() => {
+                  const inCar = vehicleOccupants(
+                    d.occupantDesc,
+                    d.rego,
+                    d.rowId
+                  );
+                  return {
+                    holds: inCar.flatMap(n => surnameTokens(n)),
+                    people: inCar,
+                    locus: {
+                      headline: `Moving in ${d.rego}`,
+                      sub: `Departed${sinceText(d.rowId).replace(" · since", "")}`,
+                    },
+                  };
+                })(),
+              });
+            });
+            (pendingWalkIns ?? [])
+              .filter(w => !walkInsAtVehicle.has(w.location))
+              .forEach(w => {
+                const chip = leftAddressChips.find(
+                  c => c.key === `la-${w.location}`
+                );
+                continuityCards.push({
+                  key: `foot-${w.location}`,
+                  title: w.names,
+                  pill: "Inside",
+                  who: `Inside ${w.location}`,
+                  state: `On foot${sinceText(w.rowId)}`,
+                  actions: [
+                    ...cardAction(chip, "Left address"),
+                    // Back to a parked vehicle from here.
+                    ...(pendingArrivals ?? []).map(a => ({
+                      key: `wov-${w.location}-${a.rego}`,
+                      label: `Walked out to ${a.rego}`,
+                      text: `${shortenAlreadyMentionedNames(w.names, usedBracketCodes)} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
+                    })),
+                  ],
+                  latestRowId: w.rowId,
+                  holds: surnameTokens(w.names),
+                  people: splitPeopleNames(w.names),
+                  locus: {
+                    headline: `Inside ${w.location}`,
+                    sub: `On foot${sinceText(w.rowId)}`,
+                  },
+                });
+              });
+            (pendingHeadingTo ?? []).forEach(h => {
+              const chip = enteredChips.find(
+                c =>
+                  c.key ===
+                  `en-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`
+              );
+              if (!chip) return;
+              const walkers = shortenAlreadyMentionedNames(
+                h.names,
+                usedBracketCodes
+              );
+              const destKnown = !h.destination.includes("[");
+              // On foot, the next step is one of: enter where they were
+              // heading, walk on to somewhere else, or walk back towards a
+              // vehicle that is parked.
+              continuityCards.push({
+                key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
+                title: h.names,
+                pill: "Walking",
+                attn: true,
+                who: destKnown ? `Walking to ${h.destination}` : "On foot",
+                state: `Left ${h.from}${sinceText(h.rowId)}`,
+                actions: [
+                  ...cardAction(
+                    chip,
+                    destKnown ? "Entered" : "Entered a location"
+                  ),
+                  {
+                    key: `wk-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
+                    label: "Walked to another location",
+                    text: `${walkers} walked [route] towards [location].`,
+                  },
+                  ...(pendingArrivals ?? []).map(a => ({
+                    key: `wv-${a.rego}`,
+                    label: `Walked to ${a.rego}`,
+                    text: `${walkers} walked towards Vehicle ${a.rego}.`,
+                  })),
+                ],
+                latestRowId: h.rowId,
+                holds: surnameTokens(h.names),
+                people: splitPeopleNames(h.names),
+                locus: {
+                  headline: destKnown
+                    ? `Walking to ${h.destination}`
+                    : "Walking",
+                  sub: `Left ${h.from}${sinceText(h.rowId)}`,
+                },
+              });
+            });
+            // The card holding the TARGET leads the band as his tracker.
+            // Only a person target is tracked this way (a vehicle or
+            // address target is described in words, not by surname).
+            const targetCode =
+              assignedTarget &&
+              (assignedTarget as { targetType?: string }).targetType &&
+              (assignedTarget as { targetType?: string }).targetType !==
+                "person"
+                ? null
+                : targetTokenFromTitle(sheet?.title);
+            // Safety net for phrasing the position logic doesn't read: the
+            // newest row that names the target alongside a movement word
+            // but matched none of the known movement phrasings. If it is
+            // newer than what the tracker is based on, the position shown
+            // may be stale, so say so rather than state it plainly. A row the
+            // logic DID read (even one that doesn't change the card, such as
+            // walking back towards a vehicle) never triggers this.
+            const targetRe = targetCode
+              ? new RegExp(`\\b${targetCode}\\b`, "i")
+              : null;
+            const latestMove =
+              targetRe && rows
+                ? rows
+                    .filter(
+                      r =>
+                        !!r.observation &&
+                        targetRe.test(r.observation) &&
+                        !isReadAsMovement(r.observation) &&
+                        /\b(entered|exited|walked|left|arrived|departed|drove|travelled|stopped|parked|inside|seated|sitting|standing|seen|sighted|remains|remained)\b/i.test(
+                          r.observation
+                        )
+                    )
+                    .reduce<
+                      NonNullable<typeof rows>[number] | null
+                    >((a, b) => (!a || b.id > a.id ? b : a), null)
+                : null;
+            const staleWarn = (basedOnRowId: number) =>
+              latestMove && latestMove.id > basedOnRowId
+                ? `The ${latestMove.time ?? "latest"} row names ${targetCode} after this, but wasn't read as a move — check where he is.`
+                : undefined;
+            if (targetCode && continuityCards.length > 0) {
+              const targetKey = pickTargetCardKey(continuityCards, targetCode);
+              const held = continuityCards.find(c => c.key === targetKey);
+              if (held) {
+                held.isTarget = true;
+                held.warn = staleWarn(held.latestRowId);
+                held.companions = companionsOf(
+                  held.people ?? [],
+                  targetCode
+                ).join(", ");
+              } else {
+                // Cards exist but none names him: say so rather than leave
+                // the band looking as if it were about someone else.
+                continuityCards.push({
+                  key: "target-not-located",
+                  title: targetCode,
+                  pill: "Not located",
+                  attn: true,
+                  who: "Position not logged",
+                  state: `No logged movement names ${targetCode} yet`,
+                  actions: [],
+                  latestRowId: Number.MAX_SAFE_INTEGER,
+                  isTarget: true,
+                  warn: staleWarn(0),
+                  locus: {
+                    headline: "Position not logged",
+                    sub: `No logged movement names ${targetCode} yet`,
+                  },
+                });
+              }
+            }
+            // Tapping a card action adds the sentence as its own row, stamped
+            // with the current (Perth) time — so the time of the event is
+            // captured the moment it happens — and it can be edited like any
+            // other row afterwards. Falls back to inserting the text (the
+            // old behaviour) when that would be wrong: offline (the offline
+            // queue doesn't carry observation text) or on a sheet dated for
+            // a different day than today.
+            // Types text into a controlled textarea so React sees it (same
+            // execCommand / native-setter approach insertAtFocused uses).
+            const typeInto = (
+              el: HTMLTextAreaElement | HTMLInputElement,
+              insert: string
+            ) => {
+              const start = el.selectionStart ?? el.value.length;
+              const end = el.selectionEnd ?? el.value.length;
+              try {
+                document.execCommand("insertText", false, insert);
+              } catch {
+                const setter =
+                  Object.getOwnPropertyDescriptor(
+                    window.HTMLTextAreaElement.prototype,
+                    "value"
+                  )?.set ||
+                  Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype,
+                    "value"
+                  )?.set;
+                if (setter) {
+                  setter.call(
+                    el,
+                    el.value.slice(0, start) + insert + el.value.slice(end)
+                  );
+                  el.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+              }
+            };
+            // The observation cell that is open for editing right now, if
+            // any. focusedTextareaRef also remembers cells that have since
+            // closed, so it must still be attached and the active element.
+            const openObservationCell = (): HTMLTextAreaElement | null => {
+              const el = focusedTextareaRef.current;
+              return el &&
+                el.tagName === "TEXTAREA" &&
+                el.isConnected &&
+                document.activeElement === el
+                ? (el as HTMLTextAreaElement)
+                : null;
+            };
+            const addContinuityEntry = (text: string) => {
+              // Rule 1: a cell is open → the sentence goes into it as the
+              // next paragraph, at the end of what's already written.
+              const open = openObservationCell();
+              if (open) {
+                const v = open.value;
+                const lead = !v
+                  ? ""
+                  : v.endsWith("\n\n")
+                    ? ""
+                    : v.endsWith("\n")
+                      ? "\n"
+                      : "\n\n";
+                open.focus();
+                open.setSelectionRange(v.length, v.length);
+                typeInto(open, lead + text);
+                return;
+              }
+              // Rule 2: no cell open → it becomes its own row. Vehicles stay
+              // written as plain "Vehicle 1ORB419", exactly as the cards
+              // phrase them.
+              const perth = (opts: Intl.DateTimeFormatOptions) =>
+                new Intl.DateTimeFormat("en-GB", {
+                  timeZone: "Australia/Perth",
+                  ...opts,
+                }).formatToParts(new Date());
+              const part = (
+                parts: Intl.DateTimeFormatPart[],
+                type: string
+              ): string => parts.find(p => p.type === type)?.value ?? "";
+              const d = perth({
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+              });
+              const todayYmd = `${part(d, "year")}-${part(d, "month")}-${part(d, "day")}`;
+              const forToday =
+                !sheet?.sheetDate || sheet.sheetDate === todayYmd;
+              if (!isOnline || !forToday) {
+                insertAtFocused(text);
+                if (!forToday) {
+                  toast.info(
+                    "This sheet is dated for another day, so the text was added to the row you're editing instead."
+                  );
+                }
+                return;
+              }
+              const t = perth({
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              });
+              const h24 = parseInt(part(t, "hour"), 10) % 24;
+              const min = parseInt(part(t, "minute"), 10);
+              const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+              const timeStr = `${String(h12).padStart(2, "0")}:${String(min).padStart(2, "0")} ${h24 < 12 ? "AM" : "PM"}`;
+              _addRowOnline
+                .mutateAsync({
+                  sheetId,
+                  time: timeStr,
+                  timeMinutes: h24 * 60 + min,
+                  observation: text,
+                })
+                .then(created => {
+                  // Leave the new row open, so the next tap adds to it as the
+                  // next paragraph.
+                  setJustAddedRowId(created.id);
+                  // If the row never appears to open (e.g. it is locked), do
+                  // not leave the request lying in wait.
+                  setTimeout(() => setJustAddedRowId(null), 6000);
+                  toast.success(`Added ${timeStr}`, {
+                    description: "Edit it any time from the row.",
+                    duration: 9000,
+                    action: {
+                      label: "Undo",
+                      onClick: () =>
+                        _deleteRowOnline.mutate({ id: created.id }),
+                    },
+                  });
+                })
+                .catch(() => {
+                  /* the mutation's own onError already showed the message */
+                });
+            };
+            const hasContinuityChips = continuityCards.length > 0;
             const insertAtFocused = (text: string) => {
               const el = focusedTextareaRef.current;
               if (!el) return;
@@ -5015,319 +5728,310 @@ export default function SheetDetail({
                 }
               }
             };
-            const ContinuityChipGroup = ({
-              label,
-              chips,
-            }: {
-              label: string;
-              chips: { key: string; rego: string; text: string }[];
-            }) =>
-              chips.length === 0 ? null : (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[9px] font-bold uppercase tracking-wide text-pink-500/70 shrink-0">
-                    {label}
-                  </span>
-                  {chips.map(chip => (
-                    <button
-                      key={chip.key}
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={() => insertAtFocused(chip.text)}
-                      title={chip.text}
-                      className="inline-flex items-center px-2 py-0.5 rounded border border-pink-500/30 bg-pink-500/5 text-pink-400 hover:bg-pink-500/15 active:scale-95 transition-all select-none cursor-pointer"
-                    >
-                      <span className="text-[10px] font-mono font-bold">
-                        {chip.rego}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              );
+            const showTargetPanel = !!(
+              (sheet?.targetId && assignedTarget) ||
+              (entityChips && entityChips.length > 0)
+            );
             return (
-              <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
-                {/* Header — always visible. Tapping the main area toggles collapse; pencil navigates to edit */}
-                <div className="flex items-center">
-                  <button
-                    className="flex-1 flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left min-w-0"
-                    onClick={() =>
-                      setTargetPanelExpanded(v => {
-                        const next = !v;
-                        try {
-                          localStorage.setItem(
-                            "runsheet_target_panel_expanded",
-                            String(next)
-                          );
-                        } catch {}
-                        return next;
-                      })
-                    }
-                  >
-                    {hasTarget ? (
-                      <Target className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    ) : (
-                      <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    )}
-                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">
-                      {hasTarget ? `TARGET — ${t!.name}` : "SHORTCUTS"}
-                    </span>
-                    <ChevronDown
-                      className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${targetPanelExpanded ? "" : "-rotate-90"}`}
-                    />
-                  </button>
-                  {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
-                  {hasTarget && (
-                    <button
-                      className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30 rounded-tr-lg"
-                      onClick={() =>
-                        navigate(
-                          `/operation/${sheet!.operationId}?tab=target&targetId=${t!.id}&fromSheet=${sheetId}`
-                        )
-                      }
-                      title="Edit Target"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-                {/* Collapsible details */}
-                {targetPanelExpanded &&
-                  (() => {
-                    // Apply saved order to the fields list
-                    const visibleFields = fields.filter(f => f.value);
-                    const isWildcard = (lbl: string) => /^#\d+$/.test(lbl);
-                    const nonWildVisible = visibleFields.filter(
-                      f => !isWildcard(f.label)
-                    );
-                    const wildcardVisible = visibleFields.filter(f =>
-                      isWildcard(f.label)
-                    );
-                    const orderedNonWild =
-                      targetFieldOrder.length > 0
-                        ? [
-                            ...(targetFieldOrder
-                              .filter(lbl => !isWildcard(lbl))
-                              .map(lbl =>
-                                nonWildVisible.find(f => f.label === lbl)
-                              )
-                              .filter(Boolean) as typeof visibleFields),
-                            ...nonWildVisible.filter(
-                              f => !targetFieldOrder.includes(f.label)
-                            ),
-                          ]
-                        : nonWildVisible;
-                    // Wildcards always at the end, in their saved order
-                    const orderedWild =
-                      targetFieldOrder.length > 0
-                        ? [
-                            ...(targetFieldOrder
-                              .filter(isWildcard)
-                              .map(lbl =>
-                                wildcardVisible.find(f => f.label === lbl)
-                              )
-                              .filter(Boolean) as typeof visibleFields),
-                            ...wildcardVisible.filter(
-                              f => !targetFieldOrder.includes(f.label)
-                            ),
-                          ]
-                        : wildcardVisible;
-                    const orderedFields = [...orderedNonWild, ...orderedWild];
-                    return (
-                      <div className="px-4 pb-3 border-t border-border/40">
-                        {hasAnyField &&
-                          (() => {
-                            const shortcutFolderLabels = new Set(
-                              (shortcutsData ?? []).map(s =>
-                                s.trigger.toUpperCase()
-                              )
-                            );
-                            const TRIGGER_ONLY_LABELS = new Set([
-                              "TGT",
-                              "HBF",
-                              "HB",
-                              "V1F",
-                              "V2F",
-                              "DEP",
-                              "ARR",
-                            ]);
-                            return (
-                              <DndContext
-                                sensors={chipSensors}
-                                collisionDetection={closestCenter}
-                                onDragEnd={handleChipDragEnd}
-                              >
-                                <SortableContext
-                                  items={orderedFields.map(f => f.label)}
-                                  strategy={horizontalListSortingStrategy}
-                                >
-                                  <div className="flex flex-wrap gap-1.5 pt-2">
-                                    {orderedFields.map(f => {
-                                      const insertIntoFocused = () => {
-                                        const el = focusedTextareaRef.current;
-                                        if (el) {
-                                          el.focus();
-                                          const start =
-                                            el.selectionStart ??
-                                            el.value.length;
-                                          const end =
-                                            el.selectionEnd ?? el.value.length;
-                                          const before = el.value.slice(
-                                            0,
-                                            start
-                                          );
-                                          const after = el.value.slice(end);
-                                          const insert =
-                                            before && !before.endsWith(" ")
-                                              ? ` ${f.value!}`
-                                              : f.value!;
-                                          try {
-                                            document.execCommand(
-                                              "insertText",
-                                              false,
-                                              insert
-                                            );
-                                          } catch {
-                                            const nativeInputValueSetter =
-                                              Object.getOwnPropertyDescriptor(
-                                                window.HTMLTextAreaElement
-                                                  .prototype,
-                                                "value"
-                                              )?.set ||
-                                              Object.getOwnPropertyDescriptor(
-                                                window.HTMLInputElement
-                                                  .prototype,
-                                                "value"
-                                              )?.set;
-                                            if (nativeInputValueSetter) {
-                                              nativeInputValueSetter.call(
-                                                el,
-                                                before + insert + after
+              <>
+                {showTargetPanel && (
+                  <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
+                    {/* Header — always visible. Tapping the main area toggles collapse; pencil navigates to edit */}
+                    <div className="flex items-center">
+                      <button
+                        className="flex-1 flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left min-w-0"
+                        onClick={() =>
+                          setTargetPanelExpanded(v => {
+                            const next = !v;
+                            try {
+                              localStorage.setItem(
+                                "runsheet_target_panel_expanded",
+                                String(next)
+                              );
+                            } catch {}
+                            return next;
+                          })
+                        }
+                      >
+                        {hasTarget ? (
+                          <Target className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        ) : (
+                          <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        )}
+                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">
+                          {hasTarget ? `TARGET — ${t!.name}` : "SHORTCUTS"}
+                        </span>
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 shrink-0 ${targetPanelExpanded ? "" : "-rotate-90"}`}
+                        />
+                      </button>
+                      {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
+                      {hasTarget && (
+                        <button
+                          className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30 rounded-tr-lg"
+                          onClick={() =>
+                            navigate(
+                              `/operation/${sheet!.operationId}?tab=target&targetId=${t!.id}&fromSheet=${sheetId}`
+                            )
+                          }
+                          title="Edit Target"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                    {/* Collapsible details */}
+                    {targetPanelExpanded &&
+                      (() => {
+                        // Apply saved order to the fields list
+                        const visibleFields = fields.filter(f => f.value);
+                        const isWildcard = (lbl: string) => /^#\d+$/.test(lbl);
+                        const nonWildVisible = visibleFields.filter(
+                          f => !isWildcard(f.label)
+                        );
+                        const wildcardVisible = visibleFields.filter(f =>
+                          isWildcard(f.label)
+                        );
+                        const orderedNonWild =
+                          targetFieldOrder.length > 0
+                            ? [
+                                ...(targetFieldOrder
+                                  .filter(lbl => !isWildcard(lbl))
+                                  .map(lbl =>
+                                    nonWildVisible.find(f => f.label === lbl)
+                                  )
+                                  .filter(Boolean) as typeof visibleFields),
+                                ...nonWildVisible.filter(
+                                  f => !targetFieldOrder.includes(f.label)
+                                ),
+                              ]
+                            : nonWildVisible;
+                        // Wildcards always at the end, in their saved order
+                        const orderedWild =
+                          targetFieldOrder.length > 0
+                            ? [
+                                ...(targetFieldOrder
+                                  .filter(isWildcard)
+                                  .map(lbl =>
+                                    wildcardVisible.find(f => f.label === lbl)
+                                  )
+                                  .filter(Boolean) as typeof visibleFields),
+                                ...wildcardVisible.filter(
+                                  f => !targetFieldOrder.includes(f.label)
+                                ),
+                              ]
+                            : wildcardVisible;
+                        const orderedFields = [
+                          ...orderedNonWild,
+                          ...orderedWild,
+                        ];
+                        return (
+                          <div className="px-4 pb-3 border-t border-border/40">
+                            {hasAnyField &&
+                              (() => {
+                                const shortcutFolderLabels = new Set(
+                                  (shortcutsData ?? []).map(s =>
+                                    s.trigger.toUpperCase()
+                                  )
+                                );
+                                const TRIGGER_ONLY_LABELS = new Set([
+                                  "TGT",
+                                  "HBF",
+                                  "HB",
+                                  "V1F",
+                                  "V2F",
+                                  "DEP",
+                                  "ARR",
+                                ]);
+                                return (
+                                  <DndContext
+                                    sensors={chipSensors}
+                                    collisionDetection={closestCenter}
+                                    onDragEnd={handleChipDragEnd}
+                                  >
+                                    <SortableContext
+                                      items={orderedFields.map(f => f.label)}
+                                      strategy={horizontalListSortingStrategy}
+                                    >
+                                      <div className="flex flex-wrap gap-1.5 pt-2">
+                                        {orderedFields.map(f => {
+                                          const insertIntoFocused = () => {
+                                            const el =
+                                              focusedTextareaRef.current;
+                                            if (el) {
+                                              el.focus();
+                                              const start =
+                                                el.selectionStart ??
+                                                el.value.length;
+                                              const end =
+                                                el.selectionEnd ??
+                                                el.value.length;
+                                              const before = el.value.slice(
+                                                0,
+                                                start
                                               );
-                                              el.dispatchEvent(
-                                                new Event("input", {
-                                                  bubbles: true,
-                                                })
-                                              );
+                                              const after = el.value.slice(end);
+                                              const insert =
+                                                before && !before.endsWith(" ")
+                                                  ? ` ${f.value!}`
+                                                  : f.value!;
+                                              try {
+                                                document.execCommand(
+                                                  "insertText",
+                                                  false,
+                                                  insert
+                                                );
+                                              } catch {
+                                                const nativeInputValueSetter =
+                                                  Object.getOwnPropertyDescriptor(
+                                                    window.HTMLTextAreaElement
+                                                      .prototype,
+                                                    "value"
+                                                  )?.set ||
+                                                  Object.getOwnPropertyDescriptor(
+                                                    window.HTMLInputElement
+                                                      .prototype,
+                                                    "value"
+                                                  )?.set;
+                                                if (nativeInputValueSetter) {
+                                                  nativeInputValueSetter.call(
+                                                    el,
+                                                    before + insert + after
+                                                  );
+                                                  el.dispatchEvent(
+                                                    new Event("input", {
+                                                      bubbles: true,
+                                                    })
+                                                  );
+                                                }
+                                              }
                                             }
-                                          }
-                                        }
-                                      };
-                                      const isVnShort = /^V\d+$/.test(f.label);
-                                      const isVnFull = /^V\d+F$/.test(f.label);
-                                      const isStandard =
-                                        !isVnShort &&
-                                        (shortcutFolderLabels.has(f.label) ||
-                                          TRIGGER_ONLY_LABELS.has(f.label) ||
-                                          isVnFull);
-                                      return (
-                                        <SortableChip
-                                          key={f.label}
-                                          id={f.label}
-                                          label={f.label}
-                                          value={f.value}
-                                          showValue={isVnShort || !isStandard}
-                                          onInsert={insertIntoFocused}
-                                        />
-                                      );
-                                    })}
-                                  </div>
-                                </SortableContext>
-                              </DndContext>
-                            );
-                          })()}
-                        {/* Entity chips — quick-insert shortcuts mined from this sheet's own
+                                          };
+                                          const isVnShort = /^V\d+$/.test(
+                                            f.label
+                                          );
+                                          const isVnFull = /^V\d+F$/.test(
+                                            f.label
+                                          );
+                                          const isStandard =
+                                            !isVnShort &&
+                                            (shortcutFolderLabels.has(
+                                              f.label
+                                            ) ||
+                                              TRIGGER_ONLY_LABELS.has(
+                                                f.label
+                                              ) ||
+                                              isVnFull);
+                                          return (
+                                            <SortableChip
+                                              key={f.label}
+                                              id={f.label}
+                                              label={f.label}
+                                              value={f.value}
+                                              showValue={
+                                                isVnShort || !isStandard
+                                              }
+                                              onInsert={insertIntoFocused}
+                                            />
+                                          );
+                                        })}
+                                      </div>
+                                    </SortableContext>
+                                  </DndContext>
+                                );
+                              })()}
+                            {/* Entity chips — quick-insert shortcuts mined from this sheet's own
                         observations (surname / short address / vehicle rego), one line
                         under the fixed chips above, shared across every officer viewing
                         the sheet since they come from the server, not a per-device setting. */}
-                        {hasEntityChips && (
-                          <div className="flex flex-wrap gap-1.5 pt-2">
-                            {entityChips!.map(chip => {
-                              const insertIntoFocused = () => {
-                                const el = focusedTextareaRef.current;
-                                if (!el) return;
-                                el.focus();
-                                const start =
-                                  el.selectionStart ?? el.value.length;
-                                const end = el.selectionEnd ?? el.value.length;
-                                const before = el.value.slice(0, start);
-                                const after = el.value.slice(end);
-                                const insert =
-                                  before && !before.endsWith(" ")
-                                    ? ` ${chip.insertValue}`
-                                    : chip.insertValue;
-                                try {
-                                  document.execCommand(
-                                    "insertText",
-                                    false,
-                                    insert
+                            {hasEntityChips && (
+                              <div className="flex flex-wrap gap-1.5 pt-2">
+                                {entityChips!.map(chip => {
+                                  const insertIntoFocused = () => {
+                                    const el = focusedTextareaRef.current;
+                                    if (!el) return;
+                                    el.focus();
+                                    const start =
+                                      el.selectionStart ?? el.value.length;
+                                    const end =
+                                      el.selectionEnd ?? el.value.length;
+                                    const before = el.value.slice(0, start);
+                                    const after = el.value.slice(end);
+                                    const insert =
+                                      before && !before.endsWith(" ")
+                                        ? ` ${chip.insertValue}`
+                                        : chip.insertValue;
+                                    try {
+                                      document.execCommand(
+                                        "insertText",
+                                        false,
+                                        insert
+                                      );
+                                    } catch {
+                                      const nativeInputValueSetter =
+                                        Object.getOwnPropertyDescriptor(
+                                          window.HTMLTextAreaElement.prototype,
+                                          "value"
+                                        )?.set ||
+                                        Object.getOwnPropertyDescriptor(
+                                          window.HTMLInputElement.prototype,
+                                          "value"
+                                        )?.set;
+                                      if (nativeInputValueSetter) {
+                                        nativeInputValueSetter.call(
+                                          el,
+                                          before + insert + after
+                                        );
+                                        el.dispatchEvent(
+                                          new Event("input", { bubbles: true })
+                                        );
+                                      }
+                                    }
+                                  };
+                                  return (
+                                    <button
+                                      key={chip.key}
+                                      onMouseDown={e => e.preventDefault()}
+                                      onClick={insertIntoFocused}
+                                      title={`Insert: ${chip.insertValue}`}
+                                      className="inline-flex items-center px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
+                                    >
+                                      <span className="text-[10px] font-mono font-bold max-w-[140px] truncate">
+                                        {chip.insertValue}
+                                      </span>
+                                    </button>
                                   );
-                                } catch {
-                                  const nativeInputValueSetter =
-                                    Object.getOwnPropertyDescriptor(
-                                      window.HTMLTextAreaElement.prototype,
-                                      "value"
-                                    )?.set ||
-                                    Object.getOwnPropertyDescriptor(
-                                      window.HTMLInputElement.prototype,
-                                      "value"
-                                    )?.set;
-                                  if (nativeInputValueSetter) {
-                                    nativeInputValueSetter.call(
-                                      el,
-                                      before + insert + after
-                                    );
-                                    el.dispatchEvent(
-                                      new Event("input", { bubbles: true })
-                                    );
-                                  }
-                                }
-                              };
-                              return (
-                                <button
-                                  key={chip.key}
-                                  onMouseDown={e => e.preventDefault()}
-                                  onClick={insertIntoFocused}
-                                  title={`Insert: ${chip.insertValue}`}
-                                  className="inline-flex items-center px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
-                                >
-                                  <span className="text-[10px] font-mono font-bold max-w-[140px] truncate">
-                                    {chip.insertValue}
-                                  </span>
-                                </button>
-                              );
-                            })}
+                                })}
+                              </div>
+                            )}
                           </div>
-                        )}
-                        {/* Continuity chips — vehicle arriving/departing,
-                        walked in/out. See ContinuityChipGroup/the chip
-                        arrays above for how these mirror the RS Quick Entry
-                        map popup's own continuity chips. */}
-                        {hasContinuityChips && (
-                          <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-2">
-                            <ContinuityChipGroup
-                              label="Vehicle arriving"
-                              chips={vehicleArrivingChips}
-                            />
-                            <ContinuityChipGroup
-                              label="Vehicle departing"
-                              chips={vehicleDepartingChips}
-                            />
-                            <ContinuityChipGroup
-                              label="Walked in"
-                              chips={walkedInChips}
-                            />
-                            <ContinuityChipGroup
-                              label="Walked in direct"
-                              chips={walkedInDirectChips}
-                            />
-                            <ContinuityChipGroup
-                              label="Walked out"
-                              chips={walkedOutChips}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-              </div>
+                        );
+                      })()}
+                  </div>
+                )}
+                {/* Continuity cards sit between the chip panel and the rows,
+                    and show whether or not the panel above is expanded. */}
+                {hasContinuityChips && (
+                  <div className={showTargetPanel ? "mb-4 -mt-2" : "mb-4"}>
+                    <ContinuityCards
+                      busy={_addRowOnline.isPending}
+                      cards={continuityCards}
+                      dismissed={continuityDismissed}
+                      onDismiss={(key, rowId) =>
+                        setContinuityDismissal.mutate({ sheetId, key, rowId })
+                      }
+                      onRestore={key =>
+                        setContinuityDismissal.mutate({
+                          sheetId,
+                          key,
+                          rowId: null,
+                        })
+                      }
+                      onAction={addContinuityEntry}
+                    />
+                  </div>
+                )}
+              </>
             );
           })()}
 
@@ -5626,6 +6330,9 @@ export default function SheetDetail({
                               ) : (
                                 <EditableCell
                                   value={row.observation}
+                                  rowId={row.id}
+                                  autoEdit={justAddedRowId === row.id}
+                                  onAutoEdited={() => setJustAddedRowId(null)}
                                   locked={row.isLocked || !canEdit}
                                   multiline
                                   placeholder="Enter observation…"

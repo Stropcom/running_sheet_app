@@ -4945,6 +4945,9 @@ export default function IntelligenceMapping() {
   // geocode, so the match is retried for a short while until one turns up.
   // No pin for the place, no flag.
   const targetFlagRef = useRef<DivIconOverlay | null>(null);
+  // Why the flag is or isn't showing — shown under the Target location switch
+  // in the right-hand pane, so a missing flag explains itself.
+  const [targetFlagStatus, setTargetFlagStatus] = useState("");
   useEffect(() => {
     const removeFlag = () => {
       if (targetFlagRef.current) {
@@ -4953,6 +4956,29 @@ export default function IntelligenceMapping() {
       }
     };
     const pos = rsTargetPosition;
+    const sheetTitle = (rsSheetsData as any[] | undefined)?.find(
+      (x: any) => x.id === rsSelectedSheetId
+    )?.title as string | undefined;
+    const token = targetTokenFromTitle(sheetTitle);
+    if (!trackingSettings.location) {
+      setTargetFlagStatus("");
+    } else if (!rsSelectedSheetId) {
+      setTargetFlagStatus("Select a running sheet in the Active RS pane.");
+    } else if (!token) {
+      setTargetFlagStatus(
+        "This sheet's title has no target surname in brackets at the end, e.g. (BAIG), so there is nobody to flag."
+      );
+    } else if (!pos) {
+      setTargetFlagStatus(
+        `The sheet doesn't say where ${token} is yet — no movement, arrival or sighting names ${token}.`
+      );
+    } else if (!pos.place) {
+      setTargetFlagStatus(
+        `${token} is ${pos.label}, but no place is written to put the flag on.`
+      );
+    } else if (!mapReady || !mapRef.current) {
+      setTargetFlagStatus("");
+    }
     if (!mapReady || !mapRef.current || !pos?.place) {
       removeFlag();
       return;
@@ -4992,8 +5018,13 @@ export default function IntelligenceMapping() {
       const at = findPin();
       if (!at) {
         if (n < 20) timer = setTimeout(() => attempt(n + 1), 1500);
+        else
+          setTargetFlagStatus(
+            `${token} is ${pos.label} at "${place}", but no pin or marker on the map matches that place. A new address only gets a pin once it has been located on the map.`
+          );
         return;
       }
+      setTargetFlagStatus(`Showing ${token} at "${place}" — ${pos.label}.`);
       removeFlag();
       const flag = document.createElement("div");
       flag.style.cssText =
@@ -5039,6 +5070,7 @@ export default function IntelligenceMapping() {
         title: "Target location",
       });
     };
+    setTargetFlagStatus(`Looking for "${place}" on the map…`);
     attempt(0);
     return () => {
       cancelled = true;
@@ -5052,6 +5084,7 @@ export default function IntelligenceMapping() {
     rsSelectedSheetId,
     locations,
     customMarkers,
+    trackingSettings.location,
   ]);
 
   // NOTE: Do NOT call renderLocations here — that would create a loop:
@@ -9798,6 +9831,11 @@ export default function IntelligenceMapping() {
                 {!trackingSettings.tracking && (
                   <p className="text-[11px] text-muted-foreground">
                     Target location needs Target tracking on.
+                  </p>
+                )}
+                {trackingSettings.location && targetFlagStatus && (
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    {targetFlagStatus}
                   </p>
                 )}
               </div>

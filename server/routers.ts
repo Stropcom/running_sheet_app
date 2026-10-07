@@ -135,7 +135,7 @@ import {
   getPendingVehicleArrivals,
   getPendingWalkIns,
   getPendingHeadingTo,
-  getPendingToVehicle,
+  getPendingPlacements,
   getPendingContinuityWithDraft,
   isAddressAlreadyMentioned,
   findMissingLocationSuggestion,
@@ -1505,11 +1505,11 @@ export const appRouter = router({
       }),
 
     // People who walked to / got into a vehicle and haven't left it. See
-    // getPendingToVehicle.
-    pendingToVehicle: protectedProcedure
+    // getPendingPlacements.
+    pendingPlacements: protectedProcedure
       .input(z.object({ sheetId: z.number() }))
       .query(async ({ input }) => {
-        return getPendingToVehicle(input.sheetId);
+        return getPendingPlacements(input.sheetId);
       }),
 
     // The pending lists above, read with text still being typed (not

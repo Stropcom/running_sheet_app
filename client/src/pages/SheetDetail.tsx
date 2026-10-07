@@ -2878,7 +2878,7 @@ export default function SheetDetail({
     }
   );
 
-  const { data: pendingToVehicleBase } = trpc.row.pendingToVehicle.useQuery(
+  const { data: pendingPlacementsBase } = trpc.row.pendingPlacements.useQuery(
     { sheetId },
     {
       enabled: isAuthenticated && !!sheetId && isOnline,
@@ -2940,9 +2940,9 @@ export default function SheetDetail({
   const pendingHeadingTo = draftActive
     ? draftPending!.headingTo
     : pendingHeadingToBase;
-  const pendingToVehicle = draftActive
-    ? draftPending!.toVehicle
-    : pendingToVehicleBase;
+  const pendingPlacements = draftActive
+    ? draftPending!.placements
+    : pendingPlacementsBase;
   // A row just created by tapping a continuity card: its observation opens
   // for editing so the next tap adds to it (see EditableCell autoEdit).
   const [justAddedRowId, setJustAddedRowId] = useState<number | null>(null);
@@ -2954,7 +2954,7 @@ export default function SheetDetail({
     utils.row.pendingVehicleArrivals.invalidate({ sheetId });
     utils.row.pendingWalkIns.invalidate({ sheetId });
     utils.row.pendingHeadingTo.invalidate({ sheetId });
-    utils.row.pendingToVehicle.invalidate({ sheetId });
+    utils.row.pendingPlacements.invalidate({ sheetId });
   }, [utils, sheetId]);
 
   // Cache sheet data to IndexedDB whenever we have fresh data online
@@ -5211,7 +5211,7 @@ export default function SheetDetail({
               sharedVehicleOccupants(
                 { rego, rowId, names: extractOccupantNames(desc) },
                 onFootNames,
-                pendingToVehicle ?? [],
+                pendingPlacements ?? [],
                 allVehicleRows
               );
             (pendingArrivals ?? []).forEach(a => {

@@ -63,3 +63,17 @@ describe("vehicleOccupants: a person is in one vehicle only", () => {
     expect(vehicleOccupants(newer, [], joined, all)).toEqual(["BAIG"]);
   });
 });
+
+describe("vehicleOccupants: seen anywhere else later means not in the vehicle", () => {
+  it("a sighting inside a place after the vehicle's row takes him out of it", () => {
+    const parked = { rego: "1ORB419", rowId: 1, names: "BAIG" };
+    const seenInside = [{ name: "BAIG", rego: "", rowId: 3 }];
+    expect(vehicleOccupants(parked, [], seenInside, [parked])).toEqual([]);
+  });
+
+  it("but a vehicle row logged after the sighting puts him back in it", () => {
+    const later = { rego: "1ORB419", rowId: 9, names: "BAIG" };
+    const seenInside = [{ name: "BAIG", rego: "", rowId: 3 }];
+    expect(vehicleOccupants(later, [], seenInside, [later])).toEqual(["BAIG"]);
+  });
+});

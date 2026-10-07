@@ -3491,8 +3491,8 @@ export default function IntelligenceMapping() {
     { sheetId: rsSelectedSheetId ?? 0 },
     { enabled: mapQeOpen && !!rsSelectedSheetId }
   );
-  // People who walked to / got into a vehicle (see getPendingToVehicle).
-  const { data: rsPendingToVehicleBase } = trpc.row.pendingToVehicle.useQuery(
+  // People who walked to / got into a vehicle (see getPendingPlacements).
+  const { data: rsPendingPlacementsBase } = trpc.row.pendingPlacements.useQuery(
     { sheetId: rsSelectedSheetId ?? 0 },
     { enabled: mapQeOpen && !!rsSelectedSheetId }
   );
@@ -3546,9 +3546,9 @@ export default function IntelligenceMapping() {
   const rsPendingHeadingTo = draftActive
     ? rsDraftPending!.headingTo
     : rsPendingHeadingToBase;
-  const rsPendingToVehicle = draftActive
-    ? rsDraftPending!.toVehicle
-    : rsPendingToVehicleBase;
+  const rsPendingPlacements = draftActive
+    ? rsDraftPending!.placements
+    : rsPendingPlacementsBase;
   // Short-form of the quick-entry address (mirrors the extraction the
   // "Address chips" section below already does) — used only to check
   // whether this address has already been mentioned in the sheet, for the
@@ -7294,7 +7294,7 @@ export default function IntelligenceMapping() {
             void utils.row.pendingHeadingTo.invalidate({
               sheetId: rsSelectedSheetId,
             });
-            void utils.row.pendingToVehicle.invalidate({
+            void utils.row.pendingPlacements.invalidate({
               sheetId: rsSelectedSheetId,
             });
           }
@@ -12084,7 +12084,7 @@ export default function IntelligenceMapping() {
                                     names: extractOccupantNames(desc),
                                   },
                                   onFootNames,
-                                  rsPendingToVehicle ?? [],
+                                  rsPendingPlacements ?? [],
                                   allVehicleRows
                                 );
                               (rsPendingDepartures ?? []).forEach(d => {

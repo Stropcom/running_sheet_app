@@ -101,7 +101,7 @@ describe("scanWalkEvents — people on foot, no vehicle", () => {
   it("ignores rows with no walking", () => {
     expect(
       scanWalkEvents(rows("Vehicle 1HIB84 arrived at 193b Stock Road."))
-    ).toEqual({ walkIns: [], headingTo: [], toVehicle: [] });
+    ).toEqual({ walkIns: [], headingTo: [], placements: [] });
   });
 
   it("ends the walk when they walk back towards a vehicle", () => {
@@ -378,16 +378,17 @@ describe("sightings: where someone is, with no movement sentence", () => {
   });
 });
 
-describe("people who joined a vehicle (toVehicle)", () => {
-  const sheet = (...obs: string[]) => rows(...obs);
+describe("placements: where each person was last put", () => {
+  const inVehicles = (r: ReturnType<typeof scanWalkEvents>) =>
+    r.placements.filter(p => p.rego);
 
   it("a walk to a vehicle whose own rows say occupants not observed", () => {
     const r = scanWalkEvents(
-      sheet(
+      rows(
         "BAIG exited Bull Creek Tavern and walked towards Vehicle 1HIB84.\nVehicle 1HIB84, occupant/s not observed, departed Bull Creek Tavern and continued via:"
       )
     );
-    expect(r.toVehicle).toEqual([
+    expect(inVehicles(r)).toEqual([
       expect.objectContaining({ name: "BAIG", rego: "1HIB84" }),
     ]);
     expect(r.walkIns).toEqual([]);
@@ -396,21 +397,30 @@ describe("people who joined a vehicle (toVehicle)", () => {
 
   it("walking away from the vehicle again takes him out of it", () => {
     const r = scanWalkEvents(
-      sheet(
+      rows(
         "BAIG exited Bull Creek Tavern and walked towards Vehicle 1HIB84.",
         "BAIG exited the vehicle and walked towards 13 Denford Street."
       )
     );
-    expect(r.toVehicle).toEqual([]);
+    expect(inVehicles(r)).toEqual([]);
   });
 
   it("entering a place takes him out of it", () => {
     const r = scanWalkEvents(
-      sheet(
+      rows(
         "BAIG walked to and entered Vehicle 1HIB84.",
         "BAIG entered Melville Fish and Chips."
       )
     );
-    expect(r.toVehicle).toEqual([]);
+    expect(inVehicles(r)).toEqual([]);
+  });
+
+  it("a sighting inside a place puts him there, not in a vehicle", () => {
+    const r = scanWalkEvents(
+      rows("BAIG seated at a table having a meal inside Bull Creek Tavern.")
+    );
+    expect(r.placements).toEqual([
+      expect.objectContaining({ name: "BAIG", rego: "" }),
+    ]);
   });
 });

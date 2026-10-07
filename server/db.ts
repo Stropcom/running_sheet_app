@@ -5882,12 +5882,11 @@ export async function getPendingHeadingTo(
   return scanWalkEvents(rows).headingTo;
 }
 
-// People who walked to / got into a vehicle and haven't been logged leaving
-// it — counted as that vehicle's occupants even when its own rows say
-// "occupant/s not observed".
-export async function getPendingToVehicle(sheetId: number) {
+// The latest place each person was put by a row (in a vehicle, inside a
+// place, on foot) — see scanWalkEvents.
+export async function getPendingPlacements(sheetId: number) {
   const rows = await getRowsBySheetId(sheetId);
-  return scanWalkEvents(rows).toVehicle;
+  return scanWalkEvents(rows).placements;
 }
 
 /**
@@ -5925,7 +5924,7 @@ export async function getPendingContinuityWithDraft(
     arrivals: computePendingVehicleArrivals(rows),
     walkIns: walk.walkIns,
     headingTo: walk.headingTo,
-    toVehicle: walk.toVehicle,
+    placements: walk.placements,
   };
 }
 

@@ -288,9 +288,11 @@ export interface ScannedHeadingTo {
  *  - headingTo: people who left a location saying where they were going and
  *    have not since been logged entering it
  */
-export interface ScannedToVehicle {
+export interface ScannedPlacement {
   /** The person as written, e.g. "BAIG". */
   name: string;
+  /** The vehicle they walked to / got into; "" when the row put them
+   * somewhere else (inside a place, on foot). */
   rego: string;
   rowId: number;
 }
@@ -298,9 +300,11 @@ export interface ScannedToVehicle {
 export function scanWalkEvents(rows: WalkScanRow[]): {
   walkIns: ScannedWalkIn[];
   headingTo: ScannedHeadingTo[];
-  /** People who walked to / got into a vehicle, so that vehicle's occupants
-   * include them even when its own rows say "occupant/s not observed". */
-  toVehicle: ScannedToVehicle[];
+  /** The latest place each person was put by a row — in a vehicle (rego set)
+   * or elsewhere (rego ""). Lets a vehicle's occupants include someone who
+   * walked to it even when its own rows say "occupant/s not observed", and
+   * drop someone who has since been seen anywhere else. */
+  placements: ScannedPlacement[];
 } {
   const key = (s: string) => s.trim().toLowerCase();
   // Heading entries are keyed by destination — except an unwritten one
@@ -311,16 +315,15 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   const lastWalkIn = new Map<string, ScannedWalkIn & { orderIdx: number }>();
   const walkedOut = new Set<string>();
   const heading = new Map<string, ScannedHeadingTo & { orderIdx: number }>();
-  const joined = new Map<string, ScannedToVehicle>();
-  const noteJoined = (names: string, rego: string, rowId: number) => {
+  const placed = new Map<string, ScannedPlacement>();
+  const placePeople = (names: string, rego: string, rowId: number) => {
     for (const p of splitPeopleNames(cleanWalkerNames(names))) {
-      const t = surnameTokens(p)[0];
-      if (t) joined.set(t, { name: p, rego: rego.toUpperCase(), rowId });
+      const entry = { name: p, rego: rego.toUpperCase(), rowId };
+      for (const t of surnameTokens(p)) placed.set(t, entry);
     }
   };
-  const noteLeftVehicle = (names: string) => {
-    for (const t of surnameTokens(names)) joined.delete(t);
-  };
+  const noteJoined = (names: string, rego: string, rowId: number) =>
+    placePeople(names, rego, rowId);
   // Drops any "heading to" entry belonging to these people — they have
   // since gone somewhere else or got back to a vehicle.
   const clearHeadingFor = (names: string) => {
@@ -359,8 +362,9 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       const dest = extractExitDestination(exitMatch[3]);
       rowDest = dest;
       rowWalkers = cleanWalkerNames(exitMatch[1]);
+      // On foot now, wherever they were (a vehicle below overrides this).
+      placePeople(rowWalkers, "", row.id);
       if (dest) {
-        noteLeftVehicle(rowWalkers);
         heading.set(headingKey(dest, cleanWalkerNames(exitMatch[1])), {
           names: cleanWalkerNames(exitMatch[1]),
           destination: dest,
@@ -382,7 +386,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       walkedOut.delete(k);
       heading.delete(k);
       clearHeadingFor(names);
-      noteLeftVehicle(names);
+      placePeople(names, "", row.id);
     };
 
     const inMatch = text.match(WALK_IN_PATTERN);
@@ -407,7 +411,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       const walkers = cleanWalkerNames(vehicleWalk[1]);
       const dest = extractExitDestination(vehicleWalk[2]) ?? "[location]";
       clearHeadingFor(walkers);
-      noteLeftVehicle(walkers);
+      placePeople(walkers, "", row.id);
       heading.set(headingKey(dest, walkers), {
         names: walkers,
         destination: dest,
@@ -444,7 +448,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         rowDest = dest;
         rowWalkers = walkers;
         if (dest) {
-          noteLeftVehicle(walkers);
+          placePeople(walkers, "", row.id);
           heading.set(headingKey(dest, walkers), {
             names: walkers,
             destination: dest,
@@ -524,7 +528,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   return {
     walkIns,
     headingTo,
-    toVehicle: Array.from(joined.values()),
+    placements: Array.from(new Set(placed.values())),
   };
 }
 
@@ -594,15 +598,15 @@ export interface VehicleOccupantSource {
 /**
  * Who is in a vehicle, with a person only ever in ONE vehicle — the one the
  * most recent row puts them in. The vehicle's own row names its occupants,
- * and anyone logged walking to / getting into it (`toVehicle`) is added; but
- * a person who joined a different vehicle AFTER this vehicle's row is no
- * longer in it, and one this vehicle's row names has left a vehicle they
+ * and anyone logged walking to / getting into it (`placements`) is added; but
+ * a person a LATER row puts anywhere else — another vehicle, inside a place,
+ * on foot — is no longer in it, and one this vehicle's row names has left a vehicle they
  * joined before it.
  */
 export function vehicleOccupants(
   self: VehicleOccupantSource,
   onFootNames: string[],
-  toVehicle: { name: string; rego: string; rowId: number }[],
+  placements: { name: string; rego: string; rowId: number }[],
   all: VehicleOccupantSource[]
 ): string[] {
   const same = (a: string, b: string) => a.toUpperCase() === b.toUpperCase();
@@ -612,14 +616,14 @@ export function vehicleOccupants(
   };
   const own = occupantsStillInVehicle(self.names, onFootNames).filter(
     p =>
-      !toVehicle.some(
+      !placements.some(
         j =>
           !same(j.rego, self.rego) &&
           j.rowId > self.rowId &&
           overlaps(p, j.name)
       )
   );
-  const joinedHere = toVehicle
+  const joinedHere = placements
     .filter(j => same(j.rego, self.rego))
     .filter(
       j =>

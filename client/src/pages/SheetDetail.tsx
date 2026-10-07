@@ -40,6 +40,7 @@ import {
   vehiclesPeopleCanReach,
 } from "@shared/targetPosition";
 import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
+import { detectUnidentifiedRepeat } from "@shared/unidentified";
 import {
   vehicleOccupants as sharedVehicleOccupants,
   occupantsStillInVehicle,
@@ -2278,6 +2279,23 @@ function EditableCell({
     const pos = textarea.selectionStart ?? 0;
     const textBefore = draft.slice(0, pos);
 
+    // An unidentified person already introduced in full ("unidentified male
+    // (UM1)" written earlier) is only ever referred to by the short name:
+    // finishing the full wording again becomes "UM1".
+    if (e.key === " " && usedBracketCodes) {
+      const repeat = detectUnidentifiedRepeat(draft, pos, usedBracketCodes);
+      if (repeat) {
+        e.preventDefault();
+        const newText = `${draft.slice(0, repeat.start)}${repeat.code} ${draft.slice(pos)}`;
+        setDraft(newText);
+        requestAnimationFrame(() => {
+          const newPos = repeat.start + repeat.code.length + 1;
+          textarea.setSelectionRange(newPos, newPos);
+        });
+        return;
+      }
+    }
+
     if (shortcuts) {
       // Find the last word before the cursor
       const match = textBefore.match(/(\S+)$/);
@@ -2975,6 +2993,17 @@ export default function SheetDetail({
       pendingHeadingTo,
       pendingPlacements,
     ]
+  );
+  // Names already introduced in full anywhere on the sheet — saved rows AND
+  // the text open for editing — so a card's inserted sentence refers to
+  // someone already introduced by their short name only.
+  const usedBracketCodesWithDraft = useMemo(
+    () =>
+      computeUsedBracketCodes([
+        ...(rows ?? []),
+        { observation: openDraft?.text },
+      ]),
+    [rows, openDraft?.text]
   );
   // A row just created by tapping a continuity card: its observation opens
   // for editing so the next tap adds to it (see EditableCell autoEdit).
@@ -5136,6 +5165,9 @@ export default function SheetDetail({
                 ]
               : [];
             const hasAnyField = fields.some(f => f.value);
+            // The cards below word names against everything written so far,
+            // including the unsaved text.
+            const usedBracketCodes = usedBracketCodesWithDraft;
             const hasEntityChips = !!(entityChips && entityChips.length > 0);
             // Continuity chips — same underlying "pending" data as the RS
             // Quick Entry map popup's continuity chips (see the queries

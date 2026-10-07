@@ -13,6 +13,7 @@ import {
 } from "@shared/vehicleEventPatterns";
 import { DivIconOverlay, wasAnyMarkerJustTapped } from "@/lib/divIconOverlay";
 import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
+import { detectUnidentifiedRepeat } from "@shared/unidentified";
 import {
   locateTargetFromPending,
   samePlace,
@@ -2371,6 +2372,16 @@ export default function IntelligenceMapping() {
   const rsUsedBracketCodes = useMemo(
     () => computeUsedBracketCodes(rsInlineRows ?? []),
     [rsInlineRows]
+  );
+  // Names already introduced in full on the sheet AND in the unsaved text in
+  // the box — a card's inserted sentence uses short names for those.
+  const rsUsedBracketCodesWithDraft = useMemo(
+    () =>
+      computeUsedBracketCodes([
+        ...(rsInlineRows ?? []),
+        { observation: rsInlineText },
+      ]),
+    [rsInlineRows, rsInlineText]
   );
   const rsUsedVehicleRegos = useMemo(
     () => computeUsedVehicleRegos(rsInlineRows ?? []),
@@ -7224,7 +7235,7 @@ export default function IntelligenceMapping() {
       if (match) {
         const occupantDesc = shortenAlreadyMentionedNames(
           match.occupantDesc,
-          rsUsedBracketCodes
+          rsUsedBracketCodesWithDraft
         );
         const arriveAddr = rsAddressMentionedData?.mentioned
           ? rsQeShortAddr
@@ -7249,7 +7260,7 @@ export default function IntelligenceMapping() {
       if (match) {
         const occupantDesc = shortenAlreadyMentionedNames(
           match.occupantDesc,
-          rsUsedBracketCodes
+          rsUsedBracketCodesWithDraft
         );
         return `Vehicle ${match.rego}, ${occupantDesc}, departed ${rsQeShortAddr} and continued via:`;
       }
@@ -11687,6 +11698,34 @@ export default function IntelligenceMapping() {
                                 const textarea = e.currentTarget;
                                 const pos = textarea.selectionStart ?? 0;
                                 const textBefore = rsInlineText.slice(0, pos);
+                                // An unidentified person already introduced in
+                                // full is only referred to by the short name:
+                                // finishing the full wording again becomes
+                                // "UM1".
+                                const unidentifiedRepeat =
+                                  e.key === " " && rsUsedBracketCodes
+                                    ? detectUnidentifiedRepeat(
+                                        rsInlineText,
+                                        pos,
+                                        rsUsedBracketCodes
+                                      )
+                                    : null;
+                                if (unidentifiedRepeat) {
+                                  e.preventDefault();
+                                  pushInlineUndo(rsInlineText);
+                                  setRsInlineText(
+                                    `${rsInlineText.slice(0, unidentifiedRepeat.start)}${unidentifiedRepeat.code} ${rsInlineText.slice(pos)}`
+                                  );
+                                  resetInlineTimer();
+                                  requestAnimationFrame(() => {
+                                    const newPos =
+                                      unidentifiedRepeat.start +
+                                      unidentifiedRepeat.code.length +
+                                      1;
+                                    textarea.setSelectionRange(newPos, newPos);
+                                  });
+                                  return;
+                                }
                                 const match = textBefore.match(/(\S+)$/);
                                 let expanded = false;
                                 if (match) {
@@ -12345,7 +12384,7 @@ export default function IntelligenceMapping() {
                               const names = (n: string) =>
                                 shortenAlreadyMentionedNames(
                                   n,
-                                  rsUsedBracketCodes
+                                  rsUsedBracketCodesWithDraft
                                 );
                               const cards: ContinuityCardData[] = [];
 

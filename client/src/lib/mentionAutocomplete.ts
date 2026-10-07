@@ -6,6 +6,10 @@
  * and the map's RS Quick Entry popup (IntelligenceMapping.tsx), so the
  * trigger/suppression behaviour is identical on both surfaces.
  */
+import {
+  shortenRepeatedUnidentified,
+  usedUnidentifiedCodes,
+} from "@shared/unidentified";
 
 /** CSS properties that affect text layout/wrapping — copied onto the mirror
  * element getCaretPixelPosition uses to measure where the caret actually
@@ -346,7 +350,9 @@ export interface PersonMentionSuggestion {
 export function computeUsedBracketCodes(
   rows: Array<{ observation?: string | null }>
 ): Set<string> {
-  const codes = new Set<string>();
+  // An unidentified person written in full ("unidentified male (UM1)") has
+  // introduced their short name too.
+  const codes = usedUnidentifiedCodes(rows);
   const bracketRe = /\(([A-Z][A-Za-z'.\s-]{0,39})\)/g;
   for (const r of rows) {
     if (!r.observation) continue;
@@ -452,7 +458,7 @@ export function shortenAlreadyMentionedNames(
   text: string,
   usedBracketCodes: Set<string>
 ): string {
-  return text.replace(
+  return shortenRepeatedUnidentified(text, usedBracketCodes).replace(
     /(?:[A-Z][a-zA-Z'-]*\s+)+\(([A-Z][A-Z'-]*)\)/g,
     (match, code: string) =>
       usedBracketCodes.has(code.toUpperCase()) ? code : match

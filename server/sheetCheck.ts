@@ -59,6 +59,7 @@ import {
 import { scanIntelligenceEntities } from "./intelligenceScan";
 import { findFuzzyMatches, DEFAULT_FUZZY_THRESHOLD } from "./fuzzyMatch";
 import { aliasMentionCompatible } from "./personAliasMatch";
+import { findUnidentifiedMentions } from "@shared/unidentified";
 
 export type SheetCheckCategory =
   | "formatting"
@@ -1052,6 +1053,57 @@ function checkPunctuationSpacing(
   return findings;
 }
 
+// ── Unidentified people — full wording repeated after the first mention ───
+
+// "unidentified male (UM1)" is written in full once; after that the person is
+// only ever "UM1" (the same first-mention-full rule every other entity
+// follows). Flags each later full mention, in row order, with a one-tap fix.
+// The fix replaces the first occurrence of `wrong` in the row, so when the row
+// holds the same full mention more than once `wrong` is widened with the text
+// in front of it until it is unique.
+export function checkRepeatedUnidentified(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
+  const findings: SheetCheckFinding[] = [];
+  const introduced = new Set<string>();
+  const ordered = [...rows].sort(
+    (a, b) => (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0) || a.rowId - b.rowId
+  );
+  for (const row of ordered) {
+    for (const m of findUnidentifiedMentions(row.observation)) {
+      if (!introduced.has(m.code)) {
+        introduced.add(m.code);
+        continue;
+      }
+      let from = m.start;
+      let wrong = row.observation.slice(from, m.end);
+      while (
+        from > 0 &&
+        row.observation.indexOf(wrong) !== row.observation.lastIndexOf(wrong)
+      ) {
+        from = Math.max(0, from - 5);
+        wrong = row.observation.slice(from, m.end);
+      }
+      const start = Math.max(0, m.start - 30);
+      const end = Math.min(row.observation.length, m.end + 31);
+      findings.push({
+        ruleId: "unidentified-full-repeat",
+        category: "formatting",
+        reason: `${m.code} was already introduced in full earlier — from then on this person is referred to as ${m.code}.`,
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        snippet: `${start > 0 ? "…" : ""}${row.observation.slice(start, end)}${end < row.observation.length ? "…" : ""}`,
+        suggestedFix: {
+          wrong,
+          correct: wrong.slice(0, m.start - from) + m.code,
+        },
+        findingKey: `ROW_${row.rowId}::UNIDENTIFIED::${m.code}::${m.start}`,
+      });
+    }
+  }
+  return findings;
+}
+
 // ── Spelling — a curated list of common, unambiguous English misspellings ─
 
 // Deliberately not exhaustive and deliberately not a general dictionary —
@@ -1409,6 +1461,7 @@ export async function checkRunningSheet(
   const sharedBracketPeople = findSharedBracketPeople(rows);
   const bareAddressConsistency = checkBareAddressConsistency(rows);
   const punctuationSpacing = checkPunctuationSpacing(rows);
+  const repeatedUnidentified = checkRepeatedUnidentified(rows);
   const bareVehicleEntities = findSheetBareVehicleEntities(
     sheetId,
     rows,
@@ -1433,6 +1486,7 @@ export async function checkRunningSheet(
     ...bracketBalance,
     ...sharedBracketPeople,
     ...punctuationSpacing,
+    ...repeatedUnidentified,
     ...consistency,
     ...bareAddressConsistency,
     ...spelling,

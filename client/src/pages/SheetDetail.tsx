@@ -5306,11 +5306,22 @@ export default function SheetDetail({
                   ]
                 : outOfSight && arrivalPeople.length > 0
                   ? [
-                      {
-                        key: `wov-oos-${rego}`,
-                        label: "Walked out to vehicle",
-                        text: `${oosNames} exited ${a.address} and walked towards Vehicle ${rego}.`,
-                      },
+                      // Back to any vehicle parked at this address, this one
+                      // first.
+                      ...[
+                        a,
+                        ...(pendingArrivals ?? []).filter(
+                          o =>
+                            o.rego !== a.rego && sameAddr(o.address, a.address)
+                        ),
+                      ].map((o, _i, all) => ({
+                        key: `wov-oos-${rego}-${o.rego}`,
+                        label:
+                          all.length > 1
+                            ? `Walked out to ${o.rego}`
+                            : "Walked out to vehicle",
+                        text: `${oosNames} exited ${a.address} and walked towards Vehicle ${o.rego}.`,
+                      })),
                       {
                         key: `la-oos-${rego}`,
                         label: "Walked away",

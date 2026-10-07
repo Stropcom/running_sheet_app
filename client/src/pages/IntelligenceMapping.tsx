@@ -12249,12 +12249,21 @@ export default function IntelligenceMapping() {
                                   // Walk out to the vehicle or on elsewhere,
                                   // ahead of Vehicle departing.
                                   actions.unshift(
-                                    {
-                                      key: `wov-oos-${v.rego}`,
-                                      label: "Walked out to vehicle",
-                                      mode: "paragraph",
-                                      text: `${oosNames} exited ${shortAddr} and walked towards Vehicle ${v.rego}.`,
-                                    },
+                                    ...Array.from(here.values())
+                                      .sort(
+                                        (x, y) =>
+                                          Number(y.rego === v.rego) -
+                                          Number(x.rego === v.rego)
+                                      )
+                                      .map((o, _i, all) => ({
+                                        key: `wov-oos-${v.rego}-${o.rego}`,
+                                        label:
+                                          all.length > 1
+                                            ? `Walked out to ${o.rego}`
+                                            : "Walked out to vehicle",
+                                        mode: "paragraph" as const,
+                                        text: `${oosNames} exited ${shortAddr} and walked towards Vehicle ${o.rego}.`,
+                                      })),
                                     {
                                       key: `la-oos-${v.rego}`,
                                       label: "Walked away",

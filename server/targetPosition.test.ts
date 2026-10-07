@@ -114,7 +114,11 @@ describe("locateTarget — BAIG's night", () => {
         arrived,
         "BAIG exited the vehicle and walked towards 13 Denford Street."
       )
-    ).toMatchObject({ place: "77 Reynolds Rd", state: "walking" });
+    ).toMatchObject({
+      place: "77 Reynolds Rd",
+      state: "walking",
+      label: "departed on foot",
+    });
   });
 
   it("null when the target is never mentioned", () => {

@@ -113,7 +113,7 @@ export function locateTarget(
     found.push({
       place: fromVehicle ?? null,
       state: "walking",
-      label: "walking",
+      label: "departed on foot",
       people: targetFirst(splitPeopleNames(h.names), t),
       rowId: h.rowId,
     });

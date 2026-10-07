@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   locateTarget,
   samePlace,
+  shortUnidentified,
   vehiclesPeopleCanReach,
   type TargetPositionInput,
 } from "@shared/targetPosition";
@@ -278,5 +279,24 @@ describe("extractDepartureAddress tolerates a doubled and", () => {
         "Vehicle 1EXP123, BAIG, departed Dôme Café - Deep Water Point and and continued via:"
       )
     ).toBe("Dôme Café - Deep Water Point");
+  });
+});
+
+describe("shortUnidentified", () => {
+  it("shows the short bracketed name for an unidentified person", () => {
+    expect(shortUnidentified("unidentified male (UM1)")).toBe("UM1");
+    expect(
+      shortUnidentified("BAIG, unidentified female (UF2) · departed in 1EXP123")
+    ).toBe("BAIG, UF2 · departed in 1EXP123");
+    expect(shortUnidentified("Unidentified child (UC1) and BAIG")).toBe(
+      "UC1 and BAIG"
+    );
+  });
+
+  it("leaves ordinary names alone", () => {
+    expect(shortUnidentified("Haris Imran BAIG (BAIG)")).toBe(
+      "Haris Imran BAIG (BAIG)"
+    );
+    expect(shortUnidentified("BAIG and JONES")).toBe("BAIG and JONES");
   });
 });

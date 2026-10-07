@@ -31,6 +31,7 @@
  */
 import { useRef, useState } from "react";
 import { ChevronDown, MapPin, X } from "lucide-react";
+import { shortUnidentified } from "@shared/targetPosition";
 
 export interface ContinuityAction {
   key: string;
@@ -135,7 +136,7 @@ export function ContinuityCards({
             aria-label={`Track ${c.title} again`}
             className="rounded-full border border-dashed border-border px-2.5 py-0.5 font-mono text-[11px] hover:border-solid hover:text-foreground"
           >
-            {c.title} · track again
+            {shortUnidentified(c.title)} · track again
           </button>
         ))}
       </div>
@@ -149,10 +150,11 @@ export function ContinuityCards({
   // what is being tracked.
   const lead = others[0];
   const needsAttention = live.some(c => c.attn || c.warn);
-  const summary =
+  const summaryRaw =
     lead?.isTarget && lead.locus
       ? `${(lead.people ?? []).join(", ") || lead.title} · ${lead.locus.headline} · ${lead.locus.sub}`
       : live.map(c => `${c.title} ${c.pill}`).join(" · ");
+  const summary = shortUnidentified(summaryRaw);
 
   // Panoramic when there is room: a lone card from a medium-wide band, two
   // cards from a wide one. Static class strings so Tailwind can see them.
@@ -263,7 +265,7 @@ export function ContinuityCards({
                   >
                     <div className={`flex items-center gap-2 pr-7 ${idCls}`}>
                       <span className="font-mono text-[13px] font-semibold break-all">
-                        {c.title}
+                        {shortUnidentified(c.title)}
                       </span>
                       <span
                         className={`whitespace-nowrap rounded-full px-2 text-[10px] font-bold ${
@@ -278,8 +280,10 @@ export function ContinuityCards({
                     <div
                       className={`min-w-0 text-[11.5px] leading-snug ${infoCls}`}
                     >
-                      <div>{c.who}</div>
-                      <div className="text-muted-foreground">{c.state}</div>
+                      <div>{shortUnidentified(c.who)}</div>
+                      <div className="text-muted-foreground">
+                        {shortUnidentified(c.state)}
+                      </div>
                       {c.warn && (
                         <div className="mt-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-amber-700 dark:text-amber-400">
                           {c.warn}

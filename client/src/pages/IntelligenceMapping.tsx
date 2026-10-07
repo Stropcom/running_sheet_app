@@ -16,6 +16,7 @@ import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
 import {
   locateTargetFromPending,
   samePlace,
+  shortUnidentified,
   TARGET_EMOJI,
   vehiclesPeopleCanReach,
 } from "@shared/targetPosition";
@@ -4984,7 +4985,9 @@ export default function IntelligenceMapping() {
       ).toUpperCase();
       // Everyone with him (the vehicle's occupants, or those inside /
       // walking with him), the target first — as on the tracker card.
-      label.textContent = `${pos.people.length ? pos.people.join(", ") : who} · ${pos.label}`;
+      label.textContent = shortUnidentified(
+        `${pos.people.length ? pos.people.join(", ") : who} · ${pos.label}`
+      );
       pill.appendChild(em);
       pill.appendChild(label);
       const stem = document.createElement("div");

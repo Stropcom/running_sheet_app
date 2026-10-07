@@ -271,3 +271,14 @@ export function vehiclesPeopleCanReach<
   if (!anchor) return args.arrivals;
   return args.arrivals.filter(a => !a.address || samePlace(a.address, anchor));
 }
+
+/** For display on the cards and the map flag: "unidentified male (UM1)" is
+ * shown as its short bracketed name, "UM1" (likewise UF2, UC1 ...). Only a
+ * display change — the sentences the cards insert keep the officer's wording
+ * (and the app-wide first-mention-full rule). */
+export function shortUnidentified(text: string): string {
+  return text.replace(
+    /\bunidentified\s+(?:male|female|child|person|adult|juvenile|youth)\b[^()\n]*\(\s*([A-Za-z]{1,3}\d+)\s*\)/gi,
+    (_m, code: string) => code.toUpperCase()
+  );
+}

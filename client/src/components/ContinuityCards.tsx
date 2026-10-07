@@ -11,6 +11,10 @@
  * format as the rest. Continuity exists to track the target, so that card is
  * never hidden by a dismissal and has no ×.
  *
+ * The band is a dropdown panel like the TEAM and TARGET ones: it starts
+ * closed, and open/closed is remembered per person on that device. Closed, a
+ * line under the header still says where the target is.
+ *
  * Layout adapts to the room the band actually has (container queries, not
  * device sniffing): one or two cards on a wide band go panoramic, three or
  * more sit side by side, and on a narrow band they swipe sideways.
@@ -26,7 +30,7 @@
  * returns by itself if a newer row about the same vehicle/people is logged.
  */
 import { useRef, useState } from "react";
-import { X } from "lucide-react";
+import { ChevronDown, MapPin, X } from "lucide-react";
 
 export interface ContinuityAction {
   key: string;
@@ -71,9 +75,9 @@ export interface ContinuityCardData {
   warn?: string;
 }
 
-// Whether the band is folded away is a per-person view preference, unlike
-// dismissal below, which is shared.
-const COLLAPSE_KEY = "runsheet_continuity_cards_collapsed";
+// Whether the panel is open is a per-person view preference, unlike
+// dismissal below, which is shared. Closed until the person opens it.
+const EXPANDED_KEY = "runsheet_continuity_cards_expanded";
 
 export function ContinuityCards({
   cards,
@@ -93,9 +97,9 @@ export function ContinuityCards({
   /** True while an action is being saved. */
   busy?: boolean;
 }) {
-  const [collapsed, setCollapsed] = useState(() => {
+  const [expanded, setExpanded] = useState(() => {
     try {
-      return localStorage.getItem(COLLAPSE_KEY) === "1";
+      return localStorage.getItem(EXPANDED_KEY) === "1";
     } catch {
       return false;
     }
@@ -138,8 +142,17 @@ export function ContinuityCards({
     ) : null;
 
   if (live.length === 0) {
-    return <div className="mt-2">{untracked}</div>;
+    return untracked ? <div className="mt-2">{untracked}</div> : null;
   }
+
+  // The closed header's one-line answer: where the target is, or failing that
+  // what is being tracked.
+  const lead = others[0];
+  const needsAttention = live.some(c => c.attn || c.warn);
+  const summary =
+    lead?.isTarget && lead.locus
+      ? `${(lead.people ?? []).join(", ") || lead.title} · ${lead.locus.headline} · ${lead.locus.sub.replace(/^Departed\s*/, "departed ")}`
+      : live.map(c => `${c.title} ${c.pill}`).join(" · ");
 
   // Panoramic when there is room: a lone card from a medium-wide band, two
   // cards from a wide one. Static class strings so Tailwind can see them.
@@ -181,145 +194,160 @@ export function ContinuityCards({
         : "";
 
   return (
-    <div className="@container mt-2 flex flex-col gap-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-            Target tracker
-          </span>
-          <span className="rounded-full bg-pink-500 px-1.5 text-[10px] font-semibold text-white">
-            {live.length}
-          </span>
+    <div className="mt-2 overflow-hidden rounded-lg border border-border bg-card/60">
+      <button
+        type="button"
+        onMouseDown={e => e.preventDefault()}
+        onClick={() => {
+          const next = !expanded;
+          setExpanded(next);
+          try {
+            localStorage.setItem(EXPANDED_KEY, next ? "1" : "0");
+          } catch {
+            /* ignore */
+          }
+        }}
+        aria-expanded={expanded}
+        className="flex w-full min-w-0 select-none items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-muted/20 active:bg-muted/30"
+      >
+        <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <span className="flex-1 truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Target tracker
+        </span>
+        <span className="rounded-full bg-pink-500 px-1.5 text-[10px] font-semibold leading-4 text-white">
+          {live.length}
+        </span>
+        <ChevronDown
+          className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${
+            expanded ? "" : "-rotate-90"
+          }`}
+        />
+      </button>
+      {!expanded && (
+        <div className="flex items-start gap-1.5 px-4 pb-3 pl-[2.375rem] text-[11.5px] leading-snug">
+          <span
+            className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
+              needsAttention ? "bg-amber-500" : "bg-emerald-500"
+            }`}
+          />
+          <span className="min-w-0 break-words font-mono">{summary}</span>
         </div>
-        <button
-          type="button"
-          onMouseDown={e => e.preventDefault()}
-          onClick={() => {
-            const next = !collapsed;
-            setCollapsed(next);
-            try {
-              localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
-            } catch {
-              /* ignore */
-            }
-          }}
-          aria-expanded={!collapsed}
-          className="rounded-md border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
-        >
-          {collapsed ? "Show" : "Hide"}
-        </button>
-      </div>
+      )}
 
-      {!collapsed && others.length > 0 && (
-        <>
-          <div
-            ref={scrollRef}
-            onScroll={e => {
-              const el = e.currentTarget;
-              const first = el.firstElementChild as HTMLElement | null;
-              if (!first) return;
-              setActiveDot(
-                Math.round(
-                  el.scrollLeft / (first.getBoundingClientRect().width + 8)
-                )
-              );
-            }}
-            className={`${gridCls} @max-md:flex @max-md:snap-x @max-md:snap-mandatory @max-md:overflow-x-auto @max-md:pb-1`}
-          >
-            {others.map(c => (
+      {expanded && (
+        <div className="@container flex flex-col gap-1.5 px-4 pb-3">
+          {others.length > 0 && (
+            <>
               <div
-                key={c.key}
-                className={`relative flex min-w-0 flex-col gap-2 rounded-lg border p-2.5 @max-md:shrink-0 @max-md:basis-[84%] @max-md:snap-start ${
-                  c.attn
-                    ? "border-amber-500/40 bg-amber-500/10"
-                    : "border-border bg-card"
-                } ${cardCls}`}
+                ref={scrollRef}
+                onScroll={e => {
+                  const el = e.currentTarget;
+                  const first = el.firstElementChild as HTMLElement | null;
+                  if (!first) return;
+                  setActiveDot(
+                    Math.round(
+                      el.scrollLeft / (first.getBoundingClientRect().width + 8)
+                    )
+                  );
+                }}
+                className={`${gridCls} @max-md:flex @max-md:snap-x @max-md:snap-mandatory @max-md:overflow-x-auto @max-md:pb-1`}
               >
-                <div className={`flex items-center gap-2 pr-8 ${idCls}`}>
-                  <span className="font-mono text-[13px] font-semibold break-all">
-                    {c.title}
-                  </span>
-                  <span
-                    className={`whitespace-nowrap rounded-full px-2 text-[10px] font-bold ${
+                {others.map(c => (
+                  <div
+                    key={c.key}
+                    className={`relative flex min-w-0 flex-col gap-2 rounded-lg border p-2.5 @max-md:shrink-0 @max-md:basis-[84%] @max-md:snap-start ${
                       c.attn
-                        ? "border border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                        : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                    }`}
+                        ? "border-amber-500/40 bg-amber-500/10"
+                        : "border-border bg-card"
+                    } ${cardCls}`}
                   >
-                    {c.pill}
-                  </span>
-                </div>
-                <div
-                  className={`min-w-0 text-[11.5px] leading-snug ${infoCls}`}
-                >
-                  <div>{c.who}</div>
-                  <div className="text-muted-foreground">{c.state}</div>
-                  {c.warn && (
-                    <div className="mt-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-amber-700 dark:text-amber-400">
-                      {c.warn}
+                    <div className={`flex items-center gap-2 pr-8 ${idCls}`}>
+                      <span className="font-mono text-[13px] font-semibold break-all">
+                        {c.title}
+                      </span>
+                      <span
+                        className={`whitespace-nowrap rounded-full px-2 text-[10px] font-bold ${
+                          c.attn
+                            ? "border border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                            : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                        }`}
+                      >
+                        {c.pill}
+                      </span>
                     </div>
-                  )}
-                </div>
-                <div
-                  className={`mt-auto grid gap-1.5 ${
-                    // A lone action is only as wide as its text (plus a small
-                    // buffer), not stretched across the card.
-                    c.actions.length === 1 ? "w-fit flex-none" : actsCls
-                  }`}
-                >
-                  {c.actions.map(a => (
-                    <button
-                      key={a.key}
-                      type="button"
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={() => onAction(a.text, a.mode)}
-                      disabled={busy}
-                      title={a.text}
-                      className="cursor-pointer disabled:cursor-wait disabled:opacity-60 rounded-md border border-pink-500/30 bg-pink-500/5 px-2.5 py-1.5 text-left font-mono text-[11px] font-semibold text-pink-500 transition-all hover:bg-pink-500/15 active:scale-[0.98] @max-xl:py-2 @max-xl:text-xs"
+                    <div
+                      className={`min-w-0 text-[11.5px] leading-snug ${infoCls}`}
                     >
-                      {a.label}
-                    </button>
+                      <div>{c.who}</div>
+                      <div className="text-muted-foreground">{c.state}</div>
+                      {c.warn && (
+                        <div className="mt-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-amber-700 dark:text-amber-400">
+                          {c.warn}
+                        </div>
+                      )}
+                    </div>
+                    <div
+                      className={`mt-auto grid gap-1.5 ${
+                        // A lone action is only as wide as its text (plus a small
+                        // buffer), not stretched across the card.
+                        c.actions.length === 1 ? "w-fit flex-none" : actsCls
+                      }`}
+                    >
+                      {c.actions.map(a => (
+                        <button
+                          key={a.key}
+                          type="button"
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => onAction(a.text, a.mode)}
+                          disabled={busy}
+                          title={a.text}
+                          className="cursor-pointer disabled:cursor-wait disabled:opacity-60 rounded-md border border-pink-500/30 bg-pink-500/5 px-2.5 py-1.5 text-left font-mono text-[11px] font-semibold text-pink-500 transition-all hover:bg-pink-500/15 active:scale-[0.98] @max-xl:py-2 @max-xl:text-xs"
+                        >
+                          {a.label}
+                        </button>
+                      ))}
+                    </div>
+                    {!c.isTarget && (
+                      <button
+                        type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => onDismiss(c.key, c.latestRowId)}
+                        aria-label={`Stop tracking ${c.title}`}
+                        title={`Stop tracking ${c.title}`}
+                        className={`absolute right-1 grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground ${
+                          pano === "one"
+                            ? "top-1 @lg:top-1/2 @lg:-translate-y-1/2"
+                            : pano === "two"
+                              ? "top-1 @3xl:top-1/2 @3xl:-translate-y-1/2"
+                              : "top-1"
+                        }`}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {others.length > 1 && (
+                <div
+                  className="hidden justify-center gap-1.5 @max-md:flex"
+                  aria-hidden
+                >
+                  {others.map((c, i) => (
+                    <i
+                      key={c.key}
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        i === activeDot ? "bg-emerald-500" : "bg-border"
+                      }`}
+                    />
                   ))}
                 </div>
-                {!c.isTarget && (
-                  <button
-                    type="button"
-                    onMouseDown={e => e.preventDefault()}
-                    onClick={() => onDismiss(c.key, c.latestRowId)}
-                    aria-label={`Stop tracking ${c.title}`}
-                    title={`Stop tracking ${c.title}`}
-                    className={`absolute right-1 grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground ${
-                      pano === "one"
-                        ? "top-1 @lg:top-1/2 @lg:-translate-y-1/2"
-                        : pano === "two"
-                          ? "top-1 @3xl:top-1/2 @3xl:-translate-y-1/2"
-                          : "top-1"
-                    }`}
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-          {others.length > 1 && (
-            <div
-              className="hidden justify-center gap-1.5 @max-md:flex"
-              aria-hidden
-            >
-              {others.map((c, i) => (
-                <i
-                  key={c.key}
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    i === activeDot ? "bg-emerald-500" : "bg-border"
-                  }`}
-                />
-              ))}
-            </div>
+              )}
+            </>
           )}
-        </>
+          {untracked}
+        </div>
       )}
-      {untracked}
     </div>
   );
 }

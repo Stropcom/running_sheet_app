@@ -37,6 +37,7 @@ import {
   locateTargetFromPending,
   samePlace,
   TARGET_EMOJI,
+  vehiclesPeopleCanReach,
 } from "@shared/targetPosition";
 import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
 import {
@@ -5235,6 +5236,19 @@ export default function SheetDetail({
                 names: extractOccupantNames(d.occupantDesc),
               })),
             ];
+            // Parked vehicles people on foot could walk to: only those at the
+            // address their latest vehicle journey ended (see
+            // vehiclesPeopleCanReach), not ones left behind earlier.
+            const reachableVehicles = (people: string, fallbackPlace: string) =>
+              vehiclesPeopleCanReach({
+                people,
+                arrivals: (pendingArrivals ?? []).map(a => ({
+                  ...a,
+                  names: extractOccupantNames(a.occupantDesc),
+                })),
+                placements: pendingPlacements ?? [],
+                fallbackPlace,
+              });
             const vehicleOccupants = (
               desc: string,
               rego: string,
@@ -5513,7 +5527,7 @@ export default function SheetDetail({
                   actions: [
                     ...cardAction(chip, "Left address"),
                     // Back to a parked vehicle from here.
-                    ...(pendingArrivals ?? []).map(a => ({
+                    ...reachableVehicles(w.names, w.location).map(a => ({
                       key: `wov-${w.location}-${a.rego}`,
                       label: `Walked to ${a.rego}`,
                       text: `${shortenAlreadyMentionedNames(w.names, usedBracketCodes)} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
@@ -5565,7 +5579,7 @@ export default function SheetDetail({
                     label: "Walked to another location",
                     text: `${walkers} walked [route] towards [location].`,
                   },
-                  ...(pendingArrivals ?? []).map(a => ({
+                  ...reachableVehicles(h.names, h.from).map(a => ({
                     key: `wv-${a.rego}`,
                     label: `Walked to ${a.rego}`,
                     text: `${walkers} walked towards Vehicle ${a.rego}.`,

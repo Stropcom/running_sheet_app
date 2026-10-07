@@ -231,3 +231,43 @@ export function locateTargetFromPending(args: {
     placements: args.placements,
   });
 }
+
+/**
+ * The parked vehicles people on foot could plausibly walk to. A vehicle left
+ * behind at an earlier address is not an option once those people have moved
+ * on by vehicle: the vehicles that count are the ones at the address where
+ * their latest vehicle journey ended — the newest arrival that names them (or
+ * a vehicle they were logged walking to / getting into). With no vehicle
+ * history at all, only vehicles at the place they are at ( `fallbackPlace` )
+ * count. Vehicles with no address written are always kept.
+ */
+export function vehiclesPeopleCanReach<
+  T extends { rego: string; address: string; rowId: number },
+>(args: {
+  /** The people on foot, as written. */
+  people: string;
+  /** Parked vehicles with their occupants already stripped to names. */
+  arrivals: (T & { names: string })[];
+  placements: { name: string; rego: string; rowId: number }[];
+  fallbackPlace?: string | null;
+}): T[] {
+  const tokens = new Set(surnameTokens(args.people));
+  const hit = (s: string) => surnameTokens(s).some(t => tokens.has(t));
+  const events: { rowId: number; address: string }[] = [];
+  for (const a of args.arrivals) {
+    if (hit(a.names)) events.push({ rowId: a.rowId, address: a.address });
+  }
+  for (const p of args.placements) {
+    if (!p.rego || !hit(p.name)) continue;
+    const v = args.arrivals.find(
+      a => a.rego.toUpperCase() === p.rego.toUpperCase()
+    );
+    if (v)
+      events.push({ rowId: Math.max(p.rowId, v.rowId), address: v.address });
+  }
+  const anchor = events.length
+    ? events.reduce((a, b) => (b.rowId > a.rowId ? b : a)).address
+    : (args.fallbackPlace ?? null);
+  if (!anchor) return args.arrivals;
+  return args.arrivals.filter(a => !a.address || samePlace(a.address, anchor));
+}

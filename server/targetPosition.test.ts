@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   locateTarget,
   samePlace,
+  vehiclesPeopleCanReach,
   type TargetPositionInput,
 } from "@shared/targetPosition";
 import {
@@ -143,5 +144,74 @@ describe("samePlace", () => {
       true
     );
     expect(samePlace("77 Reynolds Rd", "21 Leach Avenue")).toBe(false);
+  });
+});
+
+describe("vehiclesPeopleCanReach", () => {
+  const reynolds = {
+    rego: "1HIB84",
+    address: "77 Reynolds Rd",
+    rowId: 5,
+    names: "BAIG",
+  };
+  const goldsbrough = {
+    rego: "1ORB419",
+    address: "1 Goldsbrough Street",
+    rowId: 8,
+    names: "BAIG JONES",
+  };
+
+  it("only vehicles where their latest vehicle journey ended", () => {
+    const r = vehiclesPeopleCanReach({
+      people: "BAIG JONES",
+      arrivals: [reynolds, goldsbrough],
+      placements: [],
+      fallbackPlace: "Chicho Gelato Fremantle",
+    });
+    expect(r.map(v => v.rego)).toEqual(["1ORB419"]);
+  });
+
+  it("keeps every vehicle at that same address", () => {
+    const other = {
+      rego: "1TG252",
+      address: "1 Goldsbrough Street",
+      rowId: 9,
+      names: "",
+    };
+    const r = vehiclesPeopleCanReach({
+      people: "BAIG",
+      arrivals: [reynolds, goldsbrough, other],
+      placements: [],
+    });
+    expect(r.map(v => v.rego).sort()).toEqual(["1ORB419", "1TG252"]);
+  });
+
+  it("follows a vehicle they were logged walking to", () => {
+    const unseen = { ...reynolds, names: "" };
+    const r = vehiclesPeopleCanReach({
+      people: "BAIG",
+      arrivals: [unseen, goldsbrough],
+      placements: [{ name: "BAIG", rego: "1HIB84", rowId: 20 }],
+    });
+    expect(r.map(v => v.rego)).toEqual(["1HIB84"]);
+  });
+
+  it("with no vehicle history, only vehicles at the place they are", () => {
+    const r = vehiclesPeopleCanReach({
+      people: "SMITH",
+      arrivals: [reynolds, goldsbrough],
+      placements: [],
+      fallbackPlace: "77 Reynolds Rd",
+    });
+    expect(r.map(v => v.rego)).toEqual(["1HIB84"]);
+  });
+
+  it("with nothing to go on, offers them all", () => {
+    const r = vehiclesPeopleCanReach({
+      people: "SMITH",
+      arrivals: [reynolds, goldsbrough],
+      placements: [],
+    });
+    expect(r).toHaveLength(2);
   });
 });

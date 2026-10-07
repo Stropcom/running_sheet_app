@@ -17,6 +17,7 @@ import {
   locateTargetFromPending,
   samePlace,
   TARGET_EMOJI,
+  vehiclesPeopleCanReach,
 } from "@shared/targetPosition";
 import {
   getMarkerDataUrl,
@@ -12371,6 +12372,27 @@ export default function IntelligenceMapping() {
                                   names: extractOccupantNames(d.occupantDesc),
                                 })),
                               ];
+                              // Parked vehicles people on foot could walk to:
+                              // only those at the address their latest
+                              // vehicle journey ended, not ones left behind
+                              // earlier (see vehiclesPeopleCanReach).
+                              const reachableVehicles = (
+                                people: string,
+                                fallbackPlace: string
+                              ) =>
+                                vehiclesPeopleCanReach({
+                                  people,
+                                  arrivals: (rsPendingArrivals ?? []).map(
+                                    a => ({
+                                      ...a,
+                                      names: extractOccupantNames(
+                                        a.occupantDesc
+                                      ),
+                                    })
+                                  ),
+                                  placements: rsPendingPlacements ?? [],
+                                  fallbackPlace,
+                                });
                               const vehicleOccupants = (
                                 desc: string,
                                 rego: string,
@@ -12704,7 +12726,10 @@ export default function IntelligenceMapping() {
                                         text: leftAddressText(w),
                                       },
                                       // Back to a parked vehicle from here.
-                                      ...(rsPendingArrivals ?? []).map(a => ({
+                                      ...reachableVehicles(
+                                        w.names,
+                                        w.location
+                                      ).map(a => ({
                                         key: `wov-${w.location}-${a.rego}`,
                                         label: `Walked to ${a.rego}`,
                                         text: `${names(w.names)} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
@@ -12770,11 +12795,13 @@ export default function IntelligenceMapping() {
                                         label: "Walked to another location",
                                         text: `${names(h.names)} walked [route] towards [location].`,
                                       },
-                                      ...(rsPendingArrivals ?? []).map(a => ({
-                                        key: `wv-${a.rego}`,
-                                        label: `Walked to ${a.rego}`,
-                                        text: `${names(h.names)} walked towards Vehicle ${a.rego}.`,
-                                      })),
+                                      ...reachableVehicles(h.names, h.from).map(
+                                        a => ({
+                                          key: `wv-${a.rego}`,
+                                          label: `Walked to ${a.rego}`,
+                                          text: `${names(h.names)} walked towards Vehicle ${a.rego}.`,
+                                        })
+                                      ),
                                     ],
                                     latestRowId: h.rowId,
                                   })

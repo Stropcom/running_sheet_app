@@ -4566,7 +4566,16 @@ export function extractEntitiesFromText(text: string): Array<{
     // description corruption it caused for an already-recorded row,
     // without altering the stored observation text itself.
     const placeholderCandidate = shortForm.replace(/^vehicle\s+/i, "").trim();
-    if (/^(?:U[MF]|YC|UCO)\d+$/i.test(placeholderCandidate)) continue;
+    if (/^(?:U[MFCP]|YC|UCO)\d+$/i.test(placeholderCandidate)) continue;
+    // Any "unidentified <male|female|child|person|adult|juvenile|youth>
+    // (CODE)" is a placeholder for someone who has not been identified, whatever
+    // short name it was given — never recorded in the Intelligence folder.
+    if (
+      /\bunidentified\s+(?:male|female|child|person|adult|juvenile|youth)\b[^()]*$/i.test(
+        fullDescription
+      )
+    )
+      continue;
 
     const lowerFull = fullDescription.toLowerCase();
     const lowerShort = shortForm.toLowerCase();

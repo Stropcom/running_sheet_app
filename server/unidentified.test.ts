@@ -156,3 +156,72 @@ describe("Check Sheet: repeated full mention", () => {
     expect(fixed).toBe("unidentified female (UF1) entered. Later UF1 left.");
   });
 });
+
+import { extractEntitiesFromText } from "./db";
+import { checkDoubleSpaces, findDoubleSpaces } from "./sheetCheck";
+
+describe("unidentified people never reach the Intelligence folder", () => {
+  it.each([
+    "BAIG and unidentified male (UM1) arrived.",
+    "BAIG and an unidentified female (UF2) arrived.",
+    "BAIG and an unidentified child (UC1) arrived.",
+    "BAIG and an unidentified person (UP1) arrived.",
+    "BAIG and an unidentified adult (UA1) arrived.",
+    "A young girl (UF1) arrived.",
+    "BAIG and unidentified male (UM1), driver, left.",
+  ])("%s", text => {
+    const found = extractEntitiesFromText(text).map(e => e.shortForm);
+    for (const code of ["UM1", "UF2", "UC1", "UP1", "UA1", "UF1"]) {
+      expect(found).not.toContain(code);
+    }
+  });
+
+  it("a real person beside them is still an entity", () => {
+    const found = extractEntitiesFromText(
+      "Jason JOHNSON (JOHNSON) and unidentified male (UM1) arrived."
+    ).map(e => e.shortForm);
+    expect(found.join(" ")).toContain("JOHNSON");
+    expect(found).not.toContain("UM1");
+  });
+});
+
+describe("Check Sheet: double spaces", () => {
+  const row = {
+    rowId: 7,
+    timeMinutes: 586,
+    observation:
+      "BAIG and UM1 exited the vehicle, walked across the road, entered  Kinky Lizard Cafe on Mews and continued out of sight.",
+  };
+
+  it("finds a double space between words only", () => {
+    expect(findDoubleSpaces("a  b")).toHaveLength(1);
+    expect(findDoubleSpaces("a b")).toHaveLength(0);
+    expect(findDoubleSpaces("line one\n  indented")).toHaveLength(0);
+    expect(findDoubleSpaces("trailing  ")).toHaveLength(0);
+  });
+
+  it("flags it with a one-tap fix to a single space", () => {
+    const [f] = checkDoubleSpaces([row]);
+    expect(f.ruleId).toBe("double-space");
+    const fixed = row.observation.replace(
+      f.suggestedFix!.wrong,
+      f.suggestedFix!.correct
+    );
+    expect(fixed).toContain("entered Kinky Lizard");
+    expect(fixed).not.toContain("  ");
+  });
+
+  it("fixes the right one when there are two", () => {
+    const two = {
+      ...row,
+      observation: "alpha  beta gamma delta  epsilon",
+    };
+    const [a, b] = checkDoubleSpaces([two]);
+    const once = two.observation.replace(
+      b.suggestedFix!.wrong,
+      b.suggestedFix!.correct
+    );
+    expect(once).toBe("alpha  beta gamma delta epsilon");
+    expect(a.suggestedFix!.wrong).not.toBe(b.suggestedFix!.wrong);
+  });
+});

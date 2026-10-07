@@ -33,8 +33,17 @@ import {
 } from "./vehicleEventPatterns";
 import { expandRowSegments } from "./rowSegments";
 
-export const WALK_IN_PATTERN =
-  /([A-Za-z][^.\n]*?)\s*exited the vehicle,?\s*(?:walked\s+(.+?),?\s*)?entered\s+(.+?)\s+and continued out of sight/i;
+// A vehicle as the officer refers to it when someone gets out: "the vehicle",
+// or by rego — "Vehicle 1EXP123", "Vehicle 1EXP123 (Vehicle 1EXP123)".
+const VEHICLE_REF =
+  "(?:the\\s+vehicle|\\(?Vehicle\\s+[A-Za-z0-9]{5,8}\\)?(?:\\s*\\(Vehicle\\s+[A-Za-z0-9]{5,8}\\))?)";
+
+export const WALK_IN_PATTERN = new RegExp(
+  "([A-Za-z][^.\\n]*?)\\s*exited\\s+" +
+    VEHICLE_REF +
+    ",?\\s*(?:walked\\s+(.+?),?\\s*)?entered\\s+(.+?)\\s+and continued out of sight",
+  "i"
+);
 
 // Alternate walk-in phrasing with no separate "entered <location>" clause —
 // the destination is folded straight into the route text instead ("...
@@ -48,8 +57,12 @@ export const WALK_IN_PATTERN =
 // Route/destination isn't cleanly separable here (there's no anchor clause
 // like "entered" to split on), so extractWalkInTowardsLocation below does
 // its own best-effort split off the single captured route clause.
-export const WALK_IN_TOWARDS_PATTERN =
-  /([A-Za-z][^.\n]*?)\s*exited the vehicle,?\s*walked\s+(.+?)\s+and continued out of sight/i;
+export const WALK_IN_TOWARDS_PATTERN = new RegExp(
+  "([A-Za-z][^.\\n]*?)\\s*exited\\s+" +
+    VEHICLE_REF +
+    ",?\\s*walked\\s+(.+?)\\s+and continued out of sight",
+  "i"
+);
 
 // Positional/connector phrases officers write between "towards" and the
 // actual address ("towards the front of 64 Matheson Road", "towards the
@@ -136,7 +149,7 @@ export const PERSON_ENTER_PATTERN =
   /([A-Za-z][^.\n]*?)\s*\bentered\s+(?!the\s+vehicle\b)(.+?)\s+and continued out of sight/i;
 
 export const PERSON_EXIT_PATTERN =
-  /([A-Za-z][^.\n]*?)\s*\bexited\s+(?!the\s+vehicle\b)(.+?)\s*,?\s*(?:and\s+)?walked\b([^.\n]*)/i;
+  /([A-Za-z][^.\n]*?)\s*\bexited\s+(?!the\s+vehicle\b|\(?Vehicle\s+[A-Za-z0-9]{5,8}\b)(.+?)\s*,?\s*(?:and\s+)?walked\b([^.\n]*)/i;
 
 // A walker already on foot: "BAIG walked [route] towards 13 Denford Street."
 // or "BAIG walked towards Vehicle 1ORB419." — no "exited" clause. A vehicle
@@ -165,7 +178,7 @@ export const PERSON_EXIT_ANY_PATTERN =
 // BAIG driver, departed X and continued via" — is excluded by the caller: its
 // names text names a Vehicle.)
 export const PERSON_EXIT_ONWARD_PATTERN =
-  /([A-Za-z][^.\n]*?)\s*\b(?:exited|departed|left|walked\s+out\s+of|came\s+out\s+of|emerged\s+from)\s+(?!the\s+vehicle\b)([A-Z0-9][^.\n]*?)\s*,?\s*(?:(?:and|then)\s+)*(?:continued|walking|walked|proceeded|headed|moved\s+on|went|on\s+foot)\b([^.\n]*)/;
+  /([A-Za-z][^.\n]*?)\s*\b(?:exited|departed|left|walked\s+out\s+of|came\s+out\s+of|emerged\s+from)\s+(?!the\s+vehicle\b|\(?Vehicle\s+[A-Za-z0-9]{5,8}\b)([A-Z0-9][^.\n]*?)\s*,?\s*(?:(?:and|then)\s+)*(?:continued|walking|walked|proceeded|headed|moved\s+on|went|on\s+foot)\b([^.\n]*)/;
 
 // Getting into a vehicle however it is worded: "entered the front passenger
 // seat of a red Ford Ranger, bearing WA registration 1EXP123 (Vehicle
@@ -200,8 +213,12 @@ function placeName(raw: string): string {
 // a parked vehicle and walked off (no entry yet). Same shape as an exit from an
 // address, with the vehicle as the place left. (With an "entered ..." clause
 // the row is a walk-in, handled by WALK_IN_PATTERN instead.)
-export const PERSON_EXIT_VEHICLE_WALK_PATTERN =
-  /([A-Za-z][^.\n]*?)\s*\bexited\s+the\s+vehicle\b,?\s*(?:and\s+)?walked\b([^.\n]*)/i;
+export const PERSON_EXIT_VEHICLE_WALK_PATTERN = new RegExp(
+  "([A-Za-z][^.\\n]*?)\\s*\\bexited\\s+" +
+    VEHICLE_REF +
+    ",?\\s*(?:and\\s+)?walked\\b([^.\\n]*)",
+  "i"
+);
 
 /** The walkers' names, with anything from an "exited"/"walked" clause on
  * cut off — a lazy capture can otherwise swallow the start of the same
@@ -280,6 +297,18 @@ const PRESENCE_VERB_RE =
 const INSIDE_PLACE_RE =
   /\b(?:inside|within)\s+(?:the\s+)?([A-Z0-9][^.;\n]*)|\bin\s+the\s+[a-z][a-z ]{1,40}?\s+(?:of|at)\s+(?:the\s+)?([A-Z0-9][^.;\n]*)/;
 
+/** The place from the text after "inside": anything that follows the place
+ * itself ("... with Jason JOHNSON (JOHNSON)", "... while ...", "... and
+ * spoke to ...") is cut off FIRST — otherwise a person's bracket
+ * ("(JOHNSON)") is read as the place's own short name. A place's own "and"
+ * ("Melville Fish and Chips") stays. */
+function presencePlace(raw: string): string {
+  const place = raw
+    .replace(/\s+(?:with|while|who|as|when|accompanied|together)\b.*$/i, "")
+    .replace(/\s+and\s+(?=[a-z]).*$/, "");
+  return placeName(place.trim()).trim();
+}
+
 /** Who is where, from a presence sentence; null when it isn't one. */
 export function matchPresenceInside(
   text: string
@@ -298,9 +327,7 @@ export function matchPresenceInside(
   if (!m) return null;
   const raw = (m[1] ?? m[2] ?? "").trim();
   if (!raw || /^\(?Vehicle\b/i.test(raw)) return null;
-  const place = placeName(raw)
-    .replace(/\s+(?:with|and|while|who|as|when)\b.*$/i, "")
-    .trim();
+  const place = presencePlace(raw);
   return place ? { names, place } : null;
 }
 
@@ -325,9 +352,7 @@ function matchBareInside(
     )
   )
     return null;
-  const place = placeName(m[2].trim())
-    .replace(/\s+(?:with|and|while|who|as|when)\b.*$/i, "")
-    .trim();
+  const place = presencePlace(m[2].trim());
   if (!place || place.startsWith("[")) return null;
   return { names, place };
 }
@@ -509,7 +534,11 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
 
     const inMatch = text.match(WALK_IN_PATTERN);
     if (inMatch) {
-      record(inMatch[1].trim(), inMatch[3].trim(), inMatch[2]?.trim() ?? "");
+      record(
+        inMatch[1].trim(),
+        bracketLabelOrSelf(inMatch[3].trim()),
+        inMatch[2]?.trim() ?? ""
+      );
       return;
     }
     const towardsMatch = text.match(WALK_IN_TOWARDS_PATTERN);
@@ -669,7 +698,9 @@ export function splitPeopleNames(names: string): string[] {
  * in capitals ("BAIG", "Denise HOLLY (HOLLY)"), so matching on those avoids
  * confusing two people who share a first name. */
 export function surnameTokens(name: string): string[] {
-  return name.match(/\b[A-Z][A-Z'-]+\b/g) ?? [];
+  // A surname (BAIG), or the short name of an unidentified person (UM1, UF2,
+  // UC1, UP1), which has a digit and so is not a plain capitalised word.
+  return name.match(/\b[A-Z][A-Z'-]+\b|\bU[MFCP]\d+\b/g) ?? [];
 }
 
 /**

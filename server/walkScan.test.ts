@@ -4,6 +4,7 @@ import {
   extractExitDestination,
   isReadAsMovement,
   matchPresenceInside,
+  surnameTokens,
   scanWalkEvents,
 } from "@shared/walkEventPatterns";
 
@@ -534,5 +535,53 @@ describe("walking back to a vehicle with no exit written", () => {
       )
     );
     expect(r.walkIns).toMatchObject([{ location: "Chicho Gelato Fremantle" }]);
+  });
+});
+
+describe("the Kinky Lizard sheet (BAIG and UM1)", () => {
+  const arrived =
+    "Vehicle 1EXP123, BAIG front passenger, unidentified male (UM1) driver, arrived at 902 Canning Highway, APPLECROSS WA (902 Canning Highway) and parked on the street.";
+  const exited =
+    "BAIG and UM1 exited Vehicle 1EXP123 (Vehicle 1EXP123), walked across the road, entered  Kinky Lizard Cafe on Mews, 28 Moreau Mews, APPLECROSS WA (Kinky Lizard Cafe on Mews) and continued out of sight.";
+  const seated =
+    "BAIG and UM1 seated inside Kinky Lizard Cafe on Mews with Jason JOHNSON (JOHNSON).";
+
+  it("treats UM1 as a person, like a surname", () => {
+    expect(surnameTokens("BAIG and UM1")).toEqual(["BAIG", "UM1"]);
+    expect(surnameTokens("unidentified female (UF2) and UC1")).toEqual([
+      "UF2",
+      "UC1",
+    ]);
+    // A rego or a vehicle code is not a person.
+    expect(surnameTokens("Vehicle 1EXP123, UB1")).toEqual([]);
+  });
+
+  it("leaving 'Vehicle <rego> (Vehicle <rego>)' is a walk-in at the café, both people", () => {
+    const r = scanWalkEvents(rows(arrived, exited));
+    expect(r.walkIns).toMatchObject([
+      { names: "BAIG and UM1", location: "Kinky Lizard Cafe on Mews" },
+    ]);
+  });
+
+  it("the sighting names the café, not the person with them", () => {
+    expect(matchPresenceInside(seated)).toEqual({
+      names: "BAIG and UM1",
+      place: "Kinky Lizard Cafe on Mews",
+    });
+    const r = scanWalkEvents(rows(arrived, exited, seated));
+    expect(r.walkIns).toMatchObject([
+      { location: "Kinky Lizard Cafe on Mews" },
+    ]);
+  });
+
+  it("a place's own 'and' is kept, a trailing clause is not", () => {
+    expect(
+      matchPresenceInside("BAIG seated inside Melville Fish and Chips.")
+    ).toEqual({ names: "BAIG", place: "Melville Fish and Chips" });
+    expect(
+      matchPresenceInside(
+        "BAIG seated inside Bull Creek Tavern and spoke to staff."
+      )
+    ).toEqual({ names: "BAIG", place: "Bull Creek Tavern" });
   });
 });

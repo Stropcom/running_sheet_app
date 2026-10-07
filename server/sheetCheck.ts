@@ -1053,6 +1053,62 @@ function checkPunctuationSpacing(
   return findings;
 }
 
+// ── Double spaces between words ───────────────────────────────────────────
+
+// Two or more spaces in a row in the middle of a line ("entered  Kinky Lizard")
+// — usually left behind when a chip or address was inserted next to a space
+// already there. One-tap fix to a single space. Only between words: leading
+// indentation and a trailing space are left alone. The fix replaces the first
+// occurrence of `wrong`, so it is widened with the text around it until it
+// is unique within the row.
+export function findDoubleSpaces(text: string): Array<{ index: number }> {
+  const out: Array<{ index: number }> = [];
+  const re = /(?<=\S)[ \t]{2,}(?=\S)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) out.push({ index: m.index });
+  return out;
+}
+
+export function checkDoubleSpaces(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
+  const findings: SheetCheckFinding[] = [];
+  for (const row of rows) {
+    const text = row.observation;
+    for (const hit of findDoubleSpaces(text)) {
+      const run = /^[ \t]+/.exec(text.slice(hit.index))![0];
+      let from = hit.index;
+      let to = hit.index + run.length;
+      let wrong = text.slice(from, to);
+      while (
+        text.indexOf(wrong) !== text.lastIndexOf(wrong) &&
+        (from > 0 || to < text.length)
+      ) {
+        from = Math.max(0, from - 6);
+        to = Math.min(text.length, to + 6);
+        wrong = text.slice(from, to);
+      }
+      const start = Math.max(0, hit.index - 30);
+      const end = Math.min(text.length, hit.index + run.length + 31);
+      findings.push({
+        ruleId: "double-space",
+        category: "formatting",
+        reason:
+          "There are two spaces in a row here — a single space is enough.",
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        snippet: `${start > 0 ? "…" : ""}${text.slice(start, end)}${end < text.length ? "…" : ""}`,
+        suggestedFix: {
+          wrong,
+          correct: wrong.replace(/[ \t]{2,}/g, " "),
+        },
+        findingKey: `ROW_${row.rowId}::DOUBLE_SPACE::${hit.index}`,
+      });
+    }
+  }
+  return findings;
+}
+
 // ── Unidentified people — full wording repeated after the first mention ───
 
 // "unidentified male (UM1)" is written in full once; after that the person is
@@ -1462,6 +1518,7 @@ export async function checkRunningSheet(
   const bareAddressConsistency = checkBareAddressConsistency(rows);
   const punctuationSpacing = checkPunctuationSpacing(rows);
   const repeatedUnidentified = checkRepeatedUnidentified(rows);
+  const doubleSpaces = checkDoubleSpaces(rows);
   const bareVehicleEntities = findSheetBareVehicleEntities(
     sheetId,
     rows,
@@ -1487,6 +1544,7 @@ export async function checkRunningSheet(
     ...sharedBracketPeople,
     ...punctuationSpacing,
     ...repeatedUnidentified,
+    ...doubleSpaces,
     ...consistency,
     ...bareAddressConsistency,
     ...spelling,

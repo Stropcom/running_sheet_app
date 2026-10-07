@@ -4,6 +4,7 @@
 // marker and the tracker never disagree. Deterministic: no lookups.
 import {
   nameWords,
+  occupantsToVehicle,
   splitPeopleNames,
   surnameTokens,
   vehicleOccupants,
@@ -49,7 +50,12 @@ export interface TargetPositionInput {
     from: string;
     rowId: number;
   }[];
-  placements: { name: string; rego: string; rowId: number }[];
+  placements: {
+    name: string;
+    rego: string;
+    rowId: number;
+    inside?: boolean;
+  }[];
 }
 
 export const TARGET_EMOJI: Record<TargetState, string> = {
@@ -140,7 +146,11 @@ export function locateTarget(
     found.push({
       place: a.address || null,
       state: oos ? "oos" : "vehicle",
-      label: oos ? "out of sight" : `in ${a.rego}`,
+      label: oos
+        ? "out of sight"
+        : occupantsToVehicle(a, people, input.placements).some(p => has(p, t))
+          ? `to vehicle ${a.rego}`
+          : `in ${a.rego}`,
       people: targetFirst(people, t),
       rowId: joinedRow,
       rego: a.rego,

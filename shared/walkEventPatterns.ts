@@ -394,6 +394,10 @@ export interface ScannedPlacement {
   /** The vehicle they walked to / got into; "" when the row put them
    * somewhere else (inside a place, on foot). */
   rego: string;
+  /** In the vehicle (got in, entered it), as opposed to only walking towards
+   * it — which could mean in it or next to it. True for anywhere that is not
+   * a vehicle. */
+  inside: boolean;
   rowId: number;
 }
 
@@ -429,14 +433,23 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   const walkedOut = new Set<string>();
   const heading = new Map<string, ScannedHeadingTo & { orderIdx: number }>();
   const placed = new Map<string, ScannedPlacement>();
-  const placePeople = (names: string, rego: string, rowId: number) => {
+  const placePeople = (
+    names: string,
+    rego: string,
+    rowId: number,
+    inside = true
+  ) => {
     for (const p of splitPeopleNames(cleanWalkerNames(names))) {
-      const entry = { name: p, rego: rego.toUpperCase(), rowId };
+      const entry = { name: p, rego: rego.toUpperCase(), rowId, inside };
       for (const t of tok(p)) placed.set(t, entry);
     }
   };
-  const noteJoined = (names: string, rego: string, rowId: number) =>
-    placePeople(names, rego, rowId);
+  const noteJoined = (
+    names: string,
+    rego: string,
+    rowId: number,
+    inside = true
+  ) => placePeople(names, rego, rowId, inside);
   // They are on their way to / back in a vehicle, so no longer inside the
   // place they were last logged in, whether or not the row says they left it.
   const leaveAllPlaces = (names: string) => {
@@ -448,6 +461,22 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         lastWalkIn.delete(k);
       }
     }
+  };
+  // Some or all of the people logged inside a place walk out of it. When only
+  // some do, the rest are still inside.
+  const leavePlace = (place: string, walkers: string) => {
+    const k = key(place);
+    const who = new Set(tok(walkers));
+    const cur = lastWalkIn.get(k);
+    if (cur && who.size > 0) {
+      const all = splitPeopleNames(cur.names);
+      const remaining = all.filter(p => !tok(p).some(t => who.has(t)));
+      if (remaining.length > 0 && remaining.length < all.length) {
+        lastWalkIn.set(k, { ...cur, names: remaining.join(" and ") });
+        return;
+      }
+    }
+    walkedOut.add(k);
   };
   // Drops any "heading to" entry belonging to these people — they have
   // since gone somewhere else or got back to a vehicle.
@@ -468,10 +497,14 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
 
     const outMatch = text.match(WALK_OUT_PATTERN);
     if (outMatch) {
-      walkedOut.add(key(outMatch[1]));
+      leavePlace(
+        outMatch[1],
+        text.match(/([A-Za-z][^.\n]*?)\s*\bexited\b/)?.[1] ?? ""
+      );
       // They walked back to this vehicle.
       const who = text.match(/([A-Za-z][^.\n]*?)\s*\bexited\b/);
-      if (who) noteJoined(who[1], outMatch[3], row.id);
+      // Walked towards it — not necessarily in it.
+      if (who) noteJoined(who[1], outMatch[3], row.id, false);
       return;
     }
 
@@ -490,20 +523,26 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     }
     if (exitMatch) {
       const from = exitMatch[2].trim();
-      walkedOut.add(key(from));
+      leavePlace(from, cleanWalkerNames(exitMatch[1]));
       const dest = extractExitDestination(exitMatch[3]);
       rowDest = dest;
       rowWalkers = cleanWalkerNames(exitMatch[1]);
       // On foot now, wherever they were (a vehicle below overrides this).
       placePeople(rowWalkers, "", row.id);
       // Walked back to, or got into, a vehicle: they are in it, not walking.
-      const vehReg =
-        exitMatch[3].match(ENTER_VEHICLE_REGO_RE)?.[1] ??
-        exitMatch[3].match(
-          /\b(?:towards|to)\s+(?:and\s+entered\s+)?\(?Vehicle\s+([A-Za-z0-9]{5,8})/i
-        )?.[1];
+      const enteredReg = exitMatch[3].match(ENTER_VEHICLE_REGO_RE)?.[1];
+      const towardsReg = exitMatch[3].match(
+        /\b(?:towards|to)\s+(and\s+entered\s+)?\(?Vehicle\s+([A-Za-z0-9]{5,8})/i
+      );
+      const vehReg = enteredReg ?? towardsReg?.[2];
       if (vehReg) {
-        noteJoined(rowWalkers, vehReg, row.id);
+        // Got in, versus only walking towards it.
+        noteJoined(
+          rowWalkers,
+          vehReg,
+          row.id,
+          !!enteredReg || !!towardsReg?.[1]
+        );
         leaveAllPlaces(rowWalkers);
       } else if (dest) {
         heading.set(headingKey(dest, cleanWalkerNames(exitMatch[1])), {
@@ -599,11 +638,12 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         const dest = toVehicle ? null : extractExitDestination(walkMatch[2]);
         if (toVehicle) {
           const reg = walkMatch[2].match(
-            /\b(?:towards|to)\s+(?:and\s+entered\s+)?\(?Vehicle\s+([A-Za-z0-9]{5,8})|\bentered\s+\(?Vehicle\s+([A-Za-z0-9]{5,8})/i
+            /\b(?:towards|to)\s+(and\s+entered\s+)?\(?Vehicle\s+([A-Za-z0-9]{5,8})|\bentered\s+\(?Vehicle\s+([A-Za-z0-9]{5,8})/i
           );
-          const rego = reg?.[1] ?? reg?.[2];
+          const rego = reg?.[2] ?? reg?.[3];
           if (rego) {
-            noteJoined(walkers, rego, row.id);
+            // "walked towards Vehicle X" is not "got into Vehicle X".
+            noteJoined(walkers, rego, row.id, !!reg?.[1] || !!reg?.[3]);
             leaveAllPlaces(walkers);
           }
         }
@@ -679,7 +719,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     if (!exitMatch) {
       const anyExit = text.match(PERSON_EXIT_ANY_PATTERN);
       if (anyExit && !/^\(?Vehicle\b/i.test(anyExit[2])) {
-        walkedOut.add(key(placeName(anyExit[2])));
+        leavePlace(placeName(anyExit[2]), cleanWalkerNames(anyExit[1]));
       }
     }
   });
@@ -819,6 +859,32 @@ export function vehicleOccupants(
   return mergePeople(
     own,
     occupantsStillInVehicle(joinedHere.join(" and "), onFootNames)
+  );
+}
+
+/**
+ * Of a vehicle's occupants, those a later row only had walking TOWARDS it
+ * ("BAIG walked towards Vehicle 1EXP123") rather than getting in — they could
+ * be in it or next to it, so they are described as "to vehicle", not "in".
+ */
+export function occupantsToVehicle(
+  self: { rego: string; rowId: number },
+  occupants: string[],
+  placements: {
+    name: string;
+    rego: string;
+    rowId: number;
+    inside?: boolean;
+  }[]
+): string[] {
+  return occupants.filter(o =>
+    placements.some(
+      p =>
+        p.inside === false &&
+        p.rego.toUpperCase() === self.rego.toUpperCase() &&
+        p.rowId > self.rowId &&
+        surnameTokens(o).some(t => nameWords(p.name).includes(t))
+    )
   );
 }
 

@@ -378,3 +378,54 @@ describe("some leave the vehicle, others stay (29A Robert St)", () => {
     expect(pos?.people).toEqual(["BAIG", "UM1"]);
   });
 });
+
+describe("walked towards the vehicle is not the same as in it (12 Swan Street)", () => {
+  const arrived =
+    "Vehicle 1EXP123, BAIG driver, UM1 front passenger, arrived at 12 Swan Street, SOUTH PERTH WA (12 Swan Street) and parked on the street.";
+  const inside =
+    "BAIG and UM1 exited the vehicle, entered 12 Swan Street and continued out of sight.";
+  const towards =
+    "BAIG exited 12 Swan Street and walked towards Vehicle 1EXP123.";
+
+  it("only BAIG leaves the address; UM1 is still inside", () => {
+    const r = scanWalkEvents(
+      [arrived, inside, towards].map((observation, i) => ({
+        id: i + 1,
+        sheetId: 1,
+        observation,
+      }))
+    );
+    expect(r.walkIns).toMatchObject([
+      { names: "UM1", location: "12 Swan Street" },
+    ]);
+    expect(r.placements.find(p => p.name === "BAIG")).toMatchObject({
+      rego: "1EXP123",
+      inside: false,
+    });
+  });
+
+  it("the flag says to the vehicle, not in it", () => {
+    expect(locate("BAIG", arrived, inside, towards)).toMatchObject({
+      state: "vehicle",
+      label: "to vehicle 1EXP123",
+      place: "12 Swan Street",
+    });
+  });
+
+  it("once he gets in, it says in", () => {
+    expect(
+      locate("BAIG", arrived, inside, towards, "BAIG entered Vehicle 1EXP123.")
+    ).toMatchObject({ state: "vehicle", label: "in 1EXP123" });
+  });
+
+  it("walked to and entered the vehicle is in it", () => {
+    expect(
+      locate(
+        "BAIG",
+        arrived,
+        inside,
+        "BAIG exited 12 Swan Street and walked to and entered Vehicle 1EXP123."
+      )
+    ).toMatchObject({ label: "in 1EXP123" });
+  });
+});

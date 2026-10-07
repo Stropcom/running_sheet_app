@@ -42,6 +42,7 @@ import {
 import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
 import { detectUnidentifiedRepeat } from "@shared/unidentified";
 import {
+  occupantsToVehicle,
   occupantWording,
   vehicleOccupants as sharedVehicleOccupants,
   occupantsStillInVehicle,
@@ -5332,6 +5333,14 @@ export default function SheetDetail({
                 a.rowId
               );
               const inCar = occupants.length > 0;
+              // Those a later row only had walking TOWARDS the vehicle — in it
+              // or next to it, the row doesn't say.
+              const toNames = occupantsToVehicle(
+                { rego: a.rego, rowId: a.rowId },
+                occupants,
+                pendingPlacements ?? []
+              );
+              const inNames = occupants.filter(o => !toNames.includes(o));
               // People inside this address take over the card only when
               // nobody is left in the vehicle; when some got out and others
               // stayed, the vehicle keeps its own card for those still in it
@@ -5475,7 +5484,16 @@ export default function SheetDetail({
                       ? `${occupants.join(", ")} out of sight at the address`
                       : "Out of sight since arriving"
                     : inCar
-                      ? `${occupants.join(", ")} in the vehicle`
+                      ? [
+                          inNames.length
+                            ? `${inNames.join(", ")} in the vehicle`
+                            : "",
+                          toNames.length
+                            ? `${toNames.join(", ")} to vehicle`
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join("; ")
                       : "Nobody in the vehicle",
                 state: `${a.address}${sinceText(a.rowId)}`,
                 actions,
@@ -5497,7 +5515,11 @@ export default function SheetDetail({
                         sub: `Arrived in ${rego}${sinceText(a.rowId)}`,
                       }
                     : {
-                        headline: inCar ? `In ${rego}` : `${rego} unattended`,
+                        headline: inCar
+                          ? inNames.length
+                            ? `In ${rego}`
+                            : `To vehicle ${rego}`
+                          : `${rego} unattended`,
                         sub: `Parked at ${a.address}${sinceText(a.rowId)}`,
                       },
               });

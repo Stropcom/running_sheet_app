@@ -69,6 +69,7 @@ import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAddressSuggestField } from "@/components/useAddressSuggestField";
 import {
+  occupantsToVehicle,
   occupantWording,
   vehicleOccupants as sharedVehicleOccupants,
   occupantsStillInVehicle,
@@ -12690,6 +12691,16 @@ export default function IntelligenceMapping() {
                                   v.rowId
                                 );
                                 const inCar = occupants.length > 0;
+                                // Those a later row only had walking TOWARDS
+                                // the vehicle — in it or next to it.
+                                const toNames = occupantsToVehicle(
+                                  { rego: v.rego, rowId: v.rowId },
+                                  occupants,
+                                  rsPendingPlacements ?? []
+                                );
+                                const inNames = occupants.filter(
+                                  o => !toNames.includes(o)
+                                );
                                 // People inside take over the card only when
                                 // nobody is left in the vehicle; when some got
                                 // out and others stayed, the vehicle keeps a
@@ -12843,7 +12854,16 @@ export default function IntelligenceMapping() {
                                         ? `${occupants.join(", ")} out of sight at the address`
                                         : "Out of sight since arriving"
                                       : inCar
-                                        ? `${occupants.join(", ")} in the vehicle`
+                                        ? [
+                                            inNames.length
+                                              ? `${inNames.join(", ")} in the vehicle`
+                                              : "",
+                                            toNames.length
+                                              ? `${toNames.join(", ")} to vehicle`
+                                              : "",
+                                          ]
+                                            .filter(Boolean)
+                                            .join("; ")
                                         : "Nobody in the vehicle",
                                   state: shortAddr,
                                   actions,
@@ -12872,7 +12892,9 @@ export default function IntelligenceMapping() {
                                         }
                                       : {
                                           headline: inCar
-                                            ? `In ${v.rego}`
+                                            ? inNames.length
+                                              ? `In ${v.rego}`
+                                              : `To vehicle ${v.rego}`
                                             : `${v.rego} unattended`,
                                           sub: `Parked at ${shortAddr}`,
                                         },

@@ -12456,7 +12456,7 @@ export default function IntelligenceMapping() {
                                 if (v.saved) {
                                   actions.push({
                                     key: `dep-${v.rego}`,
-                                    label: "Vehicle departing",
+                                    label: "Vehicle Depart",
                                     // Everyone known to be in it, or
                                     // "unseen occupant/s" when nobody is.
                                     text: `Vehicle ${v.rego}, ${
@@ -12478,7 +12478,7 @@ export default function IntelligenceMapping() {
                                   actions.unshift(
                                     {
                                       key: `wov-oos-${v.rego}`,
-                                      label: "Walked out to vehicle",
+                                      label: "Walked to Vehicle",
                                       mode: "paragraph",
                                       text: `${oosNames} exited ${shortAddr} and walked towards Vehicle ${v.rego}.`,
                                     },
@@ -12516,7 +12516,7 @@ export default function IntelligenceMapping() {
                                   if (otherOos.length > 0) {
                                     actions.unshift({
                                       key: `wov-oos-${v.rego}`,
-                                      label: "Walked out to vehicle",
+                                      label: "Walked to Vehicle",
                                       mode: "paragraph",
                                       text: `${names(otherOos.join(" and "))} exited ${shortAddr} and walked towards Vehicle ${v.rego}.`,
                                     });
@@ -12545,7 +12545,7 @@ export default function IntelligenceMapping() {
                                   const walkOutNames = names(w.names);
                                   actions.push({
                                     key: `wo-${v.rego}`,
-                                    label: "Walked out to vehicle",
+                                    label: "Walked to Vehicle",
                                     // w.route is only ever genuine route text,
                                     // never the destination (that is shortAddr).
                                     text: w.route
@@ -12630,7 +12630,7 @@ export default function IntelligenceMapping() {
                                       // Back to a parked vehicle from here.
                                       ...(rsPendingArrivals ?? []).map(a => ({
                                         key: `wov-${w.location}-${a.rego}`,
-                                        label: `Walked out to ${a.rego}`,
+                                        label: `Walked to ${a.rego}`,
                                         text: `${names(w.names)} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
                                       })),
                                     ],

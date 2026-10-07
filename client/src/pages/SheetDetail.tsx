@@ -5328,7 +5328,7 @@ export default function SheetDetail({
               // weren't seen.
               const departingAction = {
                 key: `dep-${rego}`,
-                label: "Vehicle departing",
+                label: "Vehicle Depart",
                 // Everyone known to be in it, or "unseen occupant/s" when
                 // nobody is — the usual wording for a departure whose
                 // occupants weren't seen.
@@ -5358,7 +5358,7 @@ export default function SheetDetail({
                       )
                       .map(c => ({
                         key: c.key,
-                        label: "Walked out to vehicle",
+                        label: "Walked to Vehicle",
                         text: c.text,
                       })),
                     ...insideHere.flatMap(w =>
@@ -5375,7 +5375,7 @@ export default function SheetDetail({
                   ? [
                       {
                         key: `wov-oos-${rego}`,
-                        label: "Walked out to vehicle",
+                        label: "Walked to Vehicle",
                         text: `${oosNames} exited ${a.address} and walked towards Vehicle ${rego}.`,
                       },
                       {
@@ -5392,7 +5392,7 @@ export default function SheetDetail({
                         // walk out to THIS one.
                         {
                           key: `wov-oos-${rego}`,
-                          label: "Walked out to vehicle",
+                          label: "Walked to Vehicle",
                           text: `${shortenAlreadyMentionedNames(otherOosPeople.join(" and "), usedBracketCodes)} exited ${a.address} and walked towards Vehicle ${rego}.`,
                         },
                         departingAction,
@@ -5515,7 +5515,7 @@ export default function SheetDetail({
                     // Back to a parked vehicle from here.
                     ...(pendingArrivals ?? []).map(a => ({
                       key: `wov-${w.location}-${a.rego}`,
-                      label: `Walked out to ${a.rego}`,
+                      label: `Walked to ${a.rego}`,
                       text: `${shortenAlreadyMentionedNames(w.names, usedBracketCodes)} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
                     })),
                   ],

@@ -151,6 +151,11 @@ describe("samePlace", () => {
     );
     expect(samePlace("77 Reynolds Rd", "21 Leach Avenue")).toBe(false);
     expect(samePlace("21 Leach Avenue", "15 Leach Ave")).toBe(false);
+    expect(samePlace("29A Robert Street, COMO WA", "29A Robert St")).toBe(true);
+    expect(samePlace("29a Robert St", "29A Robert Street")).toBe(true);
+    expect(samePlace("21 Leach Avenue", "21 Leach Ave")).toBe(true);
+    expect(samePlace("902 Canning Hwy", "902 Canning Highway")).toBe(true);
+    expect(samePlace("29A Robert St", "29B Robert St")).toBe(false);
   });
 
   it("matches the short name to the full address, accents and a slip included", () => {

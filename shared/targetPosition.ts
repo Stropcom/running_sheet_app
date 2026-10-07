@@ -173,6 +173,30 @@ export function locateTarget(
   return found.reduce((a, b) => (b.rowId > a.rowId ? b : a));
 }
 
+// Street types written short or long are the same word: "29A Robert St" and
+// "29A Robert Street, COMO WA" are the same place.
+const STREET_TYPE_WORDS: Record<string, string> = {
+  st: "street",
+  rd: "road",
+  ave: "avenue",
+  av: "avenue",
+  dr: "drive",
+  hwy: "highway",
+  ct: "court",
+  pl: "place",
+  cres: "crescent",
+  blvd: "boulevard",
+  tce: "terrace",
+  pde: "parade",
+  ln: "lane",
+  cl: "close",
+  cct: "circuit",
+  fwy: "freeway",
+  gr: "grove",
+  esp: "esplanade",
+  pwy: "parkway",
+};
+
 /** Whether two ways of writing a place are the same one. Case, accents and
  * punctuation are ignored, and one counts as the other when every word of the
  * shorter appears in the longer ("Dôme Café - Deep Water Point" in the full
@@ -189,6 +213,7 @@ export function samePlace(a: string, b: string): boolean {
         .replace(/[^a-z0-9 ]+/g, " ")
         .split(/\s+/)
         .filter(Boolean)
+        .map(w => STREET_TYPE_WORDS[w] ?? w)
     );
   const x = words(a);
   const y = words(b);

@@ -583,6 +583,60 @@ export function mergePeople(a: string[], b: string[]): string[] {
   return out;
 }
 
+/** A vehicle row (arrival or departure) as the cards see it. */
+export interface VehicleOccupantSource {
+  rego: string;
+  rowId: number;
+  /** Occupant names as that row wrote them (already extracted). */
+  names: string;
+}
+
+/**
+ * Who is in a vehicle, with a person only ever in ONE vehicle — the one the
+ * most recent row puts them in. The vehicle's own row names its occupants,
+ * and anyone logged walking to / getting into it (`toVehicle`) is added; but
+ * a person who joined a different vehicle AFTER this vehicle's row is no
+ * longer in it, and one this vehicle's row names has left a vehicle they
+ * joined before it.
+ */
+export function vehicleOccupants(
+  self: VehicleOccupantSource,
+  onFootNames: string[],
+  toVehicle: { name: string; rego: string; rowId: number }[],
+  all: VehicleOccupantSource[]
+): string[] {
+  const same = (a: string, b: string) => a.toUpperCase() === b.toUpperCase();
+  const overlaps = (a: string, b: string) => {
+    const t = surnameTokens(b);
+    return surnameTokens(a).some(x => t.includes(x));
+  };
+  const own = occupantsStillInVehicle(self.names, onFootNames).filter(
+    p =>
+      !toVehicle.some(
+        j =>
+          !same(j.rego, self.rego) &&
+          j.rowId > self.rowId &&
+          overlaps(p, j.name)
+      )
+  );
+  const joinedHere = toVehicle
+    .filter(j => same(j.rego, self.rego))
+    .filter(
+      j =>
+        !all.some(
+          o =>
+            !same(o.rego, self.rego) &&
+            o.rowId > j.rowId &&
+            overlaps(j.name, o.names)
+        )
+    )
+    .map(j => j.name);
+  return mergePeople(
+    own,
+    occupantsStillInVehicle(joinedHere.join(" and "), onFootNames)
+  );
+}
+
 /**
  * True when a row's text is one the continuity logic reads as a movement —
  * a vehicle arriving/departing, someone entering, exiting or walking

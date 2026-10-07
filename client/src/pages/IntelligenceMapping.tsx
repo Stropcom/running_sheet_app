@@ -58,7 +58,7 @@ import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAddressSuggestField } from "@/components/useAddressSuggestField";
 import {
-  mergePeople,
+  vehicleOccupants as sharedVehicleOccupants,
   occupantsStillInVehicle,
   splitPeopleNames,
   surnameTokens,
@@ -12058,33 +12058,40 @@ export default function IntelligenceMapping() {
                               ];
                               // Who is in a vehicle: those its own row names,
                               // plus anyone logged walking to / getting into
-                              // it ("occupant/s not observed" doesn't hide
-                              // the target who just got in).
+                              // it — and a person is only in the vehicle the
+                              // most recent row puts them in.
+                              const allVehicleRows = [
+                                ...(rsPendingArrivals ?? []).map(a => ({
+                                  rego: a.rego,
+                                  rowId: a.rowId,
+                                  names: extractOccupantNames(a.occupantDesc),
+                                })),
+                                ...(rsPendingDepartures ?? []).map(d => ({
+                                  rego: d.rego,
+                                  rowId: d.rowId,
+                                  names: extractOccupantNames(d.occupantDesc),
+                                })),
+                              ];
                               const vehicleOccupants = (
                                 desc: string,
-                                rego: string
+                                rego: string,
+                                rowId: number
                               ) =>
-                                mergePeople(
-                                  occupantsStillInVehicle(
-                                    extractOccupantNames(desc),
-                                    onFootNames
-                                  ),
-                                  occupantsStillInVehicle(
-                                    (rsPendingToVehicle ?? [])
-                                      .filter(
-                                        j =>
-                                          j.rego.toUpperCase() ===
-                                          rego.toUpperCase()
-                                      )
-                                      .map(j => j.name)
-                                      .join(" and "),
-                                    onFootNames
-                                  )
+                                sharedVehicleOccupants(
+                                  {
+                                    rego,
+                                    rowId,
+                                    names: extractOccupantNames(desc),
+                                  },
+                                  onFootNames,
+                                  rsPendingToVehicle ?? [],
+                                  allVehicleRows
                                 );
                               (rsPendingDepartures ?? []).forEach(d => {
                                 const movingOcc = vehicleOccupants(
                                   d.occupantDesc,
-                                  d.rego
+                                  d.rego,
+                                  d.rowId
                                 );
                                 cards.push({
                                   key: `dep-${d.rego}`,
@@ -12181,7 +12188,8 @@ export default function IntelligenceMapping() {
                                 );
                                 const occupants = vehicleOccupants(
                                   v.occupantDesc,
-                                  v.rego
+                                  v.rego,
+                                  v.rowId
                                 );
                                 const inCar = occupants.length > 0;
                                 const occNames = names(occupants.join(" and "));

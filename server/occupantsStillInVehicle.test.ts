@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   occupantsStillInVehicle,
+  vehicleOccupants,
   splitPeopleNames,
 } from "@shared/walkEventPatterns";
 
@@ -41,5 +42,24 @@ describe("unseen-occupant placeholders", () => {
   it("are not treated as people", () => {
     expect(occupantsStillInVehicle("Occupant/s not observed", [])).toEqual([]);
     expect(occupantsStillInVehicle("occupants unseen", [])).toEqual([]);
+  });
+});
+
+describe("vehicleOccupants: a person is in one vehicle only", () => {
+  const parked = { rego: "1ORB419", rowId: 5, names: "BAIG" };
+  const moving = { rego: "1HIB84", rowId: 20, names: "" };
+  const joined = [{ name: "BAIG", rego: "1HIB84", rowId: 19 }];
+
+  it("moves him out of the older vehicle and into the one he walked to", () => {
+    const all = [parked, moving];
+    expect(vehicleOccupants(parked, [], joined, all)).toEqual([]);
+    expect(vehicleOccupants(moving, [], joined, all)).toEqual(["BAIG"]);
+  });
+
+  it("a newer row naming him in another vehicle wins", () => {
+    const newer = { rego: "1ORB419", rowId: 30, names: "BAIG" };
+    const all = [newer, moving];
+    expect(vehicleOccupants(moving, [], joined, all)).toEqual([]);
+    expect(vehicleOccupants(newer, [], joined, all)).toEqual(["BAIG"]);
   });
 });

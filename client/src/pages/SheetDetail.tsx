@@ -34,7 +34,7 @@ import {
 } from "@/components/SuggestedFaceMatchDialog";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import {
-  mergePeople,
+  vehicleOccupants as sharedVehicleOccupants,
   occupantsStillInVehicle,
   splitPeopleNames,
   surnameTokens,
@@ -5188,21 +5188,31 @@ export default function SheetDetail({
               ...(pendingHeadingTo ?? []).map(h => h.names),
             ];
             // Who is in a vehicle: those its own row names, plus anyone
-            // logged walking to / getting into it (so "occupant/s not
-            // observed" doesn't hide the target who just got in).
-            const vehicleOccupants = (desc: string, rego: string) =>
-              mergePeople(
-                occupantsStillInVehicle(
-                  extractOccupantNames(desc),
-                  onFootNames
-                ),
-                occupantsStillInVehicle(
-                  (pendingToVehicle ?? [])
-                    .filter(j => j.rego.toUpperCase() === rego.toUpperCase())
-                    .map(j => j.name)
-                    .join(" and "),
-                  onFootNames
-                )
+            // logged walking to / getting into it — and a person is only in
+            // the vehicle the most recent row puts them in (see
+            // vehicleOccupants).
+            const allVehicleRows = [
+              ...(pendingArrivals ?? []).map(a => ({
+                rego: a.rego,
+                rowId: a.rowId,
+                names: extractOccupantNames(a.occupantDesc),
+              })),
+              ...(pendingDepartures ?? []).map(d => ({
+                rego: d.rego,
+                rowId: d.rowId,
+                names: extractOccupantNames(d.occupantDesc),
+              })),
+            ];
+            const vehicleOccupants = (
+              desc: string,
+              rego: string,
+              rowId: number
+            ) =>
+              sharedVehicleOccupants(
+                { rego, rowId, names: extractOccupantNames(desc) },
+                onFootNames,
+                pendingToVehicle ?? [],
+                allVehicleRows
               );
             (pendingArrivals ?? []).forEach(a => {
               const insideHere = (pendingWalkIns ?? []).filter(w =>
@@ -5211,7 +5221,11 @@ export default function SheetDetail({
               insideHere.forEach(w => walkInsAtVehicle.add(w.location));
               const rego = a.rego;
               const inside = insideHere.length > 0;
-              const occupants = vehicleOccupants(a.occupantDesc, a.rego);
+              const occupants = vehicleOccupants(
+                a.occupantDesc,
+                a.rego,
+                a.rowId
+              );
               const inCar = occupants.length > 0;
               const carNames = shortenAlreadyMentionedNames(
                 occupants.join(" and "),
@@ -5321,14 +5335,18 @@ export default function SheetDetail({
                 title: d.rego,
                 pill: "Moving",
                 attn: true,
-                who: vehicleOccupants(d.occupantDesc, d.rego).length
-                  ? vehicleOccupants(d.occupantDesc, d.rego).join(", ")
+                who: vehicleOccupants(d.occupantDesc, d.rego, d.rowId).length
+                  ? vehicleOccupants(d.occupantDesc, d.rego, d.rowId).join(", ")
                   : `${extractOccupantNames(d.occupantDesc) || d.occupantDesc}`,
                 state: `Departed${sinceText(d.rowId).replace(" · since", "")}`,
                 actions: cardAction(chip, "Vehicle arriving"),
                 latestRowId: d.rowId,
                 ...(() => {
-                  const inCar = vehicleOccupants(d.occupantDesc, d.rego);
+                  const inCar = vehicleOccupants(
+                    d.occupantDesc,
+                    d.rego,
+                    d.rowId
+                  );
                   return {
                     holds: inCar.flatMap(n => surnameTokens(n)),
                     people: inCar,

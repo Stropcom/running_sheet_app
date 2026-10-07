@@ -5214,6 +5214,34 @@ export default function SheetDetail({
                 pendingPlacements ?? [],
                 allVehicleRows
               );
+            // Who is out of sight at an address after a vehicle arrived and
+            // "continued out of sight" there (and has not since been placed
+            // anywhere by a later row).
+            const oosPeopleOf = (
+              b: NonNullable<typeof pendingArrivals>[number]
+            ) => {
+              if (!b.outOfSight) return [];
+              if (
+                (pendingWalkIns ?? []).some(w =>
+                  sameAddr(w.location, b.address)
+                )
+              )
+                return [];
+              const people = occupantsStillInVehicle(
+                extractOccupantNames(b.occupantDesc),
+                []
+              );
+              return people.filter(
+                n =>
+                  !(pendingPlacements ?? []).some(
+                    pl =>
+                      pl.rowId > b.rowId &&
+                      surnameTokens(n).some(t =>
+                        surnameTokens(pl.name).includes(t)
+                      )
+                  )
+              );
+            };
             (pendingArrivals ?? []).forEach(a => {
               const insideHere = (pendingWalkIns ?? []).filter(w =>
                 sameAddr(w.location, a.address)
@@ -5252,6 +5280,13 @@ export default function SheetDetail({
                 arrivalPeople.join(" and "),
                 usedBracketCodes
               );
+              const otherOosPeople = inside
+                ? []
+                : (pendingArrivals ?? [])
+                    .filter(
+                      o => o.rego !== a.rego && sameAddr(o.address, a.address)
+                    )
+                    .flatMap(oosPeopleOf);
               const carNames = shortenAlreadyMentionedNames(
                 occupants.join(" and "),
                 usedBracketCodes
@@ -5306,22 +5341,11 @@ export default function SheetDetail({
                   ]
                 : outOfSight && arrivalPeople.length > 0
                   ? [
-                      // Back to any vehicle parked at this address, this one
-                      // first.
-                      ...[
-                        a,
-                        ...(pendingArrivals ?? []).filter(
-                          o =>
-                            o.rego !== a.rego && sameAddr(o.address, a.address)
-                        ),
-                      ].map((o, _i, all) => ({
-                        key: `wov-oos-${rego}-${o.rego}`,
-                        label:
-                          all.length > 1
-                            ? `Walked out to ${o.rego}`
-                            : "Walked out to vehicle",
-                        text: `${oosNames} exited ${a.address} and walked towards Vehicle ${o.rego}.`,
-                      })),
+                      {
+                        key: `wov-oos-${rego}`,
+                        label: "Walked out to vehicle",
+                        text: `${oosNames} exited ${a.address} and walked towards Vehicle ${rego}.`,
+                      },
                       {
                         key: `la-oos-${rego}`,
                         label: "Walked away",
@@ -5329,25 +5353,37 @@ export default function SheetDetail({
                       },
                       departingAction,
                     ]
-                  : [
-                      departingAction,
-                      ...(inCar && !inside && !outOfSight
-                        ? [
-                            // Left the vehicle and walked off somewhere other
-                            // than here (a car park or street space).
-                            {
-                              key: `wa-${rego}`,
-                              label: "Walked away",
-                              text: `${carNames} exited the vehicle and walked [route] towards [location].`,
-                            },
-                            {
-                              key: `wi-${rego}`,
-                              label: "Walked in",
-                              text: `${carNames} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
-                            },
-                          ]
-                        : []),
-                    ];
+                  : otherOosPeople.length > 0
+                    ? [
+                        // Someone is out of sight at this address after
+                        // arriving in another vehicle: he could just as well
+                        // walk out to THIS one.
+                        {
+                          key: `wov-oos-${rego}`,
+                          label: "Walked out to vehicle",
+                          text: `${shortenAlreadyMentionedNames(otherOosPeople.join(" and "), usedBracketCodes)} exited ${a.address} and walked towards Vehicle ${rego}.`,
+                        },
+                        departingAction,
+                      ]
+                    : [
+                        departingAction,
+                        ...(inCar && !inside && !outOfSight
+                          ? [
+                              // Left the vehicle and walked off somewhere other
+                              // than here (a car park or street space).
+                              {
+                                key: `wa-${rego}`,
+                                label: "Walked away",
+                                text: `${carNames} exited the vehicle and walked [route] towards [location].`,
+                              },
+                              {
+                                key: `wi-${rego}`,
+                                label: "Walked in",
+                                text: `${carNames} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
+                              },
+                            ]
+                          : []),
+                      ];
               continuityCards.push({
                 key: `veh-${rego}`,
                 title: rego,

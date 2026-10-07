@@ -4967,6 +4967,21 @@ export default function IntelligenceMapping() {
           return m.position as google.maps.LatLngLiteral;
         }
       }
+      // A custom marker that has absorbed the place's own pin (a house marker
+      // within 40 m, or a manual / Quick Entry merge) carries it instead: the
+      // place is that marker's address, the address it is linked to, or one of
+      // the locations merged into it.
+      for (const cm of customMarkersDataRef.current as any[]) {
+        if (cm?.lat == null || cm?.lng == null) continue;
+        const names: string[] = [
+          cm.address,
+          cm.linkedIntelLabel,
+          ...(mergedIntelRef.current.get(cm.id) ?? []).map((e: any) => e.label),
+        ].filter(Boolean);
+        if (names.some(n => samePlace(String(n), place))) {
+          return { lat: cm.lat, lng: cm.lng };
+        }
+      }
       return null;
     };
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -5029,7 +5044,14 @@ export default function IntelligenceMapping() {
       if (timer) clearTimeout(timer);
       removeFlag();
     };
-  }, [mapReady, rsTargetPosition, rsSheetsData, rsSelectedSheetId, locations]);
+  }, [
+    mapReady,
+    rsTargetPosition,
+    rsSheetsData,
+    rsSelectedSheetId,
+    locations,
+    customMarkers,
+  ]);
 
   // NOTE: Do NOT call renderLocations here — that would create a loop:
   //   customMarkers changes → renderLocations → geocode → placeMarker stores mergedIntel

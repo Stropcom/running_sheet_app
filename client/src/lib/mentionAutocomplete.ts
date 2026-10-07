@@ -425,17 +425,15 @@ export function computeUsedAddressLabels(
  * the record. Shared by the RS Quick Entry map popup and the full sheet
  * table's own continuity chips. */
 export function extractOccupantNames(occupantDesc: string): string {
+  // Role words mark where one person ends and the next begins, so officers
+  // who leave out the commas ("BAIG driver UM1 front passenger and JOHNSON
+  // rear passenger") still get separate people.
   const ROLE_WORD =
-    /\b(?:driver|front passenger|rear passenger|sole occupant|unseen\s+occupant(?:\/s|s)?|occupant(?:\/s|s)?\s+(?:not\s+(?:observed|seen)|unseen)|passenger)\b/gi;
+    /\b(?:driver|front passenger|rear passenger|back passenger|sole occupant|unseen\s+occupants?(?:\/s)?|occupant(?:\/s|s)?\s+(?:not\s+(?:observed|seen)|unseen)|passenger)\b/gi;
   return occupantDesc
-    .split(",")
-    .map(part =>
-      part
-        .replace(ROLE_WORD, "")
-        .replace(/\band\b/gi, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-    )
+    .replace(ROLE_WORD, ",")
+    .split(/\s*,\s*|\s*\band\b\s*/i)
+    .map(part => part.replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .join(" and ");
 }

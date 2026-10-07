@@ -16,3 +16,13 @@ describe("extractOccupantNames", () => {
     expect(extractOccupantNames("occupants not seen")).toBe("");
   });
 });
+
+describe("extractOccupantNames without commas", () => {
+  it("role words separate the people", () => {
+    expect(
+      extractOccupantNames(
+        "BAIG driver UM1 front passenger and JOHNSON rear passenger"
+      )
+    ).toBe("BAIG and UM1 and JOHNSON");
+  });
+});

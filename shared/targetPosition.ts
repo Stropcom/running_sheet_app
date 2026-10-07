@@ -3,6 +3,7 @@
 // cards are built from, with the same rules (see vehicleOccupants), so the
 // marker and the tracker never disagree. Deterministic: no lookups.
 import {
+  nameWords,
   splitPeopleNames,
   surnameTokens,
   vehicleOccupants,
@@ -65,7 +66,7 @@ const targetFirst = (people: string[], token: string) => [
 ];
 
 const has = (names: string, token: string) =>
-  surnameTokens(names).includes(token.toUpperCase());
+  nameWords(names).includes(token.toUpperCase());
 
 export function locateTarget(
   input: TargetPositionInput

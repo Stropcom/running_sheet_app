@@ -68,6 +68,7 @@ import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAddressSuggestField } from "@/components/useAddressSuggestField";
 import {
+  occupantWording,
   vehicleOccupants as sharedVehicleOccupants,
   occupantsStillInVehicle,
   splitPeopleNames,
@@ -12632,17 +12633,23 @@ export default function IntelligenceMapping() {
                                 location: string;
                               }) =>
                                 `${names(w.names)} exited ${w.location} and walked [route] towards [location].`;
+                              // Whether the people inside this address are
+                              // shown on a vehicle's card (nobody left in the
+                              // vehicle) or on a card of their own.
+                              let insideOnVehicleCard = false;
                               Array.from(here.values()).forEach(v => {
-                                const inside = insideHere.length > 0;
-                                const allOccupants = splitPeopleNames(
-                                  extractOccupantNames(v.occupantDesc)
-                                );
                                 const occupants = vehicleOccupants(
                                   v.occupantDesc,
                                   v.rego,
                                   v.rowId
                                 );
                                 const inCar = occupants.length > 0;
+                                // People inside take over the card only when
+                                // nobody is left in the vehicle; when some got
+                                // out and others stayed, the vehicle keeps a
+                                // card for those still in it.
+                                const inside = insideHere.length > 0 && !inCar;
+                                if (inside) insideOnVehicleCard = true;
                                 // "... arrived and continued out of sight":
                                 // nobody can say whether anyone is still in
                                 // it until someone is seen again, so no
@@ -12680,10 +12687,12 @@ export default function IntelligenceMapping() {
                                     // "unseen occupant/s" when nobody is.
                                     text: `Vehicle ${v.rego}, ${
                                       inCar && !outOfSight
-                                        ? occupants.length ===
-                                          allOccupants.length
-                                          ? names(v.occupantDesc)
-                                          : occNames
+                                        ? names(
+                                            occupantWording(
+                                              v.occupantDesc,
+                                              occupants
+                                            ) ?? occNames
+                                          )
                                         : "unseen occupant/s"
                                     }, departed ${shortAddr} and continued via:`,
                                   });
@@ -12826,7 +12835,7 @@ export default function IntelligenceMapping() {
 
                               // People on foot inside this address with no
                               // vehicle here.
-                              if (here.size === 0) {
+                              if (!insideOnVehicleCard) {
                                 insideHere.forEach(w =>
                                   cards.push({
                                     key: `foot-${w.location}`,

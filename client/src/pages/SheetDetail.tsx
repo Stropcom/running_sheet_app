@@ -42,6 +42,7 @@ import {
 import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
 import { detectUnidentifiedRepeat } from "@shared/unidentified";
 import {
+  occupantWording,
   vehicleOccupants as sharedVehicleOccupants,
   occupantsStillInVehicle,
   splitPeopleNames,
@@ -5324,15 +5325,20 @@ export default function SheetDetail({
               const insideHere = (pendingWalkIns ?? []).filter(w =>
                 sameAddr(w.location, a.address)
               );
-              insideHere.forEach(w => walkInsAtVehicle.add(w.location));
               const rego = a.rego;
-              const inside = insideHere.length > 0;
               const occupants = vehicleOccupants(
                 a.occupantDesc,
                 a.rego,
                 a.rowId
               );
               const inCar = occupants.length > 0;
+              // People inside this address take over the card only when
+              // nobody is left in the vehicle; when some got out and others
+              // stayed, the vehicle keeps its own card for those still in it
+              // and the people inside get a card of their own.
+              const inside = insideHere.length > 0 && !inCar;
+              if (inside)
+                insideHere.forEach(w => walkInsAtVehicle.add(w.location));
               // "... arrived and continued out of sight": nobody can say
               // whether anyone is still in it until someone is seen again,
               // so no walked-away / walked-in options are offered.
@@ -5380,14 +5386,10 @@ export default function SheetDetail({
                 // occupants weren't seen.
                 text: `Vehicle ${rego}, ${
                   inCar && !outOfSight
-                    ? occupants.length ===
-                      splitPeopleNames(extractOccupantNames(a.occupantDesc))
-                        .length
-                      ? shortenAlreadyMentionedNames(
-                          a.occupantDesc,
-                          usedBracketCodes
-                        )
-                      : carNames
+                    ? shortenAlreadyMentionedNames(
+                        occupantWording(a.occupantDesc, occupants) ?? carNames,
+                        usedBracketCodes
+                      )
                     : "unseen occupant/s"
                 }, departed ${a.address} and continued via:`,
               };

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   locateTarget,
+  locateTargetFromPending,
   samePlace,
   shortUnidentified,
   vehiclesPeopleCanReach,
@@ -307,5 +308,68 @@ describe("shortUnidentified", () => {
       "Haris Imran BAIG (BAIG)"
     );
     expect(shortUnidentified("BAIG and JONES")).toBe("BAIG and JONES");
+  });
+});
+
+import {
+  occupantWording,
+  vehicleOccupants as vehOcc,
+} from "@shared/walkEventPatterns";
+import { extractOccupantNames } from "@/lib/mentionAutocomplete";
+
+describe("some leave the vehicle, others stay (29A Robert St)", () => {
+  const row =
+    "Vehicle 1EXP123, BAIG driver UM1 front passenger and JOHNSON rear passenger, arrived at 29A Robert Street, COMO WA (29A Robert St) and parked on the street.\n\nJohnson exited the vehicle, walked towards  29a Robert St and continued out of sight.";
+  const rows = [{ id: 1, sheetId: 1, observation: row }];
+  const arrival = computePendingVehicleArrivals(rows)[0];
+  const walk = scanWalkEvents(rows);
+  const names = extractOccupantNames(arrival.occupantDesc);
+
+  it("reads three separate people from the arrival", () => {
+    expect(names).toBe("BAIG and UM1 and JOHNSON");
+  });
+
+  it("Johnson, typed in mixed case, is the JOHNSON from the vehicle", () => {
+    expect(walk.walkIns).toMatchObject([
+      { names: "Johnson", location: "29a Robert St" },
+    ]);
+    const occ = vehOcc(
+      { rego: "1EXP123", rowId: 1, names },
+      walk.walkIns.map(w => w.names),
+      walk.placements,
+      []
+    );
+    expect(occ).toEqual(["BAIG", "UM1"]);
+  });
+
+  it("the departure keeps the officer's roles for those still in the car", () => {
+    expect(occupantWording(arrival.occupantDesc, ["BAIG", "UM1"])).toBe(
+      "BAIG driver UM1 front passenger"
+    );
+    expect(
+      occupantWording(arrival.occupantDesc, ["BAIG", "UM1", "JOHNSON"])
+    ).toBe(arrival.occupantDesc);
+    // A part naming someone who left and someone who stayed can't be cut.
+    expect(
+      occupantWording("BAIG driver UM1 front passenger", ["BAIG"])
+    ).toBeNull();
+  });
+
+  it("the target is still in the vehicle at 29A Robert St", () => {
+    const pos = locateTargetFromPending({
+      token: "BAIG",
+      arrivals: [arrival],
+      departures: [],
+      walkIns: walk.walkIns,
+      headingTo: walk.headingTo,
+      placements: walk.placements,
+      extractNames: extractOccupantNames,
+    });
+    expect(pos).toMatchObject({
+      state: "vehicle",
+      place: "29A Robert St",
+      rego: "1EXP123",
+    });
+    expect(pos?.people).toEqual(["BAIG", "UM1"]);
   });
 });

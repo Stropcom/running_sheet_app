@@ -406,6 +406,19 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   placements: ScannedPlacement[];
 } {
   const key = (s: string) => s.trim().toLowerCase();
+  // People are matched by surname. A surname typed in mixed case ("Johnson")
+  // still counts when the same surname is written in capitals anywhere on the
+  // sheet ("JOHNSON rear passenger").
+  const knownSurnames = new Set(
+    rows.flatMap(r => surnameTokens(r.observation ?? ""))
+  );
+  const tok = (names: string): string[] => {
+    const out = surnameTokens(names);
+    for (const w of nameWords(names)) {
+      if (knownSurnames.has(w) && !out.includes(w)) out.push(w);
+    }
+    return out;
+  };
   // Heading entries are keyed by destination — except an unwritten one
   // ("[location]"), which several different people can share, so those are
   // keyed by who is walking too.
@@ -418,7 +431,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   const placePeople = (names: string, rego: string, rowId: number) => {
     for (const p of splitPeopleNames(cleanWalkerNames(names))) {
       const entry = { name: p, rego: rego.toUpperCase(), rowId };
-      for (const t of surnameTokens(p)) placed.set(t, entry);
+      for (const t of tok(p)) placed.set(t, entry);
     }
   };
   const noteJoined = (names: string, rego: string, rowId: number) =>
@@ -426,10 +439,10 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   // They are on their way to / back in a vehicle, so no longer inside the
   // place they were last logged in, whether or not the row says they left it.
   const leaveAllPlaces = (names: string) => {
-    const who = new Set(surnameTokens(names));
+    const who = new Set(tok(names));
     if (who.size === 0) return;
     for (const [k, v] of Array.from(lastWalkIn.entries())) {
-      const tokens = surnameTokens(v.names);
+      const tokens = tok(v.names);
       if (tokens.length > 0 && tokens.every(t => who.has(t))) {
         lastWalkIn.delete(k);
       }
@@ -438,10 +451,10 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   // Drops any "heading to" entry belonging to these people — they have
   // since gone somewhere else or got back to a vehicle.
   const clearHeadingFor = (names: string) => {
-    const who = new Set(surnameTokens(names));
+    const who = new Set(tok(names));
     if (who.size === 0) return;
     for (const [k, v] of Array.from(heading.entries())) {
-      if (surnameTokens(v.names).some(t => who.has(t))) heading.delete(k);
+      if (tok(v.names).some(t => who.has(t))) heading.delete(k);
     }
   };
 
@@ -592,7 +605,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
           }
         }
         const previous = Array.from(heading.values()).find(h =>
-          surnameTokens(h.names).some(t => surnameTokens(walkers).includes(t))
+          tok(h.names).some(t => tok(walkers).includes(t))
         );
         clearHeadingFor(walkers);
         rowDest = dest;
@@ -647,10 +660,10 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     // and so no longer wherever they were last logged.
     const presence = matchPresenceInside(text);
     if (presence) {
-      const who = new Set(surnameTokens(presence.names));
+      const who = new Set(tok(presence.names));
       for (const [k, v] of Array.from(lastWalkIn.entries())) {
         if (k === key(presence.place)) continue;
-        const tokens = surnameTokens(v.names);
+        const tokens = tok(v.names);
         if (tokens.length > 0 && tokens.every(t => who.has(t))) {
           lastWalkIn.delete(k);
         }
@@ -703,6 +716,16 @@ export function surnameTokens(name: string): string[] {
   return name.match(/\b[A-Z][A-Z'-]+\b|\bU[MFCP]\d+\b/g) ?? [];
 }
 
+/** Every word of a name in upper case, whatever case it was typed in — so
+ * "Johnson" typed in a sentence can be matched to the "JOHNSON" a vehicle's
+ * occupants were written with. Includes the short names of unidentified
+ * people (UM1). Matching only, never shown. */
+export function nameWords(name: string): string[] {
+  return (name.match(/U[MFCP]\d+|[A-Za-z][A-Za-z'-]+/gi) ?? []).map(w =>
+    w.toUpperCase()
+  );
+}
+
 /**
  * Of the people a vehicle's occupant description names, who is still
  * in it? Anyone currently logged as inside an address or walking somewhere
@@ -714,7 +737,7 @@ export function occupantsStillInVehicle(
   occupantNames: string,
   onFootNames: string[]
 ): string[] {
-  const onFoot = new Set(onFootNames.flatMap(n => surnameTokens(n)));
+  const onFoot = new Set(onFootNames.flatMap(n => nameWords(n)));
   return splitPeopleNames(occupantNames).filter(
     p => !isUnseenOccupants(p) && !surnameTokens(p).some(t => onFoot.has(t))
   );
@@ -766,7 +789,7 @@ export function vehicleOccupants(
 ): string[] {
   const same = (a: string, b: string) => a.toUpperCase() === b.toUpperCase();
   const overlaps = (a: string, b: string) => {
-    const t = surnameTokens(b);
+    const t = nameWords(b);
     return surnameTokens(a).some(x => t.includes(x));
   };
   const own = occupantsStillInVehicle(self.names, onFootNames).filter(
@@ -794,6 +817,41 @@ export function vehicleOccupants(
     own,
     occupantsStillInVehicle(joinedHere.join(" and "), onFootNames)
   );
+}
+
+/**
+ * The vehicle's occupants as originally worded ("BAIG driver UM1 front
+ * passenger and JOHNSON rear passenger"), cut down to those still in it, so a
+ * departure keeps the officer's own roles. The whole wording when nobody has
+ * left; just the parts for those who remain when someone has; null when it
+ * can't be done cleanly (a part names both someone who left and someone who
+ * stayed, or a remaining person isn't in the wording) — the caller then lists
+ * their names instead.
+ */
+export function occupantWording(
+  desc: string,
+  remaining: string[]
+): string | null {
+  const keep = new Set(remaining.flatMap(r => surnameTokens(r)));
+  if (keep.size === 0) return null;
+  const parts = desc.split(/\s*,\s*|\s+and\s+/i).filter(p => p.trim());
+  const inDesc = new Set(parts.flatMap(p => surnameTokens(p)));
+  if (Array.from(keep).some(t => !inDesc.has(t))) return null;
+  const kept: string[] = [];
+  let dropped = false;
+  for (const part of parts) {
+    const t = surnameTokens(part);
+    if (t.length === 0) {
+      kept.push(part.trim());
+    } else if (t.every(x => keep.has(x))) {
+      kept.push(part.trim());
+    } else if (t.some(x => keep.has(x))) {
+      return null;
+    } else {
+      dropped = true;
+    }
+  }
+  return dropped ? kept.join(", ") : desc.trim();
 }
 
 /**

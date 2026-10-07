@@ -149,7 +149,7 @@ export function locateTarget(
       label: oos
         ? "out of sight"
         : occupantsToVehicle(a, people, input.placements).some(p => has(p, t))
-          ? `to vehicle ${a.rego}`
+          ? `to ${a.rego}`
           : `in ${a.rego}`,
       people: targetFirst(people, t),
       rowId: joinedRow,

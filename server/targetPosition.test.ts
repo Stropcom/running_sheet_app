@@ -407,7 +407,7 @@ describe("walked towards the vehicle is not the same as in it (12 Swan Street)",
   it("the flag says to the vehicle, not in it", () => {
     expect(locate("BAIG", arrived, inside, towards)).toMatchObject({
       state: "vehicle",
-      label: "to vehicle 1EXP123",
+      label: "to 1EXP123",
       place: "12 Swan Street",
     });
   });

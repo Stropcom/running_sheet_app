@@ -122,3 +122,39 @@ describe("the app writes street types in full", () => {
     expect(text).toContain("(6 Hill Street)");
   });
 });
+
+describe("Check Sheet shows whole words", () => {
+  const row = {
+    rowId: 1,
+    timeMinutes: 100,
+    observation:
+      "Vehicle 1EXP123, BAIG driver, arrived at 77 Reynolds Rd, 77 Reynolds Road, MOUNT PLEASANT WA (77 Reynolds Rd) and parked.",
+  };
+
+  it("the fix and snippet are whole words, not fragments", () => {
+    const findings = checkAbbreviatedStreetTypes([row]);
+    expect(findings).toHaveLength(2);
+    for (const f of findings) {
+      const { wrong, correct } = f.suggestedFix!;
+      // Starts at a word, with the street's own words in front of the type.
+      expect(wrong).toMatch(/^\(?77 Reynolds Rd$/);
+      expect(correct).toMatch(/^\(?77 Reynolds Road$/);
+      expect(f.snippet).not.toMatch(/^…[a-z]{1,3}\s/);
+    }
+  });
+
+  it("each fix changes its own occurrence", () => {
+    const findings = checkAbbreviatedStreetTypes([row]);
+    let text = row.observation;
+    for (const f of findings) {
+      expect(text.indexOf(f.suggestedFix!.wrong)).toBeGreaterThanOrEqual(0);
+    }
+    text = text.replace(
+      findings[1].suggestedFix!.wrong,
+      findings[1].suggestedFix!.correct
+    );
+    // The first "77 Reynolds Rd" is still there until its own fix is applied.
+    expect(text).toContain("arrived at 77 Reynolds Rd,");
+    expect(text).toContain("(77 Reynolds Road)");
+  });
+});

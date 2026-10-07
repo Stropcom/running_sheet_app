@@ -1054,6 +1054,51 @@ function checkPunctuationSpacing(
   return findings;
 }
 
+// ── Whole-word context for one-tap fixes and snippets ─────────────────────
+
+// A fix replaces the FIRST occurrence of `wrong` in the row, so `wrong` has to
+// start where the finding does, with enough text in front of it that its first
+// occurrence is this one. The text is always cut at word boundaries so what
+// the officer sees is whole words ("77 Reynolds Rd"), never fragments ("ed at
+// 77 Reynolds Rd").
+function snapToWordStart(text: string, i: number): number {
+  while (i > 0 && !/\s/.test(text[i - 1])) i--;
+  return i;
+}
+function snapToWordEnd(text: string, i: number): number {
+  while (i < text.length && !/\s/.test(text[i])) i++;
+  return i;
+}
+function wordStartBefore(text: string, i: number): number {
+  let j = i;
+  while (j > 0 && /\s/.test(text[j - 1])) j--;
+  return snapToWordStart(text, j);
+}
+/** Where `wrong` should start: `minWords` whole words before `start`, then
+ * further back only while an earlier occurrence of the same text would be
+ * replaced first. */
+function contextStart(
+  text: string,
+  start: number,
+  end: number,
+  minWords: number
+): number {
+  let from = start;
+  for (let n = 0; n < minWords && from > 0; n++) {
+    from = wordStartBefore(text, from);
+  }
+  while (from > 0 && text.indexOf(text.slice(from, end)) !== from) {
+    from = wordStartBefore(text, from);
+  }
+  return from;
+}
+/** About 30 characters either side of a finding, widened to whole words. */
+function wordSnippet(text: string, from: number, to: number): string {
+  const s = snapToWordStart(text, Math.max(0, from - 30));
+  const e = snapToWordEnd(text, Math.min(text.length, to + 30));
+  return `${s > 0 ? "…" : ""}${text.slice(s, e)}${e < text.length ? "…" : ""}`;
+}
+
 // ── Abbreviated street types ("St", "Rd", "Ave") ──────────────────────────
 
 // Streets are written with the full street type everywhere in the app. Flags
@@ -1068,21 +1113,16 @@ export function checkAbbreviatedStreetTypes(
     const text = row.observation;
     for (const hit of findAbbreviatedStreetTypes(text)) {
       const end = hit.index + hit.abbr.length;
-      let from = hit.index;
-      let wrong = text.slice(from, end);
-      while (text.indexOf(wrong) !== text.lastIndexOf(wrong) && from > 0) {
-        from = Math.max(0, from - 6);
-        wrong = text.slice(from, end);
-      }
-      const start = Math.max(0, hit.index - 30);
-      const stop = Math.min(text.length, end + 31);
+      // The street's own words ("77 Reynolds") go with the abbreviation.
+      const from = contextStart(text, hit.index, end, 2);
+      const wrong = text.slice(from, end);
       findings.push({
         ruleId: "street-type-abbreviated",
         category: "formatting",
         reason: `"${hit.abbr}" should be written in full — "${hit.full}".`,
         rowId: row.rowId,
         timeMinutes: row.timeMinutes,
-        snippet: `${start > 0 ? "…" : ""}${text.slice(start, stop)}${stop < text.length ? "…" : ""}`,
+        snippet: wordSnippet(text, hit.index, end),
         suggestedFix: {
           wrong,
           correct: wrong.slice(0, hit.index - from) + hit.full,
@@ -1118,19 +1158,11 @@ export function checkDoubleSpaces(
     const text = row.observation;
     for (const hit of findDoubleSpaces(text)) {
       const run = /^[ \t]+/.exec(text.slice(hit.index))![0];
-      let from = hit.index;
-      let to = hit.index + run.length;
-      let wrong = text.slice(from, to);
-      while (
-        text.indexOf(wrong) !== text.lastIndexOf(wrong) &&
-        (from > 0 || to < text.length)
-      ) {
-        from = Math.max(0, from - 6);
-        to = Math.min(text.length, to + 6);
-        wrong = text.slice(from, to);
-      }
-      const start = Math.max(0, hit.index - 30);
-      const end = Math.min(text.length, hit.index + run.length + 31);
+      // The word before and the word after, so it reads "entered Kinky".
+      const runEnd = hit.index + run.length;
+      const to = snapToWordEnd(text, runEnd);
+      const from = contextStart(text, wordStartBefore(text, hit.index), to, 0);
+      const wrong = text.slice(from, to);
       findings.push({
         ruleId: "double-space",
         category: "formatting",
@@ -1138,7 +1170,7 @@ export function checkDoubleSpaces(
           "There are two spaces in a row here — a single space is enough.",
         rowId: row.rowId,
         timeMinutes: row.timeMinutes,
-        snippet: `${start > 0 ? "…" : ""}${text.slice(start, end)}${end < text.length ? "…" : ""}`,
+        snippet: wordSnippet(text, hit.index, runEnd),
         suggestedFix: {
           wrong,
           correct: wrong.replace(/[ \t]{2,}/g, " "),
@@ -1172,24 +1204,15 @@ export function checkRepeatedUnidentified(
         introduced.add(m.code);
         continue;
       }
-      let from = m.start;
-      let wrong = row.observation.slice(from, m.end);
-      while (
-        from > 0 &&
-        row.observation.indexOf(wrong) !== row.observation.lastIndexOf(wrong)
-      ) {
-        from = Math.max(0, from - 5);
-        wrong = row.observation.slice(from, m.end);
-      }
-      const start = Math.max(0, m.start - 30);
-      const end = Math.min(row.observation.length, m.end + 31);
+      const from = contextStart(row.observation, m.start, m.end, 0);
+      const wrong = row.observation.slice(from, m.end);
       findings.push({
         ruleId: "unidentified-full-repeat",
         category: "formatting",
         reason: `${m.code} was already introduced in full earlier — from then on this person is referred to as ${m.code}.`,
         rowId: row.rowId,
         timeMinutes: row.timeMinutes,
-        snippet: `${start > 0 ? "…" : ""}${row.observation.slice(start, end)}${end < row.observation.length ? "…" : ""}`,
+        snippet: wordSnippet(row.observation, m.start, m.end),
         suggestedFix: {
           wrong,
           correct: wrong.slice(0, m.start - from) + m.code,

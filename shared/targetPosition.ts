@@ -172,19 +172,29 @@ export function locateTarget(
   return found.reduce((a, b) => (b.rowId > a.rowId ? b : a));
 }
 
-/** Whether two ways of writing a place are the same one: the same text, or
- * one contained in the other once case and punctuation are ignored. */
+/** Whether two ways of writing a place are the same one. Case, accents and
+ * punctuation are ignored, and one counts as the other when every word of the
+ * shorter appears in the longer ("Dôme Café - Deep Water Point" in the full
+ * "Dôme Café - Deep Water Point, 100 The Esplanade, MOUNT PLEASANT (...)",
+ * even with a slip like "dome Dôme Café ..."). Street numbers are words too,
+ * so "21 Leach Avenue" never matches "15 Leach Ave". */
 export function samePlace(a: string, b: string): boolean {
-  const n = (s: string) =>
-    s
-      .toLowerCase()
-      .replace(/[^a-z0-9 ]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  const x = n(a);
-  const y = n(b);
-  if (!x || !y) return false;
-  return x === y || x.includes(y) || y.includes(x);
+  const words = (s: string) =>
+    new Set(
+      s
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9 ]+/g, " ")
+        .split(/\s+/)
+        .filter(Boolean)
+    );
+  const x = words(a);
+  const y = words(b);
+  if (x.size === 0 || y.size === 0) return false;
+  const within = (small: Set<string>, big: Set<string>) =>
+    Array.from(small).every(w => big.has(w));
+  return x.size <= y.size ? within(x, y) : within(y, x);
 }
 
 /** `locateTarget` over the pending lists as the server returns them, where

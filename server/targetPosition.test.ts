@@ -149,6 +149,15 @@ describe("samePlace", () => {
       true
     );
     expect(samePlace("77 Reynolds Rd", "21 Leach Avenue")).toBe(false);
+    expect(samePlace("21 Leach Avenue", "15 Leach Ave")).toBe(false);
+  });
+
+  it("matches the short name to the full address, accents and a slip included", () => {
+    const full =
+      "Dôme Café - Deep Water Point, 100 The Esplanade, MOUNT PLEASANT (Dôme Café - Deep Water Point)";
+    expect(samePlace(full, "Dôme Café - Deep Water Point")).toBe(true);
+    expect(samePlace(full, "dome Dôme Café - Deep Water Point")).toBe(true);
+    expect(samePlace(full, "Bull Creek Tavern")).toBe(false);
   });
 });
 

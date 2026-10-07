@@ -14,6 +14,7 @@ import {
 import { DivIconOverlay, wasAnyMarkerJustTapped } from "@/lib/divIconOverlay";
 import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
 import { detectUnidentifiedRepeat } from "@shared/unidentified";
+import { entryMentionsAddress } from "@shared/markerLink";
 import {
   locateTargetFromPending,
   samePlace,
@@ -2597,6 +2598,13 @@ export default function IntelligenceMapping() {
   const [showMapQeDateStepper, setShowMapQeDateStepper] = useState(false); // toggled by Date button
   const [mapQeSelectOpen, setMapQeSelectOpen] = useState(false);
   const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
+  // The custom marker an RS Quick Entry was opened from (its popup's RS Quick
+  // Entry button), so the entry can stay on that marker (see
+  // linkEntryToMarker). Cleared whenever the entry sheet closes.
+  const mapQeMarkerIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!mapQeOpen) mapQeMarkerIdRef.current = null;
+  }, [mapQeOpen]);
   // Quick Entry shortcut chip order — persisted to localStorage so user can reorder them.
   // Shared with SheetDetail's canonical order so the QE popup's fallback (used only
   // when a sheet has no saved custom order yet) can't drift out of sync with the main RS.
@@ -6644,6 +6652,7 @@ export default function IntelligenceMapping() {
       if (!cm) return;
       const address = cm.address || cm.label || "";
       setMapQeAddress(convertGoogleAddresses(address));
+      mapQeMarkerIdRef.current = id;
       setMapQeOpen(true);
     };
     return () => {
@@ -6873,6 +6882,7 @@ export default function IntelligenceMapping() {
       // Ensure the label has a bracket short-form — intel entity labels are already
       // in RS format (suburb UPPERCASE, no postcode) but may lack the bracket code.
       setMapQeAddress(ensureBracketCode(label));
+      mapQeMarkerIdRef.current = null;
       setMapQeOpen(true);
     };
     return () => {
@@ -7377,6 +7387,47 @@ export default function IntelligenceMapping() {
     }
   }, [mapQeOpen, rsSelectedSheetId, rsSheetsData]);
 
+  // An entry made from a custom marker's RS Quick Entry stays on that marker:
+  // once it is saved, the marker is linked to the address's location (the same
+  // link as the marker popup's Merge…, so Un-merge still works) and the
+  // automatic pin for that address is not drawn alongside it. Only when the
+  // entry actually mentions the marker's address, the marker has no link yet,
+  // and it is not a house marker (those already absorb a pin within 40 m).
+  const linkEntryToMarker = async (
+    markerId: number | null,
+    address: string,
+    observation: string
+  ) => {
+    if (markerId == null || !address) return;
+    const cm = customMarkersDataRef.current.find((m: any) => m.id === markerId);
+    if (
+      !cm ||
+      cm.linkedIntelLabel ||
+      ["house_outline", "house_filled"].includes(cm.markerIcon)
+    )
+      return;
+    const short = entryMentionsAddress(address, observation);
+    if (!short) return;
+    try {
+      const fresh = await refetchLocations();
+      const locs = (fresh.data ?? []) as IntelMapLocation[];
+      const target =
+        locs.find(l => addressesMatch(l.label, address)) ??
+        locs.find(l => samePlace(l.label, short));
+      if (!target) return;
+      await updateCustomMarkerMut.mutateAsync({
+        id: markerId,
+        linkedIntelLabel: target.label,
+      });
+      await refetchCustomMarkers();
+      mergedIntelRef.current.clear();
+      renderLocations(locs);
+    } catch {
+      // Leave the entry and the pin as they are; the marker can still be
+      // merged by hand from its popup.
+    }
+  };
+
   const addQuickRsEntry = (
     observation: string,
     cinsToAttach?: Set<string> | null,
@@ -7417,6 +7468,10 @@ export default function IntelligenceMapping() {
     setRsAddingRow(true);
     // Store the CINs in a local variable captured by the mutation callback
     const cins = cinsToAttach ? Array.from(cinsToAttach) : [];
+    // The marker this entry was opened from, captured now — the entry sheet
+    // closing clears the ref before the save completes.
+    const linkMarkerId = mapQeMarkerIdRef.current;
+    const linkAddress = mapQeAddress;
     rsCreateRow.mutate(
       {
         sheetId: rsSelectedSheetId,
@@ -7449,6 +7504,8 @@ export default function IntelligenceMapping() {
           toast.success("RS entry added");
           // Refetch intel pins so any new address in this observation appears on the map
           void refetchLocations();
+          // Keep the entry on the custom marker it was made from.
+          void linkEntryToMarker(linkMarkerId, linkAddress, observation);
           // Refetch entity chips so a newly-mentioned entity shows up as a chip immediately
           if (rsSelectedSheetId) {
             void utils.row.entityChips.invalidate({

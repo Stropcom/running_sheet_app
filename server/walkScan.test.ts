@@ -347,7 +347,7 @@ describe("sightings: where someone is, with no movement sentence", () => {
       matchPresenceInside(
         "BAIG remains inside Bull Creek Tavern, 52-54 Benningfield Road, BULL CREEK WA (Bull Creek Tavern) with JORDAN."
       )
-    ).toEqual({ names: "BAIG", place: "Bull Creek Tavern" });
+    ).toEqual({ names: "BAIG and JORDAN", place: "Bull Creek Tavern" });
   });
 
   it("does not read streets, car parks, vehicles or negations as a place", () => {
@@ -563,9 +563,9 @@ describe("the Kinky Lizard sheet (BAIG and UM1)", () => {
     ]);
   });
 
-  it("the sighting names the café, not the person with them", () => {
+  it("the sighting names the café, and lists the person with them", () => {
     expect(matchPresenceInside(seated)).toEqual({
-      names: "BAIG and UM1",
+      names: "BAIG and UM1 and JOHNSON",
       place: "Kinky Lizard Cafe on Mews",
     });
     const r = scanWalkEvents(rows(arrived, exited, seated));
@@ -638,5 +638,43 @@ describe("scanWalkEvents — a plain exit leaves the person on foot", () => {
       )
     );
     expect(scan.headingTo).toEqual([]);
+  });
+});
+
+describe("matchPresenceInside — people with them", () => {
+  it("adds 'with John EVANS (EVANS)' to the people inside", () => {
+    expect(
+      matchPresenceInside(
+        "RAHMAN seated at a table inside The Lookout Bar Bowling Bites with John EVANS (EVANS)."
+      )
+    ).toEqual({
+      names: "RAHMAN and EVANS",
+      place: "The Lookout Bar Bowling Bites",
+    });
+  });
+  it("adds an unidentified companion by short name", () => {
+    expect(
+      matchPresenceInside(
+        "RAHMAN seated inside The Lookout Bar Bowling Bites with an unidentified male (UM1)."
+      )
+    ).toEqual({
+      names: "RAHMAN and UM1",
+      place: "The Lookout Bar Bowling Bites",
+    });
+  });
+  it("leaves names alone when nobody is with them", () => {
+    expect(
+      matchPresenceInside("RAHMAN seated inside The Lookout Bar Bowling Bites.")
+    ).toEqual({ names: "RAHMAN", place: "The Lookout Bar Bowling Bites" });
+  });
+  it("puts both inside in the scan", () => {
+    const scan = scanWalkEvents(
+      rows(
+        "RAHMAN seated at a table inside The Lookout Bar Bowling Bites with John EVANS (EVANS)."
+      )
+    );
+    expect(scan.walkIns).toMatchObject([
+      { names: "RAHMAN and EVANS", location: "The Lookout Bar Bowling Bites" },
+    ]);
   });
 });

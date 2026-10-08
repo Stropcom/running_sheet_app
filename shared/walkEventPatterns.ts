@@ -298,6 +298,25 @@ const PRESENCE_VERB_RE =
 const INSIDE_PLACE_RE =
   /\b(?:inside|within)\s+(?:the\s+)?([A-Z0-9][^.;\n]*)|\bin\s+the\s+[a-z][a-z ]{1,40}?\s+(?:of|at)\s+(?:the\s+)?([A-Z0-9][^.;\n]*)/;
 
+/** Who else is there, from the text after "inside <Place>": "... with John
+ * EVANS (EVANS)" or "... with an unidentified male (UM1)" adds EVANS / UM1 to
+ * the people inside, so the card and flag list them with the target. */
+function presenceCompanions(raw: string, already: string): string[] {
+  const m = raw.match(
+    /\s+(?:with|accompanied\s+by|together\s+with)\s+([^.;\n]*)/i
+  );
+  if (!m) return [];
+  const have = new Set(surnameTokens(already));
+  const out: string[] = [];
+  for (const t of surnameTokens(m[1])) {
+    if (!have.has(t) && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
+const withCompanions = (names: string, more: string[]) =>
+  more.length > 0 ? `${names} and ${more.join(" and ")}` : names;
+
 /** The place from the text after "inside": anything that follows the place
  * itself ("... with Jason JOHNSON (JOHNSON)", "... while ...", "... and
  * spoke to ...") is cut off FIRST — otherwise a person's bracket
@@ -329,7 +348,9 @@ export function matchPresenceInside(
   const raw = (m[1] ?? m[2] ?? "").trim();
   if (!raw || /^\(?Vehicle\b/i.test(raw)) return null;
   const place = presencePlace(raw);
-  return place ? { names, place } : null;
+  return place
+    ? { names: withCompanions(names, presenceCompanions(raw, names)), place }
+    : null;
 }
 
 /** "BAIG and JONES inside Communicare, ..." — who is where with no verb at
@@ -355,7 +376,10 @@ function matchBareInside(
     return null;
   const place = presencePlace(m[2].trim());
   if (!place || place.startsWith("[")) return null;
-  return { names, place };
+  return {
+    names: withCompanions(names, presenceCompanions(m[2].trim(), names)),
+    place,
+  };
 }
 
 export interface WalkScanRow {

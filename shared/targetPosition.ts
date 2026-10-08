@@ -2,6 +2,7 @@
 // the sheet's address chips. This reads the same pending lists the continuity
 // cards are built from, with the same rules (see vehicleOccupants), so the
 // marker and the tracker never disagree. Deterministic: no lookups.
+import { shortAddressLabel } from "./markerLink";
 import {
   nameWords,
   occupantsToVehicle,
@@ -24,6 +25,13 @@ export interface TargetPosition {
   people: string[];
   rowId: number;
   rego?: string;
+  /** The vehicle's own marker on the map, when it has one and the target is
+   * in it: a vehicle with a marker is where its marker is, so the flag goes
+   * on the marker rather than on an address written in a row. */
+  marker?: { lat: number; lng: number };
+  /** The place is a best guess (where he was last logged), because nothing
+   * logged says where the vehicle is. */
+  placeIsEstimate?: boolean;
 }
 
 export interface TargetPositionInput {
@@ -57,6 +65,12 @@ export interface TargetPositionInput {
     inside?: boolean;
     /** Where they were last logged before getting into the vehicle. */
     at?: string;
+    /** The vehicle's own marker on the map, when it has one. */
+    vehicleMarker?: {
+      lat: number;
+      lng: number;
+      address: string | null;
+    };
   }[];
 }
 
@@ -100,6 +114,13 @@ export function locateTarget(
     vehicleOccupants(v, onFoot, input.placements, all);
 
   const found: TargetPosition[] = [];
+  // The marker standing for a vehicle, from anyone placed in it.
+  const markerOf = (rego: string) => {
+    const m = input.placements.find(
+      p => p.rego.toUpperCase() === rego.toUpperCase() && p.vehicleMarker
+    )?.vehicleMarker;
+    return m ? { marker: { lat: m.lat, lng: m.lng } } : {};
+  };
 
   for (const w of input.walkIns) {
     if (has(w.names, t)) {
@@ -156,6 +177,7 @@ export function locateTarget(
       people: targetFirst(people, t),
       rowId: joinedRow,
       rego: a.rego,
+      ...(oos ? {} : markerOf(a.rego)),
     });
   }
   for (const d of input.departures) {
@@ -190,8 +212,17 @@ export function locateTarget(
   );
   for (const mine of inVehicle.filter(p => has(p.name, t))) {
     const rego = mine.rego.toUpperCase();
+    const m =
+      mine.vehicleMarker ??
+      inVehicle.find(p => p.rego.toUpperCase() === rego && p.vehicleMarker)
+        ?.vehicleMarker;
+    // Where the vehicle is: its marker's address when it has one, else where
+    // he was last logged.
+    const markerPlace = m?.address ? shortAddressLabel(m.address) : "";
     found.push({
-      place: mine.at ?? null,
+      place: markerPlace || (mine.at ?? null),
+      placeIsEstimate: !markerPlace,
+      ...(m ? { marker: { lat: m.lat, lng: m.lng } } : {}),
       state: "vehicle",
       label: `in ${rego}`,
       people: targetFirst(

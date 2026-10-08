@@ -48,6 +48,10 @@ import {
 } from "@shared/walkEventPatterns";
 import { expandRowSegments } from "@shared/rowSegments";
 import {
+  attachVehicleMarkers,
+  type VehicleMarkerRef,
+} from "@shared/vehicleMarker";
+import {
   classifyVisitDirection,
   timeBucketLabels,
   DAY_LABELS,
@@ -5908,11 +5912,23 @@ export async function getPendingHeadingTo(
   return scanWalkEvents(rows).headingTo;
 }
 
+// Placements in a vehicle, with that vehicle's map marker when it has one — a
+// vehicle with a marker is where its marker is (see shared/vehicleMarker).
+async function withVehicleMarkers<P extends { rego: string }>(
+  sheetId: number,
+  placements: P[]
+): Promise<(P & { vehicleMarker?: VehicleMarkerRef })[]> {
+  if (!placements.some(p => p.rego)) return placements;
+  const sheet = await getRunningSheetById(sheetId);
+  const markers = await getCustomMarkers();
+  return attachVehicleMarkers(placements, markers, sheet?.operationId ?? null);
+}
+
 // The latest place each person was put by a row (in a vehicle, inside a
 // place, on foot) — see scanWalkEvents.
 export async function getPendingPlacements(sheetId: number) {
   const rows = await getRowsBySheetId(sheetId);
-  return scanWalkEvents(rows).placements;
+  return withVehicleMarkers(sheetId, scanWalkEvents(rows).placements);
 }
 
 /**
@@ -5950,7 +5966,7 @@ export async function getPendingContinuityWithDraft(
     arrivals: computePendingVehicleArrivals(rows),
     walkIns: walk.walkIns,
     headingTo: walk.headingTo,
-    placements: walk.placements,
+    placements: await withVehicleMarkers(sheetId, walk.placements),
   };
 }
 

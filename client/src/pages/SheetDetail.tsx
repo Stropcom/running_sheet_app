@@ -39,6 +39,7 @@ import {
   TARGET_EMOJI,
   vehiclesPeopleCanReach,
 } from "@shared/targetPosition";
+import { shortAddressLabel } from "@shared/markerLink";
 import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
 import { detectUnidentifiedRepeat } from "@shared/unidentified";
 import {
@@ -5673,7 +5674,14 @@ export default function SheetDetail({
               }
               byRego.forEach((ps, rego) => {
                 const names = ps.map(p => p.name);
-                const at = ps.find(p => p.at)?.at;
+                // A vehicle with a marker on the map is at that marker; else
+                // where they were last logged.
+                const markerAddr = ps.find(p => p.vehicleMarker?.address)
+                  ?.vehicleMarker?.address;
+                const at = markerAddr
+                  ? shortAddressLabel(markerAddr)
+                  : ps.find(p => p.at)?.at;
+                const atMarker = !!ps.find(p => p.vehicleMarker);
                 const rowId = Math.max(...ps.map(p => p.rowId));
                 continuityCards.push({
                   key: `vnl-${rego}`,
@@ -5681,7 +5689,7 @@ export default function SheetDetail({
                   pill: "In vehicle",
                   attn: true,
                   who: `${names.join(", ")} in the vehicle`,
-                  state: `${at ? `Last seen at ${at}` : "Position not logged"}${sinceText(rowId)}`,
+                  state: `${at ? `${atMarker ? "At" : "Last seen at"} ${at}` : "Position not logged"}${sinceText(rowId)}`,
                   actions: [
                     {
                       key: `vnl-dep-${rego}`,
@@ -5694,7 +5702,7 @@ export default function SheetDetail({
                   people: names,
                   locus: {
                     headline: `In ${rego}`,
-                    sub: `${at ? `Last seen at ${at}` : "Position not logged"}${sinceText(rowId)}`,
+                    sub: `${at ? `${atMarker ? "At" : "Last seen at"} ${at}` : "Position not logged"}${sinceText(rowId)}`,
                   },
                 });
               });

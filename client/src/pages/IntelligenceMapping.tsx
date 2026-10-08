@@ -5023,19 +5023,22 @@ export default function IntelligenceMapping() {
       setTargetFlagStatus(
         `The sheet doesn't say where ${token} is yet — no movement, arrival or sighting names ${token}.`
       );
-    } else if (!pos.place) {
+    } else if (!pos.place && !pos.marker) {
       setTargetFlagStatus(
         `${token} is ${pos.label}, but no place is written to put the flag on.`
       );
     } else if (!mapReady || !mapRef.current) {
       setTargetFlagStatus("");
     }
-    if (!mapReady || !mapRef.current || !pos?.place) {
+    if (!mapReady || !mapRef.current || (!pos?.place && !pos?.marker)) {
       removeFlag();
       return;
     }
-    const place = pos.place;
+    const place = pos.place ?? "the vehicle's marker";
     const findPin = (): google.maps.LatLngLiteral | null => {
+      // A vehicle with its own marker is where that marker is — whatever
+      // address the rows give.
+      if (pos.marker && pos.state === "vehicle") return pos.marker;
       const pins: any[] = [
         ...markersRef.current,
         ...Array.from(customMarkerMapRefs.current.values()),

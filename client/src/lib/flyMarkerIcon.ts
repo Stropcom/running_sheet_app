@@ -553,9 +553,9 @@ export function composeFlyTargetFlag(spec: FlyTargetFlagSpec): {
 } {
   const key = `targetflag2:${JSON.stringify(spec)}`;
   const S = FLAG_SCALE;
-  const font = "600 11px system-ui, -apple-system, 'Segoe UI', sans-serif";
+  const font = "700 12px system-ui, -apple-system, 'Segoe UI', sans-serif";
   const emojiFont =
-    "15px system-ui, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
+    "16px system-ui, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
   const measure = document.createElement("canvas").getContext("2d");
   if (!measure) return { url: "", width: 40, height: 40 };
   measure.font = font;
@@ -563,8 +563,8 @@ export function composeFlyTargetFlag(spec: FlyTargetFlagSpec): {
   measure.font = emojiFont;
   const emojiW = measure.measureText(spec.emoji).width;
   // Flat map pill: 2px border, padding 3px 10px 3px 7px, 6px gap.
-  const pillW = Math.ceil(2 + 7 + emojiW + 6 + textW + 10 + 2);
-  const pillH = 25;
+  const pillW = Math.ceil(2 + 8 + emojiW + 6 + textW + 11 + 2);
+  const pillH = 27;
   const stem = 8;
   const pad = 6; // room for the shadow
   const cssW = pillW + pad * 2;
@@ -602,10 +602,10 @@ export function composeFlyTargetFlag(spec: FlyTargetFlagSpec): {
   ctx.textAlign = "left";
   ctx.font = emojiFont;
   ctx.fillStyle = "#000000";
-  ctx.fillText(spec.emoji, px + 2 + 7, cy + 1);
+  ctx.fillText(spec.emoji, px + 2 + 8, Math.round(cy) + 1);
   ctx.font = font;
-  ctx.fillStyle = "#14181d";
-  ctx.fillText(spec.text, px + 2 + 7 + emojiW + 6, cy + 0.5);
+  ctx.fillStyle = "#000000";
+  ctx.fillText(spec.text, Math.round(px + 2 + 8 + emojiW + 6), Math.round(cy));
 
   // Stem from the pill down toward the pin.
   ctx.fillStyle = FLAG_PINK;

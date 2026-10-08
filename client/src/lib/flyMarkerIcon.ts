@@ -537,19 +537,21 @@ export interface FlyTargetFlagSpec {
 }
 
 const FLAG_PINK = "#e0338a";
-const FLAG_SCALE = 2;
+// The 3D map shows a picture at its own pixel size and ignores the width and
+// height it is given, so the flag must be drawn at exactly its on-screen size
+// (a 2x picture appears twice as big, and twice as high above the pin).
+const FLAG_SCALE = 1;
 
 /** The flat map's target flag — white pill, state emoji, pink edge, short
  * stem — drawn as one picture for the 3D map. The 3D map pins a picture by its
  * bottom centre, which is the target's spot; the picture ends in `lift` pixels
- * of transparent space so the flag rides above the pin standing there. Drawn
- * at twice its on-screen size and shown at the CSS size, so it stays crisp. */
+ * of transparent space so the flag rides above the pin standing there. */
 export function composeFlyTargetFlag(spec: FlyTargetFlagSpec): {
   url: string;
   width: number;
   height: number;
 } {
-  const key = `targetflag1:${JSON.stringify(spec)}`;
+  const key = `targetflag2:${JSON.stringify(spec)}`;
   const S = FLAG_SCALE;
   const font = "600 11px system-ui, -apple-system, 'Segoe UI', sans-serif";
   const emojiFont =

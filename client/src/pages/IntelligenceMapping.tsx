@@ -101,6 +101,7 @@ import {
   composeFlyIcon,
   composeFlyTeamIcon,
   composeFlyTeamPin,
+  composeFlyTargetFlag,
 } from "@/lib/flyMarkerIcon";
 import { FLY_COMPASS_FIXED_ICONS } from "@/lib/flyCompassFixed";
 import { ImagesPip } from "@/components/ImagesPip";
@@ -2567,6 +2568,15 @@ export default function IntelligenceMapping() {
     shapes: FlyShape[];
   } | null>(null);
   const [flySelectedId, setFlySelectedId] = useState<string | null>(null);
+  // Where the Target location flag is on the flat map right now (null when
+  // there isn't one). Fly draws the same flag from this, as a picture.
+  const targetFlagFlyRef = useRef<{
+    lat: number;
+    lng: number;
+    emoji: string;
+    text: string;
+    unsure: boolean;
+  } | null>(null);
   // A spot picked with a plain click in Fly — offers "Add here…".
   const [flyPick, setFlyPick] = useState<{ lat: number; lng: number } | null>(
     null
@@ -4148,6 +4158,35 @@ export default function IntelligenceMapping() {
     }
 
     await Promise.all(jobs);
+
+    // The target's location flag, riding above the pin on the same spot (the
+    // pin's own picture height says how far up it must be lifted).
+    const flag = targetFlagFlyRef.current;
+    if (flag && trackingSettings.location) {
+      const pin = markers.find(
+        m =>
+          (m.id.startsWith("intel:") || m.id.startsWith("cm:")) &&
+          Math.abs(m.lat - flag.lat) < 2e-5 &&
+          Math.abs(m.lng - flag.lng) < 2e-5
+      );
+      const pic = composeFlyTargetFlag({
+        emoji: flag.emoji,
+        text: flag.text,
+        unsure: flag.unsure,
+        lift: pin?.height ? pin.height - 5 : 81,
+      });
+      if (pic.url) {
+        markers.push({
+          id: "targetflag",
+          lat: flag.lat,
+          lng: flag.lng,
+          iconUrl: pic.url,
+          width: pic.width,
+          height: pic.height,
+          inert: true,
+        });
+      }
+    }
     markers.sort((a, b) => a.id.localeCompare(b.id));
 
     // Drawn shapes → 3D polygons and lines.
@@ -4962,6 +5001,10 @@ export default function IntelligenceMapping() {
         targetFlagRef.current.map = null;
         targetFlagRef.current = null;
       }
+      if (targetFlagFlyRef.current) {
+        targetFlagFlyRef.current = null;
+        flyTickRef.current?.();
+      }
     };
     const pos = rsTargetPosition;
     const sheetTitle = (rsSheetsData as any[] | undefined)?.find(
@@ -5077,6 +5120,17 @@ export default function IntelligenceMapping() {
         zIndex: 5000,
         title: "Target location",
       });
+      // The same flag for Fly (see buildFlySnapshot).
+      const lat = typeof at.lat === "function" ? (at as any).lat() : at.lat;
+      const lng = typeof at.lng === "function" ? (at as any).lng() : at.lng;
+      targetFlagFlyRef.current = {
+        lat,
+        lng,
+        emoji: TARGET_EMOJI[pos.state],
+        text: label.textContent ?? "",
+        unsure,
+      };
+      flyTickRef.current?.();
     };
     setTargetFlagStatus(`Looking for "${place}" on the map…`);
     attempt(0);

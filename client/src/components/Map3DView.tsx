@@ -37,6 +37,9 @@ export interface FlyMarker {
   label?: string;
   /** Moves smoothly to a new position instead of jumping (live team pins). */
   glide?: boolean;
+  /** Not clickable — a picture with empty space over another marker (the
+   * target flag) must not take that marker's taps. */
+  inert?: boolean;
 }
 
 /** A drawn area or line on the 3D map. */
@@ -496,6 +499,7 @@ export function Map3DView({
         // ── Markers and shapes, kept in step with the props ──────────────
         const MarkerCtor =
           lib.Marker3DInteractiveElement ?? lib.Marker3DElement;
+        const InertMarkerCtor = lib.Marker3DElement ?? MarkerCtor;
         const PolygonCtor = lib.Polygon3DElement;
         const PolylineCtor = lib.Polyline3DElement;
         const markerEls = new Map<string, MarkerEntry>();
@@ -510,7 +514,7 @@ export function Map3DView({
           // above the surface there (roof, tree or ground), not under it:
           // a marker buried under a rooftop is drawn faded by the 3D map,
           // which is what made markers fade out as the camera came close.
-          const marker = new MarkerCtor({
+          const marker = new (m.inert ? InertMarkerCtor : MarkerCtor)({
             position: {
               lat: at.lat,
               lng: at.lng,
@@ -528,6 +532,7 @@ export function Map3DView({
           img.height = m.height ?? Math.round(size * FLY_ICON_ASPECT);
           tpl.content.append(img);
           marker.append(tpl);
+          if (m.inert) return marker;
           marker.addEventListener("gmp-click", (e: Event) => {
             markerClick.at = Date.now();
             e.stopPropagation();

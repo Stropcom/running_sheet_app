@@ -47,4 +47,10 @@ module.exports = {
     errorPath: "error.html",
     allowNavigation: host ? [host] : [],
   },
+  ios: {
+    // Keep the page below the status bar (clock, Dynamic Island) and above
+    // the home indicator. RunLog's own pages do not leave room for them, and
+    // changing the website for this would change the browser/PWA too.
+    contentInset: "always",
+  },
 };

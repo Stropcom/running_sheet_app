@@ -608,3 +608,35 @@ describe("scanWalkEvents — exit followed by a meeting, then 'They' get in a ve
     ]);
   });
 });
+
+describe("scanWalkEvents — a plain exit leaves the person on foot", () => {
+  const entered =
+    "RAHMAN entered The Lookout Bar Bowling Bites, 1-2/148 The Esplanade, SCARBOROUGH WA (The Lookout Bar Bowling Bites) and continued out of sight.";
+
+  it("'exited X, onto The Esplanade and met ...' is departed on foot from X", () => {
+    const scan = scanWalkEvents(
+      rows(
+        entered,
+        "RAHMAN exited The Lookout Bar Bowling Bites, onto The Esplanade and met Steven HARRIS (HARRIS)."
+      )
+    );
+    expect(scan.walkIns).toEqual([]);
+    expect(scan.headingTo).toMatchObject([
+      {
+        names: "RAHMAN",
+        destination: "[location]",
+        from: "The Lookout Bar Bowling Bites",
+      },
+    ]);
+  });
+
+  it("is not on foot when the same sentence gets into a vehicle", () => {
+    const scan = scanWalkEvents(
+      rows(
+        entered,
+        "RAHMAN exited The Lookout Bar Bowling Bites and got into a white sedan."
+      )
+    );
+    expect(scan.headingTo).toEqual([]);
+  });
+});

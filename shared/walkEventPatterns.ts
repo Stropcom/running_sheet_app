@@ -737,9 +737,29 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     if (!exitMatch) {
       const anyExit = text.match(PERSON_EXIT_ANY_PATTERN);
       if (anyExit && !/^\(?Vehicle\b/i.test(anyExit[2])) {
-        leavePlace(placeName(anyExit[2]), cleanWalkerNames(anyExit[1]));
-        placePeople(cleanWalkerNames(anyExit[1]), "", row.id);
+        const walkers = cleanWalkerNames(anyExit[1]);
+        const from = placeName(anyExit[2]);
+        leavePlace(from, walkers);
+        placePeople(walkers, "", row.id);
         noteActors(anyExit[1], text);
+        // Out of the place and not into a vehicle: on foot, with nothing
+        // said about where to — "departed on foot" from that place until a
+        // later row says where they went.
+        if (
+          walkers &&
+          !PRONOUN_RE.test(walkers) &&
+          !/\bVehicle\b|\bentered\b|\bboarded\b|\b(?:got|climbed|jumped)\s+(?:in|into)\b/i.test(
+            text
+          )
+        ) {
+          clearHeadingFor(walkers);
+          heading.set(headingKey("[location]", walkers), {
+            names: walkers,
+            destination: "[location]",
+            from,
+            ...where,
+          });
+        }
       }
     }
   });

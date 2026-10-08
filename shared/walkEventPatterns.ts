@@ -168,7 +168,7 @@ export const PERSON_ENTER_ANY_PATTERN =
   /([A-Za-z][^.\n]*?)\s*\bentered\s+([A-Z0-9][^.\n]*?)\s*(?:\s+and\s+continued\s+out\s+of\s+sight|(?=\.)|$)/;
 //   "BAIG exited Melville Fish & Chips." / "... and entered Vehicle ..."
 export const PERSON_EXIT_ANY_PATTERN =
-  /([A-Za-z][^.\n]*?)\s*\bexited\s+([A-Z0-9][^.\n]*?)(?:\s+and\s+(?:walked|entered|continued|got|returned|drove|left)\b|[,.]|$)/;
+  /([A-Za-z][^.\n]*?)\s*\bexited\s+([A-Z0-9][^.\n]*?)(?:\s+and\s+(?:walked|entered|continued|got|returned|drove|left|met|joined|spoke|talked|stood|waited|stopped|greeted|approached|crossed|turned|began|proceeded|headed|moved)\b|[,.]|$)/;
 
 // Leaving a place and carrying on without saying where to — "exited
 // Communicare and walked along Cantonment Street", "departed X and continued
@@ -444,6 +444,23 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       for (const t of tok(p)) placed.set(t, entry);
     }
   };
+  // Who the previous sentence was about — "They walked along ... and got into
+  // Vehicle X" carries on from "RAHMAN exited A and met an unidentified male
+  // (UM1) out the front." (everyone named in that sentence, so UM1 too).
+  let lastActors = "";
+  const PRONOUN_RE = /^(?:they|both|the\s+(?:two|pair|group)|he|she)$/i;
+  const resolveWho = (names: string) => {
+    const n = cleanWalkerNames(names);
+    return PRONOUN_RE.test(n) && lastActors ? lastActors : n;
+  };
+  const noteActors = (names: string, sentence: string) => {
+    const base = cleanWalkerNames(names);
+    if (!base || PRONOUN_RE.test(base)) return;
+    const extra = (sentence.match(/\bU[MFCP]\d+\b/g) ?? []).filter(
+      c => !tok(base).includes(c)
+    );
+    lastActors = [base, ...extra].join(" and ");
+  };
   const noteJoined = (
     names: string,
     rego: string,
@@ -527,6 +544,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       const dest = extractExitDestination(exitMatch[3]);
       rowDest = dest;
       rowWalkers = cleanWalkerNames(exitMatch[1]);
+      noteActors(exitMatch[1], text);
       // On foot now, wherever they were (a vehicle below overrides this).
       placePeople(rowWalkers, "", row.id);
       // Walked back to, or got into, a vehicle: they are in it, not walking.
@@ -569,7 +587,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     if (!exitMatch) {
       const ev = text.match(PERSON_ENTER_VEHICLE_PATTERN);
       if (ev && !/\bVehicle\b/i.test(ev[1])) {
-        const who = cleanWalkerNames(ev[1]);
+        const who = resolveWho(ev[1]);
         if (who) {
           noteJoined(who, ev[2], row.id);
           leaveAllPlaces(who);
@@ -628,7 +646,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     if (!exitMatch) {
       const walkMatch = text.match(PERSON_WALK_PATTERN);
       if (walkMatch) {
-        const walkers = cleanWalkerNames(walkMatch[1]);
+        const walkers = resolveWho(walkMatch[1]);
         // "walked towards Vehicle X", "walked to Vehicle X" and "walked to
         // and entered Vehicle X" all mean they are back at the car.
         const toVehicle =
@@ -720,6 +738,8 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       const anyExit = text.match(PERSON_EXIT_ANY_PATTERN);
       if (anyExit && !/^\(?Vehicle\b/i.test(anyExit[2])) {
         leavePlace(placeName(anyExit[2]), cleanWalkerNames(anyExit[1]));
+        placePeople(cleanWalkerNames(anyExit[1]), "", row.id);
+        noteActors(anyExit[1], text);
       }
     }
   });

@@ -585,3 +585,26 @@ describe("the Kinky Lizard sheet (BAIG and UM1)", () => {
     ).toEqual({ names: "BAIG", place: "Bull Creek Tavern" });
   });
 });
+
+describe("scanWalkEvents — exit followed by a meeting, then 'They' get in a vehicle", () => {
+  const entered =
+    "RAHMAN entered The Lookout Bar Bowling Bites, 1-2/148 The Esplanade, SCARBOROUGH WA (The Lookout Bar Bowling Bites) and continued out of sight.";
+  const exitMet =
+    "RAHMAN exited The Lookout Bar Bowling Bites and met an unidentified male (UM1) out the front.";
+  const gotIn =
+    "They walked along The Esplanade, SCARBOROUGH and got into a blue BMW X5, bearing WA registration 1FAD004 (Vehicle 1FAD004).";
+
+  it("reads 'exited X and met ...' as leaving X", () => {
+    const scan = scanWalkEvents(rows(entered, exitMet));
+    expect(scan.walkIns).toEqual([]);
+  });
+
+  it("puts everyone 'They' refers to in the vehicle", () => {
+    const scan = scanWalkEvents(rows(entered, `${exitMet}\n\n${gotIn}`));
+    expect(scan.walkIns).toEqual([]);
+    expect(scan.placements).toMatchObject([
+      { name: "RAHMAN", rego: "1FAD004" },
+      { name: "UM1", rego: "1FAD004" },
+    ]);
+  });
+});

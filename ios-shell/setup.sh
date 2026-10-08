@@ -41,6 +41,11 @@ else
   say "iOS project already exists; keeping it"
 fi
 
+say "Putting the RunLog icon on the app"
+ICON_DIR="ios/App/App/Assets.xcassets/AppIcon.appiconset"
+[ -d "$ICON_DIR" ] || fail "Expected $ICON_DIR but it was not created. Send a screenshot of this window."
+cp resources/icon-1024.png "$ICON_DIR/AppIcon-512@2x.png"
+
 say "Adding the permission wording iOS shows officers"
 PLIST="ios/App/App/Info.plist"
 [ -f "$PLIST" ] || fail "Expected $PLIST but it was not created. Send a screenshot of this window."

@@ -107,6 +107,8 @@ server) is the next step; it is not set up yet.
 
 ## Files in this folder
 
+- `resources/icon-1024.png` — the app icon (RunLog's shield, full square, no
+  transparency, as iOS requires). `setup.sh` copies it into the Xcode project.
 - `www/` — the "can't reach RunLog" screen shown when the site can't be loaded.
 - `capacitor.config.js` — the app's name, identifier and the RunLog address.
 - `setup.sh` — the Mac setup script.

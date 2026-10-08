@@ -143,6 +143,6 @@ server/externalIntel/models/eng.traineddata
 /playwright-report/
 /playwright/.cache/
 
-# iOS shell: the Xcode project is generated on the Mac by scripts/ios/setup.sh
-/ios/
+# iOS shell: the Xcode project is generated on the Mac by ios-shell/setup.sh
+/ios-shell/ios/
 /ios-shell/runlog-url.txt

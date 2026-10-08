@@ -1,0 +1,16 @@
+{
+  "name": "runlog-ios-shell",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Thin iPhone/iPad shell that opens the live RunLog site. Kept separate from the web app so its tools never touch the RunLog build.",
+  "dependencies": {
+    "@capacitor/core": "8.5.3",
+    "@capacitor/ios": "8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

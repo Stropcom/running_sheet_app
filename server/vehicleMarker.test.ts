@@ -217,3 +217,35 @@ describe("the whole journey: marker, then departure, then arrival elsewhere", ()
     expect(locateAt(3)?.marker).toBeUndefined();
   });
 });
+
+describe("a vehicle that arrives and goes out of sight with its occupants", () => {
+  const row = {
+    id: 1,
+    sheetId: 1,
+    observation:
+      "Vehicle 1FAC488, RAHMAN driver, EVANS front passenger, TAYLOR rear passenger, arrived at Rendezvous Hotel Perth Scarborough, 148 The Esplanade, SCARBOROUGH WA (Rendezvous Hotel Perth Scarborough), entered the car park and continued out of sight.",
+  };
+  it("puts the target out of sight at that address, with his companions", () => {
+    const walk = scanWalkEvents([row]);
+    const pos = locateTarget({
+      token: "RAHMAN",
+      arrivals: computePendingVehicleArrivals([row] as any).map((a: any) => ({
+        rego: a.rego,
+        names: "RAHMAN, EVANS, TAYLOR",
+        address: a.address,
+        rowId: a.rowId,
+        outOfSight: a.outOfSight,
+      })),
+      departures: [],
+      walkIns: walk.walkIns,
+      headingTo: walk.headingTo,
+      placements: walk.placements,
+    });
+    expect(pos).toMatchObject({
+      place: "Rendezvous Hotel Perth Scarborough",
+      state: "oos",
+      label: "out of sight",
+      people: ["RAHMAN", "EVANS", "TAYLOR"],
+    });
+  });
+});

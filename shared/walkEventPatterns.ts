@@ -452,6 +452,12 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     }
     return out;
   };
+  // A "names" capture that holds "Vehicle <rego>" is a vehicle's own sentence
+  // ("Vehicle 1FAC488, RAHMAN driver, ... arrived at X, entered the car park
+  // and continued out of sight"): the vehicle moved, nobody walked. It is
+  // never a list of people on foot.
+  const isVehicleSubject = (names: string) =>
+    /\bVehicle\s+[A-Za-z0-9]{5,8}\b/i.test(names);
   // Heading entries are keyed by destination — except an unwritten one
   // ("[location]"), which several different people can share, so those are
   // keyed by who is walking too.
@@ -582,6 +588,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       const onward = text.match(PERSON_EXIT_ONWARD_PATTERN);
       if (onward && !/\bVehicle\b/i.test(onward[1])) exitMatch = onward;
     }
+    if (exitMatch && isVehicleSubject(exitMatch[1])) exitMatch = null;
     if (exitMatch) {
       const from = exitMatch[2].trim();
       leavePlace(from, cleanWalkerNames(exitMatch[1]));
@@ -691,7 +698,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     // another place.
     if (!exitMatch) {
       const walkMatch = text.match(PERSON_WALK_PATTERN);
-      if (walkMatch) {
+      if (walkMatch && !isVehicleSubject(walkMatch[1])) {
         const walkers = resolveWho(walkMatch[1]);
         // "walked towards Vehicle X", "walked to Vehicle X" and "walked to
         // and entered Vehicle X" all mean they are back at the car.
@@ -737,7 +744,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     }
 
     const directMatch = text.match(PERSON_ENTER_PATTERN);
-    if (directMatch) {
+    if (directMatch && !isVehicleSubject(directMatch[1])) {
       record(
         cleanWalkerNames(directMatch[1]),
         bracketLabelOrSelf(directMatch[2]),
@@ -748,7 +755,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
 
     // Any other "entered <Place>" (see PERSON_ENTER_ANY_PATTERN).
     const anyEnter = text.match(PERSON_ENTER_ANY_PATTERN);
-    if (anyEnter) {
+    if (anyEnter && !isVehicleSubject(anyEnter[1])) {
       if (/^\(?Vehicle\b/i.test(anyEnter[2])) {
         // Back in a vehicle: no longer walking anywhere.
         clearHeadingFor(cleanWalkerNames(anyEnter[1]));
@@ -766,7 +773,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     // A sighting: "BAIG seated ... inside <Place>." — inside that place now,
     // and so no longer wherever they were last logged.
     const presence = matchPresenceInside(text);
-    if (presence) {
+    if (presence && !isVehicleSubject(presence.names)) {
       const who = new Set(tok(presence.names));
       for (const [k, v] of Array.from(lastWalkIn.entries())) {
         if (k === key(presence.place)) continue;
@@ -782,7 +789,11 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     // A plain exit with no "walked" after it (see PERSON_EXIT_ANY_PATTERN).
     if (!exitMatch) {
       const anyExit = text.match(PERSON_EXIT_ANY_PATTERN);
-      if (anyExit && !/^\(?Vehicle\b/i.test(anyExit[2])) {
+      if (
+        anyExit &&
+        !/^\(?Vehicle\b/i.test(anyExit[2]) &&
+        !isVehicleSubject(anyExit[1])
+      ) {
         const walkers = cleanWalkerNames(anyExit[1]);
         const from = placeName(anyExit[2]);
         leavePlace(from, walkers);

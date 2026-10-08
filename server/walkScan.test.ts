@@ -705,3 +705,27 @@ describe("scanWalkEvents — exit 'onto The Esplanade', then into a vehicle with
     ]);
   });
 });
+
+describe("scanWalkEvents — a sentence about the vehicle is not people on foot", () => {
+  const arrived =
+    "Vehicle 1FAC488, RAHMAN driver, EVANS front passenger, TAYLOR rear passenger, arrived at Rendezvous Hotel Perth Scarborough, 148 The Esplanade, SCARBOROUGH WA (Rendezvous Hotel Perth Scarborough), entered the car park and continued out of sight.";
+
+  it("the vehicle entering a car park is no walk-in, heading or placement", () => {
+    const scan = scanWalkEvents(rows(arrived));
+    expect(scan.walkIns).toEqual([]);
+    expect(scan.headingTo).toEqual([]);
+    expect(scan.placements).toEqual([]);
+  });
+
+  it("holds for the other 'Vehicle X, ...' movement wording", () => {
+    for (const text of [
+      "Vehicle 1FAC488, RAHMAN driver, arrived at 8 Grace Street and entered the driveway and continued out of sight.",
+      "Vehicle 1FAC488, RAHMAN driver, exited 8 Grace Street and walked along Grace Street.",
+      "Vehicle 1FAC488, RAHMAN driver, entered Rendezvous Hotel Perth Scarborough.",
+    ]) {
+      const scan = scanWalkEvents(rows(text));
+      expect(scan.walkIns).toEqual([]);
+      expect(scan.headingTo).toEqual([]);
+    }
+  });
+});

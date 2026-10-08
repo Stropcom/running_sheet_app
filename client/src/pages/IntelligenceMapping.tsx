@@ -14,7 +14,7 @@ import {
 import { DivIconOverlay, wasAnyMarkerJustTapped } from "@/lib/divIconOverlay";
 import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
 import { detectUnidentifiedRepeat } from "@shared/unidentified";
-import { entryMentionsAddress } from "@shared/markerLink";
+import { entryMentionsAddress, popupShortAddress } from "@shared/markerLink";
 import { fullStreetTypes } from "@shared/streetTypes";
 import {
   locateTargetFromPending,
@@ -294,6 +294,12 @@ function addressesMatch(a: string, b: string): boolean {
     expandStreetType(a.trim()).toLowerCase() ===
     expandStreetType(b.trim()).toLowerCase()
   );
+}
+
+// Tracker cards in the RS Quick Entry popup: the same place however it was
+// typed — street addresses by abbreviation, businesses/POIs by name.
+function cardAddressMatch(a: string, b: string): boolean {
+  return addressesMatch(a, b) || samePlace(a, b);
 }
 
 // Isolated from the main IntelligenceMapping component on purpose: the
@@ -3653,14 +3659,7 @@ export default function IntelligenceMapping() {
   // vehicle-arriving chip's full-vs-short decision.
   const rsQeShortAddr = useMemo(() => {
     if (!mapQeAddress) return "";
-    const bracketMatch = mapQeAddress.match(
-      /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-    );
-    const toTitleCase = (s: string) =>
-      s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-    return bracketMatch
-      ? toTitleCase(bracketMatch[2])
-      : (mapQeAddress.split(",")[0]?.trim() ?? mapQeAddress);
+    return popupShortAddress(mapQeAddress);
   }, [mapQeAddress]);
   // Has this address already been mentioned (full bracketed form) anywhere
   // in this sheet? If so the vehicle-arriving chip uses the short form,
@@ -7321,7 +7320,7 @@ export default function IntelligenceMapping() {
 
     if (/\bdepart(?:ing|ed|s)\b/.test(normalized)) {
       const arrivalsHere = (rsPendingArrivals ?? []).filter(a =>
-        addressesMatch(a.address, rsQeShortAddr)
+        cardAddressMatch(a.address, rsQeShortAddr)
       );
       const candidates = arrivalsHere.filter(a =>
         normalized.includes(a.rego.toLowerCase())
@@ -12440,18 +12439,7 @@ export default function IntelligenceMapping() {
                                 rsInlineInputRef.current?.focus();
                               };
                               // Extract short address from bracket code: e.g. "21 Olding Way, MELVILLE WA (21 OLDING WAY)" → "21 Olding Way"
-                              const bracketMatch = mapQeAddress.match(
-                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                              );
-                              // Short address: title-case the bracket code content (e.g. "21 OLDING WAY" → "21 Olding Way")
-                              const toTitleCase = (s: string) =>
-                                s
-                                  .toLowerCase()
-                                  .replace(/\b\w/g, c => c.toUpperCase());
-                              const shortAddr = bracketMatch
-                                ? toTitleCase(bracketMatch[2])
-                                : (mapQeAddress.split(",")[0]?.trim() ??
-                                  mapQeAddress);
+                              const shortAddr = popupShortAddress(mapQeAddress);
                               return (
                                 <div className="flex flex-col gap-1 md:gap-1.5">
                                   <button
@@ -12489,17 +12477,7 @@ export default function IntelligenceMapping() {
                           (see onAction below) — it writes into the record. */}
                           {mapQeAddress &&
                             (() => {
-                              const bracketMatch = mapQeAddress.match(
-                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                              );
-                              const toTitleCase = (s: string) =>
-                                s
-                                  .toLowerCase()
-                                  .replace(/\b\w/g, c => c.toUpperCase());
-                              const shortAddr = bracketMatch
-                                ? toTitleCase(bracketMatch[2])
-                                : (mapQeAddress.split(",")[0]?.trim() ??
-                                  mapQeAddress);
+                              const shortAddr = popupShortAddress(mapQeAddress);
                               // First mention of an address on this sheet is
                               // written in full (with its bracket short-form,
                               // which Intelligence relies on to register the
@@ -12637,7 +12615,7 @@ export default function IntelligenceMapping() {
                               >();
                               (rsPendingArrivals ?? [])
                                 .filter(a =>
-                                  addressesMatch(a.address, shortAddr)
+                                  cardAddressMatch(a.address, shortAddr)
                                 )
                                 .forEach(a =>
                                   here.set(a.rego, {
@@ -12655,7 +12633,7 @@ export default function IntelligenceMapping() {
                                   extractArrivalAddress(rsInlineText);
                                 if (
                                   draftAddress &&
-                                  addressesMatch(draftAddress, shortAddr)
+                                  cardAddressMatch(draftAddress, shortAddr)
                                 ) {
                                   here.set(draftArrive.rego, {
                                     rego: draftArrive.rego,
@@ -12673,7 +12651,7 @@ export default function IntelligenceMapping() {
                               const insideHere = (
                                 rsPendingWalkIns ?? []
                               ).filter(w =>
-                                addressesMatch(w.location, shortAddr)
+                                cardAddressMatch(w.location, shortAddr)
                               );
                               const leftAddressText = (w: {
                                 names: string;
@@ -12945,7 +12923,7 @@ export default function IntelligenceMapping() {
                                 .filter(
                                   h =>
                                     h.destination.includes("[") ||
-                                    addressesMatch(h.destination, shortAddr)
+                                    cardAddressMatch(h.destination, shortAddr)
                                 )
                                 .forEach(h =>
                                   cards.push({

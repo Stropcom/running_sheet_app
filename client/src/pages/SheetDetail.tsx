@@ -5652,6 +5652,53 @@ export default function SheetDetail({
                 },
               });
             });
+            // People who got into a vehicle that has no arrival or departure
+            // row of its own ("entered a gold BMW ... (Vehicle 1FAB888)"):
+            // their position is where they were last logged, until a row
+            // says where the vehicle went.
+            {
+              const logged = new Set(
+                [...(pendingArrivals ?? []), ...(pendingDepartures ?? [])].map(
+                  v => v.rego.toUpperCase()
+                )
+              );
+              const byRego = new Map<
+                string,
+                NonNullable<typeof pendingPlacements>
+              >();
+              for (const p of pendingPlacements ?? []) {
+                if (!p.rego || p.inside === false) continue;
+                if (logged.has(p.rego.toUpperCase())) continue;
+                byRego.set(p.rego, [...(byRego.get(p.rego) ?? []), p]);
+              }
+              byRego.forEach((ps, rego) => {
+                const names = ps.map(p => p.name);
+                const at = ps.find(p => p.at)?.at;
+                const rowId = Math.max(...ps.map(p => p.rowId));
+                continuityCards.push({
+                  key: `vnl-${rego}`,
+                  title: rego,
+                  pill: "In vehicle",
+                  attn: true,
+                  who: `${names.join(", ")} in the vehicle`,
+                  state: `${at ? `Last seen at ${at}` : "Position not logged"}${sinceText(rowId)}`,
+                  actions: [
+                    {
+                      key: `vnl-dep-${rego}`,
+                      label: "Vehicle departing",
+                      text: `Vehicle ${rego}, ${names.join(", ")}, departed ${at ?? "[location]"} and continued via:`,
+                    },
+                  ],
+                  latestRowId: rowId,
+                  holds: names.flatMap(n => surnameTokens(n)),
+                  people: names,
+                  locus: {
+                    headline: `In ${rego}`,
+                    sub: `${at ? `Last seen at ${at}` : "Position not logged"}${sinceText(rowId)}`,
+                  },
+                });
+              });
+            }
             // The card holding the TARGET leads the band as his tracker.
             // Only a person target is tracked this way (a vehicle or
             // address target is described in words, not by surname).

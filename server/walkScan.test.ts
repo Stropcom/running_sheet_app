@@ -678,3 +678,30 @@ describe("matchPresenceInside — people with them", () => {
     ]);
   });
 });
+
+describe("scanWalkEvents — exit 'onto The Esplanade', then into a vehicle with no arrival row", () => {
+  const seated =
+    "RAHMAN seated at a table inside The Lookout Bar Bowling Bites with John EVANS (EVANS).";
+  const exited =
+    "RAHMAN and EVANS exited The Lookout Bar Bowling Bites onto The Esplanade and met with Steven TAYLOR (TAYLOR).";
+  const gotIn =
+    "RAHMAN, EVANS and TAYLOR entered a gold BMW X5 SUV, bearing WA registration 1FAB888 (Vehicle 1FAB888).";
+
+  it("'onto The Esplanade' does not become part of the place left", () => {
+    const scan = scanWalkEvents(rows(seated, exited));
+    expect(scan.walkIns).toEqual([]);
+    expect(scan.headingTo).toMatchObject([
+      { names: "RAHMAN and EVANS", from: "The Lookout Bar Bowling Bites" },
+    ]);
+  });
+
+  it("remembers where they were last logged when they get into the vehicle", () => {
+    const scan = scanWalkEvents(rows(seated, exited, gotIn));
+    expect(scan.headingTo).toEqual([]);
+    expect(scan.placements).toMatchObject([
+      { name: "RAHMAN", rego: "1FAB888", at: "The Lookout Bar Bowling Bites" },
+      { name: "EVANS", rego: "1FAB888", at: "The Lookout Bar Bowling Bites" },
+      { name: "TAYLOR", rego: "1FAB888" },
+    ]);
+  });
+});

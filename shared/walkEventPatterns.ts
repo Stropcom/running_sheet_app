@@ -168,7 +168,7 @@ export const PERSON_ENTER_ANY_PATTERN =
   /([A-Za-z][^.\n]*?)\s*\bentered\s+([A-Z0-9][^.\n]*?)\s*(?:\s+and\s+continued\s+out\s+of\s+sight|(?=\.)|$)/;
 //   "BAIG exited Melville Fish & Chips." / "... and entered Vehicle ..."
 export const PERSON_EXIT_ANY_PATTERN =
-  /([A-Za-z][^.\n]*?)\s*\bexited\s+([A-Z0-9][^.\n]*?)(?:\s+and\s+(?:walked|entered|continued|got|returned|drove|left|met|joined|spoke|talked|stood|waited|stopped|greeted|approached|crossed|turned|began|proceeded|headed|moved)\b|[,.]|$)/;
+  /([A-Za-z][^.\n]*?)\s*\bexited\s+([A-Z0-9][^.\n]*?)(?:\s+(?:onto|towards?|along|across|via)\b|\s+and\s+(?:walked|entered|continued|got|returned|drove|left|met|joined|spoke|talked|stood|waited|stopped|greeted|approached|crossed|turned|began|proceeded|headed|moved)\b|[,.]|$)/;
 
 // Leaving a place and carrying on without saying where to — "exited
 // Communicare and walked along Cantonment Street", "departed X and continued
@@ -423,6 +423,10 @@ export interface ScannedPlacement {
    * a vehicle. */
   inside: boolean;
   rowId: number;
+  /** The last place they were logged at before this (where they were seen
+   * last), when one is known — a vehicle with no arrival row of its own is
+   * taken to be around there. */
+  at?: string;
 }
 
 export function scanWalkEvents(rows: WalkScanRow[]): {
@@ -457,6 +461,13 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   const walkedOut = new Set<string>();
   const heading = new Map<string, ScannedHeadingTo & { orderIdx: number }>();
   const placed = new Map<string, ScannedPlacement>();
+  // The last place each person was logged at (a surname token → the place).
+  const lastAt = new Map<string, string>();
+  const setAt = (names: string, place: string) => {
+    const where = place.trim();
+    if (!where || where.startsWith("[")) return;
+    for (const t of tok(names)) lastAt.set(t, where);
+  };
   const placePeople = (
     names: string,
     rego: string,
@@ -464,7 +475,16 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     inside = true
   ) => {
     for (const p of splitPeopleNames(cleanWalkerNames(names))) {
-      const entry = { name: p, rego: rego.toUpperCase(), rowId, inside };
+      const at = tok(p)
+        .map(t => lastAt.get(t))
+        .find(Boolean);
+      const entry: ScannedPlacement = {
+        name: p,
+        rego: rego.toUpperCase(),
+        rowId,
+        inside,
+        ...(at ? { at } : {}),
+      };
       for (const t of tok(p)) placed.set(t, entry);
     }
   };
@@ -569,6 +589,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       rowDest = dest;
       rowWalkers = cleanWalkerNames(exitMatch[1]);
       noteActors(exitMatch[1], text);
+      setAt(rowWalkers, bracketLabelOrSelf(from));
       // On foot now, wherever they were (a vehicle below overrides this).
       placePeople(rowWalkers, "", row.id);
       // Walked back to, or got into, a vehicle: they are in it, not walking.
@@ -621,6 +642,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     }
 
     const record = (names: string, location: string, route: string) => {
+      setAt(names, location);
       const k = key(location);
       lastWalkIn.set(k, { names, location, route, ...where });
       walkedOut.delete(k);
@@ -764,6 +786,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         const walkers = cleanWalkerNames(anyExit[1]);
         const from = placeName(anyExit[2]);
         leavePlace(from, walkers);
+        setAt(walkers, from);
         placePeople(walkers, "", row.id);
         noteActors(anyExit[1], text);
         // Out of the place and not into a vehicle: on foot, with nothing

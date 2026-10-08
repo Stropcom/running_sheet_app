@@ -55,6 +55,8 @@ export interface TargetPositionInput {
     rego: string;
     rowId: number;
     inside?: boolean;
+    /** Where they were last logged before getting into the vehicle. */
+    at?: string;
   }[];
 }
 
@@ -174,6 +176,30 @@ export function locateTarget(
       people: targetFirst(people, t),
       rowId: joinedRow,
       rego: d.rego,
+    });
+  }
+
+  // Got into a vehicle that has no arrival or departure row of its own (only
+  // "entered a gold BMW ... (Vehicle 1FAB888)"): taken to be where they were
+  // last logged.
+  const loggedRegos = new Set(
+    [...input.arrivals, ...input.departures].map(v => v.rego.toUpperCase())
+  );
+  const inVehicle = input.placements.filter(
+    p => p.rego && p.inside !== false && !loggedRegos.has(p.rego.toUpperCase())
+  );
+  for (const mine of inVehicle.filter(p => has(p.name, t))) {
+    const rego = mine.rego.toUpperCase();
+    found.push({
+      place: mine.at ?? null,
+      state: "vehicle",
+      label: `in ${rego}`,
+      people: targetFirst(
+        inVehicle.filter(p => p.rego.toUpperCase() === rego).map(p => p.name),
+        t
+      ),
+      rowId: mine.rowId,
+      rego,
     });
   }
 

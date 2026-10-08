@@ -429,3 +429,38 @@ describe("walked towards the vehicle is not the same as in it (12 Swan Street)",
     ).toMatchObject({ label: "in 1EXP123" });
   });
 });
+
+describe("locateTarget — in a vehicle with no arrival or departure row", () => {
+  it("puts the target where he was last logged, with everyone in the vehicle", () => {
+    const pos = locateTarget({
+      token: "RAHMAN",
+      arrivals: [],
+      departures: [],
+      walkIns: [],
+      headingTo: [],
+      placements: [
+        {
+          name: "RAHMAN",
+          rego: "1FAB888",
+          rowId: 3,
+          inside: true,
+          at: "The Lookout Bar Bowling Bites",
+        },
+        {
+          name: "EVANS",
+          rego: "1FAB888",
+          rowId: 3,
+          inside: true,
+          at: "The Lookout Bar Bowling Bites",
+        },
+        { name: "TAYLOR", rego: "1FAB888", rowId: 3, inside: true },
+      ],
+    });
+    expect(pos).toMatchObject({
+      place: "The Lookout Bar Bowling Bites",
+      state: "vehicle",
+      label: "in 1FAB888",
+      people: ["RAHMAN", "EVANS", "TAYLOR"],
+    });
+  });
+});

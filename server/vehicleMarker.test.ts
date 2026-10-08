@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { attachVehicleMarkers, findVehicleMarker } from "@shared/vehicleMarker";
 import { locateTarget } from "@shared/targetPosition";
+import { scanWalkEvents } from "@shared/walkEventPatterns";
+import {
+  computePendingVehicleArrivals,
+  computePendingVehicleDepartures,
+} from "./db";
 
 const marker = (
   id: number,
@@ -101,30 +106,114 @@ describe("locateTarget — a vehicle with a marker is at its marker", () => {
     expect(pos?.marker).toBeUndefined();
   });
 
-  it("also uses the marker for a vehicle that has a logged arrival", () => {
+  it("logged movement beats the marker: an arrival elsewhere wins", () => {
     const pos = locateTarget({
       ...base,
       arrivals: [
         {
           rego: "1FAC488",
           names: "RAHMAN",
-          address: "170 The Esplanade",
-          rowId: 2,
+          address: "8 Grace Street",
+          rowId: 5,
         },
       ],
       placements: [
         {
           name: "RAHMAN",
           rego: "1FAC488",
-          rowId: 2,
+          rowId: 3,
           inside: true,
           vehicleMarker: vm,
         },
       ],
     });
-    expect(pos).toMatchObject({
-      state: "vehicle",
-      marker: { lat: -31.91, lng: 115.7 },
+    expect(pos).toMatchObject({ place: "8 Grace Street", state: "vehicle" });
+    expect(pos?.marker).toBeUndefined();
+  });
+
+  it("logged movement beats the marker: a departure keeps its own origin", () => {
+    const pos = locateTarget({
+      ...base,
+      departures: [
+        {
+          rego: "1FAC488",
+          names: "RAHMAN",
+          fromAddress: "170 The Esplanade",
+          rowId: 4,
+        },
+      ],
+      placements: [
+        {
+          name: "RAHMAN",
+          rego: "1FAC488",
+          rowId: 3,
+          inside: true,
+          vehicleMarker: vm,
+        },
+      ],
     });
+    expect(pos).toMatchObject({ place: "170 The Esplanade", state: "moving" });
+    expect(pos?.marker).toBeUndefined();
+  });
+});
+
+describe("the whole journey: marker, then departure, then arrival elsewhere", () => {
+  const sheet = [
+    "RAHMAN, EVANS and TAYLOR entered a red Ford Ranger Utility, bearing WA registartion 1FAC488 (Vehicle 1FAC488).",
+    "Vehicle 1FAC488, RAHMAN, EVANS, TAYLOR, departed 170 The Esplanade and continued via:",
+    "Vehicle 1FAC488, RAHMAN, EVANS, TAYLOR, arrived at 8 Grace Street, SCARBOROUGH WA (8 Grace Street) and parked in the driveway.",
+  ].map((observation, i) => ({ id: i + 1, sheetId: 1, observation }));
+  const vm = {
+    lat: 1,
+    lng: 2,
+    address: "170 The Esplanade, SCARBOROUGH WA (170 The Esplanade)",
+  };
+
+  const locateAt = (n: number) => {
+    const rows = sheet.slice(0, n);
+    const walk = scanWalkEvents(rows);
+    return locateTarget({
+      token: "RAHMAN",
+      arrivals: computePendingVehicleArrivals(rows as any).map((a: any) => ({
+        rego: a.rego,
+        names: "RAHMAN, EVANS, TAYLOR",
+        address: a.address,
+        rowId: a.rowId,
+      })),
+      departures: computePendingVehicleDepartures(rows as any).map(
+        (d: any) => ({
+          rego: d.rego,
+          names: "RAHMAN, EVANS, TAYLOR",
+          fromAddress: d.fromAddress,
+          rowId: d.rowId,
+        })
+      ),
+      walkIns: walk.walkIns,
+      headingTo: walk.headingTo,
+      placements: walk.placements.map(p =>
+        p.rego ? { ...p, vehicleMarker: vm } : p
+      ),
+    });
+  };
+
+  it("in the vehicle with no movement logged: at its marker", () => {
+    expect(locateAt(1)).toMatchObject({
+      place: "170 The Esplanade",
+      marker: { lat: 1, lng: 2 },
+    });
+  });
+  it("after it departs: at the place it left", () => {
+    expect(locateAt(2)).toMatchObject({
+      place: "170 The Esplanade",
+      state: "moving",
+    });
+    expect(locateAt(2)?.marker).toBeUndefined();
+  });
+  it("after it arrives at 8 Grace Street: there, not on the marker", () => {
+    expect(locateAt(3)).toMatchObject({
+      place: "8 Grace Street",
+      state: "vehicle",
+    });
+    expect(locateAt(3)?.marker).toBeUndefined();
   });
 });

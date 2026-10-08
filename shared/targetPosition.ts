@@ -25,9 +25,11 @@ export interface TargetPosition {
   people: string[];
   rowId: number;
   rego?: string;
-  /** The vehicle's own marker on the map, when it has one and the target is
-   * in it: a vehicle with a marker is where its marker is, so the flag goes
-   * on the marker rather than on an address written in a row. */
+  /** The vehicle's own marker on the map, set only when nothing logged says
+   * where the vehicle is (no arrival or departure row names it): then it is
+   * where its marker is, and the flag goes on the marker. Logged movement
+   * always wins — an arrival at 8 Grace Street beats a marker dropped earlier
+   * at 170 The Esplanade, because the vehicle has since moved. */
   marker?: { lat: number; lng: number };
   /** The place is a best guess (where he was last logged), because nothing
    * logged says where the vehicle is. */
@@ -114,14 +116,6 @@ export function locateTarget(
     vehicleOccupants(v, onFoot, input.placements, all);
 
   const found: TargetPosition[] = [];
-  // The marker standing for a vehicle, from anyone placed in it.
-  const markerOf = (rego: string) => {
-    const m = input.placements.find(
-      p => p.rego.toUpperCase() === rego.toUpperCase() && p.vehicleMarker
-    )?.vehicleMarker;
-    return m ? { marker: { lat: m.lat, lng: m.lng } } : {};
-  };
-
   for (const w of input.walkIns) {
     if (has(w.names, t)) {
       found.push({
@@ -177,7 +171,6 @@ export function locateTarget(
       people: targetFirst(people, t),
       rowId: joinedRow,
       rego: a.rego,
-      ...(oos ? {} : markerOf(a.rego)),
     });
   }
   for (const d of input.departures) {

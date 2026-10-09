@@ -8,6 +8,7 @@ import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
 import { CIN_LINK_CATEGORY } from "@shared/attachmentLinking";
 import { resolveTrackedTarget } from "@shared/trackedTarget";
+import { COMMAND_CODES, COMMAND_LABELS } from "@shared/commands";
 import {
   sanitizeTargetSpecialProjects,
   mergeSpecialProjects,
@@ -178,6 +179,7 @@ import {
   getIntelTargetPatternOfLife,
   extractEntitiesFromText,
   checkPossibleDuplicates,
+  searchRegions,
   checkCrossOperationEntity,
   markEntitiesNotDuplicate,
   mergeEntities,
@@ -876,16 +878,42 @@ export const appRouter = router({
           promisNumber: z.string().optional(),
           imsNumber: z.string().optional(),
           investigationUnit: z.string().optional(),
+          /** Admins only — see the checks below. */
+          command: z.enum(COMMAND_CODES).optional(),
+          restricted: z.boolean().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
+        const isAdmin = ctx.user.role === "admin";
+        if (!isAdmin && (input.restricted || input.command)) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Only an admin can set an operation's Command or mark it Restricted.",
+          });
+        }
         const id = await createOperation({
           name: input.name,
           promisNumber: input.promisNumber ?? null,
           imsNumber: input.imsNumber ?? null,
           investigationUnit: input.investigationUnit ?? null,
+          // An operation belongs to its creator's Command unless an admin
+          // says otherwise.
+          command: input.command ?? ctx.user.command,
+          restricted: input.restricted ?? false,
           createdBy: ctx.user.id,
         });
+        if (input.restricted) {
+          await createAuditLog({
+            sheetId: 0,
+            userId: ctx.user.id,
+            userName: ctx.user.cin ?? "Unknown",
+            userCIN: ctx.user.cin ?? undefined,
+            action: "operation_updated",
+            details: `Operation "${input.name}" (ID ${id}) created as Restricted`,
+            createdAt: Date.now(),
+          });
+        }
         return { id };
       }),
 
@@ -897,11 +925,56 @@ export const appRouter = router({
           promisNumber: z.string().optional().nullable(),
           imsNumber: z.string().optional().nullable(),
           investigationUnit: z.string().optional().nullable(),
+          /** Admins only — see the checks below. */
+          command: z.enum(COMMAND_CODES).optional(),
+          restricted: z.boolean().optional(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const { id, ...rest } = input;
+        if (
+          (rest.restricted !== undefined || rest.command !== undefined) &&
+          ctx.user.role !== "admin"
+        ) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Only an admin can set an operation's Command or mark it Restricted.",
+          });
+        }
+        const before =
+          rest.restricted !== undefined || rest.command !== undefined
+            ? await getOperationById(id)
+            : undefined;
         await updateOperation(id, rest);
+        if (
+          before &&
+          ((rest.restricted !== undefined &&
+            rest.restricted !== before.restricted) ||
+            (rest.command !== undefined && rest.command !== before.command))
+        ) {
+          const parts: string[] = [];
+          if (
+            rest.restricted !== undefined &&
+            rest.restricted !== before.restricted
+          )
+            parts.push(
+              rest.restricted ? "marked Restricted" : "no longer Restricted"
+            );
+          if (rest.command !== undefined && rest.command !== before.command)
+            parts.push(
+              `moved from ${COMMAND_LABELS[before.command]} to ${COMMAND_LABELS[rest.command]}`
+            );
+          await createAuditLog({
+            sheetId: 0,
+            userId: ctx.user.id,
+            userName: ctx.user.cin ?? "Unknown",
+            userCIN: ctx.user.cin ?? undefined,
+            action: "operation_updated",
+            details: `Operation "${before.name}" (ID ${id}) ${parts.join("; ")}`,
+            createdAt: Date.now(),
+          });
+        }
         // The operation name is baked into every sheet's auto-generated
         // title — resync them all when it changes.
         if (rest.name !== undefined) {
@@ -3253,6 +3326,8 @@ export const appRouter = router({
           name: z.string().min(1),
           cin: z.string().min(1),
           unit: z.string().optional(),
+          command: z.enum(COMMAND_CODES).optional(),
+          allRegions: z.boolean().optional(),
           team: z.enum(["TEAM1", "TEAM2", "PTT"]).optional(),
           phone: z.string().optional(),
           username: z.string().min(1),
@@ -3267,6 +3342,9 @@ export const appRouter = router({
           name: input.name,
           cin: input.cin.toUpperCase(),
           unit: input.unit,
+          command: input.command ?? ctx.user.command,
+          allRegions:
+            input.role === "admin" ? (input.allRegions ?? false) : false,
           team: input.team,
           phone: input.phone || null,
           username: input.username.trim().toLowerCase(),
@@ -3301,6 +3379,8 @@ export const appRouter = router({
           name: z.string().min(1).optional(),
           cin: z.string().min(1).optional(),
           unit: z.string().optional(),
+          command: z.enum(COMMAND_CODES).optional(),
+          allRegions: z.boolean().optional(),
           team: z.enum(["TEAM1", "TEAM2", "PTT"]).nullable().optional(),
           phone: z.string().nullable().optional(),
           username: z.string().min(1).optional(),
@@ -3317,6 +3397,8 @@ export const appRouter = router({
         if (password) {
           updateData.passwordHash = await bcrypt.hash(password, 12);
         }
+        // All-region is an admin-only setting; dropping the admin role drops it.
+        if (rest.role && rest.role !== "admin") updateData.allRegions = false;
         if (rest.cin) updateData.cin = rest.cin.toUpperCase();
         if (rest.username)
           updateData.username = rest.username.trim().toLowerCase();
@@ -4689,6 +4771,25 @@ export const appRouter = router({
       .input(z.object({ text: z.string() }))
       .query(async ({ input }) => {
         return extractEntitiesFromText(input.text);
+      }),
+
+    /** Region Search: which Commands hold a person, vehicle or address. Everyone
+     * signed in sees the same matches; `canOpen` says whether the viewer may
+     * open each in Intelligence (restricted operations are closed to other
+     * Commands). See shared/regionSearch.ts. */
+    regionSearch: protectedProcedure
+      .input(
+        z.object({
+          query: z.string().trim().min(1).max(100),
+          type: z.enum(["person", "vehicle", "address"]).optional(),
+          command: z.enum(COMMAND_CODES).optional(),
+        })
+      )
+      .query(async ({ input, ctx }) => {
+        return searchRegions(
+          { command: ctx.user.command, allRegions: ctx.user.allRegions },
+          input
+        );
       }),
 
     /** Fuzzy-duplicate check for a not-yet-saved entity label — backs the live confirm-dialog prompt. */

@@ -13,6 +13,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { DEFAULT_COMMAND, type CommandCode } from "@shared/commands";
 import {
   ArrowLeft,
   Loader2,
@@ -60,7 +61,8 @@ export default function AdminUserProfilePage() {
       setForm({
         name: profile.name ?? "",
         cin: profile.cin ?? "",
-        unit: profile.unit ?? "",
+        command: (profile.command as CommandCode) ?? DEFAULT_COMMAND,
+        allRegions: !!profile.allRegions,
         team: (profile.team as TeamValue) ?? undefined,
         phone: profile.phone ?? "",
         username: profile.username ?? "",
@@ -124,7 +126,8 @@ export default function AdminUserProfilePage() {
       id: userId,
       name: form.name,
       cin: form.cin,
-      unit: form.unit,
+      command: form.command,
+      allRegions: form.role === "admin" ? form.allRegions : false,
       team: form.team ?? null,
       phone: form.phone || null,
       username: form.username,

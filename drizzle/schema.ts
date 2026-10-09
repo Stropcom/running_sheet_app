@@ -41,6 +41,20 @@ export const users = mysqlTable("users", {
   // Forces a password change on next login (e.g. admin-issued temporary
   // password). Enforced server-side in _core/trpc.ts, not just client UI.
   mustChangePassword: boolean("mustChangePassword").default(false).notNull(),
+  // Home Command (region) — see shared/commands.ts. Existing users land in
+  // WESTERN when the column is added.
+  command: mysqlEnum("command", [
+    "WESTERN",
+    "NORTHERN",
+    "EASTERN",
+    "SOUTHERN",
+    "CENTRAL",
+  ])
+    .default("WESTERN")
+    .notNull(),
+  // All-region admin: sees every Command, and can open restricted operations
+  // from Region Search. Set by an admin on the user's profile.
+  allRegions: boolean("allRegions").default(false).notNull(),
   // Selectable accent colour palette — see shared/const.ts COLOR_PALETTES.
   // Null falls back to the default palette client-side.
   colorPalette: varchar("colorPalette", { length: 32 }),
@@ -151,6 +165,20 @@ export const operations = mysqlTable("operations", {
   promisNumber: varchar("promisNumber", { length: 128 }),
   imsNumber: varchar("imsNumber", { length: 128 }),
   investigationUnit: varchar("investigationUnit", { length: 255 }),
+  // The Command (region) that owns this operation — see shared/commands.ts.
+  // Existing operations land in WESTERN when the column is added.
+  command: mysqlEnum("command", [
+    "WESTERN",
+    "NORTHERN",
+    "EASTERN",
+    "SOUTHERN",
+    "CENTRAL",
+  ])
+    .default("WESTERN")
+    .notNull(),
+  // Restricted: other Commands still see this operation's matches (with all
+  // the details) in Region Search, but can't open it in Intelligence.
+  restricted: boolean("restricted").default(false).notNull(),
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -881,6 +909,7 @@ export const auditLogs = mysqlTable("audit_logs", {
     "user_archived",
     "user_restored",
     "operation_status_changed",
+    "operation_updated",
     "password_changed",
     "attachment_added",
     "attachment_deleted",

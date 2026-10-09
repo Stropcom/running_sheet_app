@@ -29,6 +29,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "sonner";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  COMMAND_CODES,
+  COMMAND_LABELS,
+  DEFAULT_COMMAND,
+  type CommandCode,
+} from "@shared/commands";
 import {
   UserPlus,
   Loader2,
@@ -76,7 +83,10 @@ export type TeamValue = "TEAM1" | "TEAM2" | "PTT" | undefined;
 export interface UserFormData {
   name: string;
   cin: string;
-  unit: string;
+  /** Home Command (region) — replaces the old free-text Unit. */
+  command: CommandCode;
+  /** Admin only: sees every Command and can open restricted operations. */
+  allRegions: boolean;
   team: TeamValue;
   phone: string;
   username: string;
@@ -87,10 +97,13 @@ export interface UserFormData {
   investigatorOperationIds: number[];
 }
 
-export const emptyForm = (): UserFormData => ({
+export const emptyForm = (
+  command: CommandCode = DEFAULT_COMMAND
+): UserFormData => ({
   name: "",
   cin: "",
-  unit: "",
+  command,
+  allRegions: false,
   team: undefined,
   phone: "",
   username: "",
@@ -153,14 +166,26 @@ export function UserFormFields({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-            Unit
+            Unit — Command
           </Label>
-          <Input
-            placeholder="e.g. Alpha Company"
-            value={form.unit}
+          <Select
+            value={form.command}
             disabled={disabled}
-            onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}
-          />
+            onValueChange={v =>
+              setForm(f => ({ ...f, command: v as CommandCode }))
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {COMMAND_CODES.map(c => (
+                <SelectItem key={c} value={c}>
+                  {COMMAND_LABELS[c]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs uppercase tracking-wider text-muted-foreground">
@@ -258,6 +283,25 @@ export function UserFormFields({
           </Select>
         )}
       </div>
+      {!accessLevelOverride && form.role === "admin" && (
+        <label className="flex items-start gap-2.5 rounded-md border border-input p-3 cursor-pointer">
+          <Checkbox
+            checked={form.allRegions}
+            disabled={disabled}
+            onCheckedChange={v =>
+              setForm(f => ({ ...f, allRegions: v === true }))
+            }
+            className="mt-0.5"
+          />
+          <span className="text-sm">
+            <span className="font-medium">All-region admin</span>
+            <span className="block text-xs text-muted-foreground">
+              Sees every Command and can open restricted operations from Region
+              Search.
+            </span>
+          </span>
+        </label>
+      )}
       {!accessLevelOverride && form.role === "investigator" && (
         <InvestigatorOperationPicker
           selected={form.investigatorOperationIds}
@@ -348,13 +392,15 @@ export default function AdminPage() {
   });
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState<UserFormData>(emptyForm());
+  // A new user starts in the admin's own Command.
+  const myCommand = (currentUser?.command as CommandCode) ?? DEFAULT_COMMAND;
+  const [form, setForm] = useState<UserFormData>(emptyForm(myCommand));
 
   const createUser = trpc.admin.createUser.useMutation({
     onSuccess: () => {
       toast.success("User created successfully.");
       setCreateOpen(false);
-      setForm(emptyForm());
+      setForm(emptyForm(myCommand));
       utils.admin.listUsers.invalidate();
     },
     onError: e => toast.error(e.message),
@@ -417,7 +463,7 @@ export default function AdminPage() {
           </div>
           <Button
             onClick={() => {
-              setForm(emptyForm());
+              setForm(emptyForm(myCommand));
               setCreateOpen(true);
             }}
             size="sm"
@@ -440,7 +486,7 @@ export default function AdminPage() {
                   CIN
                 </TableHead>
                 <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden sm:table-cell">
-                  Unit
+                  Command
                 </TableHead>
                 <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden sm:table-cell">
                   Team
@@ -506,7 +552,7 @@ export default function AdminPage() {
                         {u.cin || "—"}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">
-                        {u.unit || "—"}
+                        {COMMAND_LABELS[u.command as CommandCode] ?? "—"}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">
                         {u.team ? u.team.replace("TEAM", "TEAM ") : "—"}

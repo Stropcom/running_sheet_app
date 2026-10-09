@@ -21,6 +21,13 @@ import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 import { addressMatchKey } from "@shared/addressMatchKey";
 import { aliasMentionCompatible } from "./personAliasMatch";
 import {
+  regionSearch,
+  type RegionEntityType,
+  type RegionResult,
+  type RegionViewer,
+} from "@shared/regionSearch";
+import type { CommandCode } from "@shared/commands";
+import {
   applyTargetProjectsToSummary,
   sanitizeTargetSpecialProjects,
 } from "@shared/targetStatus";
@@ -9257,6 +9264,32 @@ export async function checkPossibleDuplicates(
       exact: true,
     }));
   return [...exact, ...fuzzy];
+}
+
+/**
+ * Region Search: which Commands hold an entity (person, vehicle, address).
+ * Every signed-in user sees the same matches and details; restricted
+ * operations only differ in whether `canOpen` is true (see shared/regionSearch).
+ */
+export async function searchRegions(
+  viewer: RegionViewer,
+  opts: { query: string; type?: RegionEntityType; command?: CommandCode }
+): Promise<RegionResult[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const [entities, ops] = await Promise.all([
+    getAllIntelligenceEntities(),
+    db
+      .select({
+        id: operations.id,
+        name: operations.name,
+        command: operations.command,
+        restricted: operations.restricted,
+      })
+      .from(operations)
+      .where(isNull(operations.deletedAt)),
+  ]);
+  return regionSearch(entities, ops, viewer, opts);
 }
 
 export interface CrossOperationMatch {

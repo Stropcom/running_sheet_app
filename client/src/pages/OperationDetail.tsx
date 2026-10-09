@@ -1,4 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import { OperationRegionFields } from "@/components/OperationRegionFields";
+import { DEFAULT_COMMAND, type CommandCode } from "@shared/commands";
 import { trpc, trpcClient } from "@/lib/trpc";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { setLastActiveContext } from "@/lib/lastActiveContext";
@@ -1879,6 +1881,8 @@ export default function OperationDetail() {
   const [editPromis, setEditPromis] = useState("");
   const [editIms, setEditIms] = useState("");
   const [editUnit, setEditUnit] = useState("");
+  const [editCommand, setEditCommand] = useState<CommandCode>(DEFAULT_COMMAND);
+  const [editRestricted, setEditRestricted] = useState(false);
 
   const utils = trpc.useUtils();
 
@@ -1934,6 +1938,8 @@ export default function OperationDetail() {
       setEditPromis(operation.promisNumber ?? "");
       setEditIms(operation.imsNumber ?? "");
       setEditUnit(operation.investigationUnit ?? "");
+      setEditCommand((operation.command as CommandCode) ?? DEFAULT_COMMAND);
+      setEditRestricted(!!operation.restricted);
     }
   }, [operation]);
 
@@ -2090,6 +2096,11 @@ export default function OperationDetail() {
       promisNumber: editPromis.trim() || null,
       imsNumber: editIms.trim() || null,
       investigationUnit: editUnit.trim() || null,
+      // Admin-only fields — only sent when an admin is editing (the server
+      // rejects them from anyone else).
+      ...(user?.role === "admin"
+        ? { command: editCommand, restricted: editRestricted }
+        : {}),
     });
   };
 
@@ -2579,6 +2590,14 @@ export default function OperationDetail() {
                 onChange={e => setEditUnit(e.target.value)}
               />
             </div>
+            <OperationRegionFields
+              command={editCommand}
+              restricted={editRestricted}
+              canEdit={user?.role === "admin"}
+              commandEditable
+              onCommand={setEditCommand}
+              onRestricted={setEditRestricted}
+            />
           </div>
           <DialogFooter className="flex items-center justify-between w-full">
             <div className="flex-1">

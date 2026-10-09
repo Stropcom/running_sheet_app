@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
-import { MergeEntitiesButton } from "@/components/MergeEntitiesButton";
+import { RegionSearchButton } from "@/components/RegionSearch";
 import { IndicesBadge } from "@/components/IndicesBadge";
 import IntelligenceHeatMap from "@/pages/IntelligenceHeatMap";
 import IntelligencePatternOfLife from "@/pages/IntelligencePatternOfLife";
@@ -1975,7 +1975,7 @@ export default function IntelligencePage() {
               </p>
             )}
           </div>
-          <MergeEntitiesButton />
+          <RegionSearchButton />
         </div>
 
         {/* Tab nav */}

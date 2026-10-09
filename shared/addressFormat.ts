@@ -124,7 +124,7 @@ export function formatIntelVehicle(
     // e.g. "black Subaru WRX, bearing WA registration 1FDD444 (Vehicle 1FDD444)"
     //   → rego = "1FDD444", desc = "black Subaru WRX" → "1FDD444 black Subaru WRX"
     const bearingMatch = cleaned.match(
-      /^(.+?),?\s+bearing\s+(?:[A-Z]{2,3}\s+)?registration\s+([A-Z0-9-]+)/i
+      /^(.+?),?\s+bearing\s+(?:[A-Z]{2,3}\s+)?regist[a-z]*\s+([A-Z0-9-]+)/i
     );
     if (bearingMatch) {
       const rawDesc = bearingMatch[1]

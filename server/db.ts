@@ -5014,7 +5014,7 @@ export function extractEntitiesFromText(text: string): Array<{
         descSource = descSource
           .replace(
             new RegExp(
-              `[,;]?\\s*(?:bearing\\s+)?(?:(?:${STATE_CODES})\\s+)?(?:registration|rego|reg\\.?|plated?)\\s*:?\\s*(?:\\d[A-Za-z0-9]{2,7})?\\s*$`,
+              `[,;]?\\s*(?:bearing\\s+)?(?:(?:${STATE_CODES})\\s+)?(?:regist[a-z]*|rego|reg\\.?|plated?)\\s*:?\\s*(?:\\d[A-Za-z0-9]{2,7})?\\s*$`,
               "i"
             ),
             ""
@@ -5435,6 +5435,34 @@ export function vehicleRegoKey(text: string): string {
 export function addressBracketKey(text: string): string {
   const m = text.match(/\(([^()]{1,120})\)\s*$/);
   return (m ? m[1] : text).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * A Vehicle or Location TARGET is itself the subject, so it is stored as the
+ * entity `target::<name>`. Observation text that mentions that same vehicle
+ * (by rego) or place (by its bracket short form) is mined into an ordinary
+ * `vehicle::<rego>` / `address::<short form>` entity, which left the target
+ * listed twice: once as the target card ("Indices" only, no sightings) and
+ * once as an ordinary vehicle/address with all the sightings.
+ *
+ * This is the ordinary entity key such a target stands in for, so
+ * getAllIntelligenceEntities can fold those mentions into the target
+ * instead. Null when the target isn't a vehicle with a rego or a location,
+ * or has nothing to key on (a vehicle target named only by description).
+ */
+export function subjectTargetEntityKey(
+  targetType: string | null | undefined,
+  targetName: string
+): string | null {
+  if (targetType === "vehicle") {
+    const m = targetName.match(VEHICLE_REGO_PATTERN);
+    return m ? `vehicle::${m[0].toLowerCase()}` : null;
+  }
+  if (targetType === "location") {
+    const k = addressBracketKey(targetName);
+    return k ? `address::${k}` : null;
+  }
+  return null;
 }
 
 /** Same "type::normalizedShortForm" key scheme getAllIntelligenceEntities uses internally. */
@@ -7941,6 +7969,29 @@ export async function getAllIntelligenceEntities(): Promise<
 
   const entityMap = new Map<string, IntelligenceEntity>();
 
+  // A Vehicle/Location target stands in for the ordinary vehicle/address
+  // entity its sightings would otherwise create (see subjectTargetEntityKey).
+  // Mentions are folded into the target below, so every target entity has to
+  // exist before any mention, registry field or text row is registered.
+  const subjectTargetByKey = new Map<string, string>();
+  for (const t of targetRows) {
+    const subjectKey = subjectTargetEntityKey(t.targetType, t.targetName);
+    if (!subjectKey) continue;
+    subjectTargetByKey.set(subjectKey, `target::${t.targetName}`);
+    const nameKey = `target::${t.targetName}`;
+    if (!entityMap.has(nameKey)) {
+      entityMap.set(nameKey, {
+        shortForm: t.targetName,
+        type: t.targetType === "vehicle" ? "vehicle" : "address",
+        isTarget: true,
+        tgtAlias: t.tgt?.trim() || null,
+        targetId: t.targetId,
+        surname: t.surname,
+        occurrences: [],
+      });
+    }
+  }
+
   // ── 2. Add formal target cards as person entities (isTarget = true) ────────
   for (const t of targetRows) {
     const linkedSheets = targetSheetMap.get(t.targetId) ?? [];
@@ -8101,7 +8152,12 @@ export async function getAllIntelligenceEntities(): Promise<
           : field.type === "address"
             ? addressBracketKey(shortForm)
             : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
-      const key = `${field.type}::${normKey}`;
+      const fieldKey = `${field.type}::${normKey}`;
+      // A registry vehicle/address that is itself a Vehicle/Location target
+      // is that target's own entity, not a second one.
+      const subjectTarget = subjectTargetByKey.get(fieldKey);
+      const folded = !!subjectTarget && entityMap.has(subjectTarget);
+      const key = folded ? subjectTarget! : fieldKey;
       // Same problem the vehicle branch above solves, now for addresses: a
       // registry address field is stored exactly as typed, still carrying its
       // state suffix and its own trailing bracket code. Unformatted it is
@@ -8114,7 +8170,9 @@ export async function getAllIntelligenceEntities(): Promise<
       // on the raw value's trailing bracket, so formatting first would change
       // the key and re-partition existing entities. Display only.
       if (field.type === "address") shortForm = formatIntelAddress(shortForm);
-      if (!entityMap.has(key)) {
+      if (folded) {
+        // The target keeps its own name; only the occurrence is added below.
+      } else if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
       } else {
         // Prefer the longer / richer shortForm
@@ -8309,12 +8367,20 @@ export async function getAllIntelligenceEntities(): Promise<
           : field.type === "address"
             ? addressBracketKey(shortForm)
             : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
-      const key = `${field.type}::${normKey}`;
+      const fieldKey = `${field.type}::${normKey}`;
+      // See the matching comment on the target locationFields loop above — a
+      // registry vehicle/address that is a Vehicle/Location target is that
+      // target's own entity.
+      const subjectTarget = subjectTargetByKey.get(fieldKey);
+      const folded = !!subjectTarget && entityMap.has(subjectTarget);
+      const key = folded ? subjectTarget! : fieldKey;
       // See the matching comment on the target locationFields loop above —
       // tidy the registry address for display, after the key is computed
       // from the raw value so entity keying is unaffected.
       if (field.type === "address") shortForm = formatIntelAddress(shortForm);
-      if (!entityMap.has(key)) {
+      if (folded) {
+        // The target keeps its own name; only the occurrence is added below.
+      } else if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
       } else {
         const existing = entityMap.get(key)!;
@@ -8532,6 +8598,25 @@ export async function getAllIntelligenceEntities(): Promise<
     if (resolved) {
       key = resolved.key;
       displayShortForm = resolved.label;
+    }
+
+    // A sighting of a Vehicle/Location target belongs to that target, not to
+    // a second ordinary entity for the same vehicle/place.
+    const subjectTarget = subjectTargetByKey.get(key);
+    if (subjectTarget && entityMap.has(subjectTarget)) {
+      entityMap.get(subjectTarget)!.occurrences.push({
+        sheetId: row.sheetId,
+        sheetTitle: row.sheetTitle,
+        operationId: row.operationId,
+        operationName: row.operationName,
+        rowId: row.rowId,
+        observationSnippet:
+          row.observation.slice(0, 80) +
+          (row.observation.length > 80 ? "…" : ""),
+        timeMinutes: row.timeMinutes ?? null,
+        fullDescription: e.fullDescription,
+      });
+      return;
     }
 
     if (!entityMap.has(key)) {

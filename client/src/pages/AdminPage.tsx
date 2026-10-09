@@ -564,7 +564,6 @@ export default function AdminPage() {
           <ShareWithSection
             viewCommand={viewCommand}
             users={(users ?? []) as AdminUserRow[]}
-            shares={shares ?? []}
             isAllRegions={!!currentUser?.allRegions}
           />
         </div>

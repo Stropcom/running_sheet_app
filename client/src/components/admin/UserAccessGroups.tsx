@@ -6,6 +6,9 @@
 
 import { useState, type ReactNode } from "react";
 import { ChevronRight, Loader2, Search } from "lucide-react";
+import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -106,6 +109,23 @@ export function UserAccessGroups({
   roleBadge: (u: AdminUserRow) => ReactNode;
   onOpen: (id: number) => void;
 }) {
+  const utils = trpc.useUtils();
+  const revoke = trpc.admin.revokeShare.useMutation();
+  // Remove everything this Command shared with one person.
+  const revokePerson = async (items: OperationShareRow[]) => {
+    try {
+      for (const s of items) await revoke.mutateAsync({ id: s.id });
+      toast.success(
+        `${items[0].userName}'s access removed. Anything already logged stays.`
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't remove access.");
+    } finally {
+      utils.admin.listShares.invalidate();
+      utils.admin.userShares.invalidate();
+      utils.operation.list.invalidate();
+    }
+  };
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Record<string, boolean>>({
     TEAM1: true,
@@ -304,22 +324,25 @@ export function UserAccessGroups({
               <Table className="min-w-[560px] table-fixed">
                 <TableHeader>
                   <TableRow className="border-border/60">
-                    <TableHead className={`${HEAD} w-[30%]`}>Name</TableHead>
-                    <TableHead className={`${HEAD} w-[10%]`}>CIN</TableHead>
-                    <TableHead className={`${HEAD} w-[16%]`}>
+                    <TableHead className={`${HEAD} w-[26%]`}>Name</TableHead>
+                    <TableHead className={`${HEAD} w-[9%]`}>CIN</TableHead>
+                    <TableHead className={`${HEAD} w-[15%]`}>
                       Home Command
                     </TableHead>
-                    <TableHead className={`${HEAD} w-[28%]`}>
+                    <TableHead className={`${HEAD} w-[24%]`}>
                       Can open
                     </TableHead>
-                    <TableHead className={`${HEAD} w-[16%]`}>Access</TableHead>
+                    <TableHead className={`${HEAD} w-[13%]`}>Access</TableHead>
+                    <TableHead className={`${HEAD} w-[13%]`}>
+                      <span className="sr-only">Revoke</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {visitingList.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={5}
+                        colSpan={6}
                         className="py-4 text-sm text-muted-foreground"
                       >
                         Nobody outside {COMMAND_LABELS[viewCommand]} has been
@@ -358,6 +381,18 @@ export function UserAccessGroups({
                               <LevelPill key={s.id} level={s.level} />
                             ))}
                           </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-destructive"
+                            disabled={revoke.isPending}
+                            title={`Remove all of ${items[0].userName}'s access to ${COMMAND_LABELS[viewCommand]}`}
+                            onClick={() => revokePerson(items)}
+                          >
+                            Revoke
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))

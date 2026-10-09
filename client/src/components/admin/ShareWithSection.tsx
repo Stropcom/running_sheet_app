@@ -5,7 +5,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Loader2, ChevronRight } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CommandChip } from "@/components/admin/CommandChip";
-import { LevelPill } from "@/components/admin/LevelPill";
 import { PersonPicker } from "@/components/admin/PersonPicker";
 import type { AdminUserRow } from "@/components/admin/UserAccessGroups";
 import {
@@ -29,7 +27,6 @@ import {
   SHARE_LEVELS,
   SHARE_LEVEL_HELP,
   SHARE_LEVEL_LABEL,
-  type OperationShareRow,
   type ShareLevel,
 } from "@shared/operationAccess";
 
@@ -69,12 +66,10 @@ function Choice({
 export function ShareWithSection({
   viewCommand,
   users,
-  shares,
   isAllRegions,
 }: {
   viewCommand: CommandCode;
   users: AdminUserRow[];
-  shares: OperationShareRow[];
   isAllRegions: boolean;
 }) {
   const utils = trpc.useUtils();
@@ -112,14 +107,6 @@ export function ShareWithSection({
     },
     onError: e => toast.error(e.message),
   });
-  const revoke = trpc.admin.revokeShare.useMutation({
-    onSuccess: () => {
-      toast.success("Access removed. Anything already logged stays.");
-      refresh();
-    },
-    onError: e => toast.error(e.message),
-  });
-
   const ready = people.length > 0 && (scope === "all" || opIds.length > 0);
   const opText =
     scope === "all"
@@ -128,18 +115,6 @@ export function ShareWithSection({
           .map(id => ownOps.find(o => o.id === id)?.name)
           .filter(Boolean)
           .join(", ");
-
-  // What was shared out, grouped by what and at which level.
-  const out = shares.filter(s => s.fromCommand === viewCommand);
-  const groups = useMemo(() => {
-    const m = new Map<string, OperationShareRow[]>();
-    for (const s of out) {
-      const k = `${s.operationId ?? "all"}|${s.level}`;
-      m.set(k, [...(m.get(k) ?? []), s]);
-    }
-    return Array.from(m.entries());
-  }, [out]);
-  const [openGroup, setOpenGroup] = useState<Record<string, boolean>>({});
 
   return (
     <div className="space-y-4">
@@ -273,90 +248,6 @@ export function ShareWithSection({
             Share
           </Button>
         </div>
-      </div>
-
-      <div className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Active shares from {SHORT(viewCommand)} ({out.length})
-        </h3>
-        {groups.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-            Nothing is shared outside {COMMAND_LABELS[viewCommand]}.
-          </p>
-        ) : (
-          groups.map(([key, rows]) => {
-            const first = rows[0];
-            const expanded = !!openGroup[key];
-            return (
-              <div
-                key={key}
-                className="overflow-hidden rounded-lg border border-border bg-card"
-              >
-                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5">
-                  <button
-                    type="button"
-                    className="flex min-w-0 flex-wrap items-center gap-2 text-left"
-                    aria-expanded={expanded}
-                    onClick={() =>
-                      setOpenGroup(o => ({ ...o, [key]: !o[key] }))
-                    }
-                  >
-                    <ChevronRight
-                      className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`}
-                    />
-                    <b className="text-sm">
-                      {first.operationName ??
-                        `Every ${SHORT(first.fromCommand)} operation`}
-                    </b>
-                    <LevelPill level={first.level} />
-                    <span className="text-xs text-muted-foreground">
-                      {rows.length} {rows.length === 1 ? "person" : "people"}
-                    </span>
-                  </button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-destructive"
-                    disabled={revoke.isPending}
-                    onClick={async () => {
-                      for (const r of rows)
-                        await revoke.mutateAsync({ id: r.id });
-                    }}
-                  >
-                    Revoke all
-                  </Button>
-                </div>
-                {expanded && (
-                  <div className="divide-y divide-border/60 border-t border-border/60">
-                    {rows.map(r => (
-                      <div
-                        key={r.id}
-                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5 text-sm"
-                      >
-                        <span className="min-w-0 truncate">
-                          {r.userName}{" "}
-                          <span className="font-mono text-xs text-muted-foreground">
-                            {r.userCIN}
-                          </span>{" "}
-                          <CommandChip command={r.userCommand} />
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive"
-                          disabled={revoke.isPending}
-                          onClick={() => revoke.mutate({ id: r.id })}
-                        >
-                          Revoke
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
       </div>
     </div>
   );

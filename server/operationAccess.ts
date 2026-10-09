@@ -17,6 +17,7 @@ import { TRPCError } from "@trpc/server";
 import { eq, inArray } from "drizzle-orm";
 import {
   accessLevel,
+  hiddenBrowseOperationIds,
   hiddenIntelligenceOperationIds,
   reachableOperationIds,
   visibleOperationIds,
@@ -375,11 +376,24 @@ export async function operationsForUser<
 
 /** Operations hidden from this person's Intelligence (empty = nothing to scope). */
 export async function hiddenIntelligenceFor(
-  user: AccessUser
+  user: AccessUser,
+  mode: "browse" | "profile" = "browse"
 ): Promise<Set<number>> {
   const { ops, shares } = await loadAccessData();
-  return hiddenIntelligenceOperationIds(user, ops, shares);
+  return mode === "profile"
+    ? hiddenIntelligenceOperationIds(user, ops, shares)
+    : hiddenBrowseOperationIds(user, ops, shares);
 }
+
+/** Procedures that open ONE entity's profile (Region Search's "Open in
+ * Intelligence"): they use the more open scope. Everything else that reads
+ * Intelligence is browsing. */
+export const INTELLIGENCE_PROFILE_PATHS = new Set([
+  "intelligence.targetProfile",
+  "intelligence.associateProfile",
+  "intelligence.vehicleProfile",
+  "intelligence.locationProfile",
+]);
 
 /** For Region Search: the operations this person holds a share for. */
 export async function reachableFor(user: AccessUser): Promise<number[]> {

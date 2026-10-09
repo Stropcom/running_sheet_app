@@ -10,6 +10,7 @@ import type { TrpcContext } from "./_core/context";
 vi.mock("./operationAccess", () => ({
   enforceOperationAccess: vi.fn().mockResolvedValue({}),
   hiddenIntelligenceFor: vi.fn().mockResolvedValue(new Set()),
+  INTELLIGENCE_PROFILE_PATHS: new Set<string>(),
   toAccessUser: (u: unknown) => u,
   filterByOperationAccess: async (_u: unknown, rows: unknown[]) => rows,
   operationsForUser: async (_u: unknown, rows: unknown[]) => rows,

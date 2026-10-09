@@ -112,12 +112,31 @@ export function canShareOperation(
 }
 
 // ─── Intelligence scope ─────────────────────────────────────────────────────
-// Operations, sheets and rows follow the access rule above. INTELLIGENCE is
-// more open: every operation is visible there except a Restricted one that
-// belongs to another Command, unless it was shared with you. (This is the
-// same line Region Search draws for "Open in Intelligence".)
+// Two scopes, because Intelligence is used two ways:
+//
+//   BROWSING (the Intelligence Folder lists, maps, reports) follows the access
+//   rule above: you see the entities of the operations you can reach, so a
+//   Command's Folder is its own (plus anything shared with it).
+//
+//   OPENING one entity's profile (what Region Search's "Open in Intelligence"
+//   does) is more open: any operation except another Command's Restricted
+//   one — so you can follow a match into another Command's unrestricted work.
 
-/** Operation ids hidden from this person's Intelligence. */
+/** Operation ids hidden when BROWSING Intelligence: everything you can't reach. */
+export function hiddenBrowseOperationIds(
+  user: AccessUser,
+  ops: AccessOperation[],
+  shares: AccessShare[]
+): Set<number> {
+  const hidden = new Set<number>();
+  if (user.allRegions) return hidden;
+  for (const op of ops) {
+    if (accessLevel(user, op, shares) < 1) hidden.add(op.id);
+  }
+  return hidden;
+}
+
+/** Operation ids hidden when OPENING an entity's profile. */
 export function hiddenIntelligenceOperationIds(
   user: AccessUser,
   ops: AccessOperation[],

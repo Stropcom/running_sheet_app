@@ -5,6 +5,7 @@ import type { TrpcContext } from "./context";
 import {
   enforceOperationAccess,
   hiddenIntelligenceFor,
+  INTELLIGENCE_PROFILE_PATHS,
   toAccessUser,
 } from "../operationAccess";
 import { intelScope } from "../intelScope";
@@ -130,7 +131,10 @@ const requireUser = t.middleware(async opts => {
     });
     // Another Command's Restricted operations stay out of Intelligence for
     // the whole request: getAllIntelligenceEntities() returns the trimmed set.
-    const hidden = await hiddenIntelligenceFor(accessUser);
+    const hidden = await hiddenIntelligenceFor(
+      accessUser,
+      INTELLIGENCE_PROFILE_PATHS.has(path) ? "profile" : "browse"
+    );
     const run = () =>
       guard.input !== undefined
         ? next({ ctx: { ...ctx, user }, input: guard.input })

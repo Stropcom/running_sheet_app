@@ -151,3 +151,32 @@ describe("Intelligence scope", () => {
     expect(out[0].occurrences).toHaveLength(1);
   });
 });
+
+import { hiddenBrowseOperationIds } from "@shared/operationAccess";
+
+describe("Intelligence scope: browsing vs opening a profile", () => {
+  const opsR: AccessOperation[] = [
+    { id: 1, command: "WESTERN" },
+    { id: 2, command: "EASTERN", restricted: false },
+    { id: 3, command: "EASTERN", restricted: true },
+  ];
+  it("browsing hides every operation you can't reach, restricted or not", () => {
+    expect([...hiddenBrowseOperationIds(west, opsR, [])].sort()).toEqual([
+      2, 3,
+    ]);
+  });
+  it("opening a profile only hides other Commands' restricted ones", () => {
+    expect([...hiddenIntelligenceOperationIds(west, opsR, [])]).toEqual([3]);
+  });
+  it("a share brings an operation back into the Folder", () => {
+    const shares: AccessShare[] = [
+      { operationId: 2, fromCommand: null, userId: 10, level: "view" },
+    ];
+    expect([...hiddenBrowseOperationIds(west, opsR, shares)]).toEqual([3]);
+  });
+  it("hides nothing from an all-region admin or the owning Command", () => {
+    expect(hiddenBrowseOperationIds(allAdmin, opsR, []).size).toBe(0);
+    const east: AccessUser = { ...west, id: 20, command: "EASTERN" };
+    expect([...hiddenBrowseOperationIds(east, opsR, [])]).toEqual([1]);
+  });
+});

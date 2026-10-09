@@ -27,6 +27,13 @@ import { toast } from "sonner";
 import { Link } from "wouter";
 import { useTheme } from "@/contexts/ThemeContext";
 import { COLOR_PALETTES, DEFAULT_COLOR_PALETTE } from "@shared/const";
+import { CommandChip } from "@/components/admin/CommandChip";
+import { LevelPill } from "@/components/admin/LevelPill";
+import {
+  COMMAND_LABELS,
+  COMMAND_SHORT,
+  type CommandCode,
+} from "@shared/commands";
 
 // Where each entity type's profile page lives — see App.tsx's
 // /intelligence/{associate,vehicle,location}/:label routes. "business"
@@ -125,6 +132,43 @@ function InfoRow({
             <span className="text-muted-foreground italic">Not set</span>
           )}
         </p>
+      </div>
+    </div>
+  );
+}
+
+/** Operations other Commands have shared with this person. */
+function MySharedAccess({ command }: { command?: CommandCode }) {
+  const { data: shares } = trpc.profile.mySharedAccess.useQuery();
+  if (!shares || shares.length === 0) return null;
+  return (
+    <div className="rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
+      <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
+        <Shield className="w-4 h-4 text-primary" />
+        Shared with you
+      </h2>
+      <p className="text-xs text-muted-foreground mb-4">
+        Operations from other Commands you can open
+        {command ? ` (you belong to ${COMMAND_LABELS[command]})` : ""}.
+      </p>
+      <div className="flex flex-col gap-2">
+        {shares.map(s => (
+          <div
+            key={s.id}
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2.5"
+          >
+            <CommandChip command={s.fromCommand} />
+            <span className="text-sm font-semibold">
+              {s.operationName ??
+                `Every ${COMMAND_SHORT[s.fromCommand]} operation`}
+            </span>
+            <LevelPill level={s.level} />
+            <span className="ml-auto text-xs text-muted-foreground">
+              Shared by CIN {s.sharedByCIN} ·{" "}
+              {new Date(s.createdAt).toLocaleDateString()}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -471,7 +515,15 @@ export default function MyProfilePage() {
             <div>
               <InfoRow icon={User} label="Full Name" value={profile?.name} />
               <InfoRow icon={Hash} label="CIN" value={profile?.cin} />
-              <InfoRow icon={Building2} label="Unit" value={profile?.unit} />
+              <InfoRow
+                icon={Building2}
+                label="Unit — Command"
+                value={
+                  profile?.command
+                    ? COMMAND_LABELS[profile.command as CommandCode]
+                    : undefined
+                }
+              />
               <InfoRow
                 icon={Phone}
                 label="Mobile Phone"
@@ -492,6 +544,8 @@ export default function MyProfilePage() {
             </div>
           )}
         </div>
+
+        <MySharedAccess command={profile?.command as CommandCode | undefined} />
 
         {/* Intelligence Entity Scan Card — admin-only */}
         {profile?.role === "admin" && (

@@ -695,6 +695,11 @@ export const appRouter = router({
       return safe;
     }),
 
+    /** What other Commands have shared with the signed-in person. */
+    mySharedAccess: protectedProcedure.query(async ({ ctx }) => {
+      return listOperationShares({ userId: ctx.user.id });
+    }),
+
     updatePassword: protectedProcedure
       .input(
         z.object({

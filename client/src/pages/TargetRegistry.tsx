@@ -1739,7 +1739,7 @@ function AssociateCard({
       setLinking(true);
       try {
         createNow(payload);
-        if (warning.kind !== "target") {
+        if (warning.kind !== "target" && !warning.exact) {
           await mergeEntitiesMutation.mutateAsync({
             type: warning.kind,
             winnerLabel: warning.candidateLabel,

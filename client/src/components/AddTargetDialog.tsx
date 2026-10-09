@@ -1093,13 +1093,7 @@ export function AddTargetDialog({
     const warnings = await runDuplicateChecks(utils, [
       ...(personClearedRef.current === composedName
         ? []
-        : [
-            {
-              kind: "person" as const,
-              label: composedName,
-              includeExact: true,
-            },
-          ]),
+        : [{ kind: "person" as const, label: composedName }]),
       { kind: "address", label: hbf },
       { kind: "vehicle", label: v1f },
       ...extraAddresses.map(ea => ({
@@ -1241,7 +1235,7 @@ export function AddTargetDialog({
       // it here too so it surfaces right after the name rather than only
       // after address/vehicle/etc. get typed in as well.
       const warnings = await runDuplicateChecks(utils, [
-        { kind: "person", label: composedName, includeExact: true },
+        { kind: "person", label: composedName },
       ]);
       if (warnings.length > 0) {
         setWarnFromSave(false);
@@ -1700,7 +1694,7 @@ export function AddTargetDialog({
         setStagedWarn(null);
         return;
       }
-      if (warning.kind !== "target") {
+      if (warning.kind !== "target" && !warning.exact) {
         const a = associates.find(x => x.key === key);
         patchStaged(key, {
           aliasMerges: [

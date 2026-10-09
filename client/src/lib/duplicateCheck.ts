@@ -15,14 +15,7 @@ import type {
 
 export type DuplicateCheckItem =
   | { kind: "target"; label: string }
-  | {
-      kind: Exclude<DuplicateWarningKind, "target">;
-      label: string;
-      /** Also flag someone already recorded under this exact name — for
-       * registering a person (a Target), who may already be an associate or
-       * a mined name in the Intelligence folder. */
-      includeExact?: boolean;
-    };
+  | { kind: Exclude<DuplicateWarningKind, "target">; label: string };
 
 export async function runDuplicateChecks(
   utils: ReturnType<typeof trpc.useUtils>,
@@ -50,7 +43,11 @@ export async function runDuplicateChecks(
     const matches = await utils.intelligence.checkPossibleDuplicates.fetch({
       type: item.kind,
       label,
-      ...(item.includeExact ? { includeExact: true } : {}),
+      // A person already on file under this exact name (a Target, an
+      // Associate, or a name mined from rows) is the strongest match there
+      // is — always flag it, so registering someone never duplicates them.
+      // (Row saves don't ask: an identical name there simply is that entity.)
+      ...(item.kind === "person" ? { includeExact: true } : {}),
     });
     if (matches.length > 0) {
       const best = matches[0];

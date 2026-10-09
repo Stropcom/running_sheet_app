@@ -4697,10 +4697,15 @@ export const appRouter = router({
         z.object({
           type: z.enum(["person", "vehicle", "address", "business"]),
           label: z.string().min(1),
+          /** Also return an entity with this exact name (registering a
+           * record for someone already in the Intelligence folder). */
+          includeExact: z.boolean().optional(),
         })
       )
       .query(async ({ input }) => {
-        return checkPossibleDuplicates(input.type, input.label);
+        return checkPossibleDuplicates(input.type, input.label, {
+          includeExact: input.includeExact,
+        });
       }),
 
     /** Is this exact entity already a real (non-registry-only) sighting on a

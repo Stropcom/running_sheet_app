@@ -1091,7 +1091,15 @@ export function AddTargetDialog({
     const { full: hbf } = composeAddress(address);
     const { full: v1f } = composeVehicle(vehicle);
     const warnings = await runDuplicateChecks(utils, [
-      { kind: "person", label: composedName },
+      ...(personClearedRef.current === composedName
+        ? []
+        : [
+            {
+              kind: "person" as const,
+              label: composedName,
+              includeExact: true,
+            },
+          ]),
       { kind: "address", label: hbf },
       { kind: "vehicle", label: v1f },
       ...extraAddresses.map(ea => ({
@@ -1209,6 +1217,9 @@ export function AddTargetDialog({
   // true when the queue came from handleSave's own runSecondaryChecks, not
   // from this early check.
   const lastBlurCheckedNameRef = useRef("");
+  // A name the officer has already answered "No, different" for as an exact
+  // match in the person check (see handleWarnContinue).
+  const personClearedRef = useRef("");
   const checkNameOnBlur = async () => {
     if (!composedName || composedName === lastBlurCheckedNameRef.current)
       return;
@@ -1230,7 +1241,7 @@ export function AddTargetDialog({
       // it here too so it surfaces right after the name rather than only
       // after address/vehicle/etc. get typed in as well.
       const warnings = await runDuplicateChecks(utils, [
-        { kind: "person", label: composedName },
+        { kind: "person", label: composedName, includeExact: true },
       ]);
       if (warnings.length > 0) {
         setWarnFromSave(false);
@@ -1247,6 +1258,12 @@ export function AddTargetDialog({
 
   const handleWarnContinue = async () => {
     const current = warnQueue[warnIndex];
+    // An exact-name match can't be remembered as "not the same" server-side
+    // (same name, nothing to tell apart), so remember it here: Save must not
+    // ask the same question again for this name.
+    if (current?.kind === "person" && current.exact) {
+      personClearedRef.current = current.candidateLabel;
+    }
     if (current) {
       notDuplicateMutation.mutate({
         type: current.kind === "target" ? "person" : current.kind,
@@ -1309,7 +1326,7 @@ export function AddTargetDialog({
         const result = await onSave(buildPayload());
         const associateIdByKey = await saveStagedAssociates(result.id);
         await saveStagedImages(result.id, associateIdByKey);
-        if (warning.kind !== "target") {
+        if (warning.kind !== "target" && !warning.exact) {
           await mergeEntitiesMutation.mutateAsync({
             type: warning.kind,
             winnerLabel: warning.candidateLabel,

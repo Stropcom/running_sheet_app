@@ -40,6 +40,8 @@ export interface DuplicateWarning {
   candidateLabel: string;
   existingLabel: string;
   reason: string;
+  /** The existing record has the very same name (not just a similar one). */
+  exact?: boolean;
   /** Set only when the match is a real Target/Associate registry record
    * (not a plain-text mention) — enables "link and copy". */
   linkable?: { recordType: "target" | "associate"; id: number } | null;
@@ -93,16 +95,33 @@ export function PossibleDuplicateAlert({
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-              Possible duplicate {KIND_NOUN[warning.kind]}
+              {warning.exact
+                ? `Already recorded as a ${KIND_NOUN[warning.kind]}`
+                : `Possible duplicate ${KIND_NOUN[warning.kind]}`}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              "{displayLabel(warning.kind, warning.candidateLabel)}" looks like
-              it may be the same {KIND_NOUN[warning.kind]} as one already
-              recorded,{" "}
-              <strong>
-                {displayLabel(warning.kind, warning.existingLabel)}
-              </strong>{" "}
-              ({warning.reason}). Is this actually the same one?
+              {warning.exact ? (
+                <>
+                  <strong>
+                    {displayLabel(warning.kind, warning.existingLabel)}
+                  </strong>{" "}
+                  is already in the Intelligence folder
+                  {warning.linkable?.recordType === "associate"
+                    ? " as an associate"
+                    : ""}
+                  . Is this the same {KIND_NOUN[warning.kind]}?
+                </>
+              ) : (
+                <>
+                  "{displayLabel(warning.kind, warning.candidateLabel)}" looks
+                  like it may be the same {KIND_NOUN[warning.kind]} as one
+                  already recorded,{" "}
+                  <strong>
+                    {displayLabel(warning.kind, warning.existingLabel)}
+                  </strong>{" "}
+                  ({warning.reason}). Is this actually the same one?
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex flex-col gap-2">

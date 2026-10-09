@@ -9128,6 +9128,9 @@ export interface DuplicateMatchResult {
   reason: string;
   associateId?: number | null;
   associateOfTargetId?: number | null;
+  /** True when the label is the SAME normalized name, not a near miss. Only
+   * returned when the caller asks for exact matches (`includeExact`). */
+  exact?: boolean;
 }
 
 /**
@@ -9138,7 +9141,8 @@ export interface DuplicateMatchResult {
  */
 export async function checkPossibleDuplicates(
   type: DedupType,
-  label: string
+  label: string,
+  opts: { includeExact?: boolean } = {}
 ): Promise<DuplicateMatchResult[]> {
   const db = await getDb();
   if (!db) return [];
@@ -9187,7 +9191,27 @@ export async function checkPossibleDuplicates(
     c => !decidedDifferentBareKeys.has(normOnly(type, c.label))
   );
 
-  return findPossibleDuplicates(label, type, candidateCombinedKey, filtered);
+  const fuzzy: DuplicateMatchResult[] = findPossibleDuplicates(
+    label,
+    type,
+    candidateCombinedKey,
+    filtered
+  );
+  if (!opts.includeExact) return fuzzy;
+  // The row-save prompt leaves an exact match out — the same name simply
+  // collapses into one entity there. But when REGISTERING a record for a
+  // person who is already in the Intelligence folder (an associate, or
+  // someone mined from rows), an exact name is the strongest match there is
+  // and the officer must be told, so it leads the list.
+  const exact: DuplicateMatchResult[] = candidates
+    .filter(c => c.key === candidateCombinedKey)
+    .map(c => ({
+      ...c,
+      score: 1,
+      reason: "same name already recorded",
+      exact: true,
+    }));
+  return [...exact, ...fuzzy];
 }
 
 export interface CrossOperationMatch {

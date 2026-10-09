@@ -15,7 +15,14 @@ import type {
 
 export type DuplicateCheckItem =
   | { kind: "target"; label: string }
-  | { kind: Exclude<DuplicateWarningKind, "target">; label: string };
+  | {
+      kind: Exclude<DuplicateWarningKind, "target">;
+      label: string;
+      /** Also flag someone already recorded under this exact name — for
+       * registering a person (a Target), who may already be an associate or
+       * a mined name in the Intelligence folder. */
+      includeExact?: boolean;
+    };
 
 export async function runDuplicateChecks(
   utils: ReturnType<typeof trpc.useUtils>,
@@ -43,6 +50,7 @@ export async function runDuplicateChecks(
     const matches = await utils.intelligence.checkPossibleDuplicates.fetch({
       type: item.kind,
       label,
+      ...(item.includeExact ? { includeExact: true } : {}),
     });
     if (matches.length > 0) {
       const best = matches[0];
@@ -51,6 +59,7 @@ export async function runDuplicateChecks(
         candidateLabel: label,
         existingLabel: best.label,
         reason: best.reason,
+        ...(best.exact ? { exact: true } : {}),
         linkable: best.associateId
           ? { recordType: "associate", id: best.associateId }
           : null,

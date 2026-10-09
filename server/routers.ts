@@ -674,6 +674,12 @@ async function assertCanManageUser(
   }
 }
 
+/** Until somebody is an all-region admin, any admin may make the first one
+ * (otherwise nobody could ever be). After that only an all-region admin can. */
+async function noAllRegionAdminYet(): Promise<boolean> {
+  return (await getAllUsers()).every(u => !u.allRegions);
+}
+
 export const appRouter = router({
   system: systemRouter,
 
@@ -3573,16 +3579,20 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-        if (
-          !ctx.user.allRegions &&
-          ((input.command && input.command !== ctx.user.command) ||
-            input.allRegions)
-        ) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message:
-              "Only an all-region admin can add people to another Command or make an all-region admin.",
-          });
+        if (!ctx.user.allRegions) {
+          if (input.command && input.command !== ctx.user.command) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Only an all-region admin can add people to another Command. Make yourself one on your profile first.",
+            });
+          }
+          if (input.allRegions && !(await noAllRegionAdminYet())) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Only an all-region admin can make another one.",
+            });
+          }
         }
         const passwordHash = await bcrypt.hash(input.password, 12);
         const id = await createUser({
@@ -3643,14 +3653,24 @@ export const appRouter = router({
         await assertCanManageUser(ctx.user, id);
         if (!ctx.user.allRegions) {
           const current = await getUserById(id);
-          if (
-            (rest.command && current && rest.command !== current.command) ||
-            rest.allRegions
-          ) {
+          if (rest.command && current && rest.command !== current.command) {
             throw new TRPCError({
               code: "FORBIDDEN",
               message:
-                "Only an all-region admin can move someone to another Command or make an all-region admin.",
+                "Only an all-region admin can move someone to another Command.",
+            });
+          }
+          // Only a CHANGE to the all-region flag matters (saving a profile
+          // sends the unchanged value back).
+          if (
+            rest.allRegions !== undefined &&
+            current &&
+            rest.allRegions !== current.allRegions &&
+            !(rest.allRegions && (await noAllRegionAdminYet()))
+          ) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Only an all-region admin can change who is one.",
             });
           }
         }

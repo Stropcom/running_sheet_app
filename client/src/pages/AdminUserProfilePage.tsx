@@ -49,6 +49,12 @@ export default function AdminUserProfilePage() {
     { enabled: isAuthenticated && currentUser?.role === "admin" && !!userId }
   );
 
+  // Needed to know whether anybody is an all-region admin yet (the first one
+  // can be made by any admin).
+  const { data: allUsers } = trpc.admin.listUsers.useQuery(undefined, {
+    enabled: isAuthenticated && currentUser?.role === "admin",
+  });
+
   const [form, setForm] = useState<UserFormData>(emptyForm());
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -231,6 +237,10 @@ export default function AdminUserProfilePage() {
             isEdit
             disabled={archived || !canManage}
             allowAnyCommand={!!currentUser?.allRegions}
+            canGrantAllRegions={
+              !!currentUser?.allRegions ||
+              !(allUsers ?? []).some(u => u.allRegions)
+            }
             accessLevelOverride={archived ? "None — set by Archive" : undefined}
           />
           {!canManage ? (

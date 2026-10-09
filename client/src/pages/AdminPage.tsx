@@ -125,6 +125,8 @@ export interface UserFormFieldsProps {
   accessLevelOverride?: string;
   /** Only an all-region admin may put someone in another Command. */
   allowAnyCommand?: boolean;
+  /** The all-region tick: an all-region admin, or anyone while nobody is one yet. */
+  canGrantAllRegions?: boolean;
 }
 
 export function UserFormFields({
@@ -134,6 +136,7 @@ export function UserFormFields({
   disabled = false,
   accessLevelOverride,
   allowAnyCommand = false,
+  canGrantAllRegions = false,
 }: UserFormFieldsProps) {
   return (
     <div className="grid gap-4 py-2">
@@ -186,6 +189,12 @@ export function UserFormFields({
               ))}
             </SelectContent>
           </Select>
+          {!allowAnyCommand && !disabled && (
+            <p className="text-[11px] text-muted-foreground">
+              Locked to your Command. An all-region admin can choose another
+              (tick “All-region admin” on your profile).
+            </p>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs uppercase tracking-wider text-muted-foreground">
@@ -287,7 +296,7 @@ export function UserFormFields({
         <label className="flex items-start gap-2.5 rounded-md border border-input p-3 cursor-pointer">
           <Checkbox
             checked={form.allRegions}
-            disabled={disabled || !allowAnyCommand}
+            disabled={disabled || !(allowAnyCommand || canGrantAllRegions)}
             onCheckedChange={v =>
               setForm(f => ({ ...f, allRegions: v === true }))
             }
@@ -296,8 +305,11 @@ export function UserFormFields({
           <span className="text-sm">
             <span className="font-medium">All-region admin</span>
             <span className="block text-xs text-muted-foreground">
-              Sees every Command and can open restricted operations from Region
-              Search.
+              Sees every Command, can add people to any Command, and can open
+              restricted operations from Region Search.
+              {!allowAnyCommand && canGrantAllRegions
+                ? " Nobody is one yet — tick this on your own profile to set yourself up."
+                : ""}
             </span>
           </span>
         </label>
@@ -449,6 +461,8 @@ export default function AdminPage() {
 
   const homeUsers = (users ?? []).filter(u => u.command === viewCommand);
   const homeCount = homeUsers.length;
+  // Until someone is an all-region admin, any admin may make the first one.
+  const noAllRegionAdminYet = !(users ?? []).some(u => u.allRegions);
   const archivedCount = homeUsers.filter(u => u.archivedAt).length;
   const visitingCount = new Set(
     (shares ?? [])
@@ -568,6 +582,7 @@ export default function AdminPage() {
               form={form}
               setForm={setForm}
               allowAnyCommand={!!currentUser?.allRegions}
+              canGrantAllRegions={noAllRegionAdminYet}
             />
             <DialogFooter>
               <Button variant="outline" onClick={() => setCreateOpen(false)}>

@@ -20,7 +20,6 @@ import { PersonPicker } from "@/components/admin/PersonPicker";
 import type { AdminUserRow } from "@/components/admin/UserAccessGroups";
 import {
   COMMAND_LABELS,
-  COMMAND_SHORT,
   type CommandCode,
 } from "@shared/commands";
 import {
@@ -29,39 +28,6 @@ import {
   SHARE_LEVEL_LABEL,
   type ShareLevel,
 } from "@shared/operationAccess";
-
-function Choice({
-  checked,
-  onSelect,
-  title,
-  hint,
-}: {
-  checked: boolean;
-  onSelect: () => void;
-  title: string;
-  hint: string;
-}) {
-  return (
-    <label
-      className={`grid cursor-pointer grid-cols-[18px_minmax(0,1fr)] items-start gap-2.5 rounded-lg border p-3 ${
-        checked
-          ? "border-primary bg-primary/10"
-          : "border-border bg-card hover:bg-accent/30"
-      }`}
-    >
-      <input
-        type="radio"
-        checked={checked}
-        onChange={onSelect}
-        className="mt-1"
-      />
-      <span>
-        <span className="block text-sm font-semibold">{title}</span>
-        <span className="block text-xs text-muted-foreground">{hint}</span>
-      </span>
-    </label>
-  );
-}
 
 export function ShareWithSection({
   viewCommand,
@@ -86,7 +52,6 @@ export function ShareWithSection({
   const [people, setPeople] = useState<number[]>([]);
   // Bumped after a share so the picker starts clean (its search text too).
   const [pickerKey, setPickerKey] = useState(0);
-  const [scope, setScope] = useState<"all" | "operations">("all");
   const [opIds, setOpIds] = useState<number[]>([]);
   const [level, setLevel] = useState<ShareLevel>("log");
 
@@ -107,14 +72,11 @@ export function ShareWithSection({
     },
     onError: e => toast.error(e.message),
   });
-  const ready = people.length > 0 && (scope === "all" || opIds.length > 0);
-  const opText =
-    scope === "all"
-      ? `every ${COMMAND_SHORT[viewCommand]} operation`
-      : opIds
-          .map(id => ownOps.find(o => o.id === id)?.name)
-          .filter(Boolean)
-          .join(", ");
+  const ready = people.length > 0 && opIds.length > 0;
+  const opText = opIds
+    .map(id => ownOps.find(o => o.id === id)?.name)
+    .filter(Boolean)
+    .join(", ");
 
   return (
     <div className="space-y-4">
@@ -140,54 +102,38 @@ export function ShareWithSection({
 
         <div className="space-y-2">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            What
+            Operations
           </h3>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Choice
-              checked={scope === "all"}
-              onSelect={() => setScope("all")}
-              title="The whole Command"
-              hint={`Every ${SHORT(viewCommand)} operation, including new ones`}
-            />
-            <Choice
-              checked={scope === "operations"}
-              onSelect={() => setScope("operations")}
-              title="Select operations"
-              hint="Only the ones you tick"
-            />
+          <div className="grid max-h-56 gap-1.5 overflow-y-auto rounded-lg border border-border bg-muted/20 p-2 sm:grid-cols-2">
+            {ownOps.length === 0 && (
+              <p className="p-2 text-sm text-muted-foreground">
+                No operations yet.
+              </p>
+            )}
+            {ownOps.map(o => (
+              <label
+                key={o.id}
+                className={`grid cursor-pointer grid-cols-[18px_minmax(0,1fr)] items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm ${
+                  opIds.includes(o.id)
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-card"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={opIds.includes(o.id)}
+                  onChange={() =>
+                    setOpIds(ids =>
+                      ids.includes(o.id)
+                        ? ids.filter(x => x !== o.id)
+                        : [...ids, o.id]
+                    )
+                  }
+                />
+                <span className="truncate font-medium">{o.name}</span>
+              </label>
+            ))}
           </div>
-          {scope === "operations" && (
-            <div className="grid max-h-56 gap-1.5 overflow-y-auto rounded-lg border border-border bg-muted/20 p-2 sm:grid-cols-2">
-              {ownOps.length === 0 && (
-                <p className="p-2 text-sm text-muted-foreground">
-                  No operations yet.
-                </p>
-              )}
-              {ownOps.map(o => (
-                <label
-                  key={o.id}
-                  className={`grid cursor-pointer grid-cols-[18px_minmax(0,1fr)] items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm ${
-                    opIds.includes(o.id)
-                      ? "border-primary bg-primary/10"
-                      : "border-border bg-card"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={opIds.includes(o.id)}
-                    onChange={() =>
-                      setOpIds(ids =>
-                        ids.includes(o.id)
-                          ? ids.filter(x => x !== o.id)
-                          : [...ids, o.id]
-                      )
-                    }
-                  />
-                  <span className="truncate font-medium">{o.name}</span>
-                </label>
-              ))}
-            </div>
-          )}
         </div>
 
         <div className="space-y-2">
@@ -235,8 +181,8 @@ export function ShareWithSection({
             onClick={() =>
               create.mutate({
                 userIds: people,
-                scope,
-                operationIds: scope === "operations" ? opIds : undefined,
+                scope: "operations",
+                operationIds: opIds,
                 fromCommand: isAllRegions ? viewCommand : undefined,
                 level,
               })
@@ -251,8 +197,4 @@ export function ShareWithSection({
       </div>
     </div>
   );
-}
-
-function SHORT(c: CommandCode) {
-  return COMMAND_SHORT[c];
 }

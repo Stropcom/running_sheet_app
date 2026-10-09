@@ -91,6 +91,19 @@ function Group({
   );
 }
 
+const OPEN_KEY = "runlog.accessGroups.open";
+
+function readOpen(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(OPEN_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed === "object") return parsed;
+  } catch {
+    /* ignore: fall back to all closed */
+  }
+  return {};
+}
+
 export function UserAccessGroups({
   users,
   viewCommand,
@@ -127,15 +140,25 @@ export function UserAccessGroups({
     }
   };
   const [query, setQuery] = useState("");
-  const [open, setOpen] = useState<Record<string, boolean>>({
-    TEAM1: true,
-    visiting: true,
-  });
+  // Every team starts closed; what an admin opens is remembered on this device.
+  const [open, setOpenState] = useState<Record<string, boolean>>(readOpen);
+  const setOpen = (
+    update: (o: Record<string, boolean>) => Record<string, boolean>
+  ) =>
+    setOpenState(o => {
+      const next = update(o);
+      try {
+        localStorage.setItem(OPEN_KEY, JSON.stringify(next));
+      } catch {
+        /* storage unavailable: the choice just won't be remembered */
+      }
+      return next;
+    });
   const searching = query.trim().length > 0;
   const isOpen = (k: string) => searching || !!open[k];
   const toggle = (k: string) => setOpen(o => ({ ...o, [k]: !o[k] }));
   const setAll = (v: boolean) =>
-    setOpen({ TEAM1: v, TEAM2: v, PTT: v, "": v, visiting: v });
+    setOpen(() => ({ TEAM1: v, TEAM2: v, PTT: v, "": v, visiting: v }));
 
   const home = users.filter(u => u.command === viewCommand);
 

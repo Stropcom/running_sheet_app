@@ -81,10 +81,11 @@ import {
   surnameTokens,
 } from "@shared/walkEventPatterns";
 import {
-  companionsOf,
-  pickTargetCardKey,
-  targetTokenFromTitle,
-} from "@shared/targetCard";
+  pickSubjectCardKey,
+  resolveTrackedTarget,
+  subjectCompanions,
+  trackedTargetCode,
+} from "@shared/trackedTarget";
 import {
   ContinuityCards,
   type ContinuityCardData,
@@ -3643,13 +3644,28 @@ export default function IntelligenceMapping() {
     : rsPendingPlacementsBase;
   // Where the target is on the selected sheet — marked on the map with a flag
   // above that place's pin (see the Target location flag effect below).
+  // What the selected sheet tracks — a person, a vehicle or a location — by
+  // the one rule the sheet's cards share (shared/trackedTarget.ts). The title
+  // answers it until the server's answer (from the linked target) arrives.
+  const { data: rsTrackedTargetData } = trpc.sheet.trackedTarget.useQuery(
+    { sheetId: rsSelectedSheetId ?? 0 },
+    { enabled: !!rsSelectedSheetId }
+  );
+  const rsSelectedSheetTitle = (rsSheetsData as any[] | undefined)?.find(
+    (x: any) => x.id === rsSelectedSheetId
+  )?.title as string | undefined;
+  const rsTrackedTarget = useMemo(
+    () =>
+      rsSelectedSheetId
+        ? (rsTrackedTargetData ??
+          resolveTrackedTarget({ title: rsSelectedSheetTitle }))
+        : null,
+    [rsSelectedSheetId, rsTrackedTargetData, rsSelectedSheetTitle]
+  );
   const rsTargetPosition = useMemo(() => {
     if (!trackingSettings.location || !rsSelectedSheetId) return null;
-    const title = (rsSheetsData as any[] | undefined)?.find(
-      (x: any) => x.id === rsSelectedSheetId
-    )?.title as string | undefined;
     return locateTargetFromPending({
-      token: targetTokenFromTitle(title),
+      subject: rsTrackedTarget,
       arrivals: rsPendingArrivals ?? [],
       departures: rsPendingDepartures ?? [],
       walkIns: rsPendingWalkIns ?? [],
@@ -3660,7 +3676,7 @@ export default function IntelligenceMapping() {
   }, [
     trackingSettings.location,
     rsSelectedSheetId,
-    rsSheetsData,
+    rsTrackedTarget,
     rsPendingArrivals,
     rsPendingDepartures,
     rsPendingWalkIns,
@@ -5017,17 +5033,18 @@ export default function IntelligenceMapping() {
       }
     };
     const pos = rsTargetPosition;
-    const sheetTitle = (rsSheetsData as any[] | undefined)?.find(
-      (x: any) => x.id === rsSelectedSheetId
-    )?.title as string | undefined;
-    const token = targetTokenFromTitle(sheetTitle);
+    const token = trackedTargetCode(rsTrackedTarget);
     if (!trackingSettings.location) {
       setTargetFlagStatus("");
     } else if (!rsSelectedSheetId) {
       setTargetFlagStatus("Select a running sheet in the Active RS pane.");
+    } else if (rsTrackedTarget?.kind === "location") {
+      setTargetFlagStatus(
+        "This sheet's target is a location — it doesn't move, so there is no flag to follow."
+      );
     } else if (!token) {
       setTargetFlagStatus(
-        "This sheet's title has no target surname in brackets at the end, e.g. (BAIG), so there is nobody to flag."
+        "This sheet's title has no target in brackets at the end — a surname, e.g. (BAIG), or a registration, e.g. (ABC123) — so there is nothing to flag."
       );
     } else if (!pos) {
       setTargetFlagStatus(
@@ -5106,13 +5123,7 @@ export default function IntelligenceMapping() {
       em.textContent = TARGET_EMOJI[pos.state];
       em.style.cssText = "font-size:15px;";
       const label = document.createElement("span");
-      const who = (
-        targetTokenFromTitle(
-          (rsSheetsData as any[] | undefined)?.find(
-            (x: any) => x.id === rsSelectedSheetId
-          )?.title
-        ) ?? "Target"
-      ).toUpperCase();
+      const who = (token ?? "Target").toUpperCase();
       // Everyone with him (the vehicle's occupants, or those inside /
       // walking with him), the target first — as on the tracker card.
       label.textContent = shortUnidentified(
@@ -5155,7 +5166,7 @@ export default function IntelligenceMapping() {
   }, [
     mapReady,
     rsTargetPosition,
-    rsSheetsData,
+    rsTrackedTarget,
     rsSelectedSheetId,
     locations,
     customMarkers,
@@ -13050,25 +13061,20 @@ export default function IntelligenceMapping() {
                                   })
                                 );
 
-                              // The card holding the target leads, as his
-                              // tracker (a person target only).
-                              const popupTitle = (
-                                rsSheetsData as any[] | undefined
-                              )?.find((x: any) => x.id === rsSelectedSheetId)
-                                ?.title as string | undefined;
-                              const targetCode =
-                                targetTokenFromTitle(popupTitle);
-                              if (targetCode) {
-                                const tKey = pickTargetCardKey(
+                              // The card holding the target leads, as its
+                              // tracker (person or vehicle; same rule as the
+                              // sheet and the flag).
+                              {
+                                const tKey = pickSubjectCardKey(
                                   cards,
-                                  targetCode
+                                  rsTrackedTarget
                                 );
                                 const held = cards.find(c => c.key === tKey);
                                 if (held) {
                                   held.isTarget = true;
-                                  held.companions = companionsOf(
+                                  held.companions = subjectCompanions(
                                     held.people ?? [],
-                                    targetCode
+                                    rsTrackedTarget
                                   ).join(", ");
                                 }
                               }

@@ -3,6 +3,7 @@
 // cards are built from, with the same rules (see vehicleOccupants), so the
 // marker and the tracker never disagree. Deterministic: no lookups.
 import { shortAddressLabel } from "./markerLink";
+import type { TrackedTarget } from "./trackedTarget";
 import {
   nameWords,
   occupantsToVehicle,
@@ -283,11 +284,106 @@ export function samePlace(a: string, b: string): boolean {
   return x.size <= y.size ? within(x, y) : within(y, x);
 }
 
+/**
+ * Where a tracked VEHICLE is: the same pending lists as locateTarget, read for
+ * the plate instead of a person. It is parked at its latest arrival's address
+ * (or out of sight there), or has departed from its latest departure's origin;
+ * with no arrival or departure row of its own, it is where the people logged
+ * in it were last logged (or at its map marker). People shown are the plate
+ * first, then whoever is in it.
+ */
+export function locateVehicleTarget(
+  input: Omit<TargetPositionInput, "token"> & { rego: string }
+): TargetPosition | null {
+  const R = input.rego.toUpperCase();
+  const mine = (rego: string) => rego.toUpperCase() === R;
+  const onFoot = [
+    ...input.walkIns.map(w => w.names),
+    ...input.headingTo.map(h => h.names),
+  ];
+  const all = [
+    ...input.arrivals.map(a => ({
+      rego: a.rego,
+      rowId: a.rowId,
+      names: a.names,
+    })),
+    ...input.departures.map(d => ({
+      rego: d.rego,
+      rowId: d.rowId,
+      names: d.names,
+    })),
+  ];
+  const occupantsOf = (v: { rego: string; rowId: number; names: string }) =>
+    vehicleOccupants(v, onFoot, input.placements, all);
+  const withPlate = (people: string[]) => [R, ...people];
+
+  const found: TargetPosition[] = [];
+  for (const a of input.arrivals.filter(a => mine(a.rego))) {
+    const oos = !!a.outOfSight;
+    found.push({
+      place: a.address || null,
+      state: oos ? "oos" : "vehicle",
+      label: oos ? "out of sight" : "parked",
+      people: withPlate(occupantsOf(a)),
+      rowId: a.rowId,
+      rego: R,
+    });
+  }
+  for (const d of input.departures.filter(d => mine(d.rego))) {
+    found.push({
+      place: d.fromAddress || null,
+      state: "moving",
+      label: "departed",
+      people: withPlate(occupantsOf(d)),
+      rowId: d.rowId,
+      rego: R,
+    });
+  }
+  if (found.length === 0) {
+    // Nothing logged for the vehicle itself — only people getting into it.
+    const inIt = input.placements.filter(
+      p => mine(p.rego) && p.inside !== false
+    );
+    if (inIt.length > 0) {
+      const m = inIt.find(p => p.vehicleMarker)?.vehicleMarker;
+      const markerPlace = m?.address ? shortAddressLabel(m.address) : "";
+      found.push({
+        place: markerPlace || (inIt.find(p => p.at)?.at ?? null),
+        placeIsEstimate: !markerPlace,
+        ...(m ? { marker: { lat: m.lat, lng: m.lng } } : {}),
+        state: "vehicle",
+        label: "in vehicle",
+        people: withPlate(inIt.map(p => p.name)),
+        rowId: Math.max(...inIt.map(p => p.rowId)),
+        rego: R,
+      });
+    }
+  }
+  if (found.length === 0) return null;
+  return found.reduce((a, b) => (b.rowId > a.rowId ? b : a));
+}
+
+/** Where the sheet's tracked target is, whatever kind it is. A location is
+ * where it is (nothing moves), so it has no position to mark. */
+export function locateTrackedTarget(
+  subject: TrackedTarget | null,
+  input: Omit<TargetPositionInput, "token">
+): TargetPosition | null {
+  if (!subject || subject.kind === "location") return null;
+  if (subject.kind === "vehicle") {
+    return locateVehicleTarget({ ...input, rego: subject.rego });
+  }
+  return locateTarget({ ...input, token: subject.token });
+}
+
 /** `locateTarget` over the pending lists as the server returns them, where
  * occupants are still written as the officer wrote them. `extractNames` strips
  * the role words (the client's extractOccupantNames). */
 export function locateTargetFromPending(args: {
-  token: string | null | undefined;
+  /** What the sheet tracks (see resolveTrackedTarget). `token` is the older
+   * person-only form: a surname. */
+  subject?: TrackedTarget | null;
+  token?: string | null;
   arrivals: {
     rego: string;
     occupantDesc: string;
@@ -306,9 +402,11 @@ export function locateTargetFromPending(args: {
   placements: TargetPositionInput["placements"];
   extractNames: (desc: string) => string;
 }): TargetPosition | null {
-  if (!args.token) return null;
-  return locateTarget({
-    token: args.token,
+  const subject: TrackedTarget | null =
+    args.subject ??
+    (args.token ? { kind: "person", token: args.token.toUpperCase() } : null);
+  if (!subject) return null;
+  return locateTrackedTarget(subject, {
     arrivals: args.arrivals.map(a => ({
       rego: a.rego,
       names: args.extractNames(a.occupantDesc),

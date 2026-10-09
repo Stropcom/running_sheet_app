@@ -7,6 +7,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
 import { CIN_LINK_CATEGORY } from "@shared/attachmentLinking";
+import { resolveTrackedTarget } from "@shared/trackedTarget";
 import {
   sanitizeTargetSpecialProjects,
   mergeSpecialProjects,
@@ -1024,6 +1025,22 @@ export const appRouter = router({
             message: "Sheet not found.",
           });
         return sheet;
+      }),
+
+    /** What this sheet tracks — a person (by surname), a vehicle (by rego) or
+     * a location — worked out from its linked Target Registry entry by the
+     * one shared rule (shared/trackedTarget.ts). The sheet's tracker cards,
+     * the map's location flag and the map popup all read this, so they agree
+     * on what the target is. Null when the sheet has no trackable target. */
+    trackedTarget: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        const sheet = await getRunningSheetById(input.sheetId);
+        if (!sheet) return null;
+        const target = sheet.targetId
+          ? await getTargetById(sheet.targetId)
+          : undefined;
+        return resolveTrackedTarget({ title: sheet.title, target });
       }),
 
     create: protectedProcedure

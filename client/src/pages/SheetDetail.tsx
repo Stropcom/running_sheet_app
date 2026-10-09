@@ -52,10 +52,11 @@ import {
   isReadAsMovement,
 } from "@shared/walkEventPatterns";
 import {
-  companionsOf,
-  pickTargetCardKey,
-  targetTokenFromTitle,
-} from "@shared/targetCard";
+  pickSubjectCardKey,
+  resolveTrackedTarget,
+  subjectCompanions,
+  trackedTargetCode,
+} from "@shared/trackedTarget";
 import {
   ContinuityCards,
   type ContinuityCardData,
@@ -2973,12 +2974,23 @@ export default function SheetDetail({
     : pendingPlacementsBase;
   // Target Tracking switches (per device, set in the map's right-hand pane).
   const trackingSettings = useTargetTrackingSettings();
+  // What the sheet tracks (a person, a vehicle or a location) — the one rule
+  // the cards, the map's flag and its popup share. The title alone answers it
+  // until the server's answer (from the linked target) arrives or when offline.
+  const { data: trackedTargetData } = trpc.sheet.trackedTarget.useQuery(
+    { sheetId },
+    { enabled: !!sheetId }
+  );
+  const trackedTarget = useMemo(
+    () => trackedTargetData ?? resolveTrackedTarget({ title: sheet?.title }),
+    [trackedTargetData, sheet?.title]
+  );
   // Where the target is, for marking on the sheet's address chips.
   const targetPosition = useMemo(
     () =>
       trackingSettings.location
         ? locateTargetFromPending({
-            token: targetTokenFromTitle(sheet?.title),
+            subject: trackedTarget,
             arrivals: pendingArrivals ?? [],
             departures: pendingDepartures ?? [],
             walkIns: pendingWalkIns ?? [],
@@ -2989,7 +3001,7 @@ export default function SheetDetail({
         : null,
     [
       trackingSettings.location,
-      sheet?.title,
+      trackedTarget,
       pendingArrivals,
       pendingDepartures,
       pendingWalkIns,
@@ -5707,16 +5719,11 @@ export default function SheetDetail({
                 });
               });
             }
-            // The card holding the TARGET leads the band as his tracker.
-            // Only a person target is tracked this way (a vehicle or
-            // address target is described in words, not by surname).
-            const targetCode =
-              assignedTarget &&
-              (assignedTarget as { targetType?: string }).targetType &&
-              (assignedTarget as { targetType?: string }).targetType !==
-                "person"
-                ? null
-                : targetTokenFromTitle(sheet?.title);
+            // The card holding the TARGET leads the band as its tracker: a
+            // person's by surname, a vehicle's by its plate (shared rule:
+            // trackedTarget). A location target has nothing that moves.
+            const targetCode = trackedTargetCode(trackedTarget);
+            const targetWho = trackedTarget?.kind === "vehicle" ? "it" : "he";
             // Safety net for phrasing the position logic doesn't read: the
             // newest row that names the target alongside a movement word
             // but matched none of the known movement phrasings. If it is
@@ -5745,17 +5752,20 @@ export default function SheetDetail({
                 : null;
             const staleWarn = (basedOnRowId: number) =>
               latestMove && latestMove.id > basedOnRowId
-                ? `The ${latestMove.time ?? "latest"} row names ${targetCode} after this, but wasn't read as a move — check where he is.`
+                ? `The ${latestMove.time ?? "latest"} row names ${targetCode} after this, but wasn't read as a move — check where ${targetWho} is.`
                 : undefined;
             if (targetCode && continuityCards.length > 0) {
-              const targetKey = pickTargetCardKey(continuityCards, targetCode);
+              const targetKey = pickSubjectCardKey(
+                continuityCards,
+                trackedTarget
+              );
               const held = continuityCards.find(c => c.key === targetKey);
               if (held) {
                 held.isTarget = true;
                 held.warn = staleWarn(held.latestRowId);
-                held.companions = companionsOf(
+                held.companions = subjectCompanions(
                   held.people ?? [],
-                  targetCode
+                  trackedTarget
                 ).join(", ");
               } else {
                 // Cards exist but none names him: say so rather than leave

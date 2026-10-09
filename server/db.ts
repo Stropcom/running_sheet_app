@@ -47,6 +47,7 @@ import {
   extractDepartureAddress,
 } from "@shared/walkEventPatterns";
 import { expandRowSegments } from "@shared/rowSegments";
+import { VEHICLE_REGO_PATTERN } from "@shared/vehicleRego";
 import {
   attachVehicleMarkers,
   type VehicleMarkerRef,
@@ -5401,8 +5402,9 @@ export function mergeContainedEntities(
 // extractRegoUpper and vehicleRegoKey below must share this single
 // pattern, or they silently diverge — see the comment history on this
 // constant for two separate regressions caused by exactly that split.
-export const VEHICLE_REGO_PATTERN =
-  /\b(?=[A-Za-z0-9]{4,10}\b)(?=[A-Za-z0-9]*[0-9])(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{4,10}\b/;
+// Defined in shared/vehicleRego.ts so the client's tracked-target rule
+// (shared/trackedTarget.ts) reads a registration exactly as this file does.
+export { VEHICLE_REGO_PATTERN };
 
 // Vehicles are uniquely identified by their registration, not by whatever
 // descriptive text happens to surround it in a given mention. The same car

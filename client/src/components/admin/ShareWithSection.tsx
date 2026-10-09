@@ -70,10 +70,6 @@ export function ShareWithSection({
     onError: e => toast.error(e.message),
   });
   const ready = people.length > 0 && opIds.length > 0;
-  const opText = opIds
-    .map(id => ownOps.find(o => o.id === id)?.name)
-    .filter(Boolean)
-    .join(", ");
 
   return (
     <div className="space-y-4">
@@ -151,24 +147,6 @@ export function ShareWithSection({
           </Select>
         </div>
 
-        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-lg bg-primary/10 px-3 py-2.5 text-sm">
-          <span className="rounded border border-foreground/40 px-1.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider">
-            Preview
-          </span>
-          <span>
-            {ready ? (
-              <>
-                <b>
-                  {people.length} {people.length === 1 ? "person" : "people"}
-                </b>{" "}
-                will be able to open <b>{opText}</b> at{" "}
-                <b>{SHARE_LEVEL_LABEL[level]}</b>.
-              </>
-            ) : (
-              `Choose ${people.length === 0 ? "at least one person" : "at least one operation"} to continue.`
-            )}
-          </span>
-        </div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">
             You can revoke this at any time. Everything already logged stays.

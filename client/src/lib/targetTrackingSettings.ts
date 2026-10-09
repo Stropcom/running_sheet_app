@@ -1,7 +1,7 @@
 /**
- * Target Tracking switches, set in the map's right-hand pane and read by the
+ * Target Logger switches, set in the map's right-hand pane and read by the
  * running sheet, the quick-entry popup and the map:
- *  - tracking: the whole feature — the Target tracker panel and everything
+ *  - tracking: the whole feature — the Target Logger panel and everything
  *    built on it. Off, the panel is not drawn at all.
  *  - location: the flag marking where the target is on the map and on the
  *    sheet's address chips. Only applies while tracking is on.

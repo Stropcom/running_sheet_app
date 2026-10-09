@@ -214,7 +214,7 @@ export function ContinuityCards({
       >
         <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span className="flex-1 truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Target tracker
+          Target Logger
         </span>
         <span className="rounded-full bg-pink-500 px-1.5 text-[10px] font-semibold leading-4 text-white">
           {live.length}

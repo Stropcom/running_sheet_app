@@ -2972,7 +2972,7 @@ export default function SheetDetail({
   const pendingPlacements = draftActive
     ? draftPending!.placements
     : pendingPlacementsBase;
-  // Target Tracking switches (per device, set in the map's right-hand pane).
+  // Target Logger switches (per device, set in the map's right-hand pane).
   const trackingSettings = useTargetTrackingSettings();
   // What the sheet tracks (a person, a vehicle or a location) — the one rule
   // the cards, the map's flag and its popup share. The title alone answers it

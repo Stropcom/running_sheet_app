@@ -3517,7 +3517,7 @@ export default function IntelligenceMapping() {
     }
     return selectedOpIds.length === 1 ? selectedOpIds[0] : null;
   }, [rsSelectedSheetId, rsSheetsData, selectedOpIds]);
-  // Target Tracking switches (per device, set in this pane's Target Tracking
+  // Target Logger switches (per device, set in this pane's Target Logger
   // section). The tracker's data is also loaded while the Target location
   // marker is on, so the flag can follow the selected sheet without the
   // quick-entry popup being open.
@@ -9846,19 +9846,19 @@ export default function IntelligenceMapping() {
               </div>
               {/* end Marker Entity Count */}
 
-              {/* ── TARGET TRACKING — same on/off pattern as the sections
+              {/* ── TARGET LOGGER — same on/off pattern as the sections
                 above. The first switch is the whole feature (the Target
-                tracker panel on the running sheet and in the quick-entry
+                logger panel on the running sheet and in the quick-entry
                 popup); the second is the flag marking where the target is,
                 and only applies while tracking is on. Per device. ── */}
               <div className="px-3 py-3 border-b border-border space-y-2">
                 <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-                  Target Tracking
+                  Target Logger
                 </span>
                 {[
                   {
                     key: "tracking",
-                    label: "Target tracking",
+                    label: "Target logger",
                     on: trackingSettings.tracking,
                     toggle: () =>
                       trackingSettings.setTracking(!trackingSettings.tracking),
@@ -9889,7 +9889,7 @@ export default function IntelligenceMapping() {
                     aria-pressed={on}
                     title={
                       disabled
-                        ? "Turn Target tracking on to use this"
+                        ? "Turn Target logger on to use this"
                         : undefined
                     }
                   >
@@ -9916,7 +9916,7 @@ export default function IntelligenceMapping() {
                 ))}
                 {!trackingSettings.tracking && (
                   <p className="text-[11px] text-muted-foreground">
-                    Target location needs Target tracking on.
+                    Target location needs Target logger on.
                   </p>
                 )}
                 {trackingSettings.location && targetFlagStatus && (
@@ -9925,7 +9925,7 @@ export default function IntelligenceMapping() {
                   </p>
                 )}
               </div>
-              {/* end Target Tracking */}
+              {/* end Target Logger */}
             </div>
           )}
           {/* end Pane Body */}

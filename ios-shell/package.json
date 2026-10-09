@@ -4,6 +4,7 @@
   "private": true,
   "description": "Thin iPhone/iPad shell that opens the live RunLog site. Kept separate from the web app so its tools never touch the RunLog build.",
   "dependencies": {
+    "@capacitor-community/background-geolocation": "file:plugins/background-geolocation",
     "@capacitor/core": "8.5.3",
     "@capacitor/ios": "8.5.3"
   },

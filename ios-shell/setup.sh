@@ -54,9 +54,16 @@ set_plist() {
     || /usr/libexec/PlistBuddy -c "Add :$1 string $2" "$PLIST"
 }
 set_plist NSLocationWhenInUseUsageDescription "RunLog uses your location to show your position to your team on the map."
+set_plist NSLocationAlwaysAndWhenInUseUsageDescription "RunLog shares your location with your team while you have location sharing switched on, including when the app is in the background or the phone is locked."
 set_plist NSMicrophoneUsageDescription "RunLog uses the microphone for voice entry you start."
 set_plist NSCameraUsageDescription "RunLog uses the camera to attach photos to the running sheet."
 set_plist NSPhotoLibraryUsageDescription "RunLog lets you attach photos from your library to the running sheet."
+
+# Let location keep running with the app in the background (the "Always"
+# location sharing). Re-created each run so it can't be duplicated.
+/usr/libexec/PlistBuddy -c "Delete :UIBackgroundModes" "$PLIST" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST"
+/usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST"
 
 say "Copying settings into the iOS project"
 npx cap sync ios

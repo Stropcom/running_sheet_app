@@ -95,6 +95,38 @@ In Xcode, with a real device or **Any iOS Device (arm64)** chosen at the top:
 Getting the file onto the phones without a cable (a web link from your own
 server) is the next step; it is not set up yet.
 
+## Installing on a phone: Developer Mode
+
+Phones running iOS 16 or later show "Developer Mode Required" the first time
+an ad hoc app is opened. Turn it on in **Settings > Privacy & Security >
+Developer Mode** (it appears once the app is installed), restart, and confirm.
+(Checked on a real phone: the build is correctly signed as ad hoc, with
+`get-task-allow` false and an "Ad Hoc Provisioning Profile", and the prompt
+still appears. Rolling the app out to many phones without this step needs a
+different distribution route, such as MDM or Apple Business Manager.)
+
+## Location in the background ("Always")
+
+The Map page's **Share my location** switch is the master switch. In the app,
+while it is on, the phone's position keeps going to the team map from any
+screen and with the app in the background or the phone locked, at the same
+rate as on the Map page. Turning the switch off stops it. In a browser or the
+PWA nothing changes: the Map page reports position only while it is open.
+
+How it works: the app includes a native location plugin (vendored in
+`plugins/background-geolocation/`) and the website's app-wide
+`NativeLocationSharing` service (`client/src/components/`) feeds its positions
+into the same `updateUserLocation` call the map uses. `setup.sh` adds the
+"Always" wording and the background-location setting to the Xcode project.
+
+On the phone, iOS asks in two steps: first **Allow While Using App**, and
+later it offers **Change to Always Allow**. If it does not offer it, set
+**Settings > RunLog > Location > Always** by hand. While tracking in the
+background, iOS shows a blue indicator in the status bar.
+
+To test: turn **Share my location** on, lock the phone, walk or drive, and
+watch the pin on another device's map.
+
 ## Updating the app later
 
 - **Changes to RunLog itself** (anything shipped to the site): nothing to do.
@@ -112,6 +144,8 @@ server) is the next step; it is not set up yet.
 - `www/` — the "can't reach RunLog" screen shown when the site can't be loaded.
 - `capacitor.config.js` — the app's name, identifier and the RunLog address.
 - `setup.sh` — the Mac setup script.
-- `package.json` — the few tools the shell needs (Capacitor only).
+- `plugins/background-geolocation/` — the native background-location plugin
+  (vendored, MIT).
+- `package.json` — the few tools the shell needs (Capacitor and the plugin).
 - `runlog-url.txt` — the RunLog address, written by the script on the Mac
   (never committed).

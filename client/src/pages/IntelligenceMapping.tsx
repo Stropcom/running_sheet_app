@@ -17,6 +17,10 @@ import { detectUnidentifiedRepeat } from "@shared/unidentified";
 import { entryMentionsAddress, popupShortAddress } from "@shared/markerLink";
 import { fullStreetTypes } from "@shared/streetTypes";
 import {
+  broadcastSharing,
+  getNativeBackgroundLocation,
+} from "@/lib/nativeLocation";
+import {
   locateTargetFromPending,
   samePlace,
   shortUnidentified,
@@ -3900,6 +3904,10 @@ export default function IntelligenceMapping() {
   }, [liveUsers, user?.id]);
 
   const startWatching = useCallback(() => {
+    // Inside the iPhone/iPad app the app-wide NativeLocationSharing service
+    // reports position (including in the background); a second watcher here
+    // would send every fix twice.
+    if (getNativeBackgroundLocation()) return;
     if (!navigator.geolocation) {
       setGpsError("Geolocation not supported on this device.");
       return;
@@ -3944,6 +3952,8 @@ export default function IntelligenceMapping() {
 
   const handleSharingToggle = (checked: boolean) => {
     setSharingEnabled(checked);
+    // Tell the app-wide location service at once (it follows this switch).
+    broadcastSharing(user?.id, checked);
     if (checked) {
       if (!isMobile) {
         setGpsError(

@@ -192,6 +192,40 @@ export const operations = mysqlTable("operations", {
 export type Operation = typeof operations.$inferSelect;
 export type InsertOperation = typeof operations.$inferInsert;
 
+// ─── Operation shares (access across Commands) ──────────────────────────────
+// An admin of the owning Command gives a named person in another Command
+// access to one operation (`operationId`) or to every operation the Command
+// owns, present and future (`fromCommand`, with `operationId` null). Exactly
+// one of the two is set. `level` is what the person may do there: view =
+// read, log = also add rows and certify, manage = also edit the operation.
+// Revoking deletes the row (the audit log keeps who shared and who revoked);
+// everything already logged stays. See shared/operationAccess.ts.
+export const operationShares = mysqlTable(
+  "operation_shares",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    operationId: int("operationId"),
+    fromCommand: mysqlEnum("fromCommand", [
+      "WESTERN",
+      "NORTHERN",
+      "EASTERN",
+      "SOUTHERN",
+      "CENTRAL",
+    ]),
+    userId: int("userId").notNull(),
+    level: mysqlEnum("level", ["view", "log", "manage"]).notNull(),
+    sharedByCIN: varchar("sharedByCIN", { length: 64 }).notNull(),
+    createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+  },
+  t => ({
+    byUser: index("operation_shares_user_idx").on(t.userId),
+    byOperation: index("operation_shares_operation_idx").on(t.operationId),
+  })
+);
+
+export type OperationShare = typeof operationShares.$inferSelect;
+export type InsertOperationShare = typeof operationShares.$inferInsert;
+
 // ─── Running Sheets ───────────────────────────────────────────────────────────
 
 export const runningSheets = mysqlTable("running_sheets", {
@@ -910,6 +944,8 @@ export const auditLogs = mysqlTable("audit_logs", {
     "user_restored",
     "operation_status_changed",
     "operation_updated",
+    "operation_shared",
+    "operation_share_revoked",
     "password_changed",
     "attachment_added",
     "attachment_deleted",

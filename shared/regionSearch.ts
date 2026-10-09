@@ -32,6 +32,9 @@ export interface RegionOperation {
 export interface RegionViewer {
   command: CommandCode;
   allRegions: boolean;
+  /** Operations the viewer was given a share for: a restricted operation
+   * they hold a share for can be opened. */
+  reachableOperationIds?: number[];
 }
 
 export interface RegionHit {
@@ -87,6 +90,7 @@ export function regionSearch(
   opts: { query: string; type?: RegionEntityType; command?: CommandCode }
 ): RegionResult[] {
   const opById = new Map(operations.map(o => [o.id, o]));
+  const reachable = new Set(viewer.reachableOperationIds ?? []);
   const results: RegionResult[] = [];
 
   for (const e of entities) {
@@ -136,7 +140,7 @@ export function regionSearch(
         canOpen:
           viewer.allRegions ||
           command === viewer.command ||
-          !operations.some(o => o.restricted),
+          operations.every(o => !o.restricted || reachable.has(o.id)),
       });
     }
     if (hits.length === 0) continue;

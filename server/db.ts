@@ -27,6 +27,8 @@ import {
   type RegionViewer,
 } from "@shared/regionSearch";
 import type { CommandCode } from "@shared/commands";
+import { scopeEntities, type OperationShareRow } from "@shared/operationAccess";
+import { intelScope } from "./intelScope";
 import {
   applyTargetProjectsToSummary,
   sanitizeTargetSpecialProjects,
@@ -114,6 +116,7 @@ import {
   associates,
   InsertAssociate,
   users,
+  operationShares,
   governanceRecords,
   GovernanceRecord,
   sheetSummaries,
@@ -7786,9 +7789,17 @@ export async function getWeeklyActivityReport(
   return { weekStart, weekEnd, operations: operationBlocks };
 }
 
-export async function getAllIntelligenceEntities(): Promise<
-  IntelligenceEntity[]
-> {
+export async function getAllIntelligenceEntities(opts?: {
+  /** Skip the per-request Intelligence scope (Region Search only). */
+  unscoped?: boolean;
+}) {
+  const all = await buildAllIntelligenceEntities();
+  const scope = intelScope.getStore();
+  if (!scope || opts?.unscoped) return all;
+  return scopeEntities(all, scope.hiddenOperationIds);
+}
+
+async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
   const db = await getDb();
   if (!db) return [];
 
@@ -9278,7 +9289,7 @@ export async function searchRegions(
   const db = await getDb();
   if (!db) return [];
   const [entities, ops] = await Promise.all([
-    getAllIntelligenceEntities(),
+    getAllIntelligenceEntities({ unscoped: true }),
     db
       .select({
         id: operations.id,
@@ -9290,6 +9301,123 @@ export async function searchRegions(
       .where(isNull(operations.deletedAt)),
   ]);
   return regionSearch(entities, ops, viewer, opts);
+}
+
+// ─── Operation shares ────────────────────────────────────────────────────────
+// A Command's admin gives named people in other Commands access to one
+// operation, or to every operation the Command owns. The rule lives in
+// shared/operationAccess.ts; these are just the rows.
+
+export async function listOperationShares(opts?: {
+  /** Only shares of what this Command owns. Omit for all. */
+  fromCommand?: CommandCode;
+  /** Only shares reaching this person. */
+  userId?: number;
+}): Promise<OperationShareRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: operationShares.id,
+      operationId: operationShares.operationId,
+      shareFromCommand: operationShares.fromCommand,
+      opName: operations.name,
+      opCommand: operations.command,
+      userId: operationShares.userId,
+      userName: users.name,
+      userCIN: users.cin,
+      userCommand: users.command,
+      userTeam: users.team,
+      level: operationShares.level,
+      sharedByCIN: operationShares.sharedByCIN,
+      createdAt: operationShares.createdAt,
+    })
+    .from(operationShares)
+    .innerJoin(users, eq(users.id, operationShares.userId))
+    .leftJoin(operations, eq(operations.id, operationShares.operationId))
+    .where(
+      opts?.userId != null ? eq(operationShares.userId, opts.userId) : undefined
+    )
+    .orderBy(desc(operationShares.createdAt));
+  const out: OperationShareRow[] = [];
+  for (const r of rows) {
+    const owner = (r.opCommand ?? r.shareFromCommand) as CommandCode | null;
+    if (!owner) continue;
+    if (opts?.fromCommand && owner !== opts.fromCommand) continue;
+    out.push({
+      id: r.id,
+      operationId: r.operationId,
+      operationName: r.opName ?? null,
+      fromCommand: owner,
+      userId: r.userId,
+      userName: r.userName,
+      userCIN: r.userCIN ?? null,
+      userCommand: r.userCommand,
+      userTeam: r.userTeam ?? null,
+      level: r.level,
+      sharedByCIN: r.sharedByCIN,
+      createdAt: r.createdAt,
+    });
+  }
+  return out;
+}
+
+/** Add or change one share. Returns whether it was new. */
+export async function upsertOperationShare(data: {
+  operationId: number | null;
+  fromCommand: CommandCode | null;
+  userId: number;
+  level: "view" | "log" | "manage";
+  sharedByCIN: string;
+}): Promise<"created" | "updated"> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await db
+    .select({ id: operationShares.id })
+    .from(operationShares)
+    .where(
+      and(
+        eq(operationShares.userId, data.userId),
+        data.operationId != null
+          ? eq(operationShares.operationId, data.operationId)
+          : isNull(operationShares.operationId),
+        data.operationId == null && data.fromCommand
+          ? eq(operationShares.fromCommand, data.fromCommand)
+          : undefined
+      )
+    )
+    .limit(1);
+  if (existing.length > 0) {
+    await db
+      .update(operationShares)
+      .set({
+        level: data.level,
+        sharedByCIN: data.sharedByCIN,
+        createdAt: Date.now(),
+      })
+      .where(eq(operationShares.id, existing[0].id));
+    return "updated";
+  }
+  await db.insert(operationShares).values({
+    operationId: data.operationId,
+    fromCommand: data.operationId != null ? null : data.fromCommand,
+    userId: data.userId,
+    level: data.level,
+    sharedByCIN: data.sharedByCIN,
+    createdAt: Date.now(),
+  });
+  return "created";
+}
+
+export async function deleteOperationShare(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(operationShares).where(eq(operationShares.id, id));
+}
+
+export async function getOperationShareRow(id: number) {
+  const rows = await listOperationShares();
+  return rows.find(r => r.id === id);
 }
 
 export interface CrossOperationMatch {

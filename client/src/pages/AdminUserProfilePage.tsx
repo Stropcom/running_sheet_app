@@ -13,7 +13,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { DEFAULT_COMMAND, type CommandCode } from "@shared/commands";
+import { SharedAccessCard } from "@/components/admin/SharedAccessCard";
+import {
+  COMMAND_LABELS,
+  COMMAND_SHORT,
+  DEFAULT_COMMAND,
+  type CommandCode,
+} from "@shared/commands";
 import {
   ArrowLeft,
   Loader2,
@@ -167,6 +173,10 @@ export default function AdminUserProfilePage() {
 
   const archived = !!profile.archivedAt;
   const isSelf = profile.id === currentUser?.id;
+  // An admin manages their own Command's people; a visiting person's profile
+  // belongs to their home Command's admins (an all-region admin manages all).
+  const canManage =
+    !!currentUser?.allRegions || profile.command === currentUser?.command;
 
   return (
     <DashboardLayout>
@@ -219,10 +229,21 @@ export default function AdminUserProfilePage() {
             form={form}
             setForm={setForm}
             isEdit
-            disabled={archived}
+            disabled={archived || !canManage}
+            allowAnyCommand={!!currentUser?.allRegions}
             accessLevelOverride={archived ? "None — set by Archive" : undefined}
           />
-          {archived ? (
+          {!canManage ? (
+            <p className="text-xs text-muted-foreground mt-1">
+              {profile.name} belongs to{" "}
+              {COMMAND_LABELS[profile.command as CommandCode]}. Only that
+              Command's admins can edit this profile — you can see and change
+              what{" "}
+              {COMMAND_SHORT[currentUser?.command as CommandCode] ??
+                "your Command"}{" "}
+              has shared with them below.
+            </p>
+          ) : archived ? (
             <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5">
               Fields are read-only while archived — restore the account to edit
               them.
@@ -239,57 +260,67 @@ export default function AdminUserProfilePage() {
           )}
         </div>
 
+        <SharedAccessCard
+          userId={userId}
+          userName={profile.name}
+          userCommand={profile.command as CommandCode}
+          adminCommand={currentUser?.command as CommandCode}
+          allRegions={!!currentUser?.allRegions}
+        />
+
         {/* Account status / archive selector — the last thing on the page */}
-        <div className="rounded-xl border border-border/60 bg-card/50 p-5 flex flex-col gap-3">
-          <p className="text-sm font-semibold">Account Status</p>
-          {isSelf ? (
-            <p className="text-xs text-muted-foreground">
-              You can't archive your own account.
-            </p>
-          ) : (
-            <>
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-sm font-medium">
-                    {archived ? "Archived" : "Active"}
-                  </span>
-                  <span className="text-xs text-muted-foreground max-w-sm">
-                    {archived
-                      ? "Signed out, Access Level set to None. Everything already on record — rows, certifications, statements, witness lists — is untouched."
-                      : "Can log in, and appears when adding members to a team, operation or running sheet."}
-                  </span>
-                </div>
-                <Switch
-                  checked={archived}
-                  onCheckedChange={checked => {
-                    if (checked) setArchiveConfirmOpen(true);
-                    else restoreUser.mutate({ id: userId });
-                  }}
-                  disabled={archiveUser.isPending || restoreUser.isPending}
-                />
-              </div>
-              {archived && (
-                <>
-                  <div className="h-px bg-border/60" />
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-xs text-muted-foreground">
-                      Nobody's coming back for this account?
+        {canManage && (
+          <div className="rounded-xl border border-border/60 bg-card/50 p-5 flex flex-col gap-3">
+            <p className="text-sm font-semibold">Account Status</p>
+            {isSelf ? (
+              <p className="text-xs text-muted-foreground">
+                You can't archive your own account.
+              </p>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-medium">
+                      {archived ? "Archived" : "Active"}
                     </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => setDeleteConfirmOpen(true)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Delete Permanently
-                    </Button>
+                    <span className="text-xs text-muted-foreground max-w-sm">
+                      {archived
+                        ? "Signed out, Access Level set to None. Everything already on record — rows, certifications, statements, witness lists — is untouched."
+                        : "Can log in, and appears when adding members to a team, operation or running sheet."}
+                    </span>
                   </div>
-                </>
-              )}
-            </>
-          )}
-        </div>
+                  <Switch
+                    checked={archived}
+                    onCheckedChange={checked => {
+                      if (checked) setArchiveConfirmOpen(true);
+                      else restoreUser.mutate({ id: userId });
+                    }}
+                    disabled={archiveUser.isPending || restoreUser.isPending}
+                  />
+                </div>
+                {archived && (
+                  <>
+                    <div className="h-px bg-border/60" />
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-xs text-muted-foreground">
+                        Nobody's coming back for this account?
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => setDeleteConfirmOpen(true)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete Permanently
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         {/* Archive confirm */}
         <Dialog open={archiveConfirmOpen} onOpenChange={setArchiveConfirmOpen}>

@@ -9,6 +9,15 @@ import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
 import { CIN_LINK_CATEGORY } from "@shared/attachmentLinking";
 import { resolveTrackedTarget } from "@shared/trackedTarget";
 import { COMMAND_CODES, COMMAND_LABELS } from "@shared/commands";
+import { canShareOperation } from "@shared/operationAccess";
+import {
+  filterByOperationAccess,
+  invalidateAccessCache,
+  operationsForUser,
+  reachableFor,
+  scopeRegistryTargets,
+  toAccessUser,
+} from "./operationAccess";
 import {
   sanitizeTargetSpecialProjects,
   mergeSpecialProjects,
@@ -180,6 +189,10 @@ import {
   extractEntitiesFromText,
   checkPossibleDuplicates,
   searchRegions,
+  listOperationShares,
+  upsertOperationShare,
+  deleteOperationShare,
+  getOperationShareRow,
   checkCrossOperationEntity,
   markEntitiesNotDuplicate,
   mergeEntities,
@@ -645,6 +658,22 @@ async function storeTargetDocumentSourceFile(params: {
 
 // ─── App Router ───────────────────────────────────────────────────────────────
 
+/** An admin manages people in their own Command; only an all-region admin
+ * reaches across Commands. */
+async function assertCanManageUser(
+  admin: { command: (typeof COMMAND_CODES)[number]; allRegions: boolean },
+  targetUserId: number
+) {
+  const target = await getUserById(targetUserId);
+  if (!target) return;
+  if (!admin.allRegions && target.command !== admin.command) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `${target.name} belongs to ${COMMAND_LABELS[target.command]}. Only that Command's admins can change their account.`,
+    });
+  }
+}
+
 export const appRouter = router({
   system: systemRouter,
 
@@ -854,9 +883,13 @@ export const appRouter = router({
     list: protectedProcedure.query(async ({ ctx }) => {
       await autoArchiveEligibleOperations();
       const all = await getOperations();
-      if (ctx.user.role !== "investigator") return all;
+      if (ctx.user.role !== "investigator")
+        return operationsForUser(toAccessUser(ctx.user), all);
       const allowed = new Set(getInvestigatorAllowedOperationIds(ctx.user));
-      return all.filter(op => allowed.has(op.id));
+      return operationsForUser(
+        toAccessUser(ctx.user),
+        all.filter(op => allowed.has(op.id))
+      );
     }),
 
     get: protectedProcedure
@@ -914,6 +947,7 @@ export const appRouter = router({
             createdAt: Date.now(),
           });
         }
+        invalidateAccessCache();
         return { id };
       }),
 
@@ -947,6 +981,7 @@ export const appRouter = router({
             ? await getOperationById(id)
             : undefined;
         await updateOperation(id, rest);
+        invalidateAccessCache();
         if (
           before &&
           ((rest.restricted !== undefined &&
@@ -1005,20 +1040,30 @@ export const appRouter = router({
 
     deepSearch: protectedProcedure
       .input(z.object({ query: z.string() }))
-      .query(async ({ input }) => {
-        return deepSearchOperations(input.query);
+      .query(async ({ input, ctx }) => {
+        return filterByOperationAccess(
+          toAccessUser(ctx.user),
+          await deepSearchOperations(input.query),
+          m => m.operationId
+        );
       }),
 
     listByStatus: protectedProcedure
       .input(
         z.object({ status: z.enum(["active", "before_court", "archive"]) })
       )
-      .query(async ({ input }) => {
-        return getOperationsByStatus(input.status);
+      .query(async ({ input, ctx }) => {
+        return operationsForUser(
+          toAccessUser(ctx.user),
+          await getOperationsByStatus(input.status)
+        );
       }),
 
-    listAll: protectedProcedure.query(async () => {
-      return getAllOperations();
+    listAll: protectedProcedure.query(async ({ ctx }) => {
+      return operationsForUser(
+        toAccessUser(ctx.user),
+        await getAllOperations()
+      );
     }),
 
     setStatus: adminProcedure
@@ -1058,8 +1103,12 @@ export const appRouter = router({
   // ─── Running Sheets ──────────────────────────────────────────────────────────
 
   sheet: router({
-    list: protectedProcedure.query(async () => {
-      return getRunningSheets();
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await getRunningSheets(),
+        s => s.operationId
+      );
     }),
 
     listByOperation: protectedProcedure
@@ -1282,13 +1331,21 @@ export const appRouter = router({
     outstandingForMe: protectedProcedure.query(async ({ ctx }) => {
       const cin = ctx.user.cin;
       if (!cin) return [];
-      return getOutstandingSheetsForCin(cin);
+      return filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await getOutstandingSheetsForCin(cin),
+        s => s.operationId
+      );
     }),
 
     governanceTodo: protectedProcedure.query(async ({ ctx }) => {
       const cin = ctx.user.cin;
       if (!cin) return [];
-      return getGovernanceTodoForCin(cin);
+      return filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await getGovernanceTodoForCin(cin),
+        s => s.operationId
+      );
     }),
 
     /**
@@ -3304,8 +3361,187 @@ export const appRouter = router({
 
   admin: router({
     listUsers: adminProcedure.query(async () => {
-      return getAllUsers();
+      // Never send password hashes to the browser, even to an admin — every
+      // admin can now see people from every Command.
+      return (await getAllUsers()).map(
+        ({ passwordHash: _passwordHash, ...rest }) => rest
+      );
     }),
+
+    // ─── Sharing operations across Commands ────────────────────────────────
+    // An admin of the Command that owns an operation gives named people in
+    // other Commands access to it. Rule: shared/operationAccess.ts.
+
+    /** Shares this admin may see: what their Command shared out, and what
+     * reaches their Command's people (an all-region admin: all). */
+    listShares: adminProcedure.query(async ({ ctx }) => {
+      const all = await listOperationShares();
+      if (ctx.user.allRegions) return all;
+      // What this Command shared out, and what reaches its own people.
+      return all.filter(
+        s =>
+          s.fromCommand === ctx.user.command ||
+          s.userCommand === ctx.user.command
+      );
+    }),
+
+    /** Shares that reach one person, as far as this admin may see them: what
+     * their own Command shared, plus anything shared INTO their Command that
+     * reaches this person. Other Commands' sharing stays private. */
+    userShares: adminProcedure
+      .input(z.object({ userId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const [target, rows] = await Promise.all([
+          getUserById(input.userId),
+          listOperationShares({ userId: input.userId }),
+        ]);
+        if (!target) return [];
+        return rows.filter(
+          r =>
+            ctx.user.allRegions ||
+            r.fromCommand === ctx.user.command ||
+            target.command === ctx.user.command
+        );
+      }),
+
+    createShares: adminProcedure
+      .input(
+        z.object({
+          userIds: z.array(z.number()).min(1).max(300),
+          scope: z.enum(["all", "operations"]),
+          operationIds: z.array(z.number()).optional(),
+          /** Which Command's operations "all" means. Defaults to the admin's
+           * own; only an all-region admin may name another. */
+          fromCommand: z.enum(COMMAND_CODES).optional(),
+          level: z.enum(["view", "log", "manage"]),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const me = toAccessUser(ctx.user);
+        const targets: Array<{
+          operationId: number | null;
+          fromCommand: (typeof COMMAND_CODES)[number] | null;
+          label: string;
+          owner: (typeof COMMAND_CODES)[number];
+        }> = [];
+        if (input.scope === "all") {
+          const from = input.fromCommand ?? ctx.user.command;
+          if (!canShareOperation(me, { id: 0, command: from })) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: `Only a ${COMMAND_LABELS[from]} admin can share its operations.`,
+            });
+          }
+          targets.push({
+            operationId: null,
+            fromCommand: from,
+            label: `every ${COMMAND_LABELS[from]} operation`,
+            owner: from,
+          });
+        } else {
+          const ids = Array.from(new Set(input.operationIds ?? []));
+          if (ids.length === 0) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Pick at least one operation to share.",
+            });
+          }
+          for (const id of ids) {
+            const op = await getOperationById(id);
+            if (!op || op.deletedAt) {
+              throw new TRPCError({
+                code: "NOT_FOUND",
+                message: "An operation you picked no longer exists.",
+              });
+            }
+            if (!canShareOperation(me, { id: op.id, command: op.command })) {
+              throw new TRPCError({
+                code: "FORBIDDEN",
+                message: `Only a ${COMMAND_LABELS[op.command]} admin can share ${op.name}.`,
+              });
+            }
+            targets.push({
+              operationId: op.id,
+              fromCommand: null,
+              label: op.name,
+              owner: op.command,
+            });
+          }
+        }
+
+        let created = 0;
+        let updated = 0;
+        let skipped = 0;
+        const sharedWith: string[] = [];
+        for (const userId of Array.from(new Set(input.userIds))) {
+          const person = await getUserById(userId);
+          if (!person || person.archivedAt) {
+            skipped++;
+            continue;
+          }
+          sharedWith.push(person.cin ?? person.name);
+          for (const t of targets) {
+            // Sharing with someone in the owning Command changes nothing —
+            // they already have it.
+            if (person.command === t.owner) {
+              skipped++;
+              continue;
+            }
+            const r = await upsertOperationShare({
+              operationId: t.operationId,
+              fromCommand: t.fromCommand,
+              userId,
+              level: input.level,
+              sharedByCIN: ctx.user.cin ?? "Unknown",
+            });
+            if (r === "created") created++;
+            else updated++;
+          }
+        }
+        invalidateAccessCache();
+        if (created + updated > 0) {
+          await createAuditLog({
+            sheetId: 0,
+            userId: ctx.user.id,
+            userName: ctx.user.cin ?? "Unknown",
+            userCIN: ctx.user.cin ?? undefined,
+            action: "operation_shared",
+            details: `Shared ${targets.map(t => t.label).join(", ")} at ${input.level} with ${sharedWith.length} ${sharedWith.length === 1 ? "person" : "people"} (CIN: ${sharedWith.join(", ")})`,
+            createdAt: Date.now(),
+          });
+        }
+        return { created, updated, skipped };
+      }),
+
+    revokeShare: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const share = await getOperationShareRow(input.id);
+        if (!share) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Share not found.",
+          });
+        }
+        if (!ctx.user.allRegions && share.fromCommand !== ctx.user.command) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: `Only a ${COMMAND_LABELS[share.fromCommand]} admin can revoke this.`,
+          });
+        }
+        await deleteOperationShare(input.id);
+        invalidateAccessCache();
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "operation_share_revoked",
+          details: `Revoked access to ${share.operationName ?? `every ${COMMAND_LABELS[share.fromCommand]} operation`} from ${share.userName} (CIN: ${share.userCIN ?? "?"})`,
+          createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
 
     getUser: adminProcedure
       .input(z.object({ id: z.number() }))
@@ -3337,6 +3573,17 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
+        if (
+          !ctx.user.allRegions &&
+          ((input.command && input.command !== ctx.user.command) ||
+            input.allRegions)
+        ) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Only an all-region admin can add people to another Command or make an all-region admin.",
+          });
+        }
         const passwordHash = await bcrypt.hash(input.password, 12);
         const id = await createUser({
           name: input.name,
@@ -3393,6 +3640,20 @@ export const appRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         const { id, password, investigatorOperationIds, ...rest } = input;
+        await assertCanManageUser(ctx.user, id);
+        if (!ctx.user.allRegions) {
+          const current = await getUserById(id);
+          if (
+            (rest.command && current && rest.command !== current.command) ||
+            rest.allRegions
+          ) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Only an all-region admin can move someone to another Command or make an all-region admin.",
+            });
+          }
+        }
         const updateData: Record<string, unknown> = { ...rest };
         if (password) {
           updateData.passwordHash = await bcrypt.hash(password, 12);
@@ -3435,6 +3696,7 @@ export const appRouter = router({
             code: "FORBIDDEN",
             message: "Cannot delete your own account.",
           });
+        await assertCanManageUser(ctx.user, input.id);
         await deleteUser(input.id);
         await createAuditLog({
           sheetId: 0,
@@ -3472,6 +3734,7 @@ export const appRouter = router({
             code: "FORBIDDEN",
             message: "Cannot archive your own account.",
           });
+        await assertCanManageUser(ctx.user, input.id);
         await archiveUser(input.id, ctx.user.cin ?? "Unknown");
         await createAuditLog({
           sheetId: 0,
@@ -3488,6 +3751,7 @@ export const appRouter = router({
     restoreUser: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
+        await assertCanManageUser(ctx.user, input.id);
         await restoreUser(input.id);
         await createAuditLog({
           sheetId: 0,
@@ -3588,8 +3852,12 @@ export const appRouter = router({
       }),
 
     /** List all targets across all operations (for cross-op linking) */
-    listAll: protectedProcedure.query(async () => {
-      return getAllTargets();
+    listAll: protectedProcedure.query(async ({ ctx }) => {
+      return filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await getAllTargets(),
+        t => t.operationId
+      );
     }),
 
     /** Get a single target by ID */
@@ -3617,8 +3885,11 @@ export const appRouter = router({
     // ─── Target Registry sub-router ─────────────────────────────────────────────────────────────────────────
     registry: router({
       /** List all targets in the global registry with linked operations */
-      list: protectedProcedure.query(async () => {
-        return getAllTargetsForRegistry();
+      list: protectedProcedure.query(async ({ ctx }) => {
+        return scopeRegistryTargets(
+          toAccessUser(ctx.user),
+          await getAllTargetsForRegistry()
+        );
       }),
 
       /** Create a new target in the global registry */
@@ -4787,7 +5058,11 @@ export const appRouter = router({
       )
       .query(async ({ input, ctx }) => {
         return searchRegions(
-          { command: ctx.user.command, allRegions: ctx.user.allRegions },
+          {
+            command: ctx.user.command,
+            allRegions: ctx.user.allRegions,
+            reachableOperationIds: await reachableFor(toAccessUser(ctx.user)),
+          },
           input
         );
       }),

@@ -5,6 +5,19 @@ import type { TrpcContext } from "./_core/context";
 
 // ─── Mock DB helpers ──────────────────────────────────────────────────────────
 
+// The cross-Command access guard has its own tests (operationGuard.test.ts);
+// here it is a pass-through so these tests stay about the router itself.
+vi.mock("./operationAccess", () => ({
+  enforceOperationAccess: vi.fn().mockResolvedValue({}),
+  hiddenIntelligenceFor: vi.fn().mockResolvedValue(new Set()),
+  toAccessUser: (u: unknown) => u,
+  filterByOperationAccess: async (_u: unknown, rows: unknown[]) => rows,
+  operationsForUser: async (_u: unknown, rows: unknown[]) => rows,
+  scopeRegistryTargets: async (_u: unknown, rows: unknown[]) => rows,
+  reachableFor: vi.fn().mockResolvedValue([]),
+  invalidateAccessCache: vi.fn(),
+}));
+
 vi.mock("./db", () => ({
   getRunningSheets: vi.fn().mockResolvedValue([]),
   getRunningSheetById: vi.fn().mockResolvedValue({

@@ -33,6 +33,7 @@ import { useViewMode } from "@/contexts/ViewModeContext";
 import { Badge } from "@/components/ui/badge";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { CommandChip } from "@/components/admin/CommandChip";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { useOffline } from "@/contexts/OfflineContext";
@@ -126,6 +127,15 @@ export default function Home() {
         investigationUnit: op.unit ?? null,
         createdAt: new Date(op.createdAt),
       })) ?? []);
+
+  // Operations another Command shared with this person get a small tag.
+  const sharedInfo = new Map((operations ?? []).map(o => [o.id, o]));
+  const sharedTag = (id: number) => {
+    const o = sharedInfo.get(id);
+    return o && o.sharedIn ? (
+      <CommandChip command={o.command} extra="· shared with me" />
+    ) : null;
+  };
 
   const filtered =
     isSearching && isOnline
@@ -278,6 +288,9 @@ export default function Home() {
                   <p className="font-semibold text-foreground leading-tight line-clamp-2">
                     {op.name}
                   </p>
+                  {sharedTag(op.id) && (
+                    <div className="mt-1.5">{sharedTag(op.id)}</div>
+                  )}
                 </div>
 
                 {/* Metadata */}
@@ -365,6 +378,7 @@ export default function Home() {
                     <span className="font-semibold text-foreground truncate">
                       {op.name}
                     </span>
+                    {sharedTag(op.id)}
                     {(op as any).operationStatus === "before_court" && (
                       <Badge className="text-[10px] px-1.5 py-0.5 bg-violet-500/20 text-violet-300 border-violet-500/30 border font-semibold shrink-0">
                         <Scale className="w-2.5 h-2.5 mr-1" />

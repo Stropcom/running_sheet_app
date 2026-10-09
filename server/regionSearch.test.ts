@@ -82,6 +82,12 @@ describe("regionSearch", () => {
     expect(r.hits.find(h => h.command === "WESTERN")!.canOpen).toBe(true);
   });
 
+  it("lets someone who was shared a restricted operation open it", () => {
+    const shared = { ...west, reachableOperationIds: [2] };
+    const [r] = regionSearch([camry], ops, shared, { query: "e426hod" });
+    expect(r.hits.find(h => h.command === "EASTERN")!.canOpen).toBe(true);
+  });
+
   it("lets an all-region admin open everything", () => {
     const [r] = regionSearch([camry], ops, all, { query: "e426hod" });
     expect(r.hits.every(h => h.canOpen)).toBe(true);

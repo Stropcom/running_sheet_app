@@ -18,10 +18,7 @@ import {
 } from "@/components/ui/select";
 import { PersonPicker } from "@/components/admin/PersonPicker";
 import type { AdminUserRow } from "@/components/admin/UserAccessGroups";
-import {
-  COMMAND_LABELS,
-  type CommandCode,
-} from "@shared/commands";
+import { COMMAND_LABELS, type CommandCode } from "@shared/commands";
 import {
   SHARE_LEVELS,
   SHARE_LEVEL_HELP,

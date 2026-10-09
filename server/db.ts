@@ -7971,6 +7971,23 @@ export async function getAllIntelligenceEntities(): Promise<
 
   const entityMap = new Map<string, IntelligenceEntity>();
 
+  // A person Target's own name, as an ordinary person key, → its target entity.
+  // A confirmed merge ("Yes, same person" on the duplicate prompt, or Merge
+  // Entities) names the target's NAME as the winner, so mentions redirected
+  // through it must land on the target entity itself — not on a second
+  // person entity that happens to carry the same name. (The surname-alias
+  // fold above can't do this on its own: it refuses a mention whose given
+  // name differs, e.g. "Mikayla" vs "Mikala", which is exactly the case a
+  // confirmed merge exists to settle.)
+  const personTargetByKey = new Map<string, string>();
+  for (const t of targetRows) {
+    if (t.targetType && t.targetType !== "person") continue;
+    personTargetByKey.set(
+      `person::${normalizeEntityLabel(t.targetName)}`,
+      `target::${t.targetName}`
+    );
+  }
+
   // A Vehicle/Location target stands in for the ordinary vehicle/address
   // entity its sightings would otherwise create (see subjectTargetEntityKey).
   // Mentions are folded into the target below, so every target entity has to
@@ -8600,6 +8617,34 @@ export async function getAllIntelligenceEntities(): Promise<
     if (resolved) {
       key = resolved.key;
       displayShortForm = resolved.label;
+    }
+
+    // A person redirected onto a Target's own name (a confirmed merge) IS that
+    // Target — fold into the target entity, remembering the spelling used.
+    const personTarget = personTargetByKey.get(key);
+    if (personTarget && entityMap.has(personTarget)) {
+      const targetEntity = entityMap.get(personTarget)!;
+      if (
+        normalizeEntityLabel(e.shortForm) !==
+        normalizeEntityLabel(targetEntity.shortForm)
+      ) {
+        targetEntity.aliasLabels = targetEntity.aliasLabels ?? [];
+        if (!targetEntity.aliasLabels.includes(e.shortForm))
+          targetEntity.aliasLabels.push(e.shortForm);
+      }
+      targetEntity.occurrences.push({
+        sheetId: row.sheetId,
+        sheetTitle: row.sheetTitle,
+        operationId: row.operationId,
+        operationName: row.operationName,
+        rowId: row.rowId,
+        observationSnippet:
+          row.observation.slice(0, 80) +
+          (row.observation.length > 80 ? "…" : ""),
+        timeMinutes: row.timeMinutes ?? null,
+        fullDescription: e.fullDescription,
+      });
+      return;
     }
 
     // A sighting of a Vehicle/Location target belongs to that target, not to

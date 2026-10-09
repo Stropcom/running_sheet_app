@@ -13,6 +13,14 @@ const ops: AccessOperation[] = [
   { id: 2, command: "WESTERN" },
   { id: 3, command: "EASTERN" },
 ];
+// Targets: 50 is linked to Western op 1 only; 51 to Eastern op 3 only (3 is
+// restricted in the "restricted" tests below); 52 to both; 53 to nothing.
+const targetOps = new Map<number, number[]>([
+  [50, [1]],
+  [51, [3]],
+  [52, [1, 3]],
+  [53, []],
+]);
 const resolvers: Resolvers = {
   operationsOfSheets: async ids =>
     new Map(
@@ -21,6 +29,14 @@ const resolvers: Resolvers = {
   sheetsOfRows: async ids => ids.map(i => (i === 100 ? 10 : 11)),
   rowsOfMembers: async ids => ids.map(i => (i === 1000 ? 100 : 300)),
   operationsOfAttachments: async ids => ids.map(() => 3),
+  attachmentsOfLinks: async ids => ids.map(() => 7),
+  operationsOfTargets: async ids =>
+    new Map(ids.map(i => [i, targetOps.get(i) ?? []])),
+  targetsOfAssociates: async ids => ids.map(i => (i === 900 ? 51 : 50)),
+  targetsOfShortcuts: async ids => ids.map(() => 51),
+  operationsOfBriefings: async (_k, ids) => ids.map(i => (i === 1 ? 1 : 3)),
+  operationsOfMarkers: async ids => ids.map(i => (i === 1 ? 1 : 3)),
+  operationsOfShapes: async ids => ids.map(i => (i === 1 ? 1 : 3)),
 };
 const west: AccessUser = {
   id: 10,
@@ -185,5 +201,158 @@ describe("operation guard", () => {
         shares
       )
     ).toEqual({});
+  });
+
+  it("covers the other ids a request can name", async () => {
+    await expect(
+      run(west, "attachment.delete", "mutation", { id: 5 })
+    ).rejects.toThrow();
+    await expect(
+      run(west, "attachment.unlinkFromEntity", "mutation", { linkId: 5 })
+    ).rejects.toThrow();
+    await expect(
+      run(west, "member.remove", "mutation", { id: 3000 })
+    ).rejects.toThrow();
+    await expect(
+      run(west, "export.sheetData", "query", { id: 11 })
+    ).rejects.toThrow();
+    await expect(
+      run(west, "smeacBriefing.getById", "query", { id: 2 })
+    ).rejects.toThrow();
+    await expect(
+      run(west, "ucoGuide.setLevel", "mutation", { id: 2 })
+    ).rejects.toThrow();
+    await expect(
+      run(west, "customMarker.update", "mutation", { id: 2 })
+    ).rejects.toThrow();
+    await expect(
+      run(west, "mapShape.delete", "mutation", { id: 2 })
+    ).rejects.toThrow();
+    expect(
+      await run(west, "smeacBriefing.getById", "query", { id: 1 })
+    ).toEqual({});
+    expect(
+      await run(west, "customMarker.update", "mutation", { id: 1 })
+    ).toEqual({});
+  });
+
+  it("covers an operation named as linkToOperationId", async () => {
+    await expect(
+      run(west, "target.registry.create", "mutation", { linkToOperationId: 3 })
+    ).rejects.toThrow();
+  });
+
+  it("recycle bin entries are traced by type", async () => {
+    await expect(
+      run(west, "recycleBin.reinstate", "mutation", {
+        type: "operation",
+        id: 3,
+      })
+    ).rejects.toThrow();
+    await expect(
+      run(west, "recycleBin.reinstate", "mutation", { type: "sheet", id: 11 })
+    ).rejects.toThrow();
+    await expect(
+      run(west, "recycleBin.reinstate", "mutation", {
+        type: "map_marker",
+        id: 2,
+      })
+    ).rejects.toThrow();
+    expect(
+      await run(west, "recycleBin.reinstate", "mutation", {
+        type: "sheet",
+        id: 10,
+      })
+    ).toEqual({});
+  });
+});
+
+describe("targets follow their operations", () => {
+  const east3: AccessOperation[] = [
+    { id: 1, command: "WESTERN" },
+    { id: 2, command: "WESTERN" },
+    { id: 3, command: "EASTERN", restricted: false },
+  ];
+  const runT = (
+    user: AccessUser,
+    path: string,
+    type: "query" | "mutation",
+    input: unknown,
+    opsList: AccessOperation[] = east3,
+    shares: AccessShare[] = []
+  ) =>
+    enforceWith({
+      user,
+      path,
+      type,
+      getRawInput: async () => input,
+      ops: opsList,
+      shares,
+      resolvers,
+    });
+
+  it("reads a target linked to an operation that is open in Intelligence", async () => {
+    // Eastern's op 3 is unrestricted: a Western user may open its target
+    // (Region Search -> Open in Intelligence)…
+    expect(
+      await runT(west, "intelligence.targetProfile", "query", { targetId: 51 })
+    ).toEqual({});
+    expect(await runT(west, "target.getById", "query", { id: 51 })).toEqual({});
+  });
+
+  it("but not once that operation is Restricted", async () => {
+    const restricted: AccessOperation[] = east3.map(o =>
+      o.id === 3 ? { ...o, restricted: true } : o
+    );
+    await expect(
+      runT(
+        west,
+        "intelligence.targetProfile",
+        "query",
+        { targetId: 51 },
+        restricted
+      )
+    ).rejects.toThrow();
+    await expect(
+      runT(west, "target.getById", "query", { id: 51 }, restricted)
+    ).rejects.toThrow();
+    // Linked to one of their own operations as well: still reachable.
+    expect(
+      await runT(west, "target.getById", "query", { id: 52 }, restricted)
+    ).toEqual({});
+  });
+
+  it("changing a target needs Log on one of its operations", async () => {
+    await expect(
+      runT(west, "target.update", "mutation", { id: 51 })
+    ).rejects.toThrow();
+    expect(await runT(west, "target.update", "mutation", { id: 50 })).toEqual(
+      {}
+    );
+    expect(await runT(west, "target.update", "mutation", { id: 52 })).toEqual(
+      {}
+    );
+    const view: AccessShare[] = [
+      { operationId: 3, fromCommand: null, userId: 10, level: "view" },
+    ];
+    await expect(
+      runT(west, "target.update", "mutation", { id: 51 }, east3, view)
+    ).rejects.toThrow();
+  });
+
+  it("a target with no operations is not blocked", async () => {
+    expect(await runT(west, "target.getById", "query", { id: 53 })).toEqual({});
+  });
+
+  it("follows an associate or a shortcut to its target", async () => {
+    await expect(
+      runT(west, "associate.update", "mutation", { id: 900 })
+    ).rejects.toThrow();
+    expect(await runT(west, "associate.update", "mutation", { id: 1 })).toEqual(
+      {}
+    );
+    await expect(
+      runT(west, "targetShortcuts.delete", "mutation", { id: 4 })
+    ).rejects.toThrow();
   });
 });

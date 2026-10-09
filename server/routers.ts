@@ -11,7 +11,12 @@ import { resolveTrackedTarget } from "@shared/trackedTarget";
 import { COMMAND_CODES, COMMAND_LABELS } from "@shared/commands";
 import { canShareOperation } from "@shared/operationAccess";
 import {
+  commandsOfUsers,
+  filterAuditLogs,
+  filterByIntelligenceScope,
   filterByOperationAccess,
+  filterLocationRows,
+  intelligenceOperationIds,
   invalidateAccessCache,
   operationsForUser,
   reachableFor,
@@ -658,6 +663,27 @@ async function storeTargetDocumentSourceFile(params: {
 
 // ─── App Router ───────────────────────────────────────────────────────────────
 
+/** WIPC members are sensitive: each belongs to the Command of the admin who
+ * created them, and only that Command's admins (or an all-region admin) see
+ * or change them. */
+async function assertCanManageWipcMember(
+  admin: { command: string; allRegions: boolean },
+  memberId: number
+) {
+  if (admin.allRegions) return;
+  const [members, commands] = await Promise.all([
+    listWipcMembers(),
+    commandsOfUsers(),
+  ]);
+  const m = members.find(x => x.id === memberId);
+  if (m && commands.get(m.createdBy) !== admin.command) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "That WIPC member belongs to another Command.",
+    });
+  }
+}
+
 /** An admin manages people in their own Command; only an all-region admin
  * reaches across Commands. */
 async function assertCanManageUser(
@@ -678,6 +704,16 @@ async function assertCanManageUser(
  * (otherwise nobody could ever be). After that only an all-region admin can. */
 async function noAllRegionAdminYet(): Promise<boolean> {
   return (await getAllUsers()).every(u => !u.allRegions);
+}
+
+/** Whole-system maintenance tools act on every Command's data. */
+function requireAllRegions(user: { allRegions: boolean }) {
+  if (!user.allRegions) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Only an all-region admin can run system-wide tools.",
+    });
+  }
 }
 
 export const appRouter = router({
@@ -2007,8 +2043,12 @@ export const appRouter = router({
       }),
 
     /** Photo count per operation, for the top-level Images folder list. */
-    countsByOperation: protectedProcedure.query(async () => {
-      return getAttachmentCountsByOperation();
+    countsByOperation: protectedProcedure.query(async ({ ctx }) => {
+      return filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await getAttachmentCountsByOperation(),
+        r => r.operationId
+      );
     }),
 
     listBySheet: protectedProcedure
@@ -2111,8 +2151,10 @@ export const appRouter = router({
         return getEntityLinksByAttachmentId(input.attachmentId);
       }),
 
-    entityLinkCounts: protectedProcedure.query(async () => {
-      return getEntityLinkCounts();
+    entityLinkCounts: protectedProcedure.query(async ({ ctx }) => {
+      return getEntityLinkCounts(
+        await intelligenceOperationIds(toAccessUser(ctx.user))
+      );
     }),
 
     byEntity: protectedProcedure
@@ -2129,8 +2171,12 @@ export const appRouter = router({
           entityLabel: z.string().optional(),
         })
       )
-      .query(async ({ input }) => {
-        return getAttachmentsForEntity(input);
+      .query(async ({ input, ctx }) => {
+        return filterByIntelligenceScope(
+          toAccessUser(ctx.user),
+          await getAttachmentsForEntity(input),
+          a => a.operationId
+        );
       }),
 
     // Hand-uploaded photos (profiles / baseball cards) of the people living
@@ -2155,7 +2201,7 @@ export const appRouter = router({
           entityLabel: z.string().optional(),
         })
       )
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
         if (input.category === "target") {
           if (!input.targetId)
             throw new TRPCError({
@@ -2163,17 +2209,25 @@ export const appRouter = router({
               message: "targetId is required.",
             });
           const links = await getLinkedOperationsForTarget(input.targetId);
-          return links.map(l => ({
-            id: l.operationId,
-            name: l.operationName ?? "Unknown",
-          }));
+          return filterByIntelligenceScope(
+            toAccessUser(ctx.user),
+            links.map(l => ({
+              id: l.operationId,
+              name: l.operationName ?? "Unknown",
+            })),
+            o => o.id
+          );
         }
         if (!input.entityLabel)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "entityLabel is required.",
           });
-        return getLinkedOperationsForEntity(input.category, input.entityLabel);
+        return filterByIntelligenceScope(
+          toAccessUser(ctx.user),
+          await getLinkedOperationsForEntity(input.category, input.entityLabel),
+          o => o.id
+        );
       }),
 
     // Runs RetinaFace detection (+ MobileFace embedding, held server-side
@@ -3074,7 +3128,11 @@ export const appRouter = router({
       }),
 
     list: protectedProcedure.query(async ({ ctx }) => {
-      const rows = await listSmeacBriefings();
+      const rows = await filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await listSmeacBriefings(),
+        r => r.operationId
+      );
       // Drafts are only visible to their own creator; posted is visible to all.
       return rows.filter(
         r => r.status === "posted" || r.createdBy === ctx.user.id
@@ -3215,7 +3273,11 @@ export const appRouter = router({
       }),
 
     list: protectedProcedure.query(async ({ ctx }) => {
-      const rows = await listUcoGuideBriefings();
+      const rows = await filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await listUcoGuideBriefings(),
+        r => r.operationId
+      );
       return rows.filter(
         r => r.status === "posted" || r.createdBy === ctx.user.id
       );
@@ -3314,8 +3376,8 @@ export const appRouter = router({
         return getAuditLogsBySheet(input.sheetId);
       }),
 
-    all: protectedProcedure.query(async () => {
-      return getAllAuditLogs();
+    all: protectedProcedure.query(async ({ ctx }) => {
+      return filterAuditLogs(toAccessUser(ctx.user), await getAllAuditLogs());
     }),
   }),
 
@@ -4166,8 +4228,12 @@ export const appRouter = router({
       /** Get all operations linked to a target */
       getLinkedOperations: protectedProcedure
         .input(z.object({ targetId: z.number() }))
-        .query(async ({ input }) => {
-          return getLinkedOperationsForTarget(input.targetId);
+        .query(async ({ input, ctx }) => {
+          return filterByIntelligenceScope(
+            toAccessUser(ctx.user),
+            await getLinkedOperationsForTarget(input.targetId),
+            l => l.operationId
+          );
         }),
 
       /** Fuzzy-checks a candidate name against existing targets — backs the "possible duplicate" prompt when adding a new target. */
@@ -4928,8 +4994,11 @@ export const appRouter = router({
           operationIds: z.array(z.number()).default([]),
         })
       )
-      .query(async ({ input }) => {
-        return getUserLocations(input.operationIds);
+      .query(async ({ input, ctx }) => {
+        return filterLocationRows(
+          toAccessUser(ctx.user),
+          await getUserLocations(input.operationIds)
+        );
       }),
 
     /** Update (upsert) the caller's location and sharing preference */
@@ -5018,8 +5087,21 @@ export const appRouter = router({
           sinceMs: z.number(),
         })
       )
-      .query(async ({ input }) => {
-        return getUserLocationHistories(input.userIds, input.sinceMs);
+      .query(async ({ input, ctx }) => {
+        // Only people whose live location this person is allowed to see.
+        const visible = new Set(
+          (
+            await filterLocationRows(
+              toAccessUser(ctx.user),
+              await getUserLocations([])
+            )
+          ).map(r => r.userId)
+        );
+        visible.add(ctx.user.id);
+        return getUserLocationHistories(
+          input.userIds.filter(id => visible.has(id)),
+          input.sinceMs
+        );
       }),
 
     /** Get the target details (DEP/ARR/etc.) for a specific running sheet */
@@ -5177,7 +5259,15 @@ export const appRouter = router({
     /** Manual position/appearance corrections for auto-generated Intelligence
      * map pins — see the intelPinOverrides schema comment. */
     getPinOverrides: protectedProcedure.query(async () => {
-      return getIntelPinOverrides();
+      const overrides = await getIntelPinOverrides();
+      // Keyed by entity label: keep those for entities this person can see.
+      const norm = (x: string) => x.toLowerCase().replace(/\s+/g, " ").trim();
+      const known = new Set<string>();
+      for (const e of await getAllIntelligenceEntities()) {
+        known.add(norm(e.shortForm));
+        for (const a of e.aliasLabels ?? []) known.add(norm(a));
+      }
+      return overrides.filter(o => known.has(norm(o.label)));
     }),
 
     savePinOverride: protectedProcedure
@@ -5214,7 +5304,18 @@ export const appRouter = router({
 
     /** Lists all confirmed entity merges (most recent first) — backs an "undo merge" view. */
     listEntityMerges: protectedProcedure.query(async () => {
-      return listEntityMerges();
+      const merges = await listEntityMerges();
+      // The merge list names entities, so show only merges involving ones
+      // this person can see (the request's Intelligence scope).
+      const norm = (x: string) => x.toLowerCase().replace(/\s+/g, " ").trim();
+      const known = new Set<string>();
+      for (const e of await getAllIntelligenceEntities()) {
+        known.add(norm(e.shortForm));
+        for (const a of e.aliasLabels ?? []) known.add(norm(a));
+      }
+      return merges.filter(
+        m => known.has(norm(m.winnerLabel)) || known.has(norm(m.loserLabel))
+      );
     }),
 
     /** Silent lookup: has this exact spelling already been confirmed against a Target/Associate? Backs auto-correcting a row's text on save without re-prompting. */
@@ -5991,9 +6092,18 @@ export const appRouter = router({
   // ─── Calendar ───────────────────────────────────────────────────────────────
   calendar: router({
     /** Return all operations and running sheets as calendar events */
-    events: protectedProcedure.query(async () => {
-      const operations = await getOperations();
-      const sheets = await getRunningSheets();
+    events: protectedProcedure.query(async ({ ctx }) => {
+      const me = toAccessUser(ctx.user);
+      const operations = await filterByOperationAccess(
+        me,
+        await getOperations(),
+        o => o.id
+      );
+      const sheets = await filterByOperationAccess(
+        me,
+        await getRunningSheets(),
+        s => s.operationId
+      );
       const events: {
         id: string;
         title: string;
@@ -6733,7 +6843,12 @@ export const appRouter = router({
         userId: ctx.user.id,
         action: "READ_MEMBERS",
       });
-      return listWipcMembers();
+      const members = await listWipcMembers();
+      if (ctx.user.allRegions) return members;
+      const commands = await commandsOfUsers();
+      return members.filter(
+        m => commands.get(m.createdBy) === ctx.user.command
+      );
     }),
 
     saveMember: protectedProcedure
@@ -6758,6 +6873,7 @@ export const appRouter = router({
             message: "Admin access required",
           });
         if (input.id) {
+          await assertCanManageWipcMember(ctx.user, input.id);
           await updateWipcMember(input.id, input);
           await createWipcAuditEntry({
             userId: ctx.user.id,
@@ -6790,6 +6906,7 @@ export const appRouter = router({
           action: "DELETE_MEMBER",
           targetId: input.id,
         });
+        await assertCanManageWipcMember(ctx.user, input.id);
         await deleteWipcMember(input.id);
         return { ok: true };
       }),
@@ -6806,9 +6923,29 @@ export const appRouter = router({
 
   // ─── Recycle Bin ──────────────────────────────────────────────────────────────
   recycleBin: router({
-    list: protectedProcedure.query(async () => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       await purgeExpiredRecycleBinItems();
-      return getRecycleBinItems();
+      const items = await getRecycleBinItems();
+      const me = toAccessUser(ctx.user);
+      // An operation's own entry follows its id; everything else follows the
+      // operation it belonged to. Items with neither (e.g. a deleted target)
+      // can't be placed, so they stay with admins when access is restricted.
+      const allowed = await filterByOperationAccess(me, items, i =>
+        i.type === "operation" ? i.id : (i.operationId ?? -1)
+      );
+      const placed = new Set(
+        allowed.filter(i => i.type === "operation" || i.operationId != null)
+      );
+      const everything = allowed.length === items.length;
+      return everything
+        ? items
+        : items.filter(
+            i =>
+              placed.has(i) ||
+              (ctx.user.role === "admin" &&
+                i.type !== "operation" &&
+                i.operationId == null)
+          );
     }),
     reinstate: protectedProcedure
       .input(
@@ -7232,22 +7369,42 @@ export const appRouter = router({
      * Returns all non-deleted, non-closed running sheets with full status info
      * for the Reports page (incomplete sheets).
      */
-    incompleteSheets: protectedProcedure.query(async () => {
-      return getIncompleteRunningSheets();
+    incompleteSheets: protectedProcedure.query(async ({ ctx }) => {
+      return filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await getIncompleteRunningSheets(),
+        r => r.operationId
+      );
     }),
 
     /**
      * Returns all users ranked by total outstanding to-do actions.
      */
-    outstandingTodos: protectedProcedure.query(async () => {
-      return getOutstandingTodosByUser();
+    outstandingTodos: protectedProcedure.query(async ({ ctx }) => {
+      const rows = await getOutstandingTodosByUser();
+      if (ctx.user.allRegions) return rows;
+      // A ranking of people: your own Command's.
+      const mine = new Set(
+        (await getAllUsers())
+          .filter(u => u.command === ctx.user.command && u.cin)
+          .map(u => u.cin)
+      );
+      return rows.filter(r => mine.has(r.cin));
     }),
 
     /** Weekly Activity Report — what the unit did in a given Monday-start week. */
     weeklyActivity: protectedProcedure
       .input(z.object({ weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
-      .query(async ({ input }) => {
-        return getWeeklyActivityReport(input.weekStart);
+      .query(async ({ input, ctx }) => {
+        const report = await getWeeklyActivityReport(input.weekStart);
+        return {
+          ...report,
+          operations: await filterByOperationAccess(
+            toAccessUser(ctx.user),
+            report.operations,
+            o => o.operationId
+          ),
+        };
       }),
 
     /** Weekly Tasking Report — what the unit can do in a given Monday-start week. */
@@ -8763,21 +8920,24 @@ export const appRouter = router({
 
   // ─── Admin Utilities ────────────────────────────────────────────────────────
   adminUtils: router({
-    backfillGoogleAddresses: adminProcedure.mutation(async () => {
+    backfillGoogleAddresses: adminProcedure.mutation(async ({ ctx }) => {
+      requireAllRegions(ctx.user);
       const result = await backfillGoogleAddressesInObservations();
       return result;
     }),
 
     /** Photos whose owning operation is gone (soft-deleted or hard-deleted)
      * but that never got cleaned up themselves — see getOrphanedAttachments. */
-    getOrphanedAttachments: adminProcedure.query(async () => {
+    getOrphanedAttachments: adminProcedure.query(async ({ ctx }) => {
+      requireAllRegions(ctx.user);
       return getOrphanedAttachments();
     }),
 
     /** Permanently purges every currently-orphaned attachment. Bypasses the
      * normal 7-day Recycle Bin grace period since these were already
      * deleted along with their operation, just never actually removed. */
-    purgeOrphanedAttachments: adminProcedure.mutation(async () => {
+    purgeOrphanedAttachments: adminProcedure.mutation(async ({ ctx }) => {
+      requireAllRegions(ctx.user);
       const count = await purgeOrphanedAttachments();
       return { purged: count };
     }),

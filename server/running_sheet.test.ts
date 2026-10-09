@@ -17,6 +17,11 @@ vi.mock("./operationAccess", () => ({
   scopeRegistryTargets: async (_u: unknown, rows: unknown[]) => rows,
   reachableFor: vi.fn().mockResolvedValue([]),
   invalidateAccessCache: vi.fn(),
+  commandsOfUsers: vi.fn().mockResolvedValue(new Map()),
+  filterAuditLogs: async (_u: unknown, rows: unknown[]) => rows,
+  filterByIntelligenceScope: async (_u: unknown, rows: unknown[]) => rows,
+  filterLocationRows: async (_u: unknown, rows: unknown[]) => rows,
+  intelligenceOperationIds: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("./db", () => ({

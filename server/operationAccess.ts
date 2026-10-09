@@ -9,10 +9,13 @@
 // A person who can reach every operation (a single-Command deployment, or an
 // all-region admin) skips all of it, so nothing changes for them.
 //
-// Not covered here (listed in CLAUDE.md): procedures that identify their data
-// only by an id this file doesn't resolve (e.g. a target, a statement) — the
-// operation lists, Intelligence entity list and the operation/sheet/row
-// procedures are the covered surface.
+// What an id points at is traced back to its operation(s): sheets, rows,
+// members, attachments (and their entity links), briefings, map markers and
+// shapes, and — because a target belongs to the operations it is linked to —
+// targets, their associates and shortcuts. A target is reachable when it has
+// no operations, or any one of them is (queries use the more open Intelligence
+// scope, so a profile opened from Region Search still works; changes need Log
+// on one of its operations).
 import { TRPCError } from "@trpc/server";
 import { eq, inArray } from "drizzle-orm";
 import {
@@ -27,14 +30,23 @@ import {
   type AccessUser,
 } from "@shared/operationAccess";
 import {
+  associates,
+  attachmentEntityLinks,
+  customMapMarkers,
+  mapShapes,
   operations,
   operationShares,
+  operationTargetLinks,
   rowAttachments,
   rowMembers,
   runningSheets,
   sheetRows,
+  smeacBriefings,
+  targets,
+  targetShortcuts,
+  ucoGuideBriefings,
 } from "../drizzle/schema";
-import { getDb } from "./db";
+import { getAllUsers, getDb } from "./db";
 
 // ─── Data (small tables, cached for a couple of seconds) ────────────────────
 interface AccessData {
@@ -161,6 +173,48 @@ async function operationsOfAttachments(ids: number[]): Promise<number[]> {
   return rows.map(r => r.operationId).filter((x): x is number => x != null);
 }
 
+async function idsOf(
+  table: any,
+  idCol: any,
+  pick: any,
+  ids: number[]
+): Promise<any[]> {
+  if (ids.length === 0) return [];
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ v: pick }).from(table).where(inArray(idCol, ids));
+}
+
+async function operationsOfTargets(
+  targetIds: number[]
+): Promise<Map<number, number[]>> {
+  const out = new Map<number, number[]>();
+  if (targetIds.length === 0) return out;
+  const db = await getDb();
+  if (!db) return out;
+  for (const id of targetIds) out.set(id, []);
+  const [own, links] = await Promise.all([
+    db
+      .select({ id: targets.id, operationId: targets.operationId })
+      .from(targets)
+      .where(inArray(targets.id, targetIds)),
+    db
+      .select({
+        targetId: operationTargetLinks.targetId,
+        operationId: operationTargetLinks.operationId,
+      })
+      .from(operationTargetLinks)
+      .where(inArray(operationTargetLinks.targetId, targetIds)),
+  ]);
+  for (const r of own)
+    if (r.operationId != null) out.get(r.id)!.push(r.operationId);
+  for (const l of links) {
+    const list = out.get(l.targetId)!;
+    if (!list.includes(l.operationId)) list.push(l.operationId);
+  }
+  return out;
+}
+
 /** How ids are traced back to operations. The database in production; a
  * plain in-memory version in the tests. */
 export interface Resolvers {
@@ -168,40 +222,179 @@ export interface Resolvers {
   sheetsOfRows(ids: number[]): Promise<number[]>;
   rowsOfMembers(ids: number[]): Promise<number[]>;
   operationsOfAttachments(ids: number[]): Promise<number[]>;
+  attachmentsOfLinks(ids: number[]): Promise<number[]>;
+  operationsOfTargets(ids: number[]): Promise<Map<number, number[]>>;
+  targetsOfAssociates(ids: number[]): Promise<number[]>;
+  targetsOfShortcuts(ids: number[]): Promise<number[]>;
+  operationsOfBriefings(
+    kind: "smeac" | "uco",
+    ids: number[]
+  ): Promise<number[]>;
+  operationsOfMarkers(ids: number[]): Promise<number[]>;
+  operationsOfShapes(ids: number[]): Promise<number[]>;
 }
+
+const notNull = (xs: any[]): number[] =>
+  xs.map(x => x.v).filter((x): x is number => x != null);
 
 const dbResolvers: Resolvers = {
   operationsOfSheets,
   sheetsOfRows,
   rowsOfMembers,
   operationsOfAttachments,
+  attachmentsOfLinks: async ids =>
+    notNull(
+      await idsOf(
+        attachmentEntityLinks,
+        attachmentEntityLinks.id,
+        attachmentEntityLinks.attachmentId,
+        ids
+      )
+    ),
+  operationsOfTargets,
+  targetsOfAssociates: async ids =>
+    notNull(await idsOf(associates, associates.id, associates.targetId, ids)),
+  targetsOfShortcuts: async ids =>
+    notNull(
+      await idsOf(
+        targetShortcuts,
+        targetShortcuts.id,
+        targetShortcuts.targetId,
+        ids
+      )
+    ),
+  operationsOfBriefings: async (kind, ids) =>
+    kind === "smeac"
+      ? notNull(
+          await idsOf(
+            smeacBriefings,
+            smeacBriefings.id,
+            smeacBriefings.operationId,
+            ids
+          )
+        )
+      : notNull(
+          await idsOf(
+            ucoGuideBriefings,
+            ucoGuideBriefings.id,
+            ucoGuideBriefings.operationId,
+            ids
+          )
+        ),
+  operationsOfMarkers: async ids =>
+    notNull(
+      await idsOf(
+        customMapMarkers,
+        customMapMarkers.id,
+        customMapMarkers.operationId,
+        ids
+      )
+    ),
+  operationsOfShapes: async ids =>
+    notNull(await idsOf(mapShapes, mapShapes.id, mapShapes.operationId, ids)),
 };
 
 const nums = (v: unknown): number[] =>
   Array.isArray(v) ? v.filter((x): x is number => typeof x === "number") : [];
 const num = (v: unknown): number[] => (typeof v === "number" ? [v] : []);
 
-/** Operation ids a single-id style request refers to. */
+/** What a request names: operations, and targets (reachable via their
+ * operations). */
+interface Refs {
+  ops: number[];
+  targets: number[];
+}
+
+/** Recycle Bin items are named by (type, id). */
+async function recycleRefs(
+  raw: Record<string, unknown>,
+  r: Resolvers
+): Promise<Refs> {
+  const ids = num(raw.id);
+  const out: Refs = { ops: [], targets: [] };
+  switch (raw.type) {
+    case "operation":
+      out.ops.push(...ids);
+      break;
+    case "sheet":
+      (await r.operationsOfSheets(ids)).forEach(o => out.ops.push(o));
+      break;
+    case "target":
+      out.targets.push(...ids);
+      break;
+    case "map_marker":
+      out.ops.push(...(await r.operationsOfMarkers(ids)));
+      break;
+    case "attachment":
+      out.ops.push(...(await r.operationsOfAttachments(ids)));
+      break;
+    case "smeac_briefing":
+      out.ops.push(...(await r.operationsOfBriefings("smeac", ids)));
+      break;
+    case "uco_guide":
+      out.ops.push(...(await r.operationsOfBriefings("uco", ids)));
+      break;
+  }
+  return out;
+}
+
+/** The operations and targets a single-id style request refers to. */
 async function singleRefs(
   path: string,
   raw: Record<string, unknown>,
   r: Resolvers
-): Promise<number[]> {
-  const ops = new Set<number>(num(raw.operationId));
+): Promise<Refs> {
+  const ops = new Set<number>([
+    ...num(raw.operationId),
+    ...num(raw.linkToOperationId),
+  ]);
+  const targetIds = new Set<number>([
+    ...num(raw.targetId),
+    ...num(raw.existingTargetId),
+  ]);
   const sheetIds = [...num(raw.sheetId)];
   const rowIds = [...num(raw.rowId)];
   const memberIds = [...num(raw.memberId)];
+  const attachmentIds = [...num(raw.attachmentId)];
+  const linkIds = [
+    ...num(raw.linkId),
+    ...num(raw.matchedLinkId),
+    ...num(raw.newLinkId),
+    ...num(raw.matchedEntityLinkId),
+  ];
+  const associateIds = [...num(raw.existingAssociateId)];
   // `id` means different things by namespace.
-  if (path.startsWith("operation.")) num(raw.id).forEach(i => ops.add(i));
-  if (path.startsWith("sheet.")) sheetIds.push(...num(raw.id));
-  if (path.startsWith("row.")) rowIds.push(...num(raw.id));
+  const id = num(raw.id);
+  if (path.startsWith("operation.")) id.forEach(i => ops.add(i));
+  else if (path.startsWith("sheet.") || path.startsWith("export."))
+    sheetIds.push(...id);
+  else if (path.startsWith("row.")) rowIds.push(...id);
+  else if (path.startsWith("member.")) memberIds.push(...id);
+  else if (path.startsWith("attachment.")) attachmentIds.push(...id);
+  else if (path.startsWith("target.")) id.forEach(i => targetIds.add(i));
+  else if (path.startsWith("associate.")) associateIds.push(...id);
+  else if (path.startsWith("targetShortcuts."))
+    (await r.targetsOfShortcuts(id)).forEach(t => targetIds.add(t));
+  else if (path.startsWith("smeacBriefing."))
+    (await r.operationsOfBriefings("smeac", id)).forEach(o => ops.add(o));
+  else if (path.startsWith("ucoGuide."))
+    (await r.operationsOfBriefings("uco", id)).forEach(o => ops.add(o));
+  else if (path.startsWith("customMarker."))
+    (await r.operationsOfMarkers(id)).forEach(o => ops.add(o));
+  else if (path.startsWith("mapShape."))
+    (await r.operationsOfShapes(id)).forEach(o => ops.add(o));
+  else if (path.startsWith("recycleBin.")) {
+    const rb = await recycleRefs(raw, r);
+    rb.ops.forEach(o => ops.add(o));
+    rb.targets.forEach(t => targetIds.add(t));
+  }
+  (await r.targetsOfAssociates(associateIds)).forEach(t => targetIds.add(t));
+  attachmentIds.push(...(await r.attachmentsOfLinks(linkIds)));
   rowIds.push(...(await r.rowsOfMembers(memberIds)));
   sheetIds.push(...(await r.sheetsOfRows(rowIds)));
   (await r.operationsOfSheets(sheetIds)).forEach(opId => ops.add(opId));
-  (await r.operationsOfAttachments(num(raw.attachmentId))).forEach(i =>
-    ops.add(i)
-  );
-  return Array.from(ops);
+  (await r.operationsOfAttachments(attachmentIds)).forEach(i => ops.add(i));
+  return { ops: Array.from(ops), targets: Array.from(targetIds) };
 }
 
 // ─── What each kind of request needs ────────────────────────────────────────
@@ -285,9 +478,28 @@ export async function enforceWith(args: {
   let changed = false;
 
   // A single id the person can't reach: refuse.
-  for (const opId of await singleRefs(path, input, resolvers)) {
+  const refs = await singleRefs(path, input, resolvers);
+  for (const opId of refs.ops) {
     if (levelOf(opId) < need) {
       throw new TRPCError({ code: "FORBIDDEN", message: FORBIDDEN_MSG });
+    }
+  }
+  // A target belongs to its operations. Reading one is allowed when it has
+  // none, or any is open to this person (the Intelligence profile scope, so
+  // Region Search's "Open in Intelligence" works); changing one needs Log on
+  // one of them.
+  if (refs.targets.length > 0) {
+    const groups = await resolvers.operationsOfTargets(refs.targets);
+    const hidden = hiddenIntelligenceOperationIds(user, ops, shares);
+    for (const group of Array.from(groups.values())) {
+      if (group.length === 0) continue;
+      const ok =
+        type === "mutation"
+          ? group.some(opId => levelOf(opId) >= need)
+          : group.some(opId => !hidden.has(opId));
+      if (!ok) {
+        throw new TRPCError({ code: "FORBIDDEN", message: FORBIDDEN_MSG });
+      }
     }
   }
 
@@ -419,4 +631,90 @@ export async function scopeRegistryTargets<
     if (kept.length > 0) out.push({ ...r, linkedOperations: kept });
   }
   return out;
+}
+
+// ─── More filters for the lists that aren't tied to one operation id ────────
+/** Operation ids open in Intelligence (the profile scope: everything except
+ * other Commands' Restricted operations). null = all of them. */
+export async function intelligenceOperationIds(
+  user: AccessUser
+): Promise<Set<number> | null> {
+  const { ops, shares } = await loadAccessData();
+  const hidden = hiddenIntelligenceOperationIds(user, ops, shares);
+  if (hidden.size === 0) return null;
+  return new Set(ops.filter(o => !hidden.has(o.id)).map(o => o.id));
+}
+
+/** Keep rows whose operation is open in Intelligence (profile scope). */
+export async function filterByIntelligenceScope<T>(
+  user: AccessUser,
+  rows: T[],
+  operationIdOf: (row: T) => number | null | undefined
+): Promise<T[]> {
+  const allowed = await intelligenceOperationIds(user);
+  if (allowed === null) return rows;
+  return rows.filter(r => {
+    const id = operationIdOf(r);
+    return id == null || allowed.has(id);
+  });
+}
+
+/** Audit entries: those on a sheet follow that sheet's operation; system
+ * entries (no sheet — users, shares, operations) stay with admins. */
+export async function filterAuditLogs<T extends { sheetId: number }>(
+  user: AccessUser,
+  logs: T[]
+): Promise<T[]> {
+  const allowed = await accessibleOperationIds(user);
+  if (allowed === null) return logs;
+  const sheetIds = Array.from(
+    new Set(logs.map(l => l.sheetId).filter(id => id > 0))
+  );
+  const opOf = await operationsOfSheets(sheetIds);
+  return logs.filter(l => {
+    if (l.sheetId <= 0) return user.role === "admin";
+    const opId = opOf.get(l.sheetId);
+    return opId == null || allowed.has(opId);
+  });
+}
+
+/** Ids of people in the same Command as this person. */
+export async function sameCommandUserIds(
+  user: AccessUser
+): Promise<Set<number>> {
+  const all = await getAllUsers();
+  return new Set(all.filter(u => u.command === user.command).map(u => u.id));
+}
+
+/** Live team locations: people in your own Command, plus anyone whose
+ * operations include one you can reach. */
+export async function filterLocationRows<
+  T extends { userId: number; operationIds: string | number[] },
+>(user: AccessUser, rows: T[]): Promise<T[]> {
+  const allowed = await accessibleOperationIds(user);
+  if (allowed === null) return rows;
+  const mine = await sameCommandUserIds(user);
+  return rows.filter(r => {
+    if (mine.has(r.userId)) return true;
+    let ids: unknown = r.operationIds;
+    if (typeof ids === "string") {
+      try {
+        ids = JSON.parse(ids);
+      } catch {
+        return false;
+      }
+    }
+    return (
+      Array.isArray(ids) &&
+      ids.some((i: unknown) => typeof i === "number" && allowed.has(i))
+    );
+  });
+}
+
+/** Command of each person, by id (empty when unknown). */
+export async function commandsOfUsers(): Promise<
+  Map<number, AccessUser["command"]>
+> {
+  const all = await getAllUsers();
+  return new Map(all.map(u => [u.id, u.command]));
 }

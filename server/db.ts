@@ -2202,9 +2202,13 @@ export async function createFaceMatchDismissal(
 
 // One row per distinct linked entity with its photo count — used to show a
 // camera badge on Intelligence Folder rows without an N+1 query per entity.
-export async function getEntityLinkCounts() {
+export async function getEntityLinkCounts(
+  /** Only count photos on these operations (null/undefined = all). */
+  allowedOperationIds?: Set<number> | null
+) {
   const db = await getDb();
   if (!db) return [];
+  if (allowedOperationIds && allowedOperationIds.size === 0) return [];
   return db
     .select({
       category: attachmentEntityLinks.category,
@@ -2217,7 +2221,14 @@ export async function getEntityLinkCounts() {
       rowAttachments,
       eq(attachmentEntityLinks.attachmentId, rowAttachments.id)
     )
-    .where(isNull(rowAttachments.deletedAt))
+    .where(
+      and(
+        isNull(rowAttachments.deletedAt),
+        allowedOperationIds
+          ? inArray(rowAttachments.operationId, Array.from(allowedOperationIds))
+          : undefined
+      )
+    )
     .groupBy(
       attachmentEntityLinks.category,
       attachmentEntityLinks.targetId,
@@ -2258,6 +2269,7 @@ export async function getAttachmentsForEntity(params: {
     .select({
       id: rowAttachments.id,
       rowId: rowAttachments.rowId,
+      operationId: rowAttachments.operationId,
       isManualUpload: rowAttachments.isManualUpload,
       url: rowAttachments.url,
       mimeType: rowAttachments.mimeType,

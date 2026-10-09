@@ -4,6 +4,7 @@ import {
   extractExitDestination,
   isReadAsMovement,
   matchPresenceInside,
+  surnameTokens,
   scanWalkEvents,
 } from "@shared/walkEventPatterns";
 
@@ -346,7 +347,7 @@ describe("sightings: where someone is, with no movement sentence", () => {
       matchPresenceInside(
         "BAIG remains inside Bull Creek Tavern, 52-54 Benningfield Road, BULL CREEK WA (Bull Creek Tavern) with JORDAN."
       )
-    ).toEqual({ names: "BAIG", place: "Bull Creek Tavern" });
+    ).toEqual({ names: "BAIG and JORDAN", place: "Bull Creek Tavern" });
   });
 
   it("does not read streets, car parks, vehicles or negations as a place", () => {
@@ -422,5 +423,309 @@ describe("placements: where each person was last put", () => {
     expect(r.placements).toEqual([
       expect.objectContaining({ name: "BAIG", rego: "" }),
     ]);
+  });
+});
+
+describe("leaving a place and walking on with no destination", () => {
+  const phrasings = [
+    "BAIG JONES exited Communicare and walked along Cantonment Street, FREMANTLE.",
+    "BAIG and JONES exited Communicare and walked on.",
+    "BAIG and JONES departed Communicare and continued via Cantonment Street.",
+    "BAIG and JONES left Communicare and continued walking via Cantonment Street.",
+    "BAIG and JONES walked out of Communicare and walked along Cantonment Street.",
+    "BAIG and JONES exited Communicare, continued walking via Cantonment Street.",
+  ];
+  for (const text of phrasings) {
+    it(`is a walking entry with the place left: ${text}`, () => {
+      const r = scanWalkEvents(
+        rows(
+          "BAIG and JONES entered Communicare and continued out of sight.",
+          text
+        )
+      );
+      expect(r.walkIns).toEqual([]);
+      expect(r.headingTo).toMatchObject([
+        { destination: "[location]", from: "Communicare" },
+      ]);
+      expect(isReadAsMovement(text)).toBe(true);
+    });
+  }
+
+  it("a vehicle's own departure is not a walk", () => {
+    const r = scanWalkEvents(
+      rows(
+        "Vehicle 1HIB84, BAIG driver, departed Bull Creek Tavern and continued via:"
+      )
+    );
+    expect(r.headingTo).toEqual([]);
+  });
+
+  it("walking towards a vehicle is still not an unknown walk", () => {
+    const r = scanWalkEvents(
+      rows("BAIG exited Communicare and walked towards Vehicle 1HIB84.")
+    );
+    expect(r.headingTo).toEqual([]);
+  });
+
+  it("a later entry ends the walk", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG and JONES exited Communicare and walked along Cantonment Street.",
+        "BAIG and JONES entered Melville Fish and Chips and continued out of sight."
+      )
+    );
+    expect(r.headingTo).toEqual([]);
+    expect(r.walkIns).toMatchObject([{ location: "Melville Fish and Chips" }]);
+  });
+});
+
+describe("the Inside chip: names inside a place, no verb", () => {
+  it("reads who is where", () => {
+    expect(
+      matchPresenceInside(
+        "BAIG and JONES inside Communicare, observed speaking to staff."
+      )
+    ).toEqual({ names: "BAIG and JONES", place: "Communicare" });
+  });
+
+  it("puts them there, ending the walk", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG and JONES exited Bull Creek Tavern and walked along Cantonment Street.",
+        "BAIG and JONES inside Communicare, observed speaking to staff."
+      )
+    );
+    expect(r.headingTo).toEqual([]);
+    expect(r.walkIns).toMatchObject([{ location: "Communicare" }]);
+  });
+
+  it("ignores an unwritten place, and sentences about movement", () => {
+    expect(
+      matchPresenceInside("BAIG inside [location] [observation].")
+    ).toBeNull();
+    expect(
+      matchPresenceInside("BAIG exited Communicare inside Fremantle.")
+    ).toBeNull();
+  });
+});
+
+describe("walking back to a vehicle with no exit written", () => {
+  const inside =
+    "BAIG JONES entered Chicho Gelato Fremantle and continued out of sight.";
+  for (const back of [
+    "BAIG JONES walked towards Vehicle 1ORB419.",
+    "BAIG JONES walked to Vehicle 1ORB419.",
+    "BAIG JONES walked to and entered Vehicle 1ORB419.",
+    "BAIG JONES entered Vehicle 1ORB419.",
+  ]) {
+    it(`takes them out of the place they were inside: ${back}`, () => {
+      const r = scanWalkEvents(rows(inside, back));
+      expect(r.walkIns).toEqual([]);
+      expect(r.placements).toEqual([
+        expect.objectContaining({ rego: "1ORB419" }),
+      ]);
+    });
+  }
+
+  it("leaves other people inside", () => {
+    const r = scanWalkEvents(
+      rows(
+        "BAIG and SMITH entered Chicho Gelato Fremantle and continued out of sight.",
+        "BAIG walked towards Vehicle 1ORB419."
+      )
+    );
+    expect(r.walkIns).toMatchObject([{ location: "Chicho Gelato Fremantle" }]);
+  });
+});
+
+describe("the Kinky Lizard sheet (BAIG and UM1)", () => {
+  const arrived =
+    "Vehicle 1EXP123, BAIG front passenger, unidentified male (UM1) driver, arrived at 902 Canning Highway, APPLECROSS WA (902 Canning Highway) and parked on the street.";
+  const exited =
+    "BAIG and UM1 exited Vehicle 1EXP123 (Vehicle 1EXP123), walked across the road, entered  Kinky Lizard Cafe on Mews, 28 Moreau Mews, APPLECROSS WA (Kinky Lizard Cafe on Mews) and continued out of sight.";
+  const seated =
+    "BAIG and UM1 seated inside Kinky Lizard Cafe on Mews with Jason JOHNSON (JOHNSON).";
+
+  it("treats UM1 as a person, like a surname", () => {
+    expect(surnameTokens("BAIG and UM1")).toEqual(["BAIG", "UM1"]);
+    expect(surnameTokens("unidentified female (UF2) and UC1")).toEqual([
+      "UF2",
+      "UC1",
+    ]);
+    // A rego or a vehicle code is not a person.
+    expect(surnameTokens("Vehicle 1EXP123, UB1")).toEqual([]);
+  });
+
+  it("leaving 'Vehicle <rego> (Vehicle <rego>)' is a walk-in at the café, both people", () => {
+    const r = scanWalkEvents(rows(arrived, exited));
+    expect(r.walkIns).toMatchObject([
+      { names: "BAIG and UM1", location: "Kinky Lizard Cafe on Mews" },
+    ]);
+  });
+
+  it("the sighting names the café, and lists the person with them", () => {
+    expect(matchPresenceInside(seated)).toEqual({
+      names: "BAIG and UM1 and JOHNSON",
+      place: "Kinky Lizard Cafe on Mews",
+    });
+    const r = scanWalkEvents(rows(arrived, exited, seated));
+    expect(r.walkIns).toMatchObject([
+      { location: "Kinky Lizard Cafe on Mews" },
+    ]);
+  });
+
+  it("a place's own 'and' is kept, a trailing clause is not", () => {
+    expect(
+      matchPresenceInside("BAIG seated inside Melville Fish and Chips.")
+    ).toEqual({ names: "BAIG", place: "Melville Fish and Chips" });
+    expect(
+      matchPresenceInside(
+        "BAIG seated inside Bull Creek Tavern and spoke to staff."
+      )
+    ).toEqual({ names: "BAIG", place: "Bull Creek Tavern" });
+  });
+});
+
+describe("scanWalkEvents — exit followed by a meeting, then 'They' get in a vehicle", () => {
+  const entered =
+    "RAHMAN entered The Lookout Bar Bowling Bites, 1-2/148 The Esplanade, SCARBOROUGH WA (The Lookout Bar Bowling Bites) and continued out of sight.";
+  const exitMet =
+    "RAHMAN exited The Lookout Bar Bowling Bites and met an unidentified male (UM1) out the front.";
+  const gotIn =
+    "They walked along The Esplanade, SCARBOROUGH and got into a blue BMW X5, bearing WA registration 1FAD004 (Vehicle 1FAD004).";
+
+  it("reads 'exited X and met ...' as leaving X", () => {
+    const scan = scanWalkEvents(rows(entered, exitMet));
+    expect(scan.walkIns).toEqual([]);
+  });
+
+  it("puts everyone 'They' refers to in the vehicle", () => {
+    const scan = scanWalkEvents(rows(entered, `${exitMet}\n\n${gotIn}`));
+    expect(scan.walkIns).toEqual([]);
+    expect(scan.placements).toMatchObject([
+      { name: "RAHMAN", rego: "1FAD004" },
+      { name: "UM1", rego: "1FAD004" },
+    ]);
+  });
+});
+
+describe("scanWalkEvents — a plain exit leaves the person on foot", () => {
+  const entered =
+    "RAHMAN entered The Lookout Bar Bowling Bites, 1-2/148 The Esplanade, SCARBOROUGH WA (The Lookout Bar Bowling Bites) and continued out of sight.";
+
+  it("'exited X, onto The Esplanade and met ...' is departed on foot from X", () => {
+    const scan = scanWalkEvents(
+      rows(
+        entered,
+        "RAHMAN exited The Lookout Bar Bowling Bites, onto The Esplanade and met Steven HARRIS (HARRIS)."
+      )
+    );
+    expect(scan.walkIns).toEqual([]);
+    expect(scan.headingTo).toMatchObject([
+      {
+        names: "RAHMAN",
+        destination: "[location]",
+        from: "The Lookout Bar Bowling Bites",
+      },
+    ]);
+  });
+
+  it("is not on foot when the same sentence gets into a vehicle", () => {
+    const scan = scanWalkEvents(
+      rows(
+        entered,
+        "RAHMAN exited The Lookout Bar Bowling Bites and got into a white sedan."
+      )
+    );
+    expect(scan.headingTo).toEqual([]);
+  });
+});
+
+describe("matchPresenceInside — people with them", () => {
+  it("adds 'with John EVANS (EVANS)' to the people inside", () => {
+    expect(
+      matchPresenceInside(
+        "RAHMAN seated at a table inside The Lookout Bar Bowling Bites with John EVANS (EVANS)."
+      )
+    ).toEqual({
+      names: "RAHMAN and EVANS",
+      place: "The Lookout Bar Bowling Bites",
+    });
+  });
+  it("adds an unidentified companion by short name", () => {
+    expect(
+      matchPresenceInside(
+        "RAHMAN seated inside The Lookout Bar Bowling Bites with an unidentified male (UM1)."
+      )
+    ).toEqual({
+      names: "RAHMAN and UM1",
+      place: "The Lookout Bar Bowling Bites",
+    });
+  });
+  it("leaves names alone when nobody is with them", () => {
+    expect(
+      matchPresenceInside("RAHMAN seated inside The Lookout Bar Bowling Bites.")
+    ).toEqual({ names: "RAHMAN", place: "The Lookout Bar Bowling Bites" });
+  });
+  it("puts both inside in the scan", () => {
+    const scan = scanWalkEvents(
+      rows(
+        "RAHMAN seated at a table inside The Lookout Bar Bowling Bites with John EVANS (EVANS)."
+      )
+    );
+    expect(scan.walkIns).toMatchObject([
+      { names: "RAHMAN and EVANS", location: "The Lookout Bar Bowling Bites" },
+    ]);
+  });
+});
+
+describe("scanWalkEvents — exit 'onto The Esplanade', then into a vehicle with no arrival row", () => {
+  const seated =
+    "RAHMAN seated at a table inside The Lookout Bar Bowling Bites with John EVANS (EVANS).";
+  const exited =
+    "RAHMAN and EVANS exited The Lookout Bar Bowling Bites onto The Esplanade and met with Steven TAYLOR (TAYLOR).";
+  const gotIn =
+    "RAHMAN, EVANS and TAYLOR entered a gold BMW X5 SUV, bearing WA registration 1FAB888 (Vehicle 1FAB888).";
+
+  it("'onto The Esplanade' does not become part of the place left", () => {
+    const scan = scanWalkEvents(rows(seated, exited));
+    expect(scan.walkIns).toEqual([]);
+    expect(scan.headingTo).toMatchObject([
+      { names: "RAHMAN and EVANS", from: "The Lookout Bar Bowling Bites" },
+    ]);
+  });
+
+  it("remembers where they were last logged when they get into the vehicle", () => {
+    const scan = scanWalkEvents(rows(seated, exited, gotIn));
+    expect(scan.headingTo).toEqual([]);
+    expect(scan.placements).toMatchObject([
+      { name: "RAHMAN", rego: "1FAB888", at: "The Lookout Bar Bowling Bites" },
+      { name: "EVANS", rego: "1FAB888", at: "The Lookout Bar Bowling Bites" },
+      { name: "TAYLOR", rego: "1FAB888" },
+    ]);
+  });
+});
+
+describe("scanWalkEvents — a sentence about the vehicle is not people on foot", () => {
+  const arrived =
+    "Vehicle 1FAC488, RAHMAN driver, EVANS front passenger, TAYLOR rear passenger, arrived at Rendezvous Hotel Perth Scarborough, 148 The Esplanade, SCARBOROUGH WA (Rendezvous Hotel Perth Scarborough), entered the car park and continued out of sight.";
+
+  it("the vehicle entering a car park is no walk-in, heading or placement", () => {
+    const scan = scanWalkEvents(rows(arrived));
+    expect(scan.walkIns).toEqual([]);
+    expect(scan.headingTo).toEqual([]);
+    expect(scan.placements).toEqual([]);
+  });
+
+  it("holds for the other 'Vehicle X, ...' movement wording", () => {
+    for (const text of [
+      "Vehicle 1FAC488, RAHMAN driver, arrived at 8 Grace Street and entered the driveway and continued out of sight.",
+      "Vehicle 1FAC488, RAHMAN driver, exited 8 Grace Street and walked along Grace Street.",
+      "Vehicle 1FAC488, RAHMAN driver, entered Rendezvous Hotel Perth Scarborough.",
+    ]) {
+      const scan = scanWalkEvents(rows(text));
+      expect(scan.walkIns).toEqual([]);
+      expect(scan.headingTo).toEqual([]);
+    }
   });
 });

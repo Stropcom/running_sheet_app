@@ -1091,7 +1091,9 @@ export function AddTargetDialog({
     const { full: hbf } = composeAddress(address);
     const { full: v1f } = composeVehicle(vehicle);
     const warnings = await runDuplicateChecks(utils, [
-      { kind: "person", label: composedName },
+      ...(personClearedRef.current === composedName
+        ? []
+        : [{ kind: "person" as const, label: composedName }]),
       { kind: "address", label: hbf },
       { kind: "vehicle", label: v1f },
       ...extraAddresses.map(ea => ({
@@ -1209,6 +1211,9 @@ export function AddTargetDialog({
   // true when the queue came from handleSave's own runSecondaryChecks, not
   // from this early check.
   const lastBlurCheckedNameRef = useRef("");
+  // A name the officer has already answered "No, different" for as an exact
+  // match in the person check (see handleWarnContinue).
+  const personClearedRef = useRef("");
   const checkNameOnBlur = async () => {
     if (!composedName || composedName === lastBlurCheckedNameRef.current)
       return;
@@ -1247,6 +1252,12 @@ export function AddTargetDialog({
 
   const handleWarnContinue = async () => {
     const current = warnQueue[warnIndex];
+    // An exact-name match can't be remembered as "not the same" server-side
+    // (same name, nothing to tell apart), so remember it here: Save must not
+    // ask the same question again for this name.
+    if (current?.kind === "person" && current.exact) {
+      personClearedRef.current = current.candidateLabel;
+    }
     if (current) {
       notDuplicateMutation.mutate({
         type: current.kind === "target" ? "person" : current.kind,
@@ -1309,7 +1320,7 @@ export function AddTargetDialog({
         const result = await onSave(buildPayload());
         const associateIdByKey = await saveStagedAssociates(result.id);
         await saveStagedImages(result.id, associateIdByKey);
-        if (warning.kind !== "target") {
+        if (warning.kind !== "target" && !warning.exact) {
           await mergeEntitiesMutation.mutateAsync({
             type: warning.kind,
             winnerLabel: warning.candidateLabel,
@@ -1683,7 +1694,7 @@ export function AddTargetDialog({
         setStagedWarn(null);
         return;
       }
-      if (warning.kind !== "target") {
+      if (warning.kind !== "target" && !warning.exact) {
         const a = associates.find(x => x.key === key);
         patchStaged(key, {
           aliasMerges: [

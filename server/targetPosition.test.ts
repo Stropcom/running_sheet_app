@@ -1,0 +1,466 @@
+import { describe, expect, it } from "vitest";
+import {
+  locateTarget,
+  locateTargetFromPending,
+  samePlace,
+  shortUnidentified,
+  vehiclesPeopleCanReach,
+  type TargetPositionInput,
+} from "@shared/targetPosition";
+import {
+  extractDepartureAddress,
+  scanWalkEvents,
+} from "@shared/walkEventPatterns";
+import {
+  computePendingVehicleArrivals,
+  computePendingVehicleDepartures,
+} from "./db";
+
+// Reads a whole sheet the way the server does, then locates the target.
+function locate(token: string, ...obs: string[]) {
+  const rows = obs.map((observation, i) => ({
+    id: i + 1,
+    sheetId: 1,
+    observation,
+  }));
+  const walk = scanWalkEvents(rows);
+  const strip = (d: string) =>
+    d
+      .replace(/\b(?:driver|sole occupant|front passenger|passenger)\b/gi, "")
+      .replace(/\bunseen\s+occupant(?:\/s|s)?\b/gi, "")
+      .replace(/\band\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const input: TargetPositionInput = {
+    token,
+    arrivals: computePendingVehicleArrivals(rows).map(a => ({
+      rego: a.rego,
+      names: strip(a.occupantDesc),
+      address: a.address,
+      rowId: a.rowId,
+      outOfSight: a.outOfSight,
+    })),
+    departures: computePendingVehicleDepartures(rows).map(d => ({
+      rego: d.rego,
+      names: strip(d.occupantDesc),
+      fromAddress: d.fromAddress,
+      rowId: d.rowId,
+    })),
+    walkIns: walk.walkIns,
+    headingTo: walk.headingTo,
+    placements: walk.placements,
+  };
+  return locateTarget(input);
+}
+
+describe("locateTarget — BAIG's night", () => {
+  const arrived =
+    "Vehicle 1ORB419, BAIG driver and sole occupant, arrived at 77 Reynolds Rd and parked.";
+  const tavernArrive =
+    "Vehicle 1HIB84, occupant/s not observed, arrived at Bull Creek Tavern.";
+  const seated =
+    "BAIG seated at a table having a meal inside Bull Creek Tavern.";
+  const out =
+    "BAIG exited Bull Creek Tavern and walked towards Vehicle 1HIB84.\nVehicle 1HIB84, BAIG driver and sole occupant, departed Bull Creek Tavern and continued via:";
+  const back =
+    "Vehicle 1HIB84, BAIG driver and sole occupant, arrived at 77 Reynolds Rd and continued out of sight.";
+
+  it("in a parked vehicle", () => {
+    expect(locate("BAIG", arrived)).toMatchObject({
+      place: "77 Reynolds Road",
+      state: "vehicle",
+      rego: "1ORB419",
+    });
+  });
+
+  it("inside a place once seen there", () => {
+    expect(locate("BAIG", arrived, tavernArrive, seated)).toMatchObject({
+      place: "Bull Creek Tavern",
+      state: "inside",
+    });
+  });
+
+  it("departed, from the place he left, with who is in the vehicle", () => {
+    expect(locate("BAIG", arrived, tavernArrive, seated, out)).toMatchObject({
+      place: "Bull Creek Tavern",
+      state: "moving",
+      label: "departed in 1HIB84",
+      people: ["BAIG"],
+      rego: "1HIB84",
+    });
+  });
+
+  it("lists everyone in the vehicle, the target first", () => {
+    const both =
+      "BAIG and James JONES exited Bull Creek Tavern and walked towards Vehicle 1HIB84.\nVehicle 1HIB84, JONES driver, BAIG front passenger, departed Bull Creek Tavern and continued via:";
+    const r = locate("BAIG", arrived, tavernArrive, seated, both);
+    expect(r?.state).toBe("moving");
+    expect(r?.people[0]).toBe("BAIG");
+    expect(r?.people.length).toBe(2);
+  });
+
+  it("out of sight at the next address", () => {
+    expect(
+      locate("BAIG", arrived, tavernArrive, seated, out, back)
+    ).toMatchObject({
+      place: "77 Reynolds Road",
+      state: "oos",
+      rego: "1HIB84",
+    });
+  });
+
+  it("walking from a vehicle names where it is parked", () => {
+    expect(
+      locate(
+        "BAIG",
+        arrived,
+        "BAIG exited the vehicle and walked towards 13 Denford Street."
+      )
+    ).toMatchObject({
+      place: "77 Reynolds Road",
+      state: "walking",
+      label: "departed on foot",
+    });
+  });
+
+  it("null when the target is never mentioned", () => {
+    expect(locate("BAIG", "JORDAN entered 13 Denford Street.")).toBeNull();
+  });
+});
+
+describe("extractDepartureAddress", () => {
+  it("reads the place a vehicle left", () => {
+    expect(
+      extractDepartureAddress(
+        "Vehicle 1HIB84, BAIG, departed Bull Creek Tavern and continued via:"
+      )
+    ).toBe("Bull Creek Tavern");
+    expect(
+      extractDepartureAddress(
+        "Vehicle 1HIB84, unseen occupant/s, departed 77 Reynolds Rd and continued via:"
+      )
+    ).toBe("77 Reynolds Road");
+  });
+});
+
+describe("samePlace", () => {
+  it("ignores case and punctuation, and short against full", () => {
+    expect(samePlace("Bull Creek Tavern", "bull creek tavern")).toBe(true);
+    expect(samePlace("77 Reynolds Rd", "77 Reynolds Rd, BULL CREEK WA")).toBe(
+      true
+    );
+    expect(samePlace("77 Reynolds Rd", "21 Leach Avenue")).toBe(false);
+    expect(samePlace("21 Leach Avenue", "15 Leach Ave")).toBe(false);
+    expect(samePlace("29A Robert Street, COMO WA", "29A Robert St")).toBe(true);
+    expect(samePlace("29a Robert St", "29A Robert Street")).toBe(true);
+    expect(samePlace("21 Leach Avenue", "21 Leach Ave")).toBe(true);
+    expect(samePlace("902 Canning Hwy", "902 Canning Highway")).toBe(true);
+    expect(samePlace("29A Robert St", "29B Robert St")).toBe(false);
+  });
+
+  it("matches the short name to the full address, accents and a slip included", () => {
+    const full =
+      "Dôme Café - Deep Water Point, 100 The Esplanade, MOUNT PLEASANT (Dôme Café - Deep Water Point)";
+    expect(samePlace(full, "Dôme Café - Deep Water Point")).toBe(true);
+    expect(samePlace(full, "dome Dôme Café - Deep Water Point")).toBe(true);
+    expect(samePlace(full, "Bull Creek Tavern")).toBe(false);
+  });
+});
+
+describe("vehiclesPeopleCanReach", () => {
+  const reynolds = {
+    rego: "1HIB84",
+    address: "77 Reynolds Rd",
+    rowId: 5,
+    names: "BAIG",
+  };
+  const goldsbrough = {
+    rego: "1ORB419",
+    address: "1 Goldsbrough Street",
+    rowId: 8,
+    names: "BAIG JONES",
+  };
+
+  it("only vehicles where their latest vehicle journey ended", () => {
+    const r = vehiclesPeopleCanReach({
+      people: "BAIG JONES",
+      arrivals: [reynolds, goldsbrough],
+      placements: [],
+      fallbackPlace: "Chicho Gelato Fremantle",
+    });
+    expect(r.map(v => v.rego)).toEqual(["1ORB419"]);
+  });
+
+  it("keeps every vehicle at that same address", () => {
+    const other = {
+      rego: "1TG252",
+      address: "1 Goldsbrough Street",
+      rowId: 9,
+      names: "",
+    };
+    const r = vehiclesPeopleCanReach({
+      people: "BAIG",
+      arrivals: [reynolds, goldsbrough, other],
+      placements: [],
+    });
+    expect(r.map(v => v.rego).sort()).toEqual(["1ORB419", "1TG252"]);
+  });
+
+  it("follows a vehicle they were logged walking to", () => {
+    const unseen = { ...reynolds, names: "" };
+    const r = vehiclesPeopleCanReach({
+      people: "BAIG",
+      arrivals: [unseen, goldsbrough],
+      placements: [{ name: "BAIG", rego: "1HIB84", rowId: 20 }],
+    });
+    expect(r.map(v => v.rego)).toEqual(["1HIB84"]);
+  });
+
+  it("with no vehicle history, only vehicles at the place they are", () => {
+    const r = vehiclesPeopleCanReach({
+      people: "SMITH",
+      arrivals: [reynolds, goldsbrough],
+      placements: [],
+      fallbackPlace: "77 Reynolds Rd",
+    });
+    expect(r.map(v => v.rego)).toEqual(["1HIB84"]);
+  });
+
+  it("with nothing to go on, offers them all", () => {
+    const r = vehiclesPeopleCanReach({
+      people: "SMITH",
+      arrivals: [reynolds, goldsbrough],
+      placements: [],
+    });
+    expect(r).toHaveLength(2);
+  });
+});
+
+describe("getting into another vehicle and departing", () => {
+  const entered =
+    "BAIG entered Dôme Café - Deep Water Point, 100 The Esplanade, MOUNT PLEASANT (Dôme Café - Deep Water Point) and continued out of sight.";
+  const row =
+    "BAIG exited Dôme Café - Deep Water Point, walked into the car park and entered the front passenger seat of a red Ford Ranger, bearing WA registration 1EXP123 (Vehicle 1EXP123).\n\nVehicle 1EXP123, BAIG front passenger, unidentified male (UM1) driver, departed Dôme Café - Deep Water Point and continued via:";
+
+  it("he is not left walking", () => {
+    const r = scanWalkEvents(
+      [entered, row].map((observation, i) => ({
+        id: i + 1,
+        sheetId: 1,
+        observation,
+      }))
+    );
+    expect(r.headingTo).toEqual([]);
+    expect(r.walkIns).toEqual([]);
+    expect(r.placements).toEqual([
+      expect.objectContaining({ name: "BAIG", rego: "1EXP123" }),
+    ]);
+  });
+
+  it("the departed card has him in it, with the driver", () => {
+    const pos = locate("BAIG", entered, row);
+    expect(pos).toMatchObject({
+      state: "moving",
+      rego: "1EXP123",
+      place: "Dôme Café - Deep Water Point",
+    });
+    expect(pos?.people[0]).toBe("BAIG");
+    expect(pos?.people.length).toBe(2);
+  });
+
+  it.each([
+    "BAIG got into Vehicle 1EXP123.",
+    "BAIG boarded the front passenger seat of Vehicle 1EXP123.",
+    "BAIG climbed into a red Ford Ranger (Vehicle 1EXP123).",
+  ])("any wording for getting in: %s", text => {
+    const r = scanWalkEvents(
+      [entered, text].map((observation, i) => ({
+        id: i + 1,
+        sheetId: 1,
+        observation,
+      }))
+    );
+    expect(r.walkIns).toEqual([]);
+    expect(r.placements).toEqual([
+      expect.objectContaining({ rego: "1EXP123" }),
+    ]);
+  });
+});
+
+describe("extractDepartureAddress tolerates a doubled and", () => {
+  it("drops trailing and", () => {
+    expect(
+      extractDepartureAddress(
+        "Vehicle 1EXP123, BAIG, departed Dôme Café - Deep Water Point and and continued via:"
+      )
+    ).toBe("Dôme Café - Deep Water Point");
+  });
+});
+
+describe("shortUnidentified", () => {
+  it("shows the short bracketed name for an unidentified person", () => {
+    expect(shortUnidentified("unidentified male (UM1)")).toBe("UM1");
+    expect(
+      shortUnidentified("BAIG, unidentified female (UF2) · departed in 1EXP123")
+    ).toBe("BAIG, UF2 · departed in 1EXP123");
+    expect(shortUnidentified("Unidentified child (UC1) and BAIG")).toBe(
+      "UC1 and BAIG"
+    );
+  });
+
+  it("leaves ordinary names alone", () => {
+    expect(shortUnidentified("Haris Imran BAIG (BAIG)")).toBe(
+      "Haris Imran BAIG (BAIG)"
+    );
+    expect(shortUnidentified("BAIG and JONES")).toBe("BAIG and JONES");
+  });
+});
+
+import {
+  occupantWording,
+  vehicleOccupants as vehOcc,
+} from "@shared/walkEventPatterns";
+import { extractOccupantNames } from "@/lib/mentionAutocomplete";
+
+describe("some leave the vehicle, others stay (29A Robert St)", () => {
+  const row =
+    "Vehicle 1EXP123, BAIG driver UM1 front passenger and JOHNSON rear passenger, arrived at 29A Robert Street, COMO WA (29A Robert St) and parked on the street.\n\nJohnson exited the vehicle, walked towards  29a Robert St and continued out of sight.";
+  const rows = [{ id: 1, sheetId: 1, observation: row }];
+  const arrival = computePendingVehicleArrivals(rows)[0];
+  const walk = scanWalkEvents(rows);
+  const names = extractOccupantNames(arrival.occupantDesc);
+
+  it("reads three separate people from the arrival", () => {
+    expect(names).toBe("BAIG and UM1 and JOHNSON");
+  });
+
+  it("Johnson, typed in mixed case, is the JOHNSON from the vehicle", () => {
+    expect(walk.walkIns).toMatchObject([
+      { names: "Johnson", location: "29a Robert Street" },
+    ]);
+    const occ = vehOcc(
+      { rego: "1EXP123", rowId: 1, names },
+      walk.walkIns.map(w => w.names),
+      walk.placements,
+      []
+    );
+    expect(occ).toEqual(["BAIG", "UM1"]);
+  });
+
+  it("the departure keeps the officer's roles for those still in the car", () => {
+    expect(occupantWording(arrival.occupantDesc, ["BAIG", "UM1"])).toBe(
+      "BAIG driver UM1 front passenger"
+    );
+    expect(
+      occupantWording(arrival.occupantDesc, ["BAIG", "UM1", "JOHNSON"])
+    ).toBe(arrival.occupantDesc);
+    // A part naming someone who left and someone who stayed can't be cut.
+    expect(
+      occupantWording("BAIG driver UM1 front passenger", ["BAIG"])
+    ).toBeNull();
+  });
+
+  it("the target is still in the vehicle at 29A Robert St", () => {
+    const pos = locateTargetFromPending({
+      token: "BAIG",
+      arrivals: [arrival],
+      departures: [],
+      walkIns: walk.walkIns,
+      headingTo: walk.headingTo,
+      placements: walk.placements,
+      extractNames: extractOccupantNames,
+    });
+    expect(pos).toMatchObject({
+      state: "vehicle",
+      place: "29A Robert Street",
+      rego: "1EXP123",
+    });
+    expect(pos?.people).toEqual(["BAIG", "UM1"]);
+  });
+});
+
+describe("walked towards the vehicle is not the same as in it (12 Swan Street)", () => {
+  const arrived =
+    "Vehicle 1EXP123, BAIG driver, UM1 front passenger, arrived at 12 Swan Street, SOUTH PERTH WA (12 Swan Street) and parked on the street.";
+  const inside =
+    "BAIG and UM1 exited the vehicle, entered 12 Swan Street and continued out of sight.";
+  const towards =
+    "BAIG exited 12 Swan Street and walked towards Vehicle 1EXP123.";
+
+  it("only BAIG leaves the address; UM1 is still inside", () => {
+    const r = scanWalkEvents(
+      [arrived, inside, towards].map((observation, i) => ({
+        id: i + 1,
+        sheetId: 1,
+        observation,
+      }))
+    );
+    expect(r.walkIns).toMatchObject([
+      { names: "UM1", location: "12 Swan Street" },
+    ]);
+    expect(r.placements.find(p => p.name === "BAIG")).toMatchObject({
+      rego: "1EXP123",
+      inside: false,
+    });
+  });
+
+  it("the flag says to the vehicle, not in it", () => {
+    expect(locate("BAIG", arrived, inside, towards)).toMatchObject({
+      state: "vehicle",
+      label: "to 1EXP123",
+      place: "12 Swan Street",
+    });
+  });
+
+  it("once he gets in, it says in", () => {
+    expect(
+      locate("BAIG", arrived, inside, towards, "BAIG entered Vehicle 1EXP123.")
+    ).toMatchObject({ state: "vehicle", label: "in 1EXP123" });
+  });
+
+  it("walked to and entered the vehicle is in it", () => {
+    expect(
+      locate(
+        "BAIG",
+        arrived,
+        inside,
+        "BAIG exited 12 Swan Street and walked to and entered Vehicle 1EXP123."
+      )
+    ).toMatchObject({ label: "in 1EXP123" });
+  });
+});
+
+describe("locateTarget — in a vehicle with no arrival or departure row", () => {
+  it("puts the target where he was last logged, with everyone in the vehicle", () => {
+    const pos = locateTarget({
+      token: "RAHMAN",
+      arrivals: [],
+      departures: [],
+      walkIns: [],
+      headingTo: [],
+      placements: [
+        {
+          name: "RAHMAN",
+          rego: "1FAB888",
+          rowId: 3,
+          inside: true,
+          at: "The Lookout Bar Bowling Bites",
+        },
+        {
+          name: "EVANS",
+          rego: "1FAB888",
+          rowId: 3,
+          inside: true,
+          at: "The Lookout Bar Bowling Bites",
+        },
+        { name: "TAYLOR", rego: "1FAB888", rowId: 3, inside: true },
+      ],
+    });
+    expect(pos).toMatchObject({
+      place: "The Lookout Bar Bowling Bites",
+      state: "vehicle",
+      label: "in 1FAB888",
+      people: ["RAHMAN", "EVANS", "TAYLOR"],
+    });
+  });
+});

@@ -1,3 +1,4 @@
+import { fullStreetTypes } from "./streetTypes";
 // Canonical "Vehicle <rego> ..." narrative patterns used to mine
 // depart/arrive continuity — see server/db.ts's "Vehicle Depart → Arrive
 // Continuity" section, the authoritative user of these for building chips.
@@ -214,6 +215,11 @@ const LEADING_LOCATION_CONNECTOR_RE = new RegExp(
 // already-established residential one, so this showed up almost
 // exclusively as "the departing chip doesn't work for businesses".
 export function extractArrivalAddress(text: string): string | null {
+  const raw = extractArrivalAddressRaw(text);
+  return raw ? fullStreetTypes(raw) : raw;
+}
+
+function extractArrivalAddressRaw(text: string): string | null {
   const verbMatch = text.match(VERB_WITH_LOCATION_CONNECTOR_RE);
   if (verbMatch && verbMatch.index !== undefined) {
     let rest = text.slice(verbMatch.index + verbMatch[0].length);

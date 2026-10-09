@@ -59,6 +59,8 @@ import {
 import { scanIntelligenceEntities } from "./intelligenceScan";
 import { findFuzzyMatches, DEFAULT_FUZZY_THRESHOLD } from "./fuzzyMatch";
 import { aliasMentionCompatible } from "./personAliasMatch";
+import { findUnidentifiedMentions } from "@shared/unidentified";
+import { findAbbreviatedStreetTypes } from "@shared/streetTypes";
 
 export type SheetCheckCategory =
   | "formatting"
@@ -1052,6 +1054,176 @@ function checkPunctuationSpacing(
   return findings;
 }
 
+// ── Whole-word context for one-tap fixes and snippets ─────────────────────
+
+// A fix replaces the FIRST occurrence of `wrong` in the row, so `wrong` has to
+// start where the finding does, with enough text in front of it that its first
+// occurrence is this one. The text is always cut at word boundaries so what
+// the officer sees is whole words ("77 Reynolds Rd"), never fragments ("ed at
+// 77 Reynolds Rd").
+function snapToWordStart(text: string, i: number): number {
+  while (i > 0 && !/\s/.test(text[i - 1])) i--;
+  return i;
+}
+function snapToWordEnd(text: string, i: number): number {
+  while (i < text.length && !/\s/.test(text[i])) i++;
+  return i;
+}
+function wordStartBefore(text: string, i: number): number {
+  let j = i;
+  while (j > 0 && /\s/.test(text[j - 1])) j--;
+  return snapToWordStart(text, j);
+}
+/** Where `wrong` should start: `minWords` whole words before `start`, then
+ * further back only while an earlier occurrence of the same text would be
+ * replaced first. */
+function contextStart(
+  text: string,
+  start: number,
+  end: number,
+  minWords: number
+): number {
+  let from = start;
+  for (let n = 0; n < minWords && from > 0; n++) {
+    from = wordStartBefore(text, from);
+  }
+  while (from > 0 && text.indexOf(text.slice(from, end)) !== from) {
+    from = wordStartBefore(text, from);
+  }
+  return from;
+}
+/** About 30 characters either side of a finding, widened to whole words. */
+function wordSnippet(text: string, from: number, to: number): string {
+  const s = snapToWordStart(text, Math.max(0, from - 30));
+  const e = snapToWordEnd(text, Math.min(text.length, to + 30));
+  return `${s > 0 ? "…" : ""}${text.slice(s, e)}${e < text.length ? "…" : ""}`;
+}
+
+// ── Abbreviated street types ("St", "Rd", "Ave") ──────────────────────────
+
+// Streets are written with the full street type everywhere in the app. Flags
+// each abbreviation left in a row with a one-tap fix to the full word. The fix
+// replaces the first occurrence of `wrong`, so it is widened with the text
+// before it until it is unique within the row.
+export function checkAbbreviatedStreetTypes(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
+  const findings: SheetCheckFinding[] = [];
+  for (const row of rows) {
+    const text = row.observation;
+    for (const hit of findAbbreviatedStreetTypes(text)) {
+      const end = hit.index + hit.abbr.length;
+      // The street's own words ("77 Reynolds") go with the abbreviation.
+      const from = contextStart(text, hit.index, end, 2);
+      const wrong = text.slice(from, end);
+      findings.push({
+        ruleId: "street-type-abbreviated",
+        category: "formatting",
+        reason: `"${hit.abbr}" should be written in full — "${hit.full}".`,
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        snippet: wordSnippet(text, hit.index, end),
+        suggestedFix: {
+          wrong,
+          correct: wrong.slice(0, hit.index - from) + hit.full,
+        },
+        findingKey: `ROW_${row.rowId}::STREET_TYPE::${hit.index}`,
+      });
+    }
+  }
+  return findings;
+}
+
+// ── Double spaces between words ───────────────────────────────────────────
+
+// Two or more spaces in a row in the middle of a line ("entered  Kinky Lizard")
+// — usually left behind when a chip or address was inserted next to a space
+// already there. One-tap fix to a single space. Only between words: leading
+// indentation and a trailing space are left alone. The fix replaces the first
+// occurrence of `wrong`, so it is widened with the text around it until it
+// is unique within the row.
+export function findDoubleSpaces(text: string): Array<{ index: number }> {
+  const out: Array<{ index: number }> = [];
+  const re = /(?<=\S)[ \t]{2,}(?=\S)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) out.push({ index: m.index });
+  return out;
+}
+
+export function checkDoubleSpaces(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
+  const findings: SheetCheckFinding[] = [];
+  for (const row of rows) {
+    const text = row.observation;
+    for (const hit of findDoubleSpaces(text)) {
+      const run = /^[ \t]+/.exec(text.slice(hit.index))![0];
+      // The word before and the word after, so it reads "entered Kinky".
+      const runEnd = hit.index + run.length;
+      const to = snapToWordEnd(text, runEnd);
+      const from = contextStart(text, wordStartBefore(text, hit.index), to, 0);
+      const wrong = text.slice(from, to);
+      findings.push({
+        ruleId: "double-space",
+        category: "formatting",
+        reason:
+          "There are two spaces in a row here — a single space is enough.",
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        snippet: wordSnippet(text, hit.index, runEnd),
+        suggestedFix: {
+          wrong,
+          correct: wrong.replace(/[ \t]{2,}/g, " "),
+        },
+        findingKey: `ROW_${row.rowId}::DOUBLE_SPACE::${hit.index}`,
+      });
+    }
+  }
+  return findings;
+}
+
+// ── Unidentified people — full wording repeated after the first mention ───
+
+// "unidentified male (UM1)" is written in full once; after that the person is
+// only ever "UM1" (the same first-mention-full rule every other entity
+// follows). Flags each later full mention, in row order, with a one-tap fix.
+// The fix replaces the first occurrence of `wrong` in the row, so when the row
+// holds the same full mention more than once `wrong` is widened with the text
+// in front of it until it is unique.
+export function checkRepeatedUnidentified(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
+  const findings: SheetCheckFinding[] = [];
+  const introduced = new Set<string>();
+  const ordered = [...rows].sort(
+    (a, b) => (a.timeMinutes ?? 0) - (b.timeMinutes ?? 0) || a.rowId - b.rowId
+  );
+  for (const row of ordered) {
+    for (const m of findUnidentifiedMentions(row.observation)) {
+      if (!introduced.has(m.code)) {
+        introduced.add(m.code);
+        continue;
+      }
+      const from = contextStart(row.observation, m.start, m.end, 0);
+      const wrong = row.observation.slice(from, m.end);
+      findings.push({
+        ruleId: "unidentified-full-repeat",
+        category: "formatting",
+        reason: `${m.code} was already introduced in full earlier — from then on this person is referred to as ${m.code}.`,
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        snippet: wordSnippet(row.observation, m.start, m.end),
+        suggestedFix: {
+          wrong,
+          correct: wrong.slice(0, m.start - from) + m.code,
+        },
+        findingKey: `ROW_${row.rowId}::UNIDENTIFIED::${m.code}::${m.start}`,
+      });
+    }
+  }
+  return findings;
+}
+
 // ── Spelling — a curated list of common, unambiguous English misspellings ─
 
 // Deliberately not exhaustive and deliberately not a general dictionary —
@@ -1409,6 +1581,9 @@ export async function checkRunningSheet(
   const sharedBracketPeople = findSharedBracketPeople(rows);
   const bareAddressConsistency = checkBareAddressConsistency(rows);
   const punctuationSpacing = checkPunctuationSpacing(rows);
+  const repeatedUnidentified = checkRepeatedUnidentified(rows);
+  const doubleSpaces = checkDoubleSpaces(rows);
+  const abbreviatedStreets = checkAbbreviatedStreetTypes(rows);
   const bareVehicleEntities = findSheetBareVehicleEntities(
     sheetId,
     rows,
@@ -1433,6 +1608,9 @@ export async function checkRunningSheet(
     ...bracketBalance,
     ...sharedBracketPeople,
     ...punctuationSpacing,
+    ...repeatedUnidentified,
+    ...doubleSpaces,
+    ...abbreviatedStreets,
     ...consistency,
     ...bareAddressConsistency,
     ...spelling,

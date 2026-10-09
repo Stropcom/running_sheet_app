@@ -34,6 +34,17 @@ import {
 } from "@/components/SuggestedFaceMatchDialog";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import {
+  locateTargetFromPending,
+  samePlace,
+  TARGET_EMOJI,
+  vehiclesPeopleCanReach,
+} from "@shared/targetPosition";
+import { shortAddressLabel } from "@shared/markerLink";
+import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
+import { detectUnidentifiedRepeat } from "@shared/unidentified";
+import {
+  occupantsToVehicle,
+  occupantWording,
   vehicleOccupants as sharedVehicleOccupants,
   occupantsStillInVehicle,
   splitPeopleNames,
@@ -41,10 +52,11 @@ import {
   isReadAsMovement,
 } from "@shared/walkEventPatterns";
 import {
-  companionsOf,
-  pickTargetCardKey,
-  targetTokenFromTitle,
-} from "@shared/targetCard";
+  pickSubjectCardKey,
+  resolveTrackedTarget,
+  subjectCompanions,
+  trackedTargetCode,
+} from "@shared/trackedTarget";
 import {
   ContinuityCards,
   type ContinuityCardData,
@@ -2271,6 +2283,23 @@ function EditableCell({
     const pos = textarea.selectionStart ?? 0;
     const textBefore = draft.slice(0, pos);
 
+    // An unidentified person already introduced in full ("unidentified male
+    // (UM1)" written earlier) is only ever referred to by the short name:
+    // finishing the full wording again becomes "UM1".
+    if (e.key === " " && usedBracketCodes) {
+      const repeat = detectUnidentifiedRepeat(draft, pos, usedBracketCodes);
+      if (repeat) {
+        e.preventDefault();
+        const newText = `${draft.slice(0, repeat.start)}${repeat.code} ${draft.slice(pos)}`;
+        setDraft(newText);
+        requestAnimationFrame(() => {
+          const newPos = repeat.start + repeat.code.length + 1;
+          textarea.setSelectionRange(newPos, newPos);
+        });
+        return;
+      }
+    }
+
     if (shortcuts) {
       // Find the last word before the cursor
       const match = textBefore.match(/(\S+)$/);
@@ -2943,6 +2972,54 @@ export default function SheetDetail({
   const pendingPlacements = draftActive
     ? draftPending!.placements
     : pendingPlacementsBase;
+  // Target Logger switches (per device, set in the map's right-hand pane).
+  const trackingSettings = useTargetTrackingSettings();
+  // What the sheet tracks (a person, a vehicle or a location) — the one rule
+  // the cards, the map's flag and its popup share. The title alone answers it
+  // until the server's answer (from the linked target) arrives or when offline.
+  const { data: trackedTargetData } = trpc.sheet.trackedTarget.useQuery(
+    { sheetId },
+    { enabled: !!sheetId }
+  );
+  const trackedTarget = useMemo(
+    () => trackedTargetData ?? resolveTrackedTarget({ title: sheet?.title }),
+    [trackedTargetData, sheet?.title]
+  );
+  // Where the target is, for marking on the sheet's address chips.
+  const targetPosition = useMemo(
+    () =>
+      trackingSettings.location
+        ? locateTargetFromPending({
+            subject: trackedTarget,
+            arrivals: pendingArrivals ?? [],
+            departures: pendingDepartures ?? [],
+            walkIns: pendingWalkIns ?? [],
+            headingTo: pendingHeadingTo ?? [],
+            placements: pendingPlacements ?? [],
+            extractNames: extractOccupantNames,
+          })
+        : null,
+    [
+      trackingSettings.location,
+      trackedTarget,
+      pendingArrivals,
+      pendingDepartures,
+      pendingWalkIns,
+      pendingHeadingTo,
+      pendingPlacements,
+    ]
+  );
+  // Names already introduced in full anywhere on the sheet — saved rows AND
+  // the text open for editing — so a card's inserted sentence refers to
+  // someone already introduced by their short name only.
+  const usedBracketCodesWithDraft = useMemo(
+    () =>
+      computeUsedBracketCodes([
+        ...(rows ?? []),
+        { observation: openDraft?.text },
+      ]),
+    [rows, openDraft?.text]
+  );
   // A row just created by tapping a continuity card: its observation opens
   // for editing so the next tap adds to it (see EditableCell autoEdit).
   const [justAddedRowId, setJustAddedRowId] = useState<number | null>(null);
@@ -5103,6 +5180,9 @@ export default function SheetDetail({
                 ]
               : [];
             const hasAnyField = fields.some(f => f.value);
+            // The cards below word names against everything written so far,
+            // including the unsaved text.
+            const usedBracketCodes = usedBracketCodesWithDraft;
             const hasEntityChips = !!(entityChips && entityChips.length > 0);
             // Continuity chips — same underlying "pending" data as the RS
             // Quick Entry map popup's continuity chips (see the queries
@@ -5203,6 +5283,19 @@ export default function SheetDetail({
                 names: extractOccupantNames(d.occupantDesc),
               })),
             ];
+            // Parked vehicles people on foot could walk to: only those at the
+            // address their latest vehicle journey ended (see
+            // vehiclesPeopleCanReach), not ones left behind earlier.
+            const reachableVehicles = (people: string, fallbackPlace: string) =>
+              vehiclesPeopleCanReach({
+                people,
+                arrivals: (pendingArrivals ?? []).map(a => ({
+                  ...a,
+                  names: extractOccupantNames(a.occupantDesc),
+                })),
+                placements: pendingPlacements ?? [],
+                fallbackPlace,
+              });
             const vehicleOccupants = (
               desc: string,
               rego: string,
@@ -5246,15 +5339,28 @@ export default function SheetDetail({
               const insideHere = (pendingWalkIns ?? []).filter(w =>
                 sameAddr(w.location, a.address)
               );
-              insideHere.forEach(w => walkInsAtVehicle.add(w.location));
               const rego = a.rego;
-              const inside = insideHere.length > 0;
               const occupants = vehicleOccupants(
                 a.occupantDesc,
                 a.rego,
                 a.rowId
               );
               const inCar = occupants.length > 0;
+              // Those a later row only had walking TOWARDS the vehicle — in it
+              // or next to it, the row doesn't say.
+              const toNames = occupantsToVehicle(
+                { rego: a.rego, rowId: a.rowId },
+                occupants,
+                pendingPlacements ?? []
+              );
+              const inNames = occupants.filter(o => !toNames.includes(o));
+              // People inside this address take over the card only when
+              // nobody is left in the vehicle; when some got out and others
+              // stayed, the vehicle keeps its own card for those still in it
+              // and the people inside get a card of their own.
+              const inside = insideHere.length > 0 && !inCar;
+              if (inside)
+                insideHere.forEach(w => walkInsAtVehicle.add(w.location));
               // "... arrived and continued out of sight": nobody can say
               // whether anyone is still in it until someone is seen again,
               // so no walked-away / walked-in options are offered.
@@ -5296,20 +5402,16 @@ export default function SheetDetail({
               // weren't seen.
               const departingAction = {
                 key: `dep-${rego}`,
-                label: "Vehicle departing",
+                label: "Vehicle Depart",
                 // Everyone known to be in it, or "unseen occupant/s" when
                 // nobody is — the usual wording for a departure whose
                 // occupants weren't seen.
                 text: `Vehicle ${rego}, ${
                   inCar && !outOfSight
-                    ? occupants.length ===
-                      splitPeopleNames(extractOccupantNames(a.occupantDesc))
-                        .length
-                      ? shortenAlreadyMentionedNames(
-                          a.occupantDesc,
-                          usedBracketCodes
-                        )
-                      : carNames
+                    ? shortenAlreadyMentionedNames(
+                        occupantWording(a.occupantDesc, occupants) ?? carNames,
+                        usedBracketCodes
+                      )
                     : "unseen occupant/s"
                 }, departed ${a.address} and continued via:`,
               };
@@ -5326,7 +5428,7 @@ export default function SheetDetail({
                       )
                       .map(c => ({
                         key: c.key,
-                        label: "Walked out to vehicle",
+                        label: "Walked to Vehicle",
                         text: c.text,
                       })),
                     ...insideHere.flatMap(w =>
@@ -5343,7 +5445,7 @@ export default function SheetDetail({
                   ? [
                       {
                         key: `wov-oos-${rego}`,
-                        label: "Walked out to vehicle",
+                        label: "Walked to Vehicle",
                         text: `${oosNames} exited ${a.address} and walked towards Vehicle ${rego}.`,
                       },
                       {
@@ -5360,7 +5462,7 @@ export default function SheetDetail({
                         // walk out to THIS one.
                         {
                           key: `wov-oos-${rego}`,
-                          label: "Walked out to vehicle",
+                          label: "Walked to Vehicle",
                           text: `${shortenAlreadyMentionedNames(otherOosPeople.join(" and "), usedBracketCodes)} exited ${a.address} and walked towards Vehicle ${rego}.`,
                         },
                         departingAction,
@@ -5395,7 +5497,16 @@ export default function SheetDetail({
                       ? `${occupants.join(", ")} out of sight at the address`
                       : "Out of sight since arriving"
                     : inCar
-                      ? `${occupants.join(", ")} in the vehicle`
+                      ? [
+                          inNames.length
+                            ? `${inNames.join(", ")} in the vehicle`
+                            : "",
+                          toNames.length
+                            ? `${toNames.join(", ")} to vehicle`
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join("; ")
                       : "Nobody in the vehicle",
                 state: `${a.address}${sinceText(a.rowId)}`,
                 actions,
@@ -5417,23 +5528,40 @@ export default function SheetDetail({
                         sub: `Arrived in ${rego}${sinceText(a.rowId)}`,
                       }
                     : {
-                        headline: inCar ? `In ${rego}` : `${rego} unattended`,
+                        headline: inCar
+                          ? inNames.length
+                            ? `In ${rego}`
+                            : `To vehicle ${rego}`
+                          : `${rego} unattended`,
                         sub: `Parked at ${a.address}${sinceText(a.rowId)}`,
                       },
               });
             });
+            // "From <place> · 09:16 PM" for a vehicle that has left and has no
+            // arrival logged yet.
+            const departedState = (d: {
+              fromAddress?: string | null;
+              rowId: number;
+            }) =>
+              [
+                d.fromAddress ? `From ${d.fromAddress}` : "",
+                rowTime(d.rowId) ?? "",
+              ]
+                .filter(Boolean)
+                .join(" · ") || "No arrival logged yet";
             (pendingDepartures ?? []).forEach(d => {
               const chip = vehicleArrivingChips.find(c => c.rego === d.rego);
               if (!chip) return;
               continuityCards.push({
                 key: `dep-${d.rego}`,
                 title: d.rego,
-                pill: "Moving",
+                pill: "Departed",
                 attn: true,
                 who: vehicleOccupants(d.occupantDesc, d.rego, d.rowId).length
                   ? vehicleOccupants(d.occupantDesc, d.rego, d.rowId).join(", ")
-                  : `${extractOccupantNames(d.occupantDesc) || d.occupantDesc}`,
-                state: `Departed${sinceText(d.rowId).replace(" · since", "")}`,
+                  : extractOccupantNames(d.occupantDesc) ||
+                    "Occupants not seen",
+                state: departedState(d),
                 actions: cardAction(chip, "Vehicle arriving"),
                 latestRowId: d.rowId,
                 ...(() => {
@@ -5446,8 +5574,8 @@ export default function SheetDetail({
                     holds: inCar.flatMap(n => surnameTokens(n)),
                     people: inCar,
                     locus: {
-                      headline: `Moving in ${d.rego}`,
-                      sub: `Departed${sinceText(d.rowId).replace(" · since", "")}`,
+                      headline: `Departed in ${d.rego}`,
+                      sub: departedState(d),
                     },
                   };
                 })(),
@@ -5468,9 +5596,9 @@ export default function SheetDetail({
                   actions: [
                     ...cardAction(chip, "Left address"),
                     // Back to a parked vehicle from here.
-                    ...(pendingArrivals ?? []).map(a => ({
+                    ...reachableVehicles(w.names, w.location).map(a => ({
                       key: `wov-${w.location}-${a.rego}`,
-                      label: `Walked out to ${a.rego}`,
+                      label: `Walked to ${a.rego}`,
                       text: `${shortenAlreadyMentionedNames(w.names, usedBracketCodes)} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
                     })),
                   ],
@@ -5501,7 +5629,7 @@ export default function SheetDetail({
               continuityCards.push({
                 key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                 title: h.names,
-                pill: "Walking",
+                pill: "Departed on foot",
                 attn: true,
                 who: destKnown ? `Walking to ${h.destination}` : "On foot",
                 state: `Left ${h.from}${sinceText(h.rowId)}`,
@@ -5511,11 +5639,16 @@ export default function SheetDetail({
                     destKnown ? "Entered" : "Entered a location"
                   ),
                   {
+                    key: `in-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
+                    label: "Inside",
+                    text: `${walkers} inside ${destKnown ? h.destination : "[location]"} [observation].`,
+                  },
+                  {
                     key: `wk-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                     label: "Walked to another location",
                     text: `${walkers} walked [route] towards [location].`,
                   },
-                  ...(pendingArrivals ?? []).map(a => ({
+                  ...reachableVehicles(h.names, h.from).map(a => ({
                     key: `wv-${a.rego}`,
                     label: `Walked to ${a.rego}`,
                     text: `${walkers} walked towards Vehicle ${a.rego}.`,
@@ -5526,22 +5659,71 @@ export default function SheetDetail({
                 people: splitPeopleNames(h.names),
                 locus: {
                   headline: destKnown
-                    ? `Walking to ${h.destination}`
-                    : "Walking",
+                    ? `Departed on foot to ${h.destination}`
+                    : "Departed on foot",
                   sub: `Left ${h.from}${sinceText(h.rowId)}`,
                 },
               });
             });
-            // The card holding the TARGET leads the band as his tracker.
-            // Only a person target is tracked this way (a vehicle or
-            // address target is described in words, not by surname).
-            const targetCode =
-              assignedTarget &&
-              (assignedTarget as { targetType?: string }).targetType &&
-              (assignedTarget as { targetType?: string }).targetType !==
-                "person"
-                ? null
-                : targetTokenFromTitle(sheet?.title);
+            // People who got into a vehicle that has no arrival or departure
+            // row of its own ("entered a gold BMW ... (Vehicle 1FAB888)"):
+            // their position is where they were last logged, until a row
+            // says where the vehicle went.
+            {
+              const logged = new Set(
+                [...(pendingArrivals ?? []), ...(pendingDepartures ?? [])].map(
+                  v => v.rego.toUpperCase()
+                )
+              );
+              const byRego = new Map<
+                string,
+                NonNullable<typeof pendingPlacements>
+              >();
+              for (const p of pendingPlacements ?? []) {
+                if (!p.rego || p.inside === false) continue;
+                if (logged.has(p.rego.toUpperCase())) continue;
+                byRego.set(p.rego, [...(byRego.get(p.rego) ?? []), p]);
+              }
+              byRego.forEach((ps, rego) => {
+                const names = ps.map(p => p.name);
+                // A vehicle with a marker on the map is at that marker; else
+                // where they were last logged.
+                const markerAddr = ps.find(p => p.vehicleMarker?.address)
+                  ?.vehicleMarker?.address;
+                const at = markerAddr
+                  ? shortAddressLabel(markerAddr)
+                  : ps.find(p => p.at)?.at;
+                const atMarker = !!ps.find(p => p.vehicleMarker);
+                const rowId = Math.max(...ps.map(p => p.rowId));
+                continuityCards.push({
+                  key: `vnl-${rego}`,
+                  title: rego,
+                  pill: "In vehicle",
+                  attn: true,
+                  who: `${names.join(", ")} in the vehicle`,
+                  state: `${at ? `${atMarker ? "At" : "Last seen at"} ${at}` : "Position not logged"}${sinceText(rowId)}`,
+                  actions: [
+                    {
+                      key: `vnl-dep-${rego}`,
+                      label: "Vehicle departing",
+                      text: `Vehicle ${rego}, ${names.join(", ")}, departed ${at ?? "[location]"} and continued via:`,
+                    },
+                  ],
+                  latestRowId: rowId,
+                  holds: names.flatMap(n => surnameTokens(n)),
+                  people: names,
+                  locus: {
+                    headline: `In ${rego}`,
+                    sub: `${at ? `${atMarker ? "At" : "Last seen at"} ${at}` : "Position not logged"}${sinceText(rowId)}`,
+                  },
+                });
+              });
+            }
+            // The card holding the TARGET leads the band as its tracker: a
+            // person's by surname, a vehicle's by its plate (shared rule:
+            // trackedTarget). A location target has nothing that moves.
+            const targetCode = trackedTargetCode(trackedTarget);
+            const targetWho = trackedTarget?.kind === "vehicle" ? "it" : "he";
             // Safety net for phrasing the position logic doesn't read: the
             // newest row that names the target alongside a movement word
             // but matched none of the known movement phrasings. If it is
@@ -5570,17 +5752,20 @@ export default function SheetDetail({
                 : null;
             const staleWarn = (basedOnRowId: number) =>
               latestMove && latestMove.id > basedOnRowId
-                ? `The ${latestMove.time ?? "latest"} row names ${targetCode} after this, but wasn't read as a move — check where he is.`
+                ? `The ${latestMove.time ?? "latest"} row names ${targetCode} after this, but wasn't read as a move — check where ${targetWho} is.`
                 : undefined;
             if (targetCode && continuityCards.length > 0) {
-              const targetKey = pickTargetCardKey(continuityCards, targetCode);
+              const targetKey = pickSubjectCardKey(
+                continuityCards,
+                trackedTarget
+              );
               const held = continuityCards.find(c => c.key === targetKey);
               if (held) {
                 held.isTarget = true;
                 held.warn = staleWarn(held.latestRowId);
-                held.companions = companionsOf(
+                held.companions = subjectCompanions(
                   held.people ?? [],
-                  targetCode
+                  trackedTarget
                 ).join(", ");
               } else {
                 // Cards exist but none names him: say so rather than leave
@@ -6032,6 +6217,18 @@ export default function SheetDetail({
                                       title={`Insert: ${chip.insertValue}`}
                                       className="inline-flex items-center px-2 py-0.5 rounded border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none cursor-pointer"
                                     >
+                                      {targetPosition?.place &&
+                                        samePlace(
+                                          chip.insertValue,
+                                          targetPosition.place
+                                        ) && (
+                                          <span
+                                            className="mr-1 text-[11px]"
+                                            title={`Target ${targetPosition.label}`}
+                                          >
+                                            {TARGET_EMOJI[targetPosition.state]}
+                                          </span>
+                                        )}
                                       <span className="text-[10px] font-mono font-bold max-w-[140px] truncate">
                                         {chip.insertValue}
                                       </span>
@@ -6047,7 +6244,7 @@ export default function SheetDetail({
                 )}
                 {/* Continuity cards sit between the chip panel and the rows,
                     and show whether or not the panel above is expanded. */}
-                {hasContinuityChips && (
+                {hasContinuityChips && trackingSettings.tracking && (
                   <div className={showTargetPanel ? "mb-4 -mt-2" : "mb-4"}>
                     <ContinuityCards
                       busy={_addRowOnline.isPending}

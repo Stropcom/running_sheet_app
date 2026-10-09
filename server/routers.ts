@@ -7,6 +7,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
 import { CIN_LINK_CATEGORY } from "@shared/attachmentLinking";
+import { resolveTrackedTarget } from "@shared/trackedTarget";
 import {
   sanitizeTargetSpecialProjects,
   mergeSpecialProjects,
@@ -1024,6 +1025,22 @@ export const appRouter = router({
             message: "Sheet not found.",
           });
         return sheet;
+      }),
+
+    /** What this sheet tracks — a person (by surname), a vehicle (by rego) or
+     * a location — worked out from its linked Target Registry entry by the
+     * one shared rule (shared/trackedTarget.ts). The sheet's tracker cards,
+     * the map's location flag and the map popup all read this, so they agree
+     * on what the target is. Null when the sheet has no trackable target. */
+    trackedTarget: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        const sheet = await getRunningSheetById(input.sheetId);
+        if (!sheet) return null;
+        const target = sheet.targetId
+          ? await getTargetById(sheet.targetId)
+          : undefined;
+        return resolveTrackedTarget({ title: sheet.title, target });
       }),
 
     create: protectedProcedure
@@ -4680,10 +4697,15 @@ export const appRouter = router({
         z.object({
           type: z.enum(["person", "vehicle", "address", "business"]),
           label: z.string().min(1),
+          /** Also return an entity with this exact name (registering a
+           * record for someone already in the Intelligence folder). */
+          includeExact: z.boolean().optional(),
         })
       )
       .query(async ({ input }) => {
-        return checkPossibleDuplicates(input.type, input.label);
+        return checkPossibleDuplicates(input.type, input.label, {
+          includeExact: input.includeExact,
+        });
       }),
 
     /** Is this exact entity already a real (non-registry-only) sighting on a

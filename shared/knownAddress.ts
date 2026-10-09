@@ -4,6 +4,8 @@
 // back out in the sheet's own convention. Shared so the server (search) and
 // client (insert) cannot drift apart, and so it can be unit tested.
 
+import { fullStreetTypes } from "./streetTypes";
+
 const STREET_START_RE = /^\d{1,5}[A-Za-z]?(?:\/\d{1,5}[A-Za-z]?)?\s+\S/;
 
 export interface KnownAddressParts {
@@ -64,8 +66,9 @@ export function buildSheetAddressText(
   parts: KnownAddressParts,
   state = "WA"
 ): string {
-  const label = parts.businessName || parts.street;
-  if (!parts.suburb) return parts.street;
+  const street = fullStreetTypes(parts.street);
+  const label = parts.businessName || street;
+  if (!parts.suburb) return street;
   const lead = parts.businessName ? `${parts.businessName}, ` : "";
-  return `${lead}${parts.street}, ${parts.suburb.toUpperCase()} ${state} (${label})`;
+  return `${lead}${street}, ${parts.suburb.toUpperCase()} ${state} (${label})`;
 }

@@ -42,8 +42,16 @@ import {
   matchVehicleArrival,
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
-import { scanWalkEvents } from "@shared/walkEventPatterns";
+import {
+  scanWalkEvents,
+  extractDepartureAddress,
+} from "@shared/walkEventPatterns";
 import { expandRowSegments } from "@shared/rowSegments";
+import { VEHICLE_REGO_PATTERN } from "@shared/vehicleRego";
+import {
+  attachVehicleMarkers,
+  type VehicleMarkerRef,
+} from "@shared/vehicleMarker";
 import {
   classifyVisitDirection,
   timeBucketLabels,
@@ -4563,7 +4571,16 @@ export function extractEntitiesFromText(text: string): Array<{
     // description corruption it caused for an already-recorded row,
     // without altering the stored observation text itself.
     const placeholderCandidate = shortForm.replace(/^vehicle\s+/i, "").trim();
-    if (/^(?:U[MF]|YC|UCO)\d+$/i.test(placeholderCandidate)) continue;
+    if (/^(?:U[MFCP]|YC|UCO)\d+$/i.test(placeholderCandidate)) continue;
+    // Any "unidentified <male|female|child|person|adult|juvenile|youth>
+    // (CODE)" is a placeholder for someone who has not been identified, whatever
+    // short name it was given — never recorded in the Intelligence folder.
+    if (
+      /\bunidentified\s+(?:male|female|child|person|adult|juvenile|youth)\b[^()]*$/i.test(
+        fullDescription
+      )
+    )
+      continue;
 
     const lowerFull = fullDescription.toLowerCase();
     const lowerShort = shortForm.toLowerCase();
@@ -4998,7 +5015,7 @@ export function extractEntitiesFromText(text: string): Array<{
         descSource = descSource
           .replace(
             new RegExp(
-              `[,;]?\\s*(?:bearing\\s+)?(?:(?:${STATE_CODES})\\s+)?(?:registration|rego|reg\\.?|plated?)\\s*:?\\s*(?:\\d[A-Za-z0-9]{2,7})?\\s*$`,
+              `[,;]?\\s*(?:bearing\\s+)?(?:(?:${STATE_CODES})\\s+)?(?:regist[a-z]*|rego|reg\\.?|plated?)\\s*:?\\s*(?:\\d[A-Za-z0-9]{2,7})?\\s*$`,
               "i"
             ),
             ""
@@ -5385,8 +5402,9 @@ export function mergeContainedEntities(
 // extractRegoUpper and vehicleRegoKey below must share this single
 // pattern, or they silently diverge — see the comment history on this
 // constant for two separate regressions caused by exactly that split.
-export const VEHICLE_REGO_PATTERN =
-  /\b(?=[A-Za-z0-9]{4,10}\b)(?=[A-Za-z0-9]*[0-9])(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{4,10}\b/;
+// Defined in shared/vehicleRego.ts so the client's tracked-target rule
+// (shared/trackedTarget.ts) reads a registration exactly as this file does.
+export { VEHICLE_REGO_PATTERN };
 
 // Vehicles are uniquely identified by their registration, not by whatever
 // descriptive text happens to surround it in a given mention. The same car
@@ -5419,6 +5437,34 @@ export function vehicleRegoKey(text: string): string {
 export function addressBracketKey(text: string): string {
   const m = text.match(/\(([^()]{1,120})\)\s*$/);
   return (m ? m[1] : text).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * A Vehicle or Location TARGET is itself the subject, so it is stored as the
+ * entity `target::<name>`. Observation text that mentions that same vehicle
+ * (by rego) or place (by its bracket short form) is mined into an ordinary
+ * `vehicle::<rego>` / `address::<short form>` entity, which left the target
+ * listed twice: once as the target card ("Indices" only, no sightings) and
+ * once as an ordinary vehicle/address with all the sightings.
+ *
+ * This is the ordinary entity key such a target stands in for, so
+ * getAllIntelligenceEntities can fold those mentions into the target
+ * instead. Null when the target isn't a vehicle with a rego or a location,
+ * or has nothing to key on (a vehicle target named only by description).
+ */
+export function subjectTargetEntityKey(
+  targetType: string | null | undefined,
+  targetName: string
+): string | null {
+  if (targetType === "vehicle") {
+    const m = targetName.match(VEHICLE_REGO_PATTERN);
+    return m ? `vehicle::${m[0].toLowerCase()}` : null;
+  }
+  if (targetType === "location") {
+    const k = addressBracketKey(targetName);
+    return k ? `address::${k}` : null;
+  }
+  return null;
 }
 
 /** Same "type::normalizedShortForm" key scheme getAllIntelligenceEntities uses internally. */
@@ -5690,6 +5736,8 @@ export interface PendingVehicleDeparture {
   occupantDesc: string;
   sheetId: number;
   rowId: number;
+  /** The place the departure row says it left, when one is written. */
+  fromAddress: string | null;
 }
 
 // Returns the most recent still-pending (not yet arrived) departure per
@@ -5716,7 +5764,13 @@ export function computePendingVehicleDepartures(
 
   const lastDepartByRego = new Map<
     string,
-    { occupantDesc: string; sheetId: number; rowId: number; orderIdx: number }
+    {
+      occupantDesc: string;
+      sheetId: number;
+      rowId: number;
+      fromAddress: string | null;
+      orderIdx: number;
+    }
   >();
   const arrivedRegos = new Set<string>();
 
@@ -5729,6 +5783,7 @@ export function computePendingVehicleDepartures(
         occupantDesc: departMatch[2].trim(),
         sheetId: row.sheetId,
         rowId: row.id,
+        fromAddress: extractDepartureAddress(row.observation),
         orderIdx: idx,
       });
       arrivedRegos.delete(rego);
@@ -5887,11 +5942,23 @@ export async function getPendingHeadingTo(
   return scanWalkEvents(rows).headingTo;
 }
 
+// Placements in a vehicle, with that vehicle's map marker when it has one — a
+// vehicle with a marker is where its marker is (see shared/vehicleMarker).
+async function withVehicleMarkers<P extends { rego: string }>(
+  sheetId: number,
+  placements: P[]
+): Promise<(P & { vehicleMarker?: VehicleMarkerRef })[]> {
+  if (!placements.some(p => p.rego)) return placements;
+  const sheet = await getRunningSheetById(sheetId);
+  const markers = await getCustomMarkers();
+  return attachVehicleMarkers(placements, markers, sheet?.operationId ?? null);
+}
+
 // The latest place each person was put by a row (in a vehicle, inside a
 // place, on foot) — see scanWalkEvents.
 export async function getPendingPlacements(sheetId: number) {
   const rows = await getRowsBySheetId(sheetId);
-  return scanWalkEvents(rows).placements;
+  return withVehicleMarkers(sheetId, scanWalkEvents(rows).placements);
 }
 
 /**
@@ -5929,7 +5996,7 @@ export async function getPendingContinuityWithDraft(
     arrivals: computePendingVehicleArrivals(rows),
     walkIns: walk.walkIns,
     headingTo: walk.headingTo,
-    placements: walk.placements,
+    placements: await withVehicleMarkers(sheetId, walk.placements),
   };
 }
 
@@ -7904,6 +7971,46 @@ export async function getAllIntelligenceEntities(): Promise<
 
   const entityMap = new Map<string, IntelligenceEntity>();
 
+  // A person Target's own name, as an ordinary person key, → its target entity.
+  // A confirmed merge ("Yes, same person" on the duplicate prompt, or Merge
+  // Entities) names the target's NAME as the winner, so mentions redirected
+  // through it must land on the target entity itself — not on a second
+  // person entity that happens to carry the same name. (The surname-alias
+  // fold above can't do this on its own: it refuses a mention whose given
+  // name differs, e.g. "Mikayla" vs "Mikala", which is exactly the case a
+  // confirmed merge exists to settle.)
+  const personTargetByKey = new Map<string, string>();
+  for (const t of targetRows) {
+    if (t.targetType && t.targetType !== "person") continue;
+    personTargetByKey.set(
+      `person::${normalizeEntityLabel(t.targetName)}`,
+      `target::${t.targetName}`
+    );
+  }
+
+  // A Vehicle/Location target stands in for the ordinary vehicle/address
+  // entity its sightings would otherwise create (see subjectTargetEntityKey).
+  // Mentions are folded into the target below, so every target entity has to
+  // exist before any mention, registry field or text row is registered.
+  const subjectTargetByKey = new Map<string, string>();
+  for (const t of targetRows) {
+    const subjectKey = subjectTargetEntityKey(t.targetType, t.targetName);
+    if (!subjectKey) continue;
+    subjectTargetByKey.set(subjectKey, `target::${t.targetName}`);
+    const nameKey = `target::${t.targetName}`;
+    if (!entityMap.has(nameKey)) {
+      entityMap.set(nameKey, {
+        shortForm: t.targetName,
+        type: t.targetType === "vehicle" ? "vehicle" : "address",
+        isTarget: true,
+        tgtAlias: t.tgt?.trim() || null,
+        targetId: t.targetId,
+        surname: t.surname,
+        occurrences: [],
+      });
+    }
+  }
+
   // ── 2. Add formal target cards as person entities (isTarget = true) ────────
   for (const t of targetRows) {
     const linkedSheets = targetSheetMap.get(t.targetId) ?? [];
@@ -8064,7 +8171,12 @@ export async function getAllIntelligenceEntities(): Promise<
           : field.type === "address"
             ? addressBracketKey(shortForm)
             : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
-      const key = `${field.type}::${normKey}`;
+      const fieldKey = `${field.type}::${normKey}`;
+      // A registry vehicle/address that is itself a Vehicle/Location target
+      // is that target's own entity, not a second one.
+      const subjectTarget = subjectTargetByKey.get(fieldKey);
+      const folded = !!subjectTarget && entityMap.has(subjectTarget);
+      const key = folded ? subjectTarget! : fieldKey;
       // Same problem the vehicle branch above solves, now for addresses: a
       // registry address field is stored exactly as typed, still carrying its
       // state suffix and its own trailing bracket code. Unformatted it is
@@ -8077,7 +8189,9 @@ export async function getAllIntelligenceEntities(): Promise<
       // on the raw value's trailing bracket, so formatting first would change
       // the key and re-partition existing entities. Display only.
       if (field.type === "address") shortForm = formatIntelAddress(shortForm);
-      if (!entityMap.has(key)) {
+      if (folded) {
+        // The target keeps its own name; only the occurrence is added below.
+      } else if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
       } else {
         // Prefer the longer / richer shortForm
@@ -8272,12 +8386,20 @@ export async function getAllIntelligenceEntities(): Promise<
           : field.type === "address"
             ? addressBracketKey(shortForm)
             : shortForm.toLowerCase().replace(/\s+/g, " ").trim();
-      const key = `${field.type}::${normKey}`;
+      const fieldKey = `${field.type}::${normKey}`;
+      // See the matching comment on the target locationFields loop above — a
+      // registry vehicle/address that is a Vehicle/Location target is that
+      // target's own entity.
+      const subjectTarget = subjectTargetByKey.get(fieldKey);
+      const folded = !!subjectTarget && entityMap.has(subjectTarget);
+      const key = folded ? subjectTarget! : fieldKey;
       // See the matching comment on the target locationFields loop above —
       // tidy the registry address for display, after the key is computed
       // from the raw value so entity keying is unaffected.
       if (field.type === "address") shortForm = formatIntelAddress(shortForm);
-      if (!entityMap.has(key)) {
+      if (folded) {
+        // The target keeps its own name; only the occurrence is added below.
+      } else if (!entityMap.has(key)) {
         entityMap.set(key, { shortForm, type: field.type, occurrences: [] });
       } else {
         const existing = entityMap.get(key)!;
@@ -8495,6 +8617,53 @@ export async function getAllIntelligenceEntities(): Promise<
     if (resolved) {
       key = resolved.key;
       displayShortForm = resolved.label;
+    }
+
+    // A person redirected onto a Target's own name (a confirmed merge) IS that
+    // Target — fold into the target entity, remembering the spelling used.
+    const personTarget = personTargetByKey.get(key);
+    if (personTarget && entityMap.has(personTarget)) {
+      const targetEntity = entityMap.get(personTarget)!;
+      if (
+        normalizeEntityLabel(e.shortForm) !==
+        normalizeEntityLabel(targetEntity.shortForm)
+      ) {
+        targetEntity.aliasLabels = targetEntity.aliasLabels ?? [];
+        if (!targetEntity.aliasLabels.includes(e.shortForm))
+          targetEntity.aliasLabels.push(e.shortForm);
+      }
+      targetEntity.occurrences.push({
+        sheetId: row.sheetId,
+        sheetTitle: row.sheetTitle,
+        operationId: row.operationId,
+        operationName: row.operationName,
+        rowId: row.rowId,
+        observationSnippet:
+          row.observation.slice(0, 80) +
+          (row.observation.length > 80 ? "…" : ""),
+        timeMinutes: row.timeMinutes ?? null,
+        fullDescription: e.fullDescription,
+      });
+      return;
+    }
+
+    // A sighting of a Vehicle/Location target belongs to that target, not to
+    // a second ordinary entity for the same vehicle/place.
+    const subjectTarget = subjectTargetByKey.get(key);
+    if (subjectTarget && entityMap.has(subjectTarget)) {
+      entityMap.get(subjectTarget)!.occurrences.push({
+        sheetId: row.sheetId,
+        sheetTitle: row.sheetTitle,
+        operationId: row.operationId,
+        operationName: row.operationName,
+        rowId: row.rowId,
+        observationSnippet:
+          row.observation.slice(0, 80) +
+          (row.observation.length > 80 ? "…" : ""),
+        timeMinutes: row.timeMinutes ?? null,
+        fullDescription: e.fullDescription,
+      });
+      return;
     }
 
     if (!entityMap.has(key)) {
@@ -9004,6 +9173,9 @@ export interface DuplicateMatchResult {
   reason: string;
   associateId?: number | null;
   associateOfTargetId?: number | null;
+  /** True when the label is the SAME normalized name, not a near miss. Only
+   * returned when the caller asks for exact matches (`includeExact`). */
+  exact?: boolean;
 }
 
 /**
@@ -9014,7 +9186,8 @@ export interface DuplicateMatchResult {
  */
 export async function checkPossibleDuplicates(
   type: DedupType,
-  label: string
+  label: string,
+  opts: { includeExact?: boolean } = {}
 ): Promise<DuplicateMatchResult[]> {
   const db = await getDb();
   if (!db) return [];
@@ -9063,7 +9236,27 @@ export async function checkPossibleDuplicates(
     c => !decidedDifferentBareKeys.has(normOnly(type, c.label))
   );
 
-  return findPossibleDuplicates(label, type, candidateCombinedKey, filtered);
+  const fuzzy: DuplicateMatchResult[] = findPossibleDuplicates(
+    label,
+    type,
+    candidateCombinedKey,
+    filtered
+  );
+  if (!opts.includeExact) return fuzzy;
+  // The row-save prompt leaves an exact match out — the same name simply
+  // collapses into one entity there. But when REGISTERING a record for a
+  // person who is already in the Intelligence folder (an associate, or
+  // someone mined from rows), an exact name is the strongest match there is
+  // and the officer must be told, so it leads the list.
+  const exact: DuplicateMatchResult[] = candidates
+    .filter(c => c.key === candidateCombinedKey)
+    .map(c => ({
+      ...c,
+      score: 1,
+      reason: "same name already recorded",
+      exact: true,
+    }));
+  return [...exact, ...fuzzy];
 }
 
 export interface CrossOperationMatch {

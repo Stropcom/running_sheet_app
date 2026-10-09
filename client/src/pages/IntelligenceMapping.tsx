@@ -12,6 +12,21 @@ import {
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
 import { DivIconOverlay, wasAnyMarkerJustTapped } from "@/lib/divIconOverlay";
+import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
+import { detectUnidentifiedRepeat } from "@shared/unidentified";
+import { entryMentionsAddress, popupShortAddress } from "@shared/markerLink";
+import { fullStreetTypes } from "@shared/streetTypes";
+import {
+  broadcastSharing,
+  getNativeBackgroundLocation,
+} from "@/lib/nativeLocation";
+import {
+  locateTargetFromPending,
+  samePlace,
+  shortUnidentified,
+  TARGET_EMOJI,
+  vehiclesPeopleCanReach,
+} from "@shared/targetPosition";
 import {
   getMarkerDataUrl,
   getMarkerIconUrl,
@@ -58,16 +73,19 @@ import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAddressSuggestField } from "@/components/useAddressSuggestField";
 import {
+  occupantsToVehicle,
+  occupantWording,
   vehicleOccupants as sharedVehicleOccupants,
   occupantsStillInVehicle,
   splitPeopleNames,
   surnameTokens,
 } from "@shared/walkEventPatterns";
 import {
-  companionsOf,
-  pickTargetCardKey,
-  targetTokenFromTitle,
-} from "@shared/targetCard";
+  pickSubjectCardKey,
+  resolveTrackedTarget,
+  subjectCompanions,
+  trackedTargetCode,
+} from "@shared/trackedTarget";
 import {
   ContinuityCards,
   type ContinuityCardData,
@@ -88,6 +106,7 @@ import {
   composeFlyIcon,
   composeFlyTeamIcon,
   composeFlyTeamPin,
+  composeFlyTargetFlag,
 } from "@/lib/flyMarkerIcon";
 import { FLY_COMPASS_FIXED_ICONS } from "@/lib/flyCompassFixed";
 import { ImagesPip } from "@/components/ImagesPip";
@@ -182,6 +201,7 @@ import {
   PieChart,
   Route,
   Compass,
+  Crosshair,
   Hash,
   Pencil,
 } from "lucide-react";
@@ -280,6 +300,12 @@ function addressesMatch(a: string, b: string): boolean {
     expandStreetType(a.trim()).toLowerCase() ===
     expandStreetType(b.trim()).toLowerCase()
   );
+}
+
+// Tracker cards in the RS Quick Entry popup: the same place however it was
+// typed — street addresses by abbreviation, businesses/POIs by name.
+function cardAddressMatch(a: string, b: string): boolean {
+  return addressesMatch(a, b) || samePlace(a, b);
 }
 
 // Isolated from the main IntelligenceMapping component on purpose: the
@@ -2363,6 +2389,16 @@ export default function IntelligenceMapping() {
     () => computeUsedBracketCodes(rsInlineRows ?? []),
     [rsInlineRows]
   );
+  // Names already introduced in full on the sheet AND in the unsaved text in
+  // the box — a card's inserted sentence uses short names for those.
+  const rsUsedBracketCodesWithDraft = useMemo(
+    () =>
+      computeUsedBracketCodes([
+        ...(rsInlineRows ?? []),
+        { observation: rsInlineText },
+      ]),
+    [rsInlineRows, rsInlineText]
+  );
   const rsUsedVehicleRegos = useMemo(
     () => computeUsedVehicleRegos(rsInlineRows ?? []),
     [rsInlineRows]
@@ -2537,6 +2573,15 @@ export default function IntelligenceMapping() {
     shapes: FlyShape[];
   } | null>(null);
   const [flySelectedId, setFlySelectedId] = useState<string | null>(null);
+  // Where the Target location flag is on the flat map right now (null when
+  // there isn't one). Fly draws the same flag from this, as a picture.
+  const targetFlagFlyRef = useRef<{
+    lat: number;
+    lng: number;
+    emoji: string;
+    text: string;
+    unsure: boolean;
+  } | null>(null);
   // A spot picked with a plain click in Fly — offers "Add here…".
   const [flyPick, setFlyPick] = useState<{ lat: number; lng: number } | null>(
     null
@@ -2576,7 +2621,21 @@ export default function IntelligenceMapping() {
   ); // explicit calendar date for the QE row
   const [showMapQeDateStepper, setShowMapQeDateStepper] = useState(false); // toggled by Date button
   const [mapQeSelectOpen, setMapQeSelectOpen] = useState(false);
-  const [mapQeAddress, setMapQeAddress] = useState(""); // pre-filled address for the observation
+  const [mapQeAddress, setMapQeAddressRaw] = useState(""); // pre-filled address for the observation
+  // Whatever sets the address, street types are written in full ("Street",
+  // never "St") — in the address, its bracket short form, and the short
+  // address shown below it.
+  const setMapQeAddress = useCallback(
+    (address: string) => setMapQeAddressRaw(fullStreetTypes(address)),
+    []
+  );
+  // The custom marker an RS Quick Entry was opened from (its popup's RS Quick
+  // Entry button), so the entry can stay on that marker (see
+  // linkEntryToMarker). Cleared whenever the entry sheet closes.
+  const mapQeMarkerIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!mapQeOpen) mapQeMarkerIdRef.current = null;
+  }, [mapQeOpen]);
   // Quick Entry shortcut chip order — persisted to localStorage so user can reorder them.
   // Shared with SheetDetail's canonical order so the QE popup's fallback (used only
   // when a sheet has no saved custom order yet) can't drift out of sync with the main RS.
@@ -3458,6 +3517,25 @@ export default function IntelligenceMapping() {
     }
     return selectedOpIds.length === 1 ? selectedOpIds[0] : null;
   }, [rsSelectedSheetId, rsSheetsData, selectedOpIds]);
+  // Target Logger switches (per device, set in this pane's Target Logger
+  // section). The tracker's data is also loaded while the Target location
+  // marker is on, so the flag can follow the selected sheet without the
+  // quick-entry popup being open.
+  const trackingSettings = useTargetTrackingSettings();
+  // The quick-entry popup's Target panel (blue + purple chips) open/closed,
+  // remembered per device like the running sheet's own TARGET panel.
+  const [qeTargetPanelExpanded, setQeTargetPanelExpanded] = useState<boolean>(
+    () => {
+      try {
+        return (
+          localStorage.getItem("runsheet_qe_target_panel_expanded") !== "false"
+        );
+      } catch {
+        return true;
+      }
+    }
+  );
+  const rsTrackingActive = mapQeOpen || trackingSettings.location;
   // Vehicles that departed somewhere on THIS sheet and haven't since
   // arrived anywhere — surfaced as a "Vehicle arriving" chip in RS Quick
   // Entry so the officer doesn't have to retype the occupant description.
@@ -3466,7 +3544,10 @@ export default function IntelligenceMapping() {
   const { data: rsPendingDeparturesBase } =
     trpc.row.pendingVehicleDepartures.useQuery(
       { sheetId: rsSelectedSheetId ?? 0 },
-      { enabled: mapQeOpen && !!rsSelectedSheetId }
+      {
+        enabled: rsTrackingActive && !!rsSelectedSheetId,
+        refetchInterval: trackingSettings.location ? 15000 : false,
+      }
     );
   // Vehicles that arrived somewhere on this sheet and haven't since
   // departed again — surfaced as a "Vehicle departing" chip so the officer
@@ -3474,7 +3555,10 @@ export default function IntelligenceMapping() {
   const { data: rsPendingArrivalsBase } =
     trpc.row.pendingVehicleArrivals.useQuery(
       { sheetId: rsSelectedSheetId ?? 0 },
-      { enabled: mapQeOpen && !!rsSelectedSheetId }
+      {
+        enabled: rsTrackingActive && !!rsSelectedSheetId,
+        refetchInterval: trackingSettings.location ? 15000 : false,
+      }
     );
   // Locations someone walked into on foot on this sheet and hasn't since
   // walked back out of — surfaced as a "Walked out" chip so the officer
@@ -3482,19 +3566,28 @@ export default function IntelligenceMapping() {
   // getPendingWalkIns.
   const { data: rsPendingWalkInsBase } = trpc.row.pendingWalkIns.useQuery(
     { sheetId: rsSelectedSheetId ?? 0 },
-    { enabled: mapQeOpen && !!rsSelectedSheetId }
+    {
+      enabled: rsTrackingActive && !!rsSelectedSheetId,
+      refetchInterval: trackingSettings.location ? 15000 : false,
+    }
   );
   // People who left a location saying where they were going and haven't
   // been logged entering it — the "Entered" card's source (see
   // getPendingHeadingTo).
   const { data: rsPendingHeadingToBase } = trpc.row.pendingHeadingTo.useQuery(
     { sheetId: rsSelectedSheetId ?? 0 },
-    { enabled: mapQeOpen && !!rsSelectedSheetId }
+    {
+      enabled: rsTrackingActive && !!rsSelectedSheetId,
+      refetchInterval: trackingSettings.location ? 15000 : false,
+    }
   );
   // People who walked to / got into a vehicle (see getPendingPlacements).
   const { data: rsPendingPlacementsBase } = trpc.row.pendingPlacements.useQuery(
     { sheetId: rsSelectedSheetId ?? 0 },
-    { enabled: mapQeOpen && !!rsSelectedSheetId }
+    {
+      enabled: rsTrackingActive && !!rsSelectedSheetId,
+      refetchInterval: trackingSettings.location ? 15000 : false,
+    }
   );
   // Continuity cards the team has stopped tracking on this sheet — shared
   // with the running sheet's own "Where now" band (same keys).
@@ -3549,20 +3642,54 @@ export default function IntelligenceMapping() {
   const rsPendingPlacements = draftActive
     ? rsDraftPending!.placements
     : rsPendingPlacementsBase;
+  // Where the target is on the selected sheet — marked on the map with a flag
+  // above that place's pin (see the Target location flag effect below).
+  // What the selected sheet tracks — a person, a vehicle or a location — by
+  // the one rule the sheet's cards share (shared/trackedTarget.ts). The title
+  // answers it until the server's answer (from the linked target) arrives.
+  const { data: rsTrackedTargetData } = trpc.sheet.trackedTarget.useQuery(
+    { sheetId: rsSelectedSheetId ?? 0 },
+    { enabled: !!rsSelectedSheetId }
+  );
+  const rsSelectedSheetTitle = (rsSheetsData as any[] | undefined)?.find(
+    (x: any) => x.id === rsSelectedSheetId
+  )?.title as string | undefined;
+  const rsTrackedTarget = useMemo(
+    () =>
+      rsSelectedSheetId
+        ? (rsTrackedTargetData ??
+          resolveTrackedTarget({ title: rsSelectedSheetTitle }))
+        : null,
+    [rsSelectedSheetId, rsTrackedTargetData, rsSelectedSheetTitle]
+  );
+  const rsTargetPosition = useMemo(() => {
+    if (!trackingSettings.location || !rsSelectedSheetId) return null;
+    return locateTargetFromPending({
+      subject: rsTrackedTarget,
+      arrivals: rsPendingArrivals ?? [],
+      departures: rsPendingDepartures ?? [],
+      walkIns: rsPendingWalkIns ?? [],
+      headingTo: rsPendingHeadingTo ?? [],
+      placements: rsPendingPlacements ?? [],
+      extractNames: extractOccupantNames,
+    });
+  }, [
+    trackingSettings.location,
+    rsSelectedSheetId,
+    rsTrackedTarget,
+    rsPendingArrivals,
+    rsPendingDepartures,
+    rsPendingWalkIns,
+    rsPendingHeadingTo,
+    rsPendingPlacements,
+  ]);
   // Short-form of the quick-entry address (mirrors the extraction the
   // "Address chips" section below already does) — used only to check
   // whether this address has already been mentioned in the sheet, for the
   // vehicle-arriving chip's full-vs-short decision.
   const rsQeShortAddr = useMemo(() => {
     if (!mapQeAddress) return "";
-    const bracketMatch = mapQeAddress.match(
-      /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-    );
-    const toTitleCase = (s: string) =>
-      s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
-    return bracketMatch
-      ? toTitleCase(bracketMatch[2])
-      : (mapQeAddress.split(",")[0]?.trim() ?? mapQeAddress);
+    return popupShortAddress(mapQeAddress);
   }, [mapQeAddress]);
   // Has this address already been mentioned (full bracketed form) anywhere
   // in this sheet? If so the vehicle-arriving chip uses the short form,
@@ -3793,6 +3920,10 @@ export default function IntelligenceMapping() {
   }, [liveUsers, user?.id]);
 
   const startWatching = useCallback(() => {
+    // Inside the iPhone/iPad app the app-wide NativeLocationSharing service
+    // reports position (including in the background); a second watcher here
+    // would send every fix twice.
+    if (getNativeBackgroundLocation()) return;
     if (!navigator.geolocation) {
       setGpsError("Geolocation not supported on this device.");
       return;
@@ -3837,6 +3968,8 @@ export default function IntelligenceMapping() {
 
   const handleSharingToggle = (checked: boolean) => {
     setSharingEnabled(checked);
+    // Tell the app-wide location service at once (it follows this switch).
+    broadcastSharing(user?.id, checked);
     if (checked) {
       if (!isMobile) {
         setGpsError(
@@ -4051,6 +4184,35 @@ export default function IntelligenceMapping() {
     }
 
     await Promise.all(jobs);
+
+    // The target's location flag, riding above the pin on the same spot (the
+    // pin's own picture height says how far up it must be lifted).
+    const flag = targetFlagFlyRef.current;
+    if (flag && trackingSettings.location) {
+      const pin = markers.find(
+        m =>
+          (m.id.startsWith("intel:") || m.id.startsWith("cm:")) &&
+          Math.abs(m.lat - flag.lat) < 2e-5 &&
+          Math.abs(m.lng - flag.lng) < 2e-5
+      );
+      const pic = composeFlyTargetFlag({
+        emoji: flag.emoji,
+        text: flag.text,
+        unsure: flag.unsure,
+        lift: pin?.height ? pin.height - 5 : 81,
+      });
+      if (pic.url) {
+        markers.push({
+          id: "targetflag",
+          lat: flag.lat,
+          lng: flag.lng,
+          iconUrl: pic.url,
+          width: pic.width,
+          height: pic.height,
+          inert: true,
+        });
+      }
+    }
     markers.sort((a, b) => a.id.localeCompare(b.id));
 
     // Drawn shapes → 3D polygons and lines.
@@ -4848,6 +5010,169 @@ export default function IntelligenceMapping() {
   ]);
 
   // Keep customMarkersDataRef in sync so placeMarker can access latest data without stale closure
+  // ── Target location flag ──
+  // A flag (emoji for his state, name, state, time) hovering over the pin of
+  // the place the target is at, on the selected sheet. It is its own overlay
+  // at that pin's position, so redrawing the pins never disturbs it. The
+  // place is matched to a pin by name; pins are placed as their addresses
+  // geocode, so the match is retried for a short while until one turns up.
+  // No pin for the place, no flag.
+  const targetFlagRef = useRef<DivIconOverlay | null>(null);
+  // Why the flag is or isn't showing — shown under the Target location switch
+  // in the right-hand pane, so a missing flag explains itself.
+  const [targetFlagStatus, setTargetFlagStatus] = useState("");
+  useEffect(() => {
+    const removeFlag = () => {
+      if (targetFlagRef.current) {
+        targetFlagRef.current.map = null;
+        targetFlagRef.current = null;
+      }
+      if (targetFlagFlyRef.current) {
+        targetFlagFlyRef.current = null;
+        flyTickRef.current?.();
+      }
+    };
+    const pos = rsTargetPosition;
+    const token = trackedTargetCode(rsTrackedTarget);
+    if (!trackingSettings.location) {
+      setTargetFlagStatus("");
+    } else if (!rsSelectedSheetId) {
+      setTargetFlagStatus("Select a running sheet in the Active RS pane.");
+    } else if (rsTrackedTarget?.kind === "location") {
+      setTargetFlagStatus(
+        "This sheet's target is a location — it doesn't move, so there is no flag to follow."
+      );
+    } else if (!token) {
+      setTargetFlagStatus(
+        "This sheet's title has no target in brackets at the end — a surname, e.g. (BAIG), or a registration, e.g. (ABC123) — so there is nothing to flag."
+      );
+    } else if (!pos) {
+      setTargetFlagStatus(
+        `The sheet doesn't say where ${token} is yet — no movement, arrival or sighting names ${token}.`
+      );
+    } else if (!pos.place && !pos.marker) {
+      setTargetFlagStatus(
+        `${token} is ${pos.label}, but no place is written to put the flag on.`
+      );
+    } else if (!mapReady || !mapRef.current) {
+      setTargetFlagStatus("");
+    }
+    if (!mapReady || !mapRef.current || (!pos?.place && !pos?.marker)) {
+      removeFlag();
+      return;
+    }
+    const place = pos.place ?? "the vehicle's marker";
+    const findPin = (): google.maps.LatLngLiteral | null => {
+      // A vehicle with its own marker is where that marker is — whatever
+      // address the rows give.
+      if (pos.marker && pos.state === "vehicle") return pos.marker;
+      const pins: any[] = [
+        ...markersRef.current,
+        ...Array.from(customMarkerMapRefs.current.values()),
+      ];
+      for (const m of pins) {
+        if (m?.title && m.position && samePlace(String(m.title), place)) {
+          return m.position as google.maps.LatLngLiteral;
+        }
+      }
+      // A custom marker that has absorbed the place's own pin (a house marker
+      // within 40 m, or a manual / Quick Entry merge) carries it instead: the
+      // place is that marker's address, the address it is linked to, or one of
+      // the locations merged into it.
+      for (const cm of customMarkersDataRef.current as any[]) {
+        if (cm?.lat == null || cm?.lng == null) continue;
+        const names: string[] = [
+          cm.address,
+          cm.linkedIntelLabel,
+          ...(mergedIntelRef.current.get(cm.id) ?? []).map((e: any) => e.label),
+        ].filter(Boolean);
+        if (names.some(n => samePlace(String(n), place))) {
+          return { lat: cm.lat, lng: cm.lng };
+        }
+      }
+      return null;
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancelled = false;
+    const attempt = (n: number) => {
+      if (cancelled) return;
+      const at = findPin();
+      if (!at) {
+        if (n < 20) timer = setTimeout(() => attempt(n + 1), 1500);
+        else
+          setTargetFlagStatus(
+            `${token} is ${pos.label} at "${place}", but no pin or marker on the map matches that place. A new address only gets a pin once it has been located on the map.`
+          );
+        return;
+      }
+      setTargetFlagStatus(`Showing ${token} at "${place}" — ${pos.label}.`);
+      removeFlag();
+      const flag = document.createElement("div");
+      flag.style.cssText =
+        "position:absolute;left:0;top:0;transform:translate(-50%,calc(-100% - 26px));" +
+        "pointer-events:none;display:flex;flex-direction:column;align-items:center;";
+      const pill = document.createElement("div");
+      const unsure = pos.state === "oos";
+      pill.style.cssText =
+        "display:flex;align-items:center;gap:6px;white-space:nowrap;" +
+        "background:#fff;color:#14181d;border:2px " +
+        (unsure ? "dashed" : "solid") +
+        " #e0338a;border-radius:999px;padding:3px 10px 3px 7px;" +
+        "font:600 11px/1.2 system-ui,sans-serif;box-shadow:0 2px 6px rgba(0,0,0,.3);";
+      const em = document.createElement("span");
+      em.textContent = TARGET_EMOJI[pos.state];
+      em.style.cssText = "font-size:15px;";
+      const label = document.createElement("span");
+      const who = (token ?? "Target").toUpperCase();
+      // Everyone with him (the vehicle's occupants, or those inside /
+      // walking with him), the target first — as on the tracker card.
+      label.textContent = shortUnidentified(
+        `${pos.people.length ? pos.people.join(", ") : who} · ${pos.label}`
+      );
+      pill.appendChild(em);
+      pill.appendChild(label);
+      const stem = document.createElement("div");
+      stem.style.cssText =
+        "width:2px;height:8px;background:#e0338a;border-radius:1px;";
+      flag.appendChild(pill);
+      flag.appendChild(stem);
+      targetFlagRef.current = new DivIconOverlay({
+        map: mapRef.current,
+        position: at,
+        content: flag,
+        anchor: "none",
+        zIndex: 5000,
+        title: "Target location",
+      });
+      // The same flag for Fly (see buildFlySnapshot).
+      const lat = typeof at.lat === "function" ? (at as any).lat() : at.lat;
+      const lng = typeof at.lng === "function" ? (at as any).lng() : at.lng;
+      targetFlagFlyRef.current = {
+        lat,
+        lng,
+        emoji: TARGET_EMOJI[pos.state],
+        text: label.textContent ?? "",
+        unsure,
+      };
+      flyTickRef.current?.();
+    };
+    setTargetFlagStatus(`Looking for "${place}" on the map…`);
+    attempt(0);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      removeFlag();
+    };
+  }, [
+    mapReady,
+    rsTargetPosition,
+    rsTrackedTarget,
+    rsSelectedSheetId,
+    locations,
+    customMarkers,
+    trackingSettings.location,
+  ]);
+
   // NOTE: Do NOT call renderLocations here — that would create a loop:
   //   customMarkers changes → renderLocations → geocode → placeMarker stores mergedIntel
   //   → (nothing triggers re-render, but the 5s poll refetches customMarkers) → loop
@@ -6469,6 +6794,7 @@ export default function IntelligenceMapping() {
       if (!cm) return;
       const address = cm.address || cm.label || "";
       setMapQeAddress(convertGoogleAddresses(address));
+      mapQeMarkerIdRef.current = id;
       setMapQeOpen(true);
     };
     return () => {
@@ -6698,6 +7024,7 @@ export default function IntelligenceMapping() {
       // Ensure the label has a bracket short-form — intel entity labels are already
       // in RS format (suburb UPPERCASE, no postcode) but may lack the bracket code.
       setMapQeAddress(ensureBracketCode(label));
+      mapQeMarkerIdRef.current = null;
       setMapQeOpen(true);
     };
     return () => {
@@ -7060,7 +7387,7 @@ export default function IntelligenceMapping() {
       if (match) {
         const occupantDesc = shortenAlreadyMentionedNames(
           match.occupantDesc,
-          rsUsedBracketCodes
+          rsUsedBracketCodesWithDraft
         );
         const arriveAddr = rsAddressMentionedData?.mentioned
           ? rsQeShortAddr
@@ -7071,7 +7398,7 @@ export default function IntelligenceMapping() {
 
     if (/\bdepart(?:ing|ed|s)\b/.test(normalized)) {
       const arrivalsHere = (rsPendingArrivals ?? []).filter(a =>
-        addressesMatch(a.address, rsQeShortAddr)
+        cardAddressMatch(a.address, rsQeShortAddr)
       );
       const candidates = arrivalsHere.filter(a =>
         normalized.includes(a.rego.toLowerCase())
@@ -7085,7 +7412,7 @@ export default function IntelligenceMapping() {
       if (match) {
         const occupantDesc = shortenAlreadyMentionedNames(
           match.occupantDesc,
-          rsUsedBracketCodes
+          rsUsedBracketCodesWithDraft
         );
         return `Vehicle ${match.rego}, ${occupantDesc}, departed ${rsQeShortAddr} and continued via:`;
       }
@@ -7202,6 +7529,47 @@ export default function IntelligenceMapping() {
     }
   }, [mapQeOpen, rsSelectedSheetId, rsSheetsData]);
 
+  // An entry made from a custom marker's RS Quick Entry stays on that marker:
+  // once it is saved, the marker is linked to the address's location (the same
+  // link as the marker popup's Merge…, so Un-merge still works) and the
+  // automatic pin for that address is not drawn alongside it. Only when the
+  // entry actually mentions the marker's address, the marker has no link yet,
+  // and it is not a house marker (those already absorb a pin within 40 m).
+  const linkEntryToMarker = async (
+    markerId: number | null,
+    address: string,
+    observation: string
+  ) => {
+    if (markerId == null || !address) return;
+    const cm = customMarkersDataRef.current.find((m: any) => m.id === markerId);
+    if (
+      !cm ||
+      cm.linkedIntelLabel ||
+      ["house_outline", "house_filled"].includes(cm.markerIcon)
+    )
+      return;
+    const short = entryMentionsAddress(address, observation);
+    if (!short) return;
+    try {
+      const fresh = await refetchLocations();
+      const locs = (fresh.data ?? []) as IntelMapLocation[];
+      const target =
+        locs.find(l => addressesMatch(l.label, address)) ??
+        locs.find(l => samePlace(l.label, short));
+      if (!target) return;
+      await updateCustomMarkerMut.mutateAsync({
+        id: markerId,
+        linkedIntelLabel: target.label,
+      });
+      await refetchCustomMarkers();
+      mergedIntelRef.current.clear();
+      renderLocations(locs);
+    } catch {
+      // Leave the entry and the pin as they are; the marker can still be
+      // merged by hand from its popup.
+    }
+  };
+
   const addQuickRsEntry = (
     observation: string,
     cinsToAttach?: Set<string> | null,
@@ -7242,6 +7610,10 @@ export default function IntelligenceMapping() {
     setRsAddingRow(true);
     // Store the CINs in a local variable captured by the mutation callback
     const cins = cinsToAttach ? Array.from(cinsToAttach) : [];
+    // The marker this entry was opened from, captured now — the entry sheet
+    // closing clears the ref before the save completes.
+    const linkMarkerId = mapQeMarkerIdRef.current;
+    const linkAddress = mapQeAddress;
     rsCreateRow.mutate(
       {
         sheetId: rsSelectedSheetId,
@@ -7274,6 +7646,8 @@ export default function IntelligenceMapping() {
           toast.success("RS entry added");
           // Refetch intel pins so any new address in this observation appears on the map
           void refetchLocations();
+          // Keep the entry on the custom marker it was made from.
+          void linkEntryToMarker(linkMarkerId, linkAddress, observation);
           // Refetch entity chips so a newly-mentioned entity shows up as a chip immediately
           if (rsSelectedSheetId) {
             void utils.row.entityChips.invalidate({
@@ -9471,6 +9845,87 @@ export default function IntelligenceMapping() {
                 </button>
               </div>
               {/* end Marker Entity Count */}
+
+              {/* ── TARGET LOGGER — same on/off pattern as the sections
+                above. The first switch is the whole feature (the Target
+                logger panel on the running sheet and in the quick-entry
+                popup); the second is the flag marking where the target is,
+                and only applies while tracking is on. Per device. ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Target Logger
+                </span>
+                {[
+                  {
+                    key: "tracking",
+                    label: "Target logger",
+                    on: trackingSettings.tracking,
+                    toggle: () =>
+                      trackingSettings.setTracking(!trackingSettings.tracking),
+                    disabled: false,
+                    Icon: Crosshair,
+                  },
+                  {
+                    key: "location",
+                    label: "Target location",
+                    on: trackingSettings.location,
+                    toggle: () =>
+                      trackingSettings.setLocation(
+                        !trackingSettings.locationSetting
+                      ),
+                    disabled: !trackingSettings.tracking,
+                    Icon: MapPin,
+                  },
+                ].map(({ key, label, on, toggle, disabled, Icon }) => (
+                  <button
+                    key={key}
+                    onClick={toggle}
+                    disabled={disabled}
+                    className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 disabled:opacity-50 disabled:active:scale-100 ${
+                      on
+                        ? "border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20"
+                        : "border-border bg-card hover:bg-accent/40"
+                    }`}
+                    aria-pressed={on}
+                    title={
+                      disabled
+                        ? "Turn Target logger on to use this"
+                        : undefined
+                    }
+                  >
+                    <Icon
+                      className={`h-3.5 w-3.5 flex-shrink-0 ${
+                        on ? "text-sky-500" : "text-muted-foreground"
+                      }`}
+                    />
+                    <span
+                      className={`text-xs font-semibold truncate flex-1 text-left ${
+                        on ? "text-sky-500" : "text-foreground"
+                      }`}
+                    >
+                      {label}
+                    </span>
+                    <span
+                      className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                        on ? "text-sky-500" : "text-muted-foreground"
+                      }`}
+                    >
+                      {on ? "On" : "Off"}
+                    </span>
+                  </button>
+                ))}
+                {!trackingSettings.tracking && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Target location needs Target logger on.
+                  </p>
+                )}
+                {trackingSettings.location && targetFlagStatus && (
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    {targetFlagStatus}
+                  </p>
+                )}
+              </div>
+              {/* end Target Logger */}
             </div>
           )}
           {/* end Pane Body */}
@@ -11447,6 +11902,34 @@ export default function IntelligenceMapping() {
                                 const textarea = e.currentTarget;
                                 const pos = textarea.selectionStart ?? 0;
                                 const textBefore = rsInlineText.slice(0, pos);
+                                // An unidentified person already introduced in
+                                // full is only referred to by the short name:
+                                // finishing the full wording again becomes
+                                // "UM1".
+                                const unidentifiedRepeat =
+                                  e.key === " " && rsUsedBracketCodes
+                                    ? detectUnidentifiedRepeat(
+                                        rsInlineText,
+                                        pos,
+                                        rsUsedBracketCodes
+                                      )
+                                    : null;
+                                if (unidentifiedRepeat) {
+                                  e.preventDefault();
+                                  pushInlineUndo(rsInlineText);
+                                  setRsInlineText(
+                                    `${rsInlineText.slice(0, unidentifiedRepeat.start)}${unidentifiedRepeat.code} ${rsInlineText.slice(pos)}`
+                                  );
+                                  resetInlineTimer();
+                                  requestAnimationFrame(() => {
+                                    const newPos =
+                                      unidentifiedRepeat.start +
+                                      unidentifiedRepeat.code.length +
+                                      1;
+                                    textarea.setSelectionRange(newPos, newPos);
+                                  });
+                                  return;
+                                }
                                 const match = textBefore.match(/(\S+)$/);
                                 let expanded = false;
                                 if (match) {
@@ -11694,239 +12177,334 @@ export default function IntelligenceMapping() {
                                 ))}
                               </div>
                             )}
-                          {/* Shortcut buttons */}
-                          {(() => {
-                            // ── QE chips: exact mirror of main RS chip set, values, and order ──────────
-                            // Single source of truth: assignedTarget (target.getById) for all target fields.
-                            // Chip set matches SheetDetail exactly: TGT, HBF, HB, V1F, V1, extra vehicles, wildcards, DEP, ARR, folder shortcuts.
-                            // Order: qeChipOrder (read from RS localStorage key) with wildcards always last.
-                            const appendText = (text: string) => {
-                              pushInlineUndo(rsInlineText);
-                              setRsInlineText(prev =>
-                                prev ? `${prev} ${text}` : text
-                              );
-                              resetInlineTimer();
-                              rsInlineInputRef.current?.focus();
-                            };
-                            const t = assignedTarget as any;
-                            if (!t) return null;
-
-                            // Extra vehicle chips from JSON (V2F/V2, V3F/V3, …)
-                            const extraVehicleChips: Array<{
-                              label: string;
-                              display: string;
-                              getValue: () => string | null;
-                            }> = [];
-                            try {
-                              const evs: Array<{
-                                full: string;
-                                short: string;
-                              }> = JSON.parse(t.extraVehicles ?? "[]");
-                              evs.forEach(
-                                (
-                                  ev: { full: string; short: string },
-                                  i: number
-                                ) => {
-                                  const num = i + 2;
-                                  if (ev.full)
-                                    extraVehicleChips.push({
-                                      label: `V${num}F`,
-                                      display: `V${num}F`,
-                                      getValue: () => ev.full,
-                                    });
-                                  if (ev.short) {
-                                    extraVehicleChips.push({
-                                      label: `V${num}`,
-                                      display: ev.short
-                                        ? `V${num} ${ev.short}`
-                                        : `V${num}`,
-                                      getValue: () => ev.short,
-                                    });
-                                  }
+                          {/* Target panel — the blue shortcut chips and, right
+                          under them, the purple entity chips, in a dropdown
+                          like the running sheet's TARGET panel. Open/closed
+                          is remembered per device. The green addresses stay
+                          below it. */}
+                          {(assignedTarget ||
+                            (rsEntityChips && rsEntityChips.length > 0)) && (
+                            <div className="rounded-lg border border-border bg-card/60 overflow-hidden">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setQeTargetPanelExpanded(v => {
+                                    const next = !v;
+                                    try {
+                                      localStorage.setItem(
+                                        "runsheet_qe_target_panel_expanded",
+                                        String(next)
+                                      );
+                                    } catch {}
+                                    return next;
+                                  })
                                 }
-                              );
-                            } catch {}
+                                aria-expanded={qeTargetPanelExpanded}
+                                className="flex w-full min-w-0 select-none items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/20 active:bg-muted/30"
+                              >
+                                <Crosshair className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                <span className="flex-1 truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                  {assignedTarget
+                                    ? `TARGET — ${(assignedTarget as any).name}`
+                                    : "SHORTCUTS"}
+                                </span>
+                                <ChevronDown
+                                  className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ${
+                                    qeTargetPanelExpanded ? "" : "-rotate-90"
+                                  }`}
+                                />
+                              </button>
+                              {qeTargetPanelExpanded && (
+                                <div className="flex flex-col gap-1.5 px-3 pb-3">
+                                  {/* Shortcut buttons */}
+                                  {(() => {
+                                    // ── QE chips: exact mirror of main RS chip set, values, and order ──────────
+                                    // Single source of truth: assignedTarget (target.getById) for all target fields.
+                                    // Chip set matches SheetDetail exactly: TGT, HBF, HB, V1F, V1, extra vehicles, wildcards, DEP, ARR, folder shortcuts.
+                                    // Order: qeChipOrder (read from RS localStorage key) with wildcards always last.
+                                    const appendText = (text: string) => {
+                                      pushInlineUndo(rsInlineText);
+                                      setRsInlineText(prev =>
+                                        prev ? `${prev} ${text}` : text
+                                      );
+                                      resetInlineTimer();
+                                      rsInlineInputRef.current?.focus();
+                                    };
+                                    const t = assignedTarget as any;
+                                    if (!t) return null;
 
-                            // Wild field chips (#1, #2, …)
-                            const wildChips: Array<{
-                              label: string;
-                              display: string;
-                              getValue: () => string | null;
-                            }> = [];
-                            try {
-                              const wfs: Array<{
-                                label: string;
-                                value: string;
-                              }> = JSON.parse(t.wildFields ?? "[]");
-                              wfs.forEach(
-                                (wf: { label: string; value: string }) => {
-                                  if (wf.value)
-                                    wildChips.push({
-                                      label: wf.label,
-                                      display: wf.label,
-                                      getValue: () => wf.value,
-                                    });
-                                }
-                              );
-                            } catch {}
+                                    // Extra vehicle chips from JSON (V2F/V2, V3F/V3, …)
+                                    const extraVehicleChips: Array<{
+                                      label: string;
+                                      display: string;
+                                      getValue: () => string | null;
+                                    }> = [];
+                                    try {
+                                      const evs: Array<{
+                                        full: string;
+                                        short: string;
+                                      }> = JSON.parse(t.extraVehicles ?? "[]");
+                                      evs.forEach(
+                                        (
+                                          ev: { full: string; short: string },
+                                          i: number
+                                        ) => {
+                                          const num = i + 2;
+                                          if (ev.full)
+                                            extraVehicleChips.push({
+                                              label: `V${num}F`,
+                                              display: `V${num}F`,
+                                              getValue: () => ev.full,
+                                            });
+                                          if (ev.short) {
+                                            extraVehicleChips.push({
+                                              label: `V${num}`,
+                                              display: ev.short
+                                                ? `V${num} ${ev.short}`
+                                                : `V${num}`,
+                                              getValue: () => ev.short,
+                                            });
+                                          }
+                                        }
+                                      );
+                                    } catch {}
 
-                            // Folder shortcut chips (showInRs=true, exclude legacy 'D')
-                            const folderShortcutChips: Array<{
-                              label: string;
-                              display: string;
-                              getValue: () => string | null;
-                            }> = ((generalShortcuts as any[]) ?? [])
-                              .filter(
-                                (s: any) =>
-                                  (s.trigger as string).toUpperCase() !== "D" &&
-                                  !!s.showInRs
-                              )
-                              .map((s: any) => ({
-                                label: (s.trigger as string).toUpperCase(),
-                                display: (s.trigger as string).toUpperCase(),
-                                getValue: () => s.expansion as string,
-                              }));
+                                    // Wild field chips (#1, #2, …)
+                                    const wildChips: Array<{
+                                      label: string;
+                                      display: string;
+                                      getValue: () => string | null;
+                                    }> = [];
+                                    try {
+                                      const wfs: Array<{
+                                        label: string;
+                                        value: string;
+                                      }> = JSON.parse(t.wildFields ?? "[]");
+                                      wfs.forEach(
+                                        (wf: {
+                                          label: string;
+                                          value: string;
+                                        }) => {
+                                          if (wf.value)
+                                            wildChips.push({
+                                              label: wf.label,
+                                              display: wf.label,
+                                              getValue: () => wf.value,
+                                            });
+                                        }
+                                      );
+                                    } catch {}
 
-                            // Full chip list — identical order to SheetDetail fields array
-                            const allChips: Array<{
-                              label: string;
-                              display: string;
-                              getValue: () => string | null;
-                            }> = [
-                              {
-                                label: "TGT",
-                                display: "TGT",
-                                getValue: () => t.tgt ?? null,
-                              },
-                              {
-                                label: "HBF",
-                                display: "HBF",
-                                getValue: () => t.hbf ?? null,
-                              },
-                              {
-                                label: "HB",
-                                display: "HB",
-                                getValue: () => t.hb ?? null,
-                              },
-                              {
-                                label: "V1F",
-                                display: "V1F",
-                                getValue: () => t.v1f ?? null,
-                              },
-                              {
-                                label: "V1",
-                                display: t.v1 ? `V1 ${t.v1}` : "V1",
-                                getValue: () => t.v1 ?? null,
-                              },
-                              ...extraVehicleChips,
-                              ...wildChips,
-                              {
-                                label: "DEP",
-                                display: "DEP",
-                                getValue: () => t.dep ?? null,
-                              },
-                              {
-                                label: "ARR",
-                                display: "ARR",
-                                getValue: () => t.arr ?? null,
-                              },
-                              ...folderShortcutChips,
-                            ];
-
-                            const available = allChips.filter(
-                              s => s.getValue() !== null
-                            );
-                            if (available.length === 0) return null;
-
-                            // Apply saved RS order — wildcards always last (mirrors SheetDetail)
-                            const isWildcard = (lbl: string) =>
-                              /^#\d+$/.test(lbl);
-                            const nonWildAvail = available.filter(
-                              s => !isWildcard(s.label)
-                            );
-                            const wildAvail = available.filter(s =>
-                              isWildcard(s.label)
-                            );
-                            const orderedNonWild =
-                              qeChipOrder.length > 0
-                                ? [
-                                    ...(qeChipOrder
-                                      .filter(lbl => !isWildcard(lbl))
-                                      .map(lbl =>
-                                        nonWildAvail.find(s => s.label === lbl)
+                                    // Folder shortcut chips (showInRs=true, exclude legacy 'D')
+                                    const folderShortcutChips: Array<{
+                                      label: string;
+                                      display: string;
+                                      getValue: () => string | null;
+                                    }> = ((generalShortcuts as any[]) ?? [])
+                                      .filter(
+                                        (s: any) =>
+                                          (
+                                            s.trigger as string
+                                          ).toUpperCase() !== "D" &&
+                                          !!s.showInRs
                                       )
-                                      .filter(Boolean) as typeof available),
-                                    ...nonWildAvail.filter(
-                                      s => !qeChipOrder.includes(s.label)
-                                    ),
-                                  ]
-                                : nonWildAvail;
-                            const orderedWild =
-                              qeChipOrder.length > 0
-                                ? [
-                                    ...(qeChipOrder
-                                      .filter(isWildcard)
-                                      .map(lbl =>
-                                        wildAvail.find(s => s.label === lbl)
+                                      .map((s: any) => ({
+                                        label: (
+                                          s.trigger as string
+                                        ).toUpperCase(),
+                                        display: (
+                                          s.trigger as string
+                                        ).toUpperCase(),
+                                        getValue: () => s.expansion as string,
+                                      }));
+
+                                    // Full chip list — identical order to SheetDetail fields array
+                                    const allChips: Array<{
+                                      label: string;
+                                      display: string;
+                                      getValue: () => string | null;
+                                    }> = [
+                                      {
+                                        label: "TGT",
+                                        display: "TGT",
+                                        getValue: () => t.tgt ?? null,
+                                      },
+                                      {
+                                        label: "HBF",
+                                        display: "HBF",
+                                        getValue: () => t.hbf ?? null,
+                                      },
+                                      {
+                                        label: "HB",
+                                        display: "HB",
+                                        getValue: () => t.hb ?? null,
+                                      },
+                                      {
+                                        label: "V1F",
+                                        display: "V1F",
+                                        getValue: () => t.v1f ?? null,
+                                      },
+                                      {
+                                        label: "V1",
+                                        display: t.v1 ? `V1 ${t.v1}` : "V1",
+                                        getValue: () => t.v1 ?? null,
+                                      },
+                                      ...extraVehicleChips,
+                                      ...wildChips,
+                                      {
+                                        label: "DEP",
+                                        display: "DEP",
+                                        getValue: () => t.dep ?? null,
+                                      },
+                                      {
+                                        label: "ARR",
+                                        display: "ARR",
+                                        getValue: () => t.arr ?? null,
+                                      },
+                                      ...folderShortcutChips,
+                                    ];
+
+                                    const available = allChips.filter(
+                                      s => s.getValue() !== null
+                                    );
+                                    if (available.length === 0) return null;
+
+                                    // Apply saved RS order — wildcards always last (mirrors SheetDetail)
+                                    const isWildcard = (lbl: string) =>
+                                      /^#\d+$/.test(lbl);
+                                    const nonWildAvail = available.filter(
+                                      s => !isWildcard(s.label)
+                                    );
+                                    const wildAvail = available.filter(s =>
+                                      isWildcard(s.label)
+                                    );
+                                    const orderedNonWild =
+                                      qeChipOrder.length > 0
+                                        ? [
+                                            ...(qeChipOrder
+                                              .filter(lbl => !isWildcard(lbl))
+                                              .map(lbl =>
+                                                nonWildAvail.find(
+                                                  s => s.label === lbl
+                                                )
+                                              )
+                                              .filter(
+                                                Boolean
+                                              ) as typeof available),
+                                            ...nonWildAvail.filter(
+                                              s =>
+                                                !qeChipOrder.includes(s.label)
+                                            ),
+                                          ]
+                                        : nonWildAvail;
+                                    const orderedWild =
+                                      qeChipOrder.length > 0
+                                        ? [
+                                            ...(qeChipOrder
+                                              .filter(isWildcard)
+                                              .map(lbl =>
+                                                wildAvail.find(
+                                                  s => s.label === lbl
+                                                )
+                                              )
+                                              .filter(
+                                                Boolean
+                                              ) as typeof available),
+                                            ...wildAvail.filter(
+                                              s =>
+                                                !qeChipOrder.includes(s.label)
+                                            ),
+                                          ]
+                                        : wildAvail;
+                                    const orderedChips = [
+                                      ...orderedNonWild,
+                                      ...orderedWild,
+                                    ];
+
+                                    // Display rules — same as SheetDetail:
+                                    // Vn short (V1/V2/…): show label + rego; everything else: trigger label only
+                                    const shortcutFolderLabels = new Set(
+                                      ((generalShortcuts as any[]) ?? []).map(
+                                        (s: any) =>
+                                          (s.trigger as string).toUpperCase()
                                       )
-                                      .filter(Boolean) as typeof available),
-                                    ...wildAvail.filter(
-                                      s => !qeChipOrder.includes(s.label)
-                                    ),
-                                  ]
-                                : wildAvail;
-                            const orderedChips = [
-                              ...orderedNonWild,
-                              ...orderedWild,
-                            ];
+                                    );
+                                    const TRIGGER_ONLY = new Set([
+                                      "TGT",
+                                      "HBF",
+                                      "HB",
+                                      "V1F",
+                                      "DEP",
+                                      "ARR",
+                                    ]);
+                                    const isVnShort = (lbl: string) =>
+                                      /^V\d+$/.test(lbl);
+                                    const isVnFull = (lbl: string) =>
+                                      /^V\d+F$/.test(lbl);
+                                    const isStandard = (lbl: string) =>
+                                      !isVnShort(lbl) &&
+                                      (shortcutFolderLabels.has(lbl) ||
+                                        TRIGGER_ONLY.has(lbl) ||
+                                        isVnFull(lbl));
 
-                            // Display rules — same as SheetDetail:
-                            // Vn short (V1/V2/…): show label + rego; everything else: trigger label only
-                            const shortcutFolderLabels = new Set(
-                              ((generalShortcuts as any[]) ?? []).map(
-                                (s: any) => (s.trigger as string).toUpperCase()
-                              )
-                            );
-                            const TRIGGER_ONLY = new Set([
-                              "TGT",
-                              "HBF",
-                              "HB",
-                              "V1F",
-                              "DEP",
-                              "ARR",
-                            ]);
-                            const isVnShort = (lbl: string) =>
-                              /^V\d+$/.test(lbl);
-                            const isVnFull = (lbl: string) =>
-                              /^V\d+F$/.test(lbl);
-                            const isStandard = (lbl: string) =>
-                              !isVnShort(lbl) &&
-                              (shortcutFolderLabels.has(lbl) ||
-                                TRIGGER_ONLY.has(lbl) ||
-                                isVnFull(lbl));
-
-                            return (
-                              <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                {orderedChips.map(s => (
-                                  <button
-                                    key={s.label}
-                                    onClick={() => {
-                                      const v = s.getValue();
-                                      if (v) appendText(v);
-                                    }}
-                                    data-qe-chip={s.label}
-                                    className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                  >
-                                    {isVnShort(s.label)
-                                      ? s.display
-                                      : isStandard(s.label)
-                                        ? s.label
-                                        : s.display}
-                                  </button>
-                                ))}
-                              </div>
-                            );
-                          })()}
+                                    return (
+                                      <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                        {orderedChips.map(s => (
+                                          <button
+                                            key={s.label}
+                                            onClick={() => {
+                                              const v = s.getValue();
+                                              if (v) appendText(v);
+                                            }}
+                                            data-qe-chip={s.label}
+                                            className="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                          >
+                                            {isVnShort(s.label)
+                                              ? s.display
+                                              : isStandard(s.label)
+                                                ? s.label
+                                                : s.display}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    );
+                                  })()}
+                                  {/* Entity chips — quick-insert shortcuts mined from this sheet's own
+                          observations (surname / short address / vehicle rego), shared
+                          across every officer on the sheet via the server. */}
+                                  {rsEntityChips &&
+                                    rsEntityChips.length > 0 &&
+                                    (() => {
+                                      const appendText = (text: string) => {
+                                        pushInlineUndo(rsInlineText);
+                                        setRsInlineText(prev =>
+                                          prev ? `${prev} ${text}` : text
+                                        );
+                                        resetInlineTimer();
+                                        rsInlineInputRef.current?.focus();
+                                      };
+                                      return (
+                                        <div className="flex flex-wrap gap-1 md:gap-1.5">
+                                          {rsEntityChips.map(chip => (
+                                            <button
+                                              key={chip.key}
+                                              onClick={() =>
+                                                appendText(chip.insertValue)
+                                              }
+                                              className="px-2 py-0.5 rounded text-[10px] font-bold border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                            >
+                                              <span className="font-mono normal-case">
+                                                {chip.insertValue}
+                                              </span>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      );
+                                    })()}
+                                </div>
+                              )}
+                            </div>
+                          )}
                           {/* Address chips — full RS address and short street address */}
                           {mapQeAddress &&
                             (() => {
@@ -11939,18 +12517,7 @@ export default function IntelligenceMapping() {
                                 rsInlineInputRef.current?.focus();
                               };
                               // Extract short address from bracket code: e.g. "21 Olding Way, MELVILLE WA (21 OLDING WAY)" → "21 Olding Way"
-                              const bracketMatch = mapQeAddress.match(
-                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                              );
-                              // Short address: title-case the bracket code content (e.g. "21 OLDING WAY" → "21 Olding Way")
-                              const toTitleCase = (s: string) =>
-                                s
-                                  .toLowerCase()
-                                  .replace(/\b\w/g, c => c.toUpperCase());
-                              const shortAddr = bracketMatch
-                                ? toTitleCase(bracketMatch[2])
-                                : (mapQeAddress.split(",")[0]?.trim() ??
-                                  mapQeAddress);
+                              const shortAddr = popupShortAddress(mapQeAddress);
                               return (
                                 <div className="flex flex-col gap-1 md:gap-1.5">
                                   <button
@@ -11978,38 +12545,6 @@ export default function IntelligenceMapping() {
                                 </div>
                               );
                             })()}
-                          {/* Entity chips — quick-insert shortcuts mined from this sheet's own
-                          observations (surname / short address / vehicle rego), shared
-                          across every officer on the sheet via the server. */}
-                          {rsEntityChips &&
-                            rsEntityChips.length > 0 &&
-                            (() => {
-                              const appendText = (text: string) => {
-                                pushInlineUndo(rsInlineText);
-                                setRsInlineText(prev =>
-                                  prev ? `${prev} ${text}` : text
-                                );
-                                resetInlineTimer();
-                                rsInlineInputRef.current?.focus();
-                              };
-                              return (
-                                <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                  {rsEntityChips.map(chip => (
-                                    <button
-                                      key={chip.key}
-                                      onClick={() =>
-                                        appendText(chip.insertValue)
-                                      }
-                                      className="px-2 py-0.5 rounded text-[10px] font-bold border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/15 active:scale-95 transition-all select-none md:px-3 md:py-1.5 md:text-xs md:rounded-md"
-                                    >
-                                      <span className="font-mono normal-case">
-                                        {chip.insertValue}
-                                      </span>
-                                    </button>
-                                  ))}
-                                </div>
-                              );
-                            })()}
                           {/* Continuity cards — the same "Where now" cards the
                           running sheet shows (ContinuityCards), narrowed to
                           this address: vehicles known to be parked here
@@ -12020,17 +12555,7 @@ export default function IntelligenceMapping() {
                           (see onAction below) — it writes into the record. */}
                           {mapQeAddress &&
                             (() => {
-                              const bracketMatch = mapQeAddress.match(
-                                /^(.*?)(?:,\s*[A-Z][\w\s]+(?:WA|NSW|VIC|QLD|SA|TAS|NT|ACT))\s*\(([^)]+)\)/
-                              );
-                              const toTitleCase = (s: string) =>
-                                s
-                                  .toLowerCase()
-                                  .replace(/\b\w/g, c => c.toUpperCase());
-                              const shortAddr = bracketMatch
-                                ? toTitleCase(bracketMatch[2])
-                                : (mapQeAddress.split(",")[0]?.trim() ??
-                                  mapQeAddress);
+                              const shortAddr = popupShortAddress(mapQeAddress);
                               // First mention of an address on this sheet is
                               // written in full (with its bracket short-form,
                               // which Intelligence relies on to register the
@@ -12042,7 +12567,7 @@ export default function IntelligenceMapping() {
                               const names = (n: string) =>
                                 shortenAlreadyMentionedNames(
                                   n,
-                                  rsUsedBracketCodes
+                                  rsUsedBracketCodesWithDraft
                                 );
                               const cards: ContinuityCardData[] = [];
 
@@ -12072,6 +12597,27 @@ export default function IntelligenceMapping() {
                                   names: extractOccupantNames(d.occupantDesc),
                                 })),
                               ];
+                              // Parked vehicles people on foot could walk to:
+                              // only those at the address their latest
+                              // vehicle journey ended, not ones left behind
+                              // earlier (see vehiclesPeopleCanReach).
+                              const reachableVehicles = (
+                                people: string,
+                                fallbackPlace: string
+                              ) =>
+                                vehiclesPeopleCanReach({
+                                  people,
+                                  arrivals: (rsPendingArrivals ?? []).map(
+                                    a => ({
+                                      ...a,
+                                      names: extractOccupantNames(
+                                        a.occupantDesc
+                                      ),
+                                    })
+                                  ),
+                                  placements: rsPendingPlacements ?? [],
+                                  fallbackPlace,
+                                });
                               const vehicleOccupants = (
                                 desc: string,
                                 rego: string,
@@ -12096,13 +12642,15 @@ export default function IntelligenceMapping() {
                                 cards.push({
                                   key: `dep-${d.rego}`,
                                   title: d.rego,
-                                  pill: "Moving",
+                                  pill: "Departed",
                                   attn: true,
                                   who: movingOcc.length
                                     ? movingOcc.join(", ")
                                     : extractOccupantNames(d.occupantDesc) ||
-                                      d.occupantDesc,
-                                  state: "Departed",
+                                      "Occupants not seen",
+                                  state: d.fromAddress
+                                    ? `From ${d.fromAddress}`
+                                    : "No arrival logged yet",
                                   holds: movingOcc.length
                                     ? movingOcc.flatMap(n => surnameTokens(n))
                                     : surnameTokens(d.occupantDesc),
@@ -12112,8 +12660,10 @@ export default function IntelligenceMapping() {
                                         extractOccupantNames(d.occupantDesc)
                                       ),
                                   locus: {
-                                    headline: `Moving in ${d.rego}`,
-                                    sub: "Departed",
+                                    headline: `Departed in ${d.rego}`,
+                                    sub: d.fromAddress
+                                      ? `From ${d.fromAddress}`
+                                      : "No arrival logged yet",
                                   },
                                   actions: [
                                     {
@@ -12143,7 +12693,7 @@ export default function IntelligenceMapping() {
                               >();
                               (rsPendingArrivals ?? [])
                                 .filter(a =>
-                                  addressesMatch(a.address, shortAddr)
+                                  cardAddressMatch(a.address, shortAddr)
                                 )
                                 .forEach(a =>
                                   here.set(a.rego, {
@@ -12161,7 +12711,7 @@ export default function IntelligenceMapping() {
                                   extractArrivalAddress(rsInlineText);
                                 if (
                                   draftAddress &&
-                                  addressesMatch(draftAddress, shortAddr)
+                                  cardAddressMatch(draftAddress, shortAddr)
                                 ) {
                                   here.set(draftArrive.rego, {
                                     rego: draftArrive.rego,
@@ -12179,24 +12729,40 @@ export default function IntelligenceMapping() {
                               const insideHere = (
                                 rsPendingWalkIns ?? []
                               ).filter(w =>
-                                addressesMatch(w.location, shortAddr)
+                                cardAddressMatch(w.location, shortAddr)
                               );
                               const leftAddressText = (w: {
                                 names: string;
                                 location: string;
                               }) =>
                                 `${names(w.names)} exited ${w.location} and walked [route] towards [location].`;
+                              // Whether the people inside this address are
+                              // shown on a vehicle's card (nobody left in the
+                              // vehicle) or on a card of their own.
+                              let insideOnVehicleCard = false;
                               Array.from(here.values()).forEach(v => {
-                                const inside = insideHere.length > 0;
-                                const allOccupants = splitPeopleNames(
-                                  extractOccupantNames(v.occupantDesc)
-                                );
                                 const occupants = vehicleOccupants(
                                   v.occupantDesc,
                                   v.rego,
                                   v.rowId
                                 );
                                 const inCar = occupants.length > 0;
+                                // Those a later row only had walking TOWARDS
+                                // the vehicle — in it or next to it.
+                                const toNames = occupantsToVehicle(
+                                  { rego: v.rego, rowId: v.rowId },
+                                  occupants,
+                                  rsPendingPlacements ?? []
+                                );
+                                const inNames = occupants.filter(
+                                  o => !toNames.includes(o)
+                                );
+                                // People inside take over the card only when
+                                // nobody is left in the vehicle; when some got
+                                // out and others stayed, the vehicle keeps a
+                                // card for those still in it.
+                                const inside = insideHere.length > 0 && !inCar;
+                                if (inside) insideOnVehicleCard = true;
                                 // "... arrived and continued out of sight":
                                 // nobody can say whether anyone is still in
                                 // it until someone is seen again, so no
@@ -12229,15 +12795,17 @@ export default function IntelligenceMapping() {
                                 if (v.saved) {
                                   actions.push({
                                     key: `dep-${v.rego}`,
-                                    label: "Vehicle departing",
+                                    label: "Vehicle Depart",
                                     // Everyone known to be in it, or
                                     // "unseen occupant/s" when nobody is.
                                     text: `Vehicle ${v.rego}, ${
                                       inCar && !outOfSight
-                                        ? occupants.length ===
-                                          allOccupants.length
-                                          ? names(v.occupantDesc)
-                                          : occNames
+                                        ? names(
+                                            occupantWording(
+                                              v.occupantDesc,
+                                              occupants
+                                            ) ?? occNames
+                                          )
                                         : "unseen occupant/s"
                                     }, departed ${shortAddr} and continued via:`,
                                   });
@@ -12251,7 +12819,7 @@ export default function IntelligenceMapping() {
                                   actions.unshift(
                                     {
                                       key: `wov-oos-${v.rego}`,
-                                      label: "Walked out to vehicle",
+                                      label: "Walked to Vehicle",
                                       mode: "paragraph",
                                       text: `${oosNames} exited ${shortAddr} and walked towards Vehicle ${v.rego}.`,
                                     },
@@ -12289,7 +12857,7 @@ export default function IntelligenceMapping() {
                                   if (otherOos.length > 0) {
                                     actions.unshift({
                                       key: `wov-oos-${v.rego}`,
-                                      label: "Walked out to vehicle",
+                                      label: "Walked to Vehicle",
                                       mode: "paragraph",
                                       text: `${names(otherOos.join(" and "))} exited ${shortAddr} and walked towards Vehicle ${v.rego}.`,
                                     });
@@ -12318,7 +12886,7 @@ export default function IntelligenceMapping() {
                                   const walkOutNames = names(w.names);
                                   actions.push({
                                     key: `wo-${v.rego}`,
-                                    label: "Walked out to vehicle",
+                                    label: "Walked to Vehicle",
                                     // w.route is only ever genuine route text,
                                     // never the destination (that is shortAddr).
                                     text: w.route
@@ -12342,7 +12910,16 @@ export default function IntelligenceMapping() {
                                         ? `${occupants.join(", ")} out of sight at the address`
                                         : "Out of sight since arriving"
                                       : inCar
-                                        ? `${occupants.join(", ")} in the vehicle`
+                                        ? [
+                                            inNames.length
+                                              ? `${inNames.join(", ")} in the vehicle`
+                                              : "",
+                                            toNames.length
+                                              ? `${toNames.join(", ")} to vehicle`
+                                              : "",
+                                          ]
+                                            .filter(Boolean)
+                                            .join("; ")
                                         : "Nobody in the vehicle",
                                   state: shortAddr,
                                   actions,
@@ -12371,7 +12948,9 @@ export default function IntelligenceMapping() {
                                         }
                                       : {
                                           headline: inCar
-                                            ? `In ${v.rego}`
+                                            ? inNames.length
+                                              ? `In ${v.rego}`
+                                              : `To vehicle ${v.rego}`
                                             : `${v.rego} unattended`,
                                           sub: `Parked at ${shortAddr}`,
                                         },
@@ -12380,7 +12959,7 @@ export default function IntelligenceMapping() {
 
                               // People on foot inside this address with no
                               // vehicle here.
-                              if (here.size === 0) {
+                              if (!insideOnVehicleCard) {
                                 insideHere.forEach(w =>
                                   cards.push({
                                     key: `foot-${w.location}`,
@@ -12401,9 +12980,12 @@ export default function IntelligenceMapping() {
                                         text: leftAddressText(w),
                                       },
                                       // Back to a parked vehicle from here.
-                                      ...(rsPendingArrivals ?? []).map(a => ({
+                                      ...reachableVehicles(
+                                        w.names,
+                                        w.location
+                                      ).map(a => ({
                                         key: `wov-${w.location}-${a.rego}`,
-                                        label: `Walked out to ${a.rego}`,
+                                        label: `Walked to ${a.rego}`,
                                         text: `${names(w.names)} exited ${w.location} and walked towards Vehicle ${a.rego}.`,
                                       })),
                                     ],
@@ -12419,13 +13001,13 @@ export default function IntelligenceMapping() {
                                 .filter(
                                   h =>
                                     h.destination.includes("[") ||
-                                    addressesMatch(h.destination, shortAddr)
+                                    cardAddressMatch(h.destination, shortAddr)
                                 )
                                 .forEach(h =>
                                   cards.push({
                                     key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                                     title: h.names,
-                                    pill: "Walking",
+                                    pill: "Departed on foot",
                                     attn: true,
                                     who: h.destination.includes("[")
                                       ? "On foot"
@@ -12435,8 +13017,8 @@ export default function IntelligenceMapping() {
                                     people: splitPeopleNames(h.names),
                                     locus: {
                                       headline: h.destination.includes("[")
-                                        ? "Walking"
-                                        : `Walking to ${h.destination}`,
+                                        ? "Departed on foot"
+                                        : `Departed on foot to ${h.destination}`,
                                       sub: `Left ${h.from}`,
                                     },
                                     actions: [
@@ -12452,44 +13034,56 @@ export default function IntelligenceMapping() {
                                         } and continued out of sight.`,
                                       },
                                       {
+                                        key: `in-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
+                                        label: h.destination.includes("[")
+                                          ? "Inside here"
+                                          : "Inside",
+                                        text: `${names(h.names)} inside ${
+                                          h.destination.includes("[")
+                                            ? arriveAddr
+                                            : h.destination
+                                        } [observation].`,
+                                      },
+                                      {
                                         key: `wk-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                                         label: "Walked to another location",
                                         text: `${names(h.names)} walked [route] towards [location].`,
                                       },
-                                      ...(rsPendingArrivals ?? []).map(a => ({
-                                        key: `wv-${a.rego}`,
-                                        label: `Walked to ${a.rego}`,
-                                        text: `${names(h.names)} walked towards Vehicle ${a.rego}.`,
-                                      })),
+                                      ...reachableVehicles(h.names, h.from).map(
+                                        a => ({
+                                          key: `wv-${a.rego}`,
+                                          label: `Walked to ${a.rego}`,
+                                          text: `${names(h.names)} walked towards Vehicle ${a.rego}.`,
+                                        })
+                                      ),
                                     ],
                                     latestRowId: h.rowId,
                                   })
                                 );
 
-                              // The card holding the target leads, as his
-                              // tracker (a person target only).
-                              const popupTitle = (
-                                rsSheetsData as any[] | undefined
-                              )?.find((x: any) => x.id === rsSelectedSheetId)
-                                ?.title as string | undefined;
-                              const targetCode =
-                                targetTokenFromTitle(popupTitle);
-                              if (targetCode) {
-                                const tKey = pickTargetCardKey(
+                              // The card holding the target leads, as its
+                              // tracker (person or vehicle; same rule as the
+                              // sheet and the flag).
+                              {
+                                const tKey = pickSubjectCardKey(
                                   cards,
-                                  targetCode
+                                  rsTrackedTarget
                                 );
                                 const held = cards.find(c => c.key === tKey);
                                 if (held) {
                                   held.isTarget = true;
-                                  held.companions = companionsOf(
+                                  held.companions = subjectCompanions(
                                     held.people ?? [],
-                                    targetCode
+                                    rsTrackedTarget
                                   ).join(", ");
                                 }
                               }
 
-                              if (cards.length === 0) return null;
+                              if (
+                                cards.length === 0 ||
+                                !trackingSettings.tracking
+                              )
+                                return null;
                               return (
                                 <ContinuityCards
                                   cards={cards}

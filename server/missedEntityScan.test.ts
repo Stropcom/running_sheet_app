@@ -69,8 +69,14 @@ describe("scanForMissedPersonMentions", () => {
 
     const findings = await scanForMissedPersonMentions(
       [
-        makeObservation({ rowId: 1, observation: "first mention" }),
-        makeObservation({ rowId: 2, observation: "second mention" }),
+        makeObservation({
+          rowId: 1,
+          observation: "Sarah Connor, first mention",
+        }),
+        makeObservation({
+          rowId: 2,
+          observation: "Sarah Connor, second mention",
+        }),
       ],
       []
     );
@@ -87,7 +93,10 @@ describe("scanForMissedPersonMentions", () => {
     const findings = await scanForMissedPersonMentions(
       [
         makeObservation({ rowId: 1, observation: "row that errors" }),
-        makeObservation({ rowId: 2, observation: "row that works" }),
+        makeObservation({
+          rowId: 2,
+          observation: "Sarah Connor, row that works",
+        }),
       ],
       []
     );
@@ -104,6 +113,43 @@ describe("scanForMissedPersonMentions", () => {
       []
     );
 
+    expect(findings).toHaveLength(0);
+  });
+});
+
+import { isPlausiblePersonMention } from "./missedEntityScan";
+
+describe("isPlausiblePersonMention", () => {
+  const row =
+    "Vehicle 1EXP123, BAIG driver, UM1 front passenger and JOHNSON rear passenger, arrived at 29A Robert Street.";
+
+  it("rejects a fragment of a longer word (NS from JOHNSON)", () => {
+    expect(isPlausiblePersonMention("NS", row)).toBe(false);
+    expect(isPlausiblePersonMention("SON", row)).toBe(false);
+    expect(isPlausiblePersonMention("##SON", row)).toBe(false);
+  });
+
+  it("rejects anything under three letters, and unidentified-person codes", () => {
+    expect(isPlausiblePersonMention("AB", "AB went home")).toBe(false);
+    expect(isPlausiblePersonMention("UM1", row)).toBe(false);
+    expect(isPlausiblePersonMention("UF2", "UF2 left")).toBe(false);
+  });
+
+  it("keeps a whole name that is in the row", () => {
+    expect(isPlausiblePersonMention("JOHNSON", row)).toBe(true);
+    expect(
+      isPlausiblePersonMention("Sarah Connor", "Sarah  Connor walked in")
+    ).toBe(true);
+  });
+
+  it("does not flag the fragment as a finding", async () => {
+    vi.mocked(findPersonMentions).mockResolvedValueOnce([
+      { text: "NS", score: 0.94 },
+    ]);
+    const findings = await scanForMissedPersonMentions(
+      [makeObservation({ observation: row })],
+      []
+    );
     expect(findings).toHaveLength(0);
   });
 });

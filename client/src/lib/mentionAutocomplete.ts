@@ -6,6 +6,10 @@
  * and the map's RS Quick Entry popup (IntelligenceMapping.tsx), so the
  * trigger/suppression behaviour is identical on both surfaces.
  */
+import {
+  shortenRepeatedUnidentified,
+  usedUnidentifiedCodes,
+} from "@shared/unidentified";
 
 /** CSS properties that affect text layout/wrapping — copied onto the mirror
  * element getCaretPixelPosition uses to measure where the caret actually
@@ -346,7 +350,9 @@ export interface PersonMentionSuggestion {
 export function computeUsedBracketCodes(
   rows: Array<{ observation?: string | null }>
 ): Set<string> {
-  const codes = new Set<string>();
+  // An unidentified person written in full ("unidentified male (UM1)") has
+  // introduced their short name too.
+  const codes = usedUnidentifiedCodes(rows);
   const bracketRe = /\(([A-Z][A-Za-z'.\s-]{0,39})\)/g;
   for (const r of rows) {
     if (!r.observation) continue;
@@ -419,17 +425,15 @@ export function computeUsedAddressLabels(
  * the record. Shared by the RS Quick Entry map popup and the full sheet
  * table's own continuity chips. */
 export function extractOccupantNames(occupantDesc: string): string {
+  // Role words mark where one person ends and the next begins, so officers
+  // who leave out the commas ("BAIG driver UM1 front passenger and JOHNSON
+  // rear passenger") still get separate people.
   const ROLE_WORD =
-    /\b(?:driver|front passenger|rear passenger|sole occupant|unseen occupants?|passenger)\b/gi;
+    /\b(?:driver|front passenger|rear passenger|back passenger|sole occupant|unseen\s+occupants?(?:\/s)?|occupant(?:\/s|s)?\s+(?:not\s+(?:observed|seen)|unseen)|passenger)\b/gi;
   return occupantDesc
-    .split(",")
-    .map(part =>
-      part
-        .replace(ROLE_WORD, "")
-        .replace(/\band\b/gi, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-    )
+    .replace(ROLE_WORD, ",")
+    .split(/\s*,\s*|\s*\band\b\s*/i)
+    .map(part => part.replace(/\s+/g, " ").trim())
     .filter(Boolean)
     .join(" and ");
 }
@@ -452,7 +456,7 @@ export function shortenAlreadyMentionedNames(
   text: string,
   usedBracketCodes: Set<string>
 ): string {
-  return text.replace(
+  return shortenRepeatedUnidentified(text, usedBracketCodes).replace(
     /(?:[A-Z][a-zA-Z'-]*\s+)+\(([A-Z][A-Z'-]*)\)/g,
     (match, code: string) =>
       usedBracketCodes.has(code.toUpperCase()) ? code : match

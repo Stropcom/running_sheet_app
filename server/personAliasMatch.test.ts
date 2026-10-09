@@ -78,3 +78,17 @@ describe("aliasMentionCompatible", () => {
     expect(aliasMentionCompatible("Mr TAN", "TAN", GRACE)).toBe(true);
   });
 });
+
+describe("aliasMentionCompatible — differently spelled given names", () => {
+  it("does not fold a different spelling by surname alone", () => {
+    // Why a confirmed merge must redirect onto the target by name (see
+    // personTargetByKey in getAllIntelligenceEntities).
+    expect(
+      aliasMentionCompatible(
+        "Mikayla JONES (JONES)",
+        "JONES",
+        "Mikala JONES (JONES)"
+      )
+    ).toBe(false);
+  });
+});

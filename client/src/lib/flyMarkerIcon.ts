@@ -521,3 +521,103 @@ export function composeFlyTeamPin(spec: FlyTeamPinSpec): {
   dataUrlCache.set(key, out);
   return { url: out, width: cssW, height: cssH };
 }
+
+// ── Target location flag ───────────────────────────────────────────────────
+
+export interface FlyTargetFlagSpec {
+  /** The state emoji (TARGET_EMOJI), e.g. "🧍". */
+  emoji: string;
+  /** The wording, e.g. "RAHMAN · inside". */
+  text: string;
+  /** Dashed border when the target is out of sight. */
+  unsure: boolean;
+  /** Pixels of empty picture under the flag's stem, so the flag floats clear
+   * above the pin picture that stands on the same spot. */
+  lift: number;
+}
+
+const FLAG_PINK = "#e0338a";
+// The 3D map shows a picture at its own pixel size and ignores the width and
+// height it is given, so the flag must be drawn at exactly its on-screen size
+// (a 2x picture appears twice as big, and twice as high above the pin).
+const FLAG_SCALE = 1;
+
+/** The flat map's target flag — white pill, state emoji, pink edge, short
+ * stem — drawn as one picture for the 3D map. The 3D map pins a picture by its
+ * bottom centre, which is the target's spot; the picture ends in `lift` pixels
+ * of transparent space so the flag rides above the pin standing there. */
+export function composeFlyTargetFlag(spec: FlyTargetFlagSpec): {
+  url: string;
+  width: number;
+  height: number;
+} {
+  const key = `targetflag2:${JSON.stringify(spec)}`;
+  const S = FLAG_SCALE;
+  const font = "700 12px system-ui, -apple-system, 'Segoe UI', sans-serif";
+  const emojiFont =
+    "16px system-ui, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif";
+  const measure = document.createElement("canvas").getContext("2d");
+  if (!measure) return { url: "", width: 40, height: 40 };
+  measure.font = font;
+  const textW = measure.measureText(spec.text).width;
+  measure.font = emojiFont;
+  const emojiW = measure.measureText(spec.emoji).width;
+  // Flat map pill: 2px border, padding 3px 10px 3px 7px, 6px gap.
+  const pillW = Math.ceil(2 + 8 + emojiW + 6 + textW + 11 + 2);
+  const pillH = 27;
+  const stem = 8;
+  const pad = 6; // room for the shadow
+  const cssW = pillW + pad * 2;
+  const cssH = pad + pillH + stem + Math.max(0, Math.round(spec.lift));
+  const cached = dataUrlCache.get(key);
+  if (cached) return { url: cached, width: cssW, height: cssH };
+
+  const canvas = document.createElement("canvas");
+  canvas.width = cssW * S;
+  canvas.height = cssH * S;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return { url: "", width: cssW, height: cssH };
+  ctx.scale(S, S);
+
+  const px = pad;
+  const py = pad - 2;
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.3)";
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetY = 2;
+  roundRect(ctx, px, py, pillW, pillH, pillH / 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = FLAG_PINK;
+  ctx.lineWidth = 2;
+  if (spec.unsure) ctx.setLineDash([4, 3]);
+  roundRect(ctx, px + 1, py + 1, pillW - 2, pillH - 2, (pillH - 2) / 2);
+  ctx.stroke();
+  ctx.restore();
+
+  const cy = py + pillH / 2;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  ctx.font = emojiFont;
+  ctx.fillStyle = "#000000";
+  ctx.fillText(spec.emoji, px + 2 + 8, Math.round(cy) + 1);
+  ctx.font = font;
+  ctx.fillStyle = "#000000";
+  ctx.fillText(spec.text, Math.round(px + 2 + 8 + emojiW + 6), Math.round(cy));
+
+  // Stem from the pill down toward the pin.
+  ctx.fillStyle = FLAG_PINK;
+  roundRect(ctx, cssW / 2 - 1, py + pillH - 1, 2, stem + 1, 1);
+  ctx.fill();
+
+  let out = "";
+  try {
+    out = canvas.toDataURL("image/png");
+  } catch {
+    out = "";
+  }
+  dataUrlCache.set(key, out);
+  return { url: out, width: cssW, height: cssH };
+}

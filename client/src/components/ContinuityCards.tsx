@@ -31,6 +31,7 @@
  */
 import { useRef, useState } from "react";
 import { ChevronDown, MapPin, X } from "lucide-react";
+import { shortUnidentified } from "@shared/targetPosition";
 
 export interface ContinuityAction {
   key: string;
@@ -135,7 +136,7 @@ export function ContinuityCards({
             aria-label={`Track ${c.title} again`}
             className="rounded-full border border-dashed border-border px-2.5 py-0.5 font-mono text-[11px] hover:border-solid hover:text-foreground"
           >
-            {c.title} · track again
+            {shortUnidentified(c.title)} · track again
           </button>
         ))}
       </div>
@@ -149,10 +150,11 @@ export function ContinuityCards({
   // what is being tracked.
   const lead = others[0];
   const needsAttention = live.some(c => c.attn || c.warn);
-  const summary =
+  const summaryRaw =
     lead?.isTarget && lead.locus
-      ? `${(lead.people ?? []).join(", ") || lead.title} · ${lead.locus.headline} · ${lead.locus.sub.replace(/^Departed\s*/, "departed ")}`
+      ? `${(lead.people ?? []).join(", ") || lead.title} · ${lead.locus.headline} · ${lead.locus.sub}`
       : live.map(c => `${c.title} ${c.pill}`).join(" · ");
+  const summary = shortUnidentified(summaryRaw);
 
   // Panoramic when there is room: a lone card from a medium-wide band, two
   // cards from a wide one. Static class strings so Tailwind can see them.
@@ -160,10 +162,10 @@ export function ContinuityCards({
     others.length === 1 ? "one" : others.length === 2 ? "two" : "none";
   const gridCls =
     pano === "one"
-      ? "grid gap-2 grid-cols-1"
+      ? "grid gap-1.5 grid-cols-1"
       : pano === "two"
-        ? "grid gap-2 grid-cols-[repeat(auto-fit,minmax(200px,1fr))] @3xl:grid-cols-1"
-        : "grid gap-2 grid-cols-[repeat(auto-fit,minmax(200px,1fr))]";
+        ? "grid gap-1.5 grid-cols-[repeat(auto-fit,minmax(200px,1fr))] @3xl:grid-cols-1"
+        : "grid gap-1.5 grid-cols-[repeat(auto-fit,minmax(200px,1fr))]";
   const cardCls =
     pano === "one"
       ? "@lg:flex-row @lg:items-center @lg:flex-wrap @lg:gap-x-5 @lg:pr-12"
@@ -208,11 +210,11 @@ export function ContinuityCards({
           }
         }}
         aria-expanded={expanded}
-        className="flex w-full min-w-0 select-none items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-muted/20 active:bg-muted/30"
+        className="flex w-full min-w-0 select-none items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/20 active:bg-muted/30"
       >
         <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <span className="flex-1 truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Target tracker
+          Target Logger
         </span>
         <span className="rounded-full bg-pink-500 px-1.5 text-[10px] font-semibold leading-4 text-white">
           {live.length}
@@ -224,7 +226,7 @@ export function ContinuityCards({
         />
       </button>
       {!expanded && (
-        <div className="flex items-start gap-1.5 px-4 pb-3 pl-[2.375rem] text-[11.5px] leading-snug">
+        <div className="flex items-start gap-1.5 px-3 pb-2 pl-[2.125rem] text-[11.5px] leading-snug">
           <span
             className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
               needsAttention ? "bg-amber-500" : "bg-emerald-500"
@@ -235,7 +237,7 @@ export function ContinuityCards({
       )}
 
       {expanded && (
-        <div className="@container flex flex-col gap-1.5 px-4 pb-3">
+        <div className="@container flex flex-col gap-1.5 px-2 pb-2">
           {others.length > 0 && (
             <>
               <div
@@ -255,15 +257,15 @@ export function ContinuityCards({
                 {others.map(c => (
                   <div
                     key={c.key}
-                    className={`relative flex min-w-0 flex-col gap-2 rounded-lg border p-2.5 @max-md:shrink-0 @max-md:basis-[84%] @max-md:snap-start ${
+                    className={`relative flex min-w-0 flex-col gap-1.5 rounded-lg border px-2.5 py-2 @max-md:shrink-0 @max-md:basis-[84%] @max-md:snap-start ${
                       c.attn
                         ? "border-amber-500/40 bg-amber-500/10"
                         : "border-border bg-card"
                     } ${cardCls}`}
                   >
-                    <div className={`flex items-center gap-2 pr-8 ${idCls}`}>
+                    <div className={`flex items-center gap-2 pr-7 ${idCls}`}>
                       <span className="font-mono text-[13px] font-semibold break-all">
-                        {c.title}
+                        {shortUnidentified(c.title)}
                       </span>
                       <span
                         className={`whitespace-nowrap rounded-full px-2 text-[10px] font-bold ${
@@ -278,8 +280,10 @@ export function ContinuityCards({
                     <div
                       className={`min-w-0 text-[11.5px] leading-snug ${infoCls}`}
                     >
-                      <div>{c.who}</div>
-                      <div className="text-muted-foreground">{c.state}</div>
+                      <div>{shortUnidentified(c.who)}</div>
+                      <div className="text-muted-foreground">
+                        {shortUnidentified(c.state)}
+                      </div>
                       {c.warn && (
                         <div className="mt-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-amber-700 dark:text-amber-400">
                           {c.warn}
@@ -301,7 +305,7 @@ export function ContinuityCards({
                           onClick={() => onAction(a.text, a.mode)}
                           disabled={busy}
                           title={a.text}
-                          className="cursor-pointer disabled:cursor-wait disabled:opacity-60 rounded-md border border-pink-500/30 bg-pink-500/5 px-2.5 py-1.5 text-left font-mono text-[11px] font-semibold text-pink-500 transition-all hover:bg-pink-500/15 active:scale-[0.98] @max-xl:py-2 @max-xl:text-xs"
+                          className="cursor-pointer disabled:cursor-wait disabled:opacity-60 rounded-md border border-pink-500/30 bg-pink-500/5 px-2 py-1 text-left font-mono text-[11px] font-semibold text-pink-500 transition-all hover:bg-pink-500/15 active:scale-[0.98] @max-xl:py-1.5 @max-xl:text-xs"
                         >
                           {a.label}
                         </button>
@@ -314,7 +318,7 @@ export function ContinuityCards({
                         onClick={() => onDismiss(c.key, c.latestRowId)}
                         aria-label={`Stop tracking ${c.title}`}
                         title={`Stop tracking ${c.title}`}
-                        className={`absolute right-1 grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground ${
+                        className={`absolute right-0.5 grid h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground ${
                           pano === "one"
                             ? "top-1 @lg:top-1/2 @lg:-translate-y-1/2"
                             : pano === "two"

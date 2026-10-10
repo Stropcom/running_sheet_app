@@ -204,3 +204,17 @@ describe("Investigator-level share", () => {
     expect(mapOnlyOperationIds(allAdmin, ops, shares).size).toBe(0);
   });
 });
+
+describe("scopeEntities by sheet", () => {
+  it("hides a registry occurrence (operation 0) whose sheet is in a hidden operation", () => {
+    const entities = [
+      {
+        occurrences: [{ operationId: 0, rowId: 0, sheetId: 7 }],
+      },
+      { occurrences: [{ operationId: 0, rowId: 0, sheetId: 0 }] },
+    ];
+    const out = scopeEntities(entities, new Set([3]), new Set([7]));
+    expect(out).toHaveLength(1);
+    expect(out[0].occurrences[0].sheetId).toBe(0);
+  });
+});

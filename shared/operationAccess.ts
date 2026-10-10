@@ -214,17 +214,30 @@ export function reachableOperationIds(
 
 /** Drop occurrences from hidden operations. An entity seen ONLY in hidden
  * operations disappears; one with other occurrences stays, trimmed.
- * Registry-only occurrences (operation 0) are never hidden. */
+ * Registry-only occurrences (operation 0) are never hidden — unless they hang
+ * off a sheet that belongs to a hidden operation (a registry target whose
+ * running sheet sits in that operation), which `hiddenSheetIds` catches. */
 export function scopeEntities<
   E extends {
-    occurrences: Array<{ operationId: number; rowId: number }>;
+    occurrences: Array<{
+      operationId: number;
+      rowId: number;
+      sheetId?: number;
+    }>;
     isIndicesOnly?: boolean;
   },
->(entities: E[], hidden: Set<number>): E[] {
-  if (hidden.size === 0) return entities;
+>(
+  entities: E[],
+  hidden: Set<number>,
+  hiddenSheetIds: Set<number> = new Set()
+): E[] {
+  if (hidden.size === 0 && hiddenSheetIds.size === 0) return entities;
+  const isHidden = (o: { operationId: number; sheetId?: number }): boolean =>
+    hidden.has(o.operationId) ||
+    (o.sheetId != null && o.sheetId > 0 && hiddenSheetIds.has(o.sheetId));
   const out: E[] = [];
   for (const e of entities) {
-    const kept = e.occurrences.filter(o => !hidden.has(o.operationId));
+    const kept = e.occurrences.filter(o => !isHidden(o));
     if (kept.length === e.occurrences.length) {
       out.push(e);
     } else if (kept.length > 0) {

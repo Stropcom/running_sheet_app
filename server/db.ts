@@ -7808,7 +7808,19 @@ export async function getAllIntelligenceEntities(opts?: {
   const all = await buildAllIntelligenceEntities();
   const scope = intelScope.getStore();
   if (!scope || opts?.unscoped) return all;
-  return scopeEntities(all, scope.hiddenOperationIds);
+  // A registry target's occurrences carry operation 0 even when its running
+  // sheet sits inside a hidden operation, so hide by the sheet as well.
+  const hiddenIds = Array.from(scope.hiddenOperationIds);
+  const db = hiddenIds.length > 0 ? await getDb() : null;
+  const hiddenSheets = new Set<number>();
+  if (db) {
+    const rows = await db
+      .select({ id: runningSheets.id })
+      .from(runningSheets)
+      .where(inArray(runningSheets.operationId, hiddenIds));
+    for (const r of rows) hiddenSheets.add(r.id);
+  }
+  return scopeEntities(all, scope.hiddenOperationIds, hiddenSheets);
 }
 
 async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {

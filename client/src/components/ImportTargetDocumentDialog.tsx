@@ -82,6 +82,8 @@ import {
   type StructuredNameParts,
   type StructuredVehicleParts,
 } from "@/lib/addressFormat";
+import { FORM_TONES } from "@/lib/formKit";
+import { cn } from "@/lib/utils";
 
 // Mirrors server/documentImport/documentAIVerify.ts's AIAssistOutcome —
 // duplicated as a plain structural type rather than imported, same as the
@@ -1115,8 +1117,13 @@ export function ImportTargetDocumentDialog({
               )}
 
               {primaryMatch && (
-                <div className="rounded-lg border border-l-4 border-amber-500/40 border-l-amber-500 bg-amber-500/5 p-3 flex flex-col gap-1">
-                  <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
+                <div
+                  className={cn(
+                    FORM_TONES.vehicle.panel,
+                    "p-3 flex flex-col gap-1"
+                  )}
+                >
+                  <p className={FORM_TONES.vehicle.band}>
                     <Link2 className="w-3.5 h-3.5" />
                     Matches an existing {primaryMatch.type}
                   </p>
@@ -1136,10 +1143,13 @@ export function ImportTargetDocumentDialog({
                 </div>
               )}
 
-              <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3 flex flex-col gap-1">
-                <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide">
-                  Name
-                </p>
+              <div
+                className={cn(
+                  FORM_TONES.person.panel,
+                  "p-3 flex flex-col gap-1"
+                )}
+              >
+                <p className={FORM_TONES.person.band}>Name</p>
                 {result.name ? (
                   <p className="text-sm">
                     {result.name.firstNames} {result.name.surname}
@@ -1158,8 +1168,13 @@ export function ImportTargetDocumentDialog({
               </div>
 
               {result.addresses.length > 0 && (
-                <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3 flex flex-col gap-1">
-                  <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">
+                <div
+                  className={cn(
+                    FORM_TONES.address.panel,
+                    "p-3 flex flex-col gap-1"
+                  )}
+                >
+                  <p className={FORM_TONES.address.band}>
                     Addresses ({result.addresses.length})
                   </p>
                   {result.addresses.map((a, i) => {
@@ -1198,8 +1213,13 @@ export function ImportTargetDocumentDialog({
               )}
 
               {result.vehicles.length > 0 && (
-                <div className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3 flex flex-col gap-1">
-                  <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide">
+                <div
+                  className={cn(
+                    FORM_TONES.vehicle.panel,
+                    "p-3 flex flex-col gap-1"
+                  )}
+                >
+                  <p className={FORM_TONES.vehicle.band}>
                     Vehicles ({result.vehicles.length})
                   </p>
                   {result.vehicles.map((v, i) => {
@@ -1227,8 +1247,13 @@ export function ImportTargetDocumentDialog({
               )}
 
               {imageCandidates.length > 0 && (
-                <div className="rounded-lg border border-l-4 border-indigo-500/30 border-l-indigo-500 bg-indigo-500/5 p-3 flex flex-col gap-2.5">
-                  <p className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wide">
+                <div
+                  className={cn(
+                    FORM_TONES.photo.panel,
+                    "p-3 flex flex-col gap-2.5"
+                  )}
+                >
+                  <p className={FORM_TONES.photo.band}>
                     Photos found ({reviewImages.length})
                   </p>
                   {otherTargetPhotoCount > 0 && (
@@ -1375,8 +1400,13 @@ export function ImportTargetDocumentDialog({
               )}
 
               {result.needsReview.length > 0 && (
-                <div className="rounded-lg border border-l-4 border-amber-500/40 border-l-amber-500 bg-amber-500/5 p-3 flex flex-col gap-2">
-                  <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
+                <div
+                  className={cn(
+                    FORM_TONES.vehicle.panel,
+                    "p-3 flex flex-col gap-2"
+                  )}
+                >
+                  <p className={FORM_TONES.vehicle.band}>
                     <AlertTriangle className="w-3.5 h-3.5" />
                     Needs your review ({result.needsReview.length})
                   </p>
@@ -1415,8 +1445,13 @@ export function ImportTargetDocumentDialog({
               )}
 
               {(laterTargetNames.length > 0 || focus > 0) && (
-                <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3 flex flex-col gap-1.5">
-                  <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide">
+                <div
+                  className={cn(
+                    FORM_TONES.person.panel,
+                    "p-3 flex flex-col gap-1.5"
+                  )}
+                >
+                  <p className={FORM_TONES.person.band}>
                     Target {focus + 1} of {targetCount} in this document
                   </p>
                   {laterTargetNames.length > 0 && (
@@ -1441,16 +1476,14 @@ export function ImportTargetDocumentDialog({
                     kind: "resident",
                     title: "Other Home Address Residents found",
                     note: "Listed at the target's own home address, so filed here rather than as associates.",
-                    box: "border-rose-500/30 border-l-rose-500 bg-rose-500/5",
-                    heading: "text-rose-700 dark:text-rose-400",
+                    tone: "resident" as const,
                     people: associateCandidates.filter(isResidentCandidate),
                   },
                   {
                     kind: "associate",
                     title: "Associates found",
                     note: "",
-                    box: "border-violet-500/30 border-l-violet-500 bg-violet-500/5",
-                    heading: "text-violet-700 dark:text-violet-400",
+                    tone: "associate" as const,
                     people: associateCandidates.filter(
                       a => !isResidentCandidate(a)
                     ),
@@ -1460,11 +1493,12 @@ export function ImportTargetDocumentDialog({
                   .map(g => (
                     <div
                       key={g.kind}
-                      className={`rounded-lg border border-l-4 ${g.box} p-3 flex flex-col gap-2.5`}
+                      className={cn(
+                        FORM_TONES[g.tone].panel,
+                        "p-3 flex flex-col gap-2.5"
+                      )}
                     >
-                      <p
-                        className={`text-xs font-bold ${g.heading} uppercase tracking-wide`}
-                      >
+                      <p className={FORM_TONES[g.tone].band}>
                         {g.title} ({g.people.length})
                       </p>
                       {g.note && (
@@ -1477,8 +1511,13 @@ export function ImportTargetDocumentDialog({
                   ))}
 
               {result.freeText.trim() && (
-                <div className="rounded-lg border border-l-4 border-slate-400/40 border-l-slate-400 bg-slate-500/5 p-3 flex flex-col gap-1">
-                  <p className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                <div
+                  className={cn(
+                    FORM_TONES.neutral.panel,
+                    "p-3 flex flex-col gap-1"
+                  )}
+                >
+                  <p className={FORM_TONES.neutral.band}>
                     Narrative / Background
                   </p>
                   <p className="text-sm whitespace-pre-wrap">

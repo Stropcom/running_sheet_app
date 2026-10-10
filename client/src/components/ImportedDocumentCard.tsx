@@ -27,6 +27,8 @@ import {
   type DiffSection,
   type DiffStatus,
 } from "@/lib/documentImportDiff";
+import { FORM_TONES } from "@/lib/formKit";
+import { cn } from "@/lib/utils";
 
 // One row per document uploaded via "Import Target" that was actually saved
 // — shown exactly as parsed and confirmed by the officer, never re-derived
@@ -317,8 +319,8 @@ export function ImportedDocumentCard({
               : "Shown exactly as parsed from the uploaded document — not the target's current live details, which may have been edited since."}
           </p>
           {row.sourceFileUrl && (
-            <div className="rounded-lg border border-l-4 border-slate-500/30 border-l-slate-500 bg-slate-500/5 p-3">
-              <p className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+            <div className={cn(FORM_TONES.neutral.panel, "p-3")}>
+              <p className={FORM_TONES.neutral.band}>
                 <FolderOpen className="w-3 h-3" />
                 Original document
               </p>
@@ -348,8 +350,8 @@ export function ImportedDocumentCard({
             </div>
           )}
           {!notParsed && (
-            <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
-              <p className="font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+            <div className={cn(FORM_TONES.person.panel, "p-3")}>
+              <p className={FORM_TONES.person.band}>
                 <Target className="w-3 h-3" />
                 Name
               </p>
@@ -357,8 +359,8 @@ export function ImportedDocumentCard({
             </div>
           )}
           {addressLines.length > 0 && (
-            <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3">
-              <p className="font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+            <div className={cn(FORM_TONES.address.panel, "p-3")}>
+              <p className={FORM_TONES.address.band}>
                 <Home className="w-3 h-3" />
                 Address{addressLines.length > 1 ? "es" : ""}
               </p>
@@ -376,8 +378,8 @@ export function ImportedDocumentCard({
             </div>
           )}
           {vehicleLines.length > 0 && (
-            <div className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3">
-              <p className="font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+            <div className={cn(FORM_TONES.vehicle.panel, "p-3")}>
+              <p className={FORM_TONES.vehicle.band}>
                 <Car className="w-3 h-3" />
                 Vehicle{vehicleLines.length > 1 ? "s" : ""}
               </p>
@@ -400,8 +402,8 @@ export function ImportedDocumentCard({
             </div>
           )}
           {associateLines.length > 0 && (
-            <div className="rounded-lg border border-l-4 border-violet-500/30 border-l-violet-500 bg-violet-500/5 p-3">
-              <p className="font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+            <div className={cn(FORM_TONES.associate.panel, "p-3")}>
+              <p className={FORM_TONES.associate.band}>
                 <Users className="w-3 h-3" />
                 Associates mentioned
               </p>
@@ -428,8 +430,8 @@ export function ImportedDocumentCard({
             </div>
           )}
           {backgroundSections.length > 0 && (
-            <div className="rounded-lg border border-l-4 border-slate-500/30 border-l-slate-500 bg-slate-500/5 p-3">
-              <p className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+            <div className={cn(FORM_TONES.neutral.panel, "p-3")}>
+              <p className={FORM_TONES.neutral.band}>
                 <FileText className="w-3 h-3" />
                 Background
               </p>

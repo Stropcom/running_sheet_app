@@ -146,7 +146,7 @@ export function UserFormFields({
     <div className="grid gap-4 py-2">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
             Full Name *
           </Label>
           <Input
@@ -157,7 +157,7 @@ export function UserFormFields({
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
             CIN *
           </Label>
           <Input
@@ -172,7 +172,7 @@ export function UserFormFields({
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
             Unit — Command
           </Label>
           <Select
@@ -206,7 +206,7 @@ export function UserFormFields({
           )}
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
             Mobile Phone
           </Label>
           <Input
@@ -218,7 +218,7 @@ export function UserFormFields({
         </div>
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+        <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
           Team
         </Label>
         <Select
@@ -246,7 +246,7 @@ export function UserFormFields({
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
             Username *
           </Label>
           <Input
@@ -259,7 +259,7 @@ export function UserFormFields({
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
             {isEdit ? "New Password" : "Password *"}
           </Label>
           <Input
@@ -272,7 +272,7 @@ export function UserFormFields({
         </div>
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+        <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
           Access Level *
         </Label>
         {accessLevelOverride ? (
@@ -360,7 +360,7 @@ function InvestigatorOperationPicker({
   };
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+      <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
         Allocated Operations *
       </Label>
       <div className="rounded-md border border-input max-h-44 overflow-y-auto divide-y divide-border/60">

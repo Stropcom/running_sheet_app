@@ -528,10 +528,8 @@ export default function AdminPage() {
               </Select>
             </div>
           )}
-          <div className="rounded-xl border border-border/60 bg-card/50 p-4 space-y-3">
-            <h2 className="text-base font-semibold">
-              Who has access to {COMMAND_LABELS[viewCommand]}
-            </h2>
+          <div className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+            <h2 className="text-base font-semibold">Teams</h2>
             <UserAccessGroups
               users={(users ?? []) as AdminUserRow[]}
               viewCommand={viewCommand}

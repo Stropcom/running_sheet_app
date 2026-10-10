@@ -69,23 +69,23 @@ function Group({
   children: ReactNode;
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-border/60 bg-card/50">
+    <div className="overflow-hidden rounded-xl border border-border bg-background shadow-sm">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2.5 bg-muted/30 px-3 py-2.5 text-left hover:bg-muted/50"
+        className="grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2.5 bg-muted/70 px-3 py-3 text-left hover:bg-muted"
       >
         <ChevronRight
           className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
         />
         <span className="text-sm font-semibold tracking-wide">{title}</span>
-        <span className="text-xs text-muted-foreground">{count}</span>
+        <span className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+          {count}
+        </span>
       </button>
       {open && (
-        <div className="overflow-x-auto border-t border-border/60">
-          {children}
-        </div>
+        <div className="overflow-x-auto border-t border-border">{children}</div>
       )}
     </div>
   );
@@ -222,7 +222,7 @@ export function UserAccessGroups({
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {TEAMS.map(t => {
             const inTeam = home.filter(u => (u.team ?? "") === t.value);
             const list = inTeam.filter(u => matchesPerson(u, query));

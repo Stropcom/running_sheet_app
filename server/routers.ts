@@ -9,7 +9,12 @@ import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
 import { CIN_LINK_CATEGORY } from "@shared/attachmentLinking";
 import { resolveTrackedTarget } from "@shared/trackedTarget";
 import { COMMAND_CODES, COMMAND_LABELS } from "@shared/commands";
-import { canShareOperation } from "@shared/operationAccess";
+import {
+  canShareOperation,
+  SHARE_LEVELS,
+  SHARE_LEVEL_LABEL,
+  type ShareLevel,
+} from "@shared/operationAccess";
 import {
   commandsOfUsers,
   filterAuditLogs,
@@ -19,6 +24,7 @@ import {
   intelligenceOperationIds,
   invalidateAccessCache,
   operationsForUser,
+  operationsForMap,
   reachableFor,
   scopeRegistryTargets,
   toAccessUser,
@@ -934,6 +940,19 @@ export const appRouter = router({
         return operationsForUser(toAccessUser(ctx.user), all);
       const allowed = new Set(getInvestigatorAllowedOperationIds(ctx.user));
       return operationsForUser(
+        toAccessUser(ctx.user),
+        all.filter(op => allowed.has(op.id))
+      );
+    }),
+
+    /** Operations the Mapping page offers: what they can open, plus what was
+     * shared at Investigator level (those carry mapOnly: true). */
+    listForMap: protectedProcedure.query(async ({ ctx }) => {
+      const all = await getOperations();
+      if (ctx.user.role !== "investigator")
+        return operationsForMap(toAccessUser(ctx.user), all);
+      const allowed = new Set(getInvestigatorAllowedOperationIds(ctx.user));
+      return operationsForMap(
         toAccessUser(ctx.user),
         all.filter(op => allowed.has(op.id))
       );
@@ -3486,7 +3505,7 @@ export const appRouter = router({
           /** Which Command's operations "all" means. Defaults to the admin's
            * own; only an all-region admin may name another. */
           fromCommand: z.enum(COMMAND_CODES).optional(),
-          level: z.enum(["view", "log", "manage"]),
+          level: z.enum(SHARE_LEVELS as [ShareLevel, ...ShareLevel[]]),
         })
       )
       .mutation(async ({ input, ctx }) => {
@@ -3579,7 +3598,7 @@ export const appRouter = router({
             userName: ctx.user.cin ?? "Unknown",
             userCIN: ctx.user.cin ?? undefined,
             action: "operation_shared",
-            details: `Shared ${targets.map(t => t.label).join(", ")} at ${input.level} with ${sharedWith.length} ${sharedWith.length === 1 ? "person" : "people"} (CIN: ${sharedWith.join(", ")})`,
+            details: `Shared ${targets.map(t => t.label).join(", ")} at ${SHARE_LEVEL_LABEL[input.level]} with ${sharedWith.length} ${sharedWith.length === 1 ? "person" : "people"} (CIN: ${sharedWith.join(", ")})`,
             createdAt: Date.now(),
           });
         }

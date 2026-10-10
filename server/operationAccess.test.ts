@@ -4,6 +4,7 @@ import {
   canShareOperation,
   seesEverything,
   visibleOperationIds,
+  mapOnlyOperationIds,
   type AccessOperation,
   type AccessShare,
   type AccessUser,
@@ -178,5 +179,28 @@ describe("Intelligence scope: browsing vs opening a profile", () => {
     expect(hiddenBrowseOperationIds(allAdmin, opsR, []).size).toBe(0);
     const east: AccessUser = { ...west, id: 20, command: "EASTERN" };
     expect([...hiddenBrowseOperationIds(east, opsR, [])]).toEqual([1]);
+  });
+});
+
+describe("Investigator-level share", () => {
+  const shares: AccessShare[] = [
+    { operationId: 3, fromCommand: null, userId: 10, level: "investigator" },
+  ];
+  it("gives no normal access", () => {
+    expect(accessLevel(west, ops[2], shares)).toBe(0);
+    expect(visibleOperationIds(west, ops, shares).has(3)).toBe(false);
+  });
+  it("is picked up as map-only", () => {
+    expect([...mapOnlyOperationIds(west, ops, shares)]).toEqual([3]);
+  });
+  it("is not map-only once a higher share also applies", () => {
+    const more: AccessShare[] = [
+      ...shares,
+      { operationId: null, fromCommand: "EASTERN", userId: 10, level: "view" },
+    ];
+    expect(mapOnlyOperationIds(west, ops, more).size).toBe(0);
+  });
+  it("an all-region admin has nothing map-only", () => {
+    expect(mapOnlyOperationIds(allAdmin, ops, shares).size).toBe(0);
   });
 });

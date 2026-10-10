@@ -152,6 +152,61 @@ describe("operation guard", () => {
     ).toEqual({});
   });
 
+  describe("an Investigator share (Mapping page only)", () => {
+    const shares: AccessShare[] = [
+      { operationId: 3, fromCommand: null, userId: 10, level: "investigator" },
+    ];
+    it("opens nothing but the Mapping reads", async () => {
+      await expect(
+        run(west, "row.list", "query", { sheetId: 11 }, shares)
+      ).rejects.toThrow();
+      await expect(
+        run(west, "row.create", "mutation", { sheetId: 11 }, shares)
+      ).rejects.toThrow();
+      await expect(
+        run(west, "operation.update", "mutation", { id: 3 }, shares)
+      ).rejects.toThrow();
+    });
+    it("lets the map lists include that operation", async () => {
+      const r = await run(
+        west,
+        "intelligence.mappingLocations",
+        "query",
+        { operationIds: [1, 2, 3] },
+        shares
+      );
+      expect((r.input as { operationIds: number[] }).operationIds).toEqual([
+        1, 2, 3,
+      ]);
+      const filled = await run(west, "customMarker.list", "query", {}, shares);
+      expect(
+        (filled.input as { operationIds: number[] }).operationIds.sort()
+      ).toEqual([1, 2, 3]);
+    });
+    it("does not let a target filter pull in other operations' targets", async () => {
+      const r = await run(
+        west,
+        "intelligence.mappingLocations",
+        "query",
+        { operationIds: [3], targetIds: [50] },
+        shares
+      );
+      expect(r.input as object).not.toHaveProperty("targetIds");
+    });
+    it("other lists still leave it out", async () => {
+      const r = await run(
+        west,
+        "sheet.listByOperations",
+        "query",
+        { operationIds: [1, 2, 3] },
+        shares
+      );
+      expect((r.input as { operationIds: number[] }).operationIds).toEqual([
+        1, 2,
+      ]);
+    });
+  });
+
   it("trims a list of operation ids to what they can reach", async () => {
     const r = await run(west, "sheet.listByOperations", "query", {
       operationIds: [1, 2, 3],

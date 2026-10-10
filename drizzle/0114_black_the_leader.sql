@@ -1,0 +1,1 @@
+ALTER TABLE `operation_shares` MODIFY COLUMN `level` enum('investigator','view','log','manage') NOT NULL;

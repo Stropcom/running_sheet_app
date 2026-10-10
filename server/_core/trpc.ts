@@ -5,10 +5,12 @@ import type { TrpcContext } from "./context";
 import {
   enforceOperationAccess,
   hiddenIntelligenceFor,
+  sharedInOperationIds,
   INTELLIGENCE_PROFILE_PATHS,
   toAccessUser,
 } from "../operationAccess";
 import { intelScope } from "../intelScope";
+import { getInvestigatorAllowedOperationIds } from "../db";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -68,6 +70,7 @@ const INVESTIGATOR_ALLOWED_PATHS = new Set([
   "profile.updateColorPalette",
   "profile.updatePassword",
   "operation.list",
+  "operation.listForMap",
   "intelligence.mappingLocations",
   "intelligence.userLocations",
   "intelligence.myLocationState",
@@ -133,7 +136,8 @@ const requireUser = t.middleware(async opts => {
     // the whole request: getAllIntelligenceEntities() returns the trimmed set.
     const hidden = await hiddenIntelligenceFor(
       accessUser,
-      INTELLIGENCE_PROFILE_PATHS.has(path) ? "profile" : "browse"
+      INTELLIGENCE_PROFILE_PATHS.has(path) ? "profile" : "browse",
+      path
     );
     const run = () =>
       guard.input !== undefined
@@ -142,6 +146,25 @@ const requireUser = t.middleware(async opts => {
     return hidden.size > 0
       ? intelScope.run({ hiddenOperationIds: hidden }, run)
       : run();
+  }
+
+  // An Investigator login is limited to the operations allocated to it; what
+  // another Command shared with them joins that list.
+  if (ctx.user.role === "investigator") {
+    const shared = await sharedInOperationIds(toAccessUser(ctx.user));
+    if (shared.length > 0) {
+      const own = getInvestigatorAllowedOperationIds(ctx.user);
+      const merged = Array.from(new Set([...own, ...shared]));
+      return next({
+        ctx: {
+          ...ctx,
+          user: {
+            ...ctx.user,
+            investigatorOperationIds: JSON.stringify(merged),
+          },
+        },
+      });
+    }
   }
 
   return next({

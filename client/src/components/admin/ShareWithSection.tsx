@@ -1,7 +1,7 @@
 /**
- * "Share with": give named people in other Commands access to some or all of
- * this Command's operations, at View, Log or Manage. Below it, what has been
- * shared so far, with Revoke.
+ * "Share": give named people in other Commands access to some of this
+ * Command's operations, at the same levels as the usual access (Investigator,
+ * Observer, Full Access, Full Access + User Management).
  */
 
 import { useMemo, useState } from "react";
@@ -21,8 +21,7 @@ import type { AdminUserRow } from "@/components/admin/UserAccessGroups";
 import { COMMAND_LABELS, type CommandCode } from "@shared/commands";
 import {
   SHARE_LEVELS,
-  SHARE_LEVEL_HELP,
-  SHARE_LEVEL_LABEL,
+  shareLevelText,
   type ShareLevel,
 } from "@shared/operationAccess";
 
@@ -173,7 +172,7 @@ export function ShareWithSection({
                 <SelectContent>
                   {SHARE_LEVELS.map(l => (
                     <SelectItem key={l} value={l}>
-                      {SHARE_LEVEL_LABEL[l]} — {SHARE_LEVEL_HELP[l]}
+                      {shareLevelText(l)}
                     </SelectItem>
                   ))}
                 </SelectContent>

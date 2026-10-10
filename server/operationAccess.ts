@@ -24,6 +24,7 @@ import {
   hiddenIntelligenceOperationIds,
   reachableOperationIds,
   visibleOperationIds,
+  mapOnlyOperationIds,
   type AccessLevel,
   type AccessOperation,
   type AccessShare,
@@ -422,6 +423,15 @@ const SCOPED_LIST_PATHS = new Set([
   "mapShape.list",
 ]);
 
+/** Reads that feed the Mapping page. An Investigator-level share opens its
+ * operation for exactly these and nothing else. */
+export const MAP_VIEW_PATHS = new Set([
+  "intelligence.mappingLocations",
+  "intelligence.userLocations",
+  "customMarker.list",
+  "mapShape.list",
+]);
+
 function requiredLevel(path: string, type: string): AccessLevel {
   if (path in LEVEL_OVERRIDES) return LEVEL_OVERRIDES[path];
   return type === "mutation" ? 2 : 1;
@@ -505,9 +515,23 @@ export async function enforceWith(args: {
 
   // Lists: keep only what they can reach.
   const allowed = visibleOperationIds(user, ops, shares, need);
+  // Mapping page reads also cover the operations shared at Investigator level.
+  const mapOnly =
+    type === "query" && MAP_VIEW_PATHS.has(path)
+      ? mapOnlyOperationIds(user, ops, shares)
+      : new Set<number>();
+  mapOnly.forEach(id => allowed.add(id));
   if (Array.isArray(input.operationIds)) {
     input.operationIds = nums(input.operationIds).filter(i => allowed.has(i));
     changed = true;
+    // targetIds is matched with OR against operationIds, so it must not be
+    // able to pull in a target from an operation they only see on the map.
+    if (
+      mapOnly.size > 0 &&
+      (input.operationIds as number[]).some(i => mapOnly.has(i))
+    ) {
+      delete input.targetIds;
+    }
   } else if (SCOPED_LIST_PATHS.has(path)) {
     input.operationIds = Array.from(allowed);
     changed = true;
@@ -589,12 +613,71 @@ export async function operationsForUser<
 /** Operations hidden from this person's Intelligence (empty = nothing to scope). */
 export async function hiddenIntelligenceFor(
   user: AccessUser,
-  mode: "browse" | "profile" = "browse"
+  mode: "browse" | "profile" = "browse",
+  path?: string
 ): Promise<Set<number>> {
   const { ops, shares } = await loadAccessData();
-  return mode === "profile"
-    ? hiddenIntelligenceOperationIds(user, ops, shares)
-    : hiddenBrowseOperationIds(user, ops, shares);
+  const hidden =
+    mode === "profile"
+      ? hiddenIntelligenceOperationIds(user, ops, shares)
+      : hiddenBrowseOperationIds(user, ops, shares);
+  // The Mapping page's own reads may show what was shared at Investigator level.
+  if (path && MAP_VIEW_PATHS.has(path)) {
+    mapOnlyOperationIds(user, ops, shares).forEach(id => hidden.delete(id));
+  }
+  return hidden;
+}
+
+/** Operations this person holds an Investigator-level share for. */
+export async function mapOnlyFor(user: AccessUser): Promise<number[]> {
+  const { ops, shares } = await loadAccessData();
+  return Array.from(mapOnlyOperationIds(user, ops, shares));
+}
+
+/** Other Commands' operations shared with this person at any level. For an
+ * Investigator login (map-only by role) these join the operations an admin
+ * allocated to them. */
+export async function sharedInOperationIds(
+  user: AccessUser
+): Promise<number[]> {
+  const { ops, shares } = await loadAccessData();
+  return ops
+    .filter(
+      op =>
+        op.command !== user.command &&
+        shares.some(
+          s =>
+            s.userId === user.id &&
+            (s.operationId != null
+              ? s.operationId === op.id
+              : s.fromCommand != null && s.fromCommand === op.command)
+        )
+    )
+    .map(op => op.id);
+}
+
+/** The operations the Mapping page may offer: everything they can open, plus
+ * what was shared at Investigator level (those carry `mapOnly: true`). */
+export async function operationsForMap<
+  T extends { id: number; command: AccessUser["command"] },
+>(
+  user: AccessUser,
+  rows: T[]
+): Promise<
+  Array<T & { accessLevel: AccessLevel; sharedIn: boolean; mapOnly?: boolean }>
+> {
+  const open = await operationsForUser(user, rows);
+  const mapOnly = new Set(await mapOnlyFor(user));
+  const have = new Set(open.map(o => o.id));
+  const extra = rows
+    .filter(r => mapOnly.has(r.id) && !have.has(r.id))
+    .map(r => ({
+      ...r,
+      accessLevel: 0 as AccessLevel,
+      sharedIn: true,
+      mapOnly: true as const,
+    }));
+  return [...open, ...extra];
 }
 
 /** Procedures that open ONE entity's profile (Region Search's "Open in

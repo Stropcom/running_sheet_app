@@ -4,34 +4,60 @@
 //   - your own Command's operations: full access (what you can DO there is
 //     still limited by your role — observers stay view-only, and so on);
 //   - an operation another Command's admin has shared with you by name, or
-//     every operation that Command owns: the level you were given —
-//     view (read), log (also add rows and certify) or manage (also edit the
-//     operation). An Observer never goes past View;
+//     every operation that Command owns: the level you were given, worded
+//     like the usual access levels — Investigator (the Mapping page only),
+//     Observer (view, read only), Full Access (also add rows and certify) or
+//     Full Access + User Management (also edit the operation). An Observer
+//     never goes past View;
 //   - an all-region admin: everything.
 //
 // Deterministic and pure — no lookups here.
 import type { CommandCode } from "./commands";
 
-export type ShareLevel = "view" | "log" | "manage";
+export type ShareLevel = "investigator" | "view" | "log" | "manage";
 /** 0 = none, 1 = view, 2 = log, 3 = manage (or your own Command's). */
 export type AccessLevel = 0 | 1 | 2 | 3;
 
-export const SHARE_LEVELS: ShareLevel[] = ["view", "log", "manage"];
-export const SHARE_LEVEL_NUM: Record<ShareLevel, 1 | 2 | 3> = {
+/** Same order and wording as the Add User "Access level" dropdown. */
+export const SHARE_LEVELS: ShareLevel[] = [
+  "investigator",
+  "view",
+  "log",
+  "manage",
+];
+/** Investigator is 0: it opens no operation data through the normal guard —
+ * the Mapping page picks it up separately (see mapOnlyOperationIds). */
+export const SHARE_LEVEL_NUM: Record<ShareLevel, 0 | 1 | 2 | 3> = {
+  investigator: 0,
   view: 1,
   log: 2,
   manage: 3,
 };
 export const SHARE_LEVEL_LABEL: Record<ShareLevel, string> = {
-  view: "View",
-  log: "Log",
-  manage: "Manage",
+  investigator: "Investigator",
+  view: "Observer",
+  log: "Full Access",
+  manage: "Full Access + User Management",
+};
+/** Short form for pills and badges. */
+export const SHARE_LEVEL_SHORT: Record<ShareLevel, string> = {
+  investigator: "Investigator",
+  view: "Observer",
+  log: "Full Access",
+  manage: "Full Access + UM",
 };
 export const SHARE_LEVEL_HELP: Record<ShareLevel, string> = {
-  view: "Read only",
-  log: "Read, add rows and certify",
-  manage: "Also edit the operation",
+  investigator: "mapping page only",
+  view: "view only",
+  log: "own CIN certify only",
+  manage: "",
 };
+/** "Observer — view only", or just the label when there's no help text. */
+export function shareLevelText(l: ShareLevel): string {
+  return SHARE_LEVEL_HELP[l]
+    ? `${SHARE_LEVEL_LABEL[l]} — ${SHARE_LEVEL_HELP[l]}`
+    : SHARE_LEVEL_LABEL[l];
+}
 
 export interface AccessUser {
   id: number;
@@ -87,6 +113,30 @@ export function visibleOperationIds(
   const out = new Set<number>();
   for (const op of ops)
     if (accessLevel(user, op, shares) >= min) out.add(op.id);
+  return out;
+}
+
+/** Operations this person holds an Investigator-level share for and can't
+ * otherwise open: they appear on the Mapping page and nowhere else. */
+export function mapOnlyOperationIds(
+  user: AccessUser,
+  ops: AccessOperation[],
+  shares: AccessShare[]
+): Set<number> {
+  const out = new Set<number>();
+  if (user.allRegions) return out;
+  for (const op of ops) {
+    if (accessLevel(user, op, shares) > 0) continue;
+    const has = shares.some(
+      s =>
+        s.userId === user.id &&
+        s.level === "investigator" &&
+        (s.operationId != null
+          ? s.operationId === op.id
+          : s.fromCommand != null && s.fromCommand === op.command)
+    );
+    if (has) out.add(op.id);
+  }
   return out;
 }
 

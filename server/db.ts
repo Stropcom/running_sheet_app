@@ -9379,7 +9379,7 @@ export async function upsertOperationShare(data: {
   operationId: number | null;
   fromCommand: CommandCode | null;
   userId: number;
-  level: "view" | "log" | "manage";
+  level: "investigator" | "view" | "log" | "manage";
   sharedByCIN: string;
 }): Promise<"created" | "updated"> {
   const db = await getDb();

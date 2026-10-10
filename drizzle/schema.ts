@@ -213,7 +213,12 @@ export const operationShares = mysqlTable(
       "CENTRAL",
     ]),
     userId: int("userId").notNull(),
-    level: mysqlEnum("level", ["view", "log", "manage"]).notNull(),
+    level: mysqlEnum("level", [
+      "investigator",
+      "view",
+      "log",
+      "manage",
+    ]).notNull(),
     sharedByCIN: varchar("sharedByCIN", { length: 64 }).notNull(),
     createdAt: bigint("createdAt", { mode: "number" }).notNull(),
   },

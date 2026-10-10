@@ -14,6 +14,8 @@ vi.mock("./operationAccess", () => ({
   toAccessUser: (u: unknown) => u,
   filterByOperationAccess: async (_u: unknown, rows: unknown[]) => rows,
   operationsForUser: async (_u: unknown, rows: unknown[]) => rows,
+  operationsForMap: async (_u: unknown, rows: unknown[]) => rows,
+  sharedInOperationIds: vi.fn().mockResolvedValue([]),
   scopeRegistryTargets: async (_u: unknown, rows: unknown[]) => rows,
   reachableFor: vi.fn().mockResolvedValue([]),
   invalidateAccessCache: vi.fn(),

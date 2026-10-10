@@ -3176,7 +3176,7 @@ export default function IntelligenceMapping() {
 
   // Data
   const { data: operations, isLoading: opsLoading } =
-    trpc.operation.list.useQuery();
+    trpc.operation.listForMap.useQuery();
   const {
     data: locations,
     isLoading: locsLoading,

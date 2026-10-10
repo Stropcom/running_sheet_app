@@ -163,7 +163,7 @@ export default function RSMapping() {
   // ── Queries ──────────────────────────────────────────────────────────────────
 
   const { data: operations, isLoading: opsLoading } =
-    trpc.operation.list.useQuery();
+    trpc.operation.listForMap.useQuery();
 
   const { data: sheetsData } = trpc.sheet.listByOperation.useQuery(
     { operationId: selectedOpId! },

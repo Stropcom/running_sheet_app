@@ -27,6 +27,8 @@ import {
   type AdminUserRow,
 } from "@/components/admin/UserAccessGroups";
 import { ShareWithSection } from "@/components/admin/ShareWithSection";
+import { TeamDialog } from "@/components/admin/TeamDialog";
+import { useTeams, type TeamRow } from "@/lib/teams";
 import {
   COMMAND_CODES,
   COMMAND_LABELS,
@@ -35,6 +37,7 @@ import {
 } from "@shared/commands";
 import {
   UserPlus,
+  Plus,
   Loader2,
   ShieldCheck,
   Users,
@@ -75,8 +78,6 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const NONE_BADGE_CLASS =
   "bg-foreground/5 text-muted-foreground border-foreground/10";
 
-export type TeamValue = "TEAM1" | "TEAM2" | "PTT" | undefined;
-
 export interface UserFormData {
   name: string;
   cin: string;
@@ -84,7 +85,8 @@ export interface UserFormData {
   command: CommandCode;
   /** Admin only: sees every Command and can open restricted operations. */
   allRegions: boolean;
-  team: TeamValue;
+  /** A team of the person's Command (see Teams on this page). */
+  teamId: number | undefined;
   phone: string;
   username: string;
   password: string;
@@ -101,7 +103,7 @@ export const emptyForm = (
   cin: "",
   command,
   allRegions: false,
-  team: undefined,
+  teamId: undefined,
   phone: "",
   username: "",
   password: "",
@@ -138,6 +140,8 @@ export function UserFormFields({
   allowAnyCommand = false,
   canGrantAllRegions = false,
 }: UserFormFieldsProps) {
+  // Teams belong to a Command: offer the chosen Command's.
+  const teamsForCommand = useTeams(form.command);
   return (
     <div className="grid gap-4 py-2">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -175,7 +179,12 @@ export function UserFormFields({
             value={form.command}
             disabled={disabled || !allowAnyCommand}
             onValueChange={v =>
-              setForm(f => ({ ...f, command: v as CommandCode }))
+              setForm(f => ({
+                ...f,
+                command: v as CommandCode,
+                // A team belongs to one Command, so moving Command clears it.
+                teamId: v === f.command ? f.teamId : undefined,
+              }))
             }
           >
             <SelectTrigger>
@@ -213,12 +222,12 @@ export function UserFormFields({
           Team
         </Label>
         <Select
-          value={form.team ?? "__none__"}
+          value={form.teamId != null ? String(form.teamId) : "__none__"}
           disabled={disabled}
           onValueChange={v =>
             setForm(f => ({
               ...f,
-              team: v === "__none__" ? undefined : (v as TeamValue),
+              teamId: v === "__none__" ? undefined : Number(v),
             }))
           }
         >
@@ -227,9 +236,11 @@ export function UserFormFields({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__none__">— None —</SelectItem>
-            <SelectItem value="TEAM1">TEAM 1</SelectItem>
-            <SelectItem value="TEAM2">TEAM 2</SelectItem>
-            <SelectItem value="PTT">PTT</SelectItem>
+            {teamsForCommand.map(t => (
+              <SelectItem key={t.id} value={String(t.id)}>
+                {t.name.toUpperCase()}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -412,6 +423,9 @@ export default function AdminPage() {
   const viewCommand: CommandCode = currentUser?.allRegions
     ? (viewCommandPick ?? myCommand)
     : myCommand;
+  const commandTeams = useTeams(viewCommand);
+  const [teamDialogOpen, setTeamDialogOpen] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<TeamRow | undefined>();
   const { data: shares } = trpc.admin.listShares.useQuery(undefined, {
     enabled: isAuthenticated && currentUser?.role === "admin",
   });
@@ -529,10 +543,28 @@ export default function AdminPage() {
             </div>
           )}
           <div className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm">
-            <h2 className="text-base font-semibold">Teams</h2>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-base font-semibold">Teams</h2>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setEditingTeam(undefined);
+                  setTeamDialogOpen(true);
+                }}
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Team
+              </Button>
+            </div>
             <UserAccessGroups
               users={(users ?? []) as AdminUserRow[]}
               viewCommand={viewCommand}
+              teams={commandTeams}
+              onEditTeam={team => {
+                setEditingTeam(team);
+                setTeamDialogOpen(true);
+              }}
               shares={shares ?? []}
               currentUserId={currentUser?.id}
               isLoading={isLoading}
@@ -563,6 +595,19 @@ export default function AdminPage() {
             viewCommand={viewCommand}
             users={(users ?? []) as AdminUserRow[]}
             isAllRegions={!!currentUser?.allRegions}
+          />
+          <TeamDialog
+            open={teamDialogOpen}
+            onOpenChange={setTeamDialogOpen}
+            command={viewCommand}
+            team={editingTeam}
+            memberCount={
+              editingTeam
+                ? ((users ?? []) as AdminUserRow[]).filter(
+                    u => u.teamId === editingTeam.id
+                  ).length
+                : 0
+            }
           />
         </div>
 

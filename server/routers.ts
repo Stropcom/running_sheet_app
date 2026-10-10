@@ -131,6 +131,12 @@ import {
   recomputeRunningSheetTitlesForOperation,
   createSheetRow,
   createUser,
+  listTeams,
+  getTeamById,
+  createTeam,
+  updateTeam,
+  deleteTeam,
+  teamNameTaken,
   archiveUser,
   restoreUser,
   getInvestigatorAllowedOperationIds,
@@ -704,6 +710,51 @@ async function assertCanManageUser(
       message: `${target.name} belongs to ${COMMAND_LABELS[target.command]}. Only that Command's admins can change their account.`,
     });
   }
+}
+
+const TEAM_COLOUR_RE = /^#[0-9a-fA-F]{6}$/;
+const teamInput = {
+  name: z.string().trim().min(1, "Give the team a name.").max(64),
+  /** #rrggbb */
+  colour: z
+    .string()
+    .regex(TEAM_COLOUR_RE, "Pick a colour.")
+    .nullable()
+    .optional(),
+  /** Assumed Identity phones for the Crash Helper. */
+  aiPhones: z.array(z.string().trim().min(1).max(32)).max(10).optional(),
+};
+
+/** A team can only be given to someone in the same Command. */
+async function assertTeamFitsCommand(
+  teamId: number,
+  command: (typeof COMMAND_CODES)[number]
+) {
+  const team = await getTeamById(teamId);
+  if (!team || team.command !== command) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `That team doesn't belong to ${COMMAND_LABELS[command]}.`,
+    });
+  }
+}
+
+/** An admin manages their own Command's teams; an all-region admin any. */
+async function assertCanManageTeam(
+  admin: { command: (typeof COMMAND_CODES)[number]; allRegions: boolean },
+  teamId: number
+) {
+  const team = await getTeamById(teamId);
+  if (!team) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Team not found." });
+  }
+  if (!admin.allRegions && team.command !== admin.command) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `That team belongs to ${COMMAND_LABELS[team.command]}. Only that Command's admins can change it.`,
+    });
+  }
+  return team;
 }
 
 /** Until somebody is an all-region admin, any admin may make the first one
@@ -3455,10 +3506,102 @@ export const appRouter = router({
     listUsers: adminProcedure.query(async () => {
       // Never send password hashes to the browser, even to an admin — every
       // admin can now see people from every Command.
+      const teamName = new Map((await listTeams()).map(t => [t.id, t.name]));
       return (await getAllUsers()).map(
-        ({ passwordHash: _passwordHash, ...rest }) => rest
+        ({ passwordHash: _passwordHash, legacyTeam: _legacy, ...rest }) => ({
+          ...rest,
+          teamName:
+            rest.teamId != null ? (teamName.get(rest.teamId) ?? null) : null,
+        })
       );
     }),
+
+    // ─── Teams (per Command) ────────────────────────────────────────────────
+    createTeam: adminProcedure
+      .input(
+        z.object({
+          command: z.enum(COMMAND_CODES).optional(),
+          ...teamInput,
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const command = input.command ?? ctx.user.command;
+        if (!ctx.user.allRegions && command !== ctx.user.command) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: `Only a ${COMMAND_LABELS[command]} admin can add its teams.`,
+          });
+        }
+        if (await teamNameTaken(command, input.name)) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `${COMMAND_LABELS[command]} already has a team called "${input.name}".`,
+          });
+        }
+        const id = await createTeam({
+          command,
+          name: input.name,
+          colour: input.colour ?? null,
+          aiPhones: input.aiPhones ?? [],
+        });
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_updated",
+          details: `Team "${input.name}" added to ${COMMAND_LABELS[command]}`,
+          createdAt: Date.now(),
+        });
+        return { id };
+      }),
+
+    updateTeam: adminProcedure
+      .input(z.object({ id: z.number(), ...teamInput }))
+      .mutation(async ({ input, ctx }) => {
+        const team = await assertCanManageTeam(ctx.user, input.id);
+        if (
+          input.name !== team.name &&
+          (await teamNameTaken(team.command, input.name, team.id))
+        ) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `${COMMAND_LABELS[team.command]} already has a team called "${input.name}".`,
+          });
+        }
+        await updateTeam(team.id, {
+          name: input.name,
+          colour: input.colour ?? null,
+          aiPhones: input.aiPhones ?? [],
+        });
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_updated",
+          details: `Team "${team.name}" (${COMMAND_LABELS[team.command]}) updated${input.name !== team.name ? ` — now "${input.name}"` : ""}`,
+          createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
+
+    deleteTeam: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const team = await assertCanManageTeam(ctx.user, input.id);
+        const moved = await deleteTeam(team.id);
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_updated",
+          details: `Team "${team.name}" (${COMMAND_LABELS[team.command]}) deleted; ${moved} ${moved === 1 ? "person" : "people"} now have no team`,
+          createdAt: Date.now(),
+        });
+        return { success: true, moved };
+      }),
 
     // ─── Sharing operations across Commands ────────────────────────────────
     // An admin of the Command that owns an operation gives named people in
@@ -3656,7 +3799,7 @@ export const appRouter = router({
           unit: z.string().optional(),
           command: z.enum(COMMAND_CODES).optional(),
           allRegions: z.boolean().optional(),
-          team: z.enum(["TEAM1", "TEAM2", "PTT"]).optional(),
+          teamId: z.number().nullable().optional(),
           phone: z.string().optional(),
           username: z.string().min(1),
           password: z.string().min(1),
@@ -3680,15 +3823,18 @@ export const appRouter = router({
             });
           }
         }
+        const newCommand = input.command ?? ctx.user.command;
+        if (input.teamId != null)
+          await assertTeamFitsCommand(input.teamId, newCommand);
         const passwordHash = await bcrypt.hash(input.password, 12);
         const id = await createUser({
           name: input.name,
           cin: input.cin.toUpperCase(),
           unit: input.unit,
-          command: input.command ?? ctx.user.command,
+          command: newCommand,
           allRegions:
             input.role === "admin" ? (input.allRegions ?? false) : false,
-          team: input.team,
+          teamId: input.teamId ?? null,
           phone: input.phone || null,
           username: input.username.trim().toLowerCase(),
           passwordHash,
@@ -3724,7 +3870,7 @@ export const appRouter = router({
           unit: z.string().optional(),
           command: z.enum(COMMAND_CODES).optional(),
           allRegions: z.boolean().optional(),
-          team: z.enum(["TEAM1", "TEAM2", "PTT"]).nullable().optional(),
+          teamId: z.number().nullable().optional(),
           phone: z.string().nullable().optional(),
           username: z.string().min(1).optional(),
           password: z.string().min(1).optional(),
@@ -3761,6 +3907,22 @@ export const appRouter = router({
           }
         }
         const updateData: Record<string, unknown> = { ...rest };
+        // A team belongs to one Command: keep the pair consistent.
+        {
+          const current = await getUserById(id);
+          const finalCommand = rest.command ?? current?.command;
+          if (rest.teamId != null && finalCommand) {
+            await assertTeamFitsCommand(rest.teamId, finalCommand);
+          } else if (
+            rest.teamId === undefined &&
+            rest.command &&
+            current &&
+            rest.command !== current.command
+          ) {
+            // Moved to another Command without a new team: they leave theirs.
+            updateData.teamId = null;
+          }
+        }
         if (password) {
           updateData.passwordHash = await bcrypt.hash(password, 12);
         }
@@ -3877,15 +4039,23 @@ export const appRouter = router({
     /** Returns all registered users as {cin, name, unit} for CIN autocomplete/validation */
     listForCin: protectedProcedure.query(async () => {
       const all = await getAllUsers();
+      const teamName = new Map((await listTeams()).map(t => [t.id, t.name]));
       return all
         .filter(u => !u.archivedAt)
         .map(u => ({
           cin: u.cin,
           name: u.name,
           unit: u.unit ?? "",
-          team: u.team ?? "",
+          teamId: u.teamId,
+          teamName: u.teamId != null ? (teamName.get(u.teamId) ?? "") : "",
         }));
     }),
+
+    /** Teams, in display order: the caller's Command's (an all-region admin:
+     * every Command's — filter by `command`). */
+    listTeams: protectedProcedure.query(async ({ ctx }) =>
+      ctx.user.allRegions ? listTeams() : listTeams(ctx.user.command)
+    ),
   }),
 
   // ─── Targets ─────────────────────────────────────────────────────────────────

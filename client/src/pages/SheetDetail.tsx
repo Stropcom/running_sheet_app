@@ -1,3 +1,4 @@
+import { useMyTeams } from "@/lib/teams";
 import { IMAGERY_PHRASE_PATTERN, cinsWithImagery } from "@shared/rowImagery";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -4333,6 +4334,7 @@ export default function SheetDetail({
   const { data: allUsers } = trpc.users.listForCin.useQuery(undefined, {
     enabled: isAuthenticated,
   });
+  const myTeams = useMyTeams();
 
   const { data: allTargetsForSheet } = trpc.target.listAll.useQuery(undefined, {
     enabled: isAuthenticated,
@@ -4530,12 +4532,12 @@ export default function SheetDetail({
     setEditRosterOpen(true);
   };
 
-  const handleAddRosterTeam = (teamKey: "TEAM1" | "TEAM2" | "PTT") => {
+  const handleAddRosterTeam = (teamId: number) => {
     if (!allUsers) {
       toast.error("User list not available");
       return;
     }
-    const members = allUsers.filter(u => u.team === teamKey);
+    const members = allUsers.filter(u => u.teamId === teamId);
     if (members.length === 0) {
       toast.error("No members found in that team");
       return;
@@ -4562,7 +4564,7 @@ export default function SheetDetail({
     if (added === 0) toast.info("All team members already added");
     else
       toast.success(
-        `Added ${added} member${added !== 1 ? "s" : ""} from ${teamKey.replace("TEAM", "TEAM ")}`
+        `Added ${added} member${added !== 1 ? "s" : ""} from ${myTeams.find(t => t.id === teamId)?.name ?? "the team"}`
       );
   };
 
@@ -7214,27 +7216,27 @@ export default function SheetDetail({
                 Add
               </Button>
             </div>
-            {allUsers && allUsers.some(u => u.team) && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-muted-foreground">Add team:</span>
-                {(["TEAM1", "TEAM2", "PTT"] as const).map(t => (
-                  <Button
-                    key={t}
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-3 text-xs font-semibold"
-                    onClick={() => handleAddRosterTeam(t)}
-                  >
-                    {t === "TEAM1"
-                      ? "TEAM 1"
-                      : t === "TEAM2"
-                        ? "TEAM 2"
-                        : "PTT"}
-                  </Button>
-                ))}
-              </div>
-            )}
+            {allUsers &&
+              myTeams.length > 0 &&
+              allUsers.some(u => u.teamId != null) && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-muted-foreground">
+                    Add team:
+                  </span>
+                  {myTeams.map(t => (
+                    <Button
+                      key={t.id}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-3 text-xs font-semibold"
+                      onClick={() => handleAddRosterTeam(t.id)}
+                    >
+                      {t.name.toUpperCase()}
+                    </Button>
+                  ))}
+                </div>
+              )}
             {rosterList.length > 0 ? (
               <div className="rounded-lg border border-border overflow-hidden">
                 {/* Header row */}

@@ -17,7 +17,8 @@ export type CinUser = {
   cin: string;
   name: string;
   unit: string;
-  team: string;
+  teamId: number | null;
+  teamName: string;
 };
 
 type Props = {

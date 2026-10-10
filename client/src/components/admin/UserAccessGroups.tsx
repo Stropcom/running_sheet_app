@@ -5,7 +5,7 @@
  */
 
 import { useState, type ReactNode } from "react";
-import { ChevronRight, Loader2, Search } from "lucide-react";
+import { ChevronRight, Loader2, Pencil, Search } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
@@ -22,25 +22,20 @@ import { CommandChip } from "@/components/admin/CommandChip";
 import { LevelPill } from "@/components/admin/LevelPill";
 import { COMMAND_LABELS, type CommandCode } from "@shared/commands";
 import type { OperationShareRow } from "@shared/operationAccess";
+import { NO_TEAM_COLOUR, type TeamRow } from "@/lib/teams";
 
 export interface AdminUserRow {
   id: number;
   name: string;
   cin: string | null;
   command: CommandCode;
-  team: string | null;
+  teamId: number | null;
+  teamName?: string | null;
   username: string;
   role: string;
   archivedAt: number | null;
   lastSignedIn: Date | string | null;
 }
-
-const TEAMS: Array<{ value: string; label: string }> = [
-  { value: "TEAM1", label: "TEAM 1" },
-  { value: "TEAM2", label: "TEAM 2" },
-  { value: "PTT", label: "PTT" },
-  { value: "", label: "No team" },
-];
 
 export function matchesPerson(
   u: { name: string; cin: string | null },
@@ -60,30 +55,48 @@ function Group({
   count,
   open,
   onToggle,
+  colour,
+  actions,
   children,
 }: {
   title: string;
   count: ReactNode;
   open: boolean;
   onToggle: () => void;
+  /** A small dot in the team's own colour, before the title. */
+  colour?: string | null;
+  /** Buttons at the right of the header (e.g. edit team). */
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-background shadow-sm">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2.5 bg-muted/70 px-3 py-3 text-left hover:bg-muted"
-      >
-        <ChevronRight
-          className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
-        />
-        <span className="text-sm font-semibold tracking-wide">{title}</span>
-        <span className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-          {count}
-        </span>
-      </button>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center bg-muted/70 hover:bg-muted">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          className="grid min-w-0 grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2.5 px-3 py-3 text-left"
+        >
+          <ChevronRight
+            className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
+          />
+          <span className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-wide">
+            {colour !== undefined && (
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full border border-black/10"
+                style={{ backgroundColor: colour ?? NO_TEAM_COLOUR }}
+                aria-hidden
+              />
+            )}
+            <span className="truncate">{title}</span>
+          </span>
+          <span className="rounded-full border border-border bg-background px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+            {count}
+          </span>
+        </button>
+        {actions && <div className="pr-2">{actions}</div>}
+      </div>
       {open && (
         <div className="overflow-x-auto border-t border-border">{children}</div>
       )}
@@ -107,6 +120,8 @@ function readOpen(): Record<string, boolean> {
 export function UserAccessGroups({
   users,
   viewCommand,
+  teams,
+  onEditTeam,
   shares,
   currentUserId,
   isLoading,
@@ -115,6 +130,9 @@ export function UserAccessGroups({
 }: {
   users: AdminUserRow[];
   viewCommand: CommandCode;
+  /** This Command's teams, in display order. */
+  teams: TeamRow[];
+  onEditTeam: (team: TeamRow) => void;
   /** Shares this admin may see (see admin.listShares). */
   shares: OperationShareRow[];
   currentUserId?: number;
@@ -158,7 +176,16 @@ export function UserAccessGroups({
   const isOpen = (k: string) => searching || !!open[k];
   const toggle = (k: string) => setOpen(o => ({ ...o, [k]: !o[k] }));
   const setAll = (v: boolean) =>
-    setOpen(() => ({ TEAM1: v, TEAM2: v, PTT: v, "": v, visiting: v }));
+    setOpen(() => ({
+      ...Object.fromEntries(teams.map(t => [String(t.id), v])),
+      "": v,
+      visiting: v,
+    }));
+  // One group per team, then everyone without one.
+  const groups: Array<{ key: string; label: string; team?: TeamRow }> = [
+    ...teams.map(t => ({ key: String(t.id), label: t.name, team: t })),
+    { key: "", label: "No team" },
+  ];
 
   const home = users.filter(u => u.command === viewCommand);
 
@@ -223,22 +250,38 @@ export function UserAccessGroups({
         </div>
       ) : (
         <div className="space-y-3">
-          {TEAMS.map(t => {
-            const inTeam = home.filter(u => (u.team ?? "") === t.value);
+          {groups.map(t => {
+            const inTeam = home.filter(u =>
+              t.team ? u.teamId === t.team.id : u.teamId == null
+            );
             const list = inTeam.filter(u => matchesPerson(u, query));
-            if (t.value === "" && inTeam.length === 0) return null;
+            if (!t.team && inTeam.length === 0) return null;
             if (searching && list.length === 0) return null;
             return (
               <Group
-                key={t.value || "none"}
-                title={t.label}
+                key={t.key || "none"}
+                title={t.team ? t.label.toUpperCase() : t.label}
+                colour={t.team ? t.team.colour : undefined}
+                actions={
+                  t.team ? (
+                    <button
+                      type="button"
+                      onClick={() => onEditTeam(t.team!)}
+                      className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+                      aria-label={`Edit ${t.label}`}
+                      title={`Edit ${t.label}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  ) : undefined
+                }
                 count={
                   searching
                     ? `${list.length} of ${inTeam.length}`
                     : `${inTeam.length} member${inTeam.length === 1 ? "" : "s"}`
                 }
-                open={isOpen(t.value)}
-                onToggle={() => toggle(t.value)}
+                open={isOpen(t.key)}
+                onToggle={() => toggle(t.key)}
               >
                 <Table className="min-w-[560px] table-fixed">
                   <TableHeader>

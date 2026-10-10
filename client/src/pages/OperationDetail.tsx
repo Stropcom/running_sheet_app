@@ -1,3 +1,4 @@
+import { useMyTeams } from "@/lib/teams";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { OperationRegionFields } from "@/components/OperationRegionFields";
 import { DEFAULT_COMMAND, type CommandCode } from "@shared/commands";
@@ -1930,6 +1931,7 @@ export default function OperationDetail() {
   const { data: allUsers } = trpc.admin.listUsers.useQuery(undefined, {
     enabled: isAuthenticated && user?.role === "admin",
   });
+  const myTeams = useMyTeams();
 
   // Populate edit form when operation loads
   useEffect(() => {
@@ -2006,12 +2008,12 @@ export default function OperationDetail() {
     onError: e => toast.error(e.message),
   });
 
-  const handleAddTeam = (teamKey: "TEAM1" | "TEAM2" | "PTT") => {
+  const handleAddTeam = (teamId: number) => {
     if (!allUsers) {
       toast.error("User list not available");
       return;
     }
-    const members = allUsers.filter(u => u.team === teamKey && !u.archivedAt);
+    const members = allUsers.filter(u => u.teamId === teamId && !u.archivedAt);
     if (members.length === 0) {
       toast.error("No members found in that team");
       return;
@@ -2038,7 +2040,7 @@ export default function OperationDetail() {
     if (added === 0) toast.info("All team members already added");
     else
       toast.success(
-        `Added ${added} member${added !== 1 ? "s" : ""} from ${teamKey.replace("TEAM", "TEAM ")}`
+        `Added ${added} member${added !== 1 ? "s" : ""} from ${myTeams.find(t => t.id === teamId)?.name ?? "the team"}`
       );
   };
 
@@ -2989,25 +2991,21 @@ export default function OperationDetail() {
                 </Button>
               </div>
               {/* Team group buttons — only shown to admins who have allUsers loaded */}
-              {user?.role === "admin" && (
-                <div className="flex gap-1.5 mb-3">
+              {user?.role === "admin" && myTeams.length > 0 && (
+                <div className="flex gap-1.5 mb-3 flex-wrap">
                   <span className="text-xs text-muted-foreground self-center mr-1">
                     Add team:
                   </span>
-                  {(["TEAM1", "TEAM2", "PTT"] as const).map(t => (
+                  {myTeams.map(t => (
                     <Button
-                      key={t}
+                      key={t.id}
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => handleAddTeam(t)}
+                      onClick={() => handleAddTeam(t.id)}
                       className="text-xs h-7 px-2.5"
                     >
-                      {t === "TEAM1"
-                        ? "TEAM 1"
-                        : t === "TEAM2"
-                          ? "TEAM 2"
-                          : "PTT"}
+                      {t.name.toUpperCase()}
                     </Button>
                   ))}
                 </div>

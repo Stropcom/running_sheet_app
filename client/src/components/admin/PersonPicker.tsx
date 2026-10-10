@@ -19,13 +19,6 @@ import {
 } from "@shared/commands";
 
 const SHOW = 40;
-const TEAM_LABEL: Record<string, string> = {
-  TEAM1: "TEAM 1",
-  TEAM2: "TEAM 2",
-  PTT: "PTT",
-  "": "No team",
-};
-
 export function PersonPicker({
   candidates,
   selected,
@@ -178,7 +171,7 @@ export function PersonPicker({
                     <span className="flex items-center gap-2">
                       <CommandChip command={u.command} />
                       <span className="hidden text-xs text-muted-foreground sm:inline">
-                        {TEAM_LABEL[u.team ?? ""]}
+                        {u.teamName ?? "No team"}
                       </span>
                     </span>
                   </button>

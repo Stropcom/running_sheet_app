@@ -24,7 +24,12 @@ export const users = mysqlTable("users", {
   name: varchar("name", { length: 255 }).notNull(),
   cin: varchar("cin", { length: 64 }).notNull().unique(),
   unit: varchar("unit", { length: 255 }),
-  team: mysqlEnum("team", ["TEAM1", "TEAM2", "PTT"]),
+  /** Legacy fixed team (TEAM1/TEAM2/PTT). Superseded by `teamId` (teams are
+   * per-Command records now); kept only so a deploy can be rolled back. Never
+   * read or written by the app. */
+  legacyTeam: mysqlEnum("team", ["TEAM1", "TEAM2", "PTT"]),
+  /** The team (see `teams`) this person belongs to, within their Command. */
+  teamId: int("teamId"),
   email: varchar("email", { length: 320 }),
   phone: varchar("phone", { length: 32 }),
   // "investigator" is a fourth, map-only tier — see INVESTIGATOR_ALLOWED_PATHS
@@ -200,6 +205,35 @@ export type InsertOperation = typeof operations.$inferInsert;
 // read, log = also add rows and certify, manage = also edit the operation.
 // Revoking deletes the row (the audit log keeps who shared and who revoked);
 // everything already logged stays. See shared/operationAccess.ts.
+/** A team within one Command (Western's "Team 1", Eastern's own, …). Managed
+ * from User Management; people point at it with users.teamId. */
+export const teams = mysqlTable(
+  "teams",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    command: mysqlEnum("command", [
+      "WESTERN",
+      "NORTHERN",
+      "EASTERN",
+      "SOUTHERN",
+      "CENTRAL",
+    ]).notNull(),
+    name: varchar("name", { length: 64 }).notNull(),
+    /** Pin colour on the live map, as #rrggbb. Null = a default grey. */
+    colour: varchar("colour", { length: 9 }),
+    /** JSON string[] — Assumed Identity phones shown in the Crash Helper. */
+    aiPhones: text("aiPhones"),
+    sortOrder: int("sortOrder").notNull().default(0),
+    createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+  },
+  t => ({
+    byCommandName: uniqueIndex("teams_command_name_idx").on(t.command, t.name),
+  })
+);
+
+export type Team = typeof teams.$inferSelect;
+export type InsertTeam = typeof teams.$inferInsert;
+
 export const operationShares = mysqlTable(
   "operation_shares",
   {

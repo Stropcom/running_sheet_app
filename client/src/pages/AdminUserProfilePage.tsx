@@ -34,7 +34,6 @@ import {
   emptyForm,
   type Role,
   type UserFormData,
-  type TeamValue,
 } from "@/pages/AdminPage";
 
 export default function AdminUserProfilePage() {
@@ -75,7 +74,7 @@ export default function AdminUserProfilePage() {
         cin: profile.cin ?? "",
         command: (profile.command as CommandCode) ?? DEFAULT_COMMAND,
         allRegions: !!profile.allRegions,
-        team: (profile.team as TeamValue) ?? undefined,
+        teamId: profile.teamId ?? undefined,
         phone: profile.phone ?? "",
         username: profile.username ?? "",
         password: "",
@@ -140,7 +139,7 @@ export default function AdminUserProfilePage() {
       cin: form.cin,
       command: form.command,
       allRegions: form.role === "admin" ? form.allRegions : false,
-      team: form.team ?? null,
+      teamId: form.teamId ?? null,
       phone: form.phone || null,
       username: form.username,
       password: form.password || undefined,

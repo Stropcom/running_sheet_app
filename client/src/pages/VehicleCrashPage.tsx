@@ -1,3 +1,4 @@
+import { useMyTeams } from "@/lib/teams";
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -33,13 +34,6 @@ const REPAIRER_NAME = "BRB Smash Repair";
 const REPAIRER_ADDRESS = "5/7 Pitt Way, Booragoon";
 const REPAIRER_CONTACT = "Bill — do not speak to any other staff";
 const REPAIRER_AFTERHOURS = "0419 908 520";
-
-// Assumed Identity phones, by team — logged-in user's own team (users.team)
-// is highlighted in the Full SOP's Stage 3 section, see AiPhonesBlock below.
-const AI_PHONES: Record<"TEAM1" | "TEAM2", string[]> = {
-  TEAM1: ["0493 197 381", "0494 183 973"],
-  TEAM2: ["0494 155 400", "0494 177 049"],
-};
 
 type Screen = "menu" | "sop" | "wizard";
 type ScenarioKey = "A1" | "A2" | "B1" | "B2" | "C1";
@@ -159,31 +153,30 @@ function SopTable({ rows }: { rows: [string, string][] }) {
   );
 }
 
-// Both teams' AI phones are shown (any member may need to recognise or
-// reach the other team's AI number), with the logged-in user's own team
-// (users.team) picked out so it doesn't need to be found by scanning.
+// Every team's AI phones in the person's Command are shown (any member may
+// need to recognise or reach another team's AI number), with the logged-in
+// user's own team picked out so it doesn't need to be found by scanning.
+// Teams and their phones are set in User Management → Teams.
 function AiPhonesBlock() {
   const { user } = useAuth();
-  const myTeam =
-    user?.team === "TEAM1" || user?.team === "TEAM2" ? user.team : null;
+  const teams = useMyTeams().filter(t => t.aiPhones.length > 0);
+  if (teams.length === 0) return null;
   return (
     <div className="rounded-lg border border-border overflow-hidden my-2">
       <div className="bg-blue-500/10 text-[10px] font-bold uppercase tracking-wide text-blue-400 px-3 py-1.5">
         Assumed Identity Phones
       </div>
-      {(["TEAM1", "TEAM2"] as const).map((team, i) => {
-        const mine = team === myTeam;
+      {teams.map((team, i) => {
+        const mine = team.id === user?.teamId;
         return (
           <div
-            key={team}
+            key={team.id}
             className={`px-3 py-2 text-[12.5px] ${i > 0 ? "border-t border-border" : ""} ${
               mine ? "bg-indigo-500/5" : ""
             }`}
           >
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-foreground">
-                {team === "TEAM1" ? "Team 1" : "Team 2"}
-              </span>
+              <span className="font-semibold text-foreground">{team.name}</span>
               {mine && (
                 <span className="text-[9.5px] font-bold uppercase tracking-wide text-indigo-400 bg-indigo-500/10 rounded px-1.5 py-0.5">
                   Your team
@@ -191,7 +184,7 @@ function AiPhonesBlock() {
               )}
             </div>
             <p className="text-muted-foreground mt-0.5">
-              {AI_PHONES[team].join(" or ")}
+              {team.aiPhones.join(" or ")}
             </p>
           </div>
         );
@@ -876,9 +869,9 @@ function CrashWizard() {
   const [step, setStep] = useState(1);
   const [answers, setAnswers] = useState<Answers>(EMPTY_ANSWERS);
   const { user } = useAuth();
-  const myTeam =
-    user?.team === "TEAM1" || user?.team === "TEAM2" ? user.team : null;
-  const myAiPhones = myTeam ? AI_PHONES[myTeam] : null;
+  const myTeam = useMyTeams().find(t => t.id === user?.teamId) ?? null;
+  const myAiPhones =
+    myTeam && myTeam.aiPhones.length > 0 ? myTeam.aiPhones : null;
 
   const restart = () => {
     setStep(1);
@@ -1068,7 +1061,7 @@ function CrashWizard() {
         give — registration, name, address, licence, phone.
         {myAiPhones && (
           <p className="mt-2 text-foreground/80">
-            Your AI phone ({myTeam === "TEAM1" ? "Team 1" : "Team 2"}):{" "}
+            Your AI phone ({myTeam?.name}):{" "}
             <b className="text-foreground">{myAiPhones.join(" or ")}</b>
           </p>
         )}

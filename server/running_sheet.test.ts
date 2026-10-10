@@ -72,6 +72,7 @@ vi.mock("./db", () => ({
   getAuditLogsBySheet: vi.fn().mockResolvedValue([]),
   getAllAuditLogs: vi.fn().mockResolvedValue([]),
   getAllUsers: vi.fn().mockResolvedValue([]),
+  listTeams: vi.fn().mockResolvedValue([]),
   updateUserRole: vi.fn().mockResolvedValue(undefined),
   upsertUser: vi.fn().mockResolvedValue(undefined),
   getUserByOpenId: vi.fn().mockResolvedValue(undefined),

@@ -116,6 +116,7 @@ import {
   associates,
   InsertAssociate,
   users,
+  teams,
   operationShares,
   governanceRecords,
   GovernanceRecord,
@@ -345,6 +346,139 @@ export async function deleteUser(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(users).where(eq(users.id, id));
+}
+
+// ─── Teams ──────────────────────────────────────────────────────────────────
+// A team belongs to one Command; people point at it with users.teamId.
+
+export interface TeamRow {
+  id: number;
+  command: CommandCode;
+  name: string;
+  /** #rrggbb pin colour on the live map, or null for the default grey. */
+  colour: string | null;
+  /** Assumed Identity phones (Crash Helper). */
+  aiPhones: string[];
+  sortOrder: number;
+}
+
+function toTeamRow(t: typeof teams.$inferSelect): TeamRow {
+  let phones: string[] = [];
+  try {
+    const parsed = t.aiPhones ? JSON.parse(t.aiPhones) : [];
+    if (Array.isArray(parsed))
+      phones = parsed.filter((p): p is string => typeof p === "string");
+  } catch {
+    phones = [];
+  }
+  return {
+    id: t.id,
+    command: t.command,
+    name: t.name,
+    colour: t.colour,
+    aiPhones: phones,
+    sortOrder: t.sortOrder,
+  };
+}
+
+/** Teams in display order; one Command's, or every Command's. */
+export async function listTeams(command?: CommandCode): Promise<TeamRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select()
+    .from(teams)
+    .where(command ? eq(teams.command, command) : undefined)
+    .orderBy(teams.sortOrder, teams.name);
+  return rows.map(toTeamRow);
+}
+
+export async function getTeamById(id: number): Promise<TeamRow | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db.select().from(teams).where(eq(teams.id, id)).limit(1);
+  return row ? toTeamRow(row) : undefined;
+}
+
+/** True when this Command already has a team with that name. */
+export async function teamNameTaken(
+  command: CommandCode,
+  name: string,
+  exceptId?: number
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const rows = await db
+    .select({ id: teams.id })
+    .from(teams)
+    .where(and(eq(teams.command, command), eq(teams.name, name)));
+  return rows.some(r => r.id !== exceptId);
+}
+
+export async function createTeam(data: {
+  command: CommandCode;
+  name: string;
+  colour: string | null;
+  aiPhones: string[];
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [last] = await db
+    .select({ sortOrder: teams.sortOrder })
+    .from(teams)
+    .where(eq(teams.command, data.command))
+    .orderBy(desc(teams.sortOrder))
+    .limit(1);
+  const [result] = await db.insert(teams).values({
+    command: data.command,
+    name: data.name,
+    colour: data.colour,
+    aiPhones: data.aiPhones.length > 0 ? JSON.stringify(data.aiPhones) : null,
+    sortOrder: (last?.sortOrder ?? 0) + 1,
+    createdAt: Date.now(),
+  });
+  return result.insertId as number;
+}
+
+export async function updateTeam(
+  id: number,
+  data: { name?: string; colour?: string | null; aiPhones?: string[] }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const set: Partial<typeof teams.$inferInsert> = {};
+  if (data.name !== undefined) set.name = data.name;
+  if (data.colour !== undefined) set.colour = data.colour;
+  if (data.aiPhones !== undefined)
+    set.aiPhones =
+      data.aiPhones.length > 0 ? JSON.stringify(data.aiPhones) : null;
+  if (Object.keys(set).length === 0) return;
+  await db.update(teams).set(set).where(eq(teams.id, id));
+}
+
+/** Delete a team; its members simply become "No team". Returns how many. */
+export async function deleteTeam(id: number): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const members = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.teamId, id));
+  await db.update(users).set({ teamId: null }).where(eq(users.teamId, id));
+  await db.delete(teams).where(eq(teams.id, id));
+  return members.length;
+}
+
+/** Team name by id, for the places that still show a plain label. */
+async function teamNameMap(): Promise<Map<number, string>> {
+  const db = await getDb();
+  const out = new Map<number, string>();
+  if (!db) return out;
+  for (const t of await db
+    .select({ id: teams.id, name: teams.name })
+    .from(teams))
+    out.set(t.id, t.name);
+  return out;
 }
 
 export async function updateUserRole(
@@ -9351,13 +9485,14 @@ export async function listOperationShares(opts?: {
       userName: users.name,
       userCIN: users.cin,
       userCommand: users.command,
-      userTeam: users.team,
+      userTeam: teams.name,
       level: operationShares.level,
       sharedByCIN: operationShares.sharedByCIN,
       createdAt: operationShares.createdAt,
     })
     .from(operationShares)
     .innerJoin(users, eq(users.id, operationShares.userId))
+    .leftJoin(teams, eq(teams.id, users.teamId))
     .leftJoin(operations, eq(operations.id, operationShares.operationId))
     .where(
       opts?.userId != null ? eq(operationShares.userId, opts.userId) : undefined
@@ -15029,7 +15164,10 @@ export interface UserLocationRow {
   deviceId: string;
   name: string;
   role: "observer" | "member" | "admin" | "investigator";
-  team: "TEAM1" | "TEAM2" | "PTT" | null;
+  /** The person's team (see teams), for pin grouping and colour. */
+  teamId: number | null;
+  teamName: string | null;
+  teamColour: string | null;
   lat: number;
   lng: number;
   speed: number | null;
@@ -15074,7 +15212,9 @@ export async function getUserLocations(
       deviceId: userLocations.deviceId,
       name: users.name,
       role: users.role,
-      team: users.team,
+      teamId: users.teamId,
+      teamName: teams.name,
+      teamColour: teams.colour,
       lat: userLocations.lat,
       lng: userLocations.lng,
       speed: userLocations.speed,
@@ -15089,6 +15229,7 @@ export async function getUserLocations(
     })
     .from(userLocations)
     .innerJoin(users, eq(users.id, userLocations.userId))
+    .leftJoin(teams, eq(teams.id, users.teamId))
     .where(
       and(
         eq(userLocations.sharingEnabled, true),
@@ -16248,10 +16389,12 @@ export async function getIncompleteRunningSheets(): Promise<
     db.select().from(users),
   ]);
 
-  // Build CIN → team map from users table
+  // Build CIN → team name map from users table
+  const teamNames = await teamNameMap();
   const cinTeamMap = new Map<string, string>();
   for (const u of allUsers) {
-    if (u.cin && u.team) cinTeamMap.set(u.cin, u.team);
+    const name = u.teamId != null ? teamNames.get(u.teamId) : undefined;
+    if (u.cin && name) cinTeamMap.set(u.cin, name);
   }
 
   // Compute certification status per sheet
@@ -16403,6 +16546,7 @@ export async function getOutstandingTodosByUser(): Promise<
 
   const allUsers = await db.select().from(users);
   const usersWithCin = allUsers.filter(u => u.cin && u.cin.trim() !== "");
+  const teamNames = await teamNameMap();
 
   const results: OutstandingTodoUser[] = [];
 
@@ -16430,7 +16574,7 @@ export async function getOutstandingTodosByUser(): Promise<
     results.push({
       cin,
       name: user.name,
-      team: user.team ?? null,
+      team: user.teamId != null ? (teamNames.get(user.teamId) ?? null) : null,
       uncertifiedCount,
       governanceCount,
       totalCount,

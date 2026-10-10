@@ -13,6 +13,7 @@ import {
 } from "@shared/vehicleEventPatterns";
 import { DivIconOverlay, wasAnyMarkerJustTapped } from "@/lib/divIconOverlay";
 import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
+import { useTeams } from "@/lib/teams";
 import { detectUnidentifiedRepeat } from "@shared/unidentified";
 import { entryMentionsAddress, popupShortAddress } from "@shared/markerLink";
 import { fullStreetTypes } from "@shared/streetTypes";
@@ -486,7 +487,9 @@ interface LiveUser {
   deviceId: string;
   name: string;
   role: "observer" | "member" | "admin" | "investigator";
-  team: "TEAM1" | "TEAM2" | "PTT" | null;
+  teamId: number | null;
+  teamName: string | null;
+  teamColour: string | null;
   lat: number;
   lng: number;
   speed: number | null;
@@ -877,22 +880,27 @@ function rectanglePolygonPath(
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-const TEAM_COLOURS: Record<string, string> = {
-  TEAM1: "#ec4899", // pink
-  TEAM2: "#1976d2", // blue
-  PTT: "#f9a825", // yellow
-  null: "#6b7280", // grey for unassigned
-};
-// Investigator accounts have no TEAM1/TEAM2/PTT (they aren't a
-// surveillance team member), so they'd otherwise fall through to the
-// generic "unassigned" grey above — deliberately darker instead, so their
-// pin still reads as a distinct, recognised category rather than looking
-// like a misconfigured account.
+// Pin colour comes from the person's team (User Management → Teams); anyone
+// without a team is grey.
+const NO_TEAM_PIN_COLOUR = "#6b7280"; // grey for unassigned
+// Investigator accounts have no team (they aren't a surveillance team
+// member), so they'd otherwise fall through to the generic "unassigned" grey
+// above — deliberately darker instead, so their pin still reads as a
+// distinct, recognised category rather than looking like a misconfigured
+// account.
 const INVESTIGATOR_PIN_COLOUR = "#374151"; // dark grey
 
-function getTeamColour(team: string | null, role?: LiveUser["role"]): string {
+/** Key a live user's team goes by in the hide/collapse sets ("null" = none). */
+function teamKeyOf(u: { teamId: number | null }): string {
+  return u.teamId != null ? String(u.teamId) : "null";
+}
+
+function getTeamColour(
+  u: { teamColour: string | null } | null,
+  role?: LiveUser["role"]
+): string {
   if (role === "investigator") return INVESTIGATOR_PIN_COLOUR;
-  return TEAM_COLOURS[team ?? "null"] ?? "#6b7280";
+  return u?.teamColour ?? NO_TEAM_PIN_COLOUR;
 }
 
 // Live team pin — directional "sonar" ring cadence + reach once a member
@@ -3045,7 +3053,9 @@ export default function IntelligenceMapping() {
   const traceLinesRef = useRef<Map<number, google.maps.Polyline>>(new Map());
   // Remembers each user's last-known team so a trace line keeps its colour
   // even if that officer briefly drops out of the live liveUsers list.
-  const traceUserTeamRef = useRef<Map<number, LiveUser["team"]>>(new Map());
+  const traceUserTeamRef = useRef<Map<number, { teamColour: string | null }>>(
+    new Map()
+  );
   // Key: userId -> epoch ms when Track was switched on for that officer, so
   // each line starts where they started rather than showing earlier history.
   const trackStartsRef = useRef<Map<number, number>>(new Map());
@@ -3194,6 +3204,7 @@ export default function IntelligenceMapping() {
   // giving them the map at all) — it's only the Teams PANEL (the
   // sidebar roster with per-team hide/collapse controls) they don't get;
   // see its own "not for Investigator" comment further down.
+  const mapTeams = useTeams();
   const { data: liveUsers } = trpc.intelligence.userLocations.useQuery(
     { operationIds: selectedOpIds },
     { refetchInterval: 1000, enabled: true }
@@ -4139,7 +4150,7 @@ export default function IntelligenceMapping() {
       const isThisDevice =
         u.userId === user?.id && u.deviceId === deviceIdRef.current;
       if (isThisDevice && !showOwnLocation) continue;
-      if (hiddenTeams.has(u.team ?? "null")) continue;
+      if (hiddenTeams.has(teamKeyOf(u))) continue;
       if (hiddenUsers.has(u.userId)) continue;
       // Same look as the flat map: name pill, with the state marker (heading
       // shape / green dot / red dot / walking figure) resting on the spot.
@@ -4154,7 +4165,7 @@ export default function IntelligenceMapping() {
       const heading = u.heading ?? 0;
       const pin = composeFlyTeamPin({
         name: u.name.toUpperCase(),
-        colour: u.pinColor ?? getTeamColour(u.team, u.role),
+        colour: u.pinColor ?? getTeamColour(u, u.role),
         state,
         onFoot: u.onFoot,
         // Walk or run is all the picture needs from the speed, and the
@@ -4538,8 +4549,7 @@ export default function IntelligenceMapping() {
   // the indicator centres itself on the overlay's local (0,0) via its own
   // translate, independent of the pill's width/height entirely.
   const createUserPinElement = useCallback((liveUser: LiveUser) => {
-    const color =
-      liveUser.pinColor ?? getTeamColour(liveUser.team, liveUser.role);
+    const color = liveUser.pinColor ?? getTeamColour(liveUser, liveUser.role);
     const label = liveUser.name.toUpperCase();
     const pinKey = `${liveUser.userId}_${liveUser.deviceId}`;
     const isMoving = liveUser.speed != null && liveUser.speed > 0.5;
@@ -5287,8 +5297,7 @@ export default function IntelligenceMapping() {
         u.userId === currentUserId && u.deviceId === currentDeviceId;
       if (isThisDevice && !showOwnLocation) return false;
       // Per-team visibility (manual hide buttons in the team list)
-      const teamKey = u.team ?? "null";
-      if (hiddenTeams.has(teamKey)) return false;
+      if (hiddenTeams.has(teamKeyOf(u))) return false;
       // Per-user visibility (manual hide button per user)
       if (hiddenUsers.has(u.userId)) return false;
       return true;
@@ -5429,7 +5438,7 @@ export default function IntelligenceMapping() {
   useEffect(() => {
     if (!liveUsers) return;
     for (const u of liveUsers as LiveUser[]) {
-      traceUserTeamRef.current.set(u.userId, u.team);
+      traceUserTeamRef.current.set(u.userId, { teamColour: u.teamColour });
     }
   }, [liveUsers]);
 
@@ -7206,18 +7215,38 @@ export default function IntelligenceMapping() {
   const obsPins = locations?.filter(l => l.type === "observation").length ?? 0;
 
   // ── Group live users by team for the settings panel ──────────────────────────
-  const liveUsersByTeam = {
-    TEAM1: [] as LiveUser[],
-    TEAM2: [] as LiveUser[],
-    PTT: [] as LiveUser[],
-    unassigned: [] as LiveUser[],
-  };
+  // One row per team: the viewer's own teams first (so an empty team still
+  // shows "No units online"), then any other team that has someone live.
+  const teamRows: Array<{
+    key: string;
+    label: string;
+    colour: string;
+    users: LiveUser[];
+  }> = mapTeams.map(t => ({
+    key: String(t.id),
+    label: t.name,
+    colour: t.colour ?? NO_TEAM_PIN_COLOUR,
+    users: [],
+  }));
+  const unassignedLiveUsers: LiveUser[] = [];
   if (liveUsers) {
     for (const u of liveUsers as LiveUser[]) {
-      if (u.team === "TEAM1") liveUsersByTeam.TEAM1.push(u);
-      else if (u.team === "TEAM2") liveUsersByTeam.TEAM2.push(u);
-      else if (u.team === "PTT") liveUsersByTeam.PTT.push(u);
-      else liveUsersByTeam.unassigned.push(u);
+      if (u.teamId == null) {
+        unassignedLiveUsers.push(u);
+        continue;
+      }
+      const key = String(u.teamId);
+      let row = teamRows.find(r => r.key === key);
+      if (!row) {
+        row = {
+          key,
+          label: u.teamName ?? "Team",
+          colour: u.teamColour ?? NO_TEAM_PIN_COLOUR,
+          users: [],
+        };
+        teamRows.push(row);
+      }
+      row.users.push(u);
     }
   }
 
@@ -8651,7 +8680,7 @@ export default function IntelligenceMapping() {
                       registeredPeopleLookupRef.current
                     )
                   : member
-                    ? `<strong style="font-size:13px">${member.name}</strong><div style="font-size:12px;color:#555">${member.team ?? "Team member"}</div>`
+                    ? `<strong style="font-size:13px">${member.name}</strong><div style="font-size:12px;color:#555">${member.teamName ?? "Team member"}</div>`
                     : `<strong style="font-size:13px">${cm.label ?? "Marker"}</strong>${
                         cm.address
                           ? `<div style="font-size:12px">${cm.address}</div>`
@@ -9538,134 +9567,117 @@ export default function IntelligenceMapping() {
 
                   {/* Team rows — collapsible with memory */}
                   <div className="flex flex-col gap-2">
-                    {[
-                      {
-                        key: "TEAM1",
-                        label: "Team 1",
-                        colour: TEAM_COLOURS.TEAM1,
-                        users: liveUsersByTeam.TEAM1,
-                      },
-                      {
-                        key: "TEAM2",
-                        label: "Team 2",
-                        colour: TEAM_COLOURS.TEAM2,
-                        users: liveUsersByTeam.TEAM2,
-                      },
-                      {
-                        key: "PTT",
-                        label: "PTT",
-                        colour: TEAM_COLOURS.PTT,
-                        users: liveUsersByTeam.PTT,
-                      },
-                    ].map(({ key, label, colour, users: teamUsers }) => {
-                      const isCollapsed = collapsedTeams.has(key);
-                      return (
-                        <div
-                          key={key}
-                          className="rounded-xl border-2 border-border overflow-hidden"
-                        >
-                          {/* Team header — tap to collapse/expand */}
-                          <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
-                            <button
-                              onClick={() =>
-                                setCollapsedTeams(prev => {
-                                  const next = new Set(prev);
-                                  next.has(key)
-                                    ? next.delete(key)
-                                    : next.add(key);
-                                  return next;
-                                })
-                              }
-                              className="flex items-center gap-2 flex-1 min-w-0"
-                            >
-                              <div
-                                className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                                style={{ background: colour }}
-                              />
-                              <span
-                                className="text-[11px] font-semibold"
-                                style={{ color: colour }}
+                    {teamRows.map(
+                      ({ key, label, colour, users: teamUsers }) => {
+                        const isCollapsed = collapsedTeams.has(key);
+                        return (
+                          <div
+                            key={key}
+                            className="rounded-xl border-2 border-border overflow-hidden"
+                          >
+                            {/* Team header — tap to collapse/expand */}
+                            <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
+                              <button
+                                onClick={() =>
+                                  setCollapsedTeams(prev => {
+                                    const next = new Set(prev);
+                                    next.has(key)
+                                      ? next.delete(key)
+                                      : next.add(key);
+                                    return next;
+                                  })
+                                }
+                                className="flex items-center gap-2 flex-1 min-w-0"
                               >
-                                {label}
-                              </span>
-                              {teamUsers.length > 0 && (
-                                <span className="text-[10px] text-muted-foreground">
-                                  ({teamUsers.length})
+                                <div
+                                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                                  style={{ background: colour }}
+                                />
+                                <span
+                                  className="text-[11px] font-semibold"
+                                  style={{ color: colour }}
+                                >
+                                  {label}
                                 </span>
-                              )}
-                              {isCollapsed ? (
-                                <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />
-                              ) : (
-                                <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />
-                              )}
-                            </button>
-                            <button
-                              onClick={() => toggleTeamVisibility(key)}
-                              className="ml-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground flex-shrink-0 px-2.5 py-1 rounded-md border border-border/50 bg-background/50 transition-colors"
-                            >
-                              {hiddenTeams.has(key) ? "Show" : "Hide"}
-                            </button>
-                          </div>
-                          {/* Team members — shown when not collapsed */}
-                          {!isCollapsed && (
-                            <div className="px-3 py-2 border-t border-border bg-card">
-                              {teamUsers.length === 0 ? (
-                                <p className="text-[10px] text-muted-foreground/50 italic">
-                                  No units online
-                                </p>
-                              ) : (
-                                <div className="flex flex-col gap-0.5">
-                                  {teamUsers.map(u => (
-                                    <div
-                                      key={u.userId}
-                                      className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
-                                    >
-                                      <span className="text-[11px] text-foreground font-medium truncate">
-                                        {u.name.toUpperCase()}
-                                        {u.userId === user?.id && (
-                                          <span className="ml-1 text-[9px] text-muted-foreground">
-                                            (you)
-                                          </span>
-                                        )}
-                                      </span>
-                                      <div className="flex items-center gap-1 flex-shrink-0">
-                                        <button
-                                          onClick={() =>
-                                            toggleUserTrace(u.userId)
-                                          }
-                                          className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors ${
-                                            tracedUserIds.has(u.userId)
-                                              ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
-                                              : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
-                                          }`}
-                                        >
-                                          {tracedUserIds.has(u.userId)
-                                            ? "Tracking"
-                                            : "Track"}
-                                        </button>
-                                        <button
-                                          onClick={() =>
-                                            toggleUserVisibility(u.userId)
-                                          }
-                                          className="text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border/50 bg-background/50 text-muted-foreground hover:text-foreground transition-colors"
-                                        >
-                                          {hiddenUsers.has(u.userId)
-                                            ? "Show"
-                                            : "Hide"}
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                                {teamUsers.length > 0 && (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    ({teamUsers.length})
+                                  </span>
+                                )}
+                                {isCollapsed ? (
+                                  <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />
+                                ) : (
+                                  <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />
+                                )}
+                              </button>
+                              <button
+                                onClick={() => toggleTeamVisibility(key)}
+                                className="ml-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground flex-shrink-0 px-2.5 py-1 rounded-md border border-border/50 bg-background/50 transition-colors"
+                              >
+                                {hiddenTeams.has(key) ? "Show" : "Hide"}
+                              </button>
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                            {/* Team members — shown when not collapsed */}
+                            {!isCollapsed && (
+                              <div className="px-3 py-2 border-t border-border bg-card">
+                                {teamUsers.length === 0 ? (
+                                  <p className="text-[10px] text-muted-foreground/50 italic">
+                                    No units online
+                                  </p>
+                                ) : (
+                                  <div className="flex flex-col gap-0.5">
+                                    {teamUsers.map(u => (
+                                      <div
+                                        key={u.userId}
+                                        className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
+                                      >
+                                        <span className="text-[11px] text-foreground font-medium truncate">
+                                          {u.name.toUpperCase()}
+                                          {u.userId === user?.id && (
+                                            <span className="ml-1 text-[9px] text-muted-foreground">
+                                              (you)
+                                            </span>
+                                          )}
+                                        </span>
+                                        <div className="flex items-center gap-1 flex-shrink-0">
+                                          <button
+                                            onClick={() =>
+                                              toggleUserTrace(u.userId)
+                                            }
+                                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors ${
+                                              tracedUserIds.has(u.userId)
+                                                ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
+                                                : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
+                                            }`}
+                                          >
+                                            {tracedUserIds.has(u.userId)
+                                              ? "Tracking"
+                                              : "Track"}
+                                          </button>
+                                          <button
+                                            onClick={() =>
+                                              toggleUserVisibility(u.userId)
+                                            }
+                                            className="text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border/50 bg-background/50 text-muted-foreground hover:text-foreground transition-colors"
+                                          >
+                                            {hiddenUsers.has(u.userId)
+                                              ? "Show"
+                                              : "Hide"}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
+                    )}
 
                     {/* Unassigned users */}
-                    {liveUsersByTeam.unassigned.length > 0 &&
+                    {unassignedLiveUsers.length > 0 &&
                       (() => {
                         const isCollapsed = collapsedTeams.has("null");
                         return (
@@ -9688,7 +9700,7 @@ export default function IntelligenceMapping() {
                                   Unassigned
                                 </span>
                                 <span className="text-[10px] text-muted-foreground">
-                                  ({liveUsersByTeam.unassigned.length})
+                                  ({unassignedLiveUsers.length})
                                 </span>
                                 {isCollapsed ? (
                                   <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />
@@ -9706,7 +9718,7 @@ export default function IntelligenceMapping() {
                             {!isCollapsed && (
                               <div className="px-3 py-2 border-t border-border bg-card">
                                 <div className="flex flex-col gap-0.5">
-                                  {liveUsersByTeam.unassigned.map(u => (
+                                  {unassignedLiveUsers.map(u => (
                                     <div
                                       key={u.userId}
                                       className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
@@ -9888,9 +9900,7 @@ export default function IntelligenceMapping() {
                     }`}
                     aria-pressed={on}
                     title={
-                      disabled
-                        ? "Turn Target logger on to use this"
-                        : undefined
+                      disabled ? "Turn Target logger on to use this" : undefined
                     }
                   >
                     <Icon

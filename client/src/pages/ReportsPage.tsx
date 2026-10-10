@@ -17,6 +17,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTeams } from "@/lib/teams";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,10 +76,8 @@ type CategoryId = (typeof CATEGORIES)[number]["id"];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// The server sends each person's team by name (User Management → Teams).
 function teamLabel(team: string) {
-  if (team === "TEAM1") return "Team 1";
-  if (team === "TEAM2") return "Team 2";
-  if (team === "PTT") return "PTT";
   return team;
 }
 
@@ -234,6 +233,7 @@ function ByTeam({
   sheets: IncompleteSheet[];
   onNavigate: (id: number) => void;
 }) {
+  const teamOrder = useTeams().map(t => t.name);
   const grouped = useMemo(() => {
     const map = new Map<string, IncompleteSheet[]>();
     for (const s of sheets) {
@@ -247,20 +247,15 @@ function ByTeam({
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(s);
     }
-    // Sort: Team 1, Team 2, PTT, Team Blended, No Team Assigned
-    const order = [
-      "Team 1",
-      "Team 2",
-      "PTT",
-      "Team Blended",
-      "No Team Assigned",
-    ];
+    // Sort: the Command's teams in their own order, then Team Blended,
+    // then No Team Assigned.
+    const order = [...teamOrder, "Team Blended", "No Team Assigned"];
     return Array.from(map.entries()).sort((a, b) => {
       const ai = order.indexOf(a[0]);
       const bi = order.indexOf(b[0]);
       return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
     });
-  }, [sheets]);
+  }, [sheets, teamOrder]);
 
   return (
     <div className="flex flex-col gap-2">

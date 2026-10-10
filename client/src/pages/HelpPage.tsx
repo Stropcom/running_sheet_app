@@ -2,7 +2,14 @@ import { useState, useMemo } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, ChevronDown, ChevronRight, BookOpen, AlertTriangle, Info } from "lucide-react";
+import {
+  Search,
+  ChevronDown,
+  ChevronRight,
+  BookOpen,
+  AlertTriangle,
+  Info,
+} from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,7 +68,8 @@ const HELP_SECTIONS: HelpSection[] = [
         tags: ["create", "operation", "new", "PROMIS", "IMS"],
       },
       {
-        question: "What is the YYYYMMDD naming convention for operations and sheets?",
+        question:
+          "What is the YYYYMMDD naming convention for operations and sheets?",
         answer:
           "If you begin an operation or running sheet title with a date in the format **YYYYMMDD** (e.g. 20260704 Operation ALPHA), the Calendar view will automatically place that operation/sheet on the correct date. Without this prefix, the system falls back to the creation date in UTC, which may display on a different day depending on timezone. Always use this prefix for accurate calendar placement.",
         tags: ["naming", "calendar", "date", "YYYYMMDD", "format"],
@@ -143,10 +151,18 @@ const HELP_SECTIONS: HelpSection[] = [
         tags: ["TEAM", "roster", "CIN", "team leader", "author"],
       },
       {
-        question: "Why must CINs in the TEAM roster match exactly what is entered in rows?",
+        question:
+          "Why must CINs in the TEAM roster match exactly what is entered in rows?",
         answer:
           "The system uses CINs to link certifications, generate AFP Statements, build Witness Lists, and populate the Governance To-Do list. If a CIN in a row does not exactly match a CIN in the TEAM roster, that officer's rows will not be included in their statement, and their certification status will not be tracked correctly. Always use the dropdown when adding CINs to rows — this ensures the correct value is used.",
-        tags: ["CIN", "match", "roster", "statement", "certification", "accuracy"],
+        tags: [
+          "CIN",
+          "match",
+          "roster",
+          "statement",
+          "certification",
+          "accuracy",
+        ],
         important: true,
       },
       {
@@ -169,9 +185,10 @@ const HELP_SECTIONS: HelpSection[] = [
         tags: ["CIN", "duplicate", "row", "multiple"],
       },
       {
-        question: "What are the group shortcuts (TEAM 1, TEAM 2, PTT) in the CIN dropdown?",
+        question:
+          "What are the team shortcuts (TEAM 1, TEAM 2, PTT…) when adding CINs?",
         answer:
-          "When adding CINs to a row, the dropdown includes group options — **TEAM 1**, **TEAM 2**, and **PTT**. Selecting one of these automatically adds all users belonging to that team to the row in one action. Individual CINs can still be added or removed after.",
+          "When adding CINs, there is an **Add team** button for each of your Command's teams (for example **TEAM 1**, **TEAM 2**, **PTT**). Selecting one adds everyone currently in that team in one action. Individual CINs can still be added or removed after. An admin adds, renames or deletes teams from **User Management → Teams**.",
         tags: ["TEAM 1", "TEAM 2", "PTT", "group", "CIN", "dropdown"],
       },
     ],
@@ -191,34 +208,79 @@ const HELP_SECTIONS: HelpSection[] = [
         question: "What are the default shortcuts?",
         answer:
           "The default shortcuts pre-loaded in the system are:\n• `sc` → Surveillance commenced in the vicinity of\n• `rack` → Surveillance ceased in the vicinity of\n• `oos` → Out of sight\n• `coos` → Continued out of sight\n• `pt` → PHOTOGRAPH/S TAKEN\n• `dso` → driver and sole occupant\n\nThese can be edited or deleted, and additional shortcuts can be created on the Shortcuts page in the sidebar.",
-        tags: ["shortcuts", "default", "sc", "rack", "oos", "coos", "pt", "dso"],
+        tags: [
+          "shortcuts",
+          "default",
+          "sc",
+          "rack",
+          "oos",
+          "coos",
+          "pt",
+          "dso",
+        ],
       },
       {
         question: "How do target-aware shortcuts work?",
         answer:
           "When a running sheet has an assigned target, the target's field abbreviations become live shortcuts in the observation field. For example, if the target's home address is set to '27 Olding Way', typing `HB ` in the observation field will expand to `27 Olding Way`. The available shortcuts are: TGT (target name), HB (home), HBF (home full address), V1 (vehicle 1), V1F (vehicle 1 full), V2 (vehicle 2), V2F (vehicle 2 full), DEP (depart), ARR (arrive).",
-        tags: ["target", "shortcuts", "TGT", "HB", "V1", "V2", "DEP", "ARR", "observation"],
+        tags: [
+          "target",
+          "shortcuts",
+          "TGT",
+          "HB",
+          "V1",
+          "V2",
+          "DEP",
+          "ARR",
+          "observation",
+        ],
         important: true,
       },
       {
-        question: "Do I need to format observations differently for the Intelligence folder?",
+        question:
+          "Do I need to format observations differently for the Intelligence folder?",
         answer:
           "No. The Intelligence folder works automatically from standard AFP surveillance log writing. As long as observations follow the normal format of writing a full description followed by a short form in parentheses — which is standard practice — the system will extract and link entities without any extra effort from the officer.\n\nConsistency in how names, registrations, and addresses are written does matter — for example, writing a vehicle registration as `(ABC 123)` in one sheet and `(ABC123)` in another will cause them to be treated as different entities. Keeping short forms consistent across sheets ensures accurate intelligence linking.",
-        tags: ["intelligence", "entities", "observation", "format", "automatic", "parentheses", "consistency"],
+        tags: [
+          "intelligence",
+          "entities",
+          "observation",
+          "format",
+          "automatic",
+          "parentheses",
+          "consistency",
+        ],
         important: true,
       },
       {
-        question: "What are 'Surveillance Commenced', 'Surveillance Ceased', and 'Travelled Via' rows?",
+        question:
+          "What are 'Surveillance Commenced', 'Surveillance Ceased', and 'Travelled Via' rows?",
         answer:
           "These are **special row types** that the system recognises by their observation text prefix:\n\n• Rows beginning with `SURVEILLANCE COMMENCED` or `SURVEILLANCE CEASED` mark the start and end of an officer's surveillance period. These rows are **excluded** from AFP Statements (they are administrative, not evidential) and are used to classify officers as **secondary witnesses** in the Witness List.\n• Rows where the observation ends with `WHEREAT` (or `WHEREAT:`) followed by a subsequent row beginning with `CONTINUED VIA` are classified as **Travelled Via** rows and are also excluded from statements and used for secondary witness classification.\n\nThese prefixes must be written exactly as shown for the system to recognise them.",
-        tags: ["surveillance commenced", "surveillance ceased", "travelled via", "whereat", "statement", "witness list", "secondary"],
+        tags: [
+          "surveillance commenced",
+          "surveillance ceased",
+          "travelled via",
+          "whereat",
+          "statement",
+          "witness list",
+          "secondary",
+        ],
         important: true,
       },
       {
         question: "Why does the observation text affect the AFP Statement?",
         answer:
           "The AFP Statement generator reads each row's observation text to build the numbered paragraphs in the statement. It also scans for photo/video keywords (e.g. `PHOTOGRAPH`, `VIDEO`, `FOOTAGE`) to determine which rows contain imagery, and lists those in paragraph 9 with exhibit labels. Rows classified as Surveillance Commenced/Ceased or Travelled Via are excluded. The quality and accuracy of the generated statement is directly dependent on how observations are written.",
-        tags: ["statement", "AFP", "observation", "photograph", "video", "imagery", "exhibit"],
+        tags: [
+          "statement",
+          "AFP",
+          "observation",
+          "photograph",
+          "video",
+          "imagery",
+          "exhibit",
+        ],
         important: true,
       },
     ],
@@ -257,19 +319,40 @@ const HELP_SECTIONS: HelpSection[] = [
         question: "What is the Governance checklist?",
         answer:
           "The Governance checklist is a post-surveillance task tracker for each running sheet. It records whether key administrative tasks have been completed after the operation: iSurv submission, sending to IO, saving as Word, saving as PDF, uploading to PROMIS, linking, saving in the Op folder, and imagery management. It is accessed via the **Governance** button on the sheet detail page or through the Governance list in the sidebar.",
-        tags: ["governance", "checklist", "iSurv", "PROMIS", "Word", "PDF", "IO"],
+        tags: [
+          "governance",
+          "checklist",
+          "iSurv",
+          "PROMIS",
+          "Word",
+          "PDF",
+          "IO",
+        ],
       },
       {
         question: "What is the Governance To-Do page?",
         answer:
           "The **Governance To-Do** page (under To-Do in the sidebar) shows each officer's outstanding governance tasks across all their running sheets. Items appear in amber (rows not yet certified), rose (governance incomplete), or emerald (ready to close). The Team Leader sees a 'Ready to close' item for every open sheet they lead, with a percentage badge showing governance completion.",
-        tags: ["governance", "to-do", "outstanding", "team leader", "ready to close", "percentage"],
+        tags: [
+          "governance",
+          "to-do",
+          "outstanding",
+          "team leader",
+          "ready to close",
+          "percentage",
+        ],
       },
       {
         question: "What does the governance percentage badge mean?",
         answer:
           "The percentage badge on a 'Ready to close' item shows how much of the governance checklist has been completed for that sheet (0–100%). A slate badge means 0–49% complete, sky-blue means 50–99%, and emerald means 100% complete. The Team Leader can use this to gauge whether the sheet is truly ready to close.",
-        tags: ["governance", "percentage", "badge", "ready to close", "team leader"],
+        tags: [
+          "governance",
+          "percentage",
+          "badge",
+          "ready to close",
+          "team leader",
+        ],
       },
     ],
   },
@@ -282,20 +365,41 @@ const HELP_SECTIONS: HelpSection[] = [
         question: "What is the Operation Management folder?",
         answer:
           "The **Operation Management** folder (in the sidebar, between Target Registry and Court) is where you manage the lifecycle status of operations. Operations can be moved from Active to **Before Court** or **Archive** status. Non-active operations are hidden from the main Operations page but remain searchable.",
-        tags: ["operation management", "before court", "archive", "status", "lifecycle"],
+        tags: [
+          "operation management",
+          "before court",
+          "archive",
+          "status",
+          "lifecycle",
+        ],
       },
       {
-        question: "What happens when an operation is moved to Before Court or Archive?",
+        question:
+          "What happens when an operation is moved to Before Court or Archive?",
         answer:
           "Once an operation is moved out of Active status:\n• It disappears from the main Operations page\n• It is still findable via the deep search (shown with a status badge)\n• Clicking it in search results redirects to Operation Management, not the operation itself\n• **All running sheet mutations are blocked** — no rows can be added, edited, or deleted, and no CINs can be modified\n• PDF export of running sheets is still permitted\n• The operation can be moved back to Active at any time from Operation Management",
-        tags: ["before court", "archive", "status", "blocked", "mutations", "PDF"],
+        tags: [
+          "before court",
+          "archive",
+          "status",
+          "blocked",
+          "mutations",
+          "PDF",
+        ],
         important: true,
       },
       {
-        question: "What is required before moving an operation to Before Court or Archive?",
+        question:
+          "What is required before moving an operation to Before Court or Archive?",
         answer:
           "All running sheets within the operation must be **closed** before the operation can be moved to Before Court or Archive status. If any sheets are still open, the status change will be blocked with an error message.",
-        tags: ["before court", "archive", "close sheets", "requirement", "status change"],
+        tags: [
+          "before court",
+          "archive",
+          "close sheets",
+          "requirement",
+          "status change",
+        ],
         important: true,
       },
     ],
@@ -309,38 +413,85 @@ const HELP_SECTIONS: HelpSection[] = [
         question: "What is the WIPC folder?",
         answer:
           "The **WIPC** folder (under Court in the sidebar) is used to generate two documents related to Witness Identification Protection Certificates:\n\n• **Statutory Declaration** — a formal statutory declaration document for a CIN, declaring the officer's identity at 1120 Hay Street, WEST PERTH, before a witness.\n• **WIPC Request** — a formal WIPC request document that includes operation details, the requesting officer's details, and a third page listing all members requiring WIPC protection.\n\nThe WIPC folder has an additional layer of security (AES-256-GCM encryption) compared to the rest of the application. A gold shield icon in the sidebar indicates this elevated security.",
-        tags: ["WIPC", "witness identification", "court", "statutory declaration", "encryption", "vault"],
+        tags: [
+          "WIPC",
+          "witness identification",
+          "court",
+          "statutory declaration",
+          "encryption",
+          "vault",
+        ],
       },
       {
         question: "How do I generate a Statutory Declaration?",
         answer:
           "Go to **Court → WIPC** in the sidebar. Select the operation, then choose **Statutory Declaration**. Fill in:\n• Full Name of Declarant\n• Full Name of Witness (followed by 'Federal Agent' and '1120 Hay Street, WEST PERTH')\n• Declared Before Name\n• Declaration date\n• CIN\n\nThe declaration location (PERTH) and declarant address (1120 Hay Street, WEST PERTH) are pre-filled but can be changed. Click **Generate** to download the .docx file.",
-        tags: ["statutory declaration", "WIPC", "declarant", "witness", "CIN", "generate", "docx"],
+        tags: [
+          "statutory declaration",
+          "WIPC",
+          "declarant",
+          "witness",
+          "CIN",
+          "generate",
+          "docx",
+        ],
       },
       {
         question: "How do I generate a WIPC Request?",
         answer:
           "Go to **Court → WIPC** in the sidebar. Select the operation, then choose **WIPC Request**. Fill in the officer details (name, rank, AFP ID, work location, portfolio) and operation details (court date, court location, operation name, commander, AC, deployment dates). Then add one or more members requiring WIPC protection in the Members Requiring WIPC panel.\n\nClick **Generate WIPC Request** to download a .docx file. The document contains:\n• Page 1–2: Officer details and operation information\n• Page 3: Members Requiring WIPC table (all members you added)",
-        tags: ["WIPC request", "generate", "officer", "members", "court", "docx"],
+        tags: [
+          "WIPC request",
+          "generate",
+          "officer",
+          "members",
+          "court",
+          "docx",
+        ],
       },
       {
         question: "What is the WIPC Vault and how does it protect my data?",
         answer:
           "The WIPC Vault is an **AES-256-GCM encrypted storage layer** that protects all sensitive WIPC data at rest. This is separate from and in addition to the standard database security.\n\nData protected by the vault includes:\n• Officer profiles (name, rank, AFP ID, work location, portfolio)\n• Member registry entries (names, AFP IDs, AI known-as values)\n• Any data that links CIN numbers to real officer identities\n\nThe vault uses a secret encryption key (WIPC_VAULT_KEY) stored separately from the database. Even if the database were accessed directly, the WIPC data would remain unreadable without the key. The gold shield (🛡) icon on the WIPC sidebar entry indicates this extra security layer.",
-        tags: ["vault", "encryption", "AES-256", "AES-256-GCM", "WIPC", "security", "key", "protect"],
+        tags: [
+          "vault",
+          "encryption",
+          "AES-256",
+          "AES-256-GCM",
+          "WIPC",
+          "security",
+          "key",
+          "protect",
+        ],
         important: true,
       },
       {
         question: "How do I save and recall officer details?",
         answer:
           "On the WIPC Request form, after filling in your officer details, click **Save Officer Profile to Vault**. Your details are encrypted and saved. The next time you open the WIPC page, your officer details are automatically recalled from the vault and pre-filled in the form.\n\nThis saves time when generating multiple WIPC documents — you only need to enter your officer details once.",
-        tags: ["officer profile", "vault", "save", "recall", "WIPC", "auto-fill"],
+        tags: [
+          "officer profile",
+          "vault",
+          "save",
+          "recall",
+          "WIPC",
+          "auto-fill",
+        ],
       },
       {
         question: "How does the Member Registry work?",
         answer:
           "The **Member Registry** is an encrypted store of member details (name, AFP ID, AI known as) that can be recalled when filling in the Members Requiring WIPC section.\n\nTo save a member: fill in their Name and AFP ID in a member card, then click **Save to Vault**. To recall a member: use the search dropdown at the top of the Members panel — search by name, AFP ID, or AI known as. Selecting a result auto-fills that member's details into a new card.\n\nAll member data is encrypted at rest using AES-256-GCM. Only Admin users can access the member registry.",
-        tags: ["member registry", "vault", "save", "recall", "AFP ID", "WIPC", "encryption", "admin"],
+        tags: [
+          "member registry",
+          "vault",
+          "save",
+          "recall",
+          "AFP ID",
+          "WIPC",
+          "encryption",
+          "admin",
+        ],
         important: true,
       },
     ],
@@ -367,13 +518,27 @@ const HELP_SECTIONS: HelpSection[] = [
         question: "How do I generate a Witness List?",
         answer:
           "Go to **Court → Witness List** in the sidebar. Select the operation, then select one or more running sheets. Click **Generate Witness List** to download a .docx file. If only one sheet is selected, only the individual sheet list is produced. If two or more sheets are selected, a combined list is also included.",
-        tags: ["witness list", "court", "generate", "docx", "primary", "secondary"],
+        tags: [
+          "witness list",
+          "court",
+          "generate",
+          "docx",
+          "primary",
+          "secondary",
+        ],
       },
       {
         question: "How are Primary and Secondary witnesses determined?",
         answer:
           "The Witness List generator classifies each CIN as:\n• **Primary Witness** — the CIN has substantive observation rows (rows that are not Surveillance Commenced/Ceased or Travelled Via)\n• **Secondary Witness** — the CIN only appears on Surveillance Commenced/Ceased or Travelled Via rows\n\nThis classification is automatic and based on the row content. Correct use of the SURVEILLANCE COMMENCED/CEASED and WHEREAT/CONTINUED VIA conventions is essential for accurate classification.",
-        tags: ["primary", "secondary", "witness", "classification", "surveillance commenced", "travelled via"],
+        tags: [
+          "primary",
+          "secondary",
+          "witness",
+          "classification",
+          "surveillance commenced",
+          "travelled via",
+        ],
         important: true,
       },
     ],
@@ -399,7 +564,15 @@ const HELP_SECTIONS: HelpSection[] = [
         question: "Why are target field values important for shortcuts?",
         answer:
           "Target-aware shortcuts only work if the target's fields are populated. If HB (home address) is empty, typing `HB ` in the observation field will not expand. Ensure all relevant target fields are filled in the Target Registry before beginning surveillance so shortcuts work correctly during the operation.",
-        tags: ["target", "shortcuts", "fields", "HB", "V1", "observation", "accuracy"],
+        tags: [
+          "target",
+          "shortcuts",
+          "fields",
+          "HB",
+          "V1",
+          "observation",
+          "accuracy",
+        ],
         important: true,
       },
     ],
@@ -413,20 +586,42 @@ const HELP_SECTIONS: HelpSection[] = [
         question: "What does the Intelligence folder do?",
         answer:
           "The Intelligence folder automatically extracts and links **persons, vehicles, addresses, and businesses** from all observation text across all running sheets. It builds profiles showing how entities are connected — which vehicles a person was seen in, which addresses they visited, which other persons they were associated with, and which running sheets they appear in.",
-        tags: ["intelligence", "entities", "persons", "vehicles", "addresses", "profiles"],
+        tags: [
+          "intelligence",
+          "entities",
+          "persons",
+          "vehicles",
+          "addresses",
+          "profiles",
+        ],
       },
       {
         question: "How does entity extraction work?",
         answer:
           "The system automatically scans observation text for the standard AFP surveillance log format — a **full description followed by a short form in parentheses**. No special formatting is required beyond writing observations as you normally would.\n\nExamples the system will detect:\n• `Jason JOHNSON (JOHNSON)` → Person\n• `a silver Toyota Hilux bearing registration (ABC 123)` → Vehicle\n• `1200 Leach Highway, MYAREE (HB)` → Address\n• `7-Eleven Northbridge (7-Eleven)` → Business\n\nThe system classifies the entity type automatically based on context words in the surrounding text — words like 'vehicle', 'registration', 'bearing' indicate a vehicle; all-caps names indicate a person; street numbers and road types indicate an address. Officers do not need to do anything differently from standard observation writing.",
-        tags: ["intelligence", "extraction", "parentheses", "vehicles", "persons", "addresses", "businesses", "automatic"],
+        tags: [
+          "intelligence",
+          "extraction",
+          "parentheses",
+          "vehicles",
+          "persons",
+          "addresses",
+          "businesses",
+          "automatic",
+        ],
         important: false,
       },
       {
         question: "What is the Association Map?",
         answer:
           "The **Association Map** (under Intelligence in the sidebar) is a visual graph showing how entities are connected to each other across all running sheets. Nodes represent entities and edges represent co-occurrence in the same observation or sheet.",
-        tags: ["association map", "intelligence", "graph", "entities", "connections"],
+        tags: [
+          "association map",
+          "intelligence",
+          "graph",
+          "entities",
+          "connections",
+        ],
       },
     ],
   },
@@ -442,10 +637,18 @@ const HELP_SECTIONS: HelpSection[] = [
         tags: ["calendar", "events", "date", "running sheet"],
       },
       {
-        question: "Why is my running sheet appearing on the wrong date in the Calendar?",
+        question:
+          "Why is my running sheet appearing on the wrong date in the Calendar?",
         answer:
           "The Calendar uses the **YYYYMMDD prefix** in the sheet or operation title to determine the date. If no prefix is present, it falls back to the UTC creation timestamp, which may differ from Perth time (UTC+8) and cause the event to appear one day earlier than expected. Always prefix sheet and operation titles with the date in YYYYMMDD format to ensure correct calendar placement.",
-        tags: ["calendar", "date", "YYYYMMDD", "timezone", "Perth", "wrong date"],
+        tags: [
+          "calendar",
+          "date",
+          "YYYYMMDD",
+          "timezone",
+          "Perth",
+          "wrong date",
+        ],
         important: true,
       },
     ],
@@ -465,7 +668,15 @@ const HELP_SECTIONS: HelpSection[] = [
         question: "What is the Governance To-Do page?",
         answer:
           "The **Governance To-Do** page shows outstanding post-surveillance governance tasks for your CIN. Items appear in different colours:\n• **Amber** — rows not yet certified (must be done before governance tasks are actionable)\n• **Rose** — governance checklist items incomplete\n• **Emerald** — sheet is ready to close (Team Leader only)\n\nThe badge count in the sidebar shows the total number of outstanding items.",
-        tags: ["governance to-do", "outstanding", "amber", "rose", "emerald", "team leader", "badge"],
+        tags: [
+          "governance to-do",
+          "outstanding",
+          "amber",
+          "rose",
+          "emerald",
+          "team leader",
+          "badge",
+        ],
       },
     ],
   },
@@ -478,20 +689,46 @@ const HELP_SECTIONS: HelpSection[] = [
         question: "How is the application secured?",
         answer:
           "The Secure Running Sheet Log uses multiple layers of security:\n\n• **Authentication** — All users must log in via Manus OAuth or local credentials. Sessions are signed with a JWT secret and stored in secure HTTP-only cookies.\n• **Role-based access control** — Three roles (Admin, Member, Observer) control what each user can see and do. Sensitive operations (user management, WIPC access) are Admin-only.\n• **Server-side enforcement** — All data access goes through tRPC procedures on the server. The frontend never has direct database access. Every procedure checks the user's role and identity before executing.\n• **Audit logging** — All significant actions (create, edit, delete, certify, close, generate documents) are recorded in the Audit Log with user, timestamp, and details.\n• **WIPC Vault encryption** — Sensitive WIPC data (officer profiles, member registry, CIN-identity links) is encrypted at rest using AES-256-GCM with a separate vault key.",
-        tags: ["security", "authentication", "JWT", "OAuth", "roles", "access control", "audit", "encryption"],
+        tags: [
+          "security",
+          "authentication",
+          "JWT",
+          "OAuth",
+          "roles",
+          "access control",
+          "audit",
+          "encryption",
+        ],
       },
       {
         question: "What is AES-256-GCM encryption and why does WIPC use it?",
         answer:
           "AES-256-GCM (Advanced Encryption Standard, 256-bit key, Galois/Counter Mode) is a military-grade authenticated encryption algorithm. It provides both **confidentiality** (data cannot be read without the key) and **integrity** (tampering with the encrypted data is detectable).\n\nWIPC data is subject to this extra layer because it contains information that directly links CIN numbers to real officer identities — which is the most sensitive data in the system. Standard database security protects data from external access, but vault encryption means that even with direct database access, the WIPC data cannot be read without the WIPC_VAULT_KEY secret.\n\nThe vault key is stored separately from the database and is never logged or exposed in application code.",
-        tags: ["AES-256", "AES-256-GCM", "encryption", "WIPC", "vault", "key", "CIN", "identity", "security"],
+        tags: [
+          "AES-256",
+          "AES-256-GCM",
+          "encryption",
+          "WIPC",
+          "vault",
+          "key",
+          "CIN",
+          "identity",
+          "security",
+        ],
         important: true,
       },
       {
         question: "What is the Audit Log?",
         answer:
           "The **Audit Log** (in the sidebar) records all significant actions taken within the application. Each entry shows:\n• The user who performed the action\n• The action type (create, edit, delete, certify, close, generate, etc.)\n• The target entity (operation name, sheet title, etc.)\n• The timestamp\n\nThe Audit Log is read-only and cannot be edited or deleted. It is accessible to Admin users and provides a complete history of all changes to the system.",
-        tags: ["audit log", "history", "actions", "admin", "timestamp", "security"],
+        tags: [
+          "audit log",
+          "history",
+          "actions",
+          "admin",
+          "timestamp",
+          "security",
+        ],
       },
     ],
   },
@@ -532,7 +769,9 @@ function scoreItem(item: HelpItem, query: string): number {
   if (!query) return 1;
   const q = normalise(query);
   const words = q.split(/\s+/).filter(Boolean);
-  const haystack = normalise(item.question + " " + item.answer + " " + item.tags.join(" "));
+  const haystack = normalise(
+    item.question + " " + item.answer + " " + item.tags.join(" ")
+  );
   let score = 0;
   for (const word of words) {
     if (haystack.includes(word)) score++;
@@ -555,7 +794,7 @@ function HelpSectionBlock({
 
   const filteredItems = useMemo(() => {
     if (!query) return section.items;
-    return section.items.filter((item) => scoreItem(item, query) > 0);
+    return section.items.filter(item => scoreItem(item, query) > 0);
   }, [section.items, query]);
 
   if (filteredItems.length === 0) return null;
@@ -563,11 +802,13 @@ function HelpSectionBlock({
   return (
     <div className="rounded-lg border border-border bg-card overflow-hidden">
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(v => !v)}
         className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-muted/30 transition-colors"
       >
         <span className="text-xl">{section.icon}</span>
-        <span className="font-semibold text-foreground flex-1">{section.title}</span>
+        <span className="font-semibold text-foreground flex-1">
+          {section.title}
+        </span>
         <Badge variant="secondary" className="text-xs mr-2">
           {filteredItems.length}
         </Badge>
@@ -604,7 +845,10 @@ function HelpItemBlock({ item, query }: { item: HelpItem; query: string }) {
       // Bold **text**
       const parts = line.split(/\*\*(.*?)\*\*/g);
       return (
-        <p key={i} className={`text-sm text-muted-foreground leading-relaxed ${i > 0 && line.startsWith("•") ? "ml-2" : ""}`}>
+        <p
+          key={i}
+          className={`text-sm text-muted-foreground leading-relaxed ${i > 0 && line.startsWith("•") ? "ml-2" : ""}`}
+        >
           {parts.map((part, j) =>
             j % 2 === 1 ? (
               <strong key={j} className="text-foreground font-semibold">
@@ -620,9 +864,11 @@ function HelpItemBlock({ item, query }: { item: HelpItem; query: string }) {
   }
 
   return (
-    <div className={`px-5 py-3 ${item.important ? "border-l-2 border-amber-500/60" : ""}`}>
+    <div
+      className={`px-5 py-3 ${item.important ? "border-l-2 border-amber-500/60" : ""}`}
+    >
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(v => !v)}
         className="w-full flex items-start gap-3 text-left group"
       >
         <div className="flex-1 flex items-start gap-2 mt-0.5">
@@ -658,21 +904,21 @@ export default function HelpPage() {
 
   const visibleSections = useMemo(() => {
     if (!trimmedQuery) return HELP_SECTIONS;
-    return HELP_SECTIONS.filter((section) =>
-      section.items.some((item) => scoreItem(item, trimmedQuery) > 0)
+    return HELP_SECTIONS.filter(section =>
+      section.items.some(item => scoreItem(item, trimmedQuery) > 0)
     );
   }, [trimmedQuery]);
 
   const totalItems = useMemo(
-    () =>
-      HELP_SECTIONS.reduce((acc, s) => acc + s.items.length, 0),
+    () => HELP_SECTIONS.reduce((acc, s) => acc + s.items.length, 0),
     []
   );
 
   const matchedItems = useMemo(() => {
     if (!trimmedQuery) return totalItems;
     return HELP_SECTIONS.reduce(
-      (acc, s) => acc + s.items.filter((item) => scoreItem(item, trimmedQuery) > 0).length,
+      (acc, s) =>
+        acc + s.items.filter(item => scoreItem(item, trimmedQuery) > 0).length,
       0
     );
   }, [trimmedQuery, totalItems]);
@@ -688,7 +934,8 @@ export default function HelpPage() {
           <div>
             <h1 className="text-xl font-bold text-foreground">Help Guide</h1>
             <p className="text-sm text-muted-foreground">
-              Usage guide and data entry standards for the Secure Running Sheet Log
+              Usage guide and data entry standards for the Secure Running Sheet
+              Log
             </p>
           </div>
         </div>
@@ -699,7 +946,11 @@ export default function HelpPage() {
           <p className="text-sm text-muted-foreground">
             Items marked with a{" "}
             <AlertTriangle className="w-3 h-3 text-amber-400 inline mx-0.5" />
-            amber indicator describe <strong className="text-foreground">data entry standards</strong> — how information must be entered for the system's automated functions (statements, witness lists, intelligence, shortcuts, calendar) to work correctly.
+            amber indicator describe{" "}
+            <strong className="text-foreground">data entry standards</strong> —
+            how information must be entered for the system's automated functions
+            (statements, witness lists, intelligence, shortcuts, calendar) to
+            work correctly.
           </p>
         </div>
 
@@ -710,7 +961,7 @@ export default function HelpPage() {
             className="pl-9"
             placeholder="Search help topics…"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={e => setQuery(e.target.value)}
           />
           {trimmedQuery && (
             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
@@ -726,7 +977,7 @@ export default function HelpPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {visibleSections.map((section) => (
+            {visibleSections.map(section => (
               <HelpSectionBlock
                 key={section.id}
                 section={section}

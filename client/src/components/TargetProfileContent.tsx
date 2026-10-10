@@ -49,23 +49,11 @@ import {
   isParsedDocumentImport,
   type DocumentImportRow,
 } from "@/components/ImportedDocumentCard";
+import { SectionHeading } from "@/components/ProfileSectionHeading";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
 type EntityItem = IntelAssocEntity;
-
-function SectionHeading({ label, count }: { label: string; count: number }) {
-  return (
-    <div className="flex items-center gap-2 mb-2">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
-      <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-        {count}
-      </span>
-    </div>
-  );
-}
 
 /** An operation this target/associate reaches into WITHOUT a formal
  * operationTargetLinks row — either because their name is mentioned in that
@@ -430,10 +418,10 @@ function PreviousNotes({
       {items.map((h, i) => (
         <p
           key={i}
-          className={`text-[11px] ${variant === "dark" ? "text-white/70" : "text-muted-foreground"}`}
+          className={`text-xs ${variant === "dark" ? "text-white/70" : "text-muted-foreground"}`}
         >
           <span
-            className={`font-semibold uppercase tracking-wide text-[10px] mr-1.5 px-1.5 py-0.5 rounded ${
+            className={`font-semibold uppercase tracking-wide text-xs mr-1.5 px-1.5 py-0.5 rounded ${
               variant === "dark"
                 ? "bg-white/15 text-white"
                 : "bg-amber-500/15 text-amber-700 dark:text-amber-400"
@@ -542,9 +530,9 @@ export function TargetProfileContent({
         <>
           {/* Header */}
           {!embedded && (
-            <div className="rounded-xl border border-border/60 bg-card overflow-hidden mb-5">
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm mb-5">
               <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap sm:gap-4">
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
@@ -637,7 +625,7 @@ export function TargetProfileContent({
           )}
 
           {/* Operations */}
-          <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+          <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
             <SectionHeading label="Operations" count={totalOperationsCount} />
             {totalOperationsCount > 1 && (
               <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
@@ -671,7 +659,7 @@ export function TargetProfileContent({
                 >
                   <Folder className="w-3 h-3 shrink-0" />
                   <span className="min-w-0 break-words">{op.name}</span>
-                  <span className="text-[9px] uppercase tracking-wide opacity-70 flex-1 min-w-0">
+                  <span className="text-xs uppercase tracking-wide opacity-70 flex-1 min-w-0">
                     {op.kind === "shared"
                       ? op.links
                           .map(l => sharedLinkChipText(l.via, l.sharedValue))
@@ -701,12 +689,10 @@ export function TargetProfileContent({
               return (
                 <div
                   key={`imports-${op.id}`}
-                  className="rounded-xl border border-border/60 bg-card p-4 mb-4"
+                  className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4"
                 >
-                  <p className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase tracking-wide mb-1">
-                    Imported Documents — {op.name}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground mb-3">
+                  <SectionHeading label={`Imported Documents — ${op.name}`} />
+                  <p className="text-xs text-muted-foreground mb-3">
                     Every document uploaded for this target on this operation,
                     verbatim as parsed.
                   </p>
@@ -744,7 +730,7 @@ export function TargetProfileContent({
             const entries = targetDetailEntries(profile);
             if (!entries.length) return null;
             return (
-              <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+              <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
                 <SectionHeading
                   label="Registered Details"
                   count={entries.length}
@@ -766,7 +752,7 @@ export function TargetProfileContent({
           {(profile.mdlStatus ||
             profile.bailStatus ||
             profile.specialProjects) && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
               <SectionHeading
                 label="Status"
                 count={
@@ -780,30 +766,30 @@ export function TargetProfileContent({
               <div className="grid grid-cols-1 gap-2 text-sm">
                 {profile.mdlStatus && (
                   <div className="flex gap-3 items-start">
-                    <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0 pt-0.5">
                       MDL
                     </span>
-                    <span className="text-xs text-foreground">
+                    <span className="text-sm text-foreground">
                       {mdlLabel(profile.mdlStatus)}
                     </span>
                   </div>
                 )}
                 {profile.bailStatus && (
                   <div className="flex gap-3 items-start">
-                    <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0 pt-0.5">
                       Bail
                     </span>
-                    <span className="text-xs text-foreground">
+                    <span className="text-sm text-foreground">
                       {formatBail(profile)}
                     </span>
                   </div>
                 )}
                 {formatSpecialProjects(profile.specialProjects) && (
                   <div className="flex gap-3 items-start">
-                    <span className="text-xs text-muted-foreground w-28 shrink-0 pt-0.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0 pt-0.5">
                       Special Projects
                     </span>
-                    <span className="text-xs text-foreground">
+                    <span className="text-sm text-foreground">
                       {formatSpecialProjects(profile.specialProjects)}
                     </span>
                   </div>
@@ -813,7 +799,7 @@ export function TargetProfileContent({
           )}
 
           {/* Running Sheets */}
-          <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+          <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
             <SectionHeading
               label="Running Sheets"
               count={profile.linkedSheets.length}
@@ -828,7 +814,7 @@ export function TargetProfileContent({
                   <button
                     key={s.id}
                     onClick={() => navigate(`/sheet/${s.id}`)}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background hover:bg-accent/10 transition-colors text-left"
                   >
                     <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                     <span className="text-xs font-medium text-foreground flex-1 truncate">
@@ -849,7 +835,7 @@ export function TargetProfileContent({
               visually distinct from "Running Sheets" so it reads as
               "elsewhere, not yours" rather than duplicating that list. */}
           {profile.mentionedSheets.length > 0 && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
               <SectionHeading
                 label="Also Mentioned In"
                 count={profile.mentionedSheets.length}
@@ -863,7 +849,7 @@ export function TargetProfileContent({
                   <button
                     key={s.id}
                     onClick={() => navigate(`/sheet/${s.id}`)}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-border/60 bg-muted/10 hover:bg-accent/10 transition-colors text-left"
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-border bg-background hover:bg-accent/10 transition-colors text-left"
                   >
                     <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                     <span className="text-xs font-medium text-foreground flex-1 truncate">
@@ -882,15 +868,11 @@ export function TargetProfileContent({
               Target Registry, a guaranteed link rather than inferred from
               observation-text co-occurrence. */}
           {residents.length > 0 && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
-              <div className="flex items-center gap-2 mb-3">
-                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Other Home Address Residents
-                </p>
-                <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                  {residents.length}
-                </span>
-              </div>
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+              <SectionHeading
+                label="Other Home Address Residents"
+                count={residents.length}
+              />
               <div className="flex flex-col gap-2">
                 {residents.map(a => (
                   <RegistryPersonRow
@@ -908,15 +890,11 @@ export function TargetProfileContent({
               Target Registry, a guaranteed link rather than inferred from
               observation-text co-occurrence. */}
           {associatesOnly.length > 0 && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
-              <div className="flex items-center gap-2 mb-3">
-                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Registered Associates
-                </p>
-                <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                  {associatesOnly.length}
-                </span>
-              </div>
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+              <SectionHeading
+                label="Registered Associates"
+                count={associatesOnly.length}
+              />
               <div className="flex flex-col gap-2">
                 {associatesOnly.map(a => (
                   <RegistryPersonRow
@@ -934,17 +912,15 @@ export function TargetProfileContent({
           {(profile.assocPersons.length > 0 ||
             profile.assocVehicles.length > 0 ||
             profile.assocLocations.length > 0) && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
-              <div className="flex items-center gap-2 mb-3">
-                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Operational Associations
-                </p>
-                <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-                  {profile.assocPersons.length +
-                    profile.assocVehicles.length +
-                    profile.assocLocations.length}
-                </span>
-              </div>
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+              <SectionHeading
+                label="Operational Associations"
+                count={
+                  profile.assocPersons.length +
+                  profile.assocVehicles.length +
+                  profile.assocLocations.length
+                }
+              />
               <p className="text-xs text-muted-foreground mb-3 italic">
                 Entities observed in the same running sheet rows as this target
               </p>
@@ -953,6 +929,7 @@ export function TargetProfileContent({
               {profile.assocPersons.length > 0 && (
                 <div className="mb-3">
                   <SectionHeading
+                    sub
                     label="Associated Persons"
                     count={profile.assocPersons.length}
                   />
@@ -967,6 +944,7 @@ export function TargetProfileContent({
               {profile.assocVehicles.length > 0 && (
                 <div className="mb-3">
                   <SectionHeading
+                    sub
                     label="Associated Vehicles"
                     count={profile.assocVehicles.length}
                   />
@@ -981,6 +959,7 @@ export function TargetProfileContent({
               {profile.assocLocations.length > 0 && (
                 <div className="mb-3">
                   <SectionHeading
+                    sub
                     label="Associated Locations"
                     count={profile.assocLocations.length}
                   />

@@ -165,7 +165,7 @@ function FieldInput({
     : undefined;
   return (
     <div>
-      <p className="text-xs font-medium text-muted-foreground mb-1.5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-1.5">
         {label}
       </p>
       <Input
@@ -250,7 +250,7 @@ function FieldTextarea({
 }) {
   return (
     <div>
-      <p className="text-xs font-medium text-muted-foreground mb-1.5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-1.5">
         {label}
         {hint && <span className="font-normal opacity-70"> — {hint}</span>}
       </p>
@@ -267,7 +267,7 @@ function FieldTextarea({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-xs font-medium text-muted-foreground mb-1.5">
+    <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-1.5">
       {children}
     </p>
   );
@@ -1223,7 +1223,7 @@ export default function SheetSummaryPage() {
         )}
 
         {/* Summary Complete lock */}
-        <div className="mb-4 rounded-xl border border-border/60 bg-card p-4 flex items-center justify-between gap-3">
+        <div className="mb-4 rounded-xl border border-border bg-card p-4 shadow-sm flex items-center justify-between gap-3">
           <div>
             {isComplete ? (
               <div className="flex items-center gap-2 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
@@ -1284,7 +1284,7 @@ export default function SheetSummaryPage() {
           </div>
         ) : (
           <div className="space-y-8">
-            <div className="rounded-xl border border-border/60 bg-card p-4 space-y-4">
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-4">
               <FieldInput
                 label="Team"
                 value={form.teamLabel}
@@ -1330,7 +1330,7 @@ export default function SheetSummaryPage() {
                 disabled={isLocked}
               />
               <div>
-                <p className="text-xs font-medium text-muted-foreground mb-1.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-1.5">
                   Location
                 </p>
                 <ShortcutAddressField
@@ -1379,7 +1379,7 @@ export default function SheetSummaryPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-border/60 bg-card p-4 space-y-4">
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-4">
               <FieldInput
                 label="Investigator"
                 value={form.ioSupport}
@@ -1463,7 +1463,7 @@ export default function SheetSummaryPage() {
                   <div className="space-y-2">
                     {specialProjects.map(p => (
                       <div key={p.key} className="flex items-center gap-2">
-                        <span className="text-xs font-medium text-muted-foreground w-16 shrink-0">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-16 shrink-0">
                           {p.key}
                         </span>
                         {p.key === "Coyotes" ? (
@@ -1507,7 +1507,7 @@ export default function SheetSummaryPage() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-border/60 bg-card p-4 space-y-5">
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-5">
               {/* Objectives — dynamic single-line list */}
               <div>
                 <SectionLabel>
@@ -1611,8 +1611,8 @@ export default function SheetSummaryPage() {
                   </button>
                 )}
                 {entries && entries.length > 0 && (
-                  <div className="rounded-lg border border-border/60 overflow-hidden">
-                    <div className="grid grid-cols-[6.5rem_1fr_2rem] bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground border-b border-border/60">
+                  <div className="rounded-lg border border-border overflow-hidden">
+                    <div className="grid grid-cols-[6.5rem_1fr_2rem] bg-muted/70 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-foreground/80 border-b border-border">
                       <span>Time</span>
                       <span>Text</span>
                       <span />

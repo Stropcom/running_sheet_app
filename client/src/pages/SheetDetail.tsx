@@ -1891,7 +1891,7 @@ function TimePickerCell({
               >
                 ◀
               </button>
-              <span className="text-[11px] font-semibold tracking-widest text-foreground font-mono">
+              <span className="text-xs font-semibold tracking-widest text-foreground font-mono">
                 {formatPerthDateLabel(selectedRowDate)}
               </span>
               <button
@@ -2749,11 +2749,11 @@ function SortableChip({
             </span>
           </span>
         )}
-        <span className="text-[10px] font-bold text-primary uppercase tracking-wide">
+        <span className="text-xs font-bold text-primary uppercase tracking-wide">
           {label}
         </span>
         {showValue && value && (
-          <span className="text-[10px] font-mono text-foreground/80 max-w-[160px] truncate">
+          <span className="text-xs font-mono text-foreground/80 max-w-[160px] truncate">
             {value}
           </span>
         )}
@@ -5008,11 +5008,11 @@ export default function SheetDetail({
 
         {/* Daily Roster Panel with Certify All — collapsible, matching target panel style */}
         {(parsedRoster.length > 0 || true) && (
-          <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
+          <div className="mb-4 rounded-lg border border-border bg-card shadow-sm overflow-hidden">
             {/* Header row — same structure as target panel: collapse button + separate pencil button */}
             <div className="flex items-center">
               <button
-                className="flex-1 flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left min-w-0"
+                className="flex-1 flex items-center gap-2 px-4 py-3 bg-muted/60 hover:bg-muted active:bg-muted transition-colors select-none text-left min-w-0"
                 onClick={() => {
                   const next = !teamPanelExpanded;
                   setTeamPanelExpanded(next);
@@ -5025,12 +5025,12 @@ export default function SheetDetail({
                 }}
               >
                 <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">
+                <span className="text-[13px] font-bold uppercase tracking-wide text-foreground truncate flex-1">
                   TEAM — CERTIFY
                 </span>
                 {/* Certified count badge */}
                 {parsedRoster.length > 0 && (
-                  <span className="text-[10px] font-mono text-muted-foreground mr-1">
+                  <span className="text-xs font-mono text-muted-foreground mr-1">
                     {cinFullyCertified.size}/{parsedRoster.length}
                   </span>
                 )}
@@ -5041,7 +5041,7 @@ export default function SheetDetail({
               {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
               {sheet && (
                 <button
-                  className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30 rounded-tr-lg"
+                  className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border bg-muted/60 hover:bg-muted rounded-tr-lg"
                   onClick={openEditRoster}
                   title="Edit TEAM"
                 >
@@ -5051,7 +5051,7 @@ export default function SheetDetail({
             </div>
             {/* Collapsible CIN badges */}
             {teamPanelExpanded && (
-              <div className="px-4 pb-3">
+              <div className="px-4 py-3">
                 {parsedRoster.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {parsedRoster.map(entry => (
@@ -5958,11 +5958,11 @@ export default function SheetDetail({
             return (
               <>
                 {showTargetPanel && (
-                  <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
+                  <div className="mb-4 rounded-lg border border-border bg-card shadow-sm overflow-hidden">
                     {/* Header — always visible. Tapping the main area toggles collapse; pencil navigates to edit */}
                     <div className="flex items-center">
                       <button
-                        className="flex-1 flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left min-w-0"
+                        className="flex-1 flex items-center gap-2 px-4 py-3 bg-muted/60 hover:bg-muted active:bg-muted transition-colors select-none text-left min-w-0"
                         onClick={() =>
                           setTargetPanelExpanded(v => {
                             const next = !v;
@@ -5981,7 +5981,7 @@ export default function SheetDetail({
                         ) : (
                           <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                         )}
-                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">
+                        <span className="text-[13px] font-bold uppercase tracking-wide text-foreground truncate flex-1">
                           {hasTarget ? `TARGET — ${t!.name}` : "SHORTCUTS"}
                         </span>
                         <ChevronDown
@@ -5991,7 +5991,7 @@ export default function SheetDetail({
                       {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
                       {hasTarget && (
                         <button
-                          className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30 rounded-tr-lg"
+                          className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border bg-muted/60 hover:bg-muted rounded-tr-lg"
                           onClick={() =>
                             navigate(
                               `/operation/${sheet!.operationId}?tab=target&targetId=${t!.id}&fromSheet=${sheetId}`
@@ -6225,13 +6225,13 @@ export default function SheetDetail({
                                           targetPosition.place
                                         ) && (
                                           <span
-                                            className="mr-1 text-[11px]"
+                                            className="mr-1 text-xs"
                                             title={`Target ${targetPosition.label}`}
                                           >
                                             {TARGET_EMOJI[targetPosition.state]}
                                           </span>
                                         )}
-                                      <span className="text-[10px] font-mono font-bold max-w-[140px] truncate">
+                                      <span className="text-xs font-mono font-bold max-w-[140px] truncate">
                                         {chip.insertValue}
                                       </span>
                                     </button>
@@ -6441,7 +6441,7 @@ export default function SheetDetail({
                                   <td colSpan={3} className="py-1.5 px-4">
                                     <div className="flex items-center gap-3">
                                       <div className="flex-1 h-px bg-border" />
-                                      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground whitespace-nowrap">
+                                      <span className="text-xs font-semibold tracking-widest text-muted-foreground whitespace-nowrap">
                                         {label}
                                       </span>
                                       <div className="flex-1 h-px bg-border" />

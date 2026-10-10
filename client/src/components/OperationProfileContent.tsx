@@ -51,6 +51,7 @@ import {
   isParsedDocumentImport,
   type DocumentImportRow,
 } from "@/components/ImportedDocumentCard";
+import { SectionHeading } from "@/components/ProfileSectionHeading";
 
 // ─── Types (mirrors server IntelOperationProfile) ──────────────────────────
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
@@ -224,12 +225,12 @@ function ImportedDocumentsSection({ operationId }: { operationId: number }) {
           <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300 uppercase tracking-wider">
             Imported Documents
           </p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             Every target-profile document uploaded for this operation, verbatim
             as parsed.
           </p>
         </div>
-        <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-[11px] font-bold text-violet-700 dark:text-violet-300 tabular-nums">
+        <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-xs font-bold text-violet-700 dark:text-violet-300 tabular-nums">
           {imports.length}
         </span>
       </div>
@@ -309,9 +310,9 @@ export function OperationProfileContent({
         <>
           {/* Header */}
           {!embedded && (
-            <div className="rounded-xl border border-border/60 bg-card overflow-hidden mb-5">
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm mb-5">
               <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap sm:gap-4">
                   <div>
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30 mb-3">
                       Operation
@@ -374,7 +375,11 @@ export function OperationProfileContent({
           )}
 
           {typedProfile.crossOperationLinks.length > 0 && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+              <SectionHeading
+                label="Cross-operation links"
+                count={typedProfile.crossOperationLinks.length}
+              />
               <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
                 <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <p className="text-xs text-amber-800 dark:text-amber-300">
@@ -398,7 +403,7 @@ export function OperationProfileContent({
                     <span className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400 shrink-0">
                       <Folder className="w-3 h-3" />
                       {l.otherOperationName}
-                      <span className="text-[9px] uppercase tracking-wide opacity-70">
+                      <span className="text-xs uppercase tracking-wide opacity-70">
                         {sharedLinkChipText(l.via, l.sharedValue)}
                       </span>
                     </span>
@@ -417,7 +422,7 @@ export function OperationProfileContent({
               <p className="text-xs font-extrabold text-blue-800 dark:text-blue-300 uppercase tracking-wider">
                 Targets
               </p>
-              <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-[11px] font-bold text-blue-800 dark:text-blue-300 tabular-nums">
+              <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-xs font-bold text-blue-800 dark:text-blue-300 tabular-nums">
                 {typedProfile.targets.length}
               </span>
             </div>
@@ -432,7 +437,7 @@ export function OperationProfileContent({
               return (
                 <div
                   key={target.targetId}
-                  className="rounded-xl border border-border/60 bg-card overflow-hidden"
+                  className="overflow-hidden rounded-xl border border-border bg-card shadow-sm"
                 >
                   <button
                     onClick={() =>
@@ -501,10 +506,10 @@ export function OperationProfileContent({
                   </button>
 
                   {isExpanded && (
-                    <div className="border-t border-border/40 px-4 pb-4 pt-3 space-y-3">
+                    <div className="border-t border-border px-4 pb-4 pt-3 space-y-3">
                       {target.photos.length > 0 && (
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                          <p className="text-xs font-bold uppercase tracking-wide text-foreground/80 mb-2">
                             Photos ({target.photos.length})
                           </p>
                           <IntelPhotoStrip photos={target.photos} />
@@ -516,7 +521,7 @@ export function OperationProfileContent({
                         if (!entries.length) return null;
                         return (
                           <div>
-                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                            <p className="text-xs font-bold uppercase tracking-wide text-foreground/80 mb-2">
                               Registered Details
                             </p>
                             <RegisteredDetailPanels entries={entries} />
@@ -530,13 +535,13 @@ export function OperationProfileContent({
                         target.bailStatus ||
                         formatSpecialProjects(target.specialProjects)) && (
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                          <p className="text-xs font-bold uppercase tracking-wide text-foreground/80 mb-2">
                             Status
                           </p>
                           <div className="space-y-1 text-xs">
                             {target.mdlStatus && (
                               <div className="flex gap-2">
-                                <span className="text-muted-foreground w-28 shrink-0">
+                                <span className="font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0">
                                   MDL
                                 </span>
                                 <span>{mdlLabel(target.mdlStatus)}</span>
@@ -544,7 +549,7 @@ export function OperationProfileContent({
                             )}
                             {target.bailStatus && (
                               <div className="flex gap-2">
-                                <span className="text-muted-foreground w-28 shrink-0">
+                                <span className="font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0">
                                   Bail
                                 </span>
                                 <span>{formatBail(target)}</span>
@@ -552,7 +557,7 @@ export function OperationProfileContent({
                             )}
                             {formatSpecialProjects(target.specialProjects) && (
                               <div className="flex gap-2">
-                                <span className="text-muted-foreground w-28 shrink-0">
+                                <span className="font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0">
                                   Special Projects
                                 </span>
                                 <span>
@@ -571,10 +576,10 @@ export function OperationProfileContent({
                       ).length > 0 && (
                         <div>
                           <div className="flex items-center gap-2 mb-2">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            <p className="text-xs font-bold uppercase tracking-wide text-foreground/80">
                               Other Home Address Residents
                             </p>
-                            <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+                            <span className="text-xs text-muted-foreground border border-border bg-background px-2 py-0.5 rounded-full">
                               {
                                 target.registryAssociates.filter(
                                   a => a.relationship === "resident"
@@ -602,10 +607,10 @@ export function OperationProfileContent({
                       ).length > 0 && (
                         <div>
                           <div className="flex items-center gap-2 mb-2">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                            <p className="text-xs font-bold uppercase tracking-wide text-foreground/80">
                               Registered Associates
                             </p>
-                            <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
+                            <span className="text-xs text-muted-foreground border border-border bg-background px-2 py-0.5 rounded-full">
                               {
                                 target.registryAssociates.filter(
                                   a => a.relationship !== "resident"
@@ -630,7 +635,7 @@ export function OperationProfileContent({
                       )}
                       {target.linkedSheets.length > 0 && (
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                          <p className="text-xs font-bold uppercase tracking-wide text-foreground/80 mb-2">
                             Running Sheets
                           </p>
                           <div className="space-y-1">
@@ -638,7 +643,7 @@ export function OperationProfileContent({
                               <button
                                 key={s.id}
                                 onClick={() => navigate(`/sheet/${s.id}`)}
-                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
+                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background hover:bg-accent/10 transition-colors text-left"
                               >
                                 <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                                 <span className="text-xs font-medium text-foreground flex-1 truncate">
@@ -651,7 +656,7 @@ export function OperationProfileContent({
                       )}
                       {totalAssoc > 0 && (
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                          <p className="text-xs font-bold uppercase tracking-wide text-foreground/80 mb-2">
                             Operational Associations
                           </p>
                           {target.assocPersons.length > 0 && (

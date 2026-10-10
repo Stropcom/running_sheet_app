@@ -27,6 +27,7 @@ import {
   ProfileDropdownRow,
   IntelEntityDropdown,
 } from "@/components/ProfileDropdown";
+import { SectionHeading } from "@/components/ProfileSectionHeading";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
@@ -52,19 +53,6 @@ export interface IntelLocationProfile {
   assocVehicles: IntelProfileEntity[];
   isPrevious?: boolean;
   isIndicesOnly: boolean;
-}
-
-function SectionHeading({ label, count }: { label: string; count: number }) {
-  return (
-    <div className="flex items-center gap-2 mb-2">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
-      <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-        {count}
-      </span>
-    </div>
-  );
 }
 
 function buildLocationProfileHtml(
@@ -221,9 +209,9 @@ export function LocationProfileContent({
       {profile && (
         <>
           {!embedded && (
-            <div className="rounded-xl border border-border/60 bg-card overflow-hidden mb-5">
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm mb-5">
               <div className="bg-gradient-to-r from-emerald-900 to-emerald-800 px-6 py-5 text-white">
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap sm:gap-4">
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
@@ -237,7 +225,7 @@ export function LocationProfileContent({
                       {displayLabel}
                     </h1>
                     {profile.isPrevious && (
-                      <span className="inline-block mt-2 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-white/15 text-white">
+                      <span className="inline-block mt-2 px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wide bg-white/15 text-white">
                         Previous
                       </span>
                     )}
@@ -292,7 +280,7 @@ export function LocationProfileContent({
           />
 
           {profile.linkedOperations.length > 0 && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
               <SectionHeading
                 label="Operations"
                 count={profile.linkedOperations.length}
@@ -325,7 +313,7 @@ export function LocationProfileContent({
           )}
 
           {profile.linkedTargets.length > 0 && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
               <SectionHeading
                 label="Linked Targets"
                 count={profile.linkedTargets.length}
@@ -348,7 +336,7 @@ export function LocationProfileContent({
           )}
 
           {profile.linkedAssociates.length > 0 && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
               <SectionHeading
                 label={
                   profile.linkedAssociates.length > 1
@@ -378,7 +366,7 @@ export function LocationProfileContent({
           )}
 
           {profile.linkedSheets.length > 0 && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
               <SectionHeading
                 label="Running Sheets"
                 count={profile.linkedSheets.length}
@@ -388,7 +376,7 @@ export function LocationProfileContent({
                   <button
                     key={s.id}
                     onClick={() => navigate(`/sheet/${s.id}`)}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background hover:bg-accent/10 transition-colors text-left"
                   >
                     <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                     <span className="text-xs font-medium text-foreground flex-1 truncate">
@@ -405,7 +393,7 @@ export function LocationProfileContent({
 
           {(profile.assocPersons.length > 0 ||
             profile.assocVehicles.length > 0) && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
               <SectionHeading
                 label="Associations"
                 count={
@@ -435,10 +423,10 @@ export function LocationProfileContent({
             </div>
           )}
 
-          <div className="rounded-xl border border-border/60 bg-card overflow-hidden mb-4">
-            <div className="px-4 py-3 border-b border-border/60 flex items-center gap-2">
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm mb-4">
+            <div className="flex items-center gap-2 border-b border-border bg-muted/70 px-4 py-2.5">
               <MapPin className="w-4 h-4 text-emerald-600" />
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <p className="text-[13px] font-bold uppercase tracking-wide text-foreground">
                 Map
               </p>
             </div>

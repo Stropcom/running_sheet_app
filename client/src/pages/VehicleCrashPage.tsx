@@ -808,9 +808,9 @@ function RepairerCard() {
 }
 
 // Groups results by topic (Identity, Declaration, Vehicle, Reporting…) —
-// each topic gets its own bordered panel rather than just a plain label
-// inline in one continuous list, so SAFETY/IDENTITY/DECLARATION/etc. read
-// as clearly separate blocks at a glance, especially on a phone/tablet
+// each topic is its own solid panel with a titled header band, and each step
+// sits in its own bordered card, so the topics and the steps inside them
+// read as clearly separate blocks at a glance, especially on a phone/tablet
 // screen in bright light. Items stay numbered, but the numbering runs
 // continuously across panel boundaries so it still reads as a single
 // procedure, just clustered by subject. Caution items use red, not amber —
@@ -831,35 +831,37 @@ function GroupedResultList({ items }: { items: ResultItem[] }) {
   }
   let n = 0;
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-3.5">
       {groups.map(g => (
         <div
           key={g.name}
-          className="rounded-lg border border-border/60 bg-background/50 px-3 py-2.5"
+          className="overflow-hidden rounded-xl border border-border bg-card shadow-sm"
         >
-          <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70 pb-1.5">
+          <p className="border-b border-border bg-muted/70 px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-foreground">
             {g.name}
           </p>
-          <div className="flex flex-col">
+          <div className="flex flex-col gap-2 p-2.5">
             {g.items.map((it, i) => {
               n++;
               return (
                 <div
                   key={i}
-                  className={`flex gap-2.5 py-2 border-t border-dashed border-border/50 first:border-t-0 text-sm text-foreground ${
-                    it.caution ? "bg-red-500/5 -mx-2 px-2 rounded-lg" : ""
+                  className={`flex gap-3 rounded-lg border px-3 py-3 text-[15px] leading-relaxed text-foreground ${
+                    it.caution
+                      ? "border-red-500/30 bg-red-500/10"
+                      : "border-border/70 bg-background"
                   }`}
                 >
                   <span
-                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
+                    className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                       it.caution
-                        ? "bg-red-500/15 text-red-500"
-                        : "bg-indigo-500/10 text-indigo-400"
+                        ? "bg-red-600 text-white"
+                        : "bg-indigo-600 text-white"
                     }`}
                   >
                     {n}
                   </span>
-                  <span className="leading-snug flex-1 min-w-0">{it.text}</span>
+                  <span className="min-w-0 flex-1">{it.text}</span>
                 </div>
               );
             })}
@@ -1065,7 +1067,7 @@ function CrashWizard() {
         Use your <b>Assumed Identity</b> details for anything you're required to
         give — registration, name, address, licence, phone.
         {myAiPhones && (
-          <p className="mt-1.5 text-muted-foreground">
+          <p className="mt-2 text-foreground/80">
             Your AI phone ({myTeam === "TEAM1" ? "Team 1" : "Team 2"}):{" "}
             <b className="text-foreground">{myAiPhones.join(" or ")}</b>
           </p>
@@ -1090,7 +1092,7 @@ function CrashWizard() {
         <>
           A <b>declaration exception may apply</b> — only permitted where one of
           these applies:
-          <ul className="list-disc list-inside mt-1.5 space-y-0.5 text-muted-foreground">
+          <ul className="list-disc pl-5 mt-2 space-y-1 text-foreground/80">
             <li>Serious injury requiring medical treatment to the operative</li>
             <li>A fatality to any person involved</li>
             <li>
@@ -1102,7 +1104,7 @@ function CrashWizard() {
             Get authorisation from your <b>Team Leader / Inspector CTO WC</b>{" "}
             first. If disclosed:
           </p>
-          <ul className="list-disc list-inside mt-1.5 space-y-0.5 text-muted-foreground">
+          <ul className="list-disc pl-5 mt-2 space-y-1 text-foreground/80">
             <li>Emergency services only — Police, SJA, FESA</li>
             <li>Never media, the public, or other parties in the incident</li>
             <li>
@@ -1184,7 +1186,7 @@ function CrashWizard() {
     text: (
       <>
         <b>Take photos before leaving the scene:</b>
-        <ul className="list-disc list-inside mt-1.5 space-y-0.5 text-muted-foreground">
+        <ul className="list-disc pl-5 mt-2 space-y-1 text-foreground/80">
           <li>Damage to the SU vehicle</li>
           <li>The scene / area</li>
           <li>Wide-angle shots of all four sides — required by Comcover</li>
@@ -1205,7 +1207,7 @@ function CrashWizard() {
       <>
         <b>Notify SSU, CPT, and HUMINT Finance</b> as soon as practicable — the
         initial information is the same for all three:
-        <ul className="list-disc list-inside mt-1.5 space-y-0.5 text-muted-foreground">
+        <ul className="list-disc pl-5 mt-2 space-y-1 text-foreground/80">
           <li>Nature of the crash ({answers.scenario})</li>
           <li>Circumstances of the crash</li>
           <li>Police attendance or response, if any</li>
@@ -1285,10 +1287,10 @@ function CrashWizard() {
   return (
     <div>
       <div
-        className={`flex items-start gap-2.5 p-3.5 rounded-xl mb-4 text-sm font-semibold ${
+        className={`mb-4 flex items-start gap-2.5 rounded-xl border-2 p-4 text-[15px] font-semibold leading-snug ${
           exceptionFlagged
-            ? "bg-red-500/10 border border-red-500/25 text-red-400"
-            : "bg-green-500/10 border border-green-500/25 text-green-500"
+            ? "border-red-500/50 bg-red-500/10 text-red-700 dark:text-red-300"
+            : "border-green-600/40 bg-green-500/10 text-green-800 dark:text-green-300"
         }`}
       >
         {exceptionFlagged ? (
@@ -1303,26 +1305,26 @@ function CrashWizard() {
         </span>
       </div>
 
-      <div className="rounded-xl border border-border/60 bg-card/60 overflow-hidden mb-3">
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-violet-500/10 text-violet-400">
-          <Camera className="h-3.5 w-3.5" />
-          <span className="text-[11px] font-bold uppercase tracking-wide">
+      <div className="mb-5 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex items-center gap-2 border-b border-border bg-violet-500/15 px-4 py-3 text-violet-800 dark:text-violet-200">
+          <Camera className="h-4 w-4" />
+          <span className="text-sm font-bold uppercase tracking-wider">
             At the Scene
           </span>
         </div>
-        <div className="p-3">
+        <div className="bg-muted/30 p-3">
           <GroupedResultList items={scene} />
         </div>
       </div>
 
-      <div className="rounded-xl border border-border/60 bg-card/60 overflow-hidden mb-4">
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-500/10 text-blue-400">
-          <ListChecks className="h-3.5 w-3.5" />
-          <span className="text-[11px] font-bold uppercase tracking-wide">
+      <div className="mb-5 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex items-center gap-2 border-b border-border bg-blue-500/15 px-4 py-3 text-blue-800 dark:text-blue-200">
+          <ListChecks className="h-4 w-4" />
+          <span className="text-sm font-bold uppercase tracking-wider">
             After / Reporting
           </span>
         </div>
-        <div className="p-3">
+        <div className="bg-muted/30 p-3">
           <GroupedResultList items={after} />
         </div>
       </div>

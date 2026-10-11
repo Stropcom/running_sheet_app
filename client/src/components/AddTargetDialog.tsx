@@ -92,6 +92,7 @@ import type {
   StagedImage,
 } from "@/components/ImportTargetDocumentDialog";
 import { FORM_TONES } from "@/lib/formKit";
+import { AddTargetBackgroundPanel } from "@/components/RegistryBackgroundPanel";
 import { cn } from "@/lib/utils";
 
 // Referenced only for the merge dialog's incoming.wildFields shape — Wild
@@ -108,6 +109,10 @@ export interface RegistryCreatePayload {
    * "{Operation name} background", read-only, shown on the Target profile.
    * Null for a manually-added target, or an import with no narrative. */
   background: string | null;
+  /** The freeform Background typed in this dialog (plain text), saved on the
+   * target itself (targets.registryBackground) and shown on its profile and
+   * on every linked operation's profile. Null/absent when left empty. */
+  registryBackground?: string | null;
   /** The full parsed document snapshot, verbatim as the officer reviewed it
    * on the import review screen — present only when this save came from
    * "Import from Document". Recorded as its own version alongside
@@ -407,6 +412,7 @@ export function AddTargetDialog({
   >(() => initialVehicle ?? EMPTY_VEHICLE_PARTS);
   const [dep, setDep] = useState("");
   const [arr, setArr] = useState("");
+  const [registryBackground, setRegistryBackground] = useState("");
   const [extraAddresses, setExtraAddresses] = useState<ExtraAddress[]>(
     () => initialExtraAddresses ?? []
   );
@@ -420,6 +426,7 @@ export function AddTargetDialog({
   const [linking, setLinking] = useState(false);
   const utils = trpc.useUtils();
   const associateCreateMut = trpc.associate.create.useMutation();
+  const setBackgroundMut = trpc.target.registry.setBackground.useMutation();
   const associateCreateLinkedMut =
     trpc.associate.createLinkedFromTarget.useMutation();
   const uploadImageMut = trpc.attachment.uploadManual.useMutation();
@@ -614,6 +621,7 @@ export function AddTargetDialog({
     setExtraAddresses([]);
     setExtraVehicles([]);
     setAssociates([]);
+    setRegistryBackground("");
     setStagedWarn(null);
     stagedCheckedRef.current = {};
     setManualImages([]);
@@ -677,6 +685,7 @@ export function AddTargetDialog({
     return {
       linkToOperationId: operation!.id,
       background: initialBackground?.trim() || null,
+      registryBackground: registryBackground.trim() || null,
       documentSnapshotJson: initialDocumentSnapshot
         ? JSON.stringify(documentSnapshotForHistory(initialDocumentSnapshot))
         : null,
@@ -1025,6 +1034,7 @@ export function AddTargetDialog({
   }): RegistryCreatePayload => ({
     linkToOperationId: operation!.id,
     background: initialBackground?.trim() || null,
+    registryBackground: registryBackground.trim() || null,
     documentSnapshotJson: initialDocumentSnapshot
       ? JSON.stringify(documentSnapshotForHistory(initialDocumentSnapshot))
       : null,
@@ -2223,6 +2233,13 @@ export function AddTargetDialog({
                 the target itself saves). */}
             {renderStagedSection("associate")}
 
+            {/* Background — freeform, same panel and position as on the
+                saved target's registry card (directly under Associates). */}
+            <AddTargetBackgroundPanel
+              value={registryBackground}
+              onChange={setRegistryBackground}
+            />
+
             {/* Photos — staged from a document import (see
                 ImportTargetDocumentDialog.tsx). Duplicate-photo detection
                 only has a target to compare against once dupMatch names one
@@ -2460,6 +2477,22 @@ export function AddTargetDialog({
             // the registry).
             const associateIdByKey = await saveStagedAssociates(targetId);
             await saveStagedImages(targetId, associateIdByKey);
+            // A Background typed here is added after whatever the existing
+            // target already has (never overwriting it).
+            const typedBackground = registryBackground.trim();
+            if (typedBackground) {
+              try {
+                await setBackgroundMut.mutateAsync({
+                  id: targetId,
+                  background: typedBackground,
+                  mode: "append",
+                });
+              } catch (err: any) {
+                toast.error(
+                  `Merged, but the Background could not be saved: ${err?.message ?? "unknown error"}`
+                );
+              }
+            }
             utils.target.registry.list.invalidate();
             utils.associate.listForTarget.invalidate();
             utils.intelligence.targetProfile.invalidate();

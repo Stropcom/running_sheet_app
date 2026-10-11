@@ -559,6 +559,35 @@ const targetStatusFieldsSchema = {
     ),
 };
 
+/** Saves a target's freeform Background and writes the audit entry — shared
+ * by target.registry.setBackground (editing on the registry card) and the
+ * two create procedures (typed in Add Target to Registry). */
+async function saveTargetBackgroundWithAudit(
+  user: { id: number; cin?: string | null },
+  target: { id: number; name: string; registryBackground?: string | null },
+  background: string
+) {
+  const saved = await setTargetBackground(
+    target.id,
+    background,
+    user.cin ?? null
+  );
+  await createAuditLog({
+    sheetId: 0,
+    userId: user.id,
+    userName: user.cin ?? "Unknown",
+    userCIN: user.cin ?? null,
+    action: "target_background_updated",
+    details: `Background ${
+      saved.registryBackground ? "updated" : "cleared"
+    } on target "${target.name}" (${
+      (target.registryBackground ?? "").length
+    } to ${(saved.registryBackground ?? "").length} characters)`,
+    createdAt: Date.now(),
+  });
+  return saved;
+}
+
 const smeacTeamSlotSchema = z.object({
   name: z.string(),
   cin: z.string().optional().nullable(),
@@ -4305,6 +4334,13 @@ export const appRouter = router({
             // from a document import — stored on the (target, operation)
             // link as its "{Operation name} background".
             background: z.string().optional().nullable(),
+            // The freeform Background typed in Add Target to Registry —
+            // plain text, stored on the target itself (targets.registryBackground).
+            registryBackground: z
+              .string()
+              .max(TARGET_BACKGROUND_MAX)
+              .optional()
+              .nullable(),
             // The full parsed document snapshot (name/addresses/vehicles/
             // associates/background), verbatim as the officer reviewed it —
             // present only when this save came from "Import from Document".
@@ -4327,6 +4363,7 @@ export const appRouter = router({
           const {
             linkToOperationId,
             background,
+            registryBackground,
             documentSnapshotJson,
             documentSourceFileName,
             documentSourceFileBase64,
@@ -4338,6 +4375,13 @@ export const appRouter = router({
             createdBy: ctx.user.id,
           });
           await linkTargetToOperation(result.id, linkToOperationId, background);
+          if (registryBackground?.trim()) {
+            await saveTargetBackgroundWithAudit(
+              ctx.user,
+              { id: result.id, name: data.name },
+              registryBackground
+            );
+          }
           if (documentSnapshotJson) {
             let sourceFileUrl: string | null = null;
             let renderablePdfUrl: string | null = null;
@@ -4392,6 +4436,12 @@ export const appRouter = router({
             // from a document import — stored on the (target, operation)
             // link as its "{Operation name} background".
             background: z.string().optional().nullable(),
+            // See target.registry.create's registryBackground.
+            registryBackground: z
+              .string()
+              .max(TARGET_BACKGROUND_MAX)
+              .optional()
+              .nullable(),
             // See target.registry.create's documentSnapshotJson.
             documentSnapshotJson: z.string().optional().nullable(),
             documentSourceFileName: z.string().optional().nullable(),
@@ -4406,6 +4456,7 @@ export const appRouter = router({
           const {
             linkToOperationId,
             background,
+            registryBackground,
             documentSnapshotJson,
             documentSourceFileName,
             documentSourceFileBase64,
@@ -4418,6 +4469,13 @@ export const appRouter = router({
             existingAssociateId
           );
           await linkTargetToOperation(result.id, linkToOperationId, background);
+          if (registryBackground?.trim()) {
+            await saveTargetBackgroundWithAudit(
+              ctx.user,
+              { id: result.id, name: data.name },
+              registryBackground
+            );
+          }
           if (documentSnapshotJson) {
             let sourceFileUrl: string | null = null;
             let renderablePdfUrl: string | null = null;
@@ -4501,6 +4559,10 @@ export const appRouter = router({
           z.object({
             id: z.number(),
             background: z.string().max(TARGET_BACKGROUND_MAX),
+            /** "append" adds the text after whatever the target already has
+             * (used when a Background typed in Add Target is merged into an
+             * existing target); the default replaces it. */
+            mode: z.enum(["replace", "append"]).default("replace"),
           })
         )
         .mutation(async ({ input, ctx }) => {
@@ -4517,24 +4579,16 @@ export const appRouter = router({
               message: "Target not found",
             });
           }
-          const saved = await setTargetBackground(
-            input.id,
-            input.background,
-            ctx.user.cin ?? null
+          const existing = before.registryBackground?.trim();
+          const next =
+            input.mode === "append" && existing
+              ? `${existing}\n\n${input.background.trim()}`
+              : input.background;
+          const saved = await saveTargetBackgroundWithAudit(
+            ctx.user,
+            before,
+            next
           );
-          await createAuditLog({
-            sheetId: 0,
-            userId: ctx.user.id,
-            userName: ctx.user.cin ?? "Unknown",
-            userCIN: ctx.user.cin ?? null,
-            action: "target_background_updated",
-            details: `Background ${
-              saved.registryBackground ? "updated" : "cleared"
-            } on target "${before.name}" (${
-              (before.registryBackground ?? "").length
-            } to ${(saved.registryBackground ?? "").length} characters)`,
-            createdAt: Date.now(),
-          });
           return saved;
         }),
 

@@ -143,3 +143,47 @@ export function RegistryBackgroundPanel({
     </div>
   );
 }
+
+/**
+ * The same Background panel for Add Target to Registry: just the freeform
+ * box (saved with the target when it is created). It can be edited later
+ * from the target's card in the registry.
+ */
+export function AddTargetBackgroundPanel({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <div className={cn(FORM_TONES.neutral.panel, "p-3 flex flex-col gap-2")}>
+      <div className={FORM_TONES.neutral.band}>
+        <FileText className="w-3 h-3" /> Background
+      </div>
+      <label htmlFor="add-target-background" className={FORM_LABEL}>
+        Background (freeform)
+      </label>
+      <Textarea
+        id="add-target-background"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        maxLength={TARGET_BACKGROUND_MAX}
+        rows={8}
+        spellCheck
+        className="min-h-40 text-sm leading-relaxed"
+        aria-describedby="add-target-background-help"
+      />
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+        <p id="add-target-background-help" className={FORM_HINT}>
+          Plain text. Line breaks are kept. Shown on this target's profile and
+          on every operation profile the target is linked to. It can be edited
+          later from the target's card in the registry.
+        </p>
+        <p className={cn(FORM_HINT, "tabular-nums")}>
+          {value.length.toLocaleString()} characters
+        </p>
+      </div>
+    </div>
+  );
+}

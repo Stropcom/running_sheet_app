@@ -262,6 +262,41 @@ export const operationShares = mysqlTable(
   })
 );
 
+/**
+ * A person from another Command who has been given access (operation_shares)
+ * can be put in one of the HOSTING Command's teams. Kept apart from
+ * users.teamId, which stays their own Command's team, so they keep both: the
+ * hosting Command sees them in its team, their home Command still sees them
+ * in theirs. One row per person per hosting Command.
+ */
+export const visitorTeamAssignments = mysqlTable(
+  "visitor_team_assignments",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    /** The Command whose team this is (the one hosting the visitor). */
+    command: mysqlEnum("command", [
+      "WESTERN",
+      "NORTHERN",
+      "EASTERN",
+      "SOUTHERN",
+      "CENTRAL",
+    ]).notNull(),
+    teamId: int("teamId").notNull(),
+    assignedByCIN: varchar("assignedByCIN", { length: 64 }).notNull(),
+    createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+  },
+  t => ({
+    byUserCommand: uniqueIndex("visitor_team_user_command_idx").on(
+      t.userId,
+      t.command
+    ),
+    byTeam: index("visitor_team_team_idx").on(t.teamId),
+  })
+);
+
+export type VisitorTeamAssignment = typeof visitorTeamAssignments.$inferSelect;
+
 export type OperationShare = typeof operationShares.$inferSelect;
 export type InsertOperationShare = typeof operationShares.$inferInsert;
 

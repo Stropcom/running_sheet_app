@@ -89,7 +89,7 @@ export function PersonPicker({
             setOpen(false);
           }
         }}
-        placeholder={`Search ${candidates.length} people by name or CIN`}
+        placeholder={`Search ${candidates.length} ${candidates.length === 1 ? "person" : "people"} by name or CIN`}
         aria-label="Find people"
         aria-expanded={open}
         role="combobox"

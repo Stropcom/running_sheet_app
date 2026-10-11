@@ -210,6 +210,10 @@ import {
   upsertOperationShare,
   deleteOperationShare,
   getOperationShareRow,
+  listVisitorTeams,
+  setVisitorTeam,
+  clearVisitorTeamIfNoShares,
+  visitorTeamMap,
   checkCrossOperationEntity,
   markEntitiesNotDuplicate,
   mergeEntities,
@@ -710,6 +714,34 @@ async function assertCanManageUser(
       message: `${target.name} belongs to ${COMMAND_LABELS[target.command]}. Only that Command's admins can change their account.`,
     });
   }
+}
+
+/**
+ * A visitor the viewer's Command hosts shows in that Command's team on the
+ * live map (pin colour and grouping), whatever their own Command's team is.
+ */
+async function withHostedTeams<
+  T extends {
+    userId: number;
+    teamId: number | null;
+    teamName: string | null;
+    teamColour: string | null;
+  },
+>(
+  viewer: { command: (typeof COMMAND_CODES)[number]; allRegions: boolean },
+  rows: T[]
+): Promise<T[]> {
+  const hosted = await visitorTeamMap(
+    viewer.allRegions ? null : viewer.command
+  );
+  if (hosted.size === 0) return rows;
+  const byId = new Map((await listTeams()).map(t => [t.id, t]));
+  return rows.map(r => {
+    const t = byId.get(hosted.get(r.userId) ?? -1);
+    return t
+      ? { ...r, teamId: t.id, teamName: t.name, teamColour: t.colour }
+      : r;
+  });
 }
 
 const TEAM_COLOUR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -3639,6 +3671,72 @@ export const appRouter = router({
         );
       }),
 
+    /** Which of the hosting Command's teams each visitor is in. An admin
+     * sees their own Command's (an all-region admin: every Command's). */
+    listVisitorTeams: adminProcedure.query(async ({ ctx }) =>
+      listVisitorTeams(ctx.user.allRegions ? null : ctx.user.command)
+    ),
+
+    /** Put a visitor (someone this Command shared access with) in one of its
+     * teams, or take them out (teamId null). Their own team is untouched. */
+    setVisitorTeam: adminProcedure
+      .input(
+        z.object({
+          userId: z.number(),
+          teamId: z.number().nullable(),
+          /** The hosting Command. Defaults to the admin's own; only an
+           * all-region admin may name another. */
+          command: z.enum(COMMAND_CODES).optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const command = input.command ?? ctx.user.command;
+        if (!ctx.user.allRegions && command !== ctx.user.command) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: `Only a ${COMMAND_LABELS[command]} admin can put visitors in its teams.`,
+          });
+        }
+        const visitor = await getUserById(input.userId);
+        if (!visitor) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Person not found.",
+          });
+        }
+        const shared = await listOperationShares({
+          userId: input.userId,
+          fromCommand: command,
+        });
+        if (shared.length === 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `${visitor.name} hasn't been given access to ${COMMAND_LABELS[command]} operations, so they aren't a visitor there.`,
+          });
+        }
+        let teamLabel = "no team";
+        if (input.teamId != null) {
+          await assertTeamFitsCommand(input.teamId, command);
+          teamLabel = `"${(await getTeamById(input.teamId))?.name ?? "?"}"`;
+        }
+        await setVisitorTeam({
+          userId: input.userId,
+          command,
+          teamId: input.teamId,
+          assignedByCIN: ctx.user.cin ?? "Unknown",
+        });
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_updated",
+          details: `Visitor ${visitor.name} (CIN: ${visitor.cin ?? "?"}) put in ${COMMAND_LABELS[command]} team: ${teamLabel}`,
+          createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
+
     createShares: adminProcedure
       .input(
         z.object({
@@ -3765,6 +3863,8 @@ export const appRouter = router({
           });
         }
         await deleteOperationShare(input.id);
+        // No access left from that Command: no longer a visitor in its team.
+        await clearVisitorTeamIfNoShares(share.userId, share.fromCommand);
         invalidateAccessCache();
         await createAuditLog({
           sheetId: 0,
@@ -4037,18 +4137,25 @@ export const appRouter = router({
 
   users: router({
     /** Returns all registered users as {cin, name, unit} for CIN autocomplete/validation */
-    listForCin: protectedProcedure.query(async () => {
+    listForCin: protectedProcedure.query(async ({ ctx }) => {
       const all = await getAllUsers();
       const teamName = new Map((await listTeams()).map(t => [t.id, t.name]));
+      // A visitor the caller's Command hosts is in that Command's team.
+      const hosted = await visitorTeamMap(
+        ctx.user.allRegions ? null : ctx.user.command
+      );
       return all
         .filter(u => !u.archivedAt)
-        .map(u => ({
-          cin: u.cin,
-          name: u.name,
-          unit: u.unit ?? "",
-          teamId: u.teamId,
-          teamName: u.teamId != null ? (teamName.get(u.teamId) ?? "") : "",
-        }));
+        .map(u => {
+          const teamId = hosted.get(u.id) ?? u.teamId;
+          return {
+            cin: u.cin,
+            name: u.name,
+            unit: u.unit ?? "",
+            teamId,
+            teamName: teamId != null ? (teamName.get(teamId) ?? "") : "",
+          };
+        });
     }),
 
     /** Teams, in display order: the caller's Command's (an all-region admin:
@@ -5184,9 +5291,12 @@ export const appRouter = router({
         })
       )
       .query(async ({ input, ctx }) => {
-        return filterLocationRows(
-          toAccessUser(ctx.user),
-          await getUserLocations(input.operationIds)
+        return withHostedTeams(
+          ctx.user,
+          await filterLocationRows(
+            toAccessUser(ctx.user),
+            await getUserLocations(input.operationIds)
+          )
         );
       }),
 
@@ -7561,7 +7671,9 @@ export const appRouter = router({
     incompleteSheets: protectedProcedure.query(async ({ ctx }) => {
       return filterByOperationAccess(
         toAccessUser(ctx.user),
-        await getIncompleteRunningSheets(),
+        await getIncompleteRunningSheets(
+          ctx.user.allRegions ? null : ctx.user.command
+        ),
         r => r.operationId
       );
     }),
@@ -7570,12 +7682,18 @@ export const appRouter = router({
      * Returns all users ranked by total outstanding to-do actions.
      */
     outstandingTodos: protectedProcedure.query(async ({ ctx }) => {
-      const rows = await getOutstandingTodosByUser();
+      const rows = await getOutstandingTodosByUser(
+        ctx.user.allRegions ? null : ctx.user.command
+      );
       if (ctx.user.allRegions) return rows;
-      // A ranking of people: your own Command's.
+      // A ranking of people: your own Command's, plus visitors it hosts in
+      // one of its teams.
+      const hosted = await visitorTeamMap(ctx.user.command);
       const mine = new Set(
         (await getAllUsers())
-          .filter(u => u.command === ctx.user.command && u.cin)
+          .filter(
+            u => (u.command === ctx.user.command || hosted.has(u.id)) && u.cin
+          )
           .map(u => u.cin)
       );
       return rows.filter(r => mine.has(r.cin));

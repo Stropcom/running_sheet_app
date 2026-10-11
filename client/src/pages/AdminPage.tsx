@@ -26,7 +26,7 @@ import {
   UserAccessGroups,
   type AdminUserRow,
 } from "@/components/admin/UserAccessGroups";
-import { ShareWithSection } from "@/components/admin/ShareWithSection";
+import { VisitingSection } from "@/components/admin/VisitingSection";
 import { TeamDialog } from "@/components/admin/TeamDialog";
 import { useTeams, type TeamRow } from "@/lib/teams";
 import {
@@ -426,6 +426,13 @@ export default function AdminPage() {
   const commandTeams = useTeams(viewCommand);
   const [teamDialogOpen, setTeamDialogOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<TeamRow | undefined>();
+  // A visitor waiting for a team that is being made (+ New team… in Members).
+  const [pendingVisitor, setPendingVisitor] = useState<number | null>(null);
+  const { data: visitorTeamRows } = trpc.admin.listVisitorTeams.useQuery();
+  const visitorTeams = (visitorTeamRows ?? []).filter(
+    v => v.command === viewCommand
+  );
+  const setVisitorTeam = trpc.admin.setVisitorTeam.useMutation();
   const { data: shares } = trpc.admin.listShares.useQuery(undefined, {
     enabled: isAuthenticated && currentUser?.role === "admin",
   });
@@ -566,6 +573,7 @@ export default function AdminPage() {
                 setTeamDialogOpen(true);
               }}
               shares={shares ?? []}
+              visitorTeams={visitorTeams}
               currentUserId={currentUser?.id}
               isLoading={isLoading}
               onOpen={id => navigate(`/admin/users/${id}`)}
@@ -591,21 +599,51 @@ export default function AdminPage() {
               there.
             </p>
           </div>
-          <ShareWithSection
+          <VisitingSection
             viewCommand={viewCommand}
             users={(users ?? []) as AdminUserRow[]}
             isAllRegions={!!currentUser?.allRegions}
+            shares={shares ?? []}
+            teams={commandTeams}
+            visitorTeams={visitorTeams}
+            onOpenPerson={id => navigate(`/admin/users/${id}`)}
+            onNewTeam={userId => {
+              setPendingVisitor(userId);
+              setEditingTeam(undefined);
+              setTeamDialogOpen(true);
+            }}
           />
           <TeamDialog
             open={teamDialogOpen}
-            onOpenChange={setTeamDialogOpen}
+            onOpenChange={open => {
+              setTeamDialogOpen(open);
+              if (!open) setPendingVisitor(null);
+            }}
+            onCreated={async teamId => {
+              // Made from a visitor's team picker: put them straight in it.
+              if (pendingVisitor == null) return;
+              try {
+                await setVisitorTeam.mutateAsync({
+                  userId: pendingVisitor,
+                  teamId,
+                  command: currentUser?.allRegions ? viewCommand : undefined,
+                });
+                utils.admin.listVisitorTeams.invalidate();
+                utils.users.listForCin.invalidate();
+              } catch (e) {
+                toast.error(
+                  e instanceof Error ? e.message : "Couldn't add them to it."
+                );
+              }
+            }}
             command={viewCommand}
             team={editingTeam}
             memberCount={
               editingTeam
                 ? ((users ?? []) as AdminUserRow[]).filter(
                     u => u.teamId === editingTeam.id
-                  ).length
+                  ).length +
+                  visitorTeams.filter(v => v.teamId === editingTeam.id).length
                 : 0
             }
           />

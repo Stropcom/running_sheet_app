@@ -1,14 +1,11 @@
 /**
- * Everyone with access to a Command, grouped by team (collapsible), plus a
- * "Visiting access" group for people from other Commands who were given
- * access. Replaces the single flat user table on Access Management.
+ * Everyone with access to a Command, grouped by team (collapsible). People
+ * from other Commands that this Command hosts appear in the team they were
+ * put in (marked "visiting"); managing who visits lives in VisitingSection.
  */
 
 import { useState, type ReactNode } from "react";
 import { ChevronRight, Loader2, Pencil, Search } from "lucide-react";
-import { toast } from "sonner";
-import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -19,7 +16,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CommandChip } from "@/components/admin/CommandChip";
-import { LevelPill } from "@/components/admin/LevelPill";
 import { COMMAND_LABELS, type CommandCode } from "@shared/commands";
 import type { OperationShareRow } from "@shared/operationAccess";
 import { NO_TEAM_COLOUR, type TeamRow } from "@/lib/teams";
@@ -123,6 +119,7 @@ export function UserAccessGroups({
   teams,
   onEditTeam,
   shares,
+  visitorTeams,
   currentUserId,
   isLoading,
   roleBadge,
@@ -135,28 +132,13 @@ export function UserAccessGroups({
   onEditTeam: (team: TeamRow) => void;
   /** Shares this admin may see (see admin.listShares). */
   shares: OperationShareRow[];
+  /** Visitors this Command put in one of its teams. */
+  visitorTeams: Array<{ userId: number; teamId: number }>;
   currentUserId?: number;
   isLoading: boolean;
   roleBadge: (u: AdminUserRow) => ReactNode;
   onOpen: (id: number) => void;
 }) {
-  const utils = trpc.useUtils();
-  const revoke = trpc.admin.revokeShare.useMutation();
-  // Remove everything this Command shared with one person.
-  const revokePerson = async (items: OperationShareRow[]) => {
-    try {
-      for (const s of items) await revoke.mutateAsync({ id: s.id });
-      toast.success(
-        `${items[0].userName}'s access removed. Anything already logged stays.`
-      );
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't remove access.");
-    } finally {
-      utils.admin.listShares.invalidate();
-      utils.admin.userShares.invalidate();
-      utils.operation.list.invalidate();
-    }
-  };
   const [query, setQuery] = useState("");
   // Every team starts closed; what an admin opens is remembered on this device.
   const [open, setOpenState] = useState<Record<string, boolean>>(readOpen);
@@ -179,7 +161,6 @@ export function UserAccessGroups({
     setOpen(() => ({
       ...Object.fromEntries(teams.map(t => [String(t.id), v])),
       "": v,
-      visiting: v,
     }));
   // One group per team, then everyone without one.
   const groups: Array<{ key: string; label: string; team?: TeamRow }> = [
@@ -196,18 +177,13 @@ export function UserAccessGroups({
       incoming.set(s.userId, [...(incoming.get(s.userId) ?? []), s]);
     }
   }
-  // People from other Commands this Command shared with.
-  const visiting = new Map<number, OperationShareRow[]>();
-  for (const s of shares) {
-    if (s.fromCommand === viewCommand && s.userCommand !== viewCommand) {
-      visiting.set(s.userId, [...(visiting.get(s.userId) ?? []), s]);
-    }
+  // Visitors this Command put in a team, by team.
+  const visitorsByTeam = new Map<number, AdminUserRow[]>();
+  for (const v of visitorTeams) {
+    const u = users.find(x => x.id === v.userId);
+    if (!u || u.archivedAt) continue;
+    visitorsByTeam.set(v.teamId, [...(visitorsByTeam.get(v.teamId) ?? []), u]);
   }
-  const visitingList = Array.from(visiting.values())
-    .filter(items =>
-      matchesPerson({ name: items[0].userName, cin: items[0].userCIN }, query)
-    )
-    .sort((a, b) => a[0].userName.localeCompare(b[0].userName));
 
   const scopeText = (s: OperationShareRow) =>
     s.operationName ?? `Every ${COMMAND_LABELS[s.fromCommand]} operation`;
@@ -251,9 +227,15 @@ export function UserAccessGroups({
       ) : (
         <div className="space-y-3">
           {groups.map(t => {
-            const inTeam = home.filter(u =>
-              t.team ? u.teamId === t.team.id : u.teamId == null
-            );
+            const visitorsHere = t.team
+              ? (visitorsByTeam.get(t.team.id) ?? [])
+              : [];
+            const inTeam = [
+              ...home.filter(u =>
+                t.team ? u.teamId === t.team.id : u.teamId == null
+              ),
+              ...visitorsHere,
+            ];
             const list = inTeam.filter(u => matchesPerson(u, query));
             if (!t.team && inTeam.length === 0) return null;
             if (searching && list.length === 0) return null;
@@ -317,6 +299,7 @@ export function UserAccessGroups({
                       list.map(u => {
                         const archived = !!u.archivedAt;
                         const inc = incoming.get(u.id) ?? [];
+                        const isVisitor = u.command !== viewCommand;
                         return (
                           <TableRow
                             key={u.id}
@@ -364,7 +347,16 @@ export function UserAccessGroups({
                             <TableCell className="hidden font-mono text-sm text-muted-foreground md:table-cell">
                               {u.username}
                             </TableCell>
-                            <TableCell>{roleBadge(u)}</TableCell>
+                            <TableCell>
+                              {isVisitor ? (
+                                <CommandChip
+                                  command={u.command}
+                                  extra="· visiting"
+                                />
+                              ) : (
+                                roleBadge(u)
+                              )}
+                            </TableCell>
                             <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
                               {u.lastSignedIn
                                 ? new Date(u.lastSignedIn).toLocaleString()
@@ -380,96 +372,10 @@ export function UserAccessGroups({
             );
           })}
 
-          {(!searching || visitingList.length > 0) && (
-            <Group
-              title="Visiting access (from other Commands)"
-              count={`${visitingList.length} ${visitingList.length === 1 ? "person" : "people"}`}
-              open={isOpen("visiting")}
-              onToggle={() => toggle("visiting")}
-            >
-              <Table className="min-w-[560px] table-fixed">
-                <TableHeader>
-                  <TableRow className="border-border/60">
-                    <TableHead className={`${HEAD} w-[26%]`}>Name</TableHead>
-                    <TableHead className={`${HEAD} w-[9%]`}>CIN</TableHead>
-                    <TableHead className={`${HEAD} w-[15%]`}>
-                      Home Command
-                    </TableHead>
-                    <TableHead className={`${HEAD} w-[24%]`}>
-                      Can open
-                    </TableHead>
-                    <TableHead className={`${HEAD} w-[13%]`}>Access</TableHead>
-                    <TableHead className={`${HEAD} w-[13%]`}>
-                      <span className="sr-only">Revoke</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visitingList.length === 0 ? (
-                    <TableRow>
-                      <TableCell
-                        colSpan={6}
-                        className="py-4 text-sm text-muted-foreground"
-                      >
-                        Nobody outside {COMMAND_LABELS[viewCommand]} has been
-                        given access yet.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    visitingList.map(items => (
-                      <TableRow
-                        key={items[0].userId}
-                        className="border-border/40 hover:bg-accent/10 align-top"
-                      >
-                        <TableCell>
-                          <button
-                            type="button"
-                            onClick={() => onOpen(items[0].userId)}
-                            className="text-left font-medium text-primary underline-offset-2 hover:underline"
-                          >
-                            {items[0].userName}
-                          </button>
-                        </TableCell>
-                        <TableCell className="font-mono text-sm text-foreground/80">
-                          {items[0].userCIN ?? "—"}
-                        </TableCell>
-                        <TableCell>
-                          <CommandChip command={items[0].userCommand} />
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {items.map(s => (
-                            <div key={s.id}>{scopeText(s)}</div>
-                          ))}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col items-start gap-1">
-                            {items.map(s => (
-                              <LevelPill key={s.id} level={s.level} />
-                            ))}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-destructive"
-                            disabled={revoke.isPending}
-                            title={`Remove all of ${items[0].userName}'s access to ${COMMAND_LABELS[viewCommand]}`}
-                            onClick={() => revokePerson(items)}
-                          >
-                            Revoke
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </Group>
-          )}
           {searching &&
-            home.every(u => !matchesPerson(u, query)) &&
-            visitingList.length === 0 && (
+            [...home, ...Array.from(visitorsByTeam.values()).flat()].every(
+              u => !matchesPerson(u, query)
+            ) && (
               <p className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
                 Nobody in {COMMAND_LABELS[viewCommand]} matches “{query}”.
               </p>

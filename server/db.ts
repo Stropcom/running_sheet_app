@@ -118,6 +118,7 @@ import {
   users,
   teams,
   operationShares,
+  visitorTeamAssignments,
   governanceRecords,
   GovernanceRecord,
   sheetSummaries,
@@ -465,8 +466,16 @@ export async function deleteTeam(id: number): Promise<number> {
     .from(users)
     .where(eq(users.teamId, id));
   await db.update(users).set({ teamId: null }).where(eq(users.teamId, id));
+  // Visitors put in this team go back to "no team" too.
+  const visitors = await db
+    .select({ id: visitorTeamAssignments.id })
+    .from(visitorTeamAssignments)
+    .where(eq(visitorTeamAssignments.teamId, id));
+  await db
+    .delete(visitorTeamAssignments)
+    .where(eq(visitorTeamAssignments.teamId, id));
   await db.delete(teams).where(eq(teams.id, id));
-  return members.length;
+  return members.length + visitors.length;
 }
 
 /** Team name by id, for the places that still show a plain label. */
@@ -9574,6 +9583,121 @@ export async function deleteOperationShare(id: number) {
   await db.delete(operationShares).where(eq(operationShares.id, id));
 }
 
+// ─── Visitor team assignments ────────────────────────────────────────────────
+// A person from another Command who was given access can be put in one of the
+// HOSTING Command's teams (visitor_team_assignments). users.teamId is left
+// alone — it stays their own Command's team.
+
+export interface VisitorTeamRow {
+  userId: number;
+  /** The hosting Command (owner of the team). */
+  command: CommandCode;
+  teamId: number;
+}
+
+/** Assignments made by one hosting Command, or every Command's. */
+export async function listVisitorTeams(
+  command?: CommandCode | null
+): Promise<VisitorTeamRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      userId: visitorTeamAssignments.userId,
+      command: visitorTeamAssignments.command,
+      teamId: visitorTeamAssignments.teamId,
+    })
+    .from(visitorTeamAssignments)
+    .where(command ? eq(visitorTeamAssignments.command, command) : undefined);
+  return rows;
+}
+
+/**
+ * userId → teamId for the visitors a Command hosts. This is the one place the
+ * "effective team" of a visitor is worked out; callers use it to override
+ * users.teamId when they show people from the viewer's Command's side. With no
+ * Command (an all-region view) every assignment counts.
+ */
+export async function visitorTeamMap(
+  command?: CommandCode | null
+): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  for (const r of await listVisitorTeams(command)) {
+    if (!out.has(r.userId)) out.set(r.userId, r.teamId);
+  }
+  return out;
+}
+
+/** Put a visitor in a team of the hosting Command, or (null) take them out. */
+export async function setVisitorTeam(data: {
+  userId: number;
+  command: CommandCode;
+  teamId: number | null;
+  assignedByCIN: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (data.teamId == null) {
+    await clearVisitorTeam(data.userId, data.command);
+    return;
+  }
+  const [existing] = await db
+    .select({ id: visitorTeamAssignments.id })
+    .from(visitorTeamAssignments)
+    .where(
+      and(
+        eq(visitorTeamAssignments.userId, data.userId),
+        eq(visitorTeamAssignments.command, data.command)
+      )
+    )
+    .limit(1);
+  if (existing) {
+    await db
+      .update(visitorTeamAssignments)
+      .set({ teamId: data.teamId, assignedByCIN: data.assignedByCIN })
+      .where(eq(visitorTeamAssignments.id, existing.id));
+  } else {
+    await db.insert(visitorTeamAssignments).values({
+      userId: data.userId,
+      command: data.command,
+      teamId: data.teamId,
+      assignedByCIN: data.assignedByCIN,
+      createdAt: Date.now(),
+    });
+  }
+}
+
+export async function clearVisitorTeam(
+  userId: number,
+  command: CommandCode
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .delete(visitorTeamAssignments)
+    .where(
+      and(
+        eq(visitorTeamAssignments.userId, userId),
+        eq(visitorTeamAssignments.command, command)
+      )
+    );
+}
+
+/**
+ * Once the last share from a Command to a person is gone they are no longer a
+ * visitor there, so their place in that Command's team goes with it.
+ */
+export async function clearVisitorTeamIfNoShares(
+  userId: number,
+  command: CommandCode
+): Promise<void> {
+  const remaining = await listOperationShares({
+    userId,
+    fromCommand: command,
+  });
+  if (remaining.length === 0) await clearVisitorTeam(userId, command);
+}
+
 export async function getOperationShareRow(id: number) {
   const rows = await listOperationShares();
   return rows.find(r => r.id === id);
@@ -16366,9 +16490,9 @@ export interface IncompleteSheetReport {
  * for the Reports page. Enriches each sheet with team membership data from
  * the users table so the "Team Blended" logic can be applied client-side.
  */
-export async function getIncompleteRunningSheets(): Promise<
-  IncompleteSheetReport[]
-> {
+export async function getIncompleteRunningSheets(
+  viewerCommand?: CommandCode | null
+): Promise<IncompleteSheetReport[]> {
   const db = await getDb();
   if (!db) return [];
 
@@ -16392,8 +16516,11 @@ export async function getIncompleteRunningSheets(): Promise<
   // Build CIN → team name map from users table
   const teamNames = await teamNameMap();
   const cinTeamMap = new Map<string, string>();
+  // A visitor hosted by the viewer's Command counts in that Command's team.
+  const visitorTeams = await visitorTeamMap(viewerCommand);
   for (const u of allUsers) {
-    const name = u.teamId != null ? teamNames.get(u.teamId) : undefined;
+    const teamId = visitorTeams.get(u.id) ?? u.teamId;
+    const name = teamId != null ? teamNames.get(teamId) : undefined;
     if (u.cin && name) cinTeamMap.set(u.cin, name);
   }
 
@@ -16538,15 +16665,16 @@ export interface OutstandingTodoUser {
  * Returns all users ranked by total outstanding to-do actions
  * (uncertified rows they are a member of + governance items they own as TL/Author).
  */
-export async function getOutstandingTodosByUser(): Promise<
-  OutstandingTodoUser[]
-> {
+export async function getOutstandingTodosByUser(
+  viewerCommand?: CommandCode | null
+): Promise<OutstandingTodoUser[]> {
   const db = await getDb();
   if (!db) return [];
 
   const allUsers = await db.select().from(users);
   const usersWithCin = allUsers.filter(u => u.cin && u.cin.trim() !== "");
   const teamNames = await teamNameMap();
+  const visitorTeams = await visitorTeamMap(viewerCommand);
 
   const results: OutstandingTodoUser[] = [];
 
@@ -16574,7 +16702,8 @@ export async function getOutstandingTodosByUser(): Promise<
     results.push({
       cin,
       name: user.name,
-      team: user.teamId != null ? (teamNames.get(user.teamId) ?? null) : null,
+      team:
+        teamNames.get(visitorTeams.get(user.id) ?? user.teamId ?? -1) ?? null,
       uncertifiedCount,
       governanceCount,
       totalCount,

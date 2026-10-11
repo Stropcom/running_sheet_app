@@ -37,6 +37,7 @@ export function TeamDialog({
   command,
   team,
   memberCount = 0,
+  onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -46,6 +47,8 @@ export function TeamDialog({
   team?: TeamRow;
   /** Used in the delete warning. */
   memberCount?: number;
+  /** Called with the new team's id after one is added (not when editing). */
+  onCreated?: (id: number) => void;
 }) {
   const utils = trpc.useUtils();
   const [name, setName] = useState("");
@@ -65,6 +68,7 @@ export function TeamDialog({
     utils.users.listTeams.invalidate();
     utils.admin.listUsers.invalidate();
     utils.users.listForCin.invalidate();
+    utils.admin.listVisitorTeams.invalidate();
   };
   const create = trpc.admin.createTeam.useMutation();
   const update = trpc.admin.updateTeam.useMutation();
@@ -87,8 +91,9 @@ export function TeamDialog({
         await update.mutateAsync({ id: team.id, ...body });
         toast.success(`${body.name} updated.`);
       } else {
-        await create.mutateAsync({ command, ...body });
+        const made = await create.mutateAsync({ command, ...body });
         toast.success(`${body.name} added to ${COMMAND_LABELS[command]}.`);
+        onCreated?.(made.id);
       }
       refresh();
       onOpenChange(false);

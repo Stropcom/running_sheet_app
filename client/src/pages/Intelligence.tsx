@@ -2110,7 +2110,7 @@ export default function IntelligencePage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <span className="text-muted-foreground/40 mx-0.5">|</span>
+                  <span className="text-muted-foreground mx-0.5">|</span>
                 </>
               )}
               <span className="text-xs text-muted-foreground mr-1">Sort:</span>

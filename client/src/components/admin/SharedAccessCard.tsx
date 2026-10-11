@@ -46,10 +46,12 @@ export function SharedAccessCard({
   const first = userName.split(" ")[0];
 
   return (
-    <div className="rounded-xl border border-border/60 bg-card/50 p-5 flex flex-col gap-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-sm font-semibold">Shared access</p>
-        <span className="text-xs text-muted-foreground">
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm p-5 flex flex-col gap-3">
+      <div className="-mx-5 -mt-5 flex flex-wrap items-baseline justify-between gap-2 border-b border-border bg-muted/70 px-5 py-2.5">
+        <p className="text-[13px] font-bold uppercase tracking-wide text-foreground">
+          Shared access
+        </p>
+        <span className="text-xs text-foreground/70">
           Operations from other Commands that reach {first}
         </span>
       </div>

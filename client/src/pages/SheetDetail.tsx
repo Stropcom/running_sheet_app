@@ -1958,9 +1958,7 @@ function TimePickerCell({
       >
         <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         {value || (
-          <span className="text-muted-foreground/50 italic text-xs">
-            Set time
-          </span>
+          <span className="text-muted-foreground italic text-xs">Set time</span>
         )}
       </button>
       {open && (
@@ -2858,7 +2856,7 @@ function EditableCell({
       onClick={() => setEditing(true)}
     >
       {value || (
-        <span className="text-muted-foreground/50 italic text-xs">
+        <span className="text-muted-foreground italic text-xs">
           {placeholder}
         </span>
       )}

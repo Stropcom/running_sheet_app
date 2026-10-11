@@ -49,14 +49,14 @@ type TargetStatus = "before_court" | "archive" | "active";
 function StatusBadge({ status }: { status: TargetStatus }) {
   if (status === "before_court") {
     return (
-      <Badge className="text-[10px] px-1.5 py-0.5 bg-violet-500/20 text-violet-300 border-violet-500/30 border font-semibold">
+      <Badge className="text-xs px-1.5 py-0.5 bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-500/40 border font-semibold">
         Before Court
       </Badge>
     );
   }
   if (status === "archive") {
     return (
-      <Badge className="text-[10px] px-1.5 py-0.5 bg-slate-500/20 text-slate-400 border-slate-500/30 border font-semibold">
+      <Badge className="text-xs px-1.5 py-0.5 bg-slate-500/20 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-500/40 border font-semibold">
         Archive
       </Badge>
     );
@@ -91,16 +91,16 @@ function OperationCard({
   const sheetCount = sheets?.length ?? 0;
 
   return (
-    <div className="rounded-xl border border-border/50 bg-card overflow-hidden">
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
       {/* Operation header */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-muted/20 border-b border-border/30">
+      <div className="flex items-center gap-3 px-4 py-3 bg-muted/20 border-b border-border">
         <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
         <span className="font-semibold text-sm text-foreground flex-1 truncate">
           {op.name}
         </span>
         <StatusBadge status={op.status as TargetStatus} />
         {op.promisNumber && (
-          <span className="text-[10px] text-muted-foreground hidden sm:block">
+          <span className="text-xs text-muted-foreground hidden sm:block">
             PROMIS: {op.promisNumber}
           </span>
         )}
@@ -138,11 +138,11 @@ function OperationCard({
 
       {/* Action footer — admin only */}
       {isAdmin && (
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/10 border-t border-border/20 flex-wrap">
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/10 border-t border-border flex-wrap">
           <Button
             size="sm"
             variant="outline"
-            className="gap-1.5 text-xs h-7 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+            className="gap-1.5 text-xs h-7 border-emerald-300 dark:border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 hover:text-emerald-300"
             onClick={onMoveToActive}
           >
             <RotateCcw className="w-3 h-3" />
@@ -152,7 +152,7 @@ function OperationCard({
             <Button
               size="sm"
               variant="outline"
-              className="gap-1.5 text-xs h-7 border-slate-500/40 text-slate-400 hover:bg-slate-500/10"
+              className="gap-1.5 text-xs h-7 border-slate-300 dark:border-slate-500/40 text-slate-700 dark:text-slate-300 hover:bg-slate-500/10"
               onClick={() => onMoveTo("archive")}
             >
               <Archive className="w-3 h-3" />
@@ -163,7 +163,7 @@ function OperationCard({
             <Button
               size="sm"
               variant="outline"
-              className="gap-1.5 text-xs h-7 border-violet-500/40 text-violet-400 hover:bg-violet-500/10"
+              className="gap-1.5 text-xs h-7 border-violet-300 dark:border-violet-500/40 text-violet-700 dark:text-violet-300 hover:bg-violet-500/10"
               onClick={() => onMoveTo("before_court")}
             >
               <Scale className="w-3 h-3" />
@@ -227,7 +227,7 @@ function OpManageTile({
             sheet{sheetCount !== 1 ? "s" : ""}
           </span>
           <span>
-            <span className="font-semibold text-emerald-400">
+            <span className="font-semibold text-emerald-700 dark:text-emerald-300">
               {closedCount}
             </span>{" "}
             closed
@@ -235,7 +235,7 @@ function OpManageTile({
         </div>
       )}
       {!sheetsLoading && sheetCount > 0 && (
-        <div className="flex flex-col gap-1 border-t border-border/40 pt-2">
+        <div className="flex flex-col gap-1 border-t border-border pt-2">
           {sheets?.slice(0, 3).map(s => (
             <button
               key={s.id}
@@ -253,18 +253,18 @@ function OpManageTile({
             </button>
           ))}
           {sheetCount > 3 && (
-            <p className="text-[10px] text-muted-foreground pl-1">
+            <p className="text-xs text-muted-foreground pl-1">
               +{sheetCount - 3} more
             </p>
           )}
         </div>
       )}
       {isAdmin && (
-        <div className="flex flex-wrap gap-2 border-t border-border/40 pt-2 mt-auto">
+        <div className="flex flex-wrap gap-2 border-t border-border pt-2 mt-auto">
           <Button
             size="sm"
             variant="outline"
-            className="gap-1 text-xs h-7 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+            className="gap-1 text-xs h-7 border-emerald-300 dark:border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10"
             onClick={onMoveToActive}
           >
             <RotateCcw className="w-3 h-3" />
@@ -274,7 +274,7 @@ function OpManageTile({
             <Button
               size="sm"
               variant="outline"
-              className="gap-1 text-xs h-7 border-slate-500/40 text-slate-400 hover:bg-slate-500/10"
+              className="gap-1 text-xs h-7 border-slate-300 dark:border-slate-500/40 text-slate-700 dark:text-slate-300 hover:bg-slate-500/10"
               onClick={() => onMoveTo("archive")}
             >
               <Archive className="w-3 h-3" />
@@ -285,7 +285,7 @@ function OpManageTile({
             <Button
               size="sm"
               variant="outline"
-              className="gap-1 text-xs h-7 border-violet-500/40 text-violet-400 hover:bg-violet-500/10"
+              className="gap-1 text-xs h-7 border-violet-300 dark:border-violet-500/40 text-violet-700 dark:text-violet-300 hover:bg-violet-500/10"
               onClick={() => onMoveTo("before_court")}
             >
               <Scale className="w-3 h-3" />
@@ -367,8 +367,8 @@ export default function OperationManagementPage() {
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div className="p-2.5 rounded-xl bg-violet-500/15 border border-violet-500/30">
-            <ArrowRightLeft className="w-5 h-5 text-violet-400" />
+          <div className="p-2.5 rounded-xl bg-violet-50 dark:bg-violet-500/10 border border-violet-300 dark:border-violet-500/40">
+            <ArrowRightLeft className="w-5 h-5 text-violet-700 dark:text-violet-300" />
           </div>
           <div className="flex-1">
             <h1 className="text-xl font-bold text-foreground">Archive</h1>
@@ -379,7 +379,7 @@ export default function OperationManagementPage() {
         </div>
 
         {/* Info banner */}
-        <div className="mb-5 rounded-lg border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs text-amber-300 leading-relaxed">
+        <div className="mb-5 rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-500/5 px-4 py-3 text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
           <strong>Note:</strong> Operations in Before Court or Archive are
           read-only. Running sheets can only be exported for printing. To make
           changes, move the operation back to Active first. Only Admins can
@@ -394,7 +394,7 @@ export default function OperationManagementPage() {
               {bcCount > 0 && (
                 <Badge
                   variant="secondary"
-                  className="ml-1 text-[10px] px-1.5 py-0 h-4"
+                  className="ml-1 text-xs px-1.5 py-0 h-4"
                 >
                   {bcCount}
                 </Badge>
@@ -406,7 +406,7 @@ export default function OperationManagementPage() {
               {archCount > 0 && (
                 <Badge
                   variant="secondary"
-                  className="ml-1 text-[10px] px-1.5 py-0 h-4"
+                  className="ml-1 text-xs px-1.5 py-0 h-4"
                 >
                   {archCount}
                 </Badge>
@@ -422,7 +422,7 @@ export default function OperationManagementPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-2 border-violet-500/40 text-violet-300 hover:bg-violet-500/10 hover:text-violet-200"
+                  className="gap-2 border-violet-300 dark:border-violet-500/40 text-violet-700 dark:text-violet-300 hover:bg-violet-500/10 hover:text-violet-200"
                   onClick={() => {
                     setPickerSearch("");
                     setPickerOpen("before_court");
@@ -441,8 +441,8 @@ export default function OperationManagementPage() {
               </div>
             ) : bcCount === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-                <div className="p-4 rounded-full bg-violet-500/10 border border-violet-500/20">
-                  <CheckCircle2 className="w-8 h-8 text-violet-400" />
+                <div className="p-4 rounded-full bg-violet-50 dark:bg-violet-500/10 border border-violet-300 dark:border-violet-500/40">
+                  <CheckCircle2 className="w-8 h-8 text-violet-700 dark:text-violet-300" />
                 </div>
                 <p className="text-base font-semibold text-foreground">
                   No operations Before Court
@@ -510,7 +510,7 @@ export default function OperationManagementPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-2 border-slate-500/40 text-slate-300 hover:bg-slate-500/10 hover:text-slate-200"
+                  className="gap-2 border-slate-300 dark:border-slate-500/40 text-slate-700 dark:text-slate-300 hover:bg-slate-500/10 hover:text-slate-200"
                   onClick={() => {
                     setPickerSearch("");
                     setPickerOpen("archive");
@@ -529,8 +529,8 @@ export default function OperationManagementPage() {
               </div>
             ) : archCount === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-                <div className="p-4 rounded-full bg-slate-500/10 border border-slate-500/20">
-                  <CheckCircle2 className="w-8 h-8 text-slate-400" />
+                <div className="p-4 rounded-full bg-slate-50 dark:bg-slate-500/10 border border-slate-300 dark:border-slate-500/40">
+                  <CheckCircle2 className="w-8 h-8 text-slate-700 dark:text-slate-300" />
                 </div>
                 <p className="text-base font-semibold text-foreground">
                   No archived operations
@@ -645,7 +645,7 @@ export default function OperationManagementPage() {
                         {op.name}
                       </p>
                       {op.promisNumber && (
-                        <p className="text-[10px] text-muted-foreground">
+                        <p className="text-xs text-muted-foreground">
                           PROMIS: {op.promisNumber}
                         </p>
                       )}
@@ -690,13 +690,13 @@ export default function OperationManagementPage() {
                   ?
                 </p>
                 {confirm?.targetStatus !== "active" && (
-                  <p className="text-amber-400 text-xs">
+                  <p className="text-amber-700 dark:text-amber-300 text-xs">
                     All running sheets must be closed before this operation can
                     be moved. If any are open, the move will be blocked.
                   </p>
                 )}
                 {confirm?.targetStatus === "active" && (
-                  <p className="text-emerald-400 text-xs">
+                  <p className="text-emerald-700 dark:text-emerald-300 text-xs">
                     The operation will return to the main Operations folder and
                     become fully editable again.
                   </p>

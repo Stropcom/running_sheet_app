@@ -110,7 +110,7 @@ function CheckRow({
         </div>
       )}
       {disabled && !checked && (
-        <Lock className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+        <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
       )}
     </div>
   );

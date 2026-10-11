@@ -250,7 +250,7 @@ export default function Home() {
                 className={`group relative flex flex-col gap-3 p-5 rounded-xl border bg-card hover:bg-accent/20 transition-all duration-150 cursor-pointer hover:shadow-md hover:-translate-y-0.5 ${
                   (op as any).operationStatus &&
                   (op as any).operationStatus !== "active"
-                    ? "border-violet-500/30 hover:border-violet-500/50 opacity-80"
+                    ? "border-violet-300 dark:border-violet-500/40 hover:border-violet-500/50 opacity-80"
                     : "border-border hover:border-primary/30"
                 }`}
                 onClick={() => {
@@ -269,13 +269,13 @@ export default function Home() {
                   </div>
                   <div className="flex flex-wrap gap-1 justify-end">
                     {(op as any).operationStatus === "before_court" && (
-                      <Badge className="text-[10px] px-1.5 py-0.5 bg-violet-500/20 text-violet-300 border-violet-500/30 border font-semibold">
+                      <Badge className="text-xs px-1.5 py-0.5 bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-500/40 border font-semibold">
                         <Scale className="w-2.5 h-2.5 mr-1" />
                         Before Court
                       </Badge>
                     )}
                     {(op as any).operationStatus === "archive" && (
-                      <Badge className="text-[10px] px-1.5 py-0.5 bg-slate-500/20 text-slate-400 border-slate-500/30 border font-semibold">
+                      <Badge className="text-xs px-1.5 py-0.5 bg-slate-500/20 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-500/40 border font-semibold">
                         <Archive className="w-2.5 h-2.5 mr-1" />
                         Archive
                       </Badge>
@@ -355,7 +355,7 @@ export default function Home() {
                 className={`group relative flex items-center gap-4 p-4 rounded-xl border bg-card hover:bg-accent/20 transition-all duration-150 cursor-pointer ${
                   (op as any).operationStatus &&
                   (op as any).operationStatus !== "active"
-                    ? "border-violet-500/30 hover:border-violet-500/50 opacity-80"
+                    ? "border-violet-300 dark:border-violet-500/40 hover:border-violet-500/50 opacity-80"
                     : "border-border hover:border-primary/30"
                 }`}
                 onClick={() => {
@@ -380,13 +380,13 @@ export default function Home() {
                     </span>
                     {sharedTag(op.id)}
                     {(op as any).operationStatus === "before_court" && (
-                      <Badge className="text-[10px] px-1.5 py-0.5 bg-violet-500/20 text-violet-300 border-violet-500/30 border font-semibold shrink-0">
+                      <Badge className="text-xs px-1.5 py-0.5 bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-500/40 border font-semibold shrink-0">
                         <Scale className="w-2.5 h-2.5 mr-1" />
                         Before Court
                       </Badge>
                     )}
                     {(op as any).operationStatus === "archive" && (
-                      <Badge className="text-[10px] px-1.5 py-0.5 bg-slate-500/20 text-slate-400 border-slate-500/30 border font-semibold shrink-0">
+                      <Badge className="text-xs px-1.5 py-0.5 bg-slate-500/20 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-500/40 border font-semibold shrink-0">
                         <Archive className="w-2.5 h-2.5 mr-1" />
                         Archive
                       </Badge>

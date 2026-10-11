@@ -354,9 +354,7 @@ function SummaryTimePicker({
       >
         <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         {value || (
-          <span className="text-muted-foreground/50 italic text-xs">
-            Set time
-          </span>
+          <span className="text-muted-foreground italic text-xs">Set time</span>
         )}
       </button>
       {open && (
@@ -1371,7 +1369,7 @@ export default function SheetSummaryPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground/70 italic">
+                  <p className="text-sm text-muted-foreground italic">
                     No vehicles found in the Target Registry or running sheet
                     text.
                   </p>
@@ -1671,7 +1669,7 @@ export default function SheetSummaryPage() {
                   </div>
                 )}
                 {entries && entries.length === 0 && (
-                  <p className="text-sm text-muted-foreground/70 italic">
+                  <p className="text-sm text-muted-foreground italic">
                     No running sheet rows yet.
                   </p>
                 )}

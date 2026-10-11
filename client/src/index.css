@@ -718,7 +718,7 @@ button:active:not(:disabled) {
 
 .running-sheet-table td {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid oklch(0.2 0.012 250);
+  border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
 
@@ -782,6 +782,57 @@ button:active:not(:disabled) {
   .running-sheet-cards tr.date-divider-row > td {
     padding: 0.25rem 0.75rem;
     border-bottom: none;
+  }
+}
+
+/* Audit Log rows as small cards on a phone: timestamp and CIN on one line,
+   then the action, the details and (when there is one) the row. */
+@media (max-width: 767px) {
+  .audit-cards,
+  .audit-cards tbody,
+  .audit-cards td {
+    display: block;
+    width: 100%;
+  }
+  .audit-cards thead {
+    display: none;
+  }
+  .audit-cards tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 0.75rem;
+    row-gap: 0.25rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .audit-cards td {
+    padding: 0;
+    border-bottom: none;
+    width: auto;
+  }
+  .audit-cards td:nth-child(1) {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .audit-cards td:nth-child(3) {
+    grid-column: 2;
+    grid-row: 1;
+    text-align: right;
+  }
+  .audit-cards td:nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .audit-cards td:nth-child(5) {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+  .audit-cards td:nth-child(4) {
+    grid-column: 1 / -1;
+    grid-row: 4;
+  }
+  .audit-cards td.audit-empty {
+    display: none;
   }
 }
 

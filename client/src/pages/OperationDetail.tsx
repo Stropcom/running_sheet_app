@@ -390,7 +390,7 @@ function TargetCard({
 
         {/* Expanded fields */}
         {expanded && (
-          <div className="px-4 pb-4 pt-1 flex flex-col gap-3 border-t border-border/50">
+          <div className="px-4 pb-4 pt-1 flex flex-col gap-3 border-t border-border">
             <TargetIdentityFields
               value={identity}
               onChange={v => mark(() => setIdentity(v))}
@@ -399,7 +399,7 @@ function TargetCard({
               showMdlError={showMdlError}
             />
 
-            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+            <div className="rounded-lg border border-border bg-muted/10 p-3">
               <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
                 <Home className="w-3 h-3" /> Home Address
               </p>
@@ -409,7 +409,7 @@ function TargetCard({
               />
             </div>
 
-            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+            <div className="rounded-lg border border-border bg-muted/10 p-3">
               <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
                 <Car className="w-3 h-3" /> Vehicle 1
               </p>
@@ -423,7 +423,7 @@ function TargetCard({
             {extraAddresses.map((ea, i) => (
               <div
                 key={i}
-                className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
+                className="rounded-lg border border-border bg-muted/20 p-3 flex flex-col gap-2"
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
@@ -459,7 +459,7 @@ function TargetCard({
             {extraVehicles.map((ev, i) => (
               <div
                 key={i}
-                className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-2"
+                className="rounded-lg border border-border bg-muted/20 p-3 flex flex-col gap-2"
               >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
@@ -535,7 +535,7 @@ function TargetCard({
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="gap-2 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
+                  className="gap-2 text-amber-700 dark:text-amber-300 hover:text-amber-600 hover:bg-amber-500/10"
                   onClick={() => setConfirmDelete(true)}
                   disabled={removeFromOp.isPending}
                 >
@@ -557,7 +557,7 @@ function TargetCard({
             </div>
 
             {/* ── Per-target shortcuts ── */}
-            <div className="mt-4 pt-4 border-t border-border/50 flex flex-col gap-3">
+            <div className="mt-4 pt-4 border-t border-border flex flex-col gap-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                 Target Shortcuts
               </p>
@@ -987,7 +987,7 @@ function DeploymentRollupPanel({
         </div>
       ) : !rows || rows.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center border border-dashed border-border rounded-xl">
-          <History className="w-8 h-8 text-muted-foreground/50 mb-3" />
+          <History className="w-8 h-8 text-muted-foreground mb-3" />
           <p className="text-sm text-muted-foreground max-w-sm">
             No Supervisor Summaries yet. Once a running sheet's Summary tab has
             been opened, it will appear here.
@@ -1001,7 +1001,7 @@ function DeploymentRollupPanel({
             </p>
             <button
               onClick={() => setSortAsc(v => !v)}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1 rounded-md border border-border/50 hover:border-border bg-background hover:bg-muted/40"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1 rounded-md border border-border hover:border-border bg-background hover:bg-muted/40"
             >
               <ArrowUpDown className="w-3 h-3" />
               {sortAsc ? "Oldest first" : "Newest first"}
@@ -1188,9 +1188,9 @@ function RollupSection({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-border/70 overflow-hidden">
-      <div className="px-3 py-1.5 bg-primary/5 border-b border-border/70">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-primary">
+    <div className="rounded-lg border border-border overflow-hidden">
+      <div className="px-3 py-1.5 bg-primary/5 border-b border-border">
+        <span className="text-xs font-bold uppercase tracking-wider text-primary">
           {title}
         </span>
       </div>
@@ -1303,7 +1303,7 @@ function DeploymentRollupCard({
       </button>
 
       {expanded && (
-        <div className="px-4 pb-4 flex flex-col gap-2.5 border-t border-border/70 pt-3">
+        <div className="px-4 pb-4 flex flex-col gap-2.5 border-t border-border pt-3">
           <RollupSection title="Deployment">
             <div className="grid grid-cols-[130px_1fr] gap-y-1.5 text-xs">
               <RollupDetailRow label="Team" value={r.teamLabel} />
@@ -1323,7 +1323,7 @@ function DeploymentRollupCard({
                 {vehicles.map(v => (
                   <span
                     key={v.key}
-                    className="text-[10px] px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 font-medium"
+                    className="text-xs px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 font-medium"
                   >
                     {v.label}
                   </span>
@@ -1363,7 +1363,7 @@ function DeploymentRollupCard({
                 {specialProjects.map(p => (
                   <span
                     key={p.key}
-                    className="text-[10px] px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20"
+                    className="text-xs px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20"
                   >
                     <strong>{p.key}</strong>
                     {p.detail?.trim() && (
@@ -1408,23 +1408,23 @@ function DeploymentRollupCard({
           </RollupSection>
 
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-primary mb-1.5 px-1">
+            <div className="text-xs font-bold uppercase tracking-wider text-primary mb-1.5 px-1">
               Summary
             </div>
             {entriesLoading ? (
               <Skeleton className="h-24 w-full" />
             ) : entries && entries.length > 0 ? (
-              <div className="overflow-x-auto rounded-lg border border-border/70">
+              <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="bg-primary/5 border-b border-border/70">
-                      <th className="text-left font-bold uppercase tracking-wide text-[9.5px] text-primary px-2 py-1.5 w-[64px]">
+                    <tr className="bg-primary/5 border-b border-border">
+                      <th className="text-left font-bold uppercase tracking-wide text-xs text-primary px-2 py-1.5 w-[64px]">
                         Time
                       </th>
-                      <th className="text-left font-bold uppercase tracking-wide text-[9.5px] text-primary px-2 py-1.5 w-[26%]">
+                      <th className="text-left font-bold uppercase tracking-wide text-xs text-primary px-2 py-1.5 w-[26%]">
                         Address
                       </th>
-                      <th className="text-left font-bold uppercase tracking-wide text-[9.5px] text-primary px-2 py-1.5">
+                      <th className="text-left font-bold uppercase tracking-wide text-xs text-primary px-2 py-1.5">
                         Observation
                       </th>
                     </tr>
@@ -1433,7 +1433,7 @@ function DeploymentRollupCard({
                     {entries.map(e => (
                       <tr
                         key={e.id}
-                        className="border-b border-border/50 last:border-b-0"
+                        className="border-b border-border last:border-b-0"
                       >
                         <td className="align-top px-2 py-1.5 text-muted-foreground">
                           {e.time || "—"}
@@ -1518,7 +1518,7 @@ function SheetCard({
         isClosed
           ? "border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/60 opacity-70"
           : allCertified
-            ? "border-emerald-500/60 bg-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-500/80"
+            ? "border-emerald-500/60 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-500/80"
             : "border-border bg-card hover:bg-accent/20 hover:border-primary/30"
       }`}
       onClick={onNavigate}
@@ -1528,12 +1528,12 @@ function SheetCard({
           isClosed
             ? "bg-slate-200/60 dark:bg-slate-700/40 border-slate-300 dark:border-slate-600"
             : allCertified
-              ? "bg-emerald-500/20 border-emerald-500/40"
+              ? "bg-emerald-500/20 border-emerald-300 dark:border-emerald-500/40"
               : "bg-blue-700/10 border-blue-700/20"
         }`}
       >
         {isClosed ? (
-          <LockKeyhole className="w-5 h-5 text-slate-400" />
+          <LockKeyhole className="w-5 h-5 text-slate-700 dark:text-slate-300" />
         ) : (
           <FileText
             className={`w-5 h-5 ${
@@ -1548,9 +1548,9 @@ function SheetCard({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span
-            className={`font-semibold truncate ${
+            className={`font-semibold break-words sm:truncate ${
               isClosed
-                ? "text-slate-500 dark:text-slate-400"
+                ? "text-slate-700 dark:text-slate-400"
                 : allCertified
                   ? "text-black dark:text-emerald-300"
                   : "text-foreground"
@@ -1559,7 +1559,7 @@ function SheetCard({
             {sheet.title}
           </span>
           {isClosed && (
-            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-slate-400/50 bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-medium shrink-0">
+            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-slate-300 dark:border-slate-500/40 bg-slate-200/60 dark:bg-slate-700/60 text-slate-700 dark:text-slate-400 font-medium shrink-0">
               <LockKeyhole className="w-2.5 h-2.5" />
               CLOSED
             </span>
@@ -1576,17 +1576,23 @@ function SheetCard({
                   key={cin}
                   className={`inline-flex items-center gap-0.5 text-xs px-2 py-0.5 rounded-full border font-mono ${
                     certified
-                      ? "border-emerald-500/50 bg-emerald-500/15 text-black dark:text-emerald-400"
-                      : "border-red-500/40 bg-red-500/10 text-red-400"
+                      ? "border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/10 text-black dark:text-emerald-400"
+                      : "border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300"
                   }`}
                 >
                   {entry?.isTeamLeader && (
-                    <span className="text-yellow-400" title="Team Leader">
+                    <span
+                      className="text-yellow-700 dark:text-yellow-300"
+                      title="Team Leader"
+                    >
                       ★
                     </span>
                   )}
                   {entry?.isAuthor && (
-                    <span className="text-sky-400" title="Author">
+                    <span
+                      className="text-sky-700 dark:text-sky-300"
+                      title="Author"
+                    >
                       ✏
                     </span>
                   )}
@@ -1603,7 +1609,7 @@ function SheetCard({
           </div>
         )}
         {isClosed && sheet.closedByCIN && sheet.closedAt && (
-          <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-400 dark:text-slate-500">
+          <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-700 dark:text-slate-500">
             <LockKeyhole className="w-3 h-3 shrink-0" />
             <span>
               Closed by{" "}
@@ -1623,7 +1629,7 @@ function SheetCard({
             <Button
               size="icon"
               variant="ghost"
-              className="w-8 h-8 text-sky-500 hover:text-sky-400 hover:bg-sky-500/10"
+              className="w-8 h-8 text-sky-700 dark:text-sky-300 hover:text-sky-400 hover:bg-sky-500/10"
               title="Copy or Move sheet"
               onClick={e => {
                 e.stopPropagation();
@@ -1638,7 +1644,7 @@ function SheetCard({
         <ChevronRight
           className={`w-4 h-4 transition-colors ${
             isClosed
-              ? "text-slate-400"
+              ? "text-slate-700 dark:text-slate-300"
               : allCertified
                 ? "text-black dark:text-emerald-400"
                 : "text-muted-foreground group-hover:text-foreground"
@@ -1694,7 +1700,7 @@ function SheetTileCard({
         isClosed
           ? "border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/40 opacity-70"
           : allCertified
-            ? "border-emerald-500/60 bg-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-500/80 hover:shadow-md"
+            ? "border-emerald-500/60 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-500/15 hover:border-emerald-500/80 hover:shadow-md"
             : "border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md"
       }`}
     >
@@ -1705,27 +1711,27 @@ function SheetTileCard({
             isClosed
               ? "bg-slate-200/60 dark:bg-slate-700/40 border-slate-300 dark:border-slate-600"
               : allCertified
-                ? "bg-emerald-500/20 border-emerald-500/40"
+                ? "bg-emerald-500/20 border-emerald-300 dark:border-emerald-500/40"
                 : "bg-blue-700/10 border-blue-700/20"
           }`}
         >
           {isClosed ? (
-            <LockKeyhole className="w-5 h-5 text-slate-400" />
+            <LockKeyhole className="w-5 h-5 text-slate-700 dark:text-slate-300" />
           ) : (
             <FileText
-              className={`w-5 h-5 ${allCertified ? "text-emerald-400" : "text-blue-700"}`}
+              className={`w-5 h-5 ${allCertified ? "text-emerald-700 dark:text-emerald-300" : "text-blue-700"}`}
             />
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {isClosed && (
-            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-slate-400/50 bg-slate-200/60 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-medium">
+            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-slate-300 dark:border-slate-500/40 bg-slate-200/60 dark:bg-slate-700/60 text-slate-700 dark:text-slate-400 font-medium">
               <LockKeyhole className="w-2.5 h-2.5" />
               CLOSED
             </span>
           )}
           {allCertified && !isClosed && (
-            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-emerald-500/50 bg-emerald-500/15 text-emerald-400 font-medium">
+            <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-medium">
               ✓ CERTIFIED
             </span>
           )}
@@ -1733,7 +1739,7 @@ function SheetTileCard({
             <Button
               size="icon"
               variant="ghost"
-              className="w-7 h-7 text-sky-500 hover:text-sky-400 hover:bg-sky-500/10"
+              className="w-7 h-7 text-sky-700 dark:text-sky-300 hover:text-sky-400 hover:bg-sky-500/10"
               onClick={e => {
                 e.stopPropagation();
                 onCopyMove();
@@ -1750,9 +1756,9 @@ function SheetTileCard({
       <p
         className={`font-semibold leading-tight line-clamp-2 ${
           isClosed
-            ? "text-slate-500 dark:text-slate-400"
+            ? "text-slate-700 dark:text-slate-400"
             : allCertified
-              ? "text-emerald-300"
+              ? "text-emerald-700 dark:text-emerald-300"
               : "text-foreground"
         }`}
       >
@@ -1779,22 +1785,31 @@ function SheetTileCard({
                 key={cin}
                 className={`inline-flex items-center gap-0.5 text-xs px-2 py-0.5 rounded-full border font-mono ${
                   certified
-                    ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-400"
-                    : "border-red-500/40 bg-red-500/10 text-red-400"
+                    ? "border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                    : "border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300"
                 }`}
               >
                 {entry?.isTeamLeader && (
-                  <span className="text-yellow-400" title="Team Leader">
+                  <span
+                    className="text-yellow-700 dark:text-yellow-300"
+                    title="Team Leader"
+                  >
                     ★
                   </span>
                 )}
                 {entry?.isAuthor && (
-                  <span className="text-sky-400" title="Author">
+                  <span
+                    className="text-sky-700 dark:text-sky-300"
+                    title="Author"
+                  >
                     ✏
                   </span>
                 )}
                 {entry?.hasImages && (
-                  <span className="text-violet-400" title="Has images">
+                  <span
+                    className="text-violet-700 dark:text-violet-300"
+                    title="Has images"
+                  >
                     📷
                   </span>
                 )}
@@ -1814,7 +1829,7 @@ function SheetTileCard({
             : format(new Date(sheet.createdAt), "d MMM yyyy")}
         </span>
         {sheet.closedAt && sheet.closedByCIN && (
-          <span className="ml-2 text-slate-400">
+          <span className="ml-2 text-slate-700 dark:text-slate-300">
             · Closed by <span className="font-mono">{sheet.closedByCIN}</span>
           </span>
         )}
@@ -2277,16 +2292,19 @@ export default function OperationDetail() {
             <TabsList className="grid grid-cols-3 w-full">
               <TabsTrigger
                 value="sheets"
-                className="w-full min-w-0 text-[11px] sm:text-sm"
+                className="w-full min-w-0 text-xs sm:text-sm"
               >
-                <FileText className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-                <span className="truncate">Running Sheets</span>
+                <FileText className="hidden sm:block w-3.5 h-3.5 mr-1.5 shrink-0" />
+                <span className="truncate sm:hidden">Sheets</span>
+                <span className="truncate hidden sm:inline">
+                  Running Sheets
+                </span>
               </TabsTrigger>
               <TabsTrigger
                 value="rollup"
-                className="w-full min-w-0 text-[11px] sm:text-sm"
+                className="w-full min-w-0 text-xs sm:text-sm"
               >
-                <History className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                <History className="hidden sm:block w-3.5 h-3.5 mr-1.5 shrink-0" />
                 <span className="truncate sm:hidden">Summaries</span>
                 <span className="truncate hidden sm:inline">
                   Deployment Summaries
@@ -2294,9 +2312,9 @@ export default function OperationDetail() {
               </TabsTrigger>
               <TabsTrigger
                 value="profile"
-                className="w-full min-w-0 text-[11px] sm:text-sm"
+                className="w-full min-w-0 text-xs sm:text-sm"
               >
-                <IdCard className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                <IdCard className="hidden sm:block w-3.5 h-3.5 mr-1.5 shrink-0" />
                 <span className="truncate sm:hidden">Profile</span>
                 <span className="truncate hidden sm:inline">
                   Operation Profile
@@ -2313,7 +2331,7 @@ export default function OperationDetail() {
             {fromSheetId && (
               <button
                 onClick={() => navigate(`/sheet/${fromSheetId}`)}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1.5 rounded-md border border-border/50 hover:border-border bg-background hover:bg-muted/40"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1.5 rounded-md border border-border hover:border-border bg-background hover:bg-muted/40"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 Back to Running Sheet
@@ -3020,13 +3038,13 @@ export default function OperationDetail() {
                       className="flex items-center justify-center"
                       title="Team Leader"
                     >
-                      <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
+                      <Star className="w-3 h-3 text-yellow-700 dark:text-yellow-300 fill-yellow-400" />
                     </span>
                     <span
                       className="flex items-center justify-center"
                       title="Author"
                     >
-                      <Pencil className="w-3 h-3 text-sky-400" />
+                      <Pencil className="w-3 h-3 text-sky-700 dark:text-sky-300" />
                     </span>
                     <span
                       className="flex items-center justify-center"
@@ -3039,7 +3057,7 @@ export default function OperationDetail() {
                   {cinList.map(entry => (
                     <div
                       key={entry.cin}
-                      className="grid grid-cols-[1fr_40px_40px_40px_32px] items-center px-3 py-2.5 border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors"
+                      className="grid grid-cols-[1fr_40px_40px_40px_32px] items-center px-3 py-2.5 border-b border-border last:border-0 hover:bg-muted/20 transition-colors"
                     >
                       <span className="text-sm font-mono font-medium text-foreground">
                         {entry.cin}

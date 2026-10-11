@@ -7982,7 +7982,7 @@ export default function IntelligenceMapping() {
             !(customMarkers && customMarkers.length > 0) && (
               <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
                 <div className="relative bg-card/90 backdrop-blur-sm border border-border rounded-lg px-4 py-2.5 shadow-md text-center max-w-[260px] flex items-center gap-2.5">
-                  <MapPin className="h-4 w-4 text-muted-foreground/50 flex-shrink-0" />
+                  <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                   <p className="text-[11px] text-muted-foreground leading-tight">
                     {selectedOpIds.length > 0 || selectedTargetIds.length > 0
                       ? "No locations found for selected filters."
@@ -7990,7 +7990,7 @@ export default function IntelligenceMapping() {
                   </p>
                   <button
                     onClick={() => setDismissedNoLocs(true)}
-                    className="flex-shrink-0 ml-1 text-muted-foreground/60 hover:text-foreground transition-colors"
+                    className="flex-shrink-0 ml-1 text-muted-foreground hover:text-foreground transition-colors"
                     aria-label="Dismiss"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -9621,7 +9621,7 @@ export default function IntelligenceMapping() {
                             {!isCollapsed && (
                               <div className="px-3 py-2 border-t border-border bg-card">
                                 {teamUsers.length === 0 ? (
-                                  <p className="text-[10px] text-muted-foreground/50 italic">
+                                  <p className="text-[10px] text-muted-foreground italic">
                                     No units online
                                   </p>
                                 ) : (
@@ -10020,7 +10020,7 @@ export default function IntelligenceMapping() {
                 })}
               </div>
 
-              <p className="text-[11px] text-muted-foreground/60 mt-3 text-center">
+              <p className="text-[11px] text-muted-foreground mt-3 text-center">
                 {quickLinks.length}/2 slots used — Operations and active sheet
                 are always shown
               </p>

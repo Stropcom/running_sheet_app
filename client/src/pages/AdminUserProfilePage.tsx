@@ -215,7 +215,7 @@ export default function AdminUserProfilePage() {
             className={`ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
               archived
                 ? NONE_BADGE_CLASS
-                : "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                : "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/40"
             }`}
           >
             {archived ? (
@@ -228,8 +228,12 @@ export default function AdminUserProfilePage() {
         </div>
 
         {/* Profile fields */}
-        <div className="rounded-xl border border-border/60 bg-card/50 p-5">
-          <p className="text-sm font-semibold mb-1">Profile</p>
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm p-5 flex flex-col gap-3">
+          <div className="-mx-5 -mt-5 border-b border-border bg-muted/70 px-5 py-2.5">
+            <p className="text-[13px] font-bold uppercase tracking-wide text-foreground">
+              Profile
+            </p>
+          </div>
           <UserFormFields
             form={form}
             setForm={setForm}
@@ -279,8 +283,12 @@ export default function AdminUserProfilePage() {
 
         {/* Account status / archive selector — the last thing on the page */}
         {canManage && (
-          <div className="rounded-xl border border-border/60 bg-card/50 p-5 flex flex-col gap-3">
-            <p className="text-sm font-semibold">Account Status</p>
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm p-5 flex flex-col gap-3">
+            <div className="-mx-5 -mt-5 border-b border-border bg-muted/70 px-5 py-2.5">
+              <p className="text-[13px] font-bold uppercase tracking-wide text-foreground">
+                Account Status
+              </p>
+            </div>
             {isSelf ? (
               <p className="text-xs text-muted-foreground">
                 You can't archive your own account.

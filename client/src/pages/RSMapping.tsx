@@ -915,11 +915,11 @@ export default function RSMapping() {
           {/* Empty state overlay */}
           {!selectedSheetId && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/60 backdrop-blur-sm pointer-events-none">
-              <ClipboardList className="h-12 w-12 text-muted-foreground/40 mb-3" />
+              <ClipboardList className="h-12 w-12 text-muted-foreground mb-3" />
               <p className="text-sm font-medium text-muted-foreground">
                 Select an operation and running sheet
               </p>
-              <p className="text-xs text-muted-foreground/70 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 The target's route will be plotted automatically
               </p>
             </div>
@@ -942,11 +942,11 @@ export default function RSMapping() {
             waypointCount === 0 &&
             (waypoints as any[])?.length === 0 && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/60 backdrop-blur-sm pointer-events-none">
-                <MapPin className="h-10 w-10 text-muted-foreground/40 mb-3" />
+                <MapPin className="h-10 w-10 text-muted-foreground mb-3" />
                 <p className="text-sm font-medium text-muted-foreground">
                   No location entries found
                 </p>
-                <p className="text-xs text-muted-foreground/70 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Observations with bracketed addresses will appear here
                 </p>
               </div>

@@ -235,7 +235,7 @@ export default function IntelligencePatternOfLife() {
       {operationId == null || targetId == null ? (
         <div className="flex-1 flex items-center justify-center py-16 text-center">
           <div>
-            <Activity className="w-8 h-8 text-muted-foreground/50 mx-auto mb-3" />
+            <Activity className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
             <p className="text-sm text-muted-foreground">
               Select an operation and a target to see their pattern of life.
             </p>
@@ -250,7 +250,7 @@ export default function IntelligencePatternOfLife() {
       ) : !data || !data.sufficientData ? (
         <div className="flex-1 flex items-center justify-center py-16 text-center">
           <div>
-            <Activity className="w-8 h-8 text-muted-foreground/50 mx-auto mb-3" />
+            <Activity className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
             <p className="text-sm text-muted-foreground">
               Not enough certified observations yet
               {data ? ` (${data.observationCount} so far)` : ""} — a meaningful

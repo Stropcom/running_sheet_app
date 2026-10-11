@@ -520,7 +520,7 @@ function LevelLadder({
                 className={`text-[9px] font-bold uppercase tracking-wide shrink-0 ${
                   isCurrent
                     ? RISK_TEXT_CLASSES[lv.risk]
-                    : "text-muted-foreground/70"
+                    : "text-muted-foreground"
                 }`}
               >
                 {lv.riskLabel}

@@ -873,7 +873,7 @@ function HelpItemBlock({ item, query }: { item: HelpItem; query: string }) {
       >
         <div className="flex-1 flex items-start gap-2 mt-0.5">
           {item.important && (
-            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5" />
           )}
           <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
             {item.question}
@@ -941,11 +941,11 @@ export default function HelpPage() {
         </div>
 
         {/* Important notice */}
-        <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
-          <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+        <div className="flex items-start gap-3 rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-500/5 px-4 py-3">
+          <Info className="w-4 h-4 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5" />
           <p className="text-sm text-muted-foreground">
             Items marked with a{" "}
-            <AlertTriangle className="w-3 h-3 text-amber-400 inline mx-0.5" />
+            <AlertTriangle className="w-3 h-3 text-amber-700 dark:text-amber-300 inline mx-0.5" />
             amber indicator describe{" "}
             <strong className="text-foreground">data entry standards</strong> —
             how information must be entered for the system's automated functions

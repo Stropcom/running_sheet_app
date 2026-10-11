@@ -166,7 +166,7 @@ export default function CinInput({
                 <span className="font-medium text-foreground">{u.cin}</span>
                 <span className="text-muted-foreground truncate">{u.name}</span>
                 {u.unit && (
-                  <span className="ml-auto text-[10px] text-muted-foreground/70 shrink-0">{u.unit}</span>
+                  <span className="ml-auto text-[10px] text-muted-foreground shrink-0">{u.unit}</span>
                 )}
               </button>
             </li>

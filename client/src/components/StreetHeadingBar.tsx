@@ -79,7 +79,7 @@ export function StreetHeadingBar({
       </span>
       {heading != null && (
         <>
-          <span className="text-muted-foreground/50 font-bold shrink-0">–</span>
+          <span className="text-muted-foreground font-bold shrink-0">–</span>
           <span className="text-xs font-bold text-sky-500 whitespace-nowrap shrink-0">
             {headingToCompassLabel(heading)}
           </span>

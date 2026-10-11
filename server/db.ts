@@ -20,6 +20,7 @@ import { makeRequest, type GeocodingResult } from "./_core/map";
 import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 import { addressMatchKey } from "@shared/addressMatchKey";
 import { normaliseTargetBackground } from "@shared/targetBackground";
+import { isLoggedIn, type TeamMapVisibility } from "@shared/teamMap";
 import { aliasMentionCompatible } from "./personAliasMatch";
 import {
   regionSearch,
@@ -362,6 +363,10 @@ export interface TeamRow {
   /** Assumed Identity phones (Crash Helper). */
   aiPhones: string[];
   sortOrder: number;
+  /** Map Settings → Teams: always listed, or only while someone is logged in. */
+  mapVisibility: TeamMapVisibility;
+  /** Members' location sharing is forced on at login and can't be turned off. */
+  forceShare: boolean;
 }
 
 function toTeamRow(t: typeof teams.$inferSelect): TeamRow {
@@ -380,6 +385,8 @@ function toTeamRow(t: typeof teams.$inferSelect): TeamRow {
     colour: t.colour,
     aiPhones: phones,
     sortOrder: t.sortOrder,
+    mapVisibility: t.mapVisibility,
+    forceShare: t.forceShare,
   };
 }
 
@@ -422,6 +429,8 @@ export async function createTeam(data: {
   name: string;
   colour: string | null;
   aiPhones: string[];
+  mapVisibility?: TeamMapVisibility;
+  forceShare?: boolean;
 }): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -437,6 +446,8 @@ export async function createTeam(data: {
     colour: data.colour,
     aiPhones: data.aiPhones.length > 0 ? JSON.stringify(data.aiPhones) : null,
     sortOrder: (last?.sortOrder ?? 0) + 1,
+    mapVisibility: data.mapVisibility ?? "always",
+    forceShare: data.forceShare ?? false,
     createdAt: Date.now(),
   });
   return result.insertId as number;
@@ -444,7 +455,13 @@ export async function createTeam(data: {
 
 export async function updateTeam(
   id: number,
-  data: { name?: string; colour?: string | null; aiPhones?: string[] }
+  data: {
+    name?: string;
+    colour?: string | null;
+    aiPhones?: string[];
+    mapVisibility?: TeamMapVisibility;
+    forceShare?: boolean;
+  }
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -454,8 +471,35 @@ export async function updateTeam(
   if (data.aiPhones !== undefined)
     set.aiPhones =
       data.aiPhones.length > 0 ? JSON.stringify(data.aiPhones) : null;
+  if (data.mapVisibility !== undefined) set.mapVisibility = data.mapVisibility;
+  if (data.forceShare !== undefined) set.forceShare = data.forceShare;
   if (Object.keys(set).length === 0) return;
   await db.update(teams).set(set).where(eq(teams.id, id));
+}
+
+/** Ids of teams with someone logged in right now (see shared/teamMap.ts). */
+export async function listTeamIdsWithOnlineMembers(
+  now: number = Date.now()
+): Promise<number[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({ teamId: users.teamId, lastSignedIn: users.lastSignedIn })
+    .from(users)
+    .where(and(isNotNull(users.teamId), isNull(users.archivedAt)));
+  const ids = new Set<number>();
+  for (const r of rows) {
+    if (r.teamId != null && isLoggedIn(r.lastSignedIn, now)) ids.add(r.teamId);
+  }
+  return Array.from(ids);
+}
+
+/** True when this person's team forces their location sharing on. */
+export async function mustShareLocation(user: {
+  teamId: number | null;
+}): Promise<boolean> {
+  if (user.teamId == null) return false;
+  return (await getTeamById(user.teamId))?.forceShare ?? false;
 }
 
 /** Delete a team; its members simply become "No team". Returns how many. */

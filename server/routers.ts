@@ -309,6 +309,8 @@ import {
   setUserOnFoot,
   setUserPinAppearance,
   clearUserLocation,
+  mustShareLocation,
+  listTeamIdsWithOnlineMembers,
   getUserLocationState,
   getUserLocationHistories,
   getCustomMarkers,
@@ -786,6 +788,10 @@ const teamInput = {
     .optional(),
   /** Assumed Identity phones for the Crash Helper. */
   aiPhones: z.array(z.string().trim().min(1).max(32)).max(10).optional(),
+  /** Map Settings → Teams: always listed, or only while someone is logged in. */
+  mapVisibility: z.enum(["always", "online"]).default("always"),
+  /** Members' location sharing is forced on at login and can't be turned off. */
+  forceShare: z.boolean().default(false),
 };
 
 /** A team can only be given to someone in the same Command. */
@@ -926,7 +932,14 @@ export const appRouter = router({
   // ─── Auth ────────────────────────────────────────────────────────────────────
 
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query(async opts => {
+      const user = opts.ctx.user;
+      if (!user) return user;
+      // Also says whether their team forces location sharing on (the app
+      // turns Show & Share on and locks it) — read here, not from the team
+      // list, because map-only Investigator accounts can't list teams.
+      return { ...user, mustShareLocation: await mustShareLocation(user) };
+    }),
 
     login: publicProcedure
       .input(
@@ -3606,6 +3619,8 @@ export const appRouter = router({
           name: input.name,
           colour: input.colour ?? null,
           aiPhones: input.aiPhones ?? [],
+          mapVisibility: input.mapVisibility,
+          forceShare: input.forceShare,
         });
         await createAuditLog({
           sheetId: 0,
@@ -3636,6 +3651,8 @@ export const appRouter = router({
           name: input.name,
           colour: input.colour ?? null,
           aiPhones: input.aiPhones ?? [],
+          mapVisibility: input.mapVisibility,
+          forceShare: input.forceShare,
         });
         await createAuditLog({
           sheetId: 0,
@@ -4194,6 +4211,22 @@ export const appRouter = router({
     listTeams: protectedProcedure.query(async ({ ctx }) =>
       ctx.user.allRegions ? listTeams() : listTeams(ctx.user.command)
     ),
+
+    /** Ids of teams that have someone logged in right now — what decides
+     * whether an "online" team (Admin, Investigators) shows in Map Settings
+     * → Teams. Only the caller's own Command's teams (all-region: every
+     * Command's), the same set listTeams returns. */
+    teamsWithOnlineMembers: protectedProcedure.query(async ({ ctx }) => {
+      const visible = new Set(
+        (ctx.user.allRegions
+          ? await listTeams()
+          : await listTeams(ctx.user.command)
+        ).map(t => t.id)
+      );
+      return (await listTeamIdsWithOnlineMembers()).filter(id =>
+        visible.has(id)
+      );
+    }),
   }),
 
   // ─── Targets ─────────────────────────────────────────────────────────────────
@@ -5416,6 +5449,8 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        // A team that must share (Investigators) can't be switched off.
+        const forced = await mustShareLocation(ctx.user);
         await upsertUserLocation(
           ctx.user.id,
           input.deviceId,
@@ -5424,7 +5459,7 @@ export const appRouter = router({
           ctx.user.role === "investigator"
             ? getInvestigatorAllowedOperationIds(ctx.user)
             : input.operationIds,
-          input.sharingEnabled,
+          forced ? true : input.sharingEnabled,
           input.speed ?? null,
           input.heading ?? null,
           input.accuracy ?? null
@@ -5533,6 +5568,8 @@ export const appRouter = router({
     clearUserLocation: protectedProcedure
       .input(z.object({ deviceId: z.string() }))
       .mutation(async ({ ctx, input }) => {
+        // Someone on a team that must share can't stop sharing.
+        if (await mustShareLocation(ctx.user)) return { ok: true };
         await clearUserLocation(ctx.user.id, input.deviceId);
         return { ok: true };
       }),

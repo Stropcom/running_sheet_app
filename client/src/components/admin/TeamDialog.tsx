@@ -11,6 +11,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -54,6 +62,10 @@ export function TeamDialog({
   const [name, setName] = useState("");
   const [colour, setColour] = useState<string>(TEAM_SWATCHES[0]);
   const [phones, setPhones] = useState("");
+  const [mapVisibility, setMapVisibility] = useState<"always" | "online">(
+    "always"
+  );
+  const [forceShare, setForceShare] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Start from the team being edited (or a clean form) each time it opens.
@@ -62,6 +74,8 @@ export function TeamDialog({
     setName(team?.name ?? "");
     setColour(team?.colour ?? TEAM_SWATCHES[0]);
     setPhones(team?.aiPhones.join("\n") ?? "");
+    setMapVisibility(team?.mapVisibility ?? "always");
+    setForceShare(team?.forceShare ?? false);
   }, [open, team]);
 
   const refresh = () => {
@@ -85,6 +99,8 @@ export function TeamDialog({
       name: name.trim(),
       colour,
       aiPhones: phoneList,
+      mapVisibility,
+      forceShare,
     };
     try {
       if (team) {
@@ -173,6 +189,45 @@ export function TeamDialog({
                 Their pins on the live map use this colour.
               </p>
             </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="team-visibility">Show in Map Settings</Label>
+              <Select
+                value={mapVisibility}
+                onValueChange={v => setMapVisibility(v as "always" | "online")}
+              >
+                <SelectTrigger id="team-visibility" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="always">Always</SelectItem>
+                  <SelectItem value="online">
+                    Only when a member is logged in
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <label
+              htmlFor="team-force-share"
+              className="flex cursor-pointer items-start gap-3 rounded-md border border-border bg-background p-3"
+            >
+              <Checkbox
+                id="team-force-share"
+                checked={forceShare}
+                onCheckedChange={v => setForceShare(v === true)}
+                className="mt-0.5"
+              />
+              <span className="text-sm text-foreground">
+                <span className="font-semibold">
+                  Location sharing always on
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  Members' Show &amp; Share switches on when they log in and
+                  can't be switched off.
+                </span>
+              </span>
+            </label>
 
             <div className="space-y-1.5">
               <Label htmlFor="team-phones">

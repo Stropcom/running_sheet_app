@@ -224,6 +224,15 @@ export const teams = mysqlTable(
     /** JSON string[] — Assumed Identity phones shown in the Crash Helper. */
     aiPhones: text("aiPhones"),
     sortOrder: int("sortOrder").notNull().default(0),
+    /** When the team shows in Map Settings → Teams: "always" (the default,
+     * and what every temporary team uses until it is deleted) or "online" —
+     * only while someone in it is logged in. */
+    mapVisibility: mysqlEnum("mapVisibility", ["always", "online"])
+      .notNull()
+      .default("always"),
+    /** True = members' location sharing is switched on automatically when
+     * they log in and cannot be switched off (e.g. Investigators). */
+    forceShare: boolean("forceShare").notNull().default(false),
     createdAt: bigint("createdAt", { mode: "number" }).notNull(),
   },
   t => ({

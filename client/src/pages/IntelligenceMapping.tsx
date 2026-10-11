@@ -13,7 +13,12 @@ import {
 } from "@shared/vehicleEventPatterns";
 import { DivIconOverlay, wasAnyMarkerJustTapped } from "@/lib/divIconOverlay";
 import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
-import { useTeams } from "@/lib/teams";
+import {
+  useMustShareLocation,
+  useTeams,
+  useTeamsWithOnlineMembers,
+} from "@/lib/teams";
+import { teamShownOnMap } from "@shared/teamMap";
 import { detectUnidentifiedRepeat } from "@shared/unidentified";
 import { entryMentionsAddress, popupShortAddress } from "@shared/markerLink";
 import { fullStreetTypes } from "@shared/streetTypes";
@@ -3205,6 +3210,10 @@ export default function IntelligenceMapping() {
   // sidebar roster with per-team hide/collapse controls) they don't get;
   // see its own "not for Investigator" comment further down.
   const mapTeams = useTeams();
+  const onlineTeamIds = useTeamsWithOnlineMembers(!isInvestigator);
+  // Their team (Investigators) forces Show & Share on: it switches on by
+  // itself and the switch is locked.
+  const mustShare = useMustShareLocation();
   const { data: liveUsers } = trpc.intelligence.userLocations.useQuery(
     { operationIds: selectedOpIds },
     { refetchInterval: 1000, enabled: true }
@@ -3978,11 +3987,13 @@ export default function IntelligenceMapping() {
   }, []); // no deps — uses refs only
 
   const handleSharingToggle = (checked: boolean) => {
+    // Locked on for a team that must share.
+    if (!checked && mustShare) return;
     setSharingEnabled(checked);
     // Tell the app-wide location service at once (it follows this switch).
     broadcastSharing(user?.id, checked);
     if (checked) {
-      if (!isMobile) {
+      if (!isMobile && !mustShare) {
         setGpsError(
           "Location sharing is designed for mobile devices. Your desktop location may be inaccurate."
         );
@@ -4013,7 +4024,7 @@ export default function IntelligenceMapping() {
     function handleStorageChange(e: StorageEvent) {
       if (!user?.id || e.key !== `runlog_sharing_u${user.id}`) return;
       const turnedOffElsewhere = e.newValue === "false";
-      if (turnedOffElsewhere && sharingEnabled) {
+      if (turnedOffElsewhere && sharingEnabled && !mustShare) {
         setSharingEnabled(false);
         setGpsError(null);
         stopWatching();
@@ -4021,7 +4032,14 @@ export default function IntelligenceMapping() {
     }
     window.addEventListener("storage", handleStorageChange);
     return () => window.removeEventListener("storage", handleStorageChange);
-  }, [user?.id, sharingEnabled, stopWatching]);
+  }, [user?.id, sharingEnabled, stopWatching, mustShare]);
+
+  // A team that must share (Investigators): sharing switches on by itself as
+  // soon as they are on the app, and stays on.
+  useEffect(() => {
+    if (mustShare && !sharingEnabled) handleSharingToggle(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mustShare, sharingEnabled]);
 
   // Update operationIds in the DB when selectedOpIds change while sharing
   useEffect(() => {
@@ -7222,12 +7240,24 @@ export default function IntelligenceMapping() {
     label: string;
     colour: string;
     users: LiveUser[];
-  }> = mapTeams.map(t => ({
-    key: String(t.id),
-    label: t.name,
-    colour: t.colour ?? NO_TEAM_PIN_COLOUR,
-    users: [],
-  }));
+  }> = mapTeams
+    // Team 1, Team 2, PTT, Capability and any team an admin has added always
+    // show (a temporary team stays until it is deleted); a team set to
+    // "online" (Admin, Investigators) shows only while someone in it is
+    // logged in — see shared/teamMap.ts.
+    .filter(t =>
+      teamShownOnMap(
+        t,
+        onlineTeamIds,
+        ((liveUsers ?? []) as LiveUser[]).some(u => u.teamId === t.id)
+      )
+    )
+    .map(t => ({
+      key: String(t.id),
+      label: t.name,
+      colour: t.colour ?? NO_TEAM_PIN_COLOUR,
+      users: [],
+    }));
   const unassignedLiveUsers: LiveUser[] = [];
   if (liveUsers) {
     for (const u of liveUsers as LiveUser[]) {
@@ -9503,7 +9533,8 @@ export default function IntelligenceMapping() {
                 </span>
                 <button
                   onClick={() => handleSharingToggle(!sharingEnabled)}
-                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+                  disabled={mustShare}
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 disabled:cursor-default disabled:opacity-100 disabled:active:scale-100 ${
                     sharingEnabled
                       ? "border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20"
                       : "border-border bg-card hover:bg-accent/40"

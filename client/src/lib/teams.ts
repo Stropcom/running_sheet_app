@@ -46,3 +46,25 @@ export function useMyTeams(): TeamRow[] {
   const all = useTeams();
   return user ? all.filter(t => t.command === user.command) : [];
 }
+
+/** Ids of teams that have someone logged in right now (see
+ * shared/teamMap.ts) — decides whether an "online" team shows on the map.
+ * `enabled` is false for map-only Investigator accounts, which can't list
+ * teams. */
+export function useTeamsWithOnlineMembers(enabled = true): Set<number> {
+  const { data } = trpc.users.teamsWithOnlineMembers.useQuery(undefined, {
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    enabled,
+  });
+  return new Set(data ?? []);
+}
+
+/** True when the signed-in person's team forces their location sharing on
+ * (Investigators): it switches on at login and can't be switched off. */
+export function useMustShareLocation(): boolean {
+  const { user } = useAuth();
+  return (
+    (user as { mustShareLocation?: boolean } | null)?.mustShareLocation === true
+  );
+}

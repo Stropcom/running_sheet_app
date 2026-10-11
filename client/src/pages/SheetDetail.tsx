@@ -1373,31 +1373,10 @@ function CinCertifyCell({
   // Phone: the row is a card (index.css), so the CINs wrap as chips under a
   // small label, with Add / Team / Delete row in one equal row at the bottom.
   if (isPhone) {
-    const real = row.members.filter(m => m.memberName !== SPACER);
-    const toCertify = real.filter(
-      m => !row.certifications.some(c => c.memberId === m.id && c.isActive)
-    ).length;
     const hasRoster = !!rosterCins && rosterCins.length > 1;
     const actionCount = 1 + (hasRoster ? 1 : 0) + (onDeleteRow ? 1 : 0);
     return (
-      <div className="flex flex-col gap-2">
-        {real.length > 0 && (
-          <div className="flex items-center justify-between gap-2 text-xs font-bold uppercase tracking-wide text-foreground/70">
-            <span className="flex items-center gap-2 whitespace-nowrap">
-              CIN · {real.length}
-              {!row.isLocked && toCertify > 0 && (
-                <span className="rounded-full border border-red-300 bg-red-50 px-2 py-0.5 normal-case tracking-normal text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
-                  {toCertify} to certify
-                </span>
-              )}
-            </span>
-            {canEdit && !row.isLocked && (
-              <span className="whitespace-nowrap text-right font-semibold normal-case tracking-normal">
-                Hold a CIN to remove
-              </span>
-            )}
-          </div>
-        )}
+      <div className="-mx-3 flex flex-col gap-2 border-t border-border px-3 pt-3">
         <div className="flex flex-wrap items-center gap-1.5">{memberItems}</div>
 
         {canEdit &&

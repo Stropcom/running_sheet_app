@@ -27,6 +27,7 @@ vi.mock("./operationAccess", () => ({
 }));
 
 vi.mock("./db", () => ({
+  mustShareLocation: vi.fn().mockResolvedValue(false),
   getRunningSheets: vi.fn().mockResolvedValue([]),
   getRunningSheetById: vi.fn().mockResolvedValue({
     id: 1,

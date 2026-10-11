@@ -25,6 +25,7 @@ import {
   reachableOperationIds,
   visibleOperationIds,
   mapOnlyOperationIds,
+  canSeeLivePin,
   type AccessLevel,
   type AccessOperation,
   type AccessShare,
@@ -769,28 +770,33 @@ export async function sameCommandUserIds(
   return new Set(all.filter(u => u.command === user.command).map(u => u.id));
 }
 
-/** Live team locations: people in your own Command, plus anyone whose
- * operations include one you can reach. */
+/** Live team locations. One rule for everyone, all-region admins included
+ * (see canSeeLivePin in shared/operationAccess.ts): your own Command's people,
+ * visitors your Command hosts, and people really on the same operation as you. */
 export async function filterLocationRows<
   T extends { userId: number; operationIds: string | number[] },
 >(user: AccessUser, rows: T[]): Promise<T[]> {
-  const allowed = await accessibleOperationIds(user);
-  if (allowed === null) return rows;
-  const mine = await sameCommandUserIds(user);
+  if (rows.length === 0) return rows;
+  const [{ ops, shares }, all] = await Promise.all([
+    loadAccessData(),
+    getAllUsers(),
+  ]);
+  const owners = new Map(all.map(u => [u.id, toAccessUser(u)]));
   return rows.filter(r => {
-    if (mine.has(r.userId)) return true;
+    const owner = owners.get(r.userId);
+    if (!owner) return false;
     let ids: unknown = r.operationIds;
     if (typeof ids === "string") {
       try {
         ids = JSON.parse(ids);
       } catch {
-        return false;
+        ids = [];
       }
     }
-    return (
-      Array.isArray(ids) &&
-      ids.some((i: unknown) => typeof i === "number" && allowed.has(i))
-    );
+    const opIds = Array.isArray(ids)
+      ? ids.filter((i: unknown): i is number => typeof i === "number")
+      : [];
+    return canSeeLivePin(user, owner, opIds, ops, shares);
   });
 }
 

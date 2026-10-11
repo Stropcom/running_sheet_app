@@ -5,6 +5,7 @@ import {
   seesEverything,
   visibleOperationIds,
   mapOnlyOperationIds,
+  canSeeLivePin,
   type AccessOperation,
   type AccessShare,
   type AccessUser,
@@ -216,5 +217,100 @@ describe("scopeEntities by sheet", () => {
     const out = scopeEntities(entities, new Set([3]), new Set([7]));
     expect(out).toHaveLength(1);
     expect(out[0].occurrences[0].sheetId).toBe(0);
+  });
+});
+
+describe("canSeeLivePin", () => {
+  // Operations: 1,2 Western; 3,4 Eastern; 5 Northern.
+  const liveOps: AccessOperation[] = [...ops, { id: 5, command: "NORTHERN" }];
+  const mark: AccessUser = {
+    id: 1,
+    command: "WESTERN",
+    role: "admin",
+    allRegions: true,
+  };
+  const priya: AccessUser = {
+    id: 2,
+    command: "WESTERN",
+    role: "member",
+    allRegions: false,
+  };
+  const tiger: AccessUser = {
+    id: 5,
+    command: "NORTHERN",
+    role: "member",
+    allRegions: false,
+  };
+  const nora: AccessUser = { ...tiger, id: 6 };
+
+  it("shows your own Command's people, and yourself", () => {
+    expect(canSeeLivePin(priya, mark, [], liveOps, [])).toBe(true);
+    expect(canSeeLivePin(mark, mark, [], liveOps, [])).toBe(true);
+    expect(canSeeLivePin(tiger, nora, [], liveOps, [])).toBe(true);
+  });
+
+  it("hides another Command's people, both ways, with no shares", () => {
+    expect(canSeeLivePin(tiger, mark, [1, 2], liveOps, [])).toBe(false);
+    expect(canSeeLivePin(mark, tiger, [5], liveOps, [])).toBe(false);
+  });
+
+  it("gives an all-region admin no exemption", () => {
+    // Mark can open every operation, but his pin is only his Command's.
+    expect(canSeeLivePin(mark, nora, [5], liveOps, [])).toBe(false);
+  });
+
+  it("ignores operations a pin is tagged with but its owner doesn't really belong on", () => {
+    // Mark is looking at Northern operation 5 on his map; that doesn't put
+    // him on it, so Northern people don't get his pin.
+    expect(canSeeLivePin(tiger, mark, [5], liveOps, [])).toBe(false);
+  });
+
+  it("shows a visitor to the Command that hosts them, whatever they have selected", () => {
+    const shares: AccessShare[] = [
+      { operationId: 1, fromCommand: null, userId: 5, level: "log" },
+    ];
+    expect(canSeeLivePin(priya, tiger, [], liveOps, shares)).toBe(true);
+    expect(canSeeLivePin(mark, tiger, [5], liveOps, shares)).toBe(true);
+    // A different Western visitor-less Northern colleague is still hidden.
+    expect(canSeeLivePin(priya, nora, [], liveOps, shares)).toBe(false);
+  });
+
+  it("shows a visitor's host Command only the people on the shared operation", () => {
+    const shares: AccessShare[] = [
+      { operationId: 1, fromCommand: null, userId: 5, level: "view" },
+    ];
+    expect(canSeeLivePin(tiger, priya, [1], liveOps, shares)).toBe(true);
+    expect(canSeeLivePin(tiger, priya, [2], liveOps, shares)).toBe(false);
+    expect(canSeeLivePin(tiger, priya, [], liveOps, shares)).toBe(false);
+  });
+
+  it("treats a share of every operation a Command owns as hosting", () => {
+    const shares: AccessShare[] = [
+      { operationId: null, fromCommand: "WESTERN", userId: 5, level: "view" },
+    ];
+    expect(canSeeLivePin(priya, tiger, [], liveOps, shares)).toBe(true);
+    expect(canSeeLivePin(tiger, priya, [2], liveOps, shares)).toBe(true);
+  });
+
+  it("counts an Investigator-level share as being on the operation", () => {
+    const shares: AccessShare[] = [
+      { operationId: 1, fromCommand: null, userId: 5, level: "investigator" },
+    ];
+    expect(canSeeLivePin(tiger, priya, [1], liveOps, shares)).toBe(true);
+  });
+
+  it("does not let one Command's share expose another Command's people", () => {
+    const shares: AccessShare[] = [
+      { operationId: 1, fromCommand: null, userId: 5, level: "log" },
+    ];
+    // Tiger visits Western; he still can't see Eastern people.
+    const east: AccessUser = {
+      id: 9,
+      command: "EASTERN",
+      role: "member",
+      allRegions: false,
+    };
+    expect(canSeeLivePin(tiger, east, [3], liveOps, shares)).toBe(false);
+    expect(canSeeLivePin(east, tiger, [1], liveOps, shares)).toBe(false);
   });
 });

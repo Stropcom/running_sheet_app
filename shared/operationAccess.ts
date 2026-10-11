@@ -212,6 +212,58 @@ export function reachableOperationIds(
   return Array.from(visibleOperationIds(user, ops, shares, 1));
 }
 
+// ─── Live team locations ────────────────────────────────────────────────────
+// One rule for who may see whose live pin on the Mapping page. It is stricter
+// than the access rule on purpose: all-region admins get no exemption, and the
+// operations a pin was "tagged" with (just the ones its owner had selected on
+// their own map) only count if that person can genuinely reach them.
+//
+// A pin is visible when ANY of these holds:
+//   1. it is yours;
+//   2. the owner is in your own Command;
+//   3. the owner is a visitor your Command hosts (one of your Command's
+//      operations, or all of them, was shared with them);
+//   4. you and the owner both genuinely reach an operation the pin is on.
+
+/** Operations a person really belongs on: their own Command's, what was
+ * shared with them (Investigator-level included), and nothing else. An
+ * all-region admin is treated as an ordinary member of their own Command. */
+export function strictOperationIds(
+  user: AccessUser,
+  ops: AccessOperation[],
+  shares: AccessShare[]
+): Set<number> {
+  const plain: AccessUser = { ...user, allRegions: false };
+  const out = visibleOperationIds(plain, ops, shares, 1);
+  mapOnlyOperationIds(plain, ops, shares).forEach(id => out.add(id));
+  return out;
+}
+
+export function canSeeLivePin(
+  viewer: AccessUser,
+  owner: AccessUser,
+  pinOperationIds: number[],
+  ops: AccessOperation[],
+  shares: AccessShare[]
+): boolean {
+  if (viewer.id === owner.id) return true;
+  if (viewer.command === owner.command) return true;
+  // A visitor this Command hosts.
+  const commandOf = new Map(ops.map(o => [o.id, o.command]));
+  const hosted = shares.some(s => {
+    if (s.userId !== owner.id) return false;
+    const from =
+      s.operationId != null ? commandOf.get(s.operationId) : s.fromCommand;
+    return from === viewer.command;
+  });
+  if (hosted) return true;
+  // Both really on the same operation.
+  if (pinOperationIds.length === 0) return false;
+  const mine = strictOperationIds(viewer, ops, shares);
+  const theirs = strictOperationIds(owner, ops, shares);
+  return pinOperationIds.some(id => mine.has(id) && theirs.has(id));
+}
+
 /** Drop occurrences from hidden operations. An entity seen ONLY in hidden
  * operations disappears; one with other occurrences stays, trimmed.
  * Registry-only occurrences (operation 0) are never hidden — unless they hang

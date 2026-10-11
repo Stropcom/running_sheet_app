@@ -717,6 +717,19 @@ export const targets = mysqlTable("targets", {
   // across. detail is the agency ("AFP" / "WAPOL"), free text like the summary.
   specialProjects: text("specialProjects"),
 
+  // Freeform Background written in the Target Registry (plain text, line
+  // breaks kept). One per target: it shows on the Target profile and on the
+  // Operation profile of every operation the target is linked to. Distinct
+  // from operation_target_links.background, the read-only narrative imported
+  // verbatim from a document for one operation.
+  registryBackground: text("registryBackground"),
+  registryBackgroundUpdatedAt: bigint("registryBackgroundUpdatedAt", {
+    mode: "number",
+  }),
+  registryBackgroundUpdatedByCIN: varchar("registryBackgroundUpdatedByCIN", {
+    length: 64,
+  }),
+
   // Primary/home address structured parts — compose into hbf/hb
   addrUnitNo: varchar("addrUnitNo", { length: 32 }),
   addrHouseNo: varchar("addrHouseNo", { length: 32 }),
@@ -1029,6 +1042,7 @@ export const auditLogs = mysqlTable("audit_logs", {
     "smeac_briefing_deleted",
     "uco_guide_posted",
     "uco_guide_deleted",
+    "target_background_updated",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),

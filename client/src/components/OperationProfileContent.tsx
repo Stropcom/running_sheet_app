@@ -52,6 +52,16 @@ import {
   type DocumentImportRow,
 } from "@/components/ImportedDocumentCard";
 import { SectionHeading } from "@/components/ProfileSectionHeading";
+import {
+  BackgroundCard,
+  JumpBar,
+  Photoboard,
+  ProfileCard,
+  SheetsCard,
+  splitPersonName,
+  type PhotoboardRow,
+} from "@/components/ProfileKit";
+import { registryPersonAddresses } from "@/lib/profileSection";
 
 // ─── Types (mirrors server IntelOperationProfile) ──────────────────────────
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
@@ -73,6 +83,9 @@ interface OperationTarget {
   bailConditions: string | null;
   bailConditionsText: string | null;
   specialProjects: string | null;
+  registryBackground: string | null;
+  registryBackgroundUpdatedAt: number | null;
+  registryBackgroundUpdatedByCIN: string | null;
   registryAssociates: Array<{
     id: number;
     name: string;
@@ -115,7 +128,21 @@ interface IntelOperationProfile {
 }
 
 // ─── PDF export ────────────────────────────────────────────────────────────
-function buildOperationProfileHtml(profile: IntelOperationProfile) {
+type PdfBoardRow = {
+  tag: string;
+  heading: string;
+  people: Array<{
+    given: string;
+    sur: string;
+    role: "target" | "associate" | "resident";
+    url: string | null;
+  }>;
+};
+
+function buildOperationProfileHtml(
+  profile: IntelOperationProfile,
+  board: PdfBoardRow[] = []
+) {
   const esc = (s: string | null | undefined) =>
     (s ?? "")
       .replace(/&/g, "&amp;")
@@ -149,6 +176,13 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
 .stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; padding:16px 32px; background:${BLUE_LIGHT} !important; border-bottom:2px solid ${BLUE_MID}; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .stat-box { text-align:center; } .stat-num { font-size:20px; font-weight:700; color:${BLUE_DARK} !important; } .stat-label { font-size:9px; text-transform:uppercase; letter-spacing:0.08em; color:#64748b; }
 .content { padding:20px 32px; } .section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:12px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+.pb-label { display:flex; gap:8px; align-items:baseline; margin:10px 0 6px; font-size:11px; } .pb-label span { font-size:9px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; border:1px solid #1d4ed8; background:${BLUE_LIGHT} !important; color:${BLUE_DARK}; border-radius:4px; padding:1px 6px; }
+.pb-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-bottom:8px; }
+.pb-tile { border:2px solid ${GREY_BORDER}; border-radius:6px; overflow:hidden; background:#fff; break-inside:avoid; }
+.pb-tile.target { border-color:#1d4ed8; background:${BLUE_LIGHT} !important; } .pb-tile.resident { border-color:#e11d48; }
+.pb-tile img, .pb-none { width:100%; aspect-ratio:4/5; object-fit:cover; object-position:top; display:block; }
+.pb-none { display:flex; align-items:center; justify-content:center; background:#f1f5f9; color:#64748b; font-size:9px; font-weight:600; }
+.pb-name { padding:3px 4px 5px; text-align:center; font-size:9px; line-height:1.25; } .pb-name b { display:block; font-size:10px; }
 .footer { margin-top:32px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
 @media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .stats-row { background:${BLUE_LIGHT} !important; } .section-title { background:${BLUE_LIGHT} !important; } }
 </style></head><body>
@@ -178,6 +212,21 @@ function buildOperationProfileHtml(profile: IntelOperationProfile) {
     <p style="font-size:10px;font-weight:600;color:#92400e;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:6px 8px;margin-bottom:8px">${profile.crossOperationLinks.length} target${profile.crossOperationLinks.length !== 1 ? "s" : ""} in this operation also reach into another operation — worth checking for a connection.</p>
     ${profile.crossOperationLinks.map(l => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(l.targetName)}</strong> ${esc(sharedLinkSentence(l.via, l.sharedValue))} — with a target on <strong>${esc(l.otherOperationName)}</strong></p>`).join("")}
   </div>`
+      : ""
+  }
+  ${
+    board.length
+      ? `<div style="margin-bottom:16px"><div class="section-title">Photoboard</div>${board
+          .map(
+            r =>
+              `<div class="pb-label"><span>${esc(r.tag)}</span><b>${esc(r.heading)}</b></div><div class="pb-grid">${r.people
+                .map(
+                  p =>
+                    `<div class="pb-tile ${p.role}">${p.url ? `<img src="${esc(p.url)}" alt="">` : `<div class="pb-none">No photo</div>`}<div class="pb-name">${esc(p.given)}<b>${esc(p.sur)}</b></div></div>`
+                )
+                .join("")}</div>`
+          )
+          .join("")}</div>`
       : ""
   }
   <div class="section-title">Target Intelligence Profiles</div>
@@ -218,22 +267,15 @@ function ImportedDocumentsSection({ operationId }: { operationId: number }) {
   }
 
   return (
-    <div className="mb-4 flex flex-col gap-2">
-      {/* Full-width heading bar; each document is its own full-width card. */}
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-violet-300/70 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 px-4 py-2.5">
-        <div className="min-w-0">
-          <p className="text-xs font-extrabold text-violet-700 dark:text-violet-300 uppercase tracking-wider">
-            Imported Documents
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Every target-profile document uploaded for this operation, verbatim
-            as parsed.
-          </p>
-        </div>
-        <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-xs font-bold text-violet-700 dark:text-violet-300 tabular-nums">
-          {imports.length}
-        </span>
-      </div>
+    <ProfileCard
+      id="imported-documents"
+      label="Imported Documents"
+      count={imports.length}
+    >
+      <p className="mb-3 text-xs text-muted-foreground">
+        Every target-profile document uploaded for this operation, verbatim as
+        parsed.
+      </p>
       <div className="flex flex-col gap-2">
         {Array.from(byTarget.values()).flatMap(rows => {
           const totalParsed = rows.filter(isParsedDocumentImport).length;
@@ -256,6 +298,247 @@ function ImportedDocumentsSection({ operationId }: { operationId: number }) {
           });
         })}
       </div>
+    </ProfileCard>
+  );
+}
+
+// ─── One target's block ─────────────────────────────────────────────────────
+// A collapsible block per target: Registered Details, Status, Background,
+// Registered Associates, Operational Associations, then Running Sheets.
+function TargetBlock({
+  target,
+  index,
+  total,
+  operationName,
+  open,
+  onToggle,
+  embedded,
+}: {
+  target: OperationTarget;
+  index: number;
+  total: number;
+  operationName: string;
+  open: boolean;
+  onToggle: () => void;
+  embedded: boolean;
+}) {
+  const [, navigate] = useLocation();
+  const residents = target.registryAssociates.filter(
+    a => a.relationship === "resident"
+  );
+  const associates = target.registryAssociates.filter(
+    a => a.relationship !== "resident"
+  );
+  const totalAssoc =
+    target.assocPersons.length +
+    target.assocVehicles.length +
+    target.assocLocations.length;
+  const entries = targetDetailEntries(target);
+  const hasStatus =
+    target.mdlStatus ||
+    target.bailStatus ||
+    formatSpecialProjects(target.specialProjects);
+  const bodyId = `tb-${target.targetId}`;
+  const personRow = (
+    a: OperationTarget["registryAssociates"][number],
+    kind: "resident" | "associate"
+  ) => (
+    <RegistryPersonRow
+      key={a.id}
+      name={a.name}
+      isIndicesOnly={a.isIndicesOnly}
+      kind={kind}
+      sub={registryPersonAddresses(a.hbf, a.extraAddresses)[0]}
+      anchorId={embedded ? undefined : `p-t${target.targetId}-${a.id}`}
+    />
+  );
+  return (
+    <div
+      id={`t-${target.targetId}`}
+      className="flex scroll-mt-28 flex-col gap-3 md:scroll-mt-16"
+    >
+      <div className="flex items-stretch overflow-hidden rounded-xl border-2 border-blue-600 bg-blue-100 text-blue-950 dark:bg-blue-950/50 dark:text-blue-100">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-controls={bodyId}
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-left focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-primary"
+        >
+          <ChevronRight
+            className={`h-[18px] w-[18px] shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
+          />
+          <span className="rounded-md border border-blue-600 bg-white/60 px-2 py-0.5 text-xs font-extrabold uppercase tracking-wide dark:bg-white/10">
+            {total > 1 ? `Target ${index + 1} of ${total}` : "Target"}
+          </span>
+          <span className="min-w-[12ch] flex-1 break-words text-base font-extrabold">
+            {target.name}
+          </span>
+          {target.isIndicesOnly && <IndicesBadge />}
+          <span className="text-xs opacity-90">
+            {[
+              target.tgt ? `TGT ${target.tgt}` : null,
+              target.hbf
+                ? formatIntelAddress(target.hbf).replace(/\.$/, "")
+                : null,
+              `${target.registryAssociates.length} registered ${target.registryAssociates.length === 1 ? "person" : "people"}`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate(`/intelligence/target/${target.targetId}`)}
+          className="shrink-0 border-l border-blue-600/40 px-3 text-xs font-bold hover:bg-white/40 dark:hover:bg-white/10"
+        >
+          Full Profile
+        </button>
+      </div>
+
+      {open && (
+        <div id={bodyId} className="flex flex-col">
+          {target.photos.length > 1 && (
+            <ProfileCard
+              label={`Photos of ${splitPersonName(target.name)[1] || target.name}`}
+              count={target.photos.length}
+            >
+              <IntelPhotoStrip photos={target.photos} />
+            </ProfileCard>
+          )}
+          {entries.length > 0 && (
+            <ProfileCard
+              id={`p-t${target.targetId}`}
+              label="Registered Details"
+              count={entries.length}
+            >
+              <RegisteredDetailPanels entries={entries} />
+            </ProfileCard>
+          )}
+          {entries.length === 0 && (
+            <div
+              id={`p-t${target.targetId}`}
+              className="scroll-mt-28 md:scroll-mt-16"
+            />
+          )}
+          {hasStatus && (
+            <ProfileCard label="Status">
+              <div className="grid grid-cols-1 gap-2 text-sm">
+                {target.mdlStatus && (
+                  <div className="flex items-start gap-3">
+                    <span className="w-28 shrink-0 pt-0.5 text-xs font-semibold uppercase tracking-wide text-foreground/70">
+                      MDL
+                    </span>
+                    <span>{mdlLabel(target.mdlStatus)}</span>
+                  </div>
+                )}
+                {target.bailStatus && (
+                  <div className="flex items-start gap-3">
+                    <span className="w-28 shrink-0 pt-0.5 text-xs font-semibold uppercase tracking-wide text-foreground/70">
+                      Bail
+                    </span>
+                    <span>{formatBail(target)}</span>
+                  </div>
+                )}
+                {formatSpecialProjects(target.specialProjects) && (
+                  <div className="flex items-start gap-3">
+                    <span className="w-28 shrink-0 pt-0.5 text-xs font-semibold uppercase tracking-wide text-foreground/70">
+                      Special Projects
+                    </span>
+                    <span>{formatSpecialProjects(target.specialProjects)}</span>
+                  </div>
+                )}
+              </div>
+            </ProfileCard>
+          )}
+          <BackgroundCard
+            id={`bg-${target.targetId}`}
+            text={target.registryBackground}
+            updatedAt={target.registryBackgroundUpdatedAt}
+            updatedByCIN={target.registryBackgroundUpdatedByCIN}
+          />
+          {residents.length > 0 && (
+            <ProfileCard
+              label="Other Home Address Residents"
+              count={residents.length}
+            >
+              <div className="flex flex-col gap-2">
+                {residents.map(a => personRow(a, "resident"))}
+              </div>
+            </ProfileCard>
+          )}
+          {associates.length > 0 && (
+            <ProfileCard
+              label="Registered Associates"
+              count={associates.length}
+            >
+              <div className="flex flex-col gap-2">
+                {associates.map(a => personRow(a, "associate"))}
+              </div>
+            </ProfileCard>
+          )}
+          {totalAssoc > 0 && (
+            <ProfileCard label="Operational Associations" count={totalAssoc}>
+              <p className="mb-3 text-xs italic text-muted-foreground">
+                Entities observed in the same running sheet rows as this target
+              </p>
+              <div className="flex flex-col gap-4">
+                {target.assocPersons.length > 0 && (
+                  <div>
+                    <SectionHeading
+                      sub
+                      label="Associated Persons"
+                      count={target.assocPersons.length}
+                    />
+                    <div className="flex flex-col gap-2">
+                      {target.assocPersons.map(p => (
+                        <IntelEntityDropdown key={p.id} item={p} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {target.assocVehicles.length > 0 && (
+                  <div>
+                    <SectionHeading
+                      sub
+                      label="Associated Vehicles"
+                      count={target.assocVehicles.length}
+                    />
+                    <div className="flex flex-col gap-2">
+                      {target.assocVehicles.map(v => (
+                        <IntelEntityDropdown key={v.id} item={v} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {target.assocLocations.length > 0 && (
+                  <div>
+                    <SectionHeading
+                      sub
+                      label="Associated Locations"
+                      count={target.assocLocations.length}
+                    />
+                    <div className="flex flex-col gap-2">
+                      {target.assocLocations.map(l => (
+                        <IntelEntityDropdown key={l.id} item={l} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </ProfileCard>
+          )}
+          {target.linkedSheets.length > 0 && (
+            <SheetsCard
+              id={`sheets-${target.targetId}`}
+              assigned={target.linkedSheets.map(s => ({
+                ...s,
+                operationName,
+              }))}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -275,20 +558,111 @@ export function OperationProfileContent({
   embedded?: boolean;
 }) {
   const [, navigate] = useLocation();
+  const utils = trpc.useUtils();
   const { data: profile, isLoading, error } = useOperationProfile(operationId);
-  const [expandedTargetId, setExpandedTargetId] = useState<number | null>(null);
+  // Which target blocks are open. Until the officer opens/closes one, only
+  // the first target's block is open.
+  const [openIds, setOpenIds] = useState<Set<number> | null>(null);
 
-  function exportPdf() {
+  async function exportPdf() {
     if (!profile) return;
-    const html = buildOperationProfileHtml(profile as IntelOperationProfile);
+    // Open the window first (inside the click) so the browser doesn't block
+    // it, then fill it once each person's photo has been looked up.
     const win = window.open("", "_blank");
     if (!win) return;
+    const board: PdfBoardRow[] = await Promise.all(
+      photoboardRows.map(async row => ({
+        tag: row.tag,
+        heading: row.heading,
+        people: await Promise.all(
+          row.people.map(async p => {
+            let url: string | null = null;
+            try {
+              const list = (await utils.attachment.byEntity.fetch({
+                category: p.photo.category,
+                targetId: p.photo.targetId,
+                entityLabel: p.photo.label,
+              })) as Array<{ url: string }>;
+              url = list[0]?.url ?? null;
+            } catch {
+              url = null;
+            }
+            const [given, sur] = splitPersonName(p.name);
+            return { given, sur, role: p.role, url };
+          })
+        ),
+      }))
+    );
+    const html = buildOperationProfileHtml(
+      profile as IntelOperationProfile,
+      board
+    );
     win.document.write(html);
     win.document.close();
     setTimeout(() => win.print(), 600);
   }
 
   const typedProfile = profile as IntelOperationProfile | undefined;
+
+  const isOpen = (id: number, index: number) =>
+    openIds ? openIds.has(id) : index === 0;
+  const currentOpen = () =>
+    openIds ??
+    new Set<number>(
+      typedProfile?.targets[0] ? [typedProfile.targets[0].targetId] : []
+    );
+  const toggleTarget = (id: number, index: number) => {
+    const next = new Set(currentOpen());
+    if (isOpen(id, index)) next.delete(id);
+    else next.add(id);
+    setOpenIds(next);
+  };
+  const openTarget = (id: number) => {
+    const next = new Set(currentOpen());
+    next.add(id);
+    setOpenIds(next);
+  };
+
+  // Photoboard: one row per target — the target first, then their registered
+  // associates and residents, each linked to their card in that block.
+  const photoboardRows: PhotoboardRow[] = (typedProfile?.targets ?? []).map(
+    (t, i, all) => {
+      const people = t.registryAssociates;
+      return {
+        tag: all.length > 1 ? `Target ${i + 1}` : "Target",
+        heading: t.name,
+        sub: `${people.length} registered ${people.length === 1 ? "person" : "people"}`,
+        people: [
+          {
+            key: `t${t.targetId}`,
+            name: t.name,
+            role: "target" as const,
+            anchor: `p-t${t.targetId}`,
+            photo: { category: "target" as const, targetId: t.targetId },
+          },
+          ...people.map(a => ({
+            key: `t${t.targetId}-${a.id}`,
+            name: a.name,
+            role:
+              a.relationship === "resident"
+                ? ("resident" as const)
+                : ("associate" as const),
+            anchor: `p-t${t.targetId}-${a.id}`,
+            photo: { category: "associate" as const, label: a.name },
+          })),
+        ],
+      };
+    }
+  );
+  const jumpItems = [
+    { id: "photoboard", label: "Photoboard" },
+    ...(typedProfile?.targets ?? []).map(t => ({
+      id: `t-${t.targetId}`,
+      label: splitPersonName(t.name)[1] || t.name,
+      before: () => openTarget(t.targetId),
+    })),
+    { id: "imported-documents", label: "Documents" },
+  ];
 
   return (
     <div className={embedded ? "pt-1" : "px-6 lg:px-8 py-6"}>
@@ -413,296 +787,35 @@ export function OperationProfileContent({
             </div>
           )}
 
-          <ImportedDocumentsSection operationId={operationId} />
-
-          {/* Target profiles — a full-width heading bar, then each target as
-              its own full-width card. */}
-          {typedProfile.targets.length > 0 && (
-            <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-blue-300/70 dark:border-blue-900 bg-blue-50 dark:bg-blue-950/30 px-4 py-2.5">
-              <p className="text-xs font-extrabold text-blue-800 dark:text-blue-300 uppercase tracking-wider">
-                Targets
-              </p>
-              <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-xs font-bold text-blue-800 dark:text-blue-300 tabular-nums">
-                {typedProfile.targets.length}
-              </span>
-            </div>
+          {!embedded && typedProfile.targets.length > 0 && (
+            <JumpBar items={jumpItems} />
           )}
-          <div className="space-y-2">
-            {typedProfile.targets.map(target => {
-              const isExpanded = expandedTargetId === target.targetId;
-              const totalAssoc =
-                target.assocPersons.length +
-                target.assocVehicles.length +
-                target.assocLocations.length;
-              return (
-                <div
-                  key={target.targetId}
-                  className="overflow-hidden rounded-xl border border-border bg-card shadow-sm"
-                >
-                  <button
-                    onClick={() =>
-                      setExpandedTargetId(isExpanded ? null : target.targetId)
-                    }
-                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors"
-                  >
-                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-full border bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30 shrink-0">
-                      <User className="w-3.5 h-3.5" />
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        {/* Phones: the whole name on its own line (wraps);
-                            larger screens keep one truncating line. */}
-                        <p className="text-sm font-semibold text-foreground sm:truncate">
-                          {target.name}
-                        </p>
-                        {target.isIndicesOnly && (
-                          <span className="hidden sm:contents">
-                            <IndicesBadge />
-                          </span>
-                        )}
-                      </div>
-                      <p className="hidden sm:block text-xs text-muted-foreground">
-                        {target.linkedSheets.length} sheet
-                        {target.linkedSheets.length !== 1 ? "s" : ""} ·{" "}
-                        {totalAssoc} association{totalAssoc !== 1 ? "s" : ""}
-                      </p>
-                      {/* Phone second line: Indices icon, then Full Profile. */}
-                      <div className="sm:hidden flex items-center gap-2 mt-0.5">
-                        {target.isIndicesOnly && <IndicesBadge />}
-                        <span
-                          role="link"
-                          tabIndex={0}
-                          onClick={e => {
-                            e.stopPropagation();
-                            navigate(`/intelligence/target/${target.targetId}`);
-                          }}
-                          onKeyDown={e => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              navigate(
-                                `/intelligence/target/${target.targetId}`
-                              );
-                            }
-                          }}
-                          className="text-xs text-blue-600 dark:text-blue-400 font-medium"
-                        >
-                          Full Profile
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={e => {
-                        e.stopPropagation();
-                        navigate(`/intelligence/target/${target.targetId}`);
-                      }}
-                      className="hidden sm:inline text-xs text-blue-600 dark:text-blue-400 hover:underline shrink-0 mr-2"
-                    >
-                      Full Profile
-                    </button>
-                    <ChevronRight
-                      className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
-                    />
-                  </button>
 
-                  {isExpanded && (
-                    <div className="border-t border-border px-4 pb-4 pt-3 space-y-3">
-                      {target.photos.length > 0 && (
-                        <div>
-                          <p className="text-xs font-bold uppercase tracking-wide text-foreground/80 mb-2">
-                            Photos ({target.photos.length})
-                          </p>
-                          <IntelPhotoStrip photos={target.photos} />
-                          <Separator className="mt-3" />
-                        </div>
-                      )}
-                      {(() => {
-                        const entries = targetDetailEntries(target);
-                        if (!entries.length) return null;
-                        return (
-                          <div>
-                            <p className="text-xs font-bold uppercase tracking-wide text-foreground/80 mb-2">
-                              Registered Details
-                            </p>
-                            <RegisteredDetailPanels entries={entries} />
-                            <Separator className="mt-3" />
-                          </div>
-                        );
-                      })()}
-                      {/* Status — MDL, bail and special projects, as on the
-                          target's own profile. */}
-                      {(target.mdlStatus ||
-                        target.bailStatus ||
-                        formatSpecialProjects(target.specialProjects)) && (
-                        <div>
-                          <p className="text-xs font-bold uppercase tracking-wide text-foreground/80 mb-2">
-                            Status
-                          </p>
-                          <div className="space-y-1 text-xs">
-                            {target.mdlStatus && (
-                              <div className="flex gap-2">
-                                <span className="font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0">
-                                  MDL
-                                </span>
-                                <span>{mdlLabel(target.mdlStatus)}</span>
-                              </div>
-                            )}
-                            {target.bailStatus && (
-                              <div className="flex gap-2">
-                                <span className="font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0">
-                                  Bail
-                                </span>
-                                <span>{formatBail(target)}</span>
-                              </div>
-                            )}
-                            {formatSpecialProjects(target.specialProjects) && (
-                              <div className="flex gap-2">
-                                <span className="font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0">
-                                  Special Projects
-                                </span>
-                                <span>
-                                  {formatSpecialProjects(
-                                    target.specialProjects
-                                  )}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                          <Separator className="mt-3" />
-                        </div>
-                      )}
-                      {target.registryAssociates.filter(
-                        a => a.relationship === "resident"
-                      ).length > 0 && (
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <p className="text-xs font-bold uppercase tracking-wide text-foreground/80">
-                              Other Home Address Residents
-                            </p>
-                            <span className="text-xs text-muted-foreground border border-border bg-background px-2 py-0.5 rounded-full">
-                              {
-                                target.registryAssociates.filter(
-                                  a => a.relationship === "resident"
-                                ).length
-                              }
-                            </span>
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            {target.registryAssociates
-                              .filter(a => a.relationship === "resident")
-                              .map(a => (
-                                <RegistryPersonRow
-                                  key={a.id}
-                                  name={a.name}
-                                  isIndicesOnly={a.isIndicesOnly}
-                                  kind="resident"
-                                />
-                              ))}
-                          </div>
-                          <Separator className="mt-3" />
-                        </div>
-                      )}
-                      {target.registryAssociates.filter(
-                        a => a.relationship !== "resident"
-                      ).length > 0 && (
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <p className="text-xs font-bold uppercase tracking-wide text-foreground/80">
-                              Registered Associates
-                            </p>
-                            <span className="text-xs text-muted-foreground border border-border bg-background px-2 py-0.5 rounded-full">
-                              {
-                                target.registryAssociates.filter(
-                                  a => a.relationship !== "resident"
-                                ).length
-                              }
-                            </span>
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            {target.registryAssociates
-                              .filter(a => a.relationship !== "resident")
-                              .map(a => (
-                                <RegistryPersonRow
-                                  key={a.id}
-                                  name={a.name}
-                                  isIndicesOnly={a.isIndicesOnly}
-                                  kind="associate"
-                                />
-                              ))}
-                          </div>
-                          <Separator className="mt-3" />
-                        </div>
-                      )}
-                      {target.linkedSheets.length > 0 && (
-                        <div>
-                          <p className="text-xs font-bold uppercase tracking-wide text-foreground/80 mb-2">
-                            Running Sheets
-                          </p>
-                          <div className="space-y-1">
-                            {target.linkedSheets.map(s => (
-                              <button
-                                key={s.id}
-                                onClick={() => navigate(`/sheet/${s.id}`)}
-                                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background hover:bg-accent/10 transition-colors text-left"
-                              >
-                                <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                <span className="text-xs font-medium text-foreground flex-1 truncate">
-                                  {s.title}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {totalAssoc > 0 && (
-                        <div>
-                          <p className="text-xs font-bold uppercase tracking-wide text-foreground/80 mb-2">
-                            Operational Associations
-                          </p>
-                          {target.assocPersons.length > 0 && (
-                            <div className="mb-2">
-                              <p className="text-xs text-muted-foreground mb-1">
-                                Persons
-                              </p>
-                              <div className="flex flex-col gap-2">
-                                {target.assocPersons.map(p => (
-                                  <IntelEntityDropdown key={p.id} item={p} />
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {target.assocVehicles.length > 0 && (
-                            <div className="mb-2">
-                              <p className="text-xs text-muted-foreground mb-1">
-                                Vehicles
-                              </p>
-                              <div className="flex flex-col gap-2">
-                                {target.assocVehicles.map(v => (
-                                  <IntelEntityDropdown key={v.id} item={v} />
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {target.assocLocations.length > 0 && (
-                            <div className="mb-2">
-                              <p className="text-xs text-muted-foreground mb-1">
-                                Locations
-                              </p>
-                              <div className="flex flex-col gap-2">
-                                {target.assocLocations.map(l => (
-                                  <IntelEntityDropdown key={l.id} item={l} />
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          {!embedded && typedProfile.targets.length > 0 && (
+            <Photoboard
+              rows={photoboardRows}
+              onBeforeGo={(_, rowIndex) =>
+                openTarget(typedProfile.targets[rowIndex].targetId)
+              }
+            />
+          )}
+
+          <div className="flex flex-col gap-4">
+            {typedProfile.targets.map((target, i) => (
+              <TargetBlock
+                key={target.targetId}
+                target={target}
+                index={i}
+                total={typedProfile.targets.length}
+                operationName={typedProfile.operationName}
+                open={isOpen(target.targetId, i)}
+                onToggle={() => toggleTarget(target.targetId, i)}
+                embedded={embedded}
+              />
+            ))}
           </div>
+
+          <ImportedDocumentsSection operationId={operationId} />
           {embedded && (
             <Button
               variant="outline"

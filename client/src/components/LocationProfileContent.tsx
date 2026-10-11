@@ -28,6 +28,15 @@ import {
   IntelEntityDropdown,
 } from "@/components/ProfileDropdown";
 import { SectionHeading } from "@/components/ProfileSectionHeading";
+import {
+  JumpBar,
+  PDF_PERSON_ROW_CSS,
+  ProfileCard,
+  SheetsCard,
+  fetchFirstPhotoUrl,
+  pdfPersonRowHtml,
+} from "@/components/ProfileKit";
+import { PersonLinkRow } from "@/components/PersonLinkRow";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
@@ -57,7 +66,12 @@ export interface IntelLocationProfile {
 
 function buildLocationProfileHtml(
   profile: IntelLocationProfile,
-  photos: ProfilePhoto[]
+  photos: ProfilePhoto[],
+  /** First photo of each linked target / associate, by id (null = none). */
+  personPhotos: {
+    targets: Map<number, string | null>;
+    associates: Map<number, string | null>;
+  } = { targets: new Map(), associates: new Map() }
 ) {
   const esc = (s: string | null | undefined) =>
     (s ?? "")
@@ -82,6 +96,7 @@ function buildLocationProfileHtml(
 .stat-box { text-align:center; } .stat-num { font-size:20px; font-weight:700; color:#064e3b !important; } .stat-label { font-size:9px; text-transform:uppercase; letter-spacing:0.08em; color:#64748b; }
 .content { padding:20px 32px; } .section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#064e3b !important; padding:6px 10px; background:#d1fae5 !important; border-left:3px solid #6ee7b7; margin-bottom:10px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .sub-title { font-size:9px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:#64748b; margin-bottom:6px; border-bottom:1px solid ${GREY_BORDER}; padding-bottom:4px; }
+${PDF_PERSON_ROW_CSS}
 .footer { margin-top:32px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
 @media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:#064e3b !important; } .stats-row { background:#d1fae5 !important; } .section-title { background:#d1fae5 !important; } }
 </style></head><body>
@@ -107,17 +122,17 @@ function buildLocationProfileHtml(
   </div>`
       : ""
   }
-  ${profile.linkedTargets.length ? `<div style="margin-bottom:16px"><div class="section-title">Linked Targets</div>${profile.linkedTargets.map(t => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(t.name)}</strong></p>`).join("")}</div>` : ""}
-  ${profile.linkedAssociates.length ? `<div style="margin-bottom:16px"><div class="section-title">Registered Associate${profile.linkedAssociates.length > 1 ? "s" : ""}</div>${profile.linkedAssociates.map(a => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(a.name)}</strong> <span style="color:#64748b">(associate of ${esc(a.targetName)})</span></p>`).join("")}</div>` : ""}
-  ${profile.linkedSheets.length ? `<div style="margin-bottom:16px"><div class="section-title">Running Sheets</div>${profile.linkedSheets.map(s => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}">${esc(s.title)} <span style="color:#64748b">— ${esc(s.operationName)}</span></p>`).join("")}</div>` : ""}
+  ${profile.linkedTargets.length ? `<div style="margin-bottom:16px"><div class="section-title">Linked Targets</div>${profile.linkedTargets.map(t => pdfPersonRowHtml({ name: t.name, tag: "Target", tone: "target", url: personPhotos.targets.get(t.targetId) ?? null })).join("")}</div>` : ""}
+  ${profile.linkedAssociates.length ? `<div style="margin-bottom:16px"><div class="section-title">Registered Associate${profile.linkedAssociates.length > 1 ? "s" : ""}</div>${profile.linkedAssociates.map(a => pdfPersonRowHtml({ name: a.name, sub: `Associate of ${a.targetName}`, tag: "Associate", tone: "associate", url: personPhotos.associates.get(a.associateId) ?? null })).join("")}</div>` : ""}
   ${
     profile.assocPersons.length || profile.assocVehicles.length
-      ? `<div style="margin-bottom:16px"><div class="section-title">Associations</div>
+      ? `<div style="margin-bottom:16px"><div class="section-title">Operational Associations</div>
     ${profile.assocPersons.length ? `<div class="sub-title">Persons</div>${buildEntityListWithPhotosHtml(profile.assocPersons)}` : ""}
     ${profile.assocVehicles.length ? `<div class="sub-title">Vehicles</div>${buildEntityListWithPhotosHtml(profile.assocVehicles)}` : ""}
   </div>`
       : ""
   }
+  ${profile.linkedSheets.length ? `<div style="margin-bottom:16px"><div class="section-title">Running Sheets</div>${profile.linkedSheets.map(s => `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}">${esc(s.title)} <span style="color:#64748b">— ${esc(s.operationName)}</span></p>`).join("")}</div>` : ""}
   <div class="footer"><span>RunLog — Location Intelligence Profile</span><span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span></div>
 </div>
 ${buildExportPreviewCloseBar()}
@@ -138,6 +153,7 @@ export function LocationProfileContent({
   embedded?: boolean;
 }) {
   const [, navigate] = useLocation();
+  const utils = trpc.useUtils();
   const displayLabel = formatIntelAddress(label);
   const { data, isLoading, error } = trpc.intelligence.locationProfile.useQuery(
     { label },
@@ -179,14 +195,63 @@ export function LocationProfileContent({
     });
   }
 
-  function exportPdf() {
+  const jumpItems = profile
+    ? [
+        { id: "photos", label: "Photos" },
+        ...(profile.linkedOperations.length > 0
+          ? [{ id: "operations", label: "Operations" }]
+          : []),
+        ...(profile.linkedTargets.length > 0
+          ? [{ id: "targets", label: "Targets" }]
+          : []),
+        ...(profile.linkedAssociates.length > 0
+          ? [{ id: "associates", label: "Associates" }]
+          : []),
+        ...(profile.assocPersons.length + profile.assocVehicles.length > 0
+          ? [{ id: "associations", label: "Associations" }]
+          : []),
+        ...(profile.linkedSheets.length > 0
+          ? [{ id: "sheets", label: "Sheets" }]
+          : []),
+        { id: "map", label: "Map" },
+      ]
+    : [];
+
+  async function exportPdf() {
     if (!profile) return;
-    const html = buildLocationProfileHtml(
-      { ...profile, label: displayLabel },
-      photos
-    );
+    // Open the window first (inside the click) so the browser doesn't block
+    // it, then fill it once each person's photo has been looked up.
     const win = window.open("", "_blank");
     if (!win) return;
+    const personPhotos = {
+      targets: new Map<number, string | null>(),
+      associates: new Map<number, string | null>(),
+    };
+    await Promise.all([
+      ...profile.linkedTargets.map(async t =>
+        personPhotos.targets.set(
+          t.targetId,
+          await fetchFirstPhotoUrl(utils, {
+            category: "target",
+            targetId: t.targetId,
+          })
+        )
+      ),
+      ...profile.linkedAssociates.map(async a =>
+        personPhotos.associates.set(
+          a.associateId,
+          await fetchFirstPhotoUrl(utils, {
+            category: "associate",
+            label: a.name,
+          })
+        )
+      ),
+    ]);
+    const html = buildLocationProfileHtml(
+      { ...profile, label: displayLabel },
+      photos,
+      personPhotos
+    );
     win.document.write(html);
     win.document.close();
     setTimeout(() => win.print(), 600);
@@ -274,17 +339,20 @@ export function LocationProfileContent({
             </div>
           )}
 
+          {!embedded && <JumpBar items={jumpItems} />}
+
           <EntityPhotosSection
             category="location"
             entityLabel={profile.label}
+            showEmpty
           />
 
           {profile.linkedOperations.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-              <SectionHeading
-                label="Operations"
-                count={profile.linkedOperations.length}
-              />
+            <ProfileCard
+              id="operations"
+              label="Operations"
+              count={profile.linkedOperations.length}
+            >
               {profile.linkedOperations.length > 1 && (
                 <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
                   <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
@@ -309,121 +377,107 @@ export function LocationProfileContent({
                   </ProfileDropdownRow>
                 ))}
               </div>
-            </div>
+            </ProfileCard>
           )}
 
           {profile.linkedTargets.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-              <SectionHeading
-                label="Linked Targets"
-                count={profile.linkedTargets.length}
-              />
-              <div className="space-y-1">
+            <ProfileCard
+              id="targets"
+              label="Linked Targets"
+              count={profile.linkedTargets.length}
+            >
+              <div className="space-y-2">
                 {profile.linkedTargets.map(t => (
-                  <ProfileDropdownRow
+                  <PersonLinkRow
                     key={t.targetId}
                     kind="target"
                     refId={t.targetId}
-                  >
-                    <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                    <span className="text-xs font-medium text-foreground flex-1 min-w-0 break-words">
-                      {t.name}
-                    </span>
-                  </ProfileDropdownRow>
+                    targetId={t.targetId}
+                    name={t.name}
+                    tone="target"
+                  />
                 ))}
               </div>
-            </div>
+            </ProfileCard>
           )}
 
           {profile.linkedAssociates.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-              <SectionHeading
-                label={
-                  profile.linkedAssociates.length > 1
-                    ? "Registered Associates"
-                    : "Registered Associate"
-                }
-                count={profile.linkedAssociates.length}
-              />
-              <div className="space-y-1">
+            <ProfileCard
+              id="associates"
+              label={
+                profile.linkedAssociates.length > 1
+                  ? "Registered Associates"
+                  : "Registered Associate"
+              }
+              count={profile.linkedAssociates.length}
+            >
+              <div className="space-y-2">
                 {profile.linkedAssociates.map(a => (
-                  <ProfileDropdownRow
+                  <PersonLinkRow
                     key={a.associateId}
                     kind="associate"
                     refId={a.name}
-                  >
-                    <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                    <span className="text-xs font-medium text-foreground min-w-0 break-words">
-                      {a.name}
-                    </span>
-                    <span className="text-xs text-muted-foreground flex-1 min-w-0 break-words">
-                      associate of {a.targetName}
-                    </span>
-                  </ProfileDropdownRow>
+                    name={a.name}
+                    tone="associate"
+                    sub={`Associate of ${a.targetName}`}
+                  />
                 ))}
               </div>
-            </div>
-          )}
-
-          {profile.linkedSheets.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-              <SectionHeading
-                label="Running Sheets"
-                count={profile.linkedSheets.length}
-              />
-              <div className="space-y-1">
-                {profile.linkedSheets.map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => navigate(`/sheet/${s.id}`)}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background hover:bg-accent/10 transition-colors text-left"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <span className="text-xs font-medium text-foreground flex-1 truncate">
-                      {s.title}
-                    </span>
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      {s.operationName}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
+            </ProfileCard>
           )}
 
           {(profile.assocPersons.length > 0 ||
             profile.assocVehicles.length > 0) && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-              <SectionHeading
-                label="Associations"
-                count={
-                  profile.assocPersons.length + profile.assocVehicles.length
-                }
-              />
-              {profile.assocPersons.length > 0 && (
-                <div className="mb-3">
-                  <p className="text-xs text-muted-foreground mb-1">Persons</p>
-                  <div className="flex flex-col gap-2">
-                    {profile.assocPersons.map(p => (
-                      <IntelEntityDropdown key={p.id} item={p} />
-                    ))}
+            <ProfileCard
+              id="associations"
+              label="Operational Associations"
+              count={profile.assocPersons.length + profile.assocVehicles.length}
+            >
+              <p className="mb-3 text-xs italic text-muted-foreground">
+                Entities observed in the same running sheet rows as this
+                location
+              </p>
+              <div className="flex flex-col gap-4">
+                {profile.assocPersons.length > 0 && (
+                  <div>
+                    <SectionHeading
+                      sub
+                      label="Associated Persons"
+                      count={profile.assocPersons.length}
+                    />
+                    <div className="flex flex-col gap-2">
+                      {profile.assocPersons.map(p => (
+                        <IntelEntityDropdown key={p.id} item={p} />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-              {profile.assocVehicles.length > 0 && (
-                <div className="mb-3">
-                  <p className="text-xs text-muted-foreground mb-1">Vehicles</p>
-                  <div className="flex flex-col gap-2">
-                    {profile.assocVehicles.map(v => (
-                      <IntelEntityDropdown key={v.id} item={v} />
-                    ))}
+                )}
+                {profile.assocVehicles.length > 0 && (
+                  <div>
+                    <SectionHeading
+                      sub
+                      label="Associated Vehicles"
+                      count={profile.assocVehicles.length}
+                    />
+                    <div className="flex flex-col gap-2">
+                      {profile.assocVehicles.map(v => (
+                        <IntelEntityDropdown key={v.id} item={v} />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            </ProfileCard>
           )}
 
-          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm mb-4">
+          {profile.linkedSheets.length > 0 && (
+            <SheetsCard assigned={profile.linkedSheets} id="sheets" />
+          )}
+
+          <div
+            id="map"
+            className="mb-4 scroll-mt-28 overflow-hidden rounded-xl border border-border bg-card shadow-sm md:scroll-mt-16"
+          >
             <div className="flex items-center gap-2 border-b border-border bg-muted/70 px-4 py-2.5">
               <MapPin className="w-4 h-4 text-emerald-600" />
               <p className="text-[13px] font-bold uppercase tracking-wide text-foreground">

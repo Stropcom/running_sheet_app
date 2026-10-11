@@ -107,6 +107,7 @@ import {
 import { runDuplicateChecks } from "@/lib/duplicateCheck";
 import { IndicesBadge } from "@/components/IndicesBadge";
 import { PhotoOwnerCaption } from "@/components/PhotoOwnerCaption";
+import { RegistryBackgroundPanel } from "@/components/RegistryBackgroundPanel";
 import type { TargetType } from "@shared/types";
 import { FORM_TONES, type FormTone } from "@/lib/formKit";
 import { cn } from "@/lib/utils";
@@ -139,6 +140,9 @@ type RegistryTarget = {
   bailConditions: string | null; // yes | no (only when bailStatus = yes)
   bailConditionsText: string | null;
   specialProjects: string | null; // JSON [{key, detail}]
+  registryBackground: string | null; // freeform, plain text
+  registryBackgroundUpdatedAt: number | null;
+  registryBackgroundUpdatedByCIN: string | null;
   addrUnitNo: string | null;
   addrHouseNo: string | null;
   addrStreetName: string | null;
@@ -1132,6 +1136,16 @@ function TargetCard({
                 // person's name on an associate card (composeAssociateName).
                 businessName: "",
               }}
+            />
+
+            <RegistryBackgroundPanel
+              targetId={target.id}
+              background={target.registryBackground ?? null}
+              updatedAt={target.registryBackgroundUpdatedAt ?? null}
+              updatedByCIN={target.registryBackgroundUpdatedByCIN ?? null}
+              operationNames={target.linkedOperations
+                .map(o => o.operationName)
+                .filter((n): n is string => !!n)}
             />
 
             {/* ── Depart / Arrive ── */}

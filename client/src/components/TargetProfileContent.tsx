@@ -50,6 +50,16 @@ import {
   type DocumentImportRow,
 } from "@/components/ImportedDocumentCard";
 import { SectionHeading } from "@/components/ProfileSectionHeading";
+import {
+  BackgroundCard,
+  JumpBar,
+  Photoboard,
+  SheetsCard,
+  personCardId,
+  splitPersonName,
+  type PhotoboardRow,
+  type SheetLink,
+} from "@/components/ProfileKit";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
@@ -125,7 +135,14 @@ function buildTargetProfileHtml(
     previousValue: string;
     supersededAt: number;
     supersededByCIN: string | null;
-  }[] = []
+  }[] = [],
+  board: Array<{
+    given: string;
+    sur: string;
+    role: "target" | "associate" | "resident";
+    url: string | null;
+  }> = [],
+  documentImports: DocumentImportRow[] = []
 ) {
   const esc = (s: string | null | undefined) =>
     (s ?? "")
@@ -206,6 +223,14 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .sheet-item { display:flex; align-items:center; gap:8px; padding:5px 8px; border-bottom:1px solid ${GREY_BORDER}; font-size:10px; }
 .sheet-item:last-child { border-bottom:none; }
 .sheet-dot { width:6px; height:6px; border-radius:50%; background:${BLUE_MID}; flex-shrink:0; }
+.pb-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; }
+.pb-tile { border:2px solid ${GREY_BORDER}; border-radius:6px; overflow:hidden; background:#fff; break-inside:avoid; }
+.pb-tile.target { border-color:#1d4ed8; background:${BLUE_LIGHT} !important; }
+.pb-tile.resident { border-color:#e11d48; }
+.pb-tile img, .pb-none { width:100%; aspect-ratio:4/5; object-fit:cover; object-position:top; display:block; }
+.pb-none { display:flex; align-items:center; justify-content:center; background:#f1f5f9; color:#64748b; font-size:9px; font-weight:600; }
+.pb-name { padding:3px 4px 5px; text-align:center; font-size:9px; line-height:1.25; }
+.pb-name b { display:block; font-size:10px; }
 .footer { margin-top:32px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
 @media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .stats-row { background:${BLUE_LIGHT} !important; } .section-title { background:${BLUE_LIGHT} !important; } .op-badge { background:${BLUE_LIGHT} !important; } }
 </style></head><body>
@@ -226,9 +251,27 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 </div>
 <div class="content">
   ${
-    photos.length
+    board.length
       ? `<div class="section">
-    <div class="section-title">Photos (${photos.length})</div>
+    <div class="section-title">Photoboard (${board.length})</div>
+    <div class="pb-grid">${board
+      .map(
+        b =>
+          `<div class="pb-tile ${b.role}">${
+            b.url
+              ? `<img src="${esc(b.url)}" alt="">`
+              : `<div class="pb-none">No photo</div>`
+          }<div class="pb-name">${esc(b.given)}<b>${esc(b.sur)}</b></div></div>`
+      )
+      .join("")}</div>
+  </div>`
+      : ""
+  }
+
+  ${
+    photos.length > 1
+      ? `<div class="section">
+    <div class="section-title">Target photos (${photos.length})</div>
     ${buildPhotoGridHtml(photos)}
   </div>`
       : ""
@@ -327,6 +370,17 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
   }
 
   ${
+    profile.registryBackground?.trim()
+      ? `
+  <div class="section">
+    <div class="section-title">Background</div>
+    <div style="white-space:pre-wrap;font-size:10.5px;line-height:1.6;overflow-wrap:anywhere">${esc(profile.registryBackground)}</div>
+    ${profile.registryBackgroundUpdatedAt ? `<div style="font-size:9px;color:#94a3b8;margin-top:6px">Last edited by CIN ${esc(profile.registryBackgroundUpdatedByCIN ?? "unknown")} · ${new Date(profile.registryBackgroundUpdatedAt).toLocaleDateString("en-AU")}</div>` : ""}
+  </div>`
+      : ""
+  }
+
+  ${
     RA_res.length
       ? `
   <div class="section">
@@ -356,25 +410,6 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
       : ""
   }
 
-  <div class="section">
-    <div class="section-title">Running Sheets</div>
-    <div style="border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">
-      ${profile.linkedSheets.map(s => `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(s.title)}</span><span style="color:#64748b">${esc(s.operationName)}</span></div>`).join("") || `<div class="sheet-item"><span style="color:#94a3b8">No linked running sheets</span></div>`}
-    </div>
-  </div>
-
-  ${
-    profile.mentionedSheets.length
-      ? `
-  <div class="section">
-    <div class="section-title">Also Mentioned In</div>
-    <div style="border:1px dashed ${GREY_BORDER};border-radius:6px;overflow:hidden">
-      ${profile.mentionedSheets.map(s => `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(s.title)}</span><span style="color:#64748b">${esc(s.operationName)}</span></div>`).join("")}
-    </div>
-  </div>`
-      : ""
-  }
-
   ${
     profile.assocPersons.length ||
     profile.assocVehicles.length ||
@@ -385,6 +420,34 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     ${sectionHtml("Associated Persons", profile.assocPersons)}
     ${sectionHtml("Associated Vehicles", profile.assocVehicles)}
     ${sectionHtml("Associated Locations", profile.assocLocations)}
+  </div>`
+      : ""
+  }
+
+  <div class="section">
+    <div class="section-title">Running Sheets (${profile.linkedSheets.length + profile.mentionedSheets.length})</div>
+    <div style="font-size:9px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin-bottom:4px">Assigned (${profile.linkedSheets.length})</div>
+    <div style="border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">
+      ${profile.linkedSheets.map(s => `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(s.title)}</span><span style="color:#64748b">${esc(s.operationName)}</span></div>`).join("") || `<div class="sheet-item"><span style="color:#94a3b8">No linked running sheets</span></div>`}
+    </div>
+    ${
+      profile.mentionedSheets.length
+        ? `<div style="font-size:9px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#64748b;margin:10px 0 4px">Mentioned on other sheets (${profile.mentionedSheets.length})</div>
+    <div style="border:1px dashed ${GREY_BORDER};border-radius:6px;overflow:hidden">
+      ${profile.mentionedSheets.map(s => `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(s.title)}</span><span style="color:#64748b">${esc(s.operationName)}</span></div>`).join("")}
+    </div>`
+        : ""
+    }
+  </div>
+
+  ${
+    documentImports.length
+      ? `
+  <div class="section">
+    <div class="section-title">Imported Documents (${documentImports.length})</div>
+    <div style="border:1px solid ${GREY_BORDER};border-radius:6px;overflow:hidden">
+      ${documentImports.map(d => `<div class="sheet-item"><div class="sheet-dot"></div><span style="flex:1">${esc(d.sourceFileName ?? "Imported document")}</span><span style="color:#64748b">${esc(profile.operations.find(o => o.id === d.operationId)?.name ?? "")} · ${new Date(d.uploadedAt).toLocaleDateString("en-AU")}</span></div>`).join("")}
+    </div>
   </div>`
       : ""
   }
@@ -462,6 +525,7 @@ export function TargetProfileContent({
   embedded?: boolean;
 }) {
   const [, navigate] = useLocation();
+  const utils = trpc.useUtils();
   const { data: profile, isLoading, error } = useTargetProfile(targetId);
   // Every document import for this target, across all its operations —
   // grouped by operation and rendered as versioned cards below, mirroring
@@ -500,11 +564,85 @@ export function TargetProfileContent({
     ? profile.operations.length + crossOpExtras.length
     : 0;
 
-  function exportPdf() {
+  // Photoboard: the target first, then their registered associates (and
+  // other home-address residents), each linked to their card below.
+  const photoboardRows: PhotoboardRow[] = profile
+    ? [
+        {
+          tag: "Target",
+          heading: profile.name,
+          sub: `${associatesOnly.length + residents.length} registered ${
+            associatesOnly.length + residents.length === 1 ? "person" : "people"
+          }`,
+          people: [
+            {
+              key: "target-self",
+              name: profile.name,
+              role: "target",
+              anchor: "details",
+              photo: { category: "target", targetId },
+            },
+            ...associatesOnly.map(a => ({
+              key: a.name,
+              name: a.name,
+              role: "associate" as const,
+              photo: { category: "associate" as const, label: a.name },
+            })),
+            ...residents.map(a => ({
+              key: a.name,
+              name: a.name,
+              role: "resident" as const,
+              photo: { category: "associate" as const, label: a.name },
+            })),
+          ],
+        },
+      ]
+    : [];
+  const jumpItems = [
+    { id: "photoboard", label: "Photoboard" },
+    { id: "operations", label: "Operations" },
+    { id: "details", label: "Details" },
+    { id: "background", label: "Background" },
+    ...(associatesOnly.length + residents.length > 0
+      ? [{ id: "associates", label: "Registered" }]
+      : []),
+    { id: "associations", label: "Operational" },
+    { id: "sheets", label: "Sheets" },
+    ...((documentImports ?? []).length > 0
+      ? [{ id: "documents", label: "Documents" }]
+      : []),
+  ];
+
+  async function exportPdf() {
     if (!profile) return;
-    const html = buildTargetProfileHtml(profile, photos, fieldHistory);
+    // Open the window first (inside the click) so the browser doesn't block
+    // it, then fill it once each person's photo has been looked up.
     const win = window.open("", "_blank");
     if (!win) return;
+    const board = await Promise.all(
+      photoboardRows[0].people.map(async p => {
+        let url: string | null = null;
+        try {
+          const list = (await utils.attachment.byEntity.fetch({
+            category: p.photo.category,
+            targetId: p.photo.targetId,
+            entityLabel: p.photo.label,
+          })) as Array<{ url: string }>;
+          url = list[0]?.url ?? null;
+        } catch {
+          url = null;
+        }
+        const [given, sur] = splitPersonName(p.name);
+        return { given, sur, role: p.role, url };
+      })
+    );
+    const html = buildTargetProfileHtml(
+      profile,
+      photos,
+      fieldHistory,
+      board,
+      (documentImports ?? []) as DocumentImportRow[]
+    );
     win.document.write(html);
     win.document.close();
     setTimeout(() => win.print(), 600);
@@ -598,7 +736,15 @@ export function TargetProfileContent({
             </div>
           )}
 
-          <EntityPhotosSection category="target" targetId={targetId} />
+          {!embedded && <JumpBar items={jumpItems} />}
+
+          {!embedded && <Photoboard rows={photoboardRows} />}
+
+          {/* More than one photo of the target: the full set, with the
+              unlink control. (The photoboard shows just the first.) */}
+          {photos.length > 1 && (
+            <EntityPhotosSection category="target" targetId={targetId} />
+          )}
 
           {profile.identicalProfile && (
             <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-300 dark:border-indigo-800">
@@ -625,7 +771,10 @@ export function TargetProfileContent({
           )}
 
           {/* Operations */}
-          <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+          <div
+            id="operations"
+            className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-28 md:scroll-mt-16"
+          >
             <SectionHeading label="Operations" count={totalOperationsCount} />
             {totalOperationsCount > 1 && (
               <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
@@ -671,66 +820,15 @@ export function TargetProfileContent({
             </div>
           </div>
 
-          {/* Imported Documents — every document uploaded for this target,
-              grouped by operation, each version clearly numbered with
-              "Current" marked — mirrors the Operation profile's own
-              "Imported Documents" panel instead of folding older versions
-              into a single free-text background block. */}
-          {profile.operations
-            .filter(op =>
-              (documentImports ?? []).some(
-                (i: DocumentImportRow) => i.operationId === op.id
-              )
-            )
-            .map(op => {
-              const versionsForOp = (documentImports ?? []).filter(
-                (i: DocumentImportRow) => i.operationId === op.id
-              );
-              return (
-                <div
-                  key={`imports-${op.id}`}
-                  className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4"
-                >
-                  <SectionHeading label={`Imported Documents — ${op.name}`} />
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Every document uploaded for this target on this operation,
-                    verbatim as parsed.
-                  </p>
-                  <div className="space-y-2">
-                    {(() => {
-                      const totalParsed = versionsForOp.filter(
-                        isParsedDocumentImport
-                      ).length;
-                      let parsedCount = 0;
-                      let lastParsedRow: DocumentImportRow | null = null;
-                      return versionsForOp.map(row => {
-                        const parsed = isParsedDocumentImport(row);
-                        if (parsed) parsedCount++;
-                        const card = (
-                          <ImportedDocumentCard
-                            key={row.id}
-                            row={row}
-                            version={parsed ? parsedCount : 0}
-                            isCurrent={parsed && parsedCount === totalParsed}
-                            subject={profile.name}
-                            previous={parsed ? lastParsedRow : null}
-                          />
-                        );
-                        if (parsed) lastParsedRow = row;
-                        return card;
-                      });
-                    })()}
-                  </div>
-                </div>
-              );
-            })}
-
           {/* Registered Details */}
           {(() => {
             const entries = targetDetailEntries(profile);
             if (!entries.length) return null;
             return (
-              <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+              <div
+                id="details"
+                className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-28 md:scroll-mt-16"
+              >
                 <SectionHeading
                   label="Registered Details"
                   count={entries.length}
@@ -798,71 +896,12 @@ export function TargetProfileContent({
             </div>
           )}
 
-          {/* Running Sheets */}
-          <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-            <SectionHeading
-              label="Running Sheets"
-              count={profile.linkedSheets.length}
-            />
-            {profile.linkedSheets.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                (no linked sheets)
-              </p>
-            ) : (
-              <div className="space-y-1">
-                {profile.linkedSheets.map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => navigate(`/sheet/${s.id}`)}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background hover:bg-accent/10 transition-colors text-left"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <span className="text-xs font-medium text-foreground flex-1 truncate">
-                      {s.title}
-                    </span>
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      {s.operationName}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Also Mentioned In — sheets this target isn't formally assigned
-              to (no runningSheets.targetId link) but whose observation text
-              names them, e.g. as a passenger on someone else's sheet. Kept
-              visually distinct from "Running Sheets" so it reads as
-              "elsewhere, not yours" rather than duplicating that list. */}
-          {profile.mentionedSheets.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-              <SectionHeading
-                label="Also Mentioned In"
-                count={profile.mentionedSheets.length}
-              />
-              <p className="text-xs text-muted-foreground mb-2">
-                Not formally assigned to this target — named in these sheets'
-                observation text.
-              </p>
-              <div className="space-y-1">
-                {profile.mentionedSheets.map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => navigate(`/sheet/${s.id}`)}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-border bg-background hover:bg-accent/10 transition-colors text-left"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <span className="text-xs font-medium text-foreground flex-1 truncate">
-                      {s.title}
-                    </span>
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      {s.operationName}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <BackgroundCard
+            id="background"
+            text={profile.registryBackground}
+            updatedAt={profile.registryBackgroundUpdatedAt}
+            updatedByCIN={profile.registryBackgroundUpdatedByCIN}
+          />
 
           {/* Other Home Address Residents — recorded directly on this target in the
               Target Registry, a guaranteed link rather than inferred from
@@ -880,6 +919,8 @@ export function TargetProfileContent({
                     name={a.name}
                     isIndicesOnly={a.isIndicesOnly}
                     kind="resident"
+                    sub={registryPersonAddresses(a.hbf, a.extraAddresses)[0]}
+                    anchorId={embedded ? undefined : personCardId(a.name)}
                   />
                 ))}
               </div>
@@ -890,7 +931,10 @@ export function TargetProfileContent({
               Target Registry, a guaranteed link rather than inferred from
               observation-text co-occurrence. */}
           {associatesOnly.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+            <div
+              id="associates"
+              className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-28 md:scroll-mt-16"
+            >
               <SectionHeading
                 label="Registered Associates"
                 count={associatesOnly.length}
@@ -902,6 +946,8 @@ export function TargetProfileContent({
                     name={a.name}
                     isIndicesOnly={a.isIndicesOnly}
                     kind="associate"
+                    sub={registryPersonAddresses(a.hbf, a.extraAddresses)[0]}
+                    anchorId={embedded ? undefined : personCardId(a.name)}
                   />
                 ))}
               </div>
@@ -912,7 +958,10 @@ export function TargetProfileContent({
           {(profile.assocPersons.length > 0 ||
             profile.assocVehicles.length > 0 ||
             profile.assocLocations.length > 0) && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+            <div
+              id="associations"
+              className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-28 md:scroll-mt-16"
+            >
               <SectionHeading
                 label="Operational Associations"
                 count={
@@ -972,6 +1021,67 @@ export function TargetProfileContent({
               )}
             </div>
           )}
+          <SheetsCard
+            assigned={profile.linkedSheets}
+            mentioned={profile.mentionedSheets as SheetLink[]}
+            id="sheets"
+          />
+
+          {/* Imported Documents — every document uploaded for this target,
+              grouped by operation, each version clearly numbered with
+              "Current" marked — mirrors the Operation profile's own
+              "Imported Documents" panel instead of folding older versions
+              into a single free-text background block. */}
+          {profile.operations
+            .filter(op =>
+              (documentImports ?? []).some(
+                (i: DocumentImportRow) => i.operationId === op.id
+              )
+            )
+            .map(op => {
+              const versionsForOp = (documentImports ?? []).filter(
+                (i: DocumentImportRow) => i.operationId === op.id
+              );
+              return (
+                <div
+                  key={`imports-${op.id}`}
+                  id={`documents${op.id === profile.operations[0]?.id ? "" : "-" + op.id}`}
+                  className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-28 md:scroll-mt-16"
+                >
+                  <SectionHeading label={`Imported Documents — ${op.name}`} />
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Every document uploaded for this target on this operation,
+                    verbatim as parsed.
+                  </p>
+                  <div className="space-y-2">
+                    {(() => {
+                      const totalParsed = versionsForOp.filter(
+                        isParsedDocumentImport
+                      ).length;
+                      let parsedCount = 0;
+                      let lastParsedRow: DocumentImportRow | null = null;
+                      return versionsForOp.map(row => {
+                        const parsed = isParsedDocumentImport(row);
+                        if (parsed) parsedCount++;
+                        const card = (
+                          <ImportedDocumentCard
+                            key={row.id}
+                            row={row}
+                            version={parsed ? parsedCount : 0}
+                            isCurrent={parsed && parsedCount === totalParsed}
+                            subject={profile.name}
+                            previous={parsed ? lastParsedRow : null}
+                          />
+                        );
+                        if (parsed) lastParsedRow = row;
+                        return card;
+                      });
+                    })()}
+                  </div>
+                </div>
+              );
+            })}
+
           {embedded && (
             <Button
               variant="outline"

@@ -43,6 +43,8 @@ export interface ProfileTargetBlock {
   bailConditionsText?: string | null;
   /** JSON [{key, detail}] — TI / LBS / SEEK / CAD. */
   specialProjects?: string | null;
+  /** Freeform Background written in the Target Registry. */
+  registryBackground?: string | null;
   registryAssociates?: Array<{
     id: number;
     name: string;
@@ -163,9 +165,9 @@ export function buildProfileTargetBlockHtml(t: ProfileTargetBlock): string {
         ${t.photos.length ? `${sectionTitle(`Photos (${t.photos.length})`)}${buildPhotoGridHtml(t.photos, 95)}` : ""}
         ${details.length ? `${sectionTitle("Registered Details")}${detailGrid(details)}` : ""}
         ${status.length ? `${sectionTitle("Status")}${detailGrid(status)}` : ""}
+        ${t.registryBackground?.trim() ? `${sectionTitle("Background")}<div style="white-space:pre-wrap;font-size:10.5px;line-height:1.6;overflow-wrap:anywhere;padding:2px 4px">${esc(t.registryBackground)}</div>` : ""}
         ${residents.length ? `${sectionTitle("Other Home Address Residents")}${registryList(residents)}` : ""}
         ${associates.length ? `${sectionTitle("Registered Associates")}${registryList(associates)}` : ""}
-        ${t.linkedSheets.length ? `${sectionTitle("Running Sheets")}${t.linkedSheets.map(s => `<p style="font-size:10px;padding:2px 4px">• ${esc(s.title)}</p>`).join("")}` : ""}
         ${
           hasAssoc
             ? `${sectionTitle("Operational Associations")}
@@ -174,6 +176,7 @@ export function buildProfileTargetBlockHtml(t: ProfileTargetBlock): string {
         ${t.assocLocations.length ? `${subTitle("Locations")}${buildEntityListWithPhotosHtml(t.assocLocations)}` : ""}`
             : ""
         }
+        ${t.linkedSheets.length ? `${sectionTitle("Running Sheets")}${t.linkedSheets.map(s => `<p style="font-size:10px;padding:2px 4px">• ${esc(s.title)}</p>`).join("")}` : ""}
       </div>
     </div>`;
 }

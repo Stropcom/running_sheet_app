@@ -19,6 +19,7 @@ import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
 import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 import { addressMatchKey } from "@shared/addressMatchKey";
+import { normaliseTargetBackground } from "@shared/targetBackground";
 import { aliasMentionCompatible } from "./personAliasMatch";
 import {
   regionSearch,
@@ -3521,6 +3522,33 @@ export async function updateTarget(
   }
 
   return result;
+}
+
+/** Saves the freeform Background written in the Target Registry. Plain text
+ * only (line breaks kept, nothing else interpreted); an empty value clears it.
+ * Returns the stored state so callers can show who/when. */
+export async function setTargetBackground(
+  id: number,
+  background: string,
+  byCIN: string | null
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const next = normaliseTargetBackground(background);
+  const now = Date.now();
+  await db
+    .update(targets)
+    .set({
+      registryBackground: next,
+      registryBackgroundUpdatedAt: now,
+      registryBackgroundUpdatedByCIN: byCIN,
+    })
+    .where(eq(targets.id, id));
+  return {
+    registryBackground: next,
+    registryBackgroundUpdatedAt: now,
+    registryBackgroundUpdatedByCIN: byCIN,
+  };
 }
 
 export async function getTargetById(id: number) {
@@ -12875,6 +12903,10 @@ export interface IntelTargetProfile {
   bailConditionsText: string | null;
   /** JSON [{key, detail}] — TI / LBS / SEEK / CAD. */
   specialProjects: string | null;
+  /** Freeform Background written in the Target Registry — null until set. */
+  registryBackground: string | null;
+  registryBackgroundUpdatedAt: number | null;
+  registryBackgroundUpdatedByCIN: string | null;
 }
 
 export interface IntelOperationProfile {
@@ -12919,6 +12951,10 @@ export interface IntelOperationProfile {
     bailConditionsText: string | null;
     /** JSON [{key, detail}] — TI / LBS / SEEK / CAD. */
     specialProjects: string | null;
+    /** Freeform Background from the Target Registry — null until set. */
+    registryBackground: string | null;
+    registryBackgroundUpdatedAt: number | null;
+    registryBackgroundUpdatedByCIN: string | null;
     registryAssociates: Array<{
       id: number;
       name: string;
@@ -14021,6 +14057,10 @@ export async function getIntelTargetProfile(
     bailStatus: target.bailStatus ?? null,
     bailConditions: target.bailConditions ?? null,
     bailConditionsText: target.bailConditionsText ?? null,
+    registryBackground: target.registryBackground ?? null,
+    registryBackgroundUpdatedAt: target.registryBackgroundUpdatedAt ?? null,
+    registryBackgroundUpdatedByCIN:
+      target.registryBackgroundUpdatedByCIN ?? null,
   };
 }
 
@@ -14153,6 +14193,10 @@ export async function getIntelOperationProfile(
         bailConditions: target.bailConditions ?? null,
         bailConditionsText: target.bailConditionsText ?? null,
         specialProjects: target.specialProjects ?? null,
+        registryBackground: target.registryBackground ?? null,
+        registryBackgroundUpdatedAt: target.registryBackgroundUpdatedAt ?? null,
+        registryBackgroundUpdatedByCIN:
+          target.registryBackgroundUpdatedByCIN ?? null,
         assocPersons,
         assocVehicles,
         assocLocations,

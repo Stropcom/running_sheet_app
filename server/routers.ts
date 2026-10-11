@@ -8,6 +8,7 @@ import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
 import { CIN_LINK_CATEGORY } from "@shared/attachmentLinking";
 import { resolveTrackedTarget } from "@shared/trackedTarget";
+import { TARGET_BACKGROUND_MAX } from "@shared/targetBackground";
 import { COMMAND_CODES, COMMAND_LABELS } from "@shared/commands";
 import {
   canShareOperation,
@@ -194,6 +195,7 @@ import {
   updateTarget,
   deleteTarget,
   getTargetById,
+  setTargetBackground,
   findPossibleDuplicateTarget,
   findPossibleDuplicatePerson,
   mergeTargetFieldDetails,
@@ -4489,6 +4491,51 @@ export const appRouter = router({
             newExtraVehicleIds,
             byCIN: ctx.user.cin ?? undefined,
           });
+        }),
+
+      /** Saves the freeform Background written on the Target Registry card.
+       * One per target: it shows on the Target profile and on the Operation
+       * profile of every operation the target is linked to. Plain text only. */
+      setBackground: protectedProcedure
+        .input(
+          z.object({
+            id: z.number(),
+            background: z.string().max(TARGET_BACKGROUND_MAX),
+          })
+        )
+        .mutation(async ({ input, ctx }) => {
+          if (ctx.user.role === "observer") {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Observers can't edit a target's Background.",
+            });
+          }
+          const before = await getTargetById(input.id);
+          if (!before) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Target not found",
+            });
+          }
+          const saved = await setTargetBackground(
+            input.id,
+            input.background,
+            ctx.user.cin ?? null
+          );
+          await createAuditLog({
+            sheetId: 0,
+            userId: ctx.user.id,
+            userName: ctx.user.cin ?? "Unknown",
+            userCIN: ctx.user.cin ?? null,
+            action: "target_background_updated",
+            details: `Background ${
+              saved.registryBackground ? "updated" : "cleared"
+            } on target "${before.name}" (${
+              (before.registryBackground ?? "").length
+            } to ${(saved.registryBackground ?? "").length} characters)`,
+            createdAt: Date.now(),
+          });
+          return saved;
         }),
 
       /** Delete a target from the registry (soft-delete → Recycle Bin) */

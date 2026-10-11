@@ -1006,3 +1006,26 @@ html.app-no-scroll body.app-vv-shifted {
     background-image: none;
   }
 }
+
+/* Profile pages: brief highlight when a photoboard tile or jump chip scrolls
+   to a card. Fades out on its own; the class is removed by the timeout in
+   scrollToSection (components/ProfileKit.tsx). */
+.profile-flash {
+  animation: profile-flash 1.6s ease-out;
+}
+@keyframes profile-flash {
+  0% {
+    box-shadow: 0 0 0 3px #f59e0b;
+    background-color: color-mix(in oklab, #f59e0b 22%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+    background-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .profile-flash {
+    animation: none;
+    outline: 3px solid #f59e0b;
+  }
+}

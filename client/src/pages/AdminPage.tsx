@@ -424,6 +424,7 @@ export default function AdminPage() {
     ? (viewCommandPick ?? myCommand)
     : myCommand;
   const commandTeams = useTeams(viewCommand);
+  const { data: allOperations } = trpc.operation.list.useQuery();
   const [teamDialogOpen, setTeamDialogOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<TeamRow | undefined>();
   // A visitor waiting for a team that is being made (+ New team… in Members).
@@ -574,6 +575,9 @@ export default function AdminPage() {
               }}
               shares={shares ?? []}
               visitorTeams={visitorTeams}
+              operations={(allOperations ?? [])
+                .filter(o => !o.deletedAt && o.command === viewCommand)
+                .map(o => ({ id: o.id, name: o.name }))}
               currentUserId={currentUser?.id}
               isLoading={isLoading}
               onOpen={id => navigate(`/admin/users/${id}`)}

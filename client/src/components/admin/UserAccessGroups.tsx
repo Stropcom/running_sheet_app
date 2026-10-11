@@ -29,6 +29,8 @@ export interface AdminUserRow {
   teamName?: string | null;
   username: string;
   role: string;
+  /** Investigators only: JSON array of the operation ids they can see. */
+  investigatorOperationIds?: string | null;
   archivedAt: number | null;
   lastSignedIn: Date | string | null;
 }
@@ -120,6 +122,7 @@ export function UserAccessGroups({
   onEditTeam,
   shares,
   visitorTeams,
+  operations,
   currentUserId,
   isLoading,
   roleBadge,
@@ -134,6 +137,8 @@ export function UserAccessGroups({
   shares: OperationShareRow[];
   /** Visitors this Command put in one of its teams. */
   visitorTeams: Array<{ userId: number; teamId: number }>;
+  /** This Command's operations, so a person's access can be named. */
+  operations: Array<{ id: number; name: string }>;
   currentUserId?: number;
   isLoading: boolean;
   roleBadge: (u: AdminUserRow) => ReactNode;
@@ -188,6 +193,51 @@ export function UserAccessGroups({
   const scopeText = (s: OperationShareRow) =>
     s.operationName ?? `Every ${COMMAND_LABELS[s.fromCommand]} operation`;
 
+  // The operations a person can open, by name. An Investigator has a list;
+  // a visitor has what this Command shared; everyone else has them all.
+  const opName = new Map(operations.map(o => [o.id, o.name]));
+  const opsFor = (u: AdminUserRow): { names: string[]; all: boolean } => {
+    if (u.command !== viewCommand) {
+      const mine = shares.filter(
+        s => s.userId === u.id && s.fromCommand === viewCommand
+      );
+      return { names: Array.from(new Set(mine.map(scopeText))), all: false };
+    }
+    if (u.role === "investigator") {
+      let ids: unknown = [];
+      try {
+        ids = u.investigatorOperationIds
+          ? JSON.parse(u.investigatorOperationIds)
+          : [];
+      } catch {
+        ids = [];
+      }
+      const names = (Array.isArray(ids) ? ids : [])
+        .map(id => opName.get(id as number))
+        .filter((n): n is string => !!n);
+      return { names, all: false };
+    }
+    return { names: [], all: true };
+  };
+  const renderOps = (u: AdminUserRow) => {
+    const { names, all } = opsFor(u);
+    if (all) return <span className="text-sm text-foreground/60">All</span>;
+    if (names.length === 0)
+      return <span className="text-sm text-foreground/60">None allocated</span>;
+    return (
+      <span className="flex flex-wrap gap-1">
+        {names.map(n => (
+          <span
+            key={n}
+            className="rounded-full border border-border bg-background px-2 py-0.5 text-xs font-semibold text-foreground"
+          >
+            {n}
+          </span>
+        ))}
+      </span>
+    );
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -237,6 +287,10 @@ export function UserAccessGroups({
               ...visitorsHere,
             ];
             const list = inTeam.filter(u => matchesPerson(u, query));
+            // An Operations column where the team has Investigators or visitors.
+            const showOps = inTeam.some(
+              u => u.role === "investigator" || u.command !== viewCommand
+            );
             if (!t.team && inTeam.length === 0) return null;
             if (searching && list.length === 0) return null;
             return (
@@ -265,21 +319,34 @@ export function UserAccessGroups({
                 open={isOpen(t.key)}
                 onToggle={() => toggle(t.key)}
               >
-                <Table className="min-w-[560px] table-fixed">
+                <Table
+                  className={`table-fixed ${showOps ? "min-w-[760px]" : "min-w-[560px]"}`}
+                >
                   <TableHeader>
                     <TableRow className="border-border/60">
-                      <TableHead className={`${HEAD} w-[32%]`}>Name</TableHead>
+                      <TableHead
+                        className={`${HEAD} ${showOps ? "w-[20%]" : "w-[32%]"}`}
+                      >
+                        Name
+                      </TableHead>
                       <TableHead className={`${HEAD} w-[10%]`}>CIN</TableHead>
                       <TableHead
-                        className={`${HEAD} hidden w-[16%] md:table-cell`}
+                        className={`${HEAD} hidden ${showOps ? "w-[13%]" : "w-[16%]"} md:table-cell`}
                       >
                         Username
                       </TableHead>
-                      <TableHead className={`${HEAD} w-[26%]`}>
+                      <TableHead
+                        className={`${HEAD} ${showOps ? "w-[17%]" : "w-[26%]"}`}
+                      >
                         Access level
                       </TableHead>
+                      {showOps && (
+                        <TableHead className={`${HEAD} w-[22%]`}>
+                          Operations
+                        </TableHead>
+                      )}
                       <TableHead
-                        className={`${HEAD} hidden w-[16%] lg:table-cell`}
+                        className={`${HEAD} hidden ${showOps ? "w-[18%]" : "w-[16%]"} lg:table-cell`}
                       >
                         Last sign in
                       </TableHead>
@@ -289,7 +356,7 @@ export function UserAccessGroups({
                     {list.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={5}
+                          colSpan={showOps ? 6 : 5}
                           className="py-4 text-sm text-muted-foreground"
                         >
                           Nobody in this team yet.
@@ -313,6 +380,11 @@ export function UserAccessGroups({
                               >
                                 {u.name}
                               </button>
+                              {showOps && (
+                                <div className="mt-1 md:hidden">
+                                  {renderOps(u)}
+                                </div>
+                              )}
                               {u.id === currentUserId && (
                                 <span className="ml-2 text-xs text-muted-foreground">
                                   (you)
@@ -357,6 +429,7 @@ export function UserAccessGroups({
                                 roleBadge(u)
                               )}
                             </TableCell>
+                            {showOps && <TableCell>{renderOps(u)}</TableCell>}
                             <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
                               {u.lastSignedIn
                                 ? new Date(u.lastSignedIn).toLocaleString()

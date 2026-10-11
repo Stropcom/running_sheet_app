@@ -14,10 +14,10 @@ export function SmeacLabel({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="h-5 w-5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 text-[11px] font-bold flex items-center justify-center shrink-0">
+      <span className="h-5 w-5 rounded-md bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold flex items-center justify-center shrink-0">
         {letter}
       </span>
-      <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+      <h3 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-1.5">
         {Icon && <Icon className="h-3.5 w-3.5" />}
         {label}
       </h3>

@@ -100,7 +100,7 @@ export default function SmeacBriefingListPage() {
               </span>
             </div>
             <h1 className="text-xl font-bold flex items-center gap-2">
-              <ShieldAlert className="h-5 w-5 text-amber-500" />
+              <ShieldAlert className="h-5 w-5 text-amber-700 dark:text-amber-300" />
               SMEAC Briefings
             </h1>
             <p className="text-xs text-muted-foreground mt-0.5">
@@ -235,10 +235,10 @@ function SmeacBriefingRow({
             <div className="flex items-center gap-x-2 gap-y-1 flex-wrap mb-0.5">
               <p className="text-sm font-semibold">{operationName}</p>
               <StatusBadge status={b.status} />
-              <span className="text-[10px] font-mono text-muted-foreground">
+              <span className="text-xs font-mono text-muted-foreground">
                 Rev {b.revision}
               </span>
-              <span className="text-[11px] text-muted-foreground ml-auto">
+              <span className="text-xs text-muted-foreground ml-auto">
                 {b.postedAt
                   ? format(new Date(b.postedAt), "d MMM, h:mm a")
                   : format(new Date(b.createdAt), "d MMM, h:mm a")}
@@ -310,14 +310,14 @@ function SmeacBriefingRow({
 function StatusBadge({ status }: { status: string }) {
   if (status === "posted") {
     return (
-      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-emerald-500/10 text-emerald-600 border border-emerald-500/30">
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 border border-emerald-300 dark:border-emerald-500/40">
         <Check className="h-2.5 w-2.5" />
         Posted
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide bg-muted text-muted-foreground">
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide bg-muted text-muted-foreground">
       Draft
     </span>
   );

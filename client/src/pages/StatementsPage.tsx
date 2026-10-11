@@ -232,27 +232,29 @@ export default function StatementsPage() {
             <h1 className="text-xl font-bold text-foreground">
               Produce Statement
             </h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-foreground/70">
               Generate a court-ready surveillance statement per officer CIN
             </p>
           </div>
         </div>
 
         {/* ── Step 1: Choose Operation ── */}
-        <section className="flex flex-col gap-3">
-          <div className="flex items-center gap-3">
+        <section className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <div className="flex items-center gap-3 border-b border-border bg-muted/70 px-4 py-2.5">
             <StepBadge n={1} active={step === 1} done={step > 1} />
-            <h2 className="font-semibold text-foreground">Choose Operation</h2>
+            <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
+              Choose Operation
+            </h2>
           </div>
 
           {opsLoading ? (
-            <div className="flex flex-col gap-2 pl-10">
+            <div className="flex flex-col gap-2 p-3">
               {[1, 2, 3].map(i => (
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
           ) : (
-            <div className="pl-10 flex flex-col gap-1.5">
+            <div className="p-3 flex flex-col gap-1.5">
               {(operations ?? []).map(op => (
                 <button
                   key={op.id}
@@ -263,8 +265,8 @@ export default function StatementsPage() {
                   }}
                   className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border text-left transition-colors ${
                     selectedOpId === op.id
-                      ? "border-primary bg-primary/10 text-foreground"
-                      : "border-border bg-card hover:bg-muted/40 text-foreground"
+                      ? "border-primary bg-primary/10 text-foreground ring-1 ring-primary"
+                      : "border-border bg-background hover:bg-muted/60 text-foreground"
                   }`}
                 >
                   <span className="font-medium">{op.name}</span>
@@ -284,22 +286,22 @@ export default function StatementsPage() {
 
         {/* ── Step 2: Choose Running Sheets ── */}
         {selectedOpId !== null && (
-          <section className="flex flex-col gap-3">
-            <div className="flex items-center gap-3">
+          <section className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <div className="flex items-center gap-3 border-b border-border bg-muted/70 px-4 py-2.5">
               <StepBadge n={2} active={step === 2} done={step > 2} />
-              <h2 className="font-semibold text-foreground">
+              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
                 Choose Running Sheet(s)
               </h2>
             </div>
 
             {sheetsLoading ? (
-              <div className="flex flex-col gap-2 pl-10">
+              <div className="flex flex-col gap-2 p-3">
                 {[1, 2].map(i => (
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
               </div>
             ) : (
-              <div className="pl-10 flex flex-col gap-2">
+              <div className="p-3 flex flex-col gap-2">
                 {(sheets ?? []).length > 1 && (
                   <button
                     onClick={toggleAllSheets}
@@ -320,8 +322,8 @@ export default function StatementsPage() {
                     key={sheet.id}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors ${
                       selectedSheetIds.includes(sheet.id)
-                        ? "border-primary bg-primary/10"
-                        : "border-border bg-card hover:bg-muted/40"
+                        ? "border-primary bg-primary/10 ring-1 ring-primary"
+                        : "border-border bg-background hover:bg-muted/60"
                     }`}
                   >
                     <Checkbox
@@ -355,17 +357,17 @@ export default function StatementsPage() {
 
         {/* ── Step 3: Choose CINs ── */}
         {selectedSheetIds.length > 0 && (
-          <section className="flex flex-col gap-3">
-            <div className="flex items-center gap-3">
+          <section className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <div className="flex items-center gap-3 border-b border-border bg-muted/70 px-4 py-2.5">
               <StepBadge n={3} active={step === 3} done={false} />
-              <h2 className="font-semibold text-foreground">
+              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
                 {isAdmin
                   ? "Choose CIN(s) to produce statements for"
                   : "Confirm your CIN"}
               </h2>
             </div>
 
-            <div className="pl-10 flex flex-col gap-2">
+            <div className="p-3 flex flex-col gap-2">
               {previewLoading ? (
                 <div className="flex flex-col gap-2">
                   {[1, 2, 3].map(i => (
@@ -373,7 +375,7 @@ export default function StatementsPage() {
                   ))}
                 </div>
               ) : availableCins.length === 0 && excludedCins.length === 0 ? (
-                <div className="flex items-center gap-2 text-sm text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/40 rounded-lg px-4 py-3">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   {isAdmin
                     ? "No CINs found in the selected running sheets."
@@ -383,7 +385,7 @@ export default function StatementsPage() {
                 <>
                   {/* Qualifying CINs (can generate statements) */}
                   {availableCins.length === 0 && excludedCins.length > 0 && (
-                    <div className="flex items-center gap-2 text-sm text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-lg px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/40 rounded-lg px-4 py-3">
                       <AlertCircle className="w-4 h-4 shrink-0" />
                       No qualifying observation rows found — all CINs are
                       excluded (see below).
@@ -411,8 +413,8 @@ export default function StatementsPage() {
                         isAdmin ? "cursor-pointer" : "cursor-default"
                       } ${
                         selectedCins.includes(cinData.cin)
-                          ? "border-primary bg-primary/10"
-                          : "border-border bg-card hover:bg-muted/40"
+                          ? "border-primary bg-primary/10 ring-1 ring-primary"
+                          : "border-border bg-background hover:bg-muted/60"
                       }`}
                     >
                       {isAdmin && (
@@ -424,7 +426,7 @@ export default function StatementsPage() {
                       )}
                       {!isAdmin && (
                         <div className="w-4 h-4 mt-0.5 rounded-sm bg-primary/20 border border-primary/40 flex items-center justify-center shrink-0">
-                          <span className="text-[10px] text-primary font-bold">
+                          <span className="text-xs text-primary font-bold">
                             ✓
                           </span>
                         </div>
@@ -445,7 +447,7 @@ export default function StatementsPage() {
                             {cinData.surveillanceDates.length !== 1 ? "s" : ""}
                           </span>
                           {cinData.authorDates.length > 0 && (
-                            <span className="flex items-center gap-1 text-sky-400">
+                            <span className="flex items-center gap-1 text-sky-700 dark:text-sky-300">
                               <PenLine className="w-3 h-3" />
                               RS Author:{" "}
                               {cinData.authorDates
@@ -454,7 +456,7 @@ export default function StatementsPage() {
                             </span>
                           )}
                           {cinData.imageDates.length > 0 && (
-                            <span className="flex items-center gap-1 text-amber-400">
+                            <span className="flex items-center gap-1 text-amber-700 dark:text-amber-300">
                               <Camera className="w-3 h-3" />
                               Images:{" "}
                               {cinData.imageDates
@@ -478,7 +480,7 @@ export default function StatementsPage() {
                           key={cinData.cin}
                           className="flex items-start gap-3 px-4 py-3 rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 opacity-70"
                         >
-                          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
+                          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-700 dark:text-amber-300" />
                           <div className="flex flex-col gap-1 min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-mono font-bold text-sm text-foreground">
@@ -487,7 +489,7 @@ export default function StatementsPage() {
                               <span className="text-sm text-muted-foreground">
                                 {cinData.name}
                               </span>
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-500 border border-amber-400/30">
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40">
                                 {cinData.excludedReason}
                               </span>
                             </div>
@@ -504,7 +506,7 @@ export default function StatementsPage() {
 
         {/* ── Generate button ── */}
         {selectedSheetIds.length > 0 && availableCins.length > 0 && (
-          <div className="pl-10">
+          <div>
             <Button
               onClick={handleGenerate}
               disabled={!canGenerate || generating}

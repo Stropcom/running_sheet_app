@@ -431,7 +431,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
   return (
     <div className="p-4 md:p-6 space-y-5">
       <div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+        <div className="flex items-center gap-2 text-xs text-foreground/70 mb-1">
           <span>Administration</span>
           <span>/</span>
           <button
@@ -463,12 +463,12 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
                 ? "SMEAC Briefing (draft)"
                 : "New SMEAC Briefing"}
           </h1>
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-amber-500/10 text-amber-600 border border-amber-500/30">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide bg-amber-50 dark:bg-amber-500/10 text-amber-600 border border-amber-300 dark:border-amber-500/40">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
             Exceptional use only
           </span>
           {isEdit && existing.data && (
-            <span className="text-[10px] font-mono font-medium text-muted-foreground border border-border rounded px-1.5 py-0.5">
+            <span className="text-xs font-mono font-medium text-foreground/70 border border-border rounded px-1.5 py-0.5">
               Rev {existing.data.revision}
             </span>
           )}
@@ -487,8 +487,8 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
         </div>
       </div>
 
-      <div className="flex gap-2.5 p-3 rounded-lg bg-card border border-border border-l-2 border-l-amber-500 text-xs text-muted-foreground">
-        <ShieldAlert className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+      <div className="flex gap-2.5 p-3 rounded-lg bg-card border border-border border-l-2 border-l-amber-500 text-xs text-foreground/70">
+        <ShieldAlert className="h-4 w-4 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5" />
         <div>
           <strong className="text-foreground">
             Reserved for urgent, exceptional circumstances
@@ -499,7 +499,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* Operation */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
+      <div className="p-4 rounded-xl bg-card border border-border shadow-sm space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           <Field label="Operation" compact>
             <Select
@@ -550,13 +550,15 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* TARGET — precedes SMEAC, not part of it */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
-        <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-          Target
-        </h3>
+      <div className="overflow-hidden p-4 rounded-xl bg-card border border-border shadow-sm space-y-3">
+        <div className="-mx-4 -mt-4 border-b border-border bg-muted/70 px-4 py-2.5">
+          <h3 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
+            Target
+          </h3>
+        </div>
 
         {operationId == null ? (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-foreground/70">
             Choose an operation to see its targets, vehicles, and locations.
           </p>
         ) : (
@@ -720,8 +722,10 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* SITUATION */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
-        <SmeacLabel letter="S" label="Situation" />
+      <div className="overflow-hidden p-4 rounded-xl bg-card border border-border shadow-sm space-y-3">
+        <div className="-mx-4 -mt-4 border-b border-border bg-muted/70 px-4 py-2.5">
+          <SmeacLabel letter="S" label="Situation" />
+        </div>
         <Field label="Background / intelligence" compact>
           <Textarea
             value={backgroundIntel}
@@ -739,13 +743,13 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
           />
         </Field>
         <div>
-          <label className="text-xs font-semibold block mb-2">
+          <label className="text-xs font-semibold uppercase tracking-wide text-foreground/80 block mb-2">
             Other agencies or teams involved
           </label>
           <div className="space-y-2">
             {otherAgencies.map((agency, i) => (
               <div key={i} className="flex items-center gap-2">
-                <span className="h-5 w-5 rounded-full bg-muted text-[11px] font-bold flex items-center justify-center shrink-0">
+                <span className="h-5 w-5 rounded-full bg-muted text-xs font-bold flex items-center justify-center shrink-0">
                   {i + 1}
                 </span>
                 <Input
@@ -763,7 +767,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
                     onClick={() =>
                       setOtherAgencies(otherAgencies.filter((_, j) => j !== i))
                     }
-                    className="text-muted-foreground hover:text-destructive shrink-0"
+                    className="text-foreground/70 hover:text-destructive shrink-0"
                     aria-label="Remove agency or team"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -773,7 +777,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
             ))}
             <button
               onClick={() => setOtherAgencies([...otherAgencies, ""])}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground border border-dashed border-border rounded-md px-2.5 py-1.5 hover:bg-accent ml-7"
+              className="flex items-center gap-1.5 text-xs text-foreground/70 border border-dashed border-border rounded-md px-2.5 py-1.5 hover:bg-accent ml-7"
             >
               <Plus className="h-3 w-3" /> Add other agency or team
             </button>
@@ -782,8 +786,10 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* MISSION */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
-        <SmeacLabel letter="M" label="Mission" />
+      <div className="overflow-hidden p-4 rounded-xl bg-card border border-border shadow-sm space-y-3">
+        <div className="-mx-4 -mt-4 border-b border-border bg-muted/70 px-4 py-2.5">
+          <SmeacLabel letter="M" label="Mission" />
+        </div>
         <Textarea
           value={mission}
           onChange={e => setMission(e.target.value)}
@@ -793,11 +799,13 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* EXECUTION */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-4">
-        <SmeacLabel letter="E" label="Execution" />
+      <div className="overflow-hidden p-4 rounded-xl bg-card border border-border shadow-sm space-y-4">
+        <div className="-mx-4 -mt-4 border-b border-border bg-muted/70 px-4 py-2.5">
+          <SmeacLabel letter="E" label="Execution" />
+        </div>
 
         <div>
-          <label className="text-xs font-semibold block mb-2">
+          <label className="text-xs font-semibold uppercase tracking-wide text-foreground/80 block mb-2">
             Map snapshot
           </label>
           <div className="rounded-lg border border-dashed border-border bg-muted/20 p-3">
@@ -808,7 +816,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
                   alt="Map snapshot"
                   className="w-full rounded-md border border-border"
                 />
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <div className="flex items-center justify-between text-xs text-foreground/70">
                   <span>
                     {mapSnapshotSource === "capture"
                       ? "Captured from the live map"
@@ -827,7 +835,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
               </div>
             ) : (
               <div className="flex flex-col items-center gap-2 text-center py-4">
-                <p className="text-xs text-muted-foreground max-w-xs">
+                <p className="text-xs text-foreground/70 max-w-xs">
                   No map attached yet. Insert the marked-up area so the team
                   sees it right in the briefing.
                 </p>
@@ -869,11 +877,13 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
         </Field>
 
         <div>
-          <label className="text-xs font-semibold block mb-2">Objectives</label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-foreground/80 block mb-2">
+            Objectives
+          </label>
           <div className="space-y-2">
             {objectives.map((obj, i) => (
               <div key={i} className="flex items-center gap-2">
-                <span className="h-5 w-5 rounded-full bg-muted text-[11px] font-bold flex items-center justify-center shrink-0">
+                <span className="h-5 w-5 rounded-full bg-muted text-xs font-bold flex items-center justify-center shrink-0">
                   {i + 1}
                 </span>
                 <Input
@@ -891,7 +901,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
                     onClick={() =>
                       setObjectives(objectives.filter((_, j) => j !== i))
                     }
-                    className="text-muted-foreground hover:text-destructive shrink-0"
+                    className="text-foreground/70 hover:text-destructive shrink-0"
                     aria-label="Remove objective"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -901,7 +911,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
             ))}
             <button
               onClick={() => setObjectives([...objectives, ""])}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground border border-dashed border-border rounded-md px-2.5 py-1.5 hover:bg-accent ml-7"
+              className="flex items-center gap-1.5 text-xs text-foreground/70 border border-dashed border-border rounded-md px-2.5 py-1.5 hover:bg-accent ml-7"
             >
               <Plus className="h-3 w-3" /> Add objective
             </button>
@@ -955,10 +965,10 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
                       };
                       setTeamSlots(next);
                     }}
-                    className={`shrink-0 h-8 px-2.5 rounded-md text-[10px] font-bold uppercase tracking-wide border transition-colors ${
+                    className={`shrink-0 h-8 px-2.5 rounded-md text-xs font-bold uppercase tracking-wide border transition-colors ${
                       slot.isTeamLeader
-                        ? "bg-amber-500/15 text-amber-600 border-amber-500/40 dark:text-amber-400"
-                        : "text-muted-foreground border-border hover:bg-accent"
+                        ? "bg-amber-50 dark:bg-amber-500/10 text-amber-600 border-amber-300 dark:border-amber-500/40 dark:text-amber-400"
+                        : "text-foreground/70 border-border hover:bg-accent"
                     }`}
                     title="Toggle Team Leader"
                   >
@@ -968,7 +978,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
                     onClick={() =>
                       setTeamSlots(teamSlots.filter((_, j) => j !== i))
                     }
-                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                    className="shrink-0 text-foreground/70 hover:text-destructive"
                     aria-label="Remove team member"
                   >
                     <X className="h-4 w-4" />
@@ -999,7 +1009,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
           </div>
           <button
             onClick={() => setTeamSlots([...teamSlots, { ...EMPTY_SLOT }])}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground border border-dashed border-border rounded-md px-2.5 py-1.5 hover:bg-accent mt-2"
+            className="flex items-center gap-1.5 text-xs text-foreground/70 border border-dashed border-border rounded-md px-2.5 py-1.5 hover:bg-accent mt-2"
           >
             <Plus className="h-3 w-3" /> Add team member
           </button>
@@ -1007,8 +1017,10 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* ADMINISTRATION & LOGISTICS */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
-        <SmeacLabel letter="A" label="Administration & Logistics" />
+      <div className="overflow-hidden p-4 rounded-xl bg-card border border-border shadow-sm space-y-3">
+        <div className="-mx-4 -mt-4 border-b border-border bg-muted/70 px-4 py-2.5">
+          <SmeacLabel letter="A" label="Administration & Logistics" />
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
           <Field label="Legal auth — arrest" compact>
             <Input
@@ -1034,7 +1046,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
         </div>
 
         <div>
-          <label className="text-xs font-semibold block mb-2">
+          <label className="text-xs font-semibold uppercase tracking-wide text-foreground/80 block mb-2">
             Accoutrements
           </label>
           <div className="flex flex-wrap gap-1.5">
@@ -1064,7 +1076,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
         </div>
 
         <div>
-          <label className="text-xs font-semibold block mb-2">
+          <label className="text-xs font-semibold uppercase tracking-wide text-foreground/80 block mb-2">
             Covert police identifier
           </label>
           <div className="flex flex-wrap gap-1.5">
@@ -1094,7 +1106,9 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
         </div>
 
         <div>
-          <label className="text-xs font-semibold block mb-2">First aid</label>
+          <label className="text-xs font-semibold uppercase tracking-wide text-foreground/80 block mb-2">
+            First aid
+          </label>
           <RadioGroup
             value={firstAidAllVehicles ? "all" : "member"}
             onValueChange={val => setFirstAidAllVehicles(val === "all")}
@@ -1141,8 +1155,10 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* COMMAND & SIGNAL */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
-        <SmeacLabel letter="C" label="Command & Signal" icon={Radio} />
+      <div className="overflow-hidden p-4 rounded-xl bg-card border border-border shadow-sm space-y-3">
+        <div className="-mx-4 -mt-4 border-b border-border bg-muted/70 px-4 py-2.5">
+          <SmeacLabel letter="C" label="Command & Signal" icon={Radio} />
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           <Field label="Team leader" compact>
@@ -1173,7 +1189,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-[10.5px] text-muted-foreground mt-1">
+            <p className="text-xs text-foreground/70 mt-1">
               Synced with the Surveillance team's TL toggle above
             </p>
           </Field>
@@ -1215,16 +1231,16 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* Post bar */}
-      <div className="flex items-center justify-between gap-4 flex-wrap p-4 rounded-xl bg-card border border-amber-500/40 shadow-[0_0_0_3px_rgba(245,158,11,0.08)]">
+      <div className="flex items-center justify-between gap-4 flex-wrap p-4 rounded-xl bg-card border border-amber-300 dark:border-amber-500/40 shadow-[0_0_0_3px_rgba(245,158,11,0.08)]">
         <div className="flex items-start gap-3">
-          <Send className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+          <Send className="h-5 w-5 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5" />
           <div>
             <h3 className="text-sm font-bold">
               {isPosted
                 ? "Save changes, or re-notify"
                 : "Post & choose who to notify"}
             </h3>
-            <p className="text-xs text-muted-foreground max-w-md">
+            <p className="text-xs text-foreground/70 max-w-md">
               {isPosted
                 ? "Save changes quietly, or re-post to send a fresh alert to whoever you choose."
                 : "Choose who receives an immediate alert; they can acknowledge it from their notifications. This can't be undone once posted."}
@@ -1257,7 +1273,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
             <DialogTitle>Select who to notify</DialogTitle>
           </DialogHeader>
           <div className="py-2 space-y-1 max-h-72 overflow-y-auto">
-            <div className="flex items-center gap-2 pb-2 border-b border-border/50">
+            <div className="flex items-center gap-2 pb-2 border-b border-border">
               <Checkbox
                 id="smeac-notify-all"
                 checked={
@@ -1305,7 +1321,7 @@ export function SmeacBriefingForm({ briefingId }: { briefingId?: number }) {
                     htmlFor={`smeac-notify-user-${u.id}`}
                     className="cursor-pointer flex items-center gap-2"
                   >
-                    <span className="font-mono text-xs text-muted-foreground w-10">
+                    <span className="font-mono text-xs text-foreground/70 w-10">
                       {u.cin ?? "—"}
                     </span>
                     <span>{u.name}</span>
@@ -1361,8 +1377,8 @@ function Field({
       <label
         className={
           compact
-            ? "text-[11px] font-medium text-muted-foreground block mb-1"
-            : "text-xs font-semibold block mb-1.5"
+            ? "text-xs font-semibold uppercase tracking-wide text-foreground/80 block mb-1"
+            : "text-xs font-semibold uppercase tracking-wide text-foreground/80 block mb-1.5"
         }
       >
         {label}
@@ -1389,8 +1405,8 @@ function CheckChip({
         dashed ? "border-dashed font-bold" : ""
       } ${
         checked
-          ? "border-amber-500/50 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-          : "border-border text-muted-foreground hover:bg-accent"
+          ? "border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400"
+          : "border-border text-foreground/70 hover:bg-accent"
       }`}
     >
       <Checkbox

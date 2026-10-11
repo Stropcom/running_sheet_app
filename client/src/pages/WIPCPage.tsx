@@ -22,6 +22,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { downloadBase64File } from "@/lib/downloadFile";
+import { FORM_LABEL } from "@/lib/formKit";
 
 /** Returns today as DD/MM/YYYY */
 function todayDDMMYYYY() {
@@ -93,8 +94,8 @@ function DocTypeCard({
       onClick={onClick}
       className={`w-full flex items-start gap-3 px-4 py-3 rounded-lg border text-left transition-colors ${
         selected
-          ? "border-primary bg-primary/10 text-foreground"
-          : "border-border bg-card hover:bg-muted/40 text-foreground"
+          ? "border-primary bg-primary/10 text-foreground ring-1 ring-primary"
+          : "border-border bg-background hover:bg-muted/60 text-foreground"
       }`}
     >
       <FileText
@@ -181,14 +182,14 @@ function MemberCard({
       {/* Row 1: Full Name + DOB */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="flex flex-col gap-1.5">
-          <Label>Full Name</Label>
+          <Label className={FORM_LABEL}>Full Name</Label>
           <Input
             value={member.fullName}
             onChange={e => set("fullName", e.target.value)}
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label>Date of Birth</Label>
+          <Label className={FORM_LABEL}>Date of Birth</Label>
           <Input
             type="date"
             value={member.dob}
@@ -200,14 +201,14 @@ function MemberCard({
       {/* Row 2: AFP ID + Checkboxes + CIN Number */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="flex flex-col gap-1.5">
-          <Label>AFP ID</Label>
+          <Label className={FORM_LABEL}>AFP ID</Label>
           <Input
             value={member.afpId}
             onChange={e => set("afpId", e.target.value)}
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label>Type</Label>
+          <Label className={FORM_LABEL}>Type</Label>
           <div className="flex items-center gap-4 h-10">
             <label className="flex items-center gap-1.5 text-sm cursor-pointer">
               <Checkbox
@@ -233,7 +234,7 @@ function MemberCard({
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label>CIN Number</Label>
+          <Label className={FORM_LABEL}>CIN Number</Label>
           <Input
             value={member.cinNumber}
             onChange={e => set("cinNumber", e.target.value)}
@@ -244,14 +245,14 @@ function MemberCard({
       {/* Row 3: AI Initials + AI Known As */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="flex flex-col gap-1.5">
-          <Label>AI Initials</Label>
+          <Label className={FORM_LABEL}>AI Initials</Label>
           <Input
             value={member.aiInitials}
             onChange={e => set("aiInitials", e.target.value)}
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label>AI Known As</Label>
+          <Label className={FORM_LABEL}>AI Known As</Label>
           <Input
             value={member.aiKnownAs}
             onChange={e => set("aiKnownAs", e.target.value)}
@@ -262,7 +263,7 @@ function MemberCard({
       {/* Row 4: Deployment Dates */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="flex flex-col gap-1.5">
-          <Label>Deployment Start</Label>
+          <Label className={FORM_LABEL}>Deployment Start</Label>
           <Input
             type="date"
             value={member.deploymentStart}
@@ -270,7 +271,7 @@ function MemberCard({
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label>Deployment End</Label>
+          <Label className={FORM_LABEL}>Deployment End</Label>
           <Input
             type="date"
             value={member.deploymentEnd}
@@ -602,7 +603,7 @@ export default function WIPCPage() {
               <h1 className="text-xl font-bold text-foreground">
                 WIPC Documents
               </h1>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40">
                 <Lock className="w-3 h-3" />
                 AES-256 Encrypted Vault
               </span>
@@ -621,13 +622,15 @@ export default function WIPCPage() {
         </div>
 
         {/* ── Step 1: Choose Operation ── */}
-        <section className="flex flex-col gap-4">
-          <div className="flex items-center gap-3">
+        <section className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <div className="flex items-center gap-3 border-b border-border bg-muted/70 px-4 py-2.5">
             <StepBadge n={1} active={step === 1} done={step > 1} />
-            <h2 className="font-semibold text-foreground">Choose Operation</h2>
+            <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
+              Choose Operation
+            </h2>
           </div>
 
-          <div className="pl-10 flex flex-col gap-2">
+          <div className="p-3 flex flex-col gap-2">
             {opsLoading ? (
               <>
                 <Skeleton className="h-12 w-full" />
@@ -635,9 +638,7 @@ export default function WIPCPage() {
                 <Skeleton className="h-12 w-full" />
               </>
             ) : !operations || operations.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No operations found.
-              </p>
+              <p className="text-sm text-foreground/70">No operations found.</p>
             ) : (
               operations.map(op => (
                 <button
@@ -648,8 +649,8 @@ export default function WIPCPage() {
                   }}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg border text-left transition-colors ${
                     selectedOpId === op.id
-                      ? "border-primary bg-primary/10 text-foreground"
-                      : "border-border bg-card hover:bg-muted/40 text-foreground"
+                      ? "border-primary bg-primary/10 text-foreground ring-1 ring-primary"
+                      : "border-border bg-background hover:bg-muted/60 text-foreground"
                   }`}
                 >
                   <span className="font-medium text-sm">{op.name}</span>
@@ -664,15 +665,15 @@ export default function WIPCPage() {
 
         {/* ── Step 2: Choose Document Type ── */}
         {selectedOp && (
-          <section className="flex flex-col gap-4">
-            <div className="flex items-center gap-3">
+          <section className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <div className="flex items-center gap-3 border-b border-border bg-muted/70 px-4 py-2.5">
               <StepBadge n={2} active={step === 2} done={step > 2} />
-              <h2 className="font-semibold text-foreground">
+              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
                 Choose Document Type
               </h2>
             </div>
 
-            <div className="pl-10 flex flex-col gap-2">
+            <div className="p-3 flex flex-col gap-2">
               <DocTypeCard
                 selected={docType === "stat-dec"}
                 value="stat-dec"
@@ -693,15 +694,15 @@ export default function WIPCPage() {
 
         {/* ── Step 3a: Stat Dec Form ── */}
         {docType === "stat-dec" && (
-          <section className="flex flex-col gap-4">
-            <div className="flex items-center gap-3">
+          <section className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <div className="flex items-center gap-3 border-b border-border bg-muted/70 px-4 py-2.5">
               <StepBadge n={3} active={step === 3} done={false} />
-              <h2 className="font-semibold text-foreground">
+              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
                 Statutory Declaration Details
               </h2>
             </div>
 
-            <div className="pl-10 flex flex-col gap-4">
+            <div className="p-3 flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="declarant-name">Full Name of Declarant</Label>
                 <Input
@@ -753,15 +754,15 @@ export default function WIPCPage() {
 
         {/* ── Step 3b: WIPC Request Form ── */}
         {docType === "wipc-request" && (
-          <section className="flex flex-col gap-4">
-            <div className="flex items-center gap-3">
+          <section className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <div className="flex items-center gap-3 border-b border-border bg-muted/70 px-4 py-2.5">
               <StepBadge n={3} active={step === 3} done={false} />
-              <h2 className="font-semibold text-foreground">
+              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
                 WIPC Request Details
               </h2>
             </div>
 
-            <div className="pl-10 flex flex-col gap-4">
+            <div className="p-3 flex flex-col gap-4">
               {/* Urgency */}
               <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/30 px-4 py-3">
                 <Checkbox
@@ -771,7 +772,7 @@ export default function WIPCPage() {
                 />
                 <Label
                   htmlFor="urgent"
-                  className="cursor-pointer font-semibold text-amber-400"
+                  className="cursor-pointer font-semibold text-amber-700 dark:text-amber-300"
                 >
                   URGENT — Mark this request as urgent
                 </Label>
@@ -838,7 +839,7 @@ export default function WIPCPage() {
                     <p className="text-sm font-semibold text-foreground">
                       Requesting Officer Details
                     </p>
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40">
                       <Lock className="w-2.5 h-2.5" />
                       Vault
                     </span>
@@ -848,7 +849,7 @@ export default function WIPCPage() {
                       Loading saved profile…
                     </span>
                   ) : savedOfficerProfile ? (
-                    <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
+                    <span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300">
                       <UserCheck className="w-3 h-3" />
                       Profile loaded from vault
                     </span>
@@ -912,7 +913,7 @@ export default function WIPCPage() {
                       !officerFullName.trim() ||
                       !officerAfpId.trim()
                     }
-                    className="w-full sm:w-auto gap-2 border-amber-500/40 text-amber-400 hover:bg-amber-500/10"
+                    className="w-full sm:w-auto gap-2 border-amber-300 dark:border-amber-500/40 text-amber-700 dark:text-amber-300 hover:bg-amber-500/10"
                   >
                     {isSavingProfile ? (
                       <>
@@ -935,7 +936,7 @@ export default function WIPCPage() {
                     <p className="text-sm font-semibold text-foreground">
                       Members Requiring WIPC
                     </p>
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-500/40">
                       <Lock className="w-2.5 h-2.5" />
                       Vault
                     </span>
@@ -947,8 +948,8 @@ export default function WIPCPage() {
 
                 {/* Saved member search / recall */}
                 {savedMembers && savedMembers.length > 0 && (
-                  <div className="mb-4 p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
-                    <p className="text-xs font-medium text-amber-400 mb-2 flex items-center gap-1">
+                  <div className="mb-4 p-3 rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-500/5">
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-300 mb-2 flex items-center gap-1">
                       <UserCheck className="w-3 h-3" />
                       Recall member from vault registry
                     </p>
@@ -1013,7 +1014,7 @@ export default function WIPCPage() {
                               aiKnownAs: member.aiKnownAs || undefined,
                             })
                           }
-                          className="self-end gap-1.5 text-xs text-amber-400 hover:bg-amber-500/10 h-7"
+                          className="self-end gap-1.5 text-xs text-amber-700 dark:text-amber-300 hover:bg-amber-500/10 h-7"
                         >
                           <Save className="w-3 h-3" />
                           Save to vault

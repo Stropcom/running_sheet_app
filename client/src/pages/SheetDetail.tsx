@@ -934,9 +934,15 @@ function CinCertifyRow({
   onUncertify: (rowId: number, memberId: number) => void;
   onRemove: () => void;
 }) {
-  const ROW_H = "h-8";
+  // On a phone each row is a card and the CINs wrap as chips (see the
+  // .running-sheet-cards rules in index.css), so there is no blank space beside
+  // a chip to hold: the hold happens on the chip itself instead. Laptop and
+  // iPad keep the blank-space hold exactly as before.
+  const isPhone = useIsMobile();
+  const ROW_H = isPhone ? "h-7" : "h-8";
   const isSpacer = member.memberName === SPACER;
   const canRemove = canEdit && !isLocked;
+  const chipHold = isPhone && canRemove && !isSpacer;
 
   // Removing a CIN (or a spacer) is a press-and-hold, not a tap — a red fill
   // sweeps across the row over HOLD_MS; releasing early cancels. No icon, no
@@ -945,11 +951,19 @@ function CinCertifyRow({
   // the fill animates every frame without re-rendering the row.
   const HOLD_MS = 1000;
   const fillRef = useRef<HTMLDivElement>(null);
+  // On a chip the red fill only starts after a short pause so an ordinary tap
+  // never flashes red; the removal still lands at HOLD_MS.
+  const SHOW_AFTER_MS = chipHold ? 250 : 0;
   const holdRef = useRef<{
     active: boolean;
     start: number;
     raf: number | null;
-  }>({ active: false, start: 0, raf: null });
+    x: number;
+    y: number;
+  }>({ active: false, start: 0, raf: null, x: 0, y: 0 });
+  // Set when a hold completes so the click that follows the finger lifting
+  // does not also certify the chip that was just removed.
+  const heldRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -962,15 +976,23 @@ function CinCertifyRow({
     const hold = holdRef.current;
     hold.active = true;
     hold.start = performance.now();
+    hold.x = e.clientX;
+    hold.y = e.clientY;
+    heldRef.current = false;
     if (fillRef.current) {
       fillRef.current.style.transition = "none";
     }
     const step = (now: number) => {
       if (!hold.active) return;
-      const pct = Math.min(1, (now - hold.start) / HOLD_MS);
+      const elapsed = now - hold.start;
+      const pct = Math.min(
+        1,
+        Math.max(0, (elapsed - SHOW_AFTER_MS) / (HOLD_MS - SHOW_AFTER_MS))
+      );
       if (fillRef.current) fillRef.current.style.width = `${pct * 100}%`;
-      if (pct >= 1) {
+      if (elapsed >= HOLD_MS) {
         hold.active = false;
+        heldRef.current = true;
         onRemove();
         return;
       }
@@ -979,9 +1001,21 @@ function CinCertifyRow({
     hold.raf = requestAnimationFrame(step);
   };
 
+  // A finger that drifts (scrolling the page) is not a hold.
+  const moveHold = (e: React.PointerEvent) => {
+    const hold = holdRef.current;
+    if (!hold.active) return;
+    if (Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 10) cancelHold();
+  };
+
   const cancelHold = () => {
     const hold = holdRef.current;
     if (!hold.active) return;
+    // The red fill was already showing, so this was a hold that got let go,
+    // not a tap: don't let the click that follows certify the chip.
+    if (chipHold && performance.now() - hold.start > SHOW_AFTER_MS) {
+      heldRef.current = true;
+    }
     hold.active = false;
     if (hold.raf) cancelAnimationFrame(hold.raf);
     if (fillRef.current) {
@@ -1003,7 +1037,7 @@ function CinCertifyRow({
   if (isSpacer) {
     return (
       <div
-        className={`relative flex items-center gap-1 ${ROW_H} select-none`}
+        className={`relative flex items-center gap-1 ${ROW_H} select-none ${isPhone ? "basis-full w-full" : ""}`}
         style={
           canRemove ? { ...noCalloutStyle, touchAction: "none" } : undefined
         }
@@ -1019,6 +1053,9 @@ function CinCertifyRow({
             className="absolute inset-0 bg-destructive/15 pointer-events-none"
             style={{ width: "0%" }}
           />
+        )}
+        {isPhone && (
+          <span className="absolute inset-x-0 top-1/2 border-t border-dashed border-border" />
         )}
         <span className="relative z-10 flex-1 min-w-0" />
       </div>
@@ -1046,21 +1083,40 @@ function CinCertifyRow({
 
   return (
     <div
-      className={`flex items-center ${ROW_H} select-none`}
+      className={`${isPhone ? "inline-flex" : "flex"} items-center ${ROW_H} select-none`}
       style={noCalloutStyle}
     >
-      <div className="inline-flex items-stretch h-7 max-w-full rounded-full shrink-0">
+      <div
+        className={`inline-flex items-stretch h-7 max-w-full rounded-full shrink-0 ${chipHold ? "relative overflow-hidden" : ""}`}
+        style={chipHold ? { touchAction: "manipulation" } : undefined}
+        onPointerDown={chipHold ? startHold : undefined}
+        onPointerUp={chipHold ? cancelHold : undefined}
+        onPointerLeave={chipHold ? cancelHold : undefined}
+        onPointerCancel={chipHold ? cancelHold : undefined}
+        onPointerMove={chipHold ? moveHold : undefined}
+        onContextMenu={chipHold ? e => e.preventDefault() : undefined}
+      >
+        {chipHold && (
+          <div
+            ref={fillRef}
+            className="absolute inset-y-0 left-0 z-10 bg-destructive/30 pointer-events-none"
+            style={{ width: "0%" }}
+          />
+        )}
         {canToggle ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 className={`${pillBase} cursor-pointer`}
-                onClick={() =>
-                  cert
-                    ? onUncertify(row.id, member.id)
-                    : onCertify(row.id, member.id)
-                }
+                onClick={() => {
+                  if (heldRef.current) {
+                    heldRef.current = false;
+                    return;
+                  }
+                  if (cert) onUncertify(row.id, member.id);
+                  else onCertify(row.id, member.id);
+                }}
               >
                 {pillContent}
               </button>
@@ -1110,7 +1166,7 @@ function CinCertifyRow({
 
       {/* Hold zone — the blank space to the right of the pill, press-and-hold
           1s to remove. A red fill sweeps across it as visual feedback. */}
-      {canRemove && (
+      {canRemove && !isPhone && (
         <div
           className="relative flex-1 h-full min-w-[28px]"
           style={{ ...noCalloutStyle, touchAction: "none" }}
@@ -1199,126 +1255,244 @@ function CinCertifyCell({
   const showTeamCollapse =
     row.isLocked && isFullTeamMembers(row.members, rosterCins);
 
+  const memberItems = showTeamCollapse ? (
+    <div className="flex items-center h-8">
+      <div className="inline-flex items-center gap-1.5 h-7 px-2.5 border rounded-full text-xs font-bold text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)]">
+        <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+        <span className="font-mono">TEAM</span>
+      </div>
+    </div>
+  ) : total === 0 ? null : (
+    row.members.map(member => {
+      const cert = row.certifications.find(
+        c => c.memberId === member.id && c.isActive
+      );
+      return (
+        <CinCertifyRow
+          key={member.id}
+          row={row}
+          member={member}
+          cert={cert}
+          canEdit={canEdit}
+          canCertify={canCertify}
+          isLocked={row.isLocked}
+          onCertify={onCertify}
+          onUncertify={onUncertify}
+          onRemove={() => onRemoveMember(member.id, row.id)}
+        />
+      );
+    })
+  );
+
+  const addingPanel = (
+    <div className="flex flex-col gap-1.5 mt-0.5">
+      {rosterCins && rosterCins.length > 0 ? (
+        /* Dropdown mode: pick from team roster — Space at top, duplicates allowed */
+        <div className="flex items-center gap-1.5">
+          <Select
+            value={newName}
+            onValueChange={v => {
+              if (v === "__all__") {
+                addAllTeamCins();
+              } else {
+                onAddMember(row.id, v);
+                setNewName("");
+                setAdding(false);
+              }
+            }}
+          >
+            <SelectTrigger className="h-7 text-xs flex-1 min-w-[120px]">
+              <SelectValue placeholder="Pick…" />
+            </SelectTrigger>
+            <SelectContent>
+              {/* Space option always at the top */}
+              <SelectItem
+                value={SPACER}
+                className="text-xs text-muted-foreground italic"
+              >
+                — Space —
+              </SelectItem>
+              {rosterCins.map(cin => (
+                <SelectItem key={cin} value={cin} className="font-mono text-xs">
+                  {cin}
+                </SelectItem>
+              ))}
+              {rosterCins.length > 1 && (
+                <SelectItem
+                  value="__all__"
+                  className="text-xs font-medium text-primary"
+                >
+                  ★ Add all team CINs
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+            onClick={() => {
+              setAdding(false);
+              setNewName("");
+            }}
+          >
+            <X className="w-3 h-3" />
+          </Button>
+        </div>
+      ) : (
+        /* Free-text mode: validated against registered users — duplicates allowed */
+        <div className="flex items-center gap-1.5">
+          <CinInput
+            autoFocus
+            placeholder="Enter CIN"
+            value={newName}
+            onChange={setNewName}
+            onValidCin={cin => {
+              setNewName(cin);
+              setNewNameValid(true);
+            }}
+            onInvalidCin={() => setNewNameValid(false)}
+            showValidation
+            className="h-7 text-xs px-2"
+          />
+          <Button
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            onClick={handleAdd}
+            disabled={!newNameValid}
+          >
+            <Plus className="w-3 h-3" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+
+  const isPhone = useIsMobile();
+
+  // Phone: the row is a card (index.css), so the CINs wrap as chips under a
+  // small label, with Add / Team / Delete row in one equal row at the bottom.
+  if (isPhone) {
+    const real = row.members.filter(m => m.memberName !== SPACER);
+    const toCertify = real.filter(
+      m => !row.certifications.some(c => c.memberId === m.id && c.isActive)
+    ).length;
+    const hasRoster = !!rosterCins && rosterCins.length > 1;
+    const actionCount = 1 + (hasRoster ? 1 : 0) + (onDeleteRow ? 1 : 0);
+    return (
+      <div className="flex flex-col gap-2">
+        {real.length > 0 && (
+          <div className="flex items-center justify-between gap-2 text-xs font-bold uppercase tracking-wide text-foreground/70">
+            <span className="flex items-center gap-2 whitespace-nowrap">
+              CIN · {real.length}
+              {!row.isLocked && toCertify > 0 && (
+                <span className="rounded-full border border-red-300 bg-red-50 px-2 py-0.5 normal-case tracking-normal text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300">
+                  {toCertify} to certify
+                </span>
+              )}
+            </span>
+            {canEdit && !row.isLocked && (
+              <span className="whitespace-nowrap text-right font-semibold normal-case tracking-normal">
+                Hold a CIN to remove
+              </span>
+            )}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-1.5">{memberItems}</div>
+
+        {canEdit &&
+          !row.isLocked &&
+          (adding ? (
+            addingPanel
+          ) : (
+            <div
+              className="grid gap-2"
+              style={{
+                gridTemplateColumns: `repeat(${actionCount}, minmax(0, 1fr))`,
+              }}
+            >
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 gap-1 px-1.5 text-xs font-semibold"
+                onClick={() => setAdding(true)}
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Add
+              </Button>
+              {hasRoster && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 gap-1 border-primary px-1.5 text-xs font-semibold text-primary"
+                  onClick={addAllTeamCins}
+                  title={`Add all ${rosterCins!.length} rostered CINs`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  Team
+                </Button>
+              )}
+              {!row.isLocked && onDeleteRow && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 gap-1 px-1.5 text-xs font-semibold text-destructive"
+                  onClick={() => onDeleteRow(row.id)}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete row
+                </Button>
+              )}
+            </div>
+          ))}
+
+        {row.isLocked && (
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className="gap-1 border-[var(--locked-border)] bg-[var(--locked-bg)] py-0 px-1.5 text-xs text-[var(--certified-color)]"
+            >
+              <Lock className="w-2.5 h-2.5" />
+              Locked
+            </Badge>
+          </div>
+        )}
+        {row.isLocked && canCertify && (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 gap-1 px-1.5 text-[13px] font-semibold text-foreground"
+            onClick={() => onUncertifyAll(row.id)}
+          >
+            <Unlock className="w-3.5 h-3.5" />
+            Uncertify all
+          </Button>
+        )}
+        {/* Delete row for a row that is not editable-but-deletable is covered above */}
+        {!canEdit && !row.isLocked && onDeleteRow && (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 gap-1 px-1.5 text-xs font-semibold text-destructive"
+            onClick={() => onDeleteRow(row.id)}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Delete row
+          </Button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-w-[90px]">
-      {showTeamCollapse ? (
-        <div className="flex items-center h-8">
-          <div className="inline-flex items-center gap-1.5 h-7 px-2.5 border rounded-full text-xs font-bold text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)]">
-            <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-            <span className="font-mono">TEAM</span>
-          </div>
-        </div>
-      ) : total === 0 ? null : (
-        row.members.map(member => {
-          const cert = row.certifications.find(
-            c => c.memberId === member.id && c.isActive
-          );
-          return (
-            <CinCertifyRow
-              key={member.id}
-              row={row}
-              member={member}
-              cert={cert}
-              canEdit={canEdit}
-              canCertify={canCertify}
-              isLocked={row.isLocked}
-              onCertify={onCertify}
-              onUncertify={onUncertify}
-              onRemove={() => onRemoveMember(member.id, row.id)}
-            />
-          );
-        })
-      )}
+      {memberItems}
 
       {/* Add button — sits below all CINs */}
       {canEdit &&
         !row.isLocked &&
         (adding ? (
-          <div className="flex flex-col gap-1.5 mt-0.5">
-            {rosterCins && rosterCins.length > 0 ? (
-              /* Dropdown mode: pick from team roster — Space at top, duplicates allowed */
-              <div className="flex items-center gap-1.5">
-                <Select
-                  value={newName}
-                  onValueChange={v => {
-                    if (v === "__all__") {
-                      addAllTeamCins();
-                    } else {
-                      onAddMember(row.id, v);
-                      setNewName("");
-                      setAdding(false);
-                    }
-                  }}
-                >
-                  <SelectTrigger className="h-7 text-xs flex-1 min-w-[120px]">
-                    <SelectValue placeholder="Pick…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {/* Space option always at the top */}
-                    <SelectItem
-                      value={SPACER}
-                      className="text-xs text-muted-foreground italic"
-                    >
-                      — Space —
-                    </SelectItem>
-                    {rosterCins.map(cin => (
-                      <SelectItem
-                        key={cin}
-                        value={cin}
-                        className="font-mono text-xs"
-                      >
-                        {cin}
-                      </SelectItem>
-                    ))}
-                    {rosterCins.length > 1 && (
-                      <SelectItem
-                        value="__all__"
-                        className="text-xs font-medium text-primary"
-                      >
-                        ★ Add all team CINs
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => {
-                    setAdding(false);
-                    setNewName("");
-                  }}
-                >
-                  <X className="w-3 h-3" />
-                </Button>
-              </div>
-            ) : (
-              /* Free-text mode: validated against registered users — duplicates allowed */
-              <div className="flex items-center gap-1.5">
-                <CinInput
-                  autoFocus
-                  placeholder="Enter CIN"
-                  value={newName}
-                  onChange={setNewName}
-                  onValidCin={cin => {
-                    setNewName(cin);
-                    setNewNameValid(true);
-                  }}
-                  onInvalidCin={() => setNewNameValid(false)}
-                  showValidation
-                  className="h-7 text-xs px-2"
-                />
-                <Button
-                  size="icon"
-                  className="h-7 w-7 shrink-0"
-                  onClick={handleAdd}
-                  disabled={!newNameValid}
-                >
-                  <Plus className="w-3 h-3" />
-                </Button>
-              </div>
-            )}
-          </div>
+          addingPanel
         ) : (
           <div className="flex flex-col mt-0.5">
             <button
@@ -6339,7 +6513,7 @@ export default function SheetDetail({
         </div>
 
         {/* Table */}
-        <div className="rounded-xl border border-border overflow-hidden bg-card">
+        <div className="md:rounded-xl md:border md:border-border overflow-hidden md:bg-card">
           <div className="overflow-x-auto">
             {isLoading ? (
               <div className="p-6 flex flex-col gap-3">
@@ -6354,7 +6528,7 @@ export default function SheetDetail({
                 </p>
               </div>
             ) : (
-              <table className="running-sheet-table w-full">
+              <table className="running-sheet-table running-sheet-cards w-full">
                 <thead>
                   <tr className="bg-muted/30">
                     <th className="w-32">Time</th>

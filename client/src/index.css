@@ -726,6 +726,65 @@ button:active:not(:disabled) {
   border-bottom: none;
 }
 
+/* Running Sheet rows as cards on a phone (below 768px). The table stays a
+   table on iPad and laptop. One DOM, so the row editor, shortcuts and
+   autosave are exactly the same code: only the layout changes. Each row is a
+   bordered card: time in a grey band, the observation at full width, then the
+   CIN chips (see CinCertifyCell). */
+@media (max-width: 767px) {
+  .running-sheet-cards,
+  .running-sheet-cards tbody,
+  .running-sheet-cards tr,
+  .running-sheet-cards td {
+    display: block;
+    width: 100%;
+  }
+  .running-sheet-cards thead {
+    display: none;
+  }
+  .running-sheet-cards tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    padding: 0.5rem 0;
+  }
+  .running-sheet-cards tr[id^="sheet-row-"] {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    background: var(--card);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+  }
+  .running-sheet-cards tr[id^="sheet-row-"] > td {
+    padding: 0.75rem;
+    border-bottom: none;
+  }
+  .running-sheet-cards tr[id^="sheet-row-"] > td:first-child {
+    padding: 0.5rem 0.75rem;
+    background: color-mix(in oklab, var(--muted) 70%, transparent);
+    border-bottom: 1px solid var(--border);
+  }
+  /* Beats the inline 2.5rem of blank space the table layout reserves. */
+  .running-sheet-cards tr[id^="sheet-row-"] > td:nth-child(2) {
+    padding-bottom: 0.5rem !important;
+  }
+  .running-sheet-cards tr[id^="sheet-row-"] > td:last-child {
+    padding-top: 0.25rem;
+  }
+  .running-sheet-cards tr.row-locked {
+    border-left-width: 3px;
+  }
+  .running-sheet-cards tr.date-divider-row {
+    padding: 0.125rem 0;
+  }
+  .running-sheet-cards tr.date-divider-row > td {
+    padding: 0.25rem 0.75rem;
+    border-bottom: none;
+  }
+}
+
 /* Fade-in animation */
 @keyframes fadeInUp {
   from {

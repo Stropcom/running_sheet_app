@@ -1029,3 +1029,35 @@ html.app-no-scroll body.app-vv-shifted {
     outline: 3px solid #f59e0b;
   }
 }
+
+/* NEARBY LOCATION: a diamond 100 m or closer pulses a red ring. */
+.nearby-diamond-close::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 3px solid #dc2626;
+  opacity: 0;
+  pointer-events: none;
+  animation: nearby-pulse 1.8s ease-out infinite;
+}
+@keyframes nearby-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.7);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nearby-diamond-close::before {
+    animation: none;
+    opacity: 0.6;
+  }
+}

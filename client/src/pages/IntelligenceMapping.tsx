@@ -19,6 +19,15 @@ import {
   useTeamsWithOnlineMembers,
 } from "@/lib/teams";
 import { teamShownOnMap } from "@shared/teamMap";
+import {
+  NEARBY_BAND_COLOURS,
+  NEARBY_RADIUS_M,
+  distanceBand,
+  foldIntoTargetAddresses,
+  formatNearbyDistance,
+  locationsWithin,
+  movedEnough,
+} from "@shared/nearbyLocations";
 import { detectUnidentifiedRepeat } from "@shared/unidentified";
 import { entryMentionsAddress, popupShortAddress } from "@shared/markerLink";
 import { fullStreetTypes } from "@shared/streetTypes";
@@ -663,6 +672,56 @@ const LS_MAP_SETTINGS_KEY = "runlog_map_settings";
 // unboundedly; oldest entries (by insertion order) are evicted first.
 const GEOCODE_CACHE_KEY = "runlog_geocode_cache_v1";
 const GEOCODE_CACHE_MAX_ENTRIES = 5000;
+
+// ── NEARBY LOCATION diamonds ───────────────────────────────────────────────────
+// A diamond (fill = type: red target address, purple associate / observed;
+// ring and distance pill = how close: red 100 m or less, amber 250 m, blue
+// 500 m). Drawn in addition to the normal pins, under them.
+const NEARBY_HOUSE_GLYPH =
+  '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" style="position:absolute;left:10px;top:10px;fill:#fff;pointer-events:none"><path d="M3 11 12 3l9 8v9h-6v-6H9v6H3z"/></svg>';
+
+function createNearbyDiamondElement(
+  type: IntelMapLocation["type"],
+  distance: number
+): HTMLElement {
+  const el = document.createElement("div");
+  el.className = "nearby-diamond";
+  el.style.cssText = "position:relative;width:38px;height:38px;cursor:pointer;";
+  const shape = document.createElement("div");
+  shape.className = "nearby-diamond-shape";
+  shape.style.cssText = `position:absolute;inset:5px;transform:rotate(45deg);background:${
+    type === "target_address" ? "#dc2626" : "#7c3aed"
+  };border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,0.45);`;
+  el.appendChild(shape);
+  el.insertAdjacentHTML("beforeend", NEARBY_HOUSE_GLYPH);
+  const pill = document.createElement("div");
+  pill.className = "nearby-diamond-pill";
+  pill.style.cssText =
+    "position:absolute;left:50%;top:41px;transform:translateX(-50%);color:#fff;font:800 12px/1.35 system-ui,sans-serif;padding:1px 7px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.4);pointer-events:none;";
+  el.appendChild(pill);
+  updateNearbyDiamondElement(el, distance);
+  return el;
+}
+
+/** Re-colours a diamond and rewrites its distance as the officer moves. */
+function updateNearbyDiamondElement(el: HTMLElement, distance: number) {
+  const colour = NEARBY_BAND_COLOURS[distanceBand(distance)];
+  const shape = el.querySelector<HTMLElement>(".nearby-diamond-shape");
+  if (shape) shape.style.border = `3px solid ${colour}`;
+  const pill = el.querySelector<HTMLElement>(".nearby-diamond-pill");
+  if (pill) {
+    pill.style.background = colour;
+    pill.textContent = formatNearbyDistance(distance);
+  }
+  el.classList.toggle("nearby-diamond-close", distance <= 100);
+}
+
+/** The address string the Geocoder is asked for — same rule the pins use. */
+function geocodeQueryForLabel(label: string): string {
+  return label.includes(",") || /\d/.test(label)
+    ? `${label}, Western Australia, Australia`
+    : `${label}, Perth, Western Australia, Australia`;
+}
 
 // Trims oldest entries (Map insertion order) down to the cap, then writes
 // the cache to localStorage. Takes the Map directly rather than being a
@@ -2113,6 +2172,18 @@ export default function IntelligenceMapping() {
   );
   const showMarkerEntityCountRef = useRef(showMarkerEntityCount);
   showMarkerEntityCountRef.current = showMarkerEntityCount;
+  // NEARBY LOCATION — every Intelligence / Target Registry location within
+  // 500 m of the officer, as diamonds on top of the normal pins. Off by
+  // default; remembered per device like the other Map Settings switches.
+  const [nearbyOn, setNearbyOn] = useState<boolean>(() => {
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return JSON.parse(s).nearbyOn === true;
+    } catch {
+      /* ignore */
+    }
+    return false;
+  });
   // Bottom-of-screen bar showing the officer's own current street + heading
   // (see StreetHeadingBar) — a display preference like mapDarkMode, not tied
   // to GPS sharing itself, so it follows the same local-only persistence.
@@ -3116,6 +3187,7 @@ export default function IntelligenceMapping() {
           panelWidthProfile,
           showStreetHeadingBar,
           showMarkerEntityCount,
+          nearbyOn,
         })
       );
     } catch {
@@ -3136,6 +3208,7 @@ export default function IntelligenceMapping() {
     panelWidthProfile,
     showStreetHeadingBar,
     showMarkerEntityCount,
+    nearbyOn,
   ]);
 
   // Save map center/zoom to localStorage whenever the map stops moving (idle event)
@@ -7173,7 +7246,10 @@ export default function IntelligenceMapping() {
   useEffect(() => {
     (window as any).__intelStartMove = (label: string) => {
       infoWindowRef.current?.close();
-      const marker = markersRef.current.find((m: any) => m.title === label);
+      // A normal pin, or (when only NEARBY LOCATION is showing it) the diamond.
+      const marker =
+        markersRef.current.find((m: any) => m.title === label) ??
+        nearbyMarkersRef.current.get(label);
       if (!marker) return;
       const origPos = marker.position as google.maps.LatLngLiteral | null;
       if (!origPos) return;
@@ -7226,6 +7302,270 @@ export default function IntelligenceMapping() {
       delete (window as any).__intelStartMove;
     };
   }, []);
+
+  // ── NEARBY LOCATION ──────────────────────────────────────────────────────────
+  // Needs: the officer's own position (its own GPS watch, so it works whether
+  // or not Show & Share is on), every location they can reach (not just the
+  // operations selected on the map), each one's coordinates (the same
+  // geocoding + local cache the normal pins use), then the ones within 500 m
+  // drawn as diamonds with a translucent 500 m circle. Clicking a diamond
+  // opens the same popup a normal pin does. Nothing here runs while it is off.
+  const nearbyMarkersRef = useRef<Map<string, DivIconOverlay>>(new Map());
+  const nearbyCircleRef = useRef<google.maps.Circle | null>(null);
+  const nearbyWithinRef = useRef<Map<string, IntelMapLocation>>(new Map());
+  const nearbyFailedRef = useRef<Set<string>>(new Set());
+  const [nearbyPos, setNearbyPos] = useState<google.maps.LatLngLiteral | null>(
+    null
+  );
+  const [nearbyCoords, setNearbyCoords] = useState<
+    Map<string, google.maps.LatLngLiteral>
+  >(new Map());
+  const nearbyOpIds = useMemo(
+    () => ((operations ?? []) as Array<{ id: number }>).map(o => o.id),
+    [operations]
+  );
+  // Every operation they can reach — not just the ones selected on the map.
+  const { data: nearbyAll } = trpc.intelligence.mappingLocations.useQuery(
+    { operationIds: nearbyOpIds },
+    {
+      enabled: nearbyOn && nearbyOpIds.length > 0,
+      refetchInterval: 120_000,
+    }
+  );
+  const nearbyRegistryOpIds = nearbyOpIds.slice(0, 200);
+  const { data: nearbyPeople } =
+    trpc.intelligence.registeredPeopleForMap.useQuery(
+      { operationIds: nearbyRegistryOpIds },
+      { enabled: nearbyOn && nearbyRegistryOpIds.length > 0 }
+    );
+  const nearbyRegistryRef = useRef<MapPeopleLookup | undefined>(undefined);
+  nearbyRegistryRef.current = useMemo(
+    () => (nearbyPeople ? buildMapPeopleLookup(nearbyPeople) : undefined),
+    [nearbyPeople]
+  );
+  const { data: nearbyPersonPhotos } =
+    trpc.attachment.personPhotosByAddress.useQuery(
+      { operationIds: nearbyRegistryOpIds },
+      { enabled: nearbyOn && nearbyRegistryOpIds.length > 0 }
+    );
+  const nearbyPhotoKeysRef = useRef<Set<string>>(new Set());
+  nearbyPhotoKeysRef.current = useMemo(
+    () => new Set((nearbyPersonPhotos ?? []).map(g => g.addressKey)),
+    [nearbyPersonPhotos]
+  );
+
+  // The officer's own position — only while NEARBY LOCATION is on.
+  useEffect(() => {
+    if (!nearbyOn) {
+      setNearbyPos(null);
+      return;
+    }
+    if (!navigator.geolocation) {
+      toast.error(
+        "This device can't give its position, so Nearby Location is off."
+      );
+      setNearbyOn(false);
+      return;
+    }
+    let last: google.maps.LatLngLiteral | null = null;
+    let warned = false;
+    const id = navigator.geolocation.watchPosition(
+      pos => {
+        const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        if (movedEnough(last, p)) {
+          last = p;
+          setNearbyPos(p);
+        }
+      },
+      err => {
+        if (warned) return;
+        warned = true;
+        toast.error(`Nearby Location can't see your position: ${err.message}`);
+      },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 }
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [nearbyOn]);
+
+  // Coordinates for every location: a manually-moved position first, then the
+  // geocode cache, then the Geocoder (a few a second, remembered afterwards).
+  useEffect(() => {
+    if (!nearbyOn || !nearbyAll || !mapReady) return;
+    const geocoder = geocoderRef.current;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const resolved = new Map<string, google.maps.LatLngLiteral>();
+    const pending: IntelMapLocation[] = [];
+    for (const loc of nearbyAll as IntelMapLocation[]) {
+      const ov = pinOverridesRef.current.get(loc.label);
+      if (ov?.lat != null && ov?.lng != null) {
+        resolved.set(loc.label, { lat: ov.lat, lng: ov.lng });
+        continue;
+      }
+      const query = geocodeQueryForLabel(loc.label);
+      const cached = geocodeCacheRef.current.get(query);
+      if (cached) {
+        resolved.set(loc.label, cached);
+      } else if (!nearbyFailedRef.current.has(query)) {
+        pending.push(loc);
+      }
+    }
+    setNearbyCoords(new Map(resolved));
+    if (!geocoder || pending.length === 0) return;
+    let index = 0;
+    let unflushed = 0;
+    const flush = () => {
+      if (unflushed > 0) {
+        persistGeocodeCache(geocodeCacheRef.current);
+        setNearbyCoords(new Map(resolved));
+        unflushed = 0;
+      }
+    };
+    const step = () => {
+      if (cancelled) return;
+      if (index >= pending.length) {
+        flush();
+        return;
+      }
+      const loc = pending[index++];
+      const query = geocodeQueryForLabel(loc.label);
+      geocoder.geocode({ address: query }, (results, status) => {
+        if (cancelled) return;
+        if (status === "OK" && results && results[0]) {
+          const at = results[0].geometry.location;
+          const pos = { lat: at.lat(), lng: at.lng() };
+          geocodeCacheRef.current.set(query, pos);
+          resolved.set(loc.label, pos);
+          if (++unflushed >= 5) flush();
+        } else if (status === "OVER_QUERY_LIMIT") {
+          index--; // try this one again, slower
+          timer = setTimeout(step, 2000);
+          return;
+        } else {
+          nearbyFailedRef.current.add(query);
+        }
+        timer = setTimeout(step, 300);
+      });
+    };
+    step();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      flush();
+    };
+  }, [nearbyOn, nearbyAll, mapReady, pinOverrides]);
+
+  // The same popup a normal pin opens.
+  const openNearbyPopup = useCallback((label: string) => {
+    const loc = nearbyWithinRef.current.get(label);
+    if (!loc || !mapRef.current || loc.lat == null || loc.lng == null) return;
+    if (!infoWindowRef.current) {
+      infoWindowRef.current = new google.maps.InfoWindow({
+        pixelOffset: new google.maps.Size(0, -40),
+      });
+    }
+    infoWindowRef.current.setContent(
+      buildInfoWindowContent(
+        loc,
+        pinOverridesRef.current.get(label),
+        photoKeysRef.current.has(normalizeEntityLabelClient(label)) ||
+          nearbyPhotoKeysRef.current.has(addressMatchKey(label)) ||
+          personPhotosByKeyRef.current.has(addressMatchKey(label)),
+        nearbyRegistryRef.current ?? registeredPeopleLookupRef.current
+      )
+    );
+    infoWindowRef.current.setPosition({ lat: loc.lat, lng: loc.lng });
+    openInfoWindowDeferred(infoWindowRef, mapRef.current);
+  }, []);
+
+  // Draw (and keep up to date) the circle and the diamonds.
+  useEffect(() => {
+    const clearAll = () => {
+      nearbyMarkersRef.current.forEach(m => {
+        m.map = null;
+      });
+      nearbyMarkersRef.current.clear();
+      nearbyWithinRef.current.clear();
+      if (nearbyCircleRef.current) {
+        nearbyCircleRef.current.setMap(null);
+        nearbyCircleRef.current = null;
+      }
+    };
+    const map = mapRef.current;
+    if (!nearbyOn || !mapReady || !map || !nearbyPos) {
+      clearAll();
+      return;
+    }
+    // The translucent 500 m area. Not clickable, so taps pass through to the
+    // map and the pins.
+    if (!nearbyCircleRef.current) {
+      nearbyCircleRef.current = new google.maps.Circle({
+        map,
+        center: nearbyPos,
+        radius: NEARBY_RADIUS_M,
+        strokeColor: "#d97706",
+        strokeOpacity: 0.9,
+        strokeWeight: 2,
+        fillColor: "#f59e0b",
+        fillOpacity: 0.12,
+        clickable: false,
+      });
+    } else {
+      nearbyCircleRef.current.setCenter(nearbyPos);
+    }
+    const located: IntelMapLocation[] = [];
+    for (const l of (nearbyAll as IntelMapLocation[] | undefined) ?? []) {
+      const c = nearbyCoords.get(l.label);
+      if (c) located.push({ ...l, lat: c.lat, lng: c.lng });
+    }
+    const within = locationsWithin(
+      foldIntoTargetAddresses(
+        located as Array<IntelMapLocation & { lat: number; lng: number }>
+      ),
+      nearbyPos
+    );
+    nearbyWithinRef.current = new Map(within.map(l => [l.label, l]));
+    const keep = new Set<string>();
+    for (const loc of within) {
+      keep.add(loc.label);
+      const position = { lat: loc.lat, lng: loc.lng };
+      const existing = nearbyMarkersRef.current.get(loc.label);
+      if (existing) {
+        existing.position = position;
+        updateNearbyDiamondElement(existing.content, loc.distance);
+        continue;
+      }
+      const marker = new DivIconOverlay({
+        map,
+        position,
+        content: createNearbyDiamondElement(loc.type, loc.distance),
+        title: loc.label,
+        // Under the normal pins: the diamond shows around one that is already
+        // on the map, and stands alone where there isn't one.
+        zIndex: -1,
+      });
+      marker.addListener("click", () => openNearbyPopup(loc.label));
+      nearbyMarkersRef.current.set(loc.label, marker);
+    }
+    nearbyMarkersRef.current.forEach((m, label) => {
+      if (!keep.has(label)) {
+        m.map = null;
+        nearbyMarkersRef.current.delete(label);
+      }
+    });
+  }, [nearbyOn, mapReady, nearbyPos, nearbyAll, nearbyCoords, openNearbyPopup]);
+  // Gone with the page.
+  useEffect(
+    () => () => {
+      nearbyMarkersRef.current.forEach(m => {
+        m.map = null;
+      });
+      nearbyMarkersRef.current.clear();
+      nearbyCircleRef.current?.setMap(null);
+      nearbyCircleRef.current = null;
+    },
+    []
+  );
 
   // ── Stats ────────────────────────────────────────────────────────────────────
   const targetPins =
@@ -9967,6 +10307,46 @@ export default function IntelligenceMapping() {
                 )}
               </div>
               {/* end Target Logger */}
+
+              {/* ── NEARBY LOCATION — one switch, off by default. On: every
+                Intelligence Folder / Target Registry location within 500 m
+                of you is shown as a diamond, with a translucent 500 m area,
+                in addition to the normal pins. ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Nearby Location
+                </span>
+                <button
+                  onClick={() => setNearbyOn(v => !v)}
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+                    nearbyOn
+                      ? "border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20"
+                      : "border-border bg-card hover:bg-accent/40"
+                  }`}
+                  aria-pressed={nearbyOn}
+                >
+                  <LocateFixed
+                    className={`h-3.5 w-3.5 flex-shrink-0 ${
+                      nearbyOn ? "text-amber-500" : "text-muted-foreground"
+                    }`}
+                  />
+                  <span
+                    className={`text-xs font-semibold truncate flex-1 text-left ${
+                      nearbyOn ? "text-amber-500" : "text-foreground"
+                    }`}
+                  >
+                    Nearby location
+                  </span>
+                  <span
+                    className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                      nearbyOn ? "text-amber-500" : "text-muted-foreground"
+                    }`}
+                  >
+                    {nearbyOn ? "On" : "Off"}
+                  </span>
+                </button>
+              </div>
+              {/* end Nearby Location */}
             </div>
           )}
           {/* end Pane Body */}

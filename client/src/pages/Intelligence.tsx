@@ -29,6 +29,7 @@ import {
   HelpCircle,
   FileDown,
   ChevronRight,
+  ChevronDown,
   Calendar,
   Folder,
   FileText,
@@ -1250,13 +1251,27 @@ function OperationsTab({
             <p className="font-semibold text-foreground leading-tight line-clamp-2">
               {op.operationName}
             </p>
-            <div className="flex gap-3 mt-auto">
-              <span className="text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">
-                  {op.entityCount}
-                </span>{" "}
+            <div className="mt-auto flex flex-wrap items-center gap-2">
+              {/* The entity count is the button that opens the entity list
+                  (the tile itself opens the operation profile). */}
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  setExpandedOpId(
+                    expandedOpId === op.operationId ? null : op.operationId
+                  );
+                }}
+                aria-expanded={expandedOpId === op.operationId}
+                title="Show the entity list"
+                className={entityPillClass(expandedOpId === op.operationId)}
+              >
+                <span className="font-bold">{op.entityCount}</span>
                 {op.entityCount === 1 ? "entity" : "entities"}
-              </span>
+                <ChevronDown
+                  className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${expandedOpId === op.operationId ? "rotate-180" : ""}`}
+                />
+              </button>
               <span className="text-xs text-muted-foreground">
                 <span className="font-semibold text-foreground">
                   {op.sheetCount}
@@ -1264,32 +1279,9 @@ function OperationsTab({
                 {op.sheetCount === 1 ? "sheet" : "sheets"}
               </span>
             </div>
-            {/* Full-width Entity List bar across the bottom of the tile — the
-                tile itself opens the operation profile. */}
-            <button
-              onClick={e => {
-                e.stopPropagation();
-                setExpandedOpId(
-                  expandedOpId === op.operationId ? null : op.operationId
-                );
-              }}
-              aria-expanded={expandedOpId === op.operationId}
-              title="Show the entity list"
-              className={`-mx-5 mt-1 flex items-center gap-2 px-5 py-2.5 border-t border-blue-500/20 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-bold uppercase tracking-wider text-left transition-colors ${
-                expandedOpId === op.operationId ? "" : "-mb-5 rounded-b-xl"
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5 shrink-0" />
-              <span className="flex-1 min-w-0 truncate">
-                {op.operationName} Entity List
-              </span>
-              <ChevronRight
-                className={`w-4 h-4 shrink-0 transition-transform duration-200 ${expandedOpId === op.operationId ? "rotate-90" : ""}`}
-              />
-            </button>
             {expandedOpId === op.operationId && (
               <div
-                className="-mx-5 -mb-5 cursor-default"
+                className="-mx-5 -mb-5 cursor-default border-t border-border"
                 onClick={e => e.stopPropagation()}
               >
                 {entityPanel(op)}
@@ -1311,56 +1303,73 @@ function OperationsTab({
             key={op.operationId}
             className="rounded-xl border border-border/60 overflow-hidden bg-card"
           >
-            <button
-              onClick={() =>
-                navigate(`/intelligence/operation/${op.operationId}`)
-              }
-              title="View Operation Profile"
-              className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors"
-            >
-              <div className="p-2.5 rounded-lg bg-violet-400/10 border border-violet-400/20 shrink-0">
-                <Folder className="w-5 h-5 text-violet-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate">
-                  {op.operationName}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {op.entityCount}{" "}
-                  {op.entityCount === 1 ? "entity" : "entities"} ·{" "}
-                  {op.sheetCount} {op.sheetCount === 1 ? "sheet" : "sheets"}
-                </p>
-              </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-            </button>
+            <div className="flex items-center gap-2 pr-3">
+              <button
+                onClick={() =>
+                  navigate(`/intelligence/operation/${op.operationId}`)
+                }
+                title="View Operation Profile"
+                className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/10"
+              >
+                <div className="p-2.5 rounded-lg bg-violet-400/10 border border-violet-400/20 shrink-0">
+                  <Folder className="w-5 h-5 text-violet-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="break-words text-sm font-semibold text-foreground sm:truncate">
+                    {op.operationName}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {op.sheetCount} {op.sheetCount === 1 ? "sheet" : "sheets"}
+                  </p>
+                </div>
+              </button>
+              {/* The entity count is the button that opens the entity list;
+                  the row beside it opens the operation profile. */}
+              <button
+                type="button"
+                onClick={() =>
+                  setExpandedOpId(isExpanded ? null : op.operationId)
+                }
+                aria-expanded={isExpanded}
+                title="Show the entity list"
+                className={`${entityPillClass(isExpanded)} justify-center sm:min-w-[8.5rem]`}
+              >
+                <span className="font-bold">{op.entityCount}</span>
+                {op.entityCount === 1 ? "entity" : "entities"}
+                <ChevronDown
+                  className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+                />
+              </button>
+              <button
+                onClick={() =>
+                  navigate(`/intelligence/operation/${op.operationId}`)
+                }
+                title="View Operation Profile"
+                aria-label={`Open ${op.operationName} profile`}
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/10"
+              >
+                <ChevronRight className="h-4 w-4 shrink-0" />
+              </button>
+            </div>
 
-            {/* Full-width Entity List bar, directly under the header — opens
-                and closes the operation's entities below it. (The header
-                above is the link to the operation profile.) */}
-            <button
-              onClick={() =>
-                setExpandedOpId(isExpanded ? null : op.operationId)
-              }
-              aria-expanded={isExpanded}
-              title="Show the entity list"
-              className="w-full flex items-center gap-2 px-4 py-2.5 border-t border-blue-500/20 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-bold uppercase tracking-wider text-left transition-colors"
-            >
-              <FileText className="w-3.5 h-3.5 shrink-0" />
-              <span className="flex-1 min-w-0 truncate">
-                {op.operationName} Entity List
-              </span>
-              <ChevronRight
-                className={`w-4 h-4 shrink-0 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
-              />
-            </button>
-
-            {isExpanded && entityPanel(op)}
+            {isExpanded && (
+              <div className="border-t border-border">{entityPanel(op)}</div>
+            )}
           </div>
         );
       })}
     </div>
   );
 }
+
+// The entity count on an operation row/tile: a button that opens the
+// operation's entity list.
+const entityPillClass = (open: boolean) =>
+  `inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
+    open
+      ? "border-primary bg-primary/10 text-foreground"
+      : "border-border bg-background text-foreground hover:bg-muted/60"
+  }`;
 
 // ─── Date filter helpers ──────────────────────────────────────────────────────
 

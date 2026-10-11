@@ -56,19 +56,29 @@ const CATEGORIES = [
     icon: FileText,
     color: "text-blue-700",
   },
-  { id: "team", label: "Team", icon: Users, color: "text-blue-400" },
+  {
+    id: "team",
+    label: "Team",
+    icon: Users,
+    color: "text-blue-700 dark:text-blue-300",
+  },
   {
     id: "teamLeader",
     label: "Team Leader",
     icon: Shield,
-    color: "text-amber-400",
+    color: "text-amber-700 dark:text-amber-300",
   },
-  { id: "author", label: "Author", icon: PenLine, color: "text-violet-400" },
+  {
+    id: "author",
+    label: "Author",
+    icon: PenLine,
+    color: "text-violet-700 dark:text-violet-300",
+  },
   {
     id: "outstanding",
     label: "Outstanding To-Do",
     icon: AlertCircle,
-    color: "text-red-400",
+    color: "text-red-700 dark:text-red-300",
   },
 ] as const;
 
@@ -103,18 +113,18 @@ function SheetCard({
 }) {
   const reasons = incompleteReasons(sheet);
   return (
-    <div className="flex items-start gap-3 px-3 py-2.5 rounded-lg bg-background/50 border border-border/50 hover:border-border transition-colors group">
-      <FileText className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+    <div className="flex items-start gap-3 px-3 py-2.5 rounded-lg bg-background border border-border hover:border-border transition-colors group">
+      <FileText className="h-3.5 w-3.5 mt-0.5 shrink-0 text-foreground/70" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium text-foreground truncate">
             {sheet.sheetTitle}
           </span>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-foreground/70">
             — {sheet.operationName}
           </span>
           {sheet.operationStatus !== "active" && (
-            <span className="text-[10px] px-1.5 py-0 rounded border border-amber-500/40 bg-amber-500/10 text-amber-400 font-medium uppercase tracking-wide">
+            <span className="text-xs px-1.5 py-0 rounded border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 font-medium uppercase tracking-wide">
               {sheet.operationStatus.replace("_", " ")}
             </span>
           )}
@@ -123,7 +133,7 @@ function SheetCard({
           {reasons.map(r => (
             <span
               key={r}
-              className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border border-red-500/30 bg-red-500/10 text-red-400 font-medium"
+              className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 font-medium"
             >
               <AlertCircle className="h-2.5 w-2.5" />
               {r}
@@ -136,7 +146,7 @@ function SheetCard({
         className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-accent"
         title="Open running sheet"
       >
-        <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+        <ExternalLink className="h-3.5 w-3.5 text-foreground/70" />
       </button>
     </div>
   );
@@ -161,27 +171,25 @@ function GroupPanel({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-xl border border-border/60 bg-card/60 overflow-hidden">
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
       <button
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-2.5 px-4 py-3 hover:bg-accent/40 transition-colors"
+        className={`w-full flex items-center gap-2.5 px-4 py-3 bg-muted/70 hover:bg-muted transition-colors ${open ? "border-b border-border" : ""}`}
       >
         <Icon className={`h-4 w-4 shrink-0 ${iconColor}`} />
         <span className="flex-1 text-sm font-semibold text-left text-foreground">
           {title}
         </span>
-        <span className="text-xs text-muted-foreground font-medium mr-2">
+        <span className="text-xs text-foreground/70 font-medium mr-2">
           {count} sheet{count !== 1 ? "s" : ""}
         </span>
         {open ? (
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          <ChevronDown className="h-3.5 w-3.5 text-foreground/70" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          <ChevronRight className="h-3.5 w-3.5 text-foreground/70" />
         )}
       </button>
-      {open && (
-        <div className="px-4 pb-3 flex flex-col gap-1.5">{children}</div>
-      )}
+      {open && <div className="p-3 flex flex-col gap-2">{children}</div>}
     </div>
   );
 }
@@ -266,7 +274,9 @@ function ByTeam({
           count={group.length}
           icon={Users}
           iconColor={
-            teamName === "Team Blended" ? "text-purple-400" : "text-blue-400"
+            teamName === "Team Blended"
+              ? "text-purple-700 dark:text-purple-300"
+              : "text-blue-700 dark:text-blue-300"
           }
         >
           {group.map(s => (
@@ -305,7 +315,7 @@ function ByTeamLeader({
           title={tl}
           count={group.length}
           icon={Shield}
-          iconColor="text-amber-400"
+          iconColor="text-amber-700 dark:text-amber-300"
         >
           {group.map(s => (
             <SheetCard key={s.sheetId} sheet={s} onNavigate={onNavigate} />
@@ -343,7 +353,7 @@ function ByAuthor({
           title={author}
           count={group.length}
           icon={PenLine}
-          iconColor="text-violet-400"
+          iconColor="text-violet-700 dark:text-violet-300"
         >
           {group.map(s => (
             <SheetCard key={s.sheetId} sheet={s} onNavigate={onNavigate} />
@@ -360,22 +370,22 @@ function ByOutstandingTodos({ users }: { users: TodoUser[] }) {
   return (
     <div className="flex flex-col gap-2">
       {users.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-4">
+        <p className="text-sm text-foreground/70 text-center py-4">
           No outstanding to-do actions.
         </p>
       )}
       {users.map((u, idx) => (
         <div
           key={u.cin}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-background/50 border border-border/50"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-background border border-border"
         >
           {/* Rank */}
-          <span className="text-xs font-bold text-muted-foreground w-5 text-center shrink-0">
+          <span className="text-xs font-bold text-foreground/70 w-5 text-center shrink-0">
             #{idx + 1}
           </span>
           {/* Avatar */}
           <div className="h-7 w-7 rounded-full bg-accent flex items-center justify-center shrink-0">
-            <User className="h-3.5 w-3.5 text-muted-foreground" />
+            <User className="h-3.5 w-3.5 text-foreground/70" />
           </div>
           {/* Name / CIN */}
           <div className="flex-1 min-w-0">
@@ -383,22 +393,22 @@ function ByOutstandingTodos({ users }: { users: TodoUser[] }) {
               <span className="text-sm font-medium text-foreground">
                 {u.cin}
               </span>
-              <span className="text-xs text-muted-foreground">{u.name}</span>
+              <span className="text-xs text-foreground/70">{u.name}</span>
               {u.team && (
-                <span className="text-[10px] px-1.5 py-0 rounded border border-blue-500/30 bg-blue-500/10 text-blue-400 font-medium">
+                <span className="text-xs px-1.5 py-0 rounded border border-blue-300 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 font-medium">
                   {teamLabel(u.team)}
                 </span>
               )}
             </div>
             <div className="flex gap-2 mt-1 flex-wrap">
               {u.uncertifiedCount > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-red-500/30 bg-red-500/10 text-red-400 font-medium">
+                <span className="text-xs px-1.5 py-0.5 rounded-full border border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 font-medium">
                   {u.uncertifiedCount} uncertified row
                   {u.uncertifiedCount !== 1 ? "s" : ""}
                 </span>
               )}
               {u.governanceCount > 0 && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400 font-medium">
+                <span className="text-xs px-1.5 py-0.5 rounded-full border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 font-medium">
                   {u.governanceCount} governance item
                   {u.governanceCount !== 1 ? "s" : ""}
                 </span>
@@ -408,11 +418,11 @@ function ByOutstandingTodos({ users }: { users: TodoUser[] }) {
           {/* Total badge */}
           <div className="flex flex-col items-center shrink-0">
             <span
-              className={`text-lg font-bold ${u.totalCount > 10 ? "text-red-400" : u.totalCount > 5 ? "text-amber-400" : "text-foreground"}`}
+              className={`text-lg font-bold ${u.totalCount > 10 ? "text-red-700 dark:text-red-300" : u.totalCount > 5 ? "text-amber-700 dark:text-amber-300" : "text-foreground"}`}
             >
               {u.totalCount}
             </span>
-            <span className="text-[9px] text-muted-foreground uppercase tracking-wide">
+            <span className="text-xs text-foreground/70 uppercase tracking-wide">
               total
             </span>
           </div>
@@ -462,12 +472,14 @@ export default function ReportsPage() {
         {/* Header */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
-            <BarChart3 className="h-5 w-5 text-slate-400" />
+            <div className="rounded-xl border-2 border-slate-300 bg-slate-50 p-2.5 dark:border-slate-600 dark:bg-slate-800">
+              <BarChart3 className="h-5 w-5 text-slate-700 dark:text-slate-300" />
+            </div>
             <div>
               <h1 className="text-xl font-semibold text-foreground">
                 Outstanding Actions
               </h1>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="text-xs text-foreground/70 mt-0.5">
                 Incomplete running sheets and outstanding actions
               </p>
             </div>
@@ -477,7 +489,7 @@ export default function ReportsPage() {
               refetchSheets();
               refetchTodos();
             }}
-            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1.5 rounded-md hover:bg-accent"
+            className="flex items-center gap-1.5 text-xs text-foreground/70 hover:text-foreground transition-colors px-2 py-1.5 rounded-md hover:bg-accent"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
@@ -486,23 +498,23 @@ export default function ReportsPage() {
 
         {/* Summary bar */}
         {!isLoading && (
-          <div className="flex items-center gap-4 flex-wrap px-4 py-3 rounded-xl bg-card/60 border border-border/60">
+          <div className="flex items-center gap-4 flex-wrap px-4 py-3 rounded-xl bg-card shadow-sm border border-border">
             <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-red-400" />
+              <AlertCircle className="h-4 w-4 text-red-700 dark:text-red-300" />
               <span className="text-sm font-semibold text-foreground">
                 {sheets.length}
               </span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-foreground/70">
                 incomplete sheet{sheets.length !== 1 ? "s" : ""}
               </span>
             </div>
             <div className="h-4 w-px bg-border/60" />
             <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-blue-400" />
+              <Users className="h-4 w-4 text-blue-700 dark:text-blue-300" />
               <span className="text-sm font-semibold text-foreground">
                 {todoUsers.length}
               </span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-foreground/70">
                 officer{todoUsers.length !== 1 ? "s" : ""} with outstanding
                 actions
               </span>
@@ -512,25 +524,25 @@ export default function ReportsPage() {
 
         {/* Category toggles */}
         <div>
-          <p className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wide">
+          <p className="text-xs text-foreground/70 mb-2 font-medium uppercase tracking-wide">
             Show categories
           </p>
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            {CATEGORIES.map(cat => {
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            {CATEGORIES.map((cat, i) => {
               const Icon = cat.icon;
               const active = activeCategories.has(cat.id);
               return (
                 <button
                   key={cat.id}
                   onClick={() => toggleCategory(cat.id)}
-                  className={`flex flex-col items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl border text-xs font-medium transition-all ${
+                  className={`flex flex-col items-center justify-center gap-1.5 px-2 py-2.5 rounded-xl border-2 text-xs font-semibold transition-all ${i === CATEGORIES.length - 1 ? "col-span-2 sm:col-span-1" : ""} ${
                     active
-                      ? "border-border bg-accent text-foreground"
-                      : "border-border/40 bg-transparent text-muted-foreground hover:border-border hover:text-foreground"
+                      ? "border-primary bg-primary/10 text-foreground shadow-sm"
+                      : "border-border bg-card text-foreground/70 hover:border-foreground/40 hover:text-foreground"
                   }`}
                 >
                   <Icon
-                    className={`h-4 w-4 ${active ? cat.color : "text-muted-foreground"}`}
+                    className={`h-4 w-4 ${active ? cat.color : "text-foreground/70"}`}
                   />
                   <span className="text-center leading-tight">{cat.label}</span>
                 </button>
@@ -551,11 +563,11 @@ export default function ReportsPage() {
         {/* Empty state */}
         {!isLoading && sheets.length === 0 && (
           <div className="flex flex-col items-center gap-3 py-16 text-center">
-            <CheckSquare className="h-10 w-10 text-green-400" />
+            <CheckSquare className="h-10 w-10 text-green-700 dark:text-green-300" />
             <p className="text-sm font-medium text-foreground">
               All running sheets are complete
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-foreground/70">
               No incomplete or outstanding items found.
             </p>
           </div>
@@ -566,9 +578,9 @@ export default function ReportsPage() {
           <div className="flex flex-col gap-6">
             {activeCategories.has("operation") && (
               <section>
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2 border-b border-border pb-1.5">
                   <FileText className="h-4 w-4 text-blue-700" />
-                  <h2 className="text-sm font-semibold text-foreground">
+                  <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
                     By Operation
                   </h2>
                 </div>
@@ -581,9 +593,9 @@ export default function ReportsPage() {
 
             {activeCategories.has("team") && (
               <section>
-                <div className="flex items-center gap-2 mb-2">
-                  <Users className="h-4 w-4 text-blue-400" />
-                  <h2 className="text-sm font-semibold text-foreground">
+                <div className="flex items-center gap-2 mb-2 border-b border-border pb-1.5">
+                  <Users className="h-4 w-4 text-blue-700 dark:text-blue-300" />
+                  <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
                     By Team
                   </h2>
                 </div>
@@ -596,9 +608,9 @@ export default function ReportsPage() {
 
             {activeCategories.has("teamLeader") && (
               <section>
-                <div className="flex items-center gap-2 mb-2">
-                  <Shield className="h-4 w-4 text-amber-400" />
-                  <h2 className="text-sm font-semibold text-foreground">
+                <div className="flex items-center gap-2 mb-2 border-b border-border pb-1.5">
+                  <Shield className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+                  <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
                     By Team Leader
                   </h2>
                 </div>
@@ -611,9 +623,9 @@ export default function ReportsPage() {
 
             {activeCategories.has("author") && (
               <section>
-                <div className="flex items-center gap-2 mb-2">
-                  <PenLine className="h-4 w-4 text-violet-400" />
-                  <h2 className="text-sm font-semibold text-foreground">
+                <div className="flex items-center gap-2 mb-2 border-b border-border pb-1.5">
+                  <PenLine className="h-4 w-4 text-violet-700 dark:text-violet-300" />
+                  <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
                     By Author
                   </h2>
                 </div>
@@ -629,9 +641,9 @@ export default function ReportsPage() {
         {/* Outstanding To-Do Actions — always shown when toggled (even if no incomplete sheets) */}
         {!isLoading && activeCategories.has("outstanding") && (
           <section>
-            <div className="flex items-center gap-2 mb-2">
-              <AlertCircle className="h-4 w-4 text-red-400" />
-              <h2 className="text-sm font-semibold text-foreground">
+            <div className="flex items-center gap-2 mb-2 border-b border-border pb-1.5">
+              <AlertCircle className="h-4 w-4 text-red-700 dark:text-red-300" />
+              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
                 By Outstanding To-Do Actions
               </h2>
             </div>

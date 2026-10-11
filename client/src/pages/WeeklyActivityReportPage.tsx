@@ -358,14 +358,17 @@ function StatPill({
   tone: "project" | "person" | "vehicle" | "location";
 }) {
   const toneClass = {
-    project: "border-sky-500/30 bg-sky-500/10 text-sky-400",
+    project:
+      "border-sky-300 dark:border-sky-500/40 bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-300",
     person: "border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-400",
-    vehicle: "border-amber-500/30 bg-amber-500/10 text-amber-400",
-    location: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
+    vehicle:
+      "border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300",
+    location:
+      "border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   }[tone];
   return (
     <span
-      className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${toneClass}`}
+      className={`text-xs px-2 py-0.5 rounded-full border font-medium ${toneClass}`}
     >
       {label ? `${label}: ` : ""}
       {value}
@@ -383,10 +386,10 @@ function SectionRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="px-4 py-3 border-b border-border/50 last:border-b-0">
+    <div className="px-4 py-3 border-b border-border last:border-b-0">
       <div className="flex items-center gap-1.5 mb-2">
         <Icon className="h-3 w-3 text-blue-700" />
-        <span className="text-[10px] font-bold uppercase tracking-wide text-blue-700">
+        <span className="text-xs font-bold uppercase tracking-wide text-blue-700">
           {label}
         </span>
       </div>
@@ -405,9 +408,9 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
   return (
     <div className="border-b-4 border-muted/40 last:border-b-0">
       {t.targetName && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 border-b border-indigo-500/20">
-          <Target className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-          <span className="text-[9px] font-bold uppercase tracking-wide text-indigo-400/80">
+        <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-500/10 border-b border-indigo-300 dark:border-indigo-500/40">
+          <Target className="h-3.5 w-3.5 text-indigo-700 dark:text-indigo-300 shrink-0" />
+          <span className="text-xs font-bold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
             Target
           </span>
           <span className="text-sm font-semibold text-foreground truncate">
@@ -418,27 +421,27 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
 
       <SectionRow icon={Clock} label="Deployment">
         {t.officers.length > 0 && (
-          <p className="text-xs text-muted-foreground mb-2">
+          <p className="text-xs text-foreground/70 mb-2">
             <span className="font-semibold text-foreground">Officers: </span>
             {t.officers.join(", ")}
           </p>
         )}
         <div className="flex flex-wrap items-center gap-1.5">
           {t.teamLabel && (
-            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
+            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-500/40">
               {t.teamLabel}
             </span>
           )}
           {t.days.map(d => (
             <span
               key={d}
-              className="text-[10px] font-medium px-2.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border"
+              className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-muted text-foreground/70 border border-border"
             >
               {formatDayChip(d)}
             </span>
           ))}
           {t.coverageHours !== null && (
-            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-green-500/10 text-green-500 border border-green-500/30 ml-auto">
+            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-300 border border-green-300 dark:border-green-500/40 ml-auto">
               ~{t.coverageHours}h coverage
             </span>
           )}
@@ -450,7 +453,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
           <div className="flex flex-wrap gap-4 text-xs">
             {t.investigator && (
               <div>
-                <p className="text-[9px] uppercase text-muted-foreground">
+                <p className="text-xs uppercase text-foreground/70">
                   Investigator
                 </p>
                 <p className="text-foreground">{t.investigator}</p>
@@ -458,7 +461,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
             )}
             {t.intelSupport && (
               <div>
-                <p className="text-[9px] uppercase text-muted-foreground">
+                <p className="text-xs uppercase text-foreground/70">
                   Intel support
                 </p>
                 <p className="text-foreground">{t.intelSupport}</p>
@@ -466,7 +469,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
             )}
             {t.contacted && (
               <div>
-                <p className="text-[9px] uppercase text-muted-foreground">
+                <p className="text-xs uppercase text-foreground/70">
                   Contacted
                 </p>
                 <p className="text-foreground">{t.contacted}</p>
@@ -474,7 +477,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
             )}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground italic">None recorded.</p>
+          <p className="text-xs text-foreground/70 italic">None recorded.</p>
         )}
       </SectionRow>
 
@@ -484,7 +487,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
             {t.specialProjects.map((p, i) => (
               <span
                 key={`${p.key}-${i}`}
-                className="text-[10px] px-2 py-0.5 rounded-full border border-sky-500/30 bg-sky-500/10 text-sky-400 font-medium"
+                className="text-xs px-2 py-0.5 rounded-full border border-sky-300 dark:border-sky-500/40 bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-300 font-medium"
               >
                 <b>{p.key}</b>
                 {p.detail ? ` — ${p.detail}` : ""}
@@ -492,7 +495,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
             ))}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground italic">None recorded.</p>
+          <p className="text-xs text-foreground/70 italic">None recorded.</p>
         )}
       </SectionRow>
 
@@ -504,7 +507,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
             ))}
           </ol>
         ) : (
-          <p className="text-xs text-muted-foreground italic">None recorded.</p>
+          <p className="text-xs text-foreground/70 italic">None recorded.</p>
         )}
       </SectionRow>
 
@@ -523,7 +526,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
             ))}
           </ol>
         ) : (
-          <p className="text-xs text-muted-foreground italic">None recorded.</p>
+          <p className="text-xs text-foreground/70 italic">None recorded.</p>
         )}
       </SectionRow>
 
@@ -533,7 +536,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
             {t.issues.map((iss, i) => (
               <div
                 key={i}
-                className="flex gap-2 items-start text-xs px-2.5 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400"
+                className="flex gap-2 items-start text-xs px-2.5 py-1.5 rounded-lg bg-red-50 dark:bg-red-500/10 border border-red-300 dark:border-red-500/40 text-red-700 dark:text-red-300"
               >
                 {iss.date && (
                   <span className="font-bold shrink-0">
@@ -545,7 +548,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
             ))}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground italic">None recorded.</p>
+          <p className="text-xs text-foreground/70 italic">None recorded.</p>
         )}
       </SectionRow>
 
@@ -557,9 +560,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
                 key={l.label}
                 className="flex items-center justify-between text-xs"
               >
-                <span className="text-muted-foreground truncate">
-                  {l.label}
-                </span>
+                <span className="text-foreground/70 truncate">{l.label}</span>
                 <span className="font-bold text-foreground tabular-nums shrink-0 ml-2">
                   {l.count}
                 </span>
@@ -567,7 +568,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
             ))}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground italic">
+          <p className="text-xs text-foreground/70 italic">
             No observed target activity this week.
           </p>
         )}
@@ -578,7 +579,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
           <div className="flex flex-col gap-2.5">
             {t.newIntel.persons.length > 0 && (
               <div>
-                <p className="text-[9px] uppercase text-muted-foreground mb-1">
+                <p className="text-xs uppercase text-foreground/70 mb-1">
                   Persons
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -590,7 +591,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
             )}
             {t.newIntel.vehicles.length > 0 && (
               <div>
-                <p className="text-[9px] uppercase text-muted-foreground mb-1">
+                <p className="text-xs uppercase text-foreground/70 mb-1">
                   Vehicles
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -602,7 +603,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
             )}
             {t.newIntel.locations.length > 0 && (
               <div>
-                <p className="text-[9px] uppercase text-muted-foreground mb-1">
+                <p className="text-xs uppercase text-foreground/70 mb-1">
                   Locations
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -614,7 +615,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
             )}
             {t.newIntel.images.length > 0 && (
               <div>
-                <p className="text-[9px] uppercase text-muted-foreground mb-1 flex items-center gap-1">
+                <p className="text-xs uppercase text-foreground/70 mb-1 flex items-center gap-1">
                   <ImageIcon className="h-2.5 w-2.5" /> Images
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -636,7 +637,7 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
             )}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground italic">
+          <p className="text-xs text-foreground/70 italic">
             No newly-identified intelligence this week.
           </p>
         )}
@@ -653,18 +654,18 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
 function OperationCard({ op }: { op: OperationBlock }) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <section className="rounded-xl border border-border/60 bg-card/60 overflow-hidden">
+    <section className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
       <button
         onClick={() => setExpanded(v => !v)}
-        className={`w-full flex items-center justify-between px-4 py-3 bg-muted/20 hover:bg-muted/30 transition-colors text-left ${expanded ? "border-b border-border/60" : ""}`}
+        className={`w-full flex items-center justify-between px-4 py-3 bg-muted/70 hover:bg-muted transition-colors text-left ${expanded ? "border-b border-border" : ""}`}
       >
         <div className="flex items-center gap-2 min-w-0">
           {expanded ? (
-            <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+            <ChevronDown className="h-4 w-4 text-foreground/70 shrink-0" />
           ) : (
-            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            <ChevronRight className="h-4 w-4 text-foreground/70 shrink-0" />
           )}
-          <h2 className="text-sm font-bold text-foreground truncate">
+          <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground truncate">
             {op.operationName}
           </h2>
         </div>
@@ -673,13 +674,13 @@ function OperationCard({ op }: { op: OperationBlock }) {
             <p className="text-sm font-bold text-foreground">
               {op.sheetsCount}
             </p>
-            <p className="text-[9px] text-muted-foreground uppercase tracking-wide">
+            <p className="text-xs text-foreground/70 uppercase tracking-wide">
               sheets
             </p>
           </div>
           <div className="text-center">
             <p className="text-sm font-bold text-foreground">{op.rowsCount}</p>
-            <p className="text-[9px] text-muted-foreground uppercase tracking-wide">
+            <p className="text-xs text-foreground/70 uppercase tracking-wide">
               rows
             </p>
           </div>
@@ -691,7 +692,7 @@ function OperationCard({ op }: { op: OperationBlock }) {
             <TargetBlockView key={t.targetId ?? `none-${i}`} t={t} />
           ))
         ) : (
-          <p className="text-sm text-muted-foreground text-center py-4">
+          <p className="text-sm text-foreground/70 text-center py-4">
             No activity recorded this week.
           </p>
         ))}
@@ -726,12 +727,14 @@ export default function WeeklyActivityReportPage() {
         {/* Header */}
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
-            <TrendingUp className="h-5 w-5 text-slate-400" />
+            <div className="rounded-xl border-2 border-slate-300 bg-slate-50 p-2.5 dark:border-slate-600 dark:bg-slate-800">
+              <TrendingUp className="h-5 w-5 text-slate-700 dark:text-slate-300" />
+            </div>
             <div>
               <h1 className="text-xl font-semibold text-foreground">
                 Weekly Surveillance Report
               </h1>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="text-xs text-foreground/70 mt-0.5">
                 What the unit did this week
               </p>
             </div>
@@ -747,7 +750,7 @@ export default function WeeklyActivityReportPage() {
         </div>
 
         {/* Week nav */}
-        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-card/60 border border-border/60">
+        <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl bg-card shadow-sm border border-border">
           <button
             onClick={() => setWeekStart(w => addWeeks(w, -1))}
             className="p-1.5 rounded-md hover:bg-accent transition-colors"
@@ -767,14 +770,14 @@ export default function WeeklyActivityReportPage() {
           </button>
           <button
             onClick={() => setWeekStart(getMondayOfWeek(new Date()))}
-            className="text-xs font-medium text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-accent transition-colors"
+            className="text-xs font-medium text-foreground/70 hover:text-foreground px-2 py-1 rounded-md hover:bg-accent transition-colors"
           >
             This Week
           </button>
         </div>
 
         {isLoading && (
-          <div className="flex items-center justify-center h-40 text-sm text-muted-foreground">
+          <div className="flex items-center justify-center h-40 text-sm text-foreground/70">
             Loading report…
           </div>
         )}
@@ -782,9 +785,9 @@ export default function WeeklyActivityReportPage() {
         {!isLoading && data && (
           <div className="flex flex-col gap-4">
             {data.operations.length === 0 ? (
-              <div className="rounded-xl border border-border/60 bg-card/60 p-8 text-center">
-                <Users className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">
+              <div className="rounded-xl border border-border bg-card shadow-sm p-8 text-center">
+                <Users className="h-6 w-6 text-foreground/70 mx-auto mb-2" />
+                <p className="text-sm text-foreground/70">
                   No operational activity recorded this week.
                 </p>
               </div>

@@ -2483,6 +2483,7 @@ export function AddTargetDialog({
         status={status}
         onStatusChange={setStatus}
         showMdlError={showMdlError}
+        flagUnanswered={false}
       />
       {manualImageUploadSection({ type: "target" }, "border-sky-500")}
     </SectionPanel>

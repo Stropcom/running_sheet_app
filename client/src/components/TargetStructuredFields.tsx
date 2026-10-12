@@ -215,12 +215,17 @@ export function TargetStatusFields({
   onChange,
   disabled,
   showMdlError,
+  flagUnanswered = true,
 }: {
   value: TargetStatusParts;
   onChange: (v: TargetStatusParts) => void;
   disabled?: boolean;
   /** Show the "MDL is required" error under the dropdown. */
   showMdlError?: boolean;
+  /** Shade MDL and Bail red until they are answered (the default). The Add
+   * Target dialog turns this off: its helper line already says what is
+   * missing. */
+  flagUnanswered?: boolean;
 }) {
   const bailYes = value.bailStatus === "yes";
   const conditionsYes = bailYes && value.bailConditions === "yes";
@@ -229,8 +234,8 @@ export function TargetStatusFields({
   // noticed and completed (not only after a failed save).
   const UNANSWERED =
     "border-red-500 bg-red-50 ring-1 ring-red-400/60 dark:bg-red-950/30";
-  const mdlUnanswered = !disabled && mdlMissing(value);
-  const bailUnanswered = !disabled && !value.bailStatus;
+  const mdlUnanswered = flagUnanswered && !disabled && mdlMissing(value);
+  const bailUnanswered = flagUnanswered && !disabled && !value.bailStatus;
   const projects = parseSpecialProjects(value.specialProjects);
   const writeProjects = (next: { key: string; detail: string }[]) =>
     onChange({
@@ -410,6 +415,7 @@ export function TargetIdentityFields({
   status,
   onStatusChange,
   showMdlError,
+  flagUnanswered,
 }: {
   value: StructuredNameParts;
   onChange: (v: StructuredNameParts) => void;
@@ -419,6 +425,8 @@ export function TargetIdentityFields({
   status?: TargetStatusParts;
   onStatusChange?: (v: TargetStatusParts) => void;
   showMdlError?: boolean;
+  /** Pass false to stop MDL / Bail being shaded red until answered. */
+  flagUnanswered?: boolean;
   /** Fired when the Surname field loses focus — lets a caller (e.g. the Add
    * Target dialog) run a possible-duplicate check as soon as a full name is
    * entered, rather than only at Save. Optional so callers that don't need
@@ -482,6 +490,7 @@ export function TargetIdentityFields({
           onChange={onStatusChange}
           disabled={disabled}
           showMdlError={showMdlError}
+          flagUnanswered={flagUnanswered}
         />
       )}
     </div>

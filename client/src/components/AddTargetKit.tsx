@@ -54,7 +54,8 @@ export function StatusMark({ mark }: { mark: TabMark }) {
   );
 }
 
-/** Done / None recorded / Needs filling in, as a pill. */
+/** Done / None recorded, as a pill. A section that still needs doing shows no
+ * chip: the red line above the buttons already says what is missing. */
 export function StatusChip({ status }: { status: SectionStatus }) {
   if (status === "done")
     return (
@@ -68,11 +69,7 @@ export function StatusChip({ status }: { status: SectionStatus }) {
         None recorded
       </span>
     );
-  return (
-    <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold normal-case tracking-normal text-red-700 dark:bg-red-950 dark:text-red-300">
-      Needs filling in
-    </span>
-  );
+  return null;
 }
 
 export interface TabSpec {
@@ -165,7 +162,7 @@ export function SectionPanel({
             </span>
           )}
         </span>
-        {status && <StatusChip status={status} />}
+        {status && status !== "todo" && <StatusChip status={status} />}
       </div>
       {children}
     </section>

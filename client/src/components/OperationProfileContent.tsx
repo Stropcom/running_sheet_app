@@ -59,6 +59,7 @@ import {
   ProfileCard,
   SheetsCard,
   displayPersonName,
+  fetchFirstPhotoUrl,
   splitPersonName,
   surnameOnly,
   type PhotoboardRow,
@@ -564,17 +565,7 @@ export function OperationProfileContent({
         heading: row.heading,
         people: await Promise.all(
           row.people.map(async p => {
-            let url: string | null = null;
-            try {
-              const list = (await utils.attachment.byEntity.fetch({
-                category: p.photo.category,
-                targetId: p.photo.targetId,
-                entityLabel: p.photo.label,
-              })) as Array<{ url: string }>;
-              url = list[0]?.url ?? null;
-            } catch {
-              url = null;
-            }
+            const url = await fetchFirstPhotoUrl(utils, p.photo);
             const [given, sur] = splitPersonName(p.name);
             return { given, sur, role: p.role, url };
           })

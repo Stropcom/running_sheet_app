@@ -1797,6 +1797,8 @@ export async function linkAttachmentToEntity(data: {
     | "member";
   targetId?: number;
   entityLabel: string;
+  /** Added through the Target Registry — wins the profile photo. */
+  fromRegistry?: boolean;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -1818,13 +1820,23 @@ export async function linkAttachmentToEntity(data: {
       .limit(1);
   // Avoid duplicate links to the same entity
   const existing = await findExisting();
-  if (existing.length > 0) return existing[0].id;
+  if (existing.length > 0) {
+    // A photo already linked elsewhere that the registry now claims.
+    if (data.fromRegistry) {
+      await db
+        .update(attachmentEntityLinks)
+        .set({ fromRegistry: true })
+        .where(eq(attachmentEntityLinks.id, existing[0].id));
+    }
+    return existing[0].id;
+  }
   const insertData: InsertAttachmentEntityLink = {
     attachmentId: data.attachmentId,
     category: data.category,
     targetId: data.category === "target" ? data.targetId : null,
     entityKey,
     entityLabel: data.entityLabel,
+    fromRegistry: data.fromRegistry ?? false,
   };
   try {
     const [result] = await db.insert(attachmentEntityLinks).values(insertData);
@@ -2479,10 +2491,10 @@ export async function getAttachmentsForEntity(params: {
     )
     .orderBy(desc(rowAttachments.createdAt));
   const withCins = await attachRowMemberCins(db, rows);
-  return withCins.map(r => ({
-    ...r,
-    linkId: links.find(l => l.attachmentId === r.id)!.id,
-  }));
+  return withCins.map(r => {
+    const link = links.find(l => l.attachmentId === r.id)!;
+    return { ...r, linkId: link.id, fromRegistry: link.fromRegistry };
+  });
 }
 
 /** Photos of the people who live at each address, for the map's "Images"

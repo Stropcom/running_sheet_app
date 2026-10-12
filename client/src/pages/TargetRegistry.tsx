@@ -1389,12 +1389,14 @@ function AssociateCard({
         faceIndex: faces[0].index,
         category: "associate",
         entityLabel,
+        fromRegistry: true,
       });
     } else {
       await linkToEntityMut.mutateAsync({
         attachmentId: uploaded.id,
         category: "associate",
         entityLabel,
+        fromRegistry: true,
       });
     }
   };

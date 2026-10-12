@@ -56,6 +56,7 @@ import {
   Photoboard,
   SheetsCard,
   displayPersonName,
+  fetchFirstPhotoUrl,
   personCardId,
   splitPersonName,
   type PhotoboardRow,
@@ -622,17 +623,7 @@ export function TargetProfileContent({
     if (!win) return;
     const board = await Promise.all(
       photoboardRows[0].people.map(async p => {
-        let url: string | null = null;
-        try {
-          const list = (await utils.attachment.byEntity.fetch({
-            category: p.photo.category,
-            targetId: p.photo.targetId,
-            entityLabel: p.photo.label,
-          })) as Array<{ url: string }>;
-          url = list[0]?.url ?? null;
-        } catch {
-          url = null;
-        }
+        const url = await fetchFirstPhotoUrl(utils, p.photo);
         const [given, sur] = splitPersonName(p.name);
         return { given, sur, role: p.role, url };
       })

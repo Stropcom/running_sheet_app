@@ -967,6 +967,7 @@ export function AddTargetDialog({
             category,
             targetId: linkedTargetId,
             entityLabel,
+            fromRegistry: true,
           });
         } else {
           await linkToEntityMut.mutateAsync({
@@ -974,6 +975,7 @@ export function AddTargetDialog({
             category,
             targetId: linkedTargetId,
             entityLabel,
+            fromRegistry: true,
           });
         }
       } catch {

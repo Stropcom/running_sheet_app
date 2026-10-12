@@ -2261,6 +2261,8 @@ export const appRouter = router({
           ]),
           targetId: z.number().optional(),
           entityLabel: z.string().min(1),
+          // Set by the Target Registry screens only (see shared/profilePhoto.ts).
+          fromRegistry: z.boolean().optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -2622,6 +2624,7 @@ export const appRouter = router({
           category: z.enum(["target", "associate"]),
           targetId: z.number().optional(),
           entityLabel: z.string().min(1),
+          fromRegistry: z.boolean().optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -2661,6 +2664,7 @@ export const appRouter = router({
           category: input.category,
           targetId: input.targetId,
           entityLabel: input.entityLabel,
+          fromRegistry: input.fromRegistry,
         });
         await createPersonDetection({
           attachmentId: input.attachmentId,

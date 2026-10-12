@@ -5,6 +5,10 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { SECTION_CARD } from "@/lib/pageKit";
 import { SectionHeading } from "@/components/ProfileSectionHeading";
+import {
+  pickProfilePhoto,
+  type ProfilePhotoCandidate,
+} from "@shared/profilePhoto";
 
 /**
  * Shared pieces of the five Intelligence profiles (Operation, Target,
@@ -138,7 +142,18 @@ type PhotoRef = {
   label?: string;
 };
 
-/** The first photo linked to an entity (null while loading / none). */
+/** People get the registry's photo, else their first upload (see
+ * shared/profilePhoto.ts); vehicles and locations keep the newest-first
+ * order the server returns. */
+function pickPhotoUrl(category: PhotoRef["category"], data: unknown) {
+  const list = (data ?? []) as Array<ProfilePhotoCandidate & { url: string }>;
+  if (category === "target" || category === "associate") {
+    return pickProfilePhoto(list)?.url ?? null;
+  }
+  return list[0]?.url ?? null;
+}
+
+/** The photo that represents an entity (null while loading / none). */
 export function useFirstPhoto(ref: PhotoRef): {
   url: string | null;
   loading: boolean;
@@ -151,8 +166,8 @@ export function useFirstPhoto(ref: PhotoRef): {
     },
     { enabled: ref.targetId != null || !!ref.label, staleTime: 60_000 }
   );
-  const first = (data as Array<{ url: string }> | undefined)?.[0];
-  return { url: first?.url ?? null, loading: isLoading };
+  const pick = pickPhotoUrl(ref.category, data);
+  return { url: pick, loading: isLoading };
 }
 
 /** A person's photo (or a grey silhouette with "No photo"). */
@@ -464,7 +479,7 @@ export async function fetchFirstPhotoUrl(
       targetId: ref.targetId,
       entityLabel: ref.label,
     })) as Array<{ url: string }>;
-    return list[0]?.url ?? null;
+    return pickPhotoUrl(ref.category, list);
   } catch {
     return null;
   }

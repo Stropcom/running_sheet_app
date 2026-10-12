@@ -1,0 +1,1 @@
+ALTER TABLE `attachment_entity_links` ADD `fromRegistry` boolean DEFAULT false NOT NULL;

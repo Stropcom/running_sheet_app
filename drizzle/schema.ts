@@ -460,6 +460,10 @@ export const attachmentEntityLinks = mysqlTable(
     targetId: int("targetId"), // set when category = "target"
     entityKey: varchar("entityKey", { length: 512 }), // normalized label, set when category != "target"
     entityLabel: varchar("entityLabel", { length: 512 }).notNull(), // display label at link time
+    // True when the photo was added through the Target Registry (Add Target /
+    // an associate's card). Those photos win the profile picture and the
+    // photoboard over every other upload — see shared/profilePhoto.ts.
+    fromRegistry: boolean("fromRegistry").default(false).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   table => ({

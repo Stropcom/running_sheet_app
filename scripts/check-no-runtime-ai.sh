@@ -53,7 +53,9 @@ FOUND=0
 
 for pattern in "${BANNED_PATTERNS[@]}"; do
   for root in "${SCAN_ROOTS[@]}"; do
-    if grep -rniE "${EXCLUDE_ARGS[@]}" "$pattern" "$root" 2>/dev/null; then
+    # -I skips binary files (test fixtures such as PDFs can contain these words
+    # inside their bytes); only text source can import or call an AI SDK.
+    if grep -rniIE "${EXCLUDE_ARGS[@]}" "$pattern" "$root" 2>/dev/null; then
       FOUND=1
     fi
   done

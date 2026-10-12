@@ -30,6 +30,13 @@ import {
   scopeRegistryTargets,
   toAccessUser,
 } from "./operationAccess";
+import { rosterCommandForWrite } from "./rosterContext";
+import { loadFeatureMatrix, saveFeatureSettings } from "./commandFeatures";
+import {
+  FEATURE_KEYS,
+  featuresFor,
+  isFeatureOwner,
+} from "@shared/commandFeatures";
 import {
   sanitizeTargetSpecialProjects,
   mergeSpecialProjects,
@@ -51,6 +58,8 @@ import { systemRouter } from "./_core/systemRouter";
 import {
   getAllCtoRosterTeams,
   getAllCtoRosterMembers,
+  getCtoRosterMembersByCin,
+  getCtoRosterCandidates,
   getCtoRosterShiftsForDateRange,
   getCtoRosterShiftsForMember,
   upsertCtoRosterShift,
@@ -938,7 +947,14 @@ export const appRouter = router({
       // Also says whether their team forces location sharing on (the app
       // turns Show & Share on and locks it) — read here, not from the team
       // list, because map-only Investigator accounts can't list teams.
-      return { ...user, mustShareLocation: await mustShareLocation(user) };
+      return {
+        ...user,
+        mustShareLocation: await mustShareLocation(user),
+        // Which switchable features their Command has on, and whether they
+        // are the person who changes the switches (see shared/commandFeatures.ts).
+        features: featuresFor(user, await loadFeatureMatrix()),
+        isFeatureOwner: isFeatureOwner(user),
+      };
     }),
 
     login: publicProcedure
@@ -7804,6 +7820,56 @@ export const appRouter = router({
       }),
   }),
 
+  // ─── Command features ──────────────────────────────────────────────────────
+  // On/off switches per Command (shared/commandFeatures.ts). Only the owner
+  // sees or changes them; everyone else's own switches arrive with auth.me.
+  commandFeatures: router({
+    all: protectedProcedure.query(async ({ ctx }) => {
+      if (!isFeatureOwner(ctx.user)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Not available." });
+      }
+      return loadFeatureMatrix();
+    }),
+
+    set: protectedProcedure
+      .input(
+        z.array(
+          z.object({
+            command: z.enum(COMMAND_CODES),
+            feature: z.enum(FEATURE_KEYS),
+            enabled: z.boolean(),
+          })
+        )
+      )
+      .mutation(async ({ input, ctx }) => {
+        if (!isFeatureOwner(ctx.user)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Not available." });
+        }
+        const before = await loadFeatureMatrix();
+        // Only what actually changes is saved and logged.
+        const changes = input.filter(
+          c => before[c.command][c.feature] !== c.enabled
+        );
+        if (changes.length > 0) {
+          await saveFeatureSettings(changes, ctx.user.cin ?? null);
+          await createAuditLog({
+            sheetId: 0,
+            userId: ctx.user.id,
+            userName: ctx.user.cin ?? "Unknown",
+            userCIN: ctx.user.cin ?? null,
+            action: "command_feature_changed",
+            details: changes
+              .map(
+                c => `${c.feature} ${c.enabled ? "on" : "off"} for ${c.command}`
+              )
+              .join("; "),
+            createdAt: Date.now(),
+          });
+        }
+        return loadFeatureMatrix();
+      }),
+  }),
+
   // ─── Reports ────────────────────────────────────────────────────────────────
   reports: router({
     /**
@@ -7868,6 +7934,8 @@ export const appRouter = router({
   opManager: router({
     listUsers: certifierOrAdminProcedure.query(async () => {
       const users = await getAllUsers();
+      // Deliberately everyone: SMEAC / UCO briefings use this list for their
+      // recipients, which can cross Commands.
       return users
         .filter(u => !u.archivedAt)
         .map(u => ({
@@ -8006,7 +8074,9 @@ export const appRouter = router({
         const targetUserIds =
           input.userIds && input.userIds.length > 0
             ? input.userIds
-            : (await getAllUsers()).map(u => u.id);
+            : (await getAllUsers())
+                .filter(u => u.command === rosterCommandForWrite())
+                .map(u => u.id);
         await createNotificationsForUsers(targetUserIds, {
           title,
           body,
@@ -8069,6 +8139,10 @@ export const appRouter = router({
       list: protectedProcedure.query(async () => {
         return getAllCtoRosterMembers();
       }),
+
+      /** Who can be added to this Command's roster (not already on it): its
+       * own people, and visitors from other Commands — admin only */
+      candidates: adminProcedure.query(async () => getCtoRosterCandidates()),
 
       /** Add an existing RunLog user (by CIN) to the roster — admin only */
       add: adminProcedure
@@ -8227,14 +8301,19 @@ export const appRouter = router({
           })
         )
         .query(async ({ ctx, input }) => {
-          const members = await getAllCtoRosterMembers();
-          const me = members.find(m => m.cin === ctx.user.cin);
-          if (!me) return [];
-          return getCtoRosterShiftsForMember(
-            me.id,
-            input.startDate,
-            input.endDate
+          // Their own entries, whichever Commands' rosters they are on (a
+          // visitor can be on their own and on a host Command's).
+          const mine = ctx.user.cin
+            ? await getCtoRosterMembersByCin(ctx.user.cin)
+            : [];
+          const shifts = await Promise.all(
+            mine.map(me =>
+              getCtoRosterShiftsForMember(me.id, input.startDate, input.endDate)
+            )
           );
+          return shifts
+            .flat()
+            .sort((a, b) => a.shiftDate.localeCompare(b.shiftDate));
         }),
 
       /** Update a single shift cell — admin only */

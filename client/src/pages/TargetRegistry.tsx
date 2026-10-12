@@ -1,3 +1,4 @@
+import { useCommandFeature } from "@/lib/commandFeatures";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -2430,6 +2431,8 @@ export default function TargetRegistryPage() {
 
   const { viewMode } = useViewMode();
   const [showImportDocument, setShowImportDocument] = useState(false);
+  // Import Target can be switched off for a Command (shared/commandFeatures.ts).
+  const importEnabled = useCommandFeature("import");
   const [importPrefill, setImportPrefill] =
     useState<DocumentImportPrefill | null>(null);
   const [importKey, setImportKey] = useState(0);
@@ -2588,13 +2591,15 @@ export default function TargetRegistryPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={() => setShowImportDocument(true)}
-            >
-              <FileText className="h-4 w-4" /> Import Target
-            </Button>
+            {importEnabled && (
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => setShowImportDocument(true)}
+              >
+                <FileText className="h-4 w-4" /> Import Target
+              </Button>
+            )}
             <Button className="gap-2" onClick={() => setShowCreate(true)}>
               <Plus className="h-4 w-4" /> Add Target
             </Button>

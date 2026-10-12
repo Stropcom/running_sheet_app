@@ -1,5 +1,9 @@
 import type { ReactNode } from "react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
+import {
+  extraAddressHeading,
+  parseExtraAddresses,
+} from "@shared/extraAddresses";
 
 /** One registered address or vehicle, ready to show in its own panel. */
 export interface RegisteredDetailEntry {
@@ -36,12 +40,12 @@ export function targetDetailEntries(t: {
       label: "Home Address",
       value: formatIntelAddress(t.hbf),
     });
-  parseExtras(t.extraAddresses).forEach((v, i) => {
-    if (v)
+  parseExtraAddresses(t.extraAddresses).forEach((a, i) => {
+    if (a.value)
       out.push({
         id: `addr${i}`,
-        label: `Address ${i + 2}`,
-        value: formatIntelAddress(v),
+        label: extraAddressHeading(a.label, i + 2),
+        value: formatIntelAddress(a.value),
       });
   });
   if (t.v1f)

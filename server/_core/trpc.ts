@@ -10,6 +10,13 @@ import {
   toAccessUser,
 } from "../operationAccess";
 import { intelScope } from "../intelScope";
+import { enforceRosterAccess } from "../rosterScope";
+import { rosterScope } from "../rosterContext";
+import { enforceFeatureAccess } from "../commandFeatures";
+import {
+  ROSTER_COMMAND_HEADER,
+  resolveRosterCommand,
+} from "@shared/rosterCommand";
 import { getInvestigatorAllowedOperationIds } from "../db";
 
 const t = initTRPC.context<TrpcContext>().create({
@@ -175,7 +182,27 @@ const requireUser = t.middleware(async opts => {
   });
 });
 
-export const protectedProcedure = t.procedure.use(requireUser);
+// Which Command's CTO Roster / Weekly Tasking board this request works on
+// (see server/rosterScope.ts): the person's own, or — for an all-region admin
+// only — the one they picked. Roster ids from another Command are refused.
+const rosterScopeMiddleware = t.middleware(async opts => {
+  const { ctx, next, path, getRawInput } = opts;
+  if (!ctx.user) return next();
+  // A feature switched off for the person's Command is refused outright.
+  await enforceFeatureAccess(ctx.user, path);
+  const command = resolveRosterCommand(
+    ctx.user,
+    ctx.req?.headers?.[ROSTER_COMMAND_HEADER]
+  );
+  if (path.startsWith("ctoRoster.")) {
+    await enforceRosterAccess(path, command, await getRawInput());
+  }
+  return rosterScope.run({ command }, () => next());
+});
+
+export const protectedProcedure = t.procedure
+  .use(requireUser)
+  .use(rosterScopeMiddleware);
 
 export const adminProcedure = protectedProcedure.use(
   t.middleware(async opts => {

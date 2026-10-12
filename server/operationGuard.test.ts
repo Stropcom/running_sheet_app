@@ -96,6 +96,20 @@ describe("operation guard", () => {
     ).rejects.toThrow(/access/i);
   });
 
+  it("doesn't read a CTO Roster memberId as a running-sheet row member", async () => {
+    // 1001 would resolve to a row on Eastern's sheet if it were a row member.
+    await expect(
+      run(west, "member.remove", "mutation", { memberId: 1001 })
+    ).rejects.toThrow(/access/i);
+    expect(
+      await run(west, "ctoRoster.roster.updateShift", "mutation", {
+        memberId: 1001,
+        shiftDate: "2026-10-14",
+        shiftCode: "d",
+      })
+    ).toEqual({});
+  });
+
   it("allows their own Command's", async () => {
     expect(
       await run(west, "sheet.listByOperation", "query", { operationId: 1 })

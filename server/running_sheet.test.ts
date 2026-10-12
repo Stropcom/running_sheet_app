@@ -26,6 +26,15 @@ vi.mock("./operationAccess", () => ({
   intelligenceOperationIds: vi.fn().mockResolvedValue(null),
 }));
 
+// The Command feature switches are read from the database; an empty matrix
+// means every feature is on.
+vi.mock("./commandFeatures", () => ({
+  loadFeatureMatrix: vi.fn().mockResolvedValue({}),
+  saveFeatureSettings: vi.fn(),
+  enforceFeatureAccess: vi.fn().mockResolvedValue(undefined),
+  invalidateFeatureCache: vi.fn(),
+}));
+
 vi.mock("./db", () => ({
   mustShareLocation: vi.fn().mockResolvedValue(false),
   getRunningSheets: vi.fn().mockResolvedValue([]),

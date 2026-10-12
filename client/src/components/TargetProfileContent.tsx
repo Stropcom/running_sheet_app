@@ -45,6 +45,10 @@ import {
 } from "@/components/RegisteredDetailPanels";
 import { registryPersonAddresses } from "@/lib/profileSection";
 import {
+  extraAddressHeading,
+  parseExtraAddresses,
+} from "@shared/extraAddresses";
+import {
   ImportedDocumentCard,
   isParsedDocumentImport,
   type DocumentImportRow,
@@ -309,26 +313,13 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
     <div class="detail-grid">
       ${profile.hbf ? `<span class="detail-label">Home Address</span><span class="detail-value">${esc(formatIntelAddress(profile.hbf))}</span>` : ""}
       ${prevHtml("hbf") ? `<span style="grid-column:1/-1">${prevHtml("hbf")}</span>` : ""}
-      ${
-        profile.extraAddresses
-          ? (() => {
-              try {
-                const eas: Array<{ full?: string; short?: string }> =
-                  JSON.parse(profile.extraAddresses!);
-                return eas
-                  .map((ea, i) => {
-                    const val = ea.full?.trim() || ea.short?.trim() || "";
-                    return val
-                      ? `<span class="detail-label">Address ${i + 2}</span><span class="detail-value">${esc(formatIntelAddress(val))}</span>`
-                      : "";
-                  })
-                  .join("");
-              } catch {
-                return "";
-              }
-            })()
-          : ""
-      }
+      ${parseExtraAddresses(profile.extraAddresses)
+        .map((ea, i) =>
+          ea.value
+            ? `<span class="detail-label">${esc(extraAddressHeading(ea.label, i + 2))}</span><span class="detail-value">${esc(formatIntelAddress(ea.value))}</span>`
+            : ""
+        )
+        .join("")}
       ${profile.v1f ? `<span class="detail-label">Vehicle 1</span><span class="detail-value">${esc(formatIntelVehicle(profile.v1f))}</span>` : ""}
       ${prevHtml("v1f") ? `<span style="grid-column:1/-1">${prevHtml("v1f")}</span>` : ""}
       ${profile.v2f ? `<span class="detail-label">Vehicle 2</span><span class="detail-value">${esc(formatIntelVehicle(profile.v2f))}</span>` : ""}
@@ -911,7 +902,9 @@ export function TargetProfileContent({
                     name={a.name}
                     isIndicesOnly={a.isIndicesOnly}
                     kind="resident"
-                    sub={registryPersonAddresses(a.hbf, a.extraAddresses)[0]}
+                    sub={registryPersonAddresses(a.hbf, a.extraAddresses).join(
+                      "\n"
+                    )}
                     anchorId={embedded ? undefined : personCardId(a.name)}
                   />
                 ))}
@@ -938,7 +931,9 @@ export function TargetProfileContent({
                     name={a.name}
                     isIndicesOnly={a.isIndicesOnly}
                     kind="associate"
-                    sub={registryPersonAddresses(a.hbf, a.extraAddresses)[0]}
+                    sub={registryPersonAddresses(a.hbf, a.extraAddresses).join(
+                      "\n"
+                    )}
                     anchorId={embedded ? undefined : personCardId(a.name)}
                   />
                 ))}

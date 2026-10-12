@@ -15,6 +15,20 @@ import {
 
 // ─── Users ───────────────────────────────────────────────────────────────────
 
+// The Command (region) a roster / tasking-board row belongs to — see
+// shared/commands.ts. Everything that existed before Commands lands in
+// WESTERN, so a single-Command deployment behaves exactly as before.
+const rosterCommandColumn = () =>
+  mysqlEnum("command", [
+    "WESTERN",
+    "NORTHERN",
+    "EASTERN",
+    "SOUTHERN",
+    "CENTRAL",
+  ])
+    .default("WESTERN")
+    .notNull();
+
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
   // Local auth fields
@@ -1056,6 +1070,7 @@ export const auditLogs = mysqlTable("audit_logs", {
     "uco_guide_posted",
     "uco_guide_deleted",
     "target_background_updated",
+    "command_feature_changed",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),
@@ -1582,6 +1597,7 @@ export type UserSidebarOrder = typeof userSidebarOrder.$inferSelect;
 
 export const opManagerPriorityRows = mysqlTable("op_manager_priority_rows", {
   id: int("id").autoincrement().primaryKey(),
+  command: rosterCommandColumn(),
   weekStart: varchar("weekStart", { length: 10 }).notNull(), // ISO date string YYYY-MM-DD (Monday)
   category: varchar("category", { length: 64 }).notNull(), // e.g. "A-TACC", "WC"
   priority: int("priority").notNull(), // 1, 2, 3 ...
@@ -1597,6 +1613,7 @@ export type OpManagerPriorityRow = typeof opManagerPriorityRows.$inferSelect;
 
 export const opManagerTaskingCells = mysqlTable("op_manager_tasking_cells", {
   id: int("id").autoincrement().primaryKey(),
+  command: rosterCommandColumn(),
   weekStart: varchar("weekStart", { length: 10 }).notNull(),
   dayIndex: int("dayIndex").notNull(), // 0=Mon … 6=Sun
   teamRow: varchar("teamRow", { length: 64 }).notNull(), // "surv1" | "surv2" | "ptt" | "cap"
@@ -1612,6 +1629,7 @@ export const opManagerSupervisorContacts = mysqlTable(
   "op_manager_supervisor_contacts",
   {
     id: int("id").autoincrement().primaryKey(),
+    command: rosterCommandColumn(),
     weekStart: varchar("weekStart", { length: 10 }).notNull(),
     role: varchar("role", { length: 128 }).notNull(), // e.g. "CTO", "Team 1 TL", "On Call Supervisor"
     userId: int("userId"), // FK to users (nullable)
@@ -1626,12 +1644,22 @@ export type OpManagerSupervisorContact =
   typeof opManagerSupervisorContacts.$inferSelect;
 
 // ─── Op Manager Posted Weeks ─────────────────────────────────────────────────
-export const opManagerPostedWeeks = mysqlTable("op_manager_posted_weeks", {
-  id: int("id").autoincrement().primaryKey(),
-  weekStart: varchar("weekStart", { length: 10 }).notNull().unique(), // ISO date YYYY-MM-DD (Monday)
-  postedAt: timestamp("postedAt").defaultNow().notNull(),
-  postedBy: int("postedBy").notNull(), // FK → users.id
-});
+export const opManagerPostedWeeks = mysqlTable(
+  "op_manager_posted_weeks",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    command: rosterCommandColumn(),
+    weekStart: varchar("weekStart", { length: 10 }).notNull(), // ISO date YYYY-MM-DD (Monday)
+    postedAt: timestamp("postedAt").defaultNow().notNull(),
+    postedBy: int("postedBy").notNull(), // FK → users.id
+  },
+  t => [
+    uniqueIndex("op_manager_posted_weeks_cmd_week_idx").on(
+      t.command,
+      t.weekStart
+    ),
+  ]
+);
 export type OpManagerPostedWeek = typeof opManagerPostedWeeks.$inferSelect;
 
 // ─── Push Subscriptions ───────────────────────────────────────────────────────
@@ -1680,11 +1708,18 @@ export type InsertNotification = typeof notifications.$inferInsert;
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ─── CTO Roster: Teams & Members ─────────────────────────────────────────────
-export const ctoRosterTeams = mysqlTable("cto_roster_teams", {
-  id: int("id").autoincrement().primaryKey(),
-  name: varchar("name", { length: 64 }).notNull().unique(),
-  sortOrder: int("sortOrder").default(0).notNull(),
-});
+export const ctoRosterTeams = mysqlTable(
+  "cto_roster_teams",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    // Each Command has its own roster; team names only need to be unique
+    // within a Command.
+    command: rosterCommandColumn(),
+    name: varchar("name", { length: 64 }).notNull(),
+    sortOrder: int("sortOrder").default(0).notNull(),
+  },
+  t => [uniqueIndex("cto_roster_teams_cmd_name_idx").on(t.command, t.name)]
+);
 export type CtoRosterTeam = typeof ctoRosterTeams.$inferSelect;
 export type InsertCtoRosterTeam = typeof ctoRosterTeams.$inferInsert;
 
@@ -1692,6 +1727,9 @@ export const ctoRosterMembers = mysqlTable(
   "cto_roster_members",
   {
     id: int("id").autoincrement().primaryKey(),
+    // The Command whose roster this member is on (always the same as their
+    // team's Command — set when added, checked when moved).
+    command: rosterCommandColumn(),
     // FK to users.cin, not users.id — matches how the rest of RunLog stamps
     // CIN (not a raw user id) on operational records, so roster history still
     // reads correctly even if a user's own name/profile changes later.
@@ -1709,7 +1747,9 @@ export const ctoRosterMembers = mysqlTable(
   },
   t => [
     index("cto_roster_members_teamId_idx").on(t.teamId),
-    uniqueIndex("cto_roster_members_cin_idx").on(t.cin),
+    // A person is on at most one team per Command's roster. A visitor can be
+    // on their own Command's roster and on each host Command's.
+    uniqueIndex("cto_roster_members_cmd_cin_idx").on(t.command, t.cin),
   ]
 );
 export type CtoRosterMember = typeof ctoRosterMembers.$inferSelect;
@@ -1797,6 +1837,7 @@ export type InsertCtoRosterShift = typeof ctoRosterShifts.$inferInsert;
 // ─── CTO Roster: Drafts (what-if planning, merges back into live roster) ────
 export const ctoRosterDrafts = mysqlTable("cto_roster_drafts", {
   id: int("id").autoincrement().primaryKey(),
+  command: rosterCommandColumn(),
   name: varchar("name", { length: 128 }).notNull(),
   startDate: date("startDate", { mode: "string" }).notNull(),
   endDate: date("endDate", { mode: "string" }).notNull(),
@@ -1889,6 +1930,7 @@ export type InsertCtoRosterDraftShift =
 // ─── CTO Roster: Saved Rosters (named point-in-time archive/export) ─────────
 export const ctoRosterSavedRosters = mysqlTable("cto_roster_saved_rosters", {
   id: int("id").autoincrement().primaryKey(),
+  command: rosterCommandColumn(),
   name: varchar("name", { length: 128 }).notNull(),
   startDate: date("startDate", { mode: "string" }).notNull(),
   endDate: date("endDate", { mode: "string" }).notNull(),
@@ -1973,6 +2015,7 @@ export const ctoRosterAuditLog = mysqlTable(
   "cto_roster_audit_log",
   {
     id: int("id").autoincrement().primaryKey(),
+    command: rosterCommandColumn(),
     userId: int("userId"),
     userName: varchar("userName", { length: 128 }),
     /** upsert_shift | delete_shift | bulk_update | bulk_copy | add_member | delete_member | change_team | reorder | draft_merge | save_as_roster */
@@ -1998,6 +2041,8 @@ export const ctoRosterOutlookSettings = mysqlTable(
   "cto_roster_outlook_settings",
   {
     id: int("id").autoincrement().primaryKey(),
+    // One row per Command.
+    command: rosterCommandColumn().unique(),
     /** Minimum on-duty headcount per team (JSON: { "Team 1": 5, "Team 2": 5, "PTT": 2, "Capability": 1 }) */
     teamMinimums: text("teamMinimums").notNull(),
     onCallMin: int("onCallMin").default(5).notNull(),
@@ -2010,6 +2055,25 @@ export type CtoRosterOutlookSettings =
   typeof ctoRosterOutlookSettings.$inferSelect;
 export type InsertCtoRosterOutlookSettings =
   typeof ctoRosterOutlookSettings.$inferInsert;
+
+// ─── Command features (on/off per Command) ──────────────────────────────────
+// Only the switches that were changed need a row; no row means on. See
+// shared/commandFeatures.ts.
+export const commandFeatures = mysqlTable(
+  "command_features",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    command: rosterCommandColumn(),
+    feature: varchar("feature", { length: 32 }).notNull(),
+    enabled: boolean("enabled").default(true).notNull(),
+    updatedByCIN: varchar("updatedByCIN", { length: 64 }),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  t => [
+    uniqueIndex("command_features_cmd_feature_idx").on(t.command, t.feature),
+  ]
+);
+export type CommandFeatureRow = typeof commandFeatures.$inferSelect;
 
 // ─── CTO Roster: EBA Rules (EA compliance engine config) ────────────────────
 export const ctoRosterEbaRules = mysqlTable("cto_roster_eba_rules", {

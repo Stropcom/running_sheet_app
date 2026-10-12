@@ -78,7 +78,7 @@ export function PersonLinkRow({
             {displayPersonName(name)}
           </span>
           {sub && (
-            <span className="block break-words text-xs text-muted-foreground">
+            <span className="block whitespace-pre-line break-words text-xs text-muted-foreground">
               {sub}
             </span>
           )}

@@ -8,6 +8,11 @@
 
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import {
+  extraAddressHeading,
+  parseExtraAddresses,
+  withAddressLabel,
+} from "@shared/extraAddresses";
+import {
   buildPhotoGridHtml,
   buildEntityListWithPhotosHtml,
   type RowAttachmentLike,
@@ -85,16 +90,10 @@ export function registryPersonAddresses(
   hbf: string | null | undefined,
   extraAddresses: string | null | undefined
 ): string[] {
-  let extras: string[] = [];
-  if (extraAddresses) {
-    try {
-      const list: Array<{ full?: string; short?: string }> =
-        JSON.parse(extraAddresses);
-      extras = list.map(x => x.full?.trim() || x.short?.trim() || "");
-    } catch {
-      extras = [];
-    }
-  }
+  // Extras carry their label in front ("Work — …") so it shows with them.
+  const extras = parseExtraAddresses(extraAddresses).map(a =>
+    a.value ? withAddressLabel(a.label, a.value) : ""
+  );
   return [hbf?.trim() || "", ...extras].filter(Boolean);
 }
 
@@ -130,8 +129,12 @@ export function buildProfileTargetBlockHtml(t: ProfileTargetBlock): string {
   // orphaned alone at the bottom of a page via break-after:avoid.
   const details: Array<[string, string]> = [];
   if (t.hbf) details.push(["Home Address", formatIntelAddress(t.hbf)]);
-  parseExtras(t.extraAddresses).forEach((v, i) => {
-    if (v) details.push([`Address ${i + 2}`, formatIntelAddress(v)]);
+  parseExtraAddresses(t.extraAddresses).forEach((a, i) => {
+    if (a.value)
+      details.push([
+        extraAddressHeading(a.label, i + 2),
+        formatIntelAddress(a.value),
+      ]);
   });
   if (t.v1f) details.push(["Vehicle 1", formatIntelVehicle(t.v1f)]);
   if (t.v2f) details.push(["Vehicle 2", formatIntelVehicle(t.v2f)]);

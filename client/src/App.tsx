@@ -60,6 +60,7 @@ import CtoRosterOutlookPage from "@/pages/CtoRoster/OutlookPage";
 import CtoRosterAuditLogPage from "@/pages/CtoRoster/AuditLogPage";
 import SmeacBriefingListPage from "@/pages/SmeacBriefingListPage";
 import IntelExportPage from "@/pages/IntelExportPage";
+import { gatedByFeature } from "@/components/FeatureGate";
 import VehicleCrashPage from "@/pages/VehicleCrashPage";
 import SmeacBriefingNewPage from "@/pages/SmeacBriefingNewPage";
 import SmeacBriefingDetailPage from "@/pages/SmeacBriefingDetailPage";
@@ -174,6 +175,58 @@ function AppearanceApplier() {
   return null;
 }
 
+// Pages whose feature a Command can switch off (shared/commandFeatures.ts).
+const GatedOperationManagerPage = gatedByFeature(
+  "tasking",
+  OperationManagerPage
+);
+const GatedWeeklyTaskingReportPage = gatedByFeature(
+  "tasking",
+  WeeklyTaskingReportPage
+);
+const GatedVehicleCrashPage = gatedByFeature("crash", VehicleCrashPage);
+const GatedCtoRosterPage = gatedByFeature("roster", CtoRosterPage);
+const GatedCtoRosterMyShiftsPage = gatedByFeature(
+  "roster",
+  CtoRosterMyShiftsPage
+);
+const GatedCtoRosterMemberManagementPage = gatedByFeature(
+  "roster",
+  CtoRosterMemberManagementPage
+);
+const GatedCtoRosterDraftsListPage = gatedByFeature(
+  "roster",
+  CtoRosterDraftsListPage
+);
+const GatedCtoRosterDraftRosterPage = gatedByFeature(
+  "roster",
+  CtoRosterDraftRosterPage
+);
+const GatedCtoRosterDraftMergePage = gatedByFeature(
+  "roster",
+  CtoRosterDraftMergePage
+);
+const GatedCtoRosterSavedRostersListPage = gatedByFeature(
+  "roster",
+  CtoRosterSavedRostersListPage
+);
+const GatedCtoRosterSavedRosterPage = gatedByFeature(
+  "roster",
+  CtoRosterSavedRosterPage
+);
+const GatedCtoRosterEACompliancePage = gatedByFeature(
+  "roster",
+  CtoRosterEACompliancePage
+);
+const GatedCtoRosterOutlookPage = gatedByFeature(
+  "roster",
+  CtoRosterOutlookPage
+);
+const GatedCtoRosterAuditLogPage = gatedByFeature(
+  "roster",
+  CtoRosterAuditLogPage
+);
+
 function Router() {
   return (
     <Switch>
@@ -221,36 +274,42 @@ function Router() {
       <Route path="/images" component={ImagesPage} />
       <Route path="/images/:operationId" component={ImagesPage} />
       <Route path="/images/:operationId/:sheetId" component={ImagesPage} />
-      <Route path="/operation-manager" component={OperationManagerPage} />
-      <Route path="/cto-roster" component={CtoRosterPage} />
-      <Route path="/cto-roster/my-shifts" component={CtoRosterMyShiftsPage} />
+      <Route path="/operation-manager" component={GatedOperationManagerPage} />
+      <Route path="/cto-roster" component={GatedCtoRosterPage} />
+      <Route
+        path="/cto-roster/my-shifts"
+        component={GatedCtoRosterMyShiftsPage}
+      />
       <Route
         path="/cto-roster/members"
-        component={CtoRosterMemberManagementPage}
+        component={GatedCtoRosterMemberManagementPage}
       />
-      <Route path="/cto-roster/drafts" component={CtoRosterDraftsListPage} />
+      <Route
+        path="/cto-roster/drafts"
+        component={GatedCtoRosterDraftsListPage}
+      />
       <Route
         path="/cto-roster/draft/:draftId/merge"
-        component={CtoRosterDraftMergePage}
+        component={GatedCtoRosterDraftMergePage}
       />
       <Route
         path="/cto-roster/draft/:draftId"
-        component={CtoRosterDraftRosterPage}
+        component={GatedCtoRosterDraftRosterPage}
       />
       <Route
         path="/cto-roster/saved-rosters"
-        component={CtoRosterSavedRostersListPage}
+        component={GatedCtoRosterSavedRostersListPage}
       />
       <Route
         path="/cto-roster/saved-roster/:id"
-        component={CtoRosterSavedRosterPage}
+        component={GatedCtoRosterSavedRosterPage}
       />
       <Route
         path="/cto-roster/ea-compliance"
-        component={CtoRosterEACompliancePage}
+        component={GatedCtoRosterEACompliancePage}
       />
-      <Route path="/cto-roster/outlook" component={CtoRosterOutlookPage} />
-      <Route path="/cto-roster/audit" component={CtoRosterAuditLogPage} />
+      <Route path="/cto-roster/outlook" component={GatedCtoRosterOutlookPage} />
+      <Route path="/cto-roster/audit" component={GatedCtoRosterAuditLogPage} />
       <Route path="/operation-management" component={OperationManagementPage} />
       <Route path="/calendar" component={CalendarPage} />
       <Route path="/court/statements" component={StatementsPage} />
@@ -267,7 +326,7 @@ function Router() {
       />
       <Route
         path="/reports/weekly-tasking"
-        component={WeeklyTaskingReportPage}
+        component={GatedWeeklyTaskingReportPage}
       />
       <Route path="/audit" component={AuditLogPage} />
       <Route path="/admin" component={AdminPage} />
@@ -288,7 +347,7 @@ function Router() {
       <Route path="/administration/intel-export" component={IntelExportPage} />
       <Route
         path="/administration/vehicle-crash"
-        component={VehicleCrashPage}
+        component={GatedVehicleCrashPage}
       />
       <Route path="/administration/uco-guide" component={UcoGuideListPage} />
       <Route path="/administration/uco-guide/new" component={UcoGuideNewPage} />

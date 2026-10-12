@@ -142,3 +142,7 @@ server/externalIntel/models/eng.traineddata
 /test-results/
 /playwright-report/
 /playwright/.cache/
+
+# Zero-data script output (scripts/ops/zero-data.mjs)
+backups/
+uploads.pre-zero-*/

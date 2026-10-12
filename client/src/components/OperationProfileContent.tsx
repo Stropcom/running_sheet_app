@@ -703,7 +703,7 @@ export function OperationProfileContent({
                     value: typedProfile.linkedSheets.length,
                   },
                   {
-                    label: "Total Associations",
+                    label: "Associations",
                     value: typedProfile.targets.reduce(
                       (s, t) =>
                         s +
@@ -714,11 +714,14 @@ export function OperationProfileContent({
                     ),
                   },
                 ].map(stat => (
-                  <div key={stat.label} className="px-4 py-3 text-center">
+                  <div
+                    key={stat.label}
+                    className="px-2 py-3 text-center sm:px-4"
+                  >
                     <p className="text-xl font-bold text-blue-900 dark:text-blue-300">
                       {stat.value}
                     </p>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide sm:tracking-wider">
                       {stat.label}
                     </p>
                   </div>
@@ -750,14 +753,20 @@ export function OperationProfileContent({
                     refId={l.targetId}
                   >
                     <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                    <span className="text-xs font-medium text-foreground flex-1 min-w-0 break-words">
-                      {l.targetName}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400 shrink-0">
-                      <Folder className="w-3 h-3" />
-                      {l.otherOperationName}
-                      <span className="text-xs uppercase tracking-wide opacity-70">
-                        {sharedLinkChipText(l.via, l.sharedValue)}
+                    {/* Name and link side by side from sm up; stacked on a
+                        phone so the name never gets squeezed to a sliver. */}
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-3">
+                      <span className="text-xs font-medium text-foreground min-w-0 break-words sm:flex-1">
+                        {l.targetName}
+                      </span>
+                      <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-amber-700 dark:text-amber-400">
+                        <Folder className="w-3 h-3 shrink-0" />
+                        <span className="font-semibold">
+                          {l.otherOperationName}
+                        </span>
+                        <span className="text-xs uppercase tracking-wide opacity-70">
+                          {sharedLinkChipText(l.via, l.sharedValue)}
+                        </span>
                       </span>
                     </span>
                   </ProfileDropdownRow>

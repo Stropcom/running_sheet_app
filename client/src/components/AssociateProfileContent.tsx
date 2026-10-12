@@ -424,11 +424,13 @@ export function AssociateProfileContent({
                         }
                       >
                         <Folder className="w-3 h-3 shrink-0" />
-                        <span className="min-w-0 break-words">
-                          {l.operationName}
-                        </span>
-                        <span className="text-xs uppercase tracking-wide opacity-70 flex-1 min-w-0">
-                          {sharedLinkChipText(l.via, l.sharedValue)}
+                        <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-1.5">
+                          <span className="min-w-0 break-words">
+                            {l.operationName}
+                          </span>
+                          <span className="min-w-0 text-xs uppercase tracking-wide opacity-70 sm:flex-1">
+                            {sharedLinkChipText(l.via, l.sharedValue)}
+                          </span>
                         </span>
                       </ProfileDropdownRow>
                     ))}

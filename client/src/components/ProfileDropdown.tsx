@@ -113,7 +113,7 @@ export function ProfileDropdownRow({
       {belowHeader}
       {open && (
         <div
-          className="mt-2 rounded-lg border border-primary/40 bg-card px-3 pb-3"
+          className="mt-2 rounded-lg border border-primary/40 bg-card px-1.5 pb-2 sm:px-3 sm:pb-3"
           onClick={e => e.stopPropagation()}
         >
           <InsideProfileDropdown.Provider value={true}>

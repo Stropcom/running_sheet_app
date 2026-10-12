@@ -790,13 +790,16 @@ export function TargetProfileContent({
                   }
                 >
                   <Folder className="w-3 h-3 shrink-0" />
-                  <span className="min-w-0 break-words">{op.name}</span>
-                  <span className="text-xs uppercase tracking-wide opacity-70 flex-1 min-w-0">
-                    {op.kind === "shared"
-                      ? op.links
-                          .map(l => sharedLinkChipText(l.via, l.sharedValue))
-                          .join(" · ")
-                      : `${shortPersonName(profile.name)} mentioned`}
+                  {/* Stacked on a phone, side by side from sm up. */}
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-1.5">
+                    <span className="min-w-0 break-words">{op.name}</span>
+                    <span className="min-w-0 text-xs uppercase tracking-wide opacity-70 sm:flex-1">
+                      {op.kind === "shared"
+                        ? op.links
+                            .map(l => sharedLinkChipText(l.via, l.sharedValue))
+                            .join(" · ")
+                        : `${shortPersonName(profile.name)} mentioned`}
+                    </span>
                   </span>
                 </ProfileDropdownRow>
               ))}

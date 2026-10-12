@@ -351,7 +351,7 @@ function TargetBlock({
       name={a.name}
       isIndicesOnly={a.isIndicesOnly}
       kind={kind}
-      sub={registryPersonAddresses(a.hbf, a.extraAddresses)[0]}
+      sub={registryPersonAddresses(a.hbf, a.extraAddresses).join("\n")}
       anchorId={embedded ? undefined : `p-t${target.targetId}-${a.id}`}
     />
   );

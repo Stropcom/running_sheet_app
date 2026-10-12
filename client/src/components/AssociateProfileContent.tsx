@@ -20,6 +20,10 @@ import {
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import { EntityPhotosSection } from "@/components/EntityPhotosSection";
 import {
+  extraAddressHeading,
+  parseExtraAddresses,
+} from "@shared/extraAddresses";
+import {
   buildPhotoGridHtml,
   buildEntityListWithPhotosHtml,
   type RowAttachmentLike,
@@ -94,18 +98,19 @@ function registeredDetailRows(p: IntelAssociateProfile) {
       return [];
     }
   };
-  const addresses = [p.hbf?.trim() || "", ...parse(p.extraAddresses)].filter(
-    Boolean
-  );
+  const addresses = [
+    { label: "", value: p.hbf?.trim() || "" },
+    ...parseExtraAddresses(p.extraAddresses),
+  ].filter(a => a.value);
   const vehicles = [p.v1f?.trim() || "", ...parse(p.extraVehicles)].filter(
     Boolean
   );
   // Shown in the Intelligence format (rego, colour, make, model, type), the
   // same as on a target's profile — not the long registry description.
   return [
-    ...addresses.map((v, i) => ({
-      label: i === 0 ? "Home Address" : `Address ${i + 1}`,
-      value: formatIntelAddress(v),
+    ...addresses.map((a, i) => ({
+      label: i === 0 ? "Home Address" : extraAddressHeading(a.label, i + 1),
+      value: formatIntelAddress(a.value),
     })),
     ...vehicles.map((v, i) => ({
       label: vehicles.length > 1 ? `Vehicle ${i + 1}` : "Vehicle",

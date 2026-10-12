@@ -9,6 +9,7 @@
  */
 
 import { useState, useRef, useEffect } from "react";
+import { labelledImportedBackground } from "@shared/targetBackground";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -413,6 +414,23 @@ export function AddTargetDialog({
   const [dep, setDep] = useState("");
   const [arr, setArr] = useState("");
   const [registryBackground, setRegistryBackground] = useState("");
+  // A document import's narrative is copied into the Background box, labelled
+  // "From <Operation> document:" so a target imported from several operations'
+  // documents keeps each story apart. It is re-labelled if the operation
+  // changes, but only while the officer hasn't touched the box.
+  const seededBackgroundRef = useRef("");
+  useEffect(() => {
+    if (!open) return;
+    const seeded = labelledImportedBackground(
+      initialBackground,
+      operation?.name
+    );
+    setRegistryBackground(current =>
+      current === seededBackgroundRef.current ? seeded : current
+    );
+    seededBackgroundRef.current = seeded;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialBackground, operation?.name]);
   const [extraAddresses, setExtraAddresses] = useState<ExtraAddress[]>(
     () => initialExtraAddresses ?? []
   );
@@ -622,6 +640,7 @@ export function AddTargetDialog({
     setExtraVehicles([]);
     setAssociates([]);
     setRegistryBackground("");
+    seededBackgroundRef.current = "";
     setStagedWarn(null);
     stagedCheckedRef.current = {};
     setManualImages([]);

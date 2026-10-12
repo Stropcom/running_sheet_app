@@ -15,3 +15,23 @@ export function normaliseTargetBackground(input: string): string | null {
   const text = input.replace(/\r\n?/g, "\n").trim();
   return text.length > 0 ? text.slice(0, TARGET_BACKGROUND_MAX) : null;
 }
+
+/** The heading put above a document's narrative when it is copied into the
+ * Background, so a target imported from several operations' documents keeps
+ * each story apart: "From Operation X document:". With no operation name
+ * (not picked yet) it reads "From imported document:". */
+export function importedBackgroundLabel(operationName?: string | null): string {
+  const name = operationName?.trim();
+  return name ? `From ${name} document:` : "From imported document:";
+}
+
+/** The document's narrative with its label above it, ready to drop into the
+ * Background box. An empty narrative gives "" (nothing to seed). */
+export function labelledImportedBackground(
+  narrative: string | null | undefined,
+  operationName?: string | null
+): string {
+  const text = (narrative ?? "").replace(/\r\n?/g, "\n").trim();
+  if (!text) return "";
+  return `${importedBackgroundLabel(operationName)}\n${text}`;
+}

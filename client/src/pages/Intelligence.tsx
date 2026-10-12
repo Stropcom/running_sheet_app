@@ -2150,14 +2150,7 @@ export default function IntelligencePage() {
         )}
 
         {/* Heat Map tab content */}
-        {activeTab === "heatmap" && (
-          <div
-            className="-mx-4 -mb-4 flex-1"
-            style={{ height: "calc(100vh - 260px)" }}
-          >
-            <IntelligenceHeatMap />
-          </div>
-        )}
+        {activeTab === "heatmap" && <IntelligenceHeatMap />}
 
         {/* Pattern of Life tab content — unlike Heat Map/Ego Network/Packages
             this isn't a canvas that needs to fill the viewport, it's a
@@ -2169,15 +2162,10 @@ export default function IntelligencePage() {
 
         {/* Ego Network tab content */}
         {activeTab === "egonet" && (
-          <div
-            className="-mx-4 -mb-4 flex-1"
-            style={{ height: "calc(100vh - 260px)" }}
-          >
-            <EgoNetworkMap
-              initialOperationId={deepLinkOperationId}
-              initialSheetId={deepLinkSheetId}
-            />
-          </div>
+          <EgoNetworkMap
+            initialOperationId={deepLinkOperationId}
+            initialSheetId={deepLinkSheetId}
+          />
         )}
 
         {/* Packages tab content */}

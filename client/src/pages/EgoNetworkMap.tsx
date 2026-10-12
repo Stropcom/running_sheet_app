@@ -24,7 +24,6 @@ import {
 } from "@/lib/egoNetworkLayout";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -34,7 +33,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { X, ChevronRight, RefreshCw, FileDown } from "lucide-react";
+import { ChevronRight, RefreshCw, FileDown, Radar } from "lucide-react";
+import {
+  ROW_ITEM,
+  SECTION_BAND,
+  SECTION_CARD,
+  SECTION_COUNT,
+  SECTION_TITLE,
+} from "@/lib/pageKit";
+import { FORM_LABEL } from "@/lib/formKit";
+import { displayPersonName } from "@/components/ProfileKit";
 
 /** Group headers for the focus-entity dropdown — matches the Intelligence
  * Folder's own tab label ("Locations") rather than ENTITY_LABELS' plural
@@ -393,6 +401,11 @@ export default function EgoNetworkMap({
 
   const radiusFor = egoNodeRadius;
 
+  /** A name as it reads on the canvas: no ", born …" and no repeated
+   * "(SURNAME)" — the list beside it keeps the full form. */
+  const canvasName = (label: string) =>
+    displayPersonName(label).replace(/\s*\([^()]*\)\s*$/, "");
+
   // Recomputed at the fixed print radii rather than reusing `placed` — the
   // on-screen layout is scaled to the viewport, so exporting it directly
   // would bake the current window size into the PDF.
@@ -441,426 +454,484 @@ export default function EgoNetworkMap({
     sheetsInOperation,
   ]);
 
-  return (
-    <div className="flex flex-col h-full">
-      {/* ── Top bar ─────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-border bg-card shrink-0">
-        <span className="text-sm font-semibold text-foreground mr-1">
-          Ego Network
-        </span>
-        {/* Plain divider, not the shared Separator component — Separator's
-            own data-[orientation=vertical]:h-full default beats a "h-5"
-            override in the generated CSS, and h-full inside a *wrapping*
-            flex row (this bar wraps to several lines on narrow screens)
-            resolves to a wildly oversized height, throwing off every row
-            after it. */}
-        <div className="h-5 w-px bg-border shrink-0" />
+  const directCount = ring1Ids.length + hiddenRing1Count;
 
-        <Select
-          value={operationId != null ? String(operationId) : "all"}
-          onValueChange={v => {
-            setOperationId(v === "all" ? null : Number(v));
-            setSheetId(null);
-          }}
+  /** The focus entity's direct links, ranked: click one to re-centre on it. */
+  const linksPanel = (
+    <aside
+      aria-label="Direct links"
+      className={
+        isCompact
+          ? "flex flex-col"
+          : "flex w-[320px] shrink-0 flex-col border-l border-border"
+      }
+    >
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/70 px-3.5 py-2.5">
+        <span className="text-[13px] font-bold uppercase tracking-wide text-foreground">
+          Direct links
+        </span>
+        {focusNode && <span className={SECTION_COUNT}>{directCount}</span>}
+      </div>
+      <div className="flex max-h-[420px] min-h-[120px] flex-1 flex-col gap-1.5 overflow-y-auto p-2.5">
+        {!focusNode && (
+          <p className="px-1 py-2 text-sm text-muted-foreground">
+            Pick a focus entity above to see its direct links.
+          </p>
+        )}
+        {focusNode && placed.length === 0 && (
+          <p className="px-1 py-2 text-sm text-muted-foreground">
+            This entity has no recorded co-occurrences.
+          </p>
+        )}
+        {placed.map(p => (
+          <button
+            key={p.node.id}
+            onClick={() => recenter(p.node.id)}
+            title={`${p.node.label} — click to focus`}
+            className={`${ROW_ITEM} grid w-full grid-cols-[12px_minmax(0,1fr)_auto_auto] items-center gap-2.5 px-2.5 py-2 text-left transition-colors hover:bg-muted/60 ${
+              p.hop === 2 ? "opacity-70" : ""
+            }`}
+          >
+            <span
+              className="h-3 w-3 rounded-full"
+              style={{
+                background: NODE_COLORS[p.node.type] ?? NODE_COLORS.unknown,
+              }}
+            />
+            <span className="min-w-0">
+              <span className="block break-words text-[13px] font-semibold leading-snug text-foreground">
+                {displayPersonName(p.node.label)}
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                {ENTITY_LABELS[p.node.type] ?? p.node.type}
+                {p.hop === 2 ? " · second degree" : ""}
+              </span>
+            </span>
+            <span className="font-mono text-xs font-bold tabular-nums text-muted-foreground">
+              {p.hop === 1 ? `${p.weight}×` : ""}
+            </span>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+        ))}
+      </div>
+    </aside>
+  );
+
+  /** Colour key, as a strip under the canvas. */
+  const legendStrip = (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border bg-card px-3.5 py-2.5 text-xs text-muted-foreground">
+      {ENTITY_TYPES.map(t => (
+        <span
+          key={t}
+          className="inline-flex items-center gap-1.5 font-semibold"
         >
-          <SelectTrigger className="w-44 h-8 text-xs">
-            <SelectValue placeholder="All operations" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All operations</SelectItem>
-            {(operations ?? []).map(op => (
-              <SelectItem key={op.id} value={String(op.id)}>
-                {op.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <span
+            className="h-2.5 w-2.5 rounded-full"
+            style={{ background: NODE_COLORS[t] }}
+          />
+          {ENTITY_LABELS[t]}
+        </span>
+      ))}
+      <span className="sm:ml-auto">
+        Inner ring = direct links. Outer ring = one step further.
+      </span>
+    </div>
+  );
+
+  return (
+    <section className={SECTION_CARD} aria-labelledby="ego-network-title">
+      {/* ── Title band: what this is, how much is shown, the two actions ── */}
+      <div className={`${SECTION_BAND} flex-wrap justify-between`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 id="ego-network-title" className={SECTION_TITLE}>
+            Ego Network
+          </h2>
+          {focusNode && (
+            <span className={SECTION_COUNT}>
+              {directCount} direct link{directCount === 1 ? "" : "s"}
+              {hops === 2 &&
+                ` · ${placed.length - ring1Placed.length} second-degree`}
+              {hiddenRing2Count > 0 && ` · ${hiddenRing2Count} not shown`}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            className="h-9 min-w-28 gap-1.5"
+            disabled={!focusNode}
+            onClick={handleExport}
+          >
+            <FileDown className="h-4 w-4" />
+            Export PDF
+          </Button>
+          <Button
+            variant="outline"
+            className="h-9 min-w-28 gap-1.5"
+            onClick={() => refetch()}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {/* ── Filters: equal columns ─────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-3 pb-4 sm:grid-cols-2 lg:grid-cols-4 lg:items-end">
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className={FORM_LABEL}>Operation</span>
+          <Select
+            value={operationId != null ? String(operationId) : "all"}
+            onValueChange={v => {
+              setOperationId(v === "all" ? null : Number(v));
+              setSheetId(null);
+            }}
+          >
+            <SelectTrigger className="h-10 w-full">
+              <SelectValue placeholder="All operations" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All operations</SelectItem>
+              {(operations ?? []).map(op => (
+                <SelectItem key={op.id} value={String(op.id)}>
+                  {op.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         {/* Running sheet only makes sense once an operation narrows the
             list — disabled rather than hidden so the control doesn't jump
             around as the officer picks an operation. */}
-        <Select
-          value={sheetId != null ? String(sheetId) : "all"}
-          onValueChange={v => setSheetId(v === "all" ? null : Number(v))}
-          disabled={operationId == null}
-        >
-          <SelectTrigger className="w-48 h-8 text-xs">
-            <SelectValue placeholder="All running sheets" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All running sheets</SelectItem>
-            {(sheetsInOperation ?? []).map(s => (
-              <SelectItem key={s.id} value={String(s.id)}>
-                {s.title}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Focus entity — placed right after the Operation/Running Sheet
-            scope so all three read as one "narrow down, then pick" group.
-            Replaces the old plain "Focus: <name>" readout, which is now
-            redundant with this dropdown showing the same thing. */}
-        <Select
-          value={focusId ?? undefined}
-          onValueChange={v => {
-            recenter(v);
-            if (isCompact) setMobilePanel("map");
-          }}
-        >
-          <SelectTrigger className="w-52 h-8 text-xs">
-            <SelectValue placeholder="Select focus entity…" />
-          </SelectTrigger>
-          <SelectContent>
-            {entityGroups.map(g => (
-              <SelectGroup key={g.type}>
-                <SelectLabel>{g.label}</SelectLabel>
-                {g.nodes.map(n => (
-                  <SelectItem key={n.id} value={n.id}>
-                    {n.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <div className="h-5 w-px bg-border shrink-0" />
-
-        {/* Hop depth */}
-        <div className="inline-flex rounded-lg border border-border overflow-hidden">
-          {([1, 2] as const).map(h => (
-            <button
-              key={h}
-              onClick={() => setHops(h)}
-              className={`px-2.5 py-1 text-xs font-semibold transition-colors ${
-                hops === h
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-accent/30"
-              }`}
-            >
-              {h} hop{h > 1 ? "s" : ""}
-            </button>
-          ))}
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className={FORM_LABEL}>Running sheet</span>
+          <Select
+            value={sheetId != null ? String(sheetId) : "all"}
+            onValueChange={v => setSheetId(v === "all" ? null : Number(v))}
+            disabled={operationId == null}
+          >
+            <SelectTrigger className="h-10 w-full">
+              <SelectValue placeholder="All running sheets" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All running sheets</SelectItem>
+              {(sheetsInOperation ?? []).map(s => (
+                <SelectItem key={s.id} value={String(s.id)}>
+                  {s.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="ml-auto flex items-center gap-1.5">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 gap-1.5 text-xs"
-            disabled={!focusNode}
-            onClick={handleExport}
+        {/* Focus entity — right after the Operation / Running Sheet scope so
+            all three read as one "narrow down, then pick" group. */}
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className={FORM_LABEL}>Focus entity</span>
+          <Select
+            value={focusId ?? undefined}
+            onValueChange={v => {
+              recenter(v);
+              if (isCompact) setMobilePanel("map");
+            }}
           >
-            <FileDown className="w-3.5 h-3.5" />
-            Export
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="w-7 h-7"
-            onClick={() => refetch()}
+            <SelectTrigger className="h-10 w-full">
+              <SelectValue placeholder="Select focus entity…" />
+            </SelectTrigger>
+            <SelectContent>
+              {entityGroups.map(g => (
+                <SelectGroup key={g.type}>
+                  <SelectLabel>{g.label}</SelectLabel>
+                  {g.nodes.map(n => (
+                    <SelectItem key={n.id} value={n.id}>
+                      {displayPersonName(n.label)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Hop depth: two equal halves */}
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className={FORM_LABEL} id="ego-reach-label">
+            Reach
+          </span>
+          <div
+            role="group"
+            aria-labelledby="ego-reach-label"
+            className="grid h-10 grid-cols-2 overflow-hidden rounded-md border border-input bg-background"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
-          </Button>
+            {([1, 2] as const).map(h => (
+              <button
+                key={h}
+                type="button"
+                aria-pressed={hops === h}
+                onClick={() => setHops(h)}
+                className={`border-r border-input text-sm font-bold transition-colors last:border-r-0 ${
+                  hops === h
+                    ? "bg-primary text-primary-foreground"
+                    : "text-foreground hover:bg-muted/60"
+                }`}
+              >
+                {h} hop{h > 1 ? "s" : ""}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* ── Compact panel switcher — phone/iPad only ────────────────────── */}
       {isCompact && (
-        <div className="px-4 py-2 border-b border-border bg-card shrink-0">
+        <div className="flex flex-col gap-1 pb-3">
+          <span className={FORM_LABEL}>Show</span>
           <Select
             value={mobilePanel}
             onValueChange={v => setMobilePanel(v as typeof mobilePanel)}
           >
-            <SelectTrigger className="w-full h-9 text-sm">
+            <SelectTrigger className="h-10 w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="info">Focus entity</SelectItem>
+              <SelectItem value="info">Direct links</SelectItem>
               <SelectItem value="map">Map</SelectItem>
             </SelectContent>
           </Select>
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* ── Left: focus entity picker, its details, and direct links ────── */}
-        {(!isCompact || mobilePanel === "info") && (
-          <div
-            className={
-              isCompact
-                ? "w-full flex flex-col overflow-hidden"
-                : "w-64 shrink-0 border-r border-border bg-card flex flex-col overflow-hidden"
-            }
-          >
-            <div className="px-3 py-2.5 border-b border-border">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                {focusNode
-                  ? `Direct links (${ring1Ids.length + hiddenRing1Count})`
-                  : "Direct links"}
-              </p>
-              {!focusNode && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Pick a focus entity above to see its direct links.
-                </p>
-              )}
-            </div>
-            <ScrollArea className="flex-1">
-              <div className="p-2 space-y-0.5">
-                {focusNode && placed.length === 0 && (
-                  <p className="text-xs text-muted-foreground px-1 py-2">
-                    This entity has no recorded co-occurrences.
-                  </p>
-                )}
-                {placed.map(p => (
-                  <button
-                    key={p.node.id}
-                    onClick={() => recenter(p.node.id)}
-                    className={`w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent/30 transition-colors ${
-                      p.hop === 2 ? "opacity-60" : ""
-                    }`}
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full shrink-0"
-                      style={{
-                        background:
-                          NODE_COLORS[p.node.type] ?? NODE_COLORS.unknown,
-                      }}
-                    />
-                    <span className="flex-1 min-w-0 text-xs text-foreground truncate">
-                      {p.node.label}
-                    </span>
-                    <span className="text-xs text-muted-foreground shrink-0 font-mono">
-                      {p.hop === 1 ? `${p.weight}×` : "2nd"}
-                    </span>
-                    <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
-                  </button>
-                ))}
-              </div>
-            </ScrollArea>
-
-            <div className="border-t border-border p-3 space-y-1.5">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Legend
-              </p>
-              <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-                {ENTITY_TYPES.map(t => (
-                  <div
-                    key={t}
-                    className="flex items-center gap-2 text-xs text-muted-foreground"
-                  >
-                    <span
-                      className="w-2.5 h-2.5 rounded-full shrink-0"
-                      style={{ background: NODE_COLORS[t] }}
-                    />
-                    {ENTITY_LABELS[t]}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-2 text-xs text-muted-foreground">
-                Inner ring = direct links. Outer ring = one step further.
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Ring canvas ─────────────────────────────────────────────────── */}
-        {/* Square, not "fill whatever's left" — a wide-but-short desktop
-            viewport used to clip 2nd-hop nodes at the top/bottom while
-            leaving spare room left/right. On desktop this scrolls
-            vertically instead of clipping when the resulting square is
-            taller than the visible viewport; the compact (phone/iPad)
-            panel keeps its original fill-the-space behaviour since that
-            layout was never the problem. */}
-        {(!isCompact || mobilePanel === "map") && (
-          <div
-            className={
-              isCompact
-                ? "flex-1 relative overflow-hidden bg-[#0f1117]"
-                : "flex-1 overflow-y-auto bg-[#0f1117]"
-            }
-          >
-            <div
-              ref={containerRef}
-              className={
-                isCompact ? "absolute inset-0" : "relative w-full aspect-square"
-              }
-            >
-              {isLoading && (
-                <div className="absolute inset-0 flex items-center justify-center z-10">
-                  <Spinner className="w-8 h-8 text-primary" />
-                </div>
-              )}
-
-              {!isLoading && !focusNode && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                  <p className="text-sm">
-                    {graphData?.nodes?.length
-                      ? "No entity focused."
-                      : "No entities available."}
-                  </p>
-                  <p className="text-xs">
-                    {graphData?.nodes?.length
-                      ? "Pick a focus entity from the dropdown above."
-                      : "Pick a focus entity once observations have been logged."}
-                  </p>
-                </div>
-              )}
-
-              {!isLoading && focusNode && (
-                <>
-                  <svg
-                    width={size.w}
-                    height={size.h}
-                    className="absolute inset-0"
-                  >
-                    {/* Hop-distance guides */}
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={ringRadii.ring1}
-                      fill="none"
-                      stroke="#262b36"
-                      strokeDasharray="4 4"
-                    />
-                    {hops === 2 && (
-                      <circle
-                        cx={cx}
-                        cy={cy}
-                        r={ringRadii.ring2}
-                        fill="none"
-                        stroke="#262b36"
-                        strokeDasharray="4 4"
-                      />
-                    )}
-
-                    {/* Edges */}
-                    {edges.map((e, i) => {
-                      const x1 = e.from ? cx + e.from.x : cx;
-                      const y1 = e.from ? cy + e.from.y : cy;
-                      const x2 = cx + e.to.x;
-                      const y2 = cy + e.to.y;
-                      return (
-                        <line
-                          key={i}
-                          x1={x1}
-                          y1={y1}
-                          x2={x2}
-                          y2={y2}
-                          stroke={e.hop === 1 ? "#cbd5e1" : "#3f4653"}
-                          strokeWidth={
-                            e.hop === 1
-                              ? Math.max(1, Math.min(4, e.to.weight * 0.9))
-                              : 1.2
-                          }
-                          strokeOpacity={e.hop === 1 ? 0.85 : 0.5}
-                        />
-                      );
-                    })}
-
-                    {/* Centre glow */}
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={30}
-                      fill={NODE_COLORS[focusNode.type] ?? NODE_COLORS.unknown}
-                      fillOpacity={0.16}
-                    />
-                  </svg>
-
-                  {/* Centre node */}
-                  <div
-                    className="absolute flex flex-col items-center gap-1.5 pointer-events-none"
-                    style={{
-                      left: cx,
-                      top: cy,
-                      transform: "translate(-50%, -50%)",
-                    }}
-                  >
-                    <span
-                      className="rounded-full"
-                      style={{
-                        width: 44,
-                        height: 44,
-                        background:
-                          NODE_COLORS[focusNode.type] ?? NODE_COLORS.unknown,
-                      }}
-                    />
-                    <span className="text-xs font-bold text-white bg-[#0f1117]/80 px-2 py-0.5 rounded whitespace-normal break-words text-center leading-tight line-clamp-2 max-w-[190px]">
-                      {focusNode.label}
-                    </span>
-                  </div>
-
-                  {/* Ring nodes */}
-                  {placed.map(p => (
-                    <button
-                      key={p.node.id}
-                      onClick={() => recenter(p.node.id)}
-                      title={`${p.node.label} — click to focus`}
-                      className="absolute flex flex-col items-center gap-1 group"
-                      style={{
-                        left: cx + p.x,
-                        top: cy + p.y,
-                        transform: "translate(-50%, -50%)",
-                      }}
-                    >
-                      <span
-                        className="rounded-full transition-transform group-hover:scale-125"
-                        style={{
-                          width: radiusFor(p.node, p.hop) * 2,
-                          height: radiusFor(p.node, p.hop) * 2,
-                          background:
-                            NODE_COLORS[p.node.type] ?? NODE_COLORS.unknown,
-                          opacity: p.hop === 1 ? 1 : 0.72,
-                        }}
-                      />
-                      {/* Wraps up to 2 lines (line-clamp-2) instead of
-                          truncating to one — a narrower max-width for hop-2
-                          keeps each label's own footprint smaller, which
-                          combined with computeEgoLayout's per-parent slot
-                          bound is what actually stops a busy branch's
-                          labels from overlapping its neighbours'. */}
-                      <span
-                        className={`whitespace-normal break-words px-1.5 py-0.5 rounded bg-[#0f1117]/75 text-center leading-tight line-clamp-2 ${
-                          p.hop === 1
-                            ? "text-[10.5px] text-slate-200 max-w-[128px]"
-                            : "text-[9px] text-slate-400 max-w-[100px]"
-                        }`}
-                      >
-                        {p.node.label}
-                      </span>
-                    </button>
-                  ))}
-
-                  {/* "+N more" chip for a crowded inner ring */}
-                  {hiddenRing1Count > 0 && (
-                    <button
-                      onClick={() => setExpandRing1(true)}
-                      className="absolute text-[10px] px-2 py-1 rounded-full border border-dashed border-slate-500 text-slate-300 hover:bg-slate-700/40 transition-colors"
-                      style={{
-                        left: cx,
-                        top: cy + ringRadii.ring1 + 34,
-                        transform: "translate(-50%, -50%)",
-                      }}
-                    >
-                      +{hiddenRing1Count} more direct
-                    </button>
+      {/* ── Canvas beside the ranked links (stacked on phone / iPad) ───── */}
+      <div className="-mx-4 -mb-4 flex flex-col overflow-hidden border-t border-border">
+        <div className={isCompact ? "" : "flex"}>
+          {(!isCompact || mobilePanel === "map") && (
+            <div className="min-w-0 flex-1">
+              {/* Square, not "fill whatever's left" — a wide-but-short
+                  desktop viewport used to clip 2nd-hop nodes at the top and
+                  bottom while leaving spare room left and right. The
+                  compact (phone/iPad) panel is a fixed tall box instead. */}
+              <div className="bg-muted/40">
+                <div
+                  ref={containerRef}
+                  className={
+                    isCompact
+                      ? "relative h-[68vh] min-h-[420px] w-full overflow-hidden"
+                      : "relative aspect-square max-h-[760px] w-full overflow-hidden"
+                  }
+                >
+                  {isLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center">
+                      <Spinner className="h-8 w-8 text-primary" />
+                    </div>
                   )}
 
-                  {/* Stats overlay */}
-                  <div className="absolute bottom-3 left-3 text-xs text-slate-500 pointer-events-none">
-                    {ring1Placed.length} direct
-                    {hops === 2 &&
-                      ` · ${placed.length - ring1Placed.length} second-degree`}
-                    {hiddenRing2Count > 0 && ` · ${hiddenRing2Count} not shown`}
-                  </div>
-                </>
-              )}
+                  {!isLoading && !focusNode && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
+                      <Radar className="h-8 w-8 opacity-40" />
+                      <p className="text-sm font-medium">
+                        {graphData?.nodes?.length
+                          ? "No entity focused."
+                          : "No entities available."}
+                      </p>
+                      <p className="text-sm">
+                        {graphData?.nodes?.length
+                          ? "Pick a focus entity from the list above."
+                          : "Pick a focus entity once observations have been logged."}
+                      </p>
+                    </div>
+                  )}
+
+                  {!isLoading && focusNode && (
+                    <>
+                      <svg
+                        width={size.w}
+                        height={size.h}
+                        className="absolute inset-0"
+                      >
+                        {/* Hop-distance guides */}
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r={ringRadii.ring1}
+                          fill="none"
+                          style={{ stroke: "var(--border)" }}
+                          strokeWidth={1.5}
+                          strokeDasharray="5 6"
+                        />
+                        {hops === 2 && (
+                          <circle
+                            cx={cx}
+                            cy={cy}
+                            r={ringRadii.ring2}
+                            fill="none"
+                            style={{ stroke: "var(--border)" }}
+                            strokeWidth={1.5}
+                            strokeDasharray="5 6"
+                          />
+                        )}
+
+                        {/* Edges */}
+                        {edges.map((e, i) => {
+                          const x1 = e.from ? cx + e.from.x : cx;
+                          const y1 = e.from ? cy + e.from.y : cy;
+                          const x2 = cx + e.to.x;
+                          const y2 = cy + e.to.y;
+                          return (
+                            <line
+                              key={i}
+                              x1={x1}
+                              y1={y1}
+                              x2={x2}
+                              y2={y2}
+                              style={{
+                                stroke:
+                                  e.hop === 1
+                                    ? "var(--muted-foreground)"
+                                    : "var(--border)",
+                              }}
+                              strokeLinecap="round"
+                              strokeWidth={
+                                e.hop === 1
+                                  ? Math.max(
+                                      1.5,
+                                      Math.min(5, e.to.weight * 0.9)
+                                    )
+                                  : 1.4
+                              }
+                              strokeOpacity={e.hop === 1 ? 0.6 : 0.9}
+                            />
+                          );
+                        })}
+
+                        {/* Centre glow */}
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r={34}
+                          fill={
+                            NODE_COLORS[focusNode.type] ?? NODE_COLORS.unknown
+                          }
+                          fillOpacity={0.18}
+                        />
+                      </svg>
+
+                      {/* Ring names, set on their rings between two spokes */}
+                      {[
+                        { r: ringRadii.ring1, text: "1 hop", show: true },
+                        {
+                          r: ringRadii.ring2,
+                          text: "2 hops",
+                          show: hops === 2,
+                        },
+                      ]
+                        .filter(l => l.show && !isCompact)
+                        .map(l => (
+                          <span
+                            key={l.text}
+                            className="pointer-events-none absolute whitespace-nowrap rounded-full border border-border bg-card px-2 py-0.5 text-xs font-bold text-muted-foreground"
+                            style={{
+                              left: cx + l.r * Math.cos(Math.PI / 8),
+                              top: cy + l.r * Math.sin(Math.PI / 8),
+                              transform: "translate(-50%, -50%)",
+                            }}
+                          >
+                            {l.text}
+                          </span>
+                        ))}
+
+                      {/* Centre node: the circle sits exactly on the centre
+                          (the edges run from it); the name sits above it, so
+                          it can never run into a ring node's own label. */}
+                      <div
+                        className="pointer-events-none absolute"
+                        style={{
+                          left: cx,
+                          top: cy,
+                          transform: "translate(-50%, -50%)",
+                        }}
+                      >
+                        <span
+                          className="block rounded-full border-[3px] border-card"
+                          style={{
+                            width: 44,
+                            height: 44,
+                            background:
+                              NODE_COLORS[focusNode.type] ??
+                              NODE_COLORS.unknown,
+                          }}
+                        />
+                        <span className="absolute bottom-[calc(100%+6px)] left-1/2 line-clamp-2 w-max max-w-[170px] -translate-x-1/2 whitespace-normal break-words rounded border border-border bg-card px-2 py-0.5 text-center text-xs font-bold leading-tight text-foreground">
+                          {canvasName(focusNode.label)}
+                        </span>
+                      </div>
+
+                      {/* Ring nodes */}
+                      {placed.map(p => (
+                        <button
+                          key={p.node.id}
+                          onClick={() => recenter(p.node.id)}
+                          title={`${p.node.label} — click to focus`}
+                          className="group absolute flex flex-col items-center gap-1"
+                          style={{
+                            left: cx + p.x,
+                            top: cy + p.y,
+                            transform: "translate(-50%, -50%)",
+                          }}
+                        >
+                          <span
+                            className="rounded-full border-[3px] border-card transition-transform group-hover:scale-125"
+                            style={{
+                              width: radiusFor(p.node, p.hop) * 2,
+                              height: radiusFor(p.node, p.hop) * 2,
+                              background:
+                                NODE_COLORS[p.node.type] ?? NODE_COLORS.unknown,
+                              opacity: p.hop === 1 ? 1 : 0.8,
+                            }}
+                          />
+                          {/* Wraps up to 2 lines (line-clamp-2) instead of
+                              truncating to one — a narrower max-width for
+                              hop-2 keeps each label's own footprint smaller,
+                              which combined with computeEgoLayout's
+                              per-parent slot bound is what stops a busy
+                              branch's labels overlapping its neighbours'. */}
+                          <span
+                            className={`line-clamp-2 whitespace-normal break-words rounded border border-border bg-card px-1.5 py-0.5 text-center text-xs leading-tight ${
+                              p.hop === 1
+                                ? "max-w-[124px] font-semibold text-foreground"
+                                : "max-w-[104px] text-muted-foreground"
+                            }`}
+                          >
+                            {canvasName(p.node.label)}
+                          </span>
+                        </button>
+                      ))}
+
+                      {/* "+N more" chip for a crowded inner ring */}
+                      {hiddenRing1Count > 0 && (
+                        <button
+                          onClick={() => setExpandRing1(true)}
+                          className="absolute rounded-full border border-dashed border-muted-foreground bg-card px-2.5 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
+                          style={{
+                            left: cx,
+                            top: cy + ringRadii.ring1 + 34,
+                            transform: "translate(-50%, -50%)",
+                          }}
+                        >
+                          +{hiddenRing1Count} more direct
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+              {legendStrip}
             </div>
-          </div>
-        )}
+          )}
+
+          {(!isCompact || mobilePanel === "info") && linksPanel}
+        </div>
       </div>
-    </div>
+    </section>
   );
 }

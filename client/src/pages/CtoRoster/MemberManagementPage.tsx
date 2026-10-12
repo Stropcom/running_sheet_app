@@ -56,6 +56,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { COMMAND_SHORT } from "@shared/commands";
 
 // Shift codes that are "personal" and may need to stay when changing teams
 const PERSONAL_SHIFT_OPTIONS = [
@@ -99,18 +100,20 @@ function AddMemberDialog({
   members: Member[];
 }) {
   const utils = trpc.useUtils();
-  const { data: allUsers } = trpc.users.listForCin.useQuery(undefined, {
-    enabled: open,
-  });
+  // This Command's own people, then visitors from other Commands (who can be
+  // on their own roster and on this one) — the server's list, so it matches
+  // what it will accept.
+  const { data: candidates } = trpc.ctoRoster.members.candidates.useQuery(
+    undefined,
+    { enabled: open }
+  );
   const [cin, setCin] = useState("");
   const [teamId, setTeamId] = useState<string>("");
 
   const availableUsers = useMemo(() => {
     const rosterCins = new Set(members.map(m => m.cin));
-    return (allUsers ?? [])
-      .filter(u => !rosterCins.has(u.cin))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [allUsers, members]);
+    return (candidates ?? []).filter(u => !rosterCins.has(u.cin));
+  }, [candidates, members]);
 
   const addMember = trpc.ctoRoster.members.add.useMutation({
     onSuccess: () => {
@@ -149,7 +152,8 @@ function AddMemberDialog({
             Add to Roster
           </DialogTitle>
           <DialogDescription>
-            Add an existing RunLog user to the CTO Roster.
+            Add someone from this Command, or a visitor from another Command, to
+            the CTO Roster. A visitor stays on their own Command's roster too.
           </DialogDescription>
         </DialogHeader>
 
@@ -172,13 +176,17 @@ function AddMemberDialog({
                 {availableUsers.map(u => (
                   <SelectItem key={u.cin} value={u.cin}>
                     {u.name} ({u.cin})
+                    {u.visiting
+                      ? ` · visiting from ${COMMAND_SHORT[u.command]}`
+                      : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             {availableUsers.length === 0 && (
               <p className="text-xs text-muted-foreground">
-                Every RunLog user is already on the roster.
+                Everyone in this Command, and everyone visiting it, is already
+                on the roster.
               </p>
             )}
           </div>

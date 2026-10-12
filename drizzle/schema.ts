@@ -1746,7 +1746,9 @@ export const ctoRosterMembers = mysqlTable(
   },
   t => [
     index("cto_roster_members_teamId_idx").on(t.teamId),
-    uniqueIndex("cto_roster_members_cin_idx").on(t.cin),
+    // A person is on at most one team per Command's roster. A visitor can be
+    // on their own Command's roster and on each host Command's.
+    uniqueIndex("cto_roster_members_cmd_cin_idx").on(t.command, t.cin),
   ]
 );
 export type CtoRosterMember = typeof ctoRosterMembers.$inferSelect;

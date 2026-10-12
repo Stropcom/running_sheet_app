@@ -9750,6 +9750,22 @@ export async function visitorTeamMap(
   return out;
 }
 
+/**
+ * The people from other Commands who are visiting a Command: someone it shared
+ * an operation (or all its operations) with by name, or put in one of its
+ * teams. Their home Command is somewhere else.
+ */
+export async function visitorUserIdsOf(
+  command: CommandCode
+): Promise<Set<number>> {
+  const out = new Set<number>();
+  for (const share of await listOperationShares({ fromCommand: command })) {
+    if (share.userCommand !== command) out.add(share.userId);
+  }
+  for (const a of await listVisitorTeams(command)) out.add(a.userId);
+  return out;
+}
+
 /** Put a visitor in a team of the hosting Command, or (null) take them out. */
 export async function setVisitorTeam(data: {
   userId: number;

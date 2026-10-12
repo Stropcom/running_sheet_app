@@ -52,7 +52,8 @@ import { systemRouter } from "./_core/systemRouter";
 import {
   getAllCtoRosterTeams,
   getAllCtoRosterMembers,
-  getCtoRosterMemberByCin,
+  getCtoRosterMembersByCin,
+  getCtoRosterCandidates,
   getCtoRosterShiftsForDateRange,
   getCtoRosterShiftsForMember,
   upsertCtoRosterShift,
@@ -8076,6 +8077,10 @@ export const appRouter = router({
         return getAllCtoRosterMembers();
       }),
 
+      /** Who can be added to this Command's roster (not already on it): its
+       * own people, and visitors from other Commands — admin only */
+      candidates: adminProcedure.query(async () => getCtoRosterCandidates()),
+
       /** Add an existing RunLog user (by CIN) to the roster — admin only */
       add: adminProcedure
         .input(z.object({ cin: z.string().min(1), teamId: z.number() }))
@@ -8233,16 +8238,19 @@ export const appRouter = router({
           })
         )
         .query(async ({ ctx, input }) => {
-          // Their own entry, whichever Command's roster it is on.
-          const me = ctx.user.cin
-            ? await getCtoRosterMemberByCin(ctx.user.cin)
-            : undefined;
-          if (!me) return [];
-          return getCtoRosterShiftsForMember(
-            me.id,
-            input.startDate,
-            input.endDate
+          // Their own entries, whichever Commands' rosters they are on (a
+          // visitor can be on their own and on a host Command's).
+          const mine = ctx.user.cin
+            ? await getCtoRosterMembersByCin(ctx.user.cin)
+            : [];
+          const shifts = await Promise.all(
+            mine.map(me =>
+              getCtoRosterShiftsForMember(me.id, input.startDate, input.endDate)
+            )
           );
+          return shifts
+            .flat()
+            .sort((a, b) => a.shiftDate.localeCompare(b.shiftDate));
         }),
 
       /** Update a single shift cell — admin only */

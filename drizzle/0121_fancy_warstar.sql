@@ -1,0 +1,2 @@
+ALTER TABLE `cto_roster_members` DROP INDEX `cto_roster_members_cin_idx`;--> statement-breakpoint
+ALTER TABLE `cto_roster_members` ADD CONSTRAINT `cto_roster_members_cmd_cin_idx` UNIQUE(`command`,`cin`);

@@ -21,6 +21,7 @@ import {
   getOpManagerPriorityBoard,
   getOpManagerTaskingCalendar,
   getOutstandingTodosByUser,
+  visitorUserIdsOf,
 } from "./db";
 import {
   ctoRosterTeams,
@@ -52,6 +53,7 @@ import {
 import { runEbaChecks, type ShiftRecord } from "./ctoRosterEbaEngine";
 import { computeShiftInterval } from "../shared/ctoRosterShiftDuration";
 import { rosterCommand, rosterCommandForWrite } from "./rosterContext";
+import { COMMAND_LABELS, type CommandCode } from "../shared/commands";
 
 // ── Per-Command scope ────────────────────────────────────────────────────────
 // Each Command has its own roster (see server/rosterScope.ts). Inside a
@@ -213,19 +215,18 @@ export async function getCtoRosterMembersByTeam(
   return all.filter(m => m.teamId === teamId);
 }
 
-/** A person's own roster entry, whichever Command's roster it is on — for
- * "My shifts", which is theirs wherever they are rostered. */
-export async function getCtoRosterMemberByCin(
+/** A person's own roster entries, whichever Commands' rosters they are on (a
+ * visitor can be on their own and on a host Command's) — for "My shifts",
+ * which is theirs wherever they are rostered. */
+export async function getCtoRosterMembersByCin(
   cin: string
-): Promise<CtoRosterMember | undefined> {
+): Promise<CtoRosterMember[]> {
   const db = await getDb();
-  if (!db) return undefined;
-  const rows = await db
+  if (!db) return [];
+  return db
     .select()
     .from(ctoRosterMembers)
-    .where(eq(ctoRosterMembers.cin, cin))
-    .limit(1);
-  return rows[0];
+    .where(eq(ctoRosterMembers.cin, cin));
 }
 
 /** Toggle whether a member counts toward ON DUTY / ON CALL headcount totals. */
@@ -241,6 +242,60 @@ export async function setCtoRosterMemberExcludedFromCounts(
     .where(eq(ctoRosterMembers.id, memberId));
 }
 
+type RosterEligibility = { ok: true } | { ok: false; message: string };
+
+/** Whether a person can go on a Command's roster: they are in that Command, or
+ * visiting it (given access by name, or put in one of its teams). */
+async function rosterEligibility(
+  command: CommandCode,
+  user: { id: number; name: string; command: string }
+): Promise<RosterEligibility> {
+  if (user.command === command) return { ok: true };
+  if ((await visitorUserIdsOf(command)).has(user.id)) return { ok: true };
+  const home =
+    COMMAND_LABELS[user.command as CommandCode] ?? `${user.command} Command`;
+  return {
+    ok: false,
+    message: `${user.name} is in ${home} and isn't visiting ${COMMAND_LABELS[command]}. Give them visiting access first (User Management → Share with), then add them.`,
+  };
+}
+
+export interface CtoRosterCandidate {
+  cin: string;
+  name: string;
+  command: CommandCode;
+  /** From another Command, visiting this one. */
+  visiting: boolean;
+}
+
+/** Who can be added to this Command's roster and isn't on it yet: its own
+ * people, then visitors from other Commands. */
+export async function getCtoRosterCandidates(): Promise<CtoRosterCandidate[]> {
+  const command = rosterCommandForWrite();
+  const [users, onRoster, visitors] = await Promise.all([
+    getAllRunLogUsers(),
+    getAllCtoRosterMembers(),
+    visitorUserIdsOf(command),
+  ]);
+  const taken = new Set(onRoster.map(m => m.cin));
+  const out: CtoRosterCandidate[] = [];
+  for (const u of users) {
+    if (u.archivedAt || !u.cin || taken.has(u.cin)) continue;
+    const home = u.command === command;
+    if (!home && !visitors.has(u.id)) continue;
+    out.push({
+      cin: u.cin,
+      name: u.name,
+      command: u.command as CommandCode,
+      visiting: !home,
+    });
+  }
+  return out.sort(
+    (a, b) =>
+      Number(a.visiting) - Number(b.visiting) || a.name.localeCompare(b.name)
+  );
+}
+
 /** Add an existing RunLog user (by CIN) to the roster under a team. */
 export async function addCtoRosterMember(
   cin: string,
@@ -250,18 +305,22 @@ export async function addCtoRosterMember(
   if (!db) throw new Error("DB not available");
   const user = await getUserByCin(cin);
   if (!user) throw new Error(`No RunLog user found with CIN ${cin}`);
-  // A person is on one roster only (the CIN is unique across Commands).
-  const alreadyOn = await db
-    .select({ command: ctoRosterMembers.command })
+  const command = rosterCommandForWrite();
+  // Who can be on this Command's roster: its own people, and people from
+  // other Commands who are visiting it.
+  const eligibility = await rosterEligibility(command, user);
+  if (!eligibility.ok) throw new Error(eligibility.message);
+  // One place on each Command's roster. (A visitor keeps their own roster
+  // place and can have one here as well.)
+  const alreadyHere = await db
+    .select({ id: ctoRosterMembers.id })
     .from(ctoRosterMembers)
-    .where(eq(ctoRosterMembers.cin, cin))
+    .where(
+      and(eq(ctoRosterMembers.cin, cin), eq(ctoRosterMembers.command, command))
+    )
     .limit(1);
-  if (alreadyOn.length > 0) {
-    throw new Error(
-      alreadyOn[0].command === rosterCommandForWrite()
-        ? `${user.name} is already on this roster.`
-        : `${user.name} is already on another Command's roster — remove them there first.`
-    );
+  if (alreadyHere.length > 0) {
+    throw new Error(`${user.name} is already on this roster.`);
   }
   const existing = await db
     .select()
@@ -269,7 +328,7 @@ export async function addCtoRosterMember(
     .where(eq(ctoRosterMembers.teamId, teamId));
   const maxSort = existing.reduce((m, r) => Math.max(m, r.sortOrder), 0);
   const [result] = await db.insert(ctoRosterMembers).values({
-    command: rosterCommandForWrite(),
+    command,
     cin,
     teamId,
     sortOrder: maxSort + 1,

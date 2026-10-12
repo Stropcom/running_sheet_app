@@ -1070,6 +1070,7 @@ export const auditLogs = mysqlTable("audit_logs", {
     "uco_guide_posted",
     "uco_guide_deleted",
     "target_background_updated",
+    "command_feature_changed",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),
@@ -2054,6 +2055,25 @@ export type CtoRosterOutlookSettings =
   typeof ctoRosterOutlookSettings.$inferSelect;
 export type InsertCtoRosterOutlookSettings =
   typeof ctoRosterOutlookSettings.$inferInsert;
+
+// ─── Command features (on/off per Command) ──────────────────────────────────
+// Only the switches that were changed need a row; no row means on. See
+// shared/commandFeatures.ts.
+export const commandFeatures = mysqlTable(
+  "command_features",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    command: rosterCommandColumn(),
+    feature: varchar("feature", { length: 32 }).notNull(),
+    enabled: boolean("enabled").default(true).notNull(),
+    updatedByCIN: varchar("updatedByCIN", { length: 64 }),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  t => [
+    uniqueIndex("command_features_cmd_feature_idx").on(t.command, t.feature),
+  ]
+);
+export type CommandFeatureRow = typeof commandFeatures.$inferSelect;
 
 // ─── CTO Roster: EBA Rules (EA compliance engine config) ────────────────────
 export const ctoRosterEbaRules = mysqlTable("cto_roster_eba_rules", {

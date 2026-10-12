@@ -12,6 +12,7 @@ import {
 import { intelScope } from "../intelScope";
 import { enforceRosterAccess } from "../rosterScope";
 import { rosterScope } from "../rosterContext";
+import { enforceFeatureAccess } from "../commandFeatures";
 import {
   ROSTER_COMMAND_HEADER,
   resolveRosterCommand,
@@ -187,6 +188,8 @@ const requireUser = t.middleware(async opts => {
 const rosterScopeMiddleware = t.middleware(async opts => {
   const { ctx, next, path, getRawInput } = opts;
   if (!ctx.user) return next();
+  // A feature switched off for the person's Command is refused outright.
+  await enforceFeatureAccess(ctx.user, path);
   const command = resolveRosterCommand(
     ctx.user,
     ctx.req?.headers?.[ROSTER_COMMAND_HEADER]

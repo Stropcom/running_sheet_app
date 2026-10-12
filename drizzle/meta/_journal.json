@@ -855,6 +855,13 @@
       "when": 1791785870014,
       "tag": "0121_fancy_warstar",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "5",
+      "when": 1791786207082,
+      "tag": "0122_bitter_mandarin",
+      "breakpoints": true
     }
   ]
 }

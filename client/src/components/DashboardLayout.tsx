@@ -1,5 +1,6 @@
 import { RosterCommandBar, isRosterPath } from "@/components/RosterCommandBar";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useCommandFeatures } from "@/lib/commandFeatures";
 import { trpc } from "@/lib/trpc";
 import { APP_VERSION } from "@shared/const";
 import {
@@ -216,6 +217,7 @@ function SortableNavItem({
     transition,
     isDragging,
   } = useSortable({ id });
+  const features = useCommandFeatures();
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -555,101 +557,113 @@ function SortableNavItem({
         </SidebarMenuButton>
         {opManagerExpanded && !isCollapsed && (
           <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
-            <button
-              onClick={() => setLocation("/operation-manager")}
-              className={subItemClass(
-                location.startsWith("/operation-manager")
-              )}
-            >
-              <ClipboardList className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-              CTO Weekly Tasking
-            </button>
-            <button
-              data-nav-toggle="cto-roster"
-              onClick={e => {
-                const willExpand = !ctoRosterSubExpanded;
-                setCtoRosterSubExpanded(v => !v);
-                if (willExpand)
-                  scrollToggleNearTop(
-                    sidebarScrollRef.current,
-                    e.currentTarget
-                  );
-              }}
-              className={subItemClass(location.startsWith("/cto-roster"))}
-            >
-              <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-              <span className="flex-1">CTO Roster</span>
-              {ctoRosterSubExpanded ? (
-                <ChevronDown className="h-3 w-3 text-sidebar-foreground/40" />
-              ) : (
-                <ChevronRight className="h-3 w-3 text-sidebar-foreground/40" />
-              )}
-            </button>
-            {ctoRosterSubExpanded && (
-              <div className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5">
+            {features.tasking && (
+              <button
+                onClick={() => setLocation("/operation-manager")}
+                className={subItemClass(
+                  location.startsWith("/operation-manager")
+                )}
+              >
+                <ClipboardList className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                CTO Weekly Tasking
+              </button>
+            )}
+            {features.roster && (
+              <>
                 <button
-                  onClick={() => setLocation("/cto-roster")}
-                  className={subItemClass(location === "/cto-roster")}
+                  data-nav-toggle="cto-roster"
+                  onClick={e => {
+                    const willExpand = !ctoRosterSubExpanded;
+                    setCtoRosterSubExpanded(v => !v);
+                    if (willExpand)
+                      scrollToggleNearTop(
+                        sidebarScrollRef.current,
+                        e.currentTarget
+                      );
+                  }}
+                  className={subItemClass(location.startsWith("/cto-roster"))}
                 >
                   <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                  Roster
-                </button>
-                <button
-                  onClick={() => setLocation("/cto-roster/my-shifts")}
-                  className={subItemClass(location === "/cto-roster/my-shifts")}
-                >
-                  <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                  My Shifts
-                </button>
-                <button
-                  onClick={() => setLocation("/cto-roster/outlook")}
-                  className={subItemClass(location === "/cto-roster/outlook")}
-                >
-                  <Binoculars className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                  Outlook
-                </button>
-                <button
-                  onClick={() => setLocation("/cto-roster/drafts")}
-                  className={subItemClass(
-                    location.startsWith("/cto-roster/draft")
+                  <span className="flex-1">CTO Roster</span>
+                  {ctoRosterSubExpanded ? (
+                    <ChevronDown className="h-3 w-3 text-sidebar-foreground/40" />
+                  ) : (
+                    <ChevronRight className="h-3 w-3 text-sidebar-foreground/40" />
                   )}
-                >
-                  <FileEdit className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                  Drafts
                 </button>
-                <button
-                  onClick={() => setLocation("/cto-roster/saved-rosters")}
-                  className={subItemClass(
-                    location.startsWith("/cto-roster/saved-roster")
-                  )}
-                >
-                  <BookOpen className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                  Saved Rosters
-                </button>
-                <button
-                  onClick={() => setLocation("/cto-roster/ea-compliance")}
-                  className={subItemClass(
-                    location === "/cto-roster/ea-compliance"
-                  )}
-                >
-                  <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                  EA Compliance
-                </button>
-                <button
-                  onClick={() => setLocation("/cto-roster/audit")}
-                  className={subItemClass(location === "/cto-roster/audit")}
-                >
-                  <ScrollText className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                  Audit Log
-                </button>
-                <button
-                  onClick={() => setLocation("/cto-roster/members")}
-                  className={subItemClass(location === "/cto-roster/members")}
-                >
-                  <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-                  Members
-                </button>
-              </div>
+                {ctoRosterSubExpanded && (
+                  <div className="ml-4 border-l border-sidebar-border/40 pl-3 flex flex-col gap-0.5 mb-0.5">
+                    <button
+                      onClick={() => setLocation("/cto-roster")}
+                      className={subItemClass(location === "/cto-roster")}
+                    >
+                      <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                      Roster
+                    </button>
+                    <button
+                      onClick={() => setLocation("/cto-roster/my-shifts")}
+                      className={subItemClass(
+                        location === "/cto-roster/my-shifts"
+                      )}
+                    >
+                      <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                      My Shifts
+                    </button>
+                    <button
+                      onClick={() => setLocation("/cto-roster/outlook")}
+                      className={subItemClass(
+                        location === "/cto-roster/outlook"
+                      )}
+                    >
+                      <Binoculars className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                      Outlook
+                    </button>
+                    <button
+                      onClick={() => setLocation("/cto-roster/drafts")}
+                      className={subItemClass(
+                        location.startsWith("/cto-roster/draft")
+                      )}
+                    >
+                      <FileEdit className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                      Drafts
+                    </button>
+                    <button
+                      onClick={() => setLocation("/cto-roster/saved-rosters")}
+                      className={subItemClass(
+                        location.startsWith("/cto-roster/saved-roster")
+                      )}
+                    >
+                      <BookOpen className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                      Saved Rosters
+                    </button>
+                    <button
+                      onClick={() => setLocation("/cto-roster/ea-compliance")}
+                      className={subItemClass(
+                        location === "/cto-roster/ea-compliance"
+                      )}
+                    >
+                      <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                      EA Compliance
+                    </button>
+                    <button
+                      onClick={() => setLocation("/cto-roster/audit")}
+                      className={subItemClass(location === "/cto-roster/audit")}
+                    >
+                      <ScrollText className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                      Audit Log
+                    </button>
+                    <button
+                      onClick={() => setLocation("/cto-roster/members")}
+                      className={subItemClass(
+                        location === "/cto-roster/members"
+                      )}
+                    >
+                      <Users className="h-3.5 w-3.5 shrink-0 text-purple-500" />
+                      Members
+                    </button>
+                  </div>
+                )}
+              </>
             )}
             <button
               onClick={() => setLocation("/reports/outstanding-actions")}
@@ -715,15 +729,17 @@ function SortableNavItem({
         </SidebarMenuButton>
         {reportsExpanded && !isCollapsed && (
           <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
-            <button
-              onClick={() => setLocation("/administration/vehicle-crash")}
-              className={subItemClass(
-                location.startsWith("/administration/vehicle-crash")
-              )}
-            >
-              <Car className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
-              Vehicle Crash
-            </button>
+            {features.crash && (
+              <button
+                onClick={() => setLocation("/administration/vehicle-crash")}
+                className={subItemClass(
+                  location.startsWith("/administration/vehicle-crash")
+                )}
+              >
+                <Car className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
+                Vehicle Crash
+              </button>
+            )}
             <button
               onClick={() => setLocation("/administration/uco-guide")}
               className={subItemClass(
@@ -898,6 +914,7 @@ function SortableNavTile({
     transition,
     isDragging,
   } = useSortable({ id });
+  const features = useCommandFeatures();
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -1136,58 +1153,62 @@ function SortableNavTile({
           </div>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
-          <DropdownMenuItem onClick={() => setLocation("/operation-manager")}>
-            <ClipboardList className="h-4 w-4 mr-2 text-purple-500" />
-            CTO Weekly Tasking
-          </DropdownMenuItem>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <Users className="h-4 w-4 mr-2 text-purple-500" />
-              CTO Roster
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              <DropdownMenuItem onClick={() => setLocation("/cto-roster")}>
+          {features.tasking && (
+            <DropdownMenuItem onClick={() => setLocation("/operation-manager")}>
+              <ClipboardList className="h-4 w-4 mr-2 text-purple-500" />
+              CTO Weekly Tasking
+            </DropdownMenuItem>
+          )}
+          {features.roster && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
                 <Users className="h-4 w-4 mr-2 text-purple-500" />
-                Roster
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => setLocation("/cto-roster/my-shifts")}
-              >
-                <Users className="h-4 w-4 mr-2 text-purple-500" />
-                My Shifts
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => setLocation("/cto-roster/outlook")}
-              >
-                <Binoculars className="h-4 w-4 mr-2 text-purple-500" />
-                Outlook
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => setLocation("/cto-roster/drafts")}
-              >
-                <FileEdit className="h-4 w-4 mr-2 text-purple-500" />
-                Drafts
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => setLocation("/cto-roster/saved-rosters")}
-              >
-                <BookOpen className="h-4 w-4 mr-2 text-purple-500" />
-                Saved Rosters
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => setLocation("/cto-roster/ea-compliance")}
-              >
-                <ShieldCheck className="h-4 w-4 mr-2 text-purple-500" />
-                EA Compliance
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => setLocation("/cto-roster/audit")}
-              >
-                <ScrollText className="h-4 w-4 mr-2 text-purple-500" />
-                Audit Log
-              </DropdownMenuItem>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
+                CTO Roster
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuItem onClick={() => setLocation("/cto-roster")}>
+                  <Users className="h-4 w-4 mr-2 text-purple-500" />
+                  Roster
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setLocation("/cto-roster/my-shifts")}
+                >
+                  <Users className="h-4 w-4 mr-2 text-purple-500" />
+                  My Shifts
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setLocation("/cto-roster/outlook")}
+                >
+                  <Binoculars className="h-4 w-4 mr-2 text-purple-500" />
+                  Outlook
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setLocation("/cto-roster/drafts")}
+                >
+                  <FileEdit className="h-4 w-4 mr-2 text-purple-500" />
+                  Drafts
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setLocation("/cto-roster/saved-rosters")}
+                >
+                  <BookOpen className="h-4 w-4 mr-2 text-purple-500" />
+                  Saved Rosters
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setLocation("/cto-roster/ea-compliance")}
+                >
+                  <ShieldCheck className="h-4 w-4 mr-2 text-purple-500" />
+                  EA Compliance
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setLocation("/cto-roster/audit")}
+                >
+                  <ScrollText className="h-4 w-4 mr-2 text-purple-500" />
+                  Audit Log
+                </DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
           <DropdownMenuItem
             onClick={() => setLocation("/reports/outstanding-actions")}
           >
@@ -1229,12 +1250,14 @@ function SortableNavTile({
           </div>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
-          <DropdownMenuItem
-            onClick={() => setLocation("/administration/vehicle-crash")}
-          >
-            <Car className="h-4 w-4 mr-2 text-indigo-400" />
-            Vehicle Crash
-          </DropdownMenuItem>
+          {features.crash && (
+            <DropdownMenuItem
+              onClick={() => setLocation("/administration/vehicle-crash")}
+            >
+              <Car className="h-4 w-4 mr-2 text-indigo-400" />
+              Vehicle Crash
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             onClick={() => setLocation("/administration/uco-guide")}
           >

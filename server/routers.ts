@@ -31,6 +31,12 @@ import {
   toAccessUser,
 } from "./operationAccess";
 import { rosterCommandForWrite } from "./rosterContext";
+import { loadFeatureMatrix, saveFeatureSettings } from "./commandFeatures";
+import {
+  FEATURE_KEYS,
+  featuresFor,
+  isFeatureOwner,
+} from "@shared/commandFeatures";
 import {
   sanitizeTargetSpecialProjects,
   mergeSpecialProjects,
@@ -941,7 +947,14 @@ export const appRouter = router({
       // Also says whether their team forces location sharing on (the app
       // turns Show & Share on and locks it) — read here, not from the team
       // list, because map-only Investigator accounts can't list teams.
-      return { ...user, mustShareLocation: await mustShareLocation(user) };
+      return {
+        ...user,
+        mustShareLocation: await mustShareLocation(user),
+        // Which switchable features their Command has on, and whether they
+        // are the person who changes the switches (see shared/commandFeatures.ts).
+        features: featuresFor(user, await loadFeatureMatrix()),
+        isFeatureOwner: isFeatureOwner(user),
+      };
     }),
 
     login: publicProcedure
@@ -7804,6 +7817,56 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         await setSidebarOrder(ctx.user.id, input.orderedKeys);
         return { ok: true };
+      }),
+  }),
+
+  // ─── Command features ──────────────────────────────────────────────────────
+  // On/off switches per Command (shared/commandFeatures.ts). Only the owner
+  // sees or changes them; everyone else's own switches arrive with auth.me.
+  commandFeatures: router({
+    all: protectedProcedure.query(async ({ ctx }) => {
+      if (!isFeatureOwner(ctx.user)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Not available." });
+      }
+      return loadFeatureMatrix();
+    }),
+
+    set: protectedProcedure
+      .input(
+        z.array(
+          z.object({
+            command: z.enum(COMMAND_CODES),
+            feature: z.enum(FEATURE_KEYS),
+            enabled: z.boolean(),
+          })
+        )
+      )
+      .mutation(async ({ input, ctx }) => {
+        if (!isFeatureOwner(ctx.user)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Not available." });
+        }
+        const before = await loadFeatureMatrix();
+        // Only what actually changes is saved and logged.
+        const changes = input.filter(
+          c => before[c.command][c.feature] !== c.enabled
+        );
+        if (changes.length > 0) {
+          await saveFeatureSettings(changes, ctx.user.cin ?? null);
+          await createAuditLog({
+            sheetId: 0,
+            userId: ctx.user.id,
+            userName: ctx.user.cin ?? "Unknown",
+            userCIN: ctx.user.cin ?? null,
+            action: "command_feature_changed",
+            details: changes
+              .map(
+                c => `${c.feature} ${c.enabled ? "on" : "off"} for ${c.command}`
+              )
+              .join("; "),
+            createdAt: Date.now(),
+          });
+        }
+        return loadFeatureMatrix();
       }),
   }),
 

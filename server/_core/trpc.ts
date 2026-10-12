@@ -2,6 +2,15 @@ import { NOT_ADMIN_ERR_MSG, UNAUTHED_ERR_MSG } from "@shared/const";
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
+import {
+  enforceOperationAccess,
+  hiddenIntelligenceFor,
+  sharedInOperationIds,
+  INTELLIGENCE_PROFILE_PATHS,
+  toAccessUser,
+} from "../operationAccess";
+import { intelScope } from "../intelScope";
+import { getInvestigatorAllowedOperationIds } from "../db";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -61,6 +70,7 @@ const INVESTIGATOR_ALLOWED_PATHS = new Set([
   "profile.updateColorPalette",
   "profile.updatePassword",
   "operation.list",
+  "operation.listForMap",
   "intelligence.mappingLocations",
   "intelligence.userLocations",
   "intelligence.myLocationState",
@@ -73,7 +83,7 @@ const INVESTIGATOR_ALLOWED_PATHS = new Set([
 ]);
 
 const requireUser = t.middleware(async opts => {
-  const { ctx, next, path, type } = opts;
+  const { ctx, next, path, type, getRawInput } = opts;
 
   if (!ctx.user) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: UNAUTHED_ERR_MSG });
@@ -108,6 +118,53 @@ const requireUser = t.middleware(async opts => {
       code: "FORBIDDEN",
       message: "Investigator accounts have map-only access.",
     });
+  }
+
+  // Operation access across Commands: refuse ids the person can't reach and
+  // trim lists to what they can. A no-op for anyone who can reach everything
+  // (see server/operationAccess.ts).
+  if (ctx.user.role !== "investigator") {
+    const user = ctx.user;
+    const accessUser = toAccessUser(user);
+    const guard = await enforceOperationAccess({
+      user: accessUser,
+      path,
+      type,
+      getRawInput,
+    });
+    // Another Command's Restricted operations stay out of Intelligence for
+    // the whole request: getAllIntelligenceEntities() returns the trimmed set.
+    const hidden = await hiddenIntelligenceFor(
+      accessUser,
+      INTELLIGENCE_PROFILE_PATHS.has(path) ? "profile" : "browse",
+      path
+    );
+    const run = () =>
+      guard.input !== undefined
+        ? next({ ctx: { ...ctx, user }, input: guard.input })
+        : next({ ctx: { ...ctx, user } });
+    return hidden.size > 0
+      ? intelScope.run({ hiddenOperationIds: hidden }, run)
+      : run();
+  }
+
+  // An Investigator login is limited to the operations allocated to it; what
+  // another Command shared with them joins that list.
+  if (ctx.user.role === "investigator") {
+    const shared = await sharedInOperationIds(toAccessUser(ctx.user));
+    if (shared.length > 0) {
+      const own = getInvestigatorAllowedOperationIds(ctx.user);
+      const merged = Array.from(new Set([...own, ...shared]));
+      return next({
+        ctx: {
+          ...ctx,
+          user: {
+            ...ctx.user,
+            investigatorOperationIds: JSON.stringify(merged),
+          },
+        },
+      });
+    }
   }
 
   return next({

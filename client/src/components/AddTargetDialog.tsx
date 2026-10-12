@@ -91,6 +91,9 @@ import type {
   DocumentImportPrefill,
   StagedImage,
 } from "@/components/ImportTargetDocumentDialog";
+import { FORM_TONES } from "@/lib/formKit";
+import { AddTargetBackgroundPanel } from "@/components/RegistryBackgroundPanel";
+import { cn } from "@/lib/utils";
 
 // Referenced only for the merge dialog's incoming.wildFields shape — Wild
 // Fields is deprecated app-wide, this dialog never collects one, but the
@@ -106,6 +109,10 @@ export interface RegistryCreatePayload {
    * "{Operation name} background", read-only, shown on the Target profile.
    * Null for a manually-added target, or an import with no narrative. */
   background: string | null;
+  /** The freeform Background typed in this dialog (plain text), saved on the
+   * target itself (targets.registryBackground) and shown on its profile and
+   * on every linked operation's profile. Null/absent when left empty. */
+  registryBackground?: string | null;
   /** The full parsed document snapshot, verbatim as the officer reviewed it
    * on the import review screen — present only when this save came from
    * "Import from Document". Recorded as its own version alongside
@@ -405,6 +412,7 @@ export function AddTargetDialog({
   >(() => initialVehicle ?? EMPTY_VEHICLE_PARTS);
   const [dep, setDep] = useState("");
   const [arr, setArr] = useState("");
+  const [registryBackground, setRegistryBackground] = useState("");
   const [extraAddresses, setExtraAddresses] = useState<ExtraAddress[]>(
     () => initialExtraAddresses ?? []
   );
@@ -418,6 +426,7 @@ export function AddTargetDialog({
   const [linking, setLinking] = useState(false);
   const utils = trpc.useUtils();
   const associateCreateMut = trpc.associate.create.useMutation();
+  const setBackgroundMut = trpc.target.registry.setBackground.useMutation();
   const associateCreateLinkedMut =
     trpc.associate.createLinkedFromTarget.useMutation();
   const uploadImageMut = trpc.attachment.uploadManual.useMutation();
@@ -612,6 +621,7 @@ export function AddTargetDialog({
     setExtraAddresses([]);
     setExtraVehicles([]);
     setAssociates([]);
+    setRegistryBackground("");
     setStagedWarn(null);
     stagedCheckedRef.current = {};
     setManualImages([]);
@@ -675,6 +685,7 @@ export function AddTargetDialog({
     return {
       linkToOperationId: operation!.id,
       background: initialBackground?.trim() || null,
+      registryBackground: registryBackground.trim() || null,
       documentSnapshotJson: initialDocumentSnapshot
         ? JSON.stringify(documentSnapshotForHistory(initialDocumentSnapshot))
         : null,
@@ -956,6 +967,7 @@ export function AddTargetDialog({
             category,
             targetId: linkedTargetId,
             entityLabel,
+            fromRegistry: true,
           });
         } else {
           await linkToEntityMut.mutateAsync({
@@ -963,6 +975,7 @@ export function AddTargetDialog({
             category,
             targetId: linkedTargetId,
             entityLabel,
+            fromRegistry: true,
           });
         }
       } catch {
@@ -1023,6 +1036,7 @@ export function AddTargetDialog({
   }): RegistryCreatePayload => ({
     linkToOperationId: operation!.id,
     background: initialBackground?.trim() || null,
+    registryBackground: registryBackground.trim() || null,
     documentSnapshotJson: initialDocumentSnapshot
       ? JSON.stringify(documentSnapshotForHistory(initialDocumentSnapshot))
       : null,
@@ -1437,8 +1451,8 @@ export function AddTargetDialog({
   // order that only made sense when a target was always a person and both
   // were just optional attributes of them.
   const addressPrimaryBox = (
-    <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3">
-      <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+    <div className={cn(FORM_TONES.address.panel, "p-3")}>
+      <p className={FORM_TONES.address.band}>
         <Home className="w-3 h-3" />
         {targetType === "location" ? "Location Identity" : "Home Address"}
       </p>
@@ -1452,10 +1466,10 @@ export function AddTargetDialog({
       {extraAddresses.map((ea, i) => (
         <div
           key={i}
-          className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3 flex flex-col gap-2"
+          className={cn(FORM_TONES.address.panel, "p-3 flex flex-col gap-2")}
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5">
+          <div className={cn(FORM_TONES.address.band, "justify-between")}>
+            <span className="flex items-center gap-1.5">
               <Home className="w-3 h-3" /> Additional Address {i + 2}
             </span>
             <Button
@@ -1516,8 +1530,8 @@ export function AddTargetDialog({
   );
 
   const vehiclePrimaryBox = (
-    <div className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3">
-      <p className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+    <div className={cn(FORM_TONES.vehicle.panel, "p-3")}>
+      <p className={FORM_TONES.vehicle.band}>
         <Car className="w-3 h-3" />
         {targetType === "vehicle" ? "Vehicle Identity" : "Vehicle 1"}
       </p>
@@ -1531,10 +1545,10 @@ export function AddTargetDialog({
       {extraVehicles.map((ev, i) => (
         <div
           key={i}
-          className="rounded-lg border border-l-4 border-amber-500/30 border-l-amber-500 bg-amber-500/5 p-3 flex flex-col gap-2"
+          className={cn(FORM_TONES.vehicle.panel, "p-3 flex flex-col gap-2")}
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1.5">
+          <div className={cn(FORM_TONES.vehicle.band, "justify-between")}>
+            <span className="flex items-center gap-1.5">
               <Car className="w-3 h-3" /> Vehicle {i + 2}
             </span>
             <Button
@@ -1738,7 +1752,7 @@ export function AddTargetDialog({
       heading: "Associates",
       cardLabel: "Associate",
       addLabel: "Add Associate",
-      section: "border-violet-500/30 border-l-violet-500 bg-violet-500/5",
+      tone: "associate" as const,
       headingText: "text-violet-700 dark:text-violet-400",
       photoBorder: "border-violet-500",
     },
@@ -1746,7 +1760,7 @@ export function AddTargetDialog({
       heading: "Other Home Address Residents",
       cardLabel: "Resident",
       addLabel: "Add Resident",
-      section: "border-rose-500/30 border-l-rose-500 bg-rose-500/5",
+      tone: "resident" as const,
       headingText: "text-rose-700 dark:text-rose-400",
       photoBorder: "border-rose-500",
     },
@@ -1761,11 +1775,12 @@ export function AddTargetDialog({
     // button) so the option is discoverable, same as Associates.
     return (
       <div
-        className={`mt-2 rounded-lg border border-l-4 ${cfg.section} p-3 flex flex-col gap-2`}
+        className={cn(
+          FORM_TONES[cfg.tone].panel,
+          "mt-2 p-3 flex flex-col gap-2"
+        )}
       >
-        <p
-          className={`text-xs font-bold ${cfg.headingText} uppercase tracking-wide flex items-center gap-1.5`}
-        >
+        <p className={FORM_TONES[cfg.tone].band}>
           <Users className="w-3.5 h-3.5" /> {cfg.heading}
         </p>
         {inSection.map((assoc, i) => {
@@ -1774,7 +1789,7 @@ export function AddTargetDialog({
           return (
             <div
               key={assoc.key}
-              className="rounded-lg border border-border/60 bg-muted/20 p-3 flex flex-col gap-3"
+              className="rounded-md border border-border bg-muted/40 p-3 flex flex-col gap-3"
             >
               <div className="flex items-center justify-between">
                 <span
@@ -1817,8 +1832,8 @@ export function AddTargetDialog({
                 { type: "associate", associateKey: assoc.key },
                 cfg.photoBorder
               )}
-              <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-                <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+              <div className="rounded-md border border-border bg-muted/40 p-3">
+                <p className="text-xs font-bold text-foreground/80 uppercase tracking-wide flex items-center gap-1.5 mb-2">
                   <Home className="w-3 h-3" /> Home Address
                 </p>
                 {assoc.addressFollowsTarget && (
@@ -1840,10 +1855,10 @@ export function AddTargetDialog({
               {extraAddrs.map((ea, ai) => (
                 <div
                   key={ea.id}
-                  className="rounded-lg border border-border/60 bg-muted/10 p-3 flex flex-col gap-2"
+                  className="rounded-md border border-border bg-muted/40 p-3 flex flex-col gap-2"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-foreground/80 uppercase tracking-wide flex items-center gap-1.5">
                       <Home className="w-3 h-3" /> Additional Address {ai + 2}
                     </span>
                     <Button
@@ -1908,8 +1923,8 @@ export function AddTargetDialog({
               >
                 <Plus className="w-3.5 h-3.5" /> Add Address
               </Button>
-              <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
-                <p className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5 mb-2">
+              <div className="rounded-md border border-border bg-muted/40 p-3">
+                <p className="text-xs font-bold text-foreground/80 uppercase tracking-wide flex items-center gap-1.5 mb-2">
                   <Car className="w-3 h-3" /> Vehicle 1
                 </p>
                 <TargetVehicleFields
@@ -1920,10 +1935,10 @@ export function AddTargetDialog({
               {extraVehs.map((ev, vi) => (
                 <div
                   key={ev.id}
-                  className="rounded-lg border border-border/60 bg-muted/10 p-3 flex flex-col gap-2"
+                  className="rounded-md border border-border bg-muted/40 p-3 flex flex-col gap-2"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-primary uppercase tracking-wide flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-foreground/80 uppercase tracking-wide flex items-center gap-1.5">
                       <Car className="w-3 h-3" /> Vehicle {vi + 2}
                     </span>
                     <Button
@@ -2107,7 +2122,7 @@ export function AddTargetDialog({
           />
           <div className="flex flex-col gap-3 py-2">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              <label className="text-xs font-semibold text-foreground/80 uppercase tracking-wide">
                 Operation <span className="text-destructive">*</span>
               </label>
               <OperationPicker
@@ -2118,7 +2133,7 @@ export function AddTargetDialog({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              <label className="text-xs font-semibold text-foreground/80 uppercase tracking-wide">
                 Target Type
               </label>
               <div className="flex gap-2">
@@ -2169,8 +2184,8 @@ export function AddTargetDialog({
                 className) still gives each box more breathing room on
                 iPad/laptop, just without splitting them into columns. */}
             {targetType === "person" && (
-              <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3">
-                <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5 mb-2">
+              <div className={cn(FORM_TONES.person.panel, "p-3")}>
+                <p className={FORM_TONES.person.band}>
                   <User className="w-3 h-3" />
                   Person Identity
                 </p>
@@ -2220,6 +2235,13 @@ export function AddTargetDialog({
                 the target itself saves). */}
             {renderStagedSection("associate")}
 
+            {/* Background — freeform, same panel and position as on the
+                saved target's registry card (directly under Associates). */}
+            <AddTargetBackgroundPanel
+              value={registryBackground}
+              onChange={setRegistryBackground}
+            />
+
             {/* Photos — staged from a document import (see
                 ImportTargetDocumentDialog.tsx). Duplicate-photo detection
                 only has a target to compare against once dupMatch names one
@@ -2227,8 +2249,13 @@ export function AddTargetDialog({
                 file defaults unticked, same "officer stays in control"
                 pattern as a matched associate defaulting to skip. */}
             {(initialImages ?? []).length > 0 && (
-              <div className="mt-2 rounded-lg border border-l-4 border-indigo-500/30 border-l-indigo-500 bg-indigo-500/5 p-3 flex flex-col gap-2.5">
-                <p className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wide flex items-center gap-1.5">
+              <div
+                className={cn(
+                  FORM_TONES.photo.panel,
+                  "mt-2 p-3 flex flex-col gap-2.5"
+                )}
+              >
+                <p className={FORM_TONES.photo.band}>
                   <ImageIcon className="w-3.5 h-3.5" /> Photos
                 </p>
                 {checkingImageDuplicates && (
@@ -2300,13 +2327,13 @@ export function AddTargetDialog({
                 grid the bordered identity boxes above need room for. */}
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <label className="text-xs font-semibold text-foreground/80 uppercase tracking-wide">
                   Depart (DEP)
                 </label>
                 <Input value={dep} onChange={e => setDep(e.target.value)} />
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <label className="text-xs font-semibold text-foreground/80 uppercase tracking-wide">
                   Arrive (ARR)
                 </label>
                 <Input value={arr} onChange={e => setArr(e.target.value)} />
@@ -2452,6 +2479,22 @@ export function AddTargetDialog({
             // the registry).
             const associateIdByKey = await saveStagedAssociates(targetId);
             await saveStagedImages(targetId, associateIdByKey);
+            // A Background typed here is added after whatever the existing
+            // target already has (never overwriting it).
+            const typedBackground = registryBackground.trim();
+            if (typedBackground) {
+              try {
+                await setBackgroundMut.mutateAsync({
+                  id: targetId,
+                  background: typedBackground,
+                  mode: "append",
+                });
+              } catch (err: any) {
+                toast.error(
+                  `Merged, but the Background could not be saved: ${err?.message ?? "unknown error"}`
+                );
+              }
+            }
             utils.target.registry.list.invalidate();
             utils.associate.listForTarget.invalidate();
             utils.intelligence.targetProfile.invalidate();

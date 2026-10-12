@@ -4,7 +4,13 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { KeyRound, Loader2, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,7 +27,7 @@ export default function ChangePasswordPage() {
       await utils.auth.me.invalidate();
       setLocation("/");
     },
-    onError: (e) => {
+    onError: e => {
       toast.error(e.message || "Could not update password.");
     },
   });
@@ -47,24 +53,32 @@ export default function ChangePasswordPage() {
             <KeyRound className="w-7 h-7 text-primary" />
           </div>
           <div className="text-center">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Set a New Password</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              Set a New Password
+            </h1>
             <p className="text-sm text-muted-foreground mt-1">
               You're using a temporary password — choose a new one to continue.
             </p>
           </div>
         </div>
 
-        <Card className="border-border/60 shadow-xl shadow-black/20 bg-card/80 backdrop-blur">
+        <Card className="border-border shadow-xl shadow-black/20 bg-card shadow-sm backdrop-blur">
           <CardHeader className="pb-4">
-            <CardTitle className="text-base font-medium">New password required</CardTitle>
+            <CardTitle className="text-base font-medium">
+              New password required
+            </CardTitle>
             <CardDescription className="text-xs">
-              At least 8 characters. You won't be able to use the app until this is done.
+              At least 8 characters. You won't be able to use the app until this
+              is done.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="newPassword" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <Label
+                  htmlFor="newPassword"
+                  className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+                >
                   New Password
                 </Label>
                 <div className="relative">
@@ -75,23 +89,30 @@ export default function ChangePasswordPage() {
                     autoFocus
                     placeholder="Enter new password"
                     value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
+                    onChange={e => setNewPassword(e.target.value)}
                     disabled={setNewPasswordMutation.isPending}
-                    className="bg-background/50 border-border/60 focus:border-primary/60 h-10 pr-10"
+                    className="bg-background border-border focus:border-primary/60 h-10 pr-10"
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPassword((v) => !v)}
+                    onClick={() => setShowPassword(v => !v)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                     tabIndex={-1}
                   >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
                   </button>
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="confirmPassword" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <Label
+                  htmlFor="confirmPassword"
+                  className="text-xs font-medium text-muted-foreground uppercase tracking-wider"
+                >
                   Confirm Password
                 </Label>
                 <Input
@@ -100,9 +121,9 @@ export default function ChangePasswordPage() {
                   autoComplete="new-password"
                   placeholder="Re-enter new password"
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onChange={e => setConfirmPassword(e.target.value)}
                   disabled={setNewPasswordMutation.isPending}
-                  className="bg-background/50 border-border/60 focus:border-primary/60 h-10"
+                  className="bg-background border-border focus:border-primary/60 h-10"
                 />
               </div>
 

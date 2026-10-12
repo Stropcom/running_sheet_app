@@ -339,19 +339,21 @@ export default function IntelExportPage() {
         </div>
 
         {/* Step 1: Operation */}
-        <section className="flex flex-col gap-3">
-          <div className="flex items-center gap-3">
+        <section className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <div className="flex items-center gap-3 border-b border-border bg-muted/70 px-4 py-2.5">
             <StepBadge n={1} active={step === 1} done={step > 1} />
-            <h2 className="font-semibold text-foreground">Choose Operation</h2>
+            <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
+              Choose Operation
+            </h2>
           </div>
           {opsLoading ? (
-            <div className="flex flex-col gap-2 pl-10">
+            <div className="flex flex-col gap-2 p-3">
               {[1, 2, 3].map(i => (
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </div>
           ) : (
-            <div className="pl-10 flex flex-col gap-1.5">
+            <div className="p-3 flex flex-col gap-1.5">
               {((operations as any[] | undefined) ?? []).map(op => (
                 <button
                   key={op.id}
@@ -361,8 +363,8 @@ export default function IntelExportPage() {
                   }}
                   className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border text-left transition-colors ${
                     selectedOpId === op.id
-                      ? "border-primary bg-primary/10 text-foreground"
-                      : "border-border bg-card hover:bg-muted/40 text-foreground"
+                      ? "border-primary bg-primary/10 text-foreground ring-1 ring-primary"
+                      : "border-border bg-background hover:bg-muted/60 text-foreground"
                   }`}
                 >
                   <span className="font-medium">{op.name}</span>
@@ -382,21 +384,21 @@ export default function IntelExportPage() {
 
         {/* Step 2: Running Sheet(s) */}
         {selectedOpId !== null && (
-          <section className="flex flex-col gap-3">
-            <div className="flex items-center gap-3">
+          <section className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <div className="flex items-center gap-3 border-b border-border bg-muted/70 px-4 py-2.5">
               <StepBadge n={2} active={step === 2} done={false} />
-              <h2 className="font-semibold text-foreground">
+              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
                 Choose Running Sheet(s)
               </h2>
             </div>
             {sheetsLoading ? (
-              <div className="flex flex-col gap-2 pl-10">
+              <div className="flex flex-col gap-2 p-3">
                 {[1, 2].map(i => (
                   <Skeleton key={i} className="h-10 w-full" />
                 ))}
               </div>
             ) : (
-              <div className="pl-10 flex flex-col gap-2">
+              <div className="p-3 flex flex-col gap-2">
                 {(sheets ?? []).length > 1 && (
                   <button
                     onClick={toggleAllSheets}
@@ -417,8 +419,8 @@ export default function IntelExportPage() {
                     key={sheet.id}
                     className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors ${
                       selectedSheetIds.includes(sheet.id)
-                        ? "border-primary bg-primary/10"
-                        : "border-border bg-card hover:bg-muted/40"
+                        ? "border-primary bg-primary/10 ring-1 ring-primary"
+                        : "border-border bg-background hover:bg-muted/60"
                     }`}
                   >
                     <Checkbox
@@ -452,17 +454,19 @@ export default function IntelExportPage() {
 
         {/* Step 3: What to include */}
         {selectedSheetIds.length > 0 && (
-          <section className="flex flex-col gap-3">
-            <div className="flex items-center gap-3">
+          <section className="flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <div className="flex items-center gap-3 border-b border-border bg-muted/70 px-4 py-2.5">
               <StepBadge n={3} active={step === 2} done={false} />
-              <h2 className="font-semibold text-foreground">What to include</h2>
+              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground">
+                What to include
+              </h2>
             </div>
-            <div className="pl-10 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors ${
                   includeRunningSheet
-                    ? "border-primary bg-primary/10"
-                    : "border-border bg-card hover:bg-muted/40"
+                    ? "border-primary bg-primary/10 ring-1 ring-primary"
+                    : "border-border bg-background hover:bg-muted/60"
                 }`}
               >
                 <Checkbox
@@ -482,8 +486,8 @@ export default function IntelExportPage() {
               <label
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors ${
                   includeIntel
-                    ? "border-primary bg-primary/10"
-                    : "border-border bg-card hover:bg-muted/40"
+                    ? "border-primary bg-primary/10 ring-1 ring-primary"
+                    : "border-border bg-background hover:bg-muted/60"
                 }`}
               >
                 <Checkbox
@@ -502,12 +506,12 @@ export default function IntelExportPage() {
               </label>
             </div>
 
-            <div className="pl-10 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors ${
                   formatJson
-                    ? "border-primary bg-primary/10"
-                    : "border-border bg-card hover:bg-muted/40"
+                    ? "border-primary bg-primary/10 ring-1 ring-primary"
+                    : "border-border bg-background hover:bg-muted/60"
                 }`}
               >
                 <Checkbox
@@ -522,8 +526,8 @@ export default function IntelExportPage() {
               <label
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-colors ${
                   formatCsv
-                    ? "border-primary bg-primary/10"
-                    : "border-border bg-card hover:bg-muted/40"
+                    ? "border-primary bg-primary/10 ring-1 ring-primary"
+                    : "border-border bg-background hover:bg-muted/60"
                 }`}
               >
                 <Checkbox

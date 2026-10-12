@@ -1,3 +1,4 @@
+import { useMyTeams } from "@/lib/teams";
 import { IMAGERY_PHRASE_PATTERN, cinsWithImagery } from "@shared/rowImagery";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
@@ -933,9 +934,15 @@ function CinCertifyRow({
   onUncertify: (rowId: number, memberId: number) => void;
   onRemove: () => void;
 }) {
-  const ROW_H = "h-8";
+  // On a phone each row is a card and the CINs wrap as chips (see the
+  // .running-sheet-cards rules in index.css), so there is no blank space beside
+  // a chip to hold: the hold happens on the chip itself instead. Laptop and
+  // iPad keep the blank-space hold exactly as before.
+  const isPhone = useIsMobile();
+  const ROW_H = isPhone ? "h-7" : "h-8";
   const isSpacer = member.memberName === SPACER;
   const canRemove = canEdit && !isLocked;
+  const chipHold = isPhone && canRemove && !isSpacer;
 
   // Removing a CIN (or a spacer) is a press-and-hold, not a tap — a red fill
   // sweeps across the row over HOLD_MS; releasing early cancels. No icon, no
@@ -944,11 +951,19 @@ function CinCertifyRow({
   // the fill animates every frame without re-rendering the row.
   const HOLD_MS = 1000;
   const fillRef = useRef<HTMLDivElement>(null);
+  // On a chip the red fill only starts after a short pause so an ordinary tap
+  // never flashes red; the removal still lands at HOLD_MS.
+  const SHOW_AFTER_MS = chipHold ? 250 : 0;
   const holdRef = useRef<{
     active: boolean;
     start: number;
     raf: number | null;
-  }>({ active: false, start: 0, raf: null });
+    x: number;
+    y: number;
+  }>({ active: false, start: 0, raf: null, x: 0, y: 0 });
+  // Set when a hold completes so the click that follows the finger lifting
+  // does not also certify the chip that was just removed.
+  const heldRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -961,15 +976,23 @@ function CinCertifyRow({
     const hold = holdRef.current;
     hold.active = true;
     hold.start = performance.now();
+    hold.x = e.clientX;
+    hold.y = e.clientY;
+    heldRef.current = false;
     if (fillRef.current) {
       fillRef.current.style.transition = "none";
     }
     const step = (now: number) => {
       if (!hold.active) return;
-      const pct = Math.min(1, (now - hold.start) / HOLD_MS);
+      const elapsed = now - hold.start;
+      const pct = Math.min(
+        1,
+        Math.max(0, (elapsed - SHOW_AFTER_MS) / (HOLD_MS - SHOW_AFTER_MS))
+      );
       if (fillRef.current) fillRef.current.style.width = `${pct * 100}%`;
-      if (pct >= 1) {
+      if (elapsed >= HOLD_MS) {
         hold.active = false;
+        heldRef.current = true;
         onRemove();
         return;
       }
@@ -978,9 +1001,21 @@ function CinCertifyRow({
     hold.raf = requestAnimationFrame(step);
   };
 
+  // A finger that drifts (scrolling the page) is not a hold.
+  const moveHold = (e: React.PointerEvent) => {
+    const hold = holdRef.current;
+    if (!hold.active) return;
+    if (Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 10) cancelHold();
+  };
+
   const cancelHold = () => {
     const hold = holdRef.current;
     if (!hold.active) return;
+    // The red fill was already showing, so this was a hold that got let go,
+    // not a tap: don't let the click that follows certify the chip.
+    if (chipHold && performance.now() - hold.start > SHOW_AFTER_MS) {
+      heldRef.current = true;
+    }
     hold.active = false;
     if (hold.raf) cancelAnimationFrame(hold.raf);
     if (fillRef.current) {
@@ -1002,7 +1037,7 @@ function CinCertifyRow({
   if (isSpacer) {
     return (
       <div
-        className={`relative flex items-center gap-1 ${ROW_H} select-none`}
+        className={`relative flex items-center gap-1 ${ROW_H} select-none ${isPhone ? "basis-full w-full" : ""}`}
         style={
           canRemove ? { ...noCalloutStyle, touchAction: "none" } : undefined
         }
@@ -1018,6 +1053,9 @@ function CinCertifyRow({
             className="absolute inset-0 bg-destructive/15 pointer-events-none"
             style={{ width: "0%" }}
           />
+        )}
+        {isPhone && (
+          <span className="absolute inset-x-0 top-1/2 border-t border-dashed border-border" />
         )}
         <span className="relative z-10 flex-1 min-w-0" />
       </div>
@@ -1045,21 +1083,40 @@ function CinCertifyRow({
 
   return (
     <div
-      className={`flex items-center ${ROW_H} select-none`}
+      className={`${isPhone ? "inline-flex" : "flex"} items-center ${ROW_H} select-none`}
       style={noCalloutStyle}
     >
-      <div className="inline-flex items-stretch h-7 max-w-full rounded-full shrink-0">
+      <div
+        className={`inline-flex items-stretch h-7 max-w-full rounded-full shrink-0 ${chipHold ? "relative overflow-hidden" : ""}`}
+        style={chipHold ? { touchAction: "manipulation" } : undefined}
+        onPointerDown={chipHold ? startHold : undefined}
+        onPointerUp={chipHold ? cancelHold : undefined}
+        onPointerLeave={chipHold ? cancelHold : undefined}
+        onPointerCancel={chipHold ? cancelHold : undefined}
+        onPointerMove={chipHold ? moveHold : undefined}
+        onContextMenu={chipHold ? e => e.preventDefault() : undefined}
+      >
+        {chipHold && (
+          <div
+            ref={fillRef}
+            className="absolute inset-y-0 left-0 z-10 bg-destructive/30 pointer-events-none"
+            style={{ width: "0%" }}
+          />
+        )}
         {canToggle ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 className={`${pillBase} cursor-pointer`}
-                onClick={() =>
-                  cert
-                    ? onUncertify(row.id, member.id)
-                    : onCertify(row.id, member.id)
-                }
+                onClick={() => {
+                  if (heldRef.current) {
+                    heldRef.current = false;
+                    return;
+                  }
+                  if (cert) onUncertify(row.id, member.id);
+                  else onCertify(row.id, member.id);
+                }}
               >
                 {pillContent}
               </button>
@@ -1109,7 +1166,7 @@ function CinCertifyRow({
 
       {/* Hold zone — the blank space to the right of the pill, press-and-hold
           1s to remove. A red fill sweeps across it as visual feedback. */}
-      {canRemove && (
+      {canRemove && !isPhone && (
         <div
           className="relative flex-1 h-full min-w-[28px]"
           style={{ ...noCalloutStyle, touchAction: "none" }}
@@ -1198,126 +1255,223 @@ function CinCertifyCell({
   const showTeamCollapse =
     row.isLocked && isFullTeamMembers(row.members, rosterCins);
 
+  const memberItems = showTeamCollapse ? (
+    <div className="flex items-center h-8">
+      <div className="inline-flex items-center gap-1.5 h-7 px-2.5 border rounded-full text-xs font-bold text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)]">
+        <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+        <span className="font-mono">TEAM</span>
+      </div>
+    </div>
+  ) : total === 0 ? null : (
+    row.members.map(member => {
+      const cert = row.certifications.find(
+        c => c.memberId === member.id && c.isActive
+      );
+      return (
+        <CinCertifyRow
+          key={member.id}
+          row={row}
+          member={member}
+          cert={cert}
+          canEdit={canEdit}
+          canCertify={canCertify}
+          isLocked={row.isLocked}
+          onCertify={onCertify}
+          onUncertify={onUncertify}
+          onRemove={() => onRemoveMember(member.id, row.id)}
+        />
+      );
+    })
+  );
+
+  const addingPanel = (
+    <div className="flex flex-col gap-1.5 mt-0.5">
+      {rosterCins && rosterCins.length > 0 ? (
+        /* Dropdown mode: pick from team roster — Space at top, duplicates allowed */
+        <div className="flex items-center gap-1.5">
+          <Select
+            value={newName}
+            onValueChange={v => {
+              if (v === "__all__") {
+                addAllTeamCins();
+              } else {
+                onAddMember(row.id, v);
+                setNewName("");
+                setAdding(false);
+              }
+            }}
+          >
+            <SelectTrigger className="h-7 text-xs flex-1 min-w-[120px]">
+              <SelectValue placeholder="Pick…" />
+            </SelectTrigger>
+            <SelectContent>
+              {/* Space option always at the top */}
+              <SelectItem
+                value={SPACER}
+                className="text-xs text-muted-foreground italic"
+              >
+                — Space —
+              </SelectItem>
+              {rosterCins.map(cin => (
+                <SelectItem key={cin} value={cin} className="font-mono text-xs">
+                  {cin}
+                </SelectItem>
+              ))}
+              {rosterCins.length > 1 && (
+                <SelectItem
+                  value="__all__"
+                  className="text-xs font-medium text-primary"
+                >
+                  ★ Add all team CINs
+                </SelectItem>
+              )}
+            </SelectContent>
+          </Select>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+            onClick={() => {
+              setAdding(false);
+              setNewName("");
+            }}
+          >
+            <X className="w-3 h-3" />
+          </Button>
+        </div>
+      ) : (
+        /* Free-text mode: validated against registered users — duplicates allowed */
+        <div className="flex items-center gap-1.5">
+          <CinInput
+            autoFocus
+            placeholder="Enter CIN"
+            value={newName}
+            onChange={setNewName}
+            onValidCin={cin => {
+              setNewName(cin);
+              setNewNameValid(true);
+            }}
+            onInvalidCin={() => setNewNameValid(false)}
+            showValidation
+            className="h-7 text-xs px-2"
+          />
+          <Button
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            onClick={handleAdd}
+            disabled={!newNameValid}
+          >
+            <Plus className="w-3 h-3" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+
+  const isPhone = useIsMobile();
+
+  // Phone: the row is a card (index.css), so the CINs wrap as chips under a
+  // small label, with Add / Team / Delete row in one equal row at the bottom.
+  if (isPhone) {
+    const hasRoster = !!rosterCins && rosterCins.length > 1;
+    const actionCount = 1 + (hasRoster ? 1 : 0) + (onDeleteRow ? 1 : 0);
+    return (
+      <div className="-mx-3 flex flex-col gap-2 border-t border-border px-3 pt-3">
+        <div className="flex flex-wrap items-center gap-1.5">{memberItems}</div>
+
+        {canEdit &&
+          !row.isLocked &&
+          (adding ? (
+            addingPanel
+          ) : (
+            <div
+              className="grid gap-2"
+              style={{
+                gridTemplateColumns: `repeat(${actionCount}, minmax(0, 1fr))`,
+              }}
+            >
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9 gap-1 px-1.5 text-xs font-semibold"
+                onClick={() => setAdding(true)}
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                Add
+              </Button>
+              {hasRoster && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 gap-1 border-primary px-1.5 text-xs font-semibold text-primary"
+                  onClick={addAllTeamCins}
+                  title={`Add all ${rosterCins!.length} rostered CINs`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  Team
+                </Button>
+              )}
+              {!row.isLocked && onDeleteRow && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 gap-1 px-1.5 text-xs font-semibold text-destructive"
+                  onClick={() => onDeleteRow(row.id)}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete row
+                </Button>
+              )}
+            </div>
+          ))}
+
+        {row.isLocked && (
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className="gap-1 border-[var(--locked-border)] bg-[var(--locked-bg)] py-0 px-1.5 text-xs text-[var(--certified-color)]"
+            >
+              <Lock className="w-2.5 h-2.5" />
+              Locked
+            </Badge>
+          </div>
+        )}
+        {row.isLocked && canCertify && (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 gap-1 px-1.5 text-[13px] font-semibold text-foreground"
+            onClick={() => onUncertifyAll(row.id)}
+          >
+            <Unlock className="w-3.5 h-3.5" />
+            Uncertify all
+          </Button>
+        )}
+        {/* Delete row for a row that is not editable-but-deletable is covered above */}
+        {!canEdit && !row.isLocked && onDeleteRow && (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9 gap-1 px-1.5 text-xs font-semibold text-destructive"
+            onClick={() => onDeleteRow(row.id)}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Delete row
+          </Button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-w-[90px]">
-      {showTeamCollapse ? (
-        <div className="flex items-center h-8">
-          <div className="inline-flex items-center gap-1.5 h-7 px-2.5 border rounded-full text-xs font-bold text-[var(--certified-color)] border-[var(--locked-border)] bg-[var(--locked-bg)]">
-            <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-            <span className="font-mono">TEAM</span>
-          </div>
-        </div>
-      ) : total === 0 ? null : (
-        row.members.map(member => {
-          const cert = row.certifications.find(
-            c => c.memberId === member.id && c.isActive
-          );
-          return (
-            <CinCertifyRow
-              key={member.id}
-              row={row}
-              member={member}
-              cert={cert}
-              canEdit={canEdit}
-              canCertify={canCertify}
-              isLocked={row.isLocked}
-              onCertify={onCertify}
-              onUncertify={onUncertify}
-              onRemove={() => onRemoveMember(member.id, row.id)}
-            />
-          );
-        })
-      )}
+      {memberItems}
 
       {/* Add button — sits below all CINs */}
       {canEdit &&
         !row.isLocked &&
         (adding ? (
-          <div className="flex flex-col gap-1.5 mt-0.5">
-            {rosterCins && rosterCins.length > 0 ? (
-              /* Dropdown mode: pick from team roster — Space at top, duplicates allowed */
-              <div className="flex items-center gap-1.5">
-                <Select
-                  value={newName}
-                  onValueChange={v => {
-                    if (v === "__all__") {
-                      addAllTeamCins();
-                    } else {
-                      onAddMember(row.id, v);
-                      setNewName("");
-                      setAdding(false);
-                    }
-                  }}
-                >
-                  <SelectTrigger className="h-7 text-xs flex-1 min-w-[120px]">
-                    <SelectValue placeholder="Pick…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {/* Space option always at the top */}
-                    <SelectItem
-                      value={SPACER}
-                      className="text-xs text-muted-foreground italic"
-                    >
-                      — Space —
-                    </SelectItem>
-                    {rosterCins.map(cin => (
-                      <SelectItem
-                        key={cin}
-                        value={cin}
-                        className="font-mono text-xs"
-                      >
-                        {cin}
-                      </SelectItem>
-                    ))}
-                    {rosterCins.length > 1 && (
-                      <SelectItem
-                        value="__all__"
-                        className="text-xs font-medium text-primary"
-                      >
-                        ★ Add all team CINs
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                  onClick={() => {
-                    setAdding(false);
-                    setNewName("");
-                  }}
-                >
-                  <X className="w-3 h-3" />
-                </Button>
-              </div>
-            ) : (
-              /* Free-text mode: validated against registered users — duplicates allowed */
-              <div className="flex items-center gap-1.5">
-                <CinInput
-                  autoFocus
-                  placeholder="Enter CIN"
-                  value={newName}
-                  onChange={setNewName}
-                  onValidCin={cin => {
-                    setNewName(cin);
-                    setNewNameValid(true);
-                  }}
-                  onInvalidCin={() => setNewNameValid(false)}
-                  showValidation
-                  className="h-7 text-xs px-2"
-                />
-                <Button
-                  size="icon"
-                  className="h-7 w-7 shrink-0"
-                  onClick={handleAdd}
-                  disabled={!newNameValid}
-                >
-                  <Plus className="w-3 h-3" />
-                </Button>
-              </div>
-            )}
-          </div>
+          addingPanel
         ) : (
           <div className="flex flex-col mt-0.5">
             <button
@@ -1783,9 +1937,7 @@ function TimePickerCell({
       >
         <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         {value || (
-          <span className="text-muted-foreground/50 italic text-xs">
-            Set time
-          </span>
+          <span className="text-muted-foreground italic text-xs">Set time</span>
         )}
       </button>
       {open && (
@@ -1890,7 +2042,7 @@ function TimePickerCell({
               >
                 ◀
               </button>
-              <span className="text-[11px] font-semibold tracking-widest text-foreground font-mono">
+              <span className="text-xs font-semibold tracking-widest text-foreground font-mono">
                 {formatPerthDateLabel(selectedRowDate)}
               </span>
               <button
@@ -2683,7 +2835,7 @@ function EditableCell({
       onClick={() => setEditing(true)}
     >
       {value || (
-        <span className="text-muted-foreground/50 italic text-xs">
+        <span className="text-muted-foreground italic text-xs">
           {placeholder}
         </span>
       )}
@@ -2748,11 +2900,11 @@ function SortableChip({
             </span>
           </span>
         )}
-        <span className="text-[10px] font-bold text-primary uppercase tracking-wide">
+        <span className="text-xs font-bold text-primary uppercase tracking-wide">
           {label}
         </span>
         {showValue && value && (
-          <span className="text-[10px] font-mono text-foreground/80 max-w-[160px] truncate">
+          <span className="text-xs font-mono text-foreground/80 max-w-[160px] truncate">
             {value}
           </span>
         )}
@@ -4333,6 +4485,7 @@ export default function SheetDetail({
   const { data: allUsers } = trpc.users.listForCin.useQuery(undefined, {
     enabled: isAuthenticated,
   });
+  const myTeams = useMyTeams();
 
   const { data: allTargetsForSheet } = trpc.target.listAll.useQuery(undefined, {
     enabled: isAuthenticated,
@@ -4530,12 +4683,12 @@ export default function SheetDetail({
     setEditRosterOpen(true);
   };
 
-  const handleAddRosterTeam = (teamKey: "TEAM1" | "TEAM2" | "PTT") => {
+  const handleAddRosterTeam = (teamId: number) => {
     if (!allUsers) {
       toast.error("User list not available");
       return;
     }
-    const members = allUsers.filter(u => u.team === teamKey);
+    const members = allUsers.filter(u => u.teamId === teamId);
     if (members.length === 0) {
       toast.error("No members found in that team");
       return;
@@ -4562,7 +4715,7 @@ export default function SheetDetail({
     if (added === 0) toast.info("All team members already added");
     else
       toast.success(
-        `Added ${added} member${added !== 1 ? "s" : ""} from ${teamKey.replace("TEAM", "TEAM ")}`
+        `Added ${added} member${added !== 1 ? "s" : ""} from ${myTeams.find(t => t.id === teamId)?.name ?? "the team"}`
       );
   };
 
@@ -5006,11 +5159,11 @@ export default function SheetDetail({
 
         {/* Daily Roster Panel with Certify All — collapsible, matching target panel style */}
         {(parsedRoster.length > 0 || true) && (
-          <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
+          <div className="mb-4 rounded-lg border border-border bg-card shadow-sm overflow-hidden">
             {/* Header row — same structure as target panel: collapse button + separate pencil button */}
             <div className="flex items-center">
               <button
-                className="flex-1 flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left min-w-0"
+                className="flex-1 flex items-center gap-2 px-4 py-3 bg-muted/60 hover:bg-muted active:bg-muted transition-colors select-none text-left min-w-0"
                 onClick={() => {
                   const next = !teamPanelExpanded;
                   setTeamPanelExpanded(next);
@@ -5023,12 +5176,12 @@ export default function SheetDetail({
                 }}
               >
                 <Users className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">
+                <span className="text-[13px] font-bold uppercase tracking-wide text-foreground truncate flex-1">
                   TEAM — CERTIFY
                 </span>
                 {/* Certified count badge */}
                 {parsedRoster.length > 0 && (
-                  <span className="text-[10px] font-mono text-muted-foreground mr-1">
+                  <span className="text-xs font-mono text-muted-foreground mr-1">
                     {cinFullyCertified.size}/{parsedRoster.length}
                   </span>
                 )}
@@ -5039,7 +5192,7 @@ export default function SheetDetail({
               {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
               {sheet && (
                 <button
-                  className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30 rounded-tr-lg"
+                  className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border bg-muted/60 hover:bg-muted rounded-tr-lg"
                   onClick={openEditRoster}
                   title="Edit TEAM"
                 >
@@ -5049,7 +5202,7 @@ export default function SheetDetail({
             </div>
             {/* Collapsible CIN badges */}
             {teamPanelExpanded && (
-              <div className="px-4 pb-3">
+              <div className="px-4 py-3">
                 {parsedRoster.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {parsedRoster.map(entry => (
@@ -5956,11 +6109,11 @@ export default function SheetDetail({
             return (
               <>
                 {showTargetPanel && (
-                  <div className="mb-4 rounded-lg border border-border bg-card/60 overflow-hidden">
+                  <div className="mb-4 rounded-lg border border-border bg-card shadow-sm overflow-hidden">
                     {/* Header — always visible. Tapping the main area toggles collapse; pencil navigates to edit */}
                     <div className="flex items-center">
                       <button
-                        className="flex-1 flex items-center gap-2 px-4 py-3 hover:bg-muted/20 active:bg-muted/30 transition-colors select-none text-left min-w-0"
+                        className="flex-1 flex items-center gap-2 px-4 py-3 bg-muted/60 hover:bg-muted active:bg-muted transition-colors select-none text-left min-w-0"
                         onClick={() =>
                           setTargetPanelExpanded(v => {
                             const next = !v;
@@ -5979,7 +6132,7 @@ export default function SheetDetail({
                         ) : (
                           <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                         )}
-                        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate flex-1">
+                        <span className="text-[13px] font-bold uppercase tracking-wide text-foreground truncate flex-1">
                           {hasTarget ? `TARGET — ${t!.name}` : "SHORTCUTS"}
                         </span>
                         <ChevronDown
@@ -5989,7 +6142,7 @@ export default function SheetDetail({
                       {/* Edit pencil — independent tap zone, doesn't trigger collapse */}
                       {hasTarget && (
                         <button
-                          className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border/30 rounded-tr-lg"
+                          className="px-3 py-3 text-muted-foreground hover:text-foreground active:scale-95 transition-all shrink-0 border-l border-border bg-muted/60 hover:bg-muted rounded-tr-lg"
                           onClick={() =>
                             navigate(
                               `/operation/${sheet!.operationId}?tab=target&targetId=${t!.id}&fromSheet=${sheetId}`
@@ -6223,13 +6376,13 @@ export default function SheetDetail({
                                           targetPosition.place
                                         ) && (
                                           <span
-                                            className="mr-1 text-[11px]"
+                                            className="mr-1 text-xs"
                                             title={`Target ${targetPosition.label}`}
                                           >
                                             {TARGET_EMOJI[targetPosition.state]}
                                           </span>
                                         )}
-                                      <span className="text-[10px] font-mono font-bold max-w-[140px] truncate">
+                                      <span className="text-xs font-mono font-bold max-w-[140px] truncate">
                                         {chip.insertValue}
                                       </span>
                                     </button>
@@ -6337,7 +6490,7 @@ export default function SheetDetail({
         </div>
 
         {/* Table */}
-        <div className="rounded-xl border border-border overflow-hidden bg-card">
+        <div className="md:rounded-xl md:border md:border-border overflow-hidden md:bg-card">
           <div className="overflow-x-auto">
             {isLoading ? (
               <div className="p-6 flex flex-col gap-3">
@@ -6352,7 +6505,7 @@ export default function SheetDetail({
                 </p>
               </div>
             ) : (
-              <table className="running-sheet-table w-full">
+              <table className="running-sheet-table running-sheet-cards w-full">
                 <thead>
                   <tr className="bg-muted/30">
                     <th className="w-32">Time</th>
@@ -6439,7 +6592,7 @@ export default function SheetDetail({
                                   <td colSpan={3} className="py-1.5 px-4">
                                     <div className="flex items-center gap-3">
                                       <div className="flex-1 h-px bg-border" />
-                                      <span className="text-[10px] font-semibold tracking-widest text-muted-foreground whitespace-nowrap">
+                                      <span className="text-xs font-semibold tracking-widest text-muted-foreground whitespace-nowrap">
                                         {label}
                                       </span>
                                       <div className="flex-1 h-px bg-border" />
@@ -7214,27 +7367,27 @@ export default function SheetDetail({
                 Add
               </Button>
             </div>
-            {allUsers && allUsers.some(u => u.team) && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-muted-foreground">Add team:</span>
-                {(["TEAM1", "TEAM2", "PTT"] as const).map(t => (
-                  <Button
-                    key={t}
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-3 text-xs font-semibold"
-                    onClick={() => handleAddRosterTeam(t)}
-                  >
-                    {t === "TEAM1"
-                      ? "TEAM 1"
-                      : t === "TEAM2"
-                        ? "TEAM 2"
-                        : "PTT"}
-                  </Button>
-                ))}
-              </div>
-            )}
+            {allUsers &&
+              myTeams.length > 0 &&
+              allUsers.some(u => u.teamId != null) && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-muted-foreground">
+                    Add team:
+                  </span>
+                  {myTeams.map(t => (
+                    <Button
+                      key={t.id}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-3 text-xs font-semibold"
+                      onClick={() => handleAddRosterTeam(t.id)}
+                    >
+                      {t.name.toUpperCase()}
+                    </Button>
+                  ))}
+                </div>
+              )}
             {rosterList.length > 0 ? (
               <div className="rounded-lg border border-border overflow-hidden">
                 {/* Header row */}

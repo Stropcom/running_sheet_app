@@ -134,7 +134,7 @@ export function ContinuityCards({
             onMouseDown={e => e.preventDefault()}
             onClick={() => onRestore(c.key)}
             aria-label={`Track ${c.title} again`}
-            className="rounded-full border border-dashed border-border px-2.5 py-0.5 font-mono text-[11px] hover:border-solid hover:text-foreground"
+            className="rounded-full border border-dashed border-border px-2.5 py-0.5 font-mono text-xs hover:border-solid hover:text-foreground"
           >
             {shortUnidentified(c.title)} · track again
           </button>
@@ -196,7 +196,7 @@ export function ContinuityCards({
         : "";
 
   return (
-    <div className="mt-2 overflow-hidden rounded-lg border border-border bg-card/60">
+    <div className="mt-2 overflow-hidden rounded-lg border border-border bg-card shadow-sm">
       <button
         type="button"
         onMouseDown={e => e.preventDefault()}
@@ -210,13 +210,13 @@ export function ContinuityCards({
           }
         }}
         aria-expanded={expanded}
-        className="flex w-full min-w-0 select-none items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/20 active:bg-muted/30"
+        className="flex w-full min-w-0 select-none items-center gap-2 bg-muted/60 px-3 py-2 text-left transition-colors hover:bg-muted active:bg-muted"
       >
         <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <span className="flex-1 truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="flex-1 truncate text-[13px] font-bold uppercase tracking-wide text-foreground">
           Target Logger
         </span>
-        <span className="rounded-full bg-pink-500 px-1.5 text-[10px] font-semibold leading-4 text-white">
+        <span className="rounded-full bg-pink-500 px-1.5 text-xs font-semibold leading-4 text-white">
           {live.length}
         </span>
         <ChevronDown
@@ -226,7 +226,7 @@ export function ContinuityCards({
         />
       </button>
       {!expanded && (
-        <div className="flex items-start gap-1.5 px-3 pb-2 pl-[2.125rem] text-[11.5px] leading-snug">
+        <div className="flex items-start gap-1.5 px-3 py-2 pl-[2.125rem] text-[11.5px] leading-snug">
           <span
             className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
               needsAttention ? "bg-amber-500" : "bg-emerald-500"
@@ -268,7 +268,7 @@ export function ContinuityCards({
                         {shortUnidentified(c.title)}
                       </span>
                       <span
-                        className={`whitespace-nowrap rounded-full px-2 text-[10px] font-bold ${
+                        className={`whitespace-nowrap rounded-full px-2 text-xs font-bold ${
                           c.attn
                             ? "border border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400"
                             : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
@@ -305,7 +305,7 @@ export function ContinuityCards({
                           onClick={() => onAction(a.text, a.mode)}
                           disabled={busy}
                           title={a.text}
-                          className="cursor-pointer disabled:cursor-wait disabled:opacity-60 rounded-md border border-pink-500/30 bg-pink-500/5 px-2 py-1 text-left font-mono text-[11px] font-semibold text-pink-500 transition-all hover:bg-pink-500/15 active:scale-[0.98] @max-xl:py-1.5 @max-xl:text-xs"
+                          className="cursor-pointer disabled:cursor-wait disabled:opacity-60 rounded-md border border-pink-500/30 bg-pink-500/5 px-2 py-1 text-left font-mono text-xs font-semibold text-pink-500 transition-all hover:bg-pink-500/15 active:scale-[0.98] @max-xl:py-1.5 @max-xl:text-xs"
                         >
                           {a.label}
                         </button>

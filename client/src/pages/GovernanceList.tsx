@@ -60,11 +60,11 @@ function OperationGroup({
   const anyOverdue = summaries.some(s => s.isOverdue);
 
   return (
-    <div className="rounded-xl border border-border/50 overflow-hidden bg-card">
+    <div className="rounded-xl border border-border overflow-hidden bg-card shadow-sm">
       {/* Operation header row */}
       <button
         onClick={() => setExpanded(v => !v)}
-        className="w-full flex items-center gap-2 px-4 py-3 bg-muted/30 border-b border-border/30 hover:bg-muted/50 transition-colors"
+        className="w-full flex items-center gap-2 px-4 py-3 bg-muted/70 border-b border-border hover:bg-muted transition-colors"
       >
         <div className="p-2.5 rounded-lg bg-purple-400/10 border border-purple-400/20 shrink-0">
           <FolderOpen className="w-5 h-5 text-purple-400" />
@@ -75,14 +75,14 @@ function OperationGroup({
 
         {/* Operation-level status badge */}
         {allDone ? (
-          <Badge className="text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-500 border-emerald-500/30 border">
+          <Badge className="text-xs px-1.5 py-0 bg-emerald-500/15 text-emerald-500 border-emerald-500/30 border">
             <CheckCircle2 className="w-3 h-3 mr-1" />
             All complete
           </Badge>
         ) : (
           <Badge
             variant="outline"
-            className={`text-[10px] px-1.5 py-0 ${
+            className={`text-xs px-1.5 py-0 ${
               anyOverdue
                 ? "border-rose-500/40 text-rose-500"
                 : "border-cyan-500/40 text-cyan-500"
@@ -135,7 +135,7 @@ function OperationGroup({
                   />
                 </svg>
                 <span
-                  className={`absolute text-[9px] font-bold ${percentColor(s.overallPercent)}`}
+                  className={`absolute text-xs font-bold ${percentColor(s.overallPercent)}`}
                 >
                   {s.overallPercent}%
                 </span>
@@ -230,14 +230,14 @@ function GovernanceTileCard({
           <ClipboardCheck className="w-5 h-5 text-purple-400" />
         </div>
         {allDone ? (
-          <Badge className="text-[10px] px-1.5 py-0 bg-emerald-500/15 text-emerald-500 border-emerald-500/30 border shrink-0">
+          <Badge className="text-xs px-1.5 py-0 bg-emerald-500/15 text-emerald-500 border-emerald-500/30 border shrink-0">
             <CheckCircle2 className="w-3 h-3 mr-1" />
             All complete
           </Badge>
         ) : (
           <Badge
             variant="outline"
-            className={`text-[10px] px-1.5 py-0 shrink-0 ${
+            className={`text-xs px-1.5 py-0 shrink-0 ${
               anyOverdue
                 ? "border-rose-500/40 text-rose-500"
                 : "border-cyan-500/40 text-cyan-500"
@@ -287,7 +287,7 @@ function GovernanceTileCard({
       </div>
 
       {/* Sheet list (compact) */}
-      <div className="flex flex-col gap-1 border-t border-border/40 pt-2">
+      <div className="flex flex-col gap-1 border-t border-border pt-2">
         {summaries.slice(0, 3).map(s => (
           <button
             key={s.sheetId}
@@ -305,7 +305,7 @@ function GovernanceTileCard({
           </button>
         ))}
         {summaries.length > 3 && (
-          <p className="text-[10px] text-muted-foreground pl-1">
+          <p className="text-xs text-muted-foreground pl-1">
             +{summaries.length - 3} more sheets
           </p>
         )}

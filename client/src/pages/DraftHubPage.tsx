@@ -568,7 +568,8 @@ export default function DraftHubPage() {
               {/* Operation picker — required */}
               <div>
                 <label className="mb-1 block text-sm font-medium">
-                  Operation <span className="text-red-500">*</span>
+                  Operation{" "}
+                  <span className="text-red-700 dark:text-red-300">*</span>
                 </label>
                 <Select value={newSheetOpKey} onValueChange={setNewSheetOpKey}>
                   <SelectTrigger>
@@ -614,7 +615,7 @@ export default function DraftHubPage() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium">
-                  Date <span className="text-red-500">*</span>
+                  Date <span className="text-red-700 dark:text-red-300">*</span>
                 </label>
                 <Input
                   type="date"

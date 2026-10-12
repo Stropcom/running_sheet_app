@@ -36,36 +36,52 @@ const ACTION_CONFIG: Record<
   certified: {
     label: "Certified",
     icon: ShieldCheck,
-    color: "text-emerald-400",
+    color: "text-emerald-700 dark:text-emerald-300",
   },
-  uncertified: { label: "Uncertified", icon: Unlock, color: "text-amber-400" },
-  row_created: { label: "Row Created", icon: FilePen, color: "text-blue-400" },
-  row_updated: { label: "Row Updated", icon: FilePen, color: "text-blue-300" },
-  row_deleted: { label: "Row Deleted", icon: Trash2, color: "text-red-400" },
+  uncertified: {
+    label: "Uncertified",
+    icon: Unlock,
+    color: "text-amber-700 dark:text-amber-300",
+  },
+  row_created: {
+    label: "Row Created",
+    icon: FilePen,
+    color: "text-blue-700 dark:text-blue-300",
+  },
+  row_updated: {
+    label: "Row Updated",
+    icon: FilePen,
+    color: "text-blue-700 dark:text-blue-300",
+  },
+  row_deleted: {
+    label: "Row Deleted",
+    icon: Trash2,
+    color: "text-red-700 dark:text-red-300",
+  },
   member_added: {
     label: "Member Added",
     icon: UserPlus,
-    color: "text-violet-400",
+    color: "text-violet-700 dark:text-violet-300",
   },
   member_removed: {
     label: "Member Removed",
     icon: UserMinus,
-    color: "text-orange-400",
+    color: "text-orange-700 dark:text-orange-300",
   },
   sheet_created: {
     label: "Sheet Created",
     icon: FileText,
-    color: "text-sky-400",
+    color: "text-sky-700 dark:text-sky-300",
   },
   sheet_updated: {
     label: "Sheet Updated",
     icon: FileText,
-    color: "text-sky-300",
+    color: "text-sky-700 dark:text-sky-300",
   },
   sheet_deleted: {
     label: "Sheet Deleted",
     icon: Trash2,
-    color: "text-red-400",
+    color: "text-red-700 dark:text-red-300",
   },
 };
 
@@ -341,7 +357,7 @@ export default function AuditLogPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="running-sheet-table w-full">
+              <table className="running-sheet-table audit-cards w-full">
                 <thead>
                   <tr className="bg-muted/30">
                     <th className="w-44">Timestamp</th>
@@ -385,7 +401,11 @@ export default function AuditLogPage() {
                             {(log as any).userCIN ?? log.userName}
                           </span>
                         </td>
-                        <td>
+                        <td
+                          className={
+                            log.rowTime && log.rowId ? "" : "audit-empty"
+                          }
+                        >
                           {log.rowTime && log.rowId ? (
                             <button
                               onClick={() => jumpToRow(log)}

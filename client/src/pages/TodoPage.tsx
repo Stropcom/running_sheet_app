@@ -2,7 +2,13 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
+import {
+  TodoGroup,
+  TodoHeader,
+  TodoPill,
+  TodoRow,
+  TodoTile,
+} from "@/components/TodoKit";
 import {
   FileText,
   ChevronRight,
@@ -51,26 +57,13 @@ export default function TodoPage() {
   return (
     <DashboardLayout>
       <div className="px-4 py-8">
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20">
-            <Shield className="w-5 h-5 text-red-400" />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold text-foreground">Certify</h1>
-            <p className="text-sm text-muted-foreground">
-              Running sheet rows awaiting your certification
-            </p>
-          </div>
-          {count > 0 && (
-            <Badge
-              variant="outline"
-              className="border-red-500/40 bg-red-500/10 text-red-400 font-semibold"
-            >
-              {count} sheet{count !== 1 ? "s" : ""}
-            </Badge>
-          )}
-        </div>
+        <TodoHeader
+          tone="red"
+          icon={<Shield className="w-5 h-5 text-red-600 dark:text-red-400" />}
+          title="Certify"
+          subtitle="Running sheet rows awaiting your certification"
+          count={count}
+        />
 
         {/* Loading */}
         {isLoading && (
@@ -84,13 +77,13 @@ export default function TodoPage() {
         {/* All done */}
         {!isLoading && count === 0 && (
           <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
-            <div className="p-4 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-              <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+            <div className="p-4 rounded-full border border-emerald-300 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/10">
+              <CheckCircle2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
             </div>
             <p className="text-base font-semibold text-foreground">
               All certified!
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-foreground/70">
               No outstanding certifications for your CIN.
             </p>
           </div>
@@ -102,77 +95,72 @@ export default function TodoPage() {
           (viewMode === "tile" ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {(certify ?? []).map(item => (
-                <div
+                <TodoTile
                   key={item.sheetId}
+                  tone="red"
                   onClick={() => navigate(`/sheet/${item.sheetId}`)}
-                  className="group flex flex-col gap-3 p-5 rounded-xl border border-red-500/30 bg-card hover:bg-red-500/5 hover:border-red-500/50 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 shrink-0">
-                      <FileText className="w-5 h-5 text-red-400" />
+                    <div className="shrink-0 rounded-lg border border-red-300 bg-red-50 p-2.5 dark:border-red-500/30 dark:bg-red-500/10">
+                      <FileText className="w-5 h-5 text-red-600 dark:text-red-400" />
                     </div>
-                    <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border border-red-500/40 bg-red-500/10 text-red-400 font-medium shrink-0">
+                    <TodoPill tone="red">
                       {item.uncertifiedRowCount} to certify
-                    </span>
+                    </TodoPill>
                   </div>
                   <p className="font-semibold text-foreground leading-tight line-clamp-2">
                     {item.sheetTitle}
                   </p>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1 text-xs text-foreground/70">
                     <Building2 className="w-3 h-3 shrink-0" />
                     <span className="truncate">{item.operationName}</span>
                   </div>
-                  <div className="flex items-center gap-1 mt-auto text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1 mt-auto text-xs text-foreground/70">
                     <Calendar className="w-3 h-3" />
                     <span>
                       {format(new Date(item.createdAt), "d MMM yyyy")}
                     </span>
                   </div>
-                </div>
+                </TodoTile>
               ))}
             </div>
           ) : (
             <div className="space-y-3">
               {Object.entries(certByOp).map(([opId, group]) => (
-                <div
+                <TodoGroup
                   key={opId}
-                  className="rounded-xl border border-border/50 overflow-hidden bg-card"
+                  tone="red"
+                  name={group.operationName}
+                  count={group.sheets.length}
                 >
-                  <div className="flex items-center gap-2 px-4 py-2 bg-muted/20 border-b border-border/20">
-                    <Building2 className="w-3 h-3 text-red-400 shrink-0" />
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {group.operationName}
-                    </span>
-                  </div>
                   {group.sheets.map(item => (
-                    <div
+                    <TodoRow
                       key={item.sheetId}
-                      className="group flex items-center gap-4 px-4 py-3 hover:bg-red-500/5 transition-colors cursor-pointer border-b border-border/20 last:border-0"
+                      tone="red"
                       onClick={() => navigate(`/sheet/${item.sheetId}`)}
+                      icon={
+                        <FileText className="w-5 h-5 text-red-600 dark:text-red-400" />
+                      }
+                      trailing={
+                        <ChevronRight className="w-4 h-4 text-red-500/70 group-hover:text-red-600 transition-colors" />
+                      }
                     >
-                      <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 shrink-0">
-                        <FileText className="w-5 h-5 text-red-400" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="font-medium text-sm text-foreground truncate block">
-                          {item.sheetTitle}
+                      <span className="font-semibold text-sm text-foreground truncate block">
+                        {item.sheetTitle}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                        <TodoPill tone="red">
+                          {item.uncertifiedRowCount} row
+                          {item.uncertifiedRowCount !== 1 ? "s" : ""} to certify
+                        </TodoPill>
+                        <span className="flex items-center gap-1 text-xs text-foreground/70">
+                          <Calendar className="w-3 h-3" />
+                          {format(new Date(item.createdAt), "d MMM yyyy")}
                         </span>
-                        <div className="flex items-center gap-3 mt-0.5">
-                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full border border-red-500/40 bg-red-500/10 text-red-400 font-medium">
-                            {item.uncertifiedRowCount} row
-                            {item.uncertifiedRowCount !== 1 ? "s" : ""} to
-                            certify
-                          </span>
-                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Calendar className="w-3 h-3" />
-                            {format(new Date(item.createdAt), "d MMM yyyy")}
-                          </span>
-                        </div>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-red-400/50 group-hover:text-red-400 transition-colors shrink-0" />
-                    </div>
+                    </TodoRow>
                   ))}
-                </div>
+                </TodoGroup>
               ))}
             </div>
           ))}

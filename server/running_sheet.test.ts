@@ -5,7 +5,29 @@ import type { TrpcContext } from "./_core/context";
 
 // ─── Mock DB helpers ──────────────────────────────────────────────────────────
 
+// The cross-Command access guard has its own tests (operationGuard.test.ts);
+// here it is a pass-through so these tests stay about the router itself.
+vi.mock("./operationAccess", () => ({
+  enforceOperationAccess: vi.fn().mockResolvedValue({}),
+  hiddenIntelligenceFor: vi.fn().mockResolvedValue(new Set()),
+  INTELLIGENCE_PROFILE_PATHS: new Set<string>(),
+  toAccessUser: (u: unknown) => u,
+  filterByOperationAccess: async (_u: unknown, rows: unknown[]) => rows,
+  operationsForUser: async (_u: unknown, rows: unknown[]) => rows,
+  operationsForMap: async (_u: unknown, rows: unknown[]) => rows,
+  sharedInOperationIds: vi.fn().mockResolvedValue([]),
+  scopeRegistryTargets: async (_u: unknown, rows: unknown[]) => rows,
+  reachableFor: vi.fn().mockResolvedValue([]),
+  invalidateAccessCache: vi.fn(),
+  commandsOfUsers: vi.fn().mockResolvedValue(new Map()),
+  filterAuditLogs: async (_u: unknown, rows: unknown[]) => rows,
+  filterByIntelligenceScope: async (_u: unknown, rows: unknown[]) => rows,
+  filterLocationRows: async (_u: unknown, rows: unknown[]) => rows,
+  intelligenceOperationIds: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock("./db", () => ({
+  mustShareLocation: vi.fn().mockResolvedValue(false),
   getRunningSheets: vi.fn().mockResolvedValue([]),
   getRunningSheetById: vi.fn().mockResolvedValue({
     id: 1,
@@ -51,6 +73,7 @@ vi.mock("./db", () => ({
   getAuditLogsBySheet: vi.fn().mockResolvedValue([]),
   getAllAuditLogs: vi.fn().mockResolvedValue([]),
   getAllUsers: vi.fn().mockResolvedValue([]),
+  listTeams: vi.fn().mockResolvedValue([]),
   updateUserRole: vi.fn().mockResolvedValue(undefined),
   upsertUser: vi.fn().mockResolvedValue(undefined),
   getUserByOpenId: vi.fn().mockResolvedValue(undefined),

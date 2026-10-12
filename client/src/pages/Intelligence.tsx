@@ -29,6 +29,7 @@ import {
   HelpCircle,
   FileDown,
   ChevronRight,
+  ChevronDown,
   Calendar,
   Folder,
   FileText,
@@ -41,7 +42,7 @@ import {
 } from "lucide-react";
 import { useViewMode } from "@/contexts/ViewModeContext";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
-import { MergeEntitiesButton } from "@/components/MergeEntitiesButton";
+import { RegionSearchButton } from "@/components/RegionSearch";
 import { IndicesBadge } from "@/components/IndicesBadge";
 import IntelligenceHeatMap from "@/pages/IntelligenceHeatMap";
 import IntelligencePatternOfLife from "@/pages/IntelligencePatternOfLife";
@@ -1250,13 +1251,27 @@ function OperationsTab({
             <p className="font-semibold text-foreground leading-tight line-clamp-2">
               {op.operationName}
             </p>
-            <div className="flex gap-3 mt-auto">
-              <span className="text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">
-                  {op.entityCount}
-                </span>{" "}
+            <div className="mt-auto flex flex-wrap items-center gap-2">
+              {/* The entity count is the button that opens the entity list
+                  (the tile itself opens the operation profile). */}
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  setExpandedOpId(
+                    expandedOpId === op.operationId ? null : op.operationId
+                  );
+                }}
+                aria-expanded={expandedOpId === op.operationId}
+                title="Show the entity list"
+                className={entityPillClass(expandedOpId === op.operationId)}
+              >
+                <span className="font-bold">{op.entityCount}</span>
                 {op.entityCount === 1 ? "entity" : "entities"}
-              </span>
+                <ChevronDown
+                  className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${expandedOpId === op.operationId ? "rotate-180" : ""}`}
+                />
+              </button>
               <span className="text-xs text-muted-foreground">
                 <span className="font-semibold text-foreground">
                   {op.sheetCount}
@@ -1264,32 +1279,9 @@ function OperationsTab({
                 {op.sheetCount === 1 ? "sheet" : "sheets"}
               </span>
             </div>
-            {/* Full-width Entity List bar across the bottom of the tile — the
-                tile itself opens the operation profile. */}
-            <button
-              onClick={e => {
-                e.stopPropagation();
-                setExpandedOpId(
-                  expandedOpId === op.operationId ? null : op.operationId
-                );
-              }}
-              aria-expanded={expandedOpId === op.operationId}
-              title="Show the entity list"
-              className={`-mx-5 mt-1 flex items-center gap-2 px-5 py-2.5 border-t border-blue-500/20 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-bold uppercase tracking-wider text-left transition-colors ${
-                expandedOpId === op.operationId ? "" : "-mb-5 rounded-b-xl"
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5 shrink-0" />
-              <span className="flex-1 min-w-0 truncate">
-                {op.operationName} Entity List
-              </span>
-              <ChevronRight
-                className={`w-4 h-4 shrink-0 transition-transform duration-200 ${expandedOpId === op.operationId ? "rotate-90" : ""}`}
-              />
-            </button>
             {expandedOpId === op.operationId && (
               <div
-                className="-mx-5 -mb-5 cursor-default"
+                className="-mx-5 -mb-5 cursor-default border-t border-border"
                 onClick={e => e.stopPropagation()}
               >
                 {entityPanel(op)}
@@ -1311,56 +1303,73 @@ function OperationsTab({
             key={op.operationId}
             className="rounded-xl border border-border/60 overflow-hidden bg-card"
           >
-            <button
-              onClick={() =>
-                navigate(`/intelligence/operation/${op.operationId}`)
-              }
-              title="View Operation Profile"
-              className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors"
-            >
-              <div className="p-2.5 rounded-lg bg-violet-400/10 border border-violet-400/20 shrink-0">
-                <Folder className="w-5 h-5 text-violet-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground truncate">
-                  {op.operationName}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {op.entityCount}{" "}
-                  {op.entityCount === 1 ? "entity" : "entities"} ·{" "}
-                  {op.sheetCount} {op.sheetCount === 1 ? "sheet" : "sheets"}
-                </p>
-              </div>
-              <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-            </button>
+            <div className="flex items-center gap-2 pr-3">
+              <button
+                onClick={() =>
+                  navigate(`/intelligence/operation/${op.operationId}`)
+                }
+                title="View Operation Profile"
+                className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/10"
+              >
+                <div className="p-2.5 rounded-lg bg-violet-400/10 border border-violet-400/20 shrink-0">
+                  <Folder className="w-5 h-5 text-violet-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="break-words text-sm font-semibold text-foreground sm:truncate">
+                    {op.operationName}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {op.sheetCount} {op.sheetCount === 1 ? "sheet" : "sheets"}
+                  </p>
+                </div>
+              </button>
+              {/* The entity count is the button that opens the entity list;
+                  the row beside it opens the operation profile. */}
+              <button
+                type="button"
+                onClick={() =>
+                  setExpandedOpId(isExpanded ? null : op.operationId)
+                }
+                aria-expanded={isExpanded}
+                title="Show the entity list"
+                className={`${entityPillClass(isExpanded)} justify-center sm:min-w-[8.5rem]`}
+              >
+                <span className="font-bold">{op.entityCount}</span>
+                {op.entityCount === 1 ? "entity" : "entities"}
+                <ChevronDown
+                  className={`h-3.5 w-3.5 shrink-0 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+                />
+              </button>
+              <button
+                onClick={() =>
+                  navigate(`/intelligence/operation/${op.operationId}`)
+                }
+                title="View Operation Profile"
+                aria-label={`Open ${op.operationName} profile`}
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-accent/10"
+              >
+                <ChevronRight className="h-4 w-4 shrink-0" />
+              </button>
+            </div>
 
-            {/* Full-width Entity List bar, directly under the header — opens
-                and closes the operation's entities below it. (The header
-                above is the link to the operation profile.) */}
-            <button
-              onClick={() =>
-                setExpandedOpId(isExpanded ? null : op.operationId)
-              }
-              aria-expanded={isExpanded}
-              title="Show the entity list"
-              className="w-full flex items-center gap-2 px-4 py-2.5 border-t border-blue-500/20 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-xs font-bold uppercase tracking-wider text-left transition-colors"
-            >
-              <FileText className="w-3.5 h-3.5 shrink-0" />
-              <span className="flex-1 min-w-0 truncate">
-                {op.operationName} Entity List
-              </span>
-              <ChevronRight
-                className={`w-4 h-4 shrink-0 transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
-              />
-            </button>
-
-            {isExpanded && entityPanel(op)}
+            {isExpanded && (
+              <div className="border-t border-border">{entityPanel(op)}</div>
+            )}
           </div>
         );
       })}
     </div>
   );
 }
+
+// The entity count on an operation row/tile: a button that opens the
+// operation's entity list.
+const entityPillClass = (open: boolean) =>
+  `inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${
+    open
+      ? "border-primary bg-primary/10 text-foreground"
+      : "border-border bg-background text-foreground hover:bg-muted/60"
+  }`;
 
 // ─── Date filter helpers ──────────────────────────────────────────────────────
 
@@ -1507,48 +1516,48 @@ const ENTITY_TAB_COLORS: Record<
 > = {
   operations: {
     icon: "text-slate-500 dark:text-slate-400",
-    activeBg: "bg-slate-500/10",
+    activeBg: "bg-slate-500/15 shadow-sm",
     activeText: "text-slate-900 dark:text-slate-100",
     bar: "bg-slate-500",
-    idleBorder: "border-slate-500/20",
-    idleBg: "bg-slate-500/5",
-    activeBorder: "border-slate-500/40",
+    idleBorder: "border-slate-500/45",
+    idleBg: "bg-card",
+    activeBorder: "border-slate-500",
   },
   targets: {
-    icon: "text-sky-500",
-    activeBg: "bg-sky-500/10",
+    icon: "text-sky-600",
+    activeBg: "bg-sky-500/15 shadow-sm",
     activeText: "text-sky-700 dark:text-sky-400",
     bar: "bg-sky-500",
-    idleBorder: "border-sky-500/20",
-    idleBg: "bg-sky-500/5",
-    activeBorder: "border-sky-500/40",
+    idleBorder: "border-sky-500/45",
+    idleBg: "bg-card",
+    activeBorder: "border-sky-500",
   },
   associates: {
-    icon: "text-violet-500",
-    activeBg: "bg-violet-500/10",
+    icon: "text-violet-600",
+    activeBg: "bg-violet-500/15 shadow-sm",
     activeText: "text-violet-700 dark:text-violet-400",
     bar: "bg-violet-500",
-    idleBorder: "border-violet-500/20",
-    idleBg: "bg-violet-500/5",
-    activeBorder: "border-violet-500/40",
+    idleBorder: "border-violet-500/45",
+    idleBg: "bg-card",
+    activeBorder: "border-violet-500",
   },
   vehicle: {
-    icon: "text-amber-500",
-    activeBg: "bg-amber-500/10",
+    icon: "text-amber-600",
+    activeBg: "bg-amber-500/15 shadow-sm",
     activeText: "text-amber-700 dark:text-amber-400",
     bar: "bg-amber-500",
-    idleBorder: "border-amber-500/20",
-    idleBg: "bg-amber-500/5",
-    activeBorder: "border-amber-500/40",
+    idleBorder: "border-amber-500/45",
+    idleBg: "bg-card",
+    activeBorder: "border-amber-500",
   },
   locations: {
-    icon: "text-emerald-500",
-    activeBg: "bg-emerald-500/10",
+    icon: "text-emerald-600",
+    activeBg: "bg-emerald-500/15 shadow-sm",
     activeText: "text-emerald-700 dark:text-emerald-400",
     bar: "bg-emerald-500",
-    idleBorder: "border-emerald-500/20",
-    idleBg: "bg-emerald-500/5",
-    activeBorder: "border-emerald-500/40",
+    idleBorder: "border-emerald-500/45",
+    idleBg: "bg-card",
+    activeBorder: "border-emerald-500",
   },
 };
 
@@ -1975,7 +1984,7 @@ export default function IntelligencePage() {
               </p>
             )}
           </div>
-          <MergeEntitiesButton />
+          <RegionSearchButton />
         </div>
 
         {/* Tab nav */}
@@ -2015,7 +2024,7 @@ export default function IntelligencePage() {
                   <button
                     key={tab.value}
                     onClick={() => setActiveTab(tab.value)}
-                    className={`flex flex-col items-center gap-1 py-3 px-2 rounded-lg border transition-colors ${
+                    className={`flex flex-col items-center gap-1 py-3 px-2 rounded-lg border-2 transition-colors ${
                       isActive
                         ? `${colors.activeBorder} ${colors.activeBg}`
                         : `${colors.idleBorder} ${colors.idleBg} hover:bg-muted/40`
@@ -2024,14 +2033,14 @@ export default function IntelligencePage() {
                     <span className="flex items-center gap-1.5">
                       <span className={colors.icon}>{tab.icon}</span>
                       <span
-                        className={`text-xs font-semibold ${isActive ? colors.activeText : "text-foreground"}`}
+                        className={`text-[13px] font-bold ${isActive ? colors.activeText : "text-foreground"}`}
                       >
                         {tab.label}
                       </span>
                     </span>
-                    {count !== undefined && count > 0 && (
+                    {count !== undefined && (
                       <span
-                        className={`text-base font-bold ${isActive ? colors.activeText : "text-muted-foreground"}`}
+                        className={`text-lg font-bold ${isActive ? colors.activeText : "text-foreground/80"}`}
                       >
                         {count}
                       </span>
@@ -2044,7 +2053,7 @@ export default function IntelligencePage() {
               })}
             </div>
             <div className="flex flex-col gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              <span className="text-xs font-bold uppercase tracking-wide text-foreground/70">
                 Reports
               </span>
               <div className="flex gap-2">
@@ -2054,10 +2063,10 @@ export default function IntelligencePage() {
                     <button
                       key={tab.value}
                       onClick={() => setActiveTab(tab.value)}
-                      className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg border text-xs font-semibold transition-colors ${
+                      className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2.5 rounded-lg border-2 text-[13px] font-bold transition-colors ${
                         isActive
-                          ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-700 dark:text-indigo-400"
-                          : "border-indigo-500/20 bg-indigo-500/5 text-indigo-600/80 dark:text-indigo-400/70 hover:bg-indigo-500/10"
+                          ? "border-indigo-500 bg-indigo-500/15 text-indigo-800 shadow-sm dark:text-indigo-300"
+                          : "border-indigo-500/45 bg-card text-indigo-700 hover:bg-indigo-500/10 dark:text-indigo-300"
                       }`}
                     >
                       {tab.icon}
@@ -2110,7 +2119,7 @@ export default function IntelligencePage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <span className="text-muted-foreground/40 mx-0.5">|</span>
+                  <span className="text-muted-foreground mx-0.5">|</span>
                 </>
               )}
               <span className="text-xs text-muted-foreground mr-1">Sort:</span>
@@ -2121,7 +2130,7 @@ export default function IntelligencePage() {
                   className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
                     sortOrder === opt.value
                       ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70"
+                      : "bg-card text-foreground/80 border-input hover:bg-muted/70"
                   }`}
                 >
                   {opt.label}
@@ -2209,7 +2218,7 @@ export default function IntelligencePage() {
                     className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
                       opSortOrder === opt.value
                         ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70"
+                        : "bg-card text-foreground/80 border-input hover:bg-muted/70"
                     }`}
                   >
                     {opt.label}
@@ -2299,7 +2308,7 @@ export default function IntelligencePage() {
                     <button
                       key={`${entity.isTarget ? "target" : entity.type}::${entity.shortForm}`}
                       onClick={handleClick}
-                      className="group flex flex-col gap-3 p-5 rounded-xl overflow-hidden border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 text-left w-full"
+                      className="group flex flex-col gap-3 p-5 rounded-xl overflow-hidden border border-border bg-card shadow-sm hover:bg-accent/20 hover:border-primary/40 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 text-left w-full"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span
@@ -2308,10 +2317,10 @@ export default function IntelligencePage() {
                           {icon}
                         </span>
                         <div className="text-right shrink-0">
-                          <p className="text-xs font-semibold text-foreground">
+                          <p className="text-sm font-bold text-foreground">
                             {entity.occurrences.length}×
                           </p>
-                          <p className="text-[10px] text-muted-foreground">
+                          <p className="text-xs text-foreground/70">
                             {uniqueSheets(entity.occurrences).length} sheet
                             {uniqueSheets(entity.occurrences).length !== 1
                               ? "s"
@@ -2320,7 +2329,7 @@ export default function IntelligencePage() {
                         </div>
                       </div>
                       <div className="flex-1">
-                        <p className="font-mono text-sm font-semibold text-foreground line-clamp-2">
+                        <p className="font-mono text-[15px] font-semibold leading-snug text-foreground line-clamp-2">
                           {displayShortForm}
                         </p>
                         <div className="flex flex-wrap items-center gap-1 mt-1">
@@ -2328,13 +2337,15 @@ export default function IntelligencePage() {
                         </div>
                       </div>
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-[10px] text-muted-foreground truncate">
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${entity.isTarget ? TYPE_COLORS.person : TYPE_COLORS[entity.type]}`}
+                        >
                           {TYPE_LABELS[entity.type]}
-                        </p>
+                        </span>
                         {photoCountForEntity(entity) > 0 && (
                           <span
                             title={`${photoCountForEntity(entity)} linked photo${photoCountForEntity(entity) === 1 ? "" : "s"}`}
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-pink-500/10 text-pink-500 border border-pink-500/30 shrink-0"
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-pink-500/10 text-pink-700 dark:text-pink-400 border border-pink-500/40 shrink-0"
                           >
                             <Camera className="w-3 h-3" />
                             {photoCountForEntity(entity)}
@@ -2346,7 +2357,7 @@ export default function IntelligencePage() {
                 })}
               </div>
             ) : (
-              <div className="rounded-xl border border-border/60 overflow-hidden bg-card">
+              <div className="rounded-xl border border-border overflow-hidden bg-card shadow-sm">
                 {sortedByTab(filteredByTab).map((entity, idx) => {
                   const iconColor = entity.isTarget
                     ? TYPE_COLORS.person
@@ -2392,7 +2403,7 @@ export default function IntelligencePage() {
                       }}
                       className={`w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/10 transition-colors ${
                         idx < filteredByTab.length - 1
-                          ? "border-b border-border/40"
+                          ? "border-b border-border"
                           : ""
                       }`}
                     >
@@ -2403,7 +2414,7 @@ export default function IntelligencePage() {
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="font-mono text-sm font-medium text-foreground truncate">
+                          <p className="font-mono text-[15px] font-semibold text-foreground truncate">
                             {displayShortForm}
                           </p>
                           {entity.lowConfidence && (
@@ -2418,10 +2429,10 @@ export default function IntelligencePage() {
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-xs font-medium text-foreground">
+                        <p className="text-sm font-bold text-foreground">
                           {entity.occurrences.length}×
                         </p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-foreground/70">
                           {uniqueSheets(entity.occurrences).length} sheet
                           {uniqueSheets(entity.occurrences).length !== 1
                             ? "s"
@@ -2431,7 +2442,7 @@ export default function IntelligencePage() {
                       {photoCountForEntity(entity) > 0 && (
                         <span
                           title={`${photoCountForEntity(entity)} linked photo${photoCountForEntity(entity) === 1 ? "" : "s"}`}
-                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-pink-500/10 text-pink-500 border border-pink-500/30 shrink-0"
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-pink-500/10 text-pink-700 dark:text-pink-400 border border-pink-500/40 shrink-0"
                         >
                           <Camera className="w-3 h-3" />
                           {photoCountForEntity(entity)}

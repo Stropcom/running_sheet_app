@@ -38,7 +38,7 @@ export function SmeacReadOnlyContent({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-card border border-border shadow-sm">
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-card border border-border shadow-sm">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
           {briefing.acknowledgedCount} acknowledged
         </span>
@@ -48,7 +48,7 @@ export function SmeacReadOnlyContent({
       {/* TARGET — precedes SMEAC, not part of it */}
       {(briefing.target || briefing.extraLocations.length > 0) && (
         <div className="space-y-1.5">
-          <h3 className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+          <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
             Target
           </h3>
           <div className="flex flex-wrap gap-1.5">
@@ -99,7 +99,7 @@ export function SmeacReadOnlyContent({
           <SmeacLabel letter="S" label="Situation" />
           {briefing.backgroundIntel && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">
                 Background / intelligence
               </p>
               <p className="text-sm whitespace-pre-wrap">
@@ -109,7 +109,7 @@ export function SmeacReadOnlyContent({
           )}
           {briefing.knownRisks && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">
                 Known risks or threats
               </p>
               <p className="text-sm whitespace-pre-wrap">
@@ -119,7 +119,7 @@ export function SmeacReadOnlyContent({
           )}
           {briefing.otherAgencies.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">
                 Other agencies / teams
               </p>
               <div className="flex flex-wrap gap-1.5">
@@ -156,7 +156,7 @@ export function SmeacReadOnlyContent({
           <SmeacLabel letter="E" label="Execution" />
           {briefing.mapSnapshotUrl && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1.5">
+              <p className="text-xs font-semibold text-muted-foreground mb-1.5">
                 Map snapshot
               </p>
               <img
@@ -168,7 +168,7 @@ export function SmeacReadOnlyContent({
           )}
           {briefing.overallPlan && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">
                 Overall plan
               </p>
               <p className="text-sm whitespace-pre-wrap">
@@ -178,7 +178,7 @@ export function SmeacReadOnlyContent({
           )}
           {briefing.actionsOn && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">
                 Actions on
               </p>
               <p className="text-sm whitespace-pre-wrap">
@@ -188,7 +188,7 @@ export function SmeacReadOnlyContent({
           )}
           {briefing.situationChange && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">
                 Situation change
               </p>
               <p className="text-sm whitespace-pre-wrap">
@@ -198,7 +198,7 @@ export function SmeacReadOnlyContent({
           )}
           {briefing.objectives.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1.5">
+              <p className="text-xs font-semibold text-muted-foreground mb-1.5">
                 Objectives
               </p>
               <ol className="space-y-1">
@@ -213,7 +213,7 @@ export function SmeacReadOnlyContent({
           )}
           {briefing.teamSlots.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1.5 flex items-center gap-1.5">
+              <p className="text-xs font-semibold text-muted-foreground mb-1.5 flex items-center gap-1.5">
                 <Users className="h-3 w-3" />
                 Surveillance team
               </p>
@@ -224,8 +224,8 @@ export function SmeacReadOnlyContent({
                   const pillClass = !slot.cin
                     ? "bg-muted text-muted-foreground border-border"
                     : acked
-                      ? "bg-emerald-500/15 text-emerald-700 border-emerald-500/40 dark:text-emerald-400"
-                      : "bg-red-500/15 text-red-700 border-red-500/40 dark:text-red-400";
+                      ? "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 border-emerald-300 dark:border-emerald-500/40 dark:text-emerald-400"
+                      : "bg-red-50 dark:bg-red-500/10 text-red-700 border-red-300 dark:border-red-500/40 dark:text-red-400";
                   return (
                     <div
                       key={i}
@@ -250,7 +250,7 @@ export function SmeacReadOnlyContent({
                           {slot.name}
                         </span>
                         {slot.isTeamLeader && (
-                          <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                          <span className="text-xs font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400">
                             TL
                           </span>
                         )}
@@ -295,7 +295,7 @@ export function SmeacReadOnlyContent({
           </div>
           {briefing.accoutrements.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">
                 Accoutrements
               </p>
               <div className="flex flex-wrap gap-1.5">
@@ -312,7 +312,7 @@ export function SmeacReadOnlyContent({
           )}
           {briefing.covertIdentifiers.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">
                 Covert police identifier
               </p>
               <div className="flex flex-wrap gap-1.5">
@@ -345,7 +345,7 @@ export function SmeacReadOnlyContent({
           <SmeacLabel letter="C" label="Command & Signal" icon={Radio} />
           {briefing.teamSlots.some(s => s.isTeamLeader) && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">
                 Team leader
               </p>
               <p className="text-sm">
@@ -355,7 +355,7 @@ export function SmeacReadOnlyContent({
           )}
           {briefing.locationOfTeamLeader && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">
                 Location of team leader
               </p>
               <p className="text-sm">{briefing.locationOfTeamLeader}</p>
@@ -363,7 +363,7 @@ export function SmeacReadOnlyContent({
           )}
           {briefing.reportingProcedures && (
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground mb-1">
+              <p className="text-xs font-semibold text-muted-foreground mb-1">
                 Reporting procedures
               </p>
               <p className="text-sm whitespace-pre-wrap">

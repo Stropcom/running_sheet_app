@@ -117,9 +117,9 @@ const LEVELS: LevelDef[] = [
   },
 ];
 const RISK_CLASSES: Record<LevelDef["risk"], string> = {
-  low: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-  med: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-  high: "bg-red-500/15 text-red-700 dark:text-red-400",
+  low: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  med: "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  high: "bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400",
 };
 
 export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
@@ -478,7 +478,7 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
   return (
     <div className="p-4 md:p-6 space-y-5">
       <div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+        <div className="flex items-center gap-2 text-xs text-foreground/70 mb-1">
           <span>Administration</span>
           <span>/</span>
           <button
@@ -513,8 +513,8 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
           <span
             className={
               isPosted
-                ? "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-emerald-500/10 text-emerald-600 border border-emerald-500/30"
-                : "inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-muted text-muted-foreground"
+                ? "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 border border-emerald-300 dark:border-emerald-500/40"
+                : "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wide bg-muted text-foreground/70"
             }
           >
             {isPosted ? "Posted" : "Draft"}
@@ -523,7 +523,7 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* Operation / Sheet / Target context */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
+      <div className="p-4 rounded-xl bg-card border border-border shadow-sm space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Operation">
             <Select
@@ -569,7 +569,7 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
         <SmeacLabel letter="T" label="Target" icon={Eye} />
 
         {operationId == null ? (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-foreground/70">
             Choose an operation to see its targets, vehicles, and locations.
           </p>
         ) : (
@@ -733,9 +733,11 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* Information & Intelligence */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
-        <SmeacLabel letter="1" label="Information & intelligence" />
-        <p className="text-[11px] font-semibold text-muted-foreground -mt-1">
+      <div className="overflow-hidden p-4 rounded-xl bg-card border border-border shadow-sm space-y-3">
+        <div className="-mx-4 -mt-4 border-b border-border bg-muted/70 px-4 py-2.5">
+          <SmeacLabel letter="1" label="Information & intelligence" />
+        </div>
+        <p className="text-xs font-semibold text-foreground/70 -mt-1">
           Operation & target
         </p>
         <Field label="Operation background" compact>
@@ -763,7 +765,7 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
             className="min-h-[60px] text-sm"
           />
         </Field>
-        <p className="text-[11px] font-semibold text-muted-foreground">UCO</p>
+        <p className="text-xs font-semibold text-foreground/70">UCO</p>
         <Field label="UCO photograph(s)" compact>
           <Input
             value={ucoPhotoRef}
@@ -788,8 +790,10 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* UCO Deployment Plan */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
-        <SmeacLabel letter="2" label="UCO deployment plan" />
+      <div className="overflow-hidden p-4 rounded-xl bg-card border border-border shadow-sm space-y-3">
+        <div className="-mx-4 -mt-4 border-b border-border bg-muted/70 px-4 py-2.5">
+          <SmeacLabel letter="2" label="UCO deployment plan" />
+        </div>
         <Field label="Objective" compact>
           <Textarea
             value={planObjective}
@@ -849,11 +853,11 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* iSURV icon key — static reference */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-2">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+      <div className="p-4 rounded-xl bg-card border border-border shadow-sm space-y-2">
+        <p className="text-xs font-bold uppercase tracking-wide text-foreground/70">
           iSURV icon key
         </p>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-foreground/70">
           iSURV should be marked up with all relevant surveillance and tactical
           icons: target location (stronghold), Final Action Point (FAP),
           vehicle/foot ingress-egress, EB location, optical device, TCP, and UCO
@@ -862,11 +866,13 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* Surveillance team */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
-        <SmeacLabel
-          letter="3"
-          label="Surveillance team — tactics & structure"
-        />
+      <div className="overflow-hidden p-4 rounded-xl bg-card border border-border shadow-sm space-y-3">
+        <div className="-mx-4 -mt-4 border-b border-border bg-muted/70 px-4 py-2.5">
+          <SmeacLabel
+            letter="3"
+            label="Surveillance team — tactics & structure"
+          />
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <RoleSelect
             label="Team Leader"
@@ -894,19 +900,19 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
           />
         </div>
         {roleSelectableUsers.length === 0 && (
-          <p className="text-[11px] text-muted-foreground -mt-1">
+          <p className="text-xs text-foreground/70 -mt-1">
             No running sheet roster loaded yet — choose an operation and running
             sheet above, or add a member below, to fill these roles.
           </p>
         )}
         <div>
-          <label className="text-xs font-semibold block mb-2">
+          <label className="text-xs font-semibold uppercase tracking-wide text-foreground/80 block mb-2">
             Additional team members
           </label>
           <div className="space-y-2">
             {additionalMemberCins.map((cin, i) => (
               <div key={i} className="flex items-center gap-2">
-                <span className="h-5 w-5 rounded-full bg-muted text-[11px] font-bold flex items-center justify-center shrink-0">
+                <span className="h-5 w-5 rounded-full bg-muted text-xs font-bold flex items-center justify-center shrink-0">
                   {i + 1}
                 </span>
                 <Select
@@ -935,7 +941,7 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
                         additionalMemberCins.filter((_, j) => j !== i)
                       )
                     }
-                    className="text-muted-foreground hover:text-destructive shrink-0"
+                    className="text-foreground/70 hover:text-destructive shrink-0"
                     aria-label="Remove team member"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -947,7 +953,7 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
               onClick={() =>
                 setAdditionalMemberCins([...additionalMemberCins, ""])
               }
-              className="flex items-center gap-1.5 text-xs text-muted-foreground border border-dashed border-border rounded-md px-2.5 py-1.5 hover:bg-accent ml-7"
+              className="flex items-center gap-1.5 text-xs text-foreground/70 border border-dashed border-border rounded-md px-2.5 py-1.5 hover:bg-accent ml-7"
             >
               <Plus className="h-3 w-3" /> Add team member
             </button>
@@ -967,7 +973,7 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
               ))}
             </div>
           ) : (
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-xs text-foreground/70">
               No one yet — choose a running sheet, or add a member above.
             </p>
           )}
@@ -982,14 +988,16 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* Equipment */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
-        <SmeacLabel letter="4" label="Member accoutrements" />
+      <div className="overflow-hidden p-4 rounded-xl bg-card border border-border shadow-sm space-y-3">
+        <div className="-mx-4 -mt-4 border-b border-border bg-muted/70 px-4 py-2.5">
+          <SmeacLabel letter="4" label="Member accoutrements" />
+        </div>
         <EquipmentGroup
           options={ACCOUTREMENT_OPTIONS}
           selected={accoutrements}
           onChange={setAccoutrements}
         />
-        <p className="text-[11px] font-semibold text-muted-foreground pt-1">
+        <p className="text-xs font-semibold text-foreground/70 pt-1">
           MOE equipment
         </p>
         <EquipmentGroup
@@ -1000,9 +1008,11 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* Surveillance level */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
-        <SmeacLabel letter="5" label="Surveillance level" />
-        <p className="text-xs text-muted-foreground -mt-1">
+      <div className="overflow-hidden p-4 rounded-xl bg-card border border-border shadow-sm space-y-3">
+        <div className="-mx-4 -mt-4 border-b border-border bg-muted/70 px-4 py-2.5">
+          <SmeacLabel letter="5" label="Surveillance level" />
+        </div>
+        <p className="text-xs text-foreground/70 -mt-1">
           Select the starting level — it can be upgraded or downgraded from the
           posted guide as the deployment progresses.
         </p>
@@ -1012,7 +1022,7 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
             onClick={() => setCurrentLevel(lv.n)}
             className={`p-3 rounded-lg border cursor-pointer transition-colors ${
               currentLevel === lv.n
-                ? "border-amber-500/50 bg-amber-500/5"
+                ? "border-amber-300 dark:border-amber-500/40 bg-amber-500/5"
                 : "border-border hover:bg-accent/50"
             }`}
           >
@@ -1027,17 +1037,17 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
                 {lv.n}. {lv.label}
               </span>
               <span
-                className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${RISK_CLASSES[lv.risk]}`}
+                className={`text-xs font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${RISK_CLASSES[lv.risk]}`}
               >
                 {lv.riskLabel}
               </span>
             </div>
             <p className="text-xs mb-1">{lv.desc}</p>
-            <p className="text-[11px] italic text-muted-foreground mb-2">
+            <p className="text-xs italic text-foreground/70 mb-2">
               e.g. {lv.example}
             </p>
             {lv.warn && (
-              <p className="text-[11px] font-semibold text-red-600 dark:text-red-400 mb-2">
+              <p className="text-xs font-semibold text-red-600 dark:text-red-400 mb-2">
                 {lv.warn}
               </p>
             )}
@@ -1057,8 +1067,10 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* Communication */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-3">
-        <SmeacLabel letter="6" label="Communication" />
+      <div className="overflow-hidden p-4 rounded-xl bg-card border border-border shadow-sm space-y-3">
+        <div className="-mx-4 -mt-4 border-b border-border bg-muted/70 px-4 py-2.5">
+          <SmeacLabel letter="6" label="Communication" />
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="AFP vehicle primary" compact>
             <Input
@@ -1099,11 +1111,11 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
       </div>
 
       {/* Command & control — static reference */}
-      <div className="p-4 rounded-xl bg-card border border-border space-y-2">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+      <div className="p-4 rounded-xl bg-card border border-border shadow-sm space-y-2">
+        <p className="text-xs font-bold uppercase tracking-wide text-foreground/70">
           Command & control
         </p>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-foreground/70">
           UCO actions are decided by the UCO controller, communicated to the SU
           team via the SU TL. SU team actions are decided by the SU TL and SU
           SO. All information/observations go via primary or alternate channels
@@ -1111,16 +1123,16 @@ export function UcoGuideForm({ briefingId }: { briefingId?: number }) {
         </p>
       </div>
 
-      <div className="flex items-center justify-between gap-4 flex-wrap p-4 rounded-xl bg-card border border-amber-500/40 shadow-[0_0_0_3px_rgba(245,158,11,0.08)]">
+      <div className="flex items-center justify-between gap-4 flex-wrap p-4 rounded-xl bg-card border border-amber-300 dark:border-amber-500/40 shadow-[0_0_0_3px_rgba(245,158,11,0.08)]">
         <div className="flex items-start gap-3">
-          <Send className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+          <Send className="h-5 w-5 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5" />
           <div>
             <h3 className="text-sm font-bold">
               {isPosted
                 ? "Save changes, or re-notify"
                 : "Post & choose who to notify"}
             </h3>
-            <p className="text-xs text-muted-foreground max-w-md">
+            <p className="text-xs text-foreground/70 max-w-md">
               {isPosted
                 ? "Save changes quietly, or re-post to send a fresh alert to whoever you choose."
                 : "Choose who receives an immediate alert; they can acknowledge it from their notifications."}
@@ -1206,7 +1218,7 @@ function EquipmentGroup({
       <button
         type="button"
         onClick={() => onChange(allChecked ? [] : [...options])}
-        className="text-[11px] font-semibold text-amber-600 hover:underline mb-1.5"
+        className="text-xs font-semibold text-amber-600 hover:underline mb-1.5"
       >
         {allChecked ? "Clear all" : "Select all"}
       </button>
@@ -1268,11 +1280,11 @@ function UcoGuideNotifyDialog({
         </DialogHeader>
         <div className="py-2 space-y-3 max-h-80 overflow-y-auto">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5">
+            <p className="text-xs font-bold uppercase tracking-wide text-foreground/70 mb-1.5">
               On this deployment
             </p>
             {primaryUsers.length === 0 && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-foreground/70">
                 No running sheet roster or additional members yet — choose an
                 operation and running sheet above, or add members in
                 Surveillance team.
@@ -1294,8 +1306,8 @@ function UcoGuideNotifyDialog({
               />
             ))}
           </div>
-          <div className="pt-2 border-t border-border/50">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1.5">
+          <div className="pt-2 border-t border-border">
+            <p className="text-xs font-bold uppercase tracking-wide text-foreground/70 mb-1.5">
               All other users
             </p>
             {secondaryUsers.map(u => (
@@ -1358,7 +1370,7 @@ function UserCheckboxRow({
         htmlFor={`uco-notify-user-${user.id}`}
         className="cursor-pointer flex items-center gap-2"
       >
-        <span className="font-mono text-xs text-muted-foreground w-10">
+        <span className="font-mono text-xs text-foreground/70 w-10">
           {user.cin ?? "—"}
         </span>
         <span>{user.name}</span>
@@ -1383,15 +1395,13 @@ function Field({
       <label
         className={
           compact
-            ? "text-[11px] font-medium text-muted-foreground block mb-1"
-            : "text-xs font-semibold block mb-1.5"
+            ? "text-xs font-semibold uppercase tracking-wide text-foreground/80 block mb-1"
+            : "text-xs font-semibold uppercase tracking-wide text-foreground/80 block mb-1.5"
         }
       >
         {label}
       </label>
-      {hint && (
-        <p className="text-[10px] text-muted-foreground/80 mb-1">{hint}</p>
-      )}
+      {hint && <p className="text-xs text-foreground/70/80 mb-1">{hint}</p>}
       {children}
     </div>
   );

@@ -9,6 +9,9 @@
 
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { OperationRegionFields } from "@/components/OperationRegionFields";
+import { DEFAULT_COMMAND, type CommandCode } from "@shared/commands";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +40,10 @@ export function CreateOperationDialog({
   const [promis, setPromis] = useState("");
   const [ims, setIms] = useState("");
   const [unit, setUnit] = useState("");
+  const [restricted, setRestricted] = useState(false);
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const myCommand = (user?.command as CommandCode) ?? DEFAULT_COMMAND;
   const utils = trpc.useUtils();
 
   const createOp = trpc.operation.create.useMutation({
@@ -48,6 +55,7 @@ export function CreateOperationDialog({
       setPromis("");
       setIms("");
       setUnit("");
+      setRestricted(false);
       onOpenChange(false);
       onCreated({ id, name: createdName });
     },
@@ -61,6 +69,8 @@ export function CreateOperationDialog({
       promisNumber: promis.trim() || undefined,
       imsNumber: ims.trim() || undefined,
       investigationUnit: unit.trim() || undefined,
+      // Server checks admin; only sent when ticked so a non-admin never trips it.
+      ...(restricted ? { restricted: true } : {}),
     });
   };
 
@@ -116,6 +126,12 @@ export function CreateOperationDialog({
               onKeyDown={e => e.key === "Enter" && handleCreate()}
             />
           </div>
+          <OperationRegionFields
+            command={myCommand}
+            restricted={restricted}
+            canEdit={isAdmin}
+            onRestricted={setRestricted}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>

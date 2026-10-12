@@ -277,7 +277,7 @@ export function TargetMergeDialog({
           <div className="flex flex-col gap-3 py-1">
             {conflicts.map(c => (
               <div key={c.field} className="flex flex-col gap-1.5">
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <span className="text-xs font-semibold text-foreground/80 uppercase tracking-wide">
                   {FIELD_LABELS[c.field]}
                 </span>
                 <div className="grid grid-cols-2 gap-2">

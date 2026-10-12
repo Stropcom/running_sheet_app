@@ -49,16 +49,20 @@ type RecycleBinItem = {
 
 function typeIcon(type: RecycleBinItem["type"]) {
   if (type === "operation")
-    return <FolderOpen className="w-5 h-5 text-blue-500" />;
-  if (type === "sheet") return <FileText className="w-5 h-5 text-teal-500" />;
+    return <FolderOpen className="w-5 h-5 text-blue-700 dark:text-blue-300" />;
+  if (type === "sheet")
+    return <FileText className="w-5 h-5 text-teal-700 dark:text-teal-300" />;
   if (type === "map_marker")
-    return <MapPin className="w-5 h-5 text-orange-500" />;
+    return <MapPin className="w-5 h-5 text-orange-700 dark:text-orange-300" />;
   if (type === "attachment")
-    return <Camera className="w-5 h-5 text-pink-500" />;
+    return <Camera className="w-5 h-5 text-pink-700 dark:text-pink-300" />;
   if (type === "smeac_briefing")
-    return <ShieldAlert className="w-5 h-5 text-amber-500" />;
-  if (type === "uco_guide") return <Eye className="w-5 h-5 text-indigo-500" />;
-  return <User className="w-5 h-5 text-purple-500" />;
+    return (
+      <ShieldAlert className="w-5 h-5 text-amber-700 dark:text-amber-300" />
+    );
+  if (type === "uco_guide")
+    return <Eye className="w-5 h-5 text-indigo-700 dark:text-indigo-300" />;
+  return <User className="w-5 h-5 text-purple-700 dark:text-purple-300" />;
 }
 
 function typeLabel(type: RecycleBinItem["type"]) {
@@ -268,7 +272,7 @@ export default function RecycleBin() {
                   key={`${item.type}-${item.id}`}
                   className={`flex flex-col gap-3 p-5 rounded-xl border bg-card hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 ${
                     isExpiringSoon
-                      ? "border-red-400/50 bg-red-50/10"
+                      ? "border-red-300 dark:border-red-500/40 bg-red-50/10"
                       : "border-border hover:border-primary/30"
                   }`}
                 >
@@ -293,7 +297,7 @@ export default function RecycleBin() {
                     <span
                       className={
                         isExpiringSoon
-                          ? "text-red-500 font-medium"
+                          ? "text-red-700 dark:text-red-300 font-medium"
                           : "text-muted-foreground"
                       }
                     >

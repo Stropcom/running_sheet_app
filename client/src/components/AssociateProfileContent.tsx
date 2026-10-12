@@ -31,6 +31,7 @@ import {
   ProfileDropdownRow,
   IntelEntityDropdown,
 } from "@/components/ProfileDropdown";
+import { SectionHeading } from "@/components/ProfileSectionHeading";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
 
@@ -111,19 +112,6 @@ function registeredDetailRows(p: IntelAssociateProfile) {
       value: formatIntelVehicle(v),
     })),
   ];
-}
-
-function SectionHeading({ label, count }: { label: string; count: number }) {
-  return (
-    <div className="flex items-center gap-2 mb-2">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
-      <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">
-        {count}
-      </span>
-    </div>
-  );
 }
 
 function buildAssociateProfileHtml(
@@ -272,9 +260,9 @@ export function AssociateProfileContent({
       {profile && (
         <>
           {!embedded && (
-            <div className="rounded-xl border border-border/60 bg-card overflow-hidden mb-5">
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm mb-5">
               <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap sm:gap-4">
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
@@ -359,7 +347,7 @@ export function AssociateProfileContent({
 
           {profile.registryAssociateId &&
             registeredDetailRows(profile).length > 0 && (
-              <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+              <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
                 <SectionHeading
                   label="Registered Details"
                   count={registeredDetailRows(profile).length}
@@ -368,7 +356,7 @@ export function AssociateProfileContent({
                   {registeredDetailRows(profile).map(r => (
                     <div
                       key={r.label}
-                      className="px-3 py-2 rounded-lg border border-border/60 bg-muted/20"
+                      className="px-3 py-2 rounded-lg border border-border bg-background"
                     >
                       <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">
                         {r.label}
@@ -381,7 +369,7 @@ export function AssociateProfileContent({
             )}
 
           {(profile.linkedTargets.length > 0 || sharedOnlyOps.length > 0) && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
               <SectionHeading
                 label="Linked Targets"
                 count={profile.linkedTargets.length}
@@ -434,7 +422,7 @@ export function AssociateProfileContent({
                         <span className="min-w-0 break-words">
                           {l.operationName}
                         </span>
-                        <span className="text-[9px] uppercase tracking-wide opacity-70 flex-1 min-w-0">
+                        <span className="text-xs uppercase tracking-wide opacity-70 flex-1 min-w-0">
                           {sharedLinkChipText(l.via, l.sharedValue)}
                         </span>
                       </ProfileDropdownRow>
@@ -446,7 +434,7 @@ export function AssociateProfileContent({
           )}
 
           {profile.linkedSheets.length > 0 && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
               <SectionHeading
                 label="Running Sheets"
                 count={profile.linkedSheets.length}
@@ -456,7 +444,7 @@ export function AssociateProfileContent({
                   <button
                     key={s.id}
                     onClick={() => navigate(`/sheet/${s.id}`)}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/60 bg-muted/20 hover:bg-accent/10 transition-colors text-left"
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background hover:bg-accent/10 transition-colors text-left"
                   >
                     <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                     <span className="text-xs font-medium text-foreground flex-1 truncate">
@@ -473,7 +461,7 @@ export function AssociateProfileContent({
 
           {(profile.assocVehicles.length > 0 ||
             profile.assocLocations.length > 0) && (
-            <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
               <SectionHeading
                 label="Associations"
                 count={

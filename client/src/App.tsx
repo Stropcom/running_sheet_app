@@ -6,6 +6,7 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { NativeLocationSharing } from "./components/NativeLocationSharing";
+import { ForcedLocationSharing } from "./components/ForcedLocationSharing";
 import { FaceMatchNotificationProvider } from "./contexts/FaceMatchNotificationContext";
 import Home from "./pages/Home";
 import OperationDetail from "./pages/OperationDetail";
@@ -316,6 +317,7 @@ function App() {
               <AppearanceApplier />
               {/* iPhone/iPad app only: background location (no-op elsewhere) */}
               <NativeLocationSharing />
+              <ForcedLocationSharing />
               <Toaster />
               <DraftModeBanner />
               <Router />

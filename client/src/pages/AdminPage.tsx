@@ -20,17 +20,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { toast } from "sonner";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  UserAccessGroups,
+  type AdminUserRow,
+} from "@/components/admin/UserAccessGroups";
+import { VisitingSection } from "@/components/admin/VisitingSection";
+import { TeamDialog } from "@/components/admin/TeamDialog";
+import { useTeams, type TeamRow } from "@/lib/teams";
+import {
+  COMMAND_CODES,
+  COMMAND_LABELS,
+  DEFAULT_COMMAND,
+  type CommandCode,
+} from "@shared/commands";
 import {
   UserPlus,
+  Plus,
   Loader2,
   ShieldCheck,
   Users,
@@ -71,13 +78,15 @@ export const ROLE_LABELS: Record<Role, string> = {
 export const NONE_BADGE_CLASS =
   "bg-foreground/5 text-muted-foreground border-foreground/10";
 
-export type TeamValue = "TEAM1" | "TEAM2" | "PTT" | undefined;
-
 export interface UserFormData {
   name: string;
   cin: string;
-  unit: string;
-  team: TeamValue;
+  /** Home Command (region) — replaces the old free-text Unit. */
+  command: CommandCode;
+  /** Admin only: sees every Command and can open restricted operations. */
+  allRegions: boolean;
+  /** A team of the person's Command (see Teams on this page). */
+  teamId: number | undefined;
   phone: string;
   username: string;
   password: string;
@@ -87,11 +96,14 @@ export interface UserFormData {
   investigatorOperationIds: number[];
 }
 
-export const emptyForm = (): UserFormData => ({
+export const emptyForm = (
+  command: CommandCode = DEFAULT_COMMAND
+): UserFormData => ({
   name: "",
   cin: "",
-  unit: "",
-  team: undefined,
+  command,
+  allRegions: false,
+  teamId: undefined,
   phone: "",
   username: "",
   password: "",
@@ -113,6 +125,10 @@ export interface UserFormFieldsProps {
    * role is preserved underneath (not actually "none") but the admin UI
    * presents it as such. See archivedAt's comment in drizzle/schema.ts. */
   accessLevelOverride?: string;
+  /** Only an all-region admin may put someone in another Command. */
+  allowAnyCommand?: boolean;
+  /** The all-region tick: an all-region admin, or anyone while nobody is one yet. */
+  canGrantAllRegions?: boolean;
 }
 
 export function UserFormFields({
@@ -121,12 +137,16 @@ export function UserFormFields({
   isEdit = false,
   disabled = false,
   accessLevelOverride,
+  allowAnyCommand = false,
+  canGrantAllRegions = false,
 }: UserFormFieldsProps) {
+  // Teams belong to a Command: offer the chosen Command's.
+  const teamsForCommand = useTeams(form.command);
   return (
     <div className="grid gap-4 py-2">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
             Full Name *
           </Label>
           <Input
@@ -137,7 +157,7 @@ export function UserFormFields({
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
             CIN *
           </Label>
           <Input
@@ -152,18 +172,41 @@ export function UserFormFields({
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
-            Unit
+          <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
+            Unit — Command
           </Label>
-          <Input
-            placeholder="e.g. Alpha Company"
-            value={form.unit}
-            disabled={disabled}
-            onChange={e => setForm(f => ({ ...f, unit: e.target.value }))}
-          />
+          <Select
+            value={form.command}
+            disabled={disabled || !allowAnyCommand}
+            onValueChange={v =>
+              setForm(f => ({
+                ...f,
+                command: v as CommandCode,
+                // A team belongs to one Command, so moving Command clears it.
+                teamId: v === f.command ? f.teamId : undefined,
+              }))
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {COMMAND_CODES.map(c => (
+                <SelectItem key={c} value={c}>
+                  {COMMAND_LABELS[c]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {!allowAnyCommand && !disabled && (
+            <p className="text-[11px] text-muted-foreground">
+              Locked to your Command. An all-region admin can choose another
+              (tick “All-region admin” on your profile).
+            </p>
+          )}
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
             Mobile Phone
           </Label>
           <Input
@@ -175,16 +218,16 @@ export function UserFormFields({
         </div>
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+        <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
           Team
         </Label>
         <Select
-          value={form.team ?? "__none__"}
+          value={form.teamId != null ? String(form.teamId) : "__none__"}
           disabled={disabled}
           onValueChange={v =>
             setForm(f => ({
               ...f,
-              team: v === "__none__" ? undefined : (v as TeamValue),
+              teamId: v === "__none__" ? undefined : Number(v),
             }))
           }
         >
@@ -193,15 +236,17 @@ export function UserFormFields({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__none__">— None —</SelectItem>
-            <SelectItem value="TEAM1">TEAM 1</SelectItem>
-            <SelectItem value="TEAM2">TEAM 2</SelectItem>
-            <SelectItem value="PTT">PTT</SelectItem>
+            {teamsForCommand.map(t => (
+              <SelectItem key={t.id} value={String(t.id)}>
+                {t.name.toUpperCase()}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
             Username *
           </Label>
           <Input
@@ -214,7 +259,7 @@ export function UserFormFields({
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+          <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
             {isEdit ? "New Password" : "Password *"}
           </Label>
           <Input
@@ -227,7 +272,7 @@ export function UserFormFields({
         </div>
       </div>
       <div className="space-y-1.5">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+        <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
           Access Level *
         </Label>
         {accessLevelOverride ? (
@@ -258,6 +303,28 @@ export function UserFormFields({
           </Select>
         )}
       </div>
+      {!accessLevelOverride && form.role === "admin" && (
+        <label className="flex items-start gap-2.5 rounded-md border border-input p-3 cursor-pointer">
+          <Checkbox
+            checked={form.allRegions}
+            disabled={disabled || !(allowAnyCommand || canGrantAllRegions)}
+            onCheckedChange={v =>
+              setForm(f => ({ ...f, allRegions: v === true }))
+            }
+            className="mt-0.5"
+          />
+          <span className="text-sm">
+            <span className="font-medium">All-region admin</span>
+            <span className="block text-xs text-muted-foreground">
+              Sees every Command, can add people to any Command, and can open
+              restricted operations from Region Search.
+              {!allowAnyCommand && canGrantAllRegions
+                ? " Nobody is one yet — tick this on your own profile to set yourself up."
+                : ""}
+            </span>
+          </span>
+        </label>
+      )}
       {!accessLevelOverride && form.role === "investigator" && (
         <InvestigatorOperationPicker
           selected={form.investigatorOperationIds}
@@ -293,7 +360,7 @@ function InvestigatorOperationPicker({
   };
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+      <Label className="text-xs font-semibold uppercase tracking-wide text-foreground/80">
         Allocated Operations *
       </Label>
       <div className="rounded-md border border-input max-h-44 overflow-y-auto divide-y divide-border/60">
@@ -348,13 +415,34 @@ export default function AdminPage() {
   });
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState<UserFormData>(emptyForm());
+  // A new user starts in the admin's own Command.
+  const myCommand = (currentUser?.command as CommandCode) ?? DEFAULT_COMMAND;
+  const [form, setForm] = useState<UserFormData>(emptyForm(myCommand));
+  // An all-region admin can look at any Command; everyone else sees their own.
+  const [viewCommandPick, setViewCommand] = useState<CommandCode | null>(null);
+  const viewCommand: CommandCode = currentUser?.allRegions
+    ? (viewCommandPick ?? myCommand)
+    : myCommand;
+  const commandTeams = useTeams(viewCommand);
+  const { data: allOperations } = trpc.operation.list.useQuery();
+  const [teamDialogOpen, setTeamDialogOpen] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<TeamRow | undefined>();
+  // A visitor waiting for a team that is being made (+ New team… in Members).
+  const [pendingVisitor, setPendingVisitor] = useState<number | null>(null);
+  const { data: visitorTeamRows } = trpc.admin.listVisitorTeams.useQuery();
+  const visitorTeams = (visitorTeamRows ?? []).filter(
+    v => v.command === viewCommand
+  );
+  const setVisitorTeam = trpc.admin.setVisitorTeam.useMutation();
+  const { data: shares } = trpc.admin.listShares.useQuery(undefined, {
+    enabled: isAuthenticated && currentUser?.role === "admin",
+  });
 
   const createUser = trpc.admin.createUser.useMutation({
     onSuccess: () => {
       toast.success("User created successfully.");
       setCreateOpen(false);
-      setForm(emptyForm());
+      setForm(emptyForm(myCommand));
       utils.admin.listUsers.invalidate();
     },
     onError: e => toast.error(e.message),
@@ -393,7 +481,18 @@ export default function AdminPage() {
     );
   }
 
-  const archivedCount = users?.filter(u => u.archivedAt).length ?? 0;
+  const homeUsers = (users ?? []).filter(u => u.command === viewCommand);
+  const homeCount = homeUsers.length;
+  // Until someone is an all-region admin, any admin may make the first one.
+  const noAllRegionAdminYet = !(users ?? []).some(u => u.allRegions);
+  const archivedCount = homeUsers.filter(u => u.archivedAt).length;
+  const visitingCount = new Set(
+    (shares ?? [])
+      .filter(
+        s => s.fromCommand === viewCommand && s.userCommand !== viewCommand
+      )
+      .map(s => s.userId)
+  ).size;
 
   return (
     <DashboardLayout>
@@ -409,15 +508,16 @@ export default function AdminPage() {
                 User Management
               </h1>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {users?.length ?? 0} registered user
-                {(users?.length ?? 0) !== 1 ? "s" : ""}
+                {homeCount} {homeCount === 1 ? "person" : "people"} in{" "}
+                {COMMAND_LABELS[viewCommand]}
+                {visitingCount > 0 ? ` · ${visitingCount} visiting` : ""}
                 {archivedCount > 0 ? ` — ${archivedCount} archived` : ""}
               </p>
             </div>
           </div>
           <Button
             onClick={() => {
-              setForm(emptyForm());
+              setForm(emptyForm(myCommand));
               setCreateOpen(true);
             }}
             size="sm"
@@ -428,124 +528,130 @@ export default function AdminPage() {
           </Button>
         </div>
 
-        {/* Table */}
-        <div className="rounded-xl border border-border/60 overflow-hidden bg-card/50 overflow-x-auto">
-          <Table className="min-w-[600px]">
-            <TableHeader>
-              <TableRow className="border-border/60 bg-muted/30">
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                  Name
-                </TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                  CIN
-                </TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden sm:table-cell">
-                  Unit
-                </TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden sm:table-cell">
-                  Team
-                </TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden md:table-cell">
-                  Username
-                </TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                  Access Level
-                </TableHead>
-                <TableHead className="text-xs uppercase tracking-wider text-muted-foreground font-medium hidden lg:table-cell">
-                  Last Sign In
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="text-center py-12 text-muted-foreground"
+        {/* Everyone with access to the Command, by team, then Share with */}
+        <div className="space-y-6">
+          {currentUser?.allRegions && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Viewing</span>
+              <Select
+                value={viewCommand}
+                onValueChange={v => setViewCommand(v as CommandCode)}
+              >
+                <SelectTrigger className="w-56">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {COMMAND_CODES.map(c => (
+                    <SelectItem key={c} value={c}>
+                      {COMMAND_LABELS[c]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-base font-semibold">Teams</h2>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setEditingTeam(undefined);
+                  setTeamDialogOpen(true);
+                }}
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Team
+              </Button>
+            </div>
+            <UserAccessGroups
+              users={(users ?? []) as AdminUserRow[]}
+              viewCommand={viewCommand}
+              teams={commandTeams}
+              onEditTeam={team => {
+                setEditingTeam(team);
+                setTeamDialogOpen(true);
+              }}
+              shares={shares ?? []}
+              visitorTeams={visitorTeams}
+              operations={(allOperations ?? [])
+                .filter(o => !o.deletedAt && o.command === viewCommand)
+                .map(o => ({ id: o.id, name: o.name }))}
+              currentUserId={currentUser?.id}
+              isLoading={isLoading}
+              onOpen={id => navigate(`/admin/users/${id}`)}
+              roleBadge={u =>
+                u.archivedAt ? (
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${NONE_BADGE_CLASS}`}
                   >
-                    <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-                  </TableCell>
-                </TableRow>
-              ) : !users?.length ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    className="text-center py-12 text-muted-foreground text-sm"
+                    None
+                  </span>
+                ) : (
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${ROLE_COLORS[u.role as Role]}`}
                   >
-                    No users registered yet. Add the first user above.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                users.map(u => {
-                  const archived = !!u.archivedAt;
-                  return (
-                    <TableRow
-                      key={u.id}
-                      className={`border-border/40 hover:bg-accent/10 transition-colors ${archived ? "opacity-50" : ""}`}
-                    >
-                      <TableCell className="font-medium">
-                        <button
-                          onClick={() => navigate(`/admin/users/${u.id}`)}
-                          className="text-primary hover:underline underline-offset-2 font-medium text-left"
-                        >
-                          {u.name}
-                        </button>
-                        {u.id === currentUser?.id && (
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            (you)
-                          </span>
-                        )}
-                        {archived && (
-                          <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10.5px] font-semibold uppercase tracking-wide border bg-foreground/5 text-muted-foreground border-foreground/10">
-                            <Archive className="w-2.5 h-2.5" />
-                            Archived
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm text-foreground/80">
-                        {u.cin || "—"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">
-                        {u.unit || "—"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">
-                        {u.team ? u.team.replace("TEAM", "TEAM ") : "—"}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm text-muted-foreground hidden md:table-cell">
-                        {u.username}
-                      </TableCell>
-                      <TableCell>
-                        {archived ? (
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${NONE_BADGE_CLASS}`}
-                          >
-                            None
-                          </span>
-                        ) : (
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${ROLE_COLORS[u.role as Role]}`}
-                          >
-                            {ROLE_ICONS[u.role as Role]}
-                            {ROLE_LABELS[u.role as Role]}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground hidden lg:table-cell">
-                        {u.lastSignedIn
-                          ? new Date(u.lastSignedIn).toLocaleString()
-                          : "Never"}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
+                    {ROLE_ICONS[u.role as Role]}
+                    {ROLE_LABELS[u.role as Role]}
+                  </span>
+                )
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              Click a name to open their profile — Edit and Archive both live
+              there.
+            </p>
+          </div>
+          <VisitingSection
+            viewCommand={viewCommand}
+            users={(users ?? []) as AdminUserRow[]}
+            isAllRegions={!!currentUser?.allRegions}
+            shares={shares ?? []}
+            teams={commandTeams}
+            visitorTeams={visitorTeams}
+            onOpenPerson={id => navigate(`/admin/users/${id}`)}
+            onNewTeam={userId => {
+              setPendingVisitor(userId);
+              setEditingTeam(undefined);
+              setTeamDialogOpen(true);
+            }}
+          />
+          <TeamDialog
+            open={teamDialogOpen}
+            onOpenChange={open => {
+              setTeamDialogOpen(open);
+              if (!open) setPendingVisitor(null);
+            }}
+            onCreated={async teamId => {
+              // Made from a visitor's team picker: put them straight in it.
+              if (pendingVisitor == null) return;
+              try {
+                await setVisitorTeam.mutateAsync({
+                  userId: pendingVisitor,
+                  teamId,
+                  command: currentUser?.allRegions ? viewCommand : undefined,
+                });
+                utils.admin.listVisitorTeams.invalidate();
+                utils.users.listForCin.invalidate();
+              } catch (e) {
+                toast.error(
+                  e instanceof Error ? e.message : "Couldn't add them to it."
+                );
+              }
+            }}
+            command={viewCommand}
+            team={editingTeam}
+            memberCount={
+              editingTeam
+                ? ((users ?? []) as AdminUserRow[]).filter(
+                    u => u.teamId === editingTeam.id
+                  ).length +
+                  visitorTeams.filter(v => v.teamId === editingTeam.id).length
+                : 0
+            }
+          />
         </div>
-        <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1.5">
-          Click a name to open their profile — Edit and Archive both live there
-          now.
-        </p>
 
         {/* Create Dialog */}
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -556,7 +662,12 @@ export default function AdminPage() {
                 Add New User
               </DialogTitle>
             </DialogHeader>
-            <UserFormFields form={form} setForm={setForm} />
+            <UserFormFields
+              form={form}
+              setForm={setForm}
+              allowAnyCommand={!!currentUser?.allRegions}
+              canGrantAllRegions={noAllRegionAdminYet}
+            />
             <DialogFooter>
               <Button variant="outline" onClick={() => setCreateOpen(false)}>
                 Cancel

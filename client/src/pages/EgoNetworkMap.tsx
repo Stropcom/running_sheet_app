@@ -658,7 +658,7 @@ export default function EgoNetworkMap({
                   </div>
                 ))}
               </div>
-              <div className="mt-2 text-xs text-muted-foreground/60">
+              <div className="mt-2 text-xs text-muted-foreground">
                 Inner ring = direct links. Outer ring = one step further.
               </div>
             </div>

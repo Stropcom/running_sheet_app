@@ -19,7 +19,22 @@ import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
 import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 import { addressMatchKey } from "@shared/addressMatchKey";
+import {
+  pickProfilePhoto,
+  type ProfilePhotoCandidate,
+} from "@shared/profilePhoto";
+import { normaliseTargetBackground } from "@shared/targetBackground";
+import { isLoggedIn, type TeamMapVisibility } from "@shared/teamMap";
 import { aliasMentionCompatible } from "./personAliasMatch";
+import {
+  regionSearch,
+  type RegionEntityType,
+  type RegionResult,
+  type RegionViewer,
+} from "@shared/regionSearch";
+import type { CommandCode } from "@shared/commands";
+import { scopeEntities, type OperationShareRow } from "@shared/operationAccess";
+import { intelScope } from "./intelScope";
 import {
   applyTargetProjectsToSummary,
   sanitizeTargetSpecialProjects,
@@ -107,6 +122,9 @@ import {
   associates,
   InsertAssociate,
   users,
+  teams,
+  operationShares,
+  visitorTeamAssignments,
   governanceRecords,
   GovernanceRecord,
   sheetSummaries,
@@ -335,6 +353,190 @@ export async function deleteUser(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(users).where(eq(users.id, id));
+}
+
+// ─── Teams ──────────────────────────────────────────────────────────────────
+// A team belongs to one Command; people point at it with users.teamId.
+
+export interface TeamRow {
+  id: number;
+  command: CommandCode;
+  name: string;
+  /** #rrggbb pin colour on the live map, or null for the default grey. */
+  colour: string | null;
+  /** Assumed Identity phones (Crash Helper). */
+  aiPhones: string[];
+  sortOrder: number;
+  /** Map Settings → Teams: always listed, or only while someone is logged in. */
+  mapVisibility: TeamMapVisibility;
+  /** Members' location sharing is forced on at login and can't be turned off. */
+  forceShare: boolean;
+}
+
+function toTeamRow(t: typeof teams.$inferSelect): TeamRow {
+  let phones: string[] = [];
+  try {
+    const parsed = t.aiPhones ? JSON.parse(t.aiPhones) : [];
+    if (Array.isArray(parsed))
+      phones = parsed.filter((p): p is string => typeof p === "string");
+  } catch {
+    phones = [];
+  }
+  return {
+    id: t.id,
+    command: t.command,
+    name: t.name,
+    colour: t.colour,
+    aiPhones: phones,
+    sortOrder: t.sortOrder,
+    mapVisibility: t.mapVisibility,
+    forceShare: t.forceShare,
+  };
+}
+
+/** Teams in display order; one Command's, or every Command's. */
+export async function listTeams(command?: CommandCode): Promise<TeamRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select()
+    .from(teams)
+    .where(command ? eq(teams.command, command) : undefined)
+    .orderBy(teams.sortOrder, teams.name);
+  return rows.map(toTeamRow);
+}
+
+export async function getTeamById(id: number): Promise<TeamRow | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const [row] = await db.select().from(teams).where(eq(teams.id, id)).limit(1);
+  return row ? toTeamRow(row) : undefined;
+}
+
+/** True when this Command already has a team with that name. */
+export async function teamNameTaken(
+  command: CommandCode,
+  name: string,
+  exceptId?: number
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const rows = await db
+    .select({ id: teams.id })
+    .from(teams)
+    .where(and(eq(teams.command, command), eq(teams.name, name)));
+  return rows.some(r => r.id !== exceptId);
+}
+
+export async function createTeam(data: {
+  command: CommandCode;
+  name: string;
+  colour: string | null;
+  aiPhones: string[];
+  mapVisibility?: TeamMapVisibility;
+  forceShare?: boolean;
+}): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [last] = await db
+    .select({ sortOrder: teams.sortOrder })
+    .from(teams)
+    .where(eq(teams.command, data.command))
+    .orderBy(desc(teams.sortOrder))
+    .limit(1);
+  const [result] = await db.insert(teams).values({
+    command: data.command,
+    name: data.name,
+    colour: data.colour,
+    aiPhones: data.aiPhones.length > 0 ? JSON.stringify(data.aiPhones) : null,
+    sortOrder: (last?.sortOrder ?? 0) + 1,
+    mapVisibility: data.mapVisibility ?? "always",
+    forceShare: data.forceShare ?? false,
+    createdAt: Date.now(),
+  });
+  return result.insertId as number;
+}
+
+export async function updateTeam(
+  id: number,
+  data: {
+    name?: string;
+    colour?: string | null;
+    aiPhones?: string[];
+    mapVisibility?: TeamMapVisibility;
+    forceShare?: boolean;
+  }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const set: Partial<typeof teams.$inferInsert> = {};
+  if (data.name !== undefined) set.name = data.name;
+  if (data.colour !== undefined) set.colour = data.colour;
+  if (data.aiPhones !== undefined)
+    set.aiPhones =
+      data.aiPhones.length > 0 ? JSON.stringify(data.aiPhones) : null;
+  if (data.mapVisibility !== undefined) set.mapVisibility = data.mapVisibility;
+  if (data.forceShare !== undefined) set.forceShare = data.forceShare;
+  if (Object.keys(set).length === 0) return;
+  await db.update(teams).set(set).where(eq(teams.id, id));
+}
+
+/** Ids of teams with someone logged in right now (see shared/teamMap.ts). */
+export async function listTeamIdsWithOnlineMembers(
+  now: number = Date.now()
+): Promise<number[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({ teamId: users.teamId, lastSignedIn: users.lastSignedIn })
+    .from(users)
+    .where(and(isNotNull(users.teamId), isNull(users.archivedAt)));
+  const ids = new Set<number>();
+  for (const r of rows) {
+    if (r.teamId != null && isLoggedIn(r.lastSignedIn, now)) ids.add(r.teamId);
+  }
+  return Array.from(ids);
+}
+
+/** True when this person's team forces their location sharing on. */
+export async function mustShareLocation(user: {
+  teamId: number | null;
+}): Promise<boolean> {
+  if (user.teamId == null) return false;
+  return (await getTeamById(user.teamId))?.forceShare ?? false;
+}
+
+/** Delete a team; its members simply become "No team". Returns how many. */
+export async function deleteTeam(id: number): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const members = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.teamId, id));
+  await db.update(users).set({ teamId: null }).where(eq(users.teamId, id));
+  // Visitors put in this team go back to "no team" too.
+  const visitors = await db
+    .select({ id: visitorTeamAssignments.id })
+    .from(visitorTeamAssignments)
+    .where(eq(visitorTeamAssignments.teamId, id));
+  await db
+    .delete(visitorTeamAssignments)
+    .where(eq(visitorTeamAssignments.teamId, id));
+  await db.delete(teams).where(eq(teams.id, id));
+  return members.length + visitors.length;
+}
+
+/** Team name by id, for the places that still show a plain label. */
+async function teamNameMap(): Promise<Map<number, string>> {
+  const db = await getDb();
+  const out = new Map<number, string>();
+  if (!db) return out;
+  for (const t of await db
+    .select({ id: teams.id, name: teams.name })
+    .from(teams))
+    out.set(t.id, t.name);
+  return out;
 }
 
 export async function updateUserRole(
@@ -1599,6 +1801,8 @@ export async function linkAttachmentToEntity(data: {
     | "member";
   targetId?: number;
   entityLabel: string;
+  /** Added through the Target Registry — wins the profile photo. */
+  fromRegistry?: boolean;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -1620,13 +1824,23 @@ export async function linkAttachmentToEntity(data: {
       .limit(1);
   // Avoid duplicate links to the same entity
   const existing = await findExisting();
-  if (existing.length > 0) return existing[0].id;
+  if (existing.length > 0) {
+    // A photo already linked elsewhere that the registry now claims.
+    if (data.fromRegistry) {
+      await db
+        .update(attachmentEntityLinks)
+        .set({ fromRegistry: true })
+        .where(eq(attachmentEntityLinks.id, existing[0].id));
+    }
+    return existing[0].id;
+  }
   const insertData: InsertAttachmentEntityLink = {
     attachmentId: data.attachmentId,
     category: data.category,
     targetId: data.category === "target" ? data.targetId : null,
     entityKey,
     entityLabel: data.entityLabel,
+    fromRegistry: data.fromRegistry ?? false,
   };
   try {
     const [result] = await db.insert(attachmentEntityLinks).values(insertData);
@@ -2192,9 +2406,13 @@ export async function createFaceMatchDismissal(
 
 // One row per distinct linked entity with its photo count — used to show a
 // camera badge on Intelligence Folder rows without an N+1 query per entity.
-export async function getEntityLinkCounts() {
+export async function getEntityLinkCounts(
+  /** Only count photos on these operations (null/undefined = all). */
+  allowedOperationIds?: Set<number> | null
+) {
   const db = await getDb();
   if (!db) return [];
+  if (allowedOperationIds && allowedOperationIds.size === 0) return [];
   return db
     .select({
       category: attachmentEntityLinks.category,
@@ -2207,7 +2425,14 @@ export async function getEntityLinkCounts() {
       rowAttachments,
       eq(attachmentEntityLinks.attachmentId, rowAttachments.id)
     )
-    .where(isNull(rowAttachments.deletedAt))
+    .where(
+      and(
+        isNull(rowAttachments.deletedAt),
+        allowedOperationIds
+          ? inArray(rowAttachments.operationId, Array.from(allowedOperationIds))
+          : undefined
+      )
+    )
     .groupBy(
       attachmentEntityLinks.category,
       attachmentEntityLinks.targetId,
@@ -2248,6 +2473,7 @@ export async function getAttachmentsForEntity(params: {
     .select({
       id: rowAttachments.id,
       rowId: rowAttachments.rowId,
+      operationId: rowAttachments.operationId,
       isManualUpload: rowAttachments.isManualUpload,
       url: rowAttachments.url,
       mimeType: rowAttachments.mimeType,
@@ -2269,10 +2495,10 @@ export async function getAttachmentsForEntity(params: {
     )
     .orderBy(desc(rowAttachments.createdAt));
   const withCins = await attachRowMemberCins(db, rows);
-  return withCins.map(r => ({
-    ...r,
-    linkId: links.find(l => l.attachmentId === r.id)!.id,
-  }));
+  return withCins.map(r => {
+    const link = links.find(l => l.attachmentId === r.id)!;
+    return { ...r, linkId: link.id, fromRegistry: link.fromRegistry };
+  });
 }
 
 /** Photos of the people who live at each address, for the map's "Images"
@@ -2292,6 +2518,7 @@ export async function getPersonPhotosByAddress(operationIds: number[]): Promise<
       url: string;
       personLabel: string;
       createdAt: Date | null;
+      isMain: boolean;
     }>;
   }>
 > {
@@ -2393,6 +2620,7 @@ export async function getPersonPhotosByAddress(operationIds: number[]): Promise<
       category: attachmentEntityLinks.category,
       targetId: attachmentEntityLinks.targetId,
       entityKey: attachmentEntityLinks.entityKey,
+      fromRegistry: attachmentEntityLinks.fromRegistry,
     })
     .from(attachmentEntityLinks)
     .where(
@@ -2434,13 +2662,32 @@ export async function getPersonPhotosByAddress(operationIds: number[]): Promise<
     .orderBy(desc(rowAttachments.createdAt));
   const photoById = new Map(photoRows.map(p => [p.id, p]));
 
-  const byAddress = new Map<
-    string,
-    Map<
-      number,
-      { id: number; url: string; personLabel: string; createdAt: Date | null }
-    >
-  >();
+  type MapPhoto = {
+    id: number;
+    url: string;
+    personLabel: string;
+    createdAt: Date | null;
+    /** The person's main profile photo (registry photo first — see
+     * shared/profilePhoto.ts); the map's Images viewer leads with these. */
+    isMain: boolean;
+  };
+  // Each person's main photo, picked from everything linked to them.
+  const candidatesByPerson = new Map<string, ProfilePhotoCandidate[]>();
+  const personKeyOf = (l: (typeof links)[number]) =>
+    l.category === "target" ? `t:${l.targetId}` : `a:${l.entityKey}`;
+  for (const l of links) {
+    const photo = photoById.get(l.attachmentId);
+    if (!photo) continue;
+    const key = personKeyOf(l);
+    const list = candidatesByPerson.get(key) ?? [];
+    list.push({
+      id: photo.id,
+      fromRegistry: l.fromRegistry,
+      createdAt: photo.createdAt,
+    });
+    candidatesByPerson.set(key, list);
+  }
+  const byAddress = new Map<string, Map<number, MapPhoto>>();
   for (const l of links) {
     const photo = photoById.get(l.attachmentId);
     if (!photo) continue;
@@ -2450,26 +2697,38 @@ export async function getPersonPhotosByAddress(operationIds: number[]): Promise<
         : associatePeople.get(l.entityKey ?? "");
     if (!person) continue;
     const forAddress =
-      byAddress.get(person.addressKey) ??
-      new Map<
-        number,
-        { id: number; url: string; personLabel: string; createdAt: Date | null }
-      >();
+      byAddress.get(person.addressKey) ?? new Map<number, MapPhoto>();
+    const personMain = pickProfilePhoto(
+      candidatesByPerson.get(personKeyOf(l)) ?? []
+    );
+    const isMain = personMain?.id === photo.id;
+    const seen = forAddress.get(photo.id);
     // One photo linked to a target AND the same person as an associate shows
-    // once.
-    if (!forAddress.has(photo.id))
+    // once (and counts as main if it is main for either).
+    if (seen) {
+      if (isMain) seen.isMain = true;
+    } else {
       forAddress.set(photo.id, {
         id: photo.id,
         url: photo.url,
         personLabel: person.label,
         createdAt: photo.createdAt ?? null,
+        isMain,
       });
+    }
     byAddress.set(person.addressKey, forAddress);
   }
   return Array.from(byAddress, ([addressKey, photos]) => ({
     addressKey,
-    photos: Array.from(photos.values()).sort(
-      (a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)
+    // Main profile photos first (by name), then the rest newest first.
+    photos: Array.from(photos.values()).sort((a, b) =>
+      a.isMain !== b.isMain
+        ? a.isMain
+          ? -1
+          : 1
+        : a.isMain
+          ? a.personLabel.localeCompare(b.personLabel)
+          : (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)
     ),
   }));
 }
@@ -3356,6 +3615,33 @@ export async function updateTarget(
   }
 
   return result;
+}
+
+/** Saves the freeform Background written in the Target Registry. Plain text
+ * only (line breaks kept, nothing else interpreted); an empty value clears it.
+ * Returns the stored state so callers can show who/when. */
+export async function setTargetBackground(
+  id: number,
+  background: string,
+  byCIN: string | null
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const next = normaliseTargetBackground(background);
+  const now = Date.now();
+  await db
+    .update(targets)
+    .set({
+      registryBackground: next,
+      registryBackgroundUpdatedAt: now,
+      registryBackgroundUpdatedByCIN: byCIN,
+    })
+    .where(eq(targets.id, id));
+  return {
+    registryBackground: next,
+    registryBackgroundUpdatedAt: now,
+    registryBackgroundUpdatedByCIN: byCIN,
+  };
 }
 
 export async function getTargetById(id: number) {
@@ -7779,9 +8065,29 @@ export async function getWeeklyActivityReport(
   return { weekStart, weekEnd, operations: operationBlocks };
 }
 
-export async function getAllIntelligenceEntities(): Promise<
-  IntelligenceEntity[]
-> {
+export async function getAllIntelligenceEntities(opts?: {
+  /** Skip the per-request Intelligence scope (Region Search only). */
+  unscoped?: boolean;
+}) {
+  const all = await buildAllIntelligenceEntities();
+  const scope = intelScope.getStore();
+  if (!scope || opts?.unscoped) return all;
+  // A registry target's occurrences carry operation 0 even when its running
+  // sheet sits inside a hidden operation, so hide by the sheet as well.
+  const hiddenIds = Array.from(scope.hiddenOperationIds);
+  const db = hiddenIds.length > 0 ? await getDb() : null;
+  const hiddenSheets = new Set<number>();
+  if (db) {
+    const rows = await db
+      .select({ id: runningSheets.id })
+      .from(runningSheets)
+      .where(inArray(runningSheets.operationId, hiddenIds));
+    for (const r of rows) hiddenSheets.add(r.id);
+  }
+  return scopeEntities(all, scope.hiddenOperationIds, hiddenSheets);
+}
+
+async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
   const db = await getDb();
   if (!db) return [];
 
@@ -9257,6 +9563,265 @@ export async function checkPossibleDuplicates(
       exact: true,
     }));
   return [...exact, ...fuzzy];
+}
+
+/**
+ * Region Search: which Commands hold an entity (person, vehicle, address).
+ * Every signed-in user sees the same matches and details; restricted
+ * operations only differ in whether `canOpen` is true (see shared/regionSearch).
+ */
+export async function searchRegions(
+  viewer: RegionViewer,
+  opts: { query: string; type?: RegionEntityType; command?: CommandCode }
+): Promise<RegionResult[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const [entities, ops] = await Promise.all([
+    getAllIntelligenceEntities({ unscoped: true }),
+    db
+      .select({
+        id: operations.id,
+        name: operations.name,
+        command: operations.command,
+        restricted: operations.restricted,
+      })
+      .from(operations)
+      .where(isNull(operations.deletedAt)),
+  ]);
+  return regionSearch(entities, ops, viewer, opts);
+}
+
+// ─── Operation shares ────────────────────────────────────────────────────────
+// A Command's admin gives named people in other Commands access to one
+// operation, or to every operation the Command owns. The rule lives in
+// shared/operationAccess.ts; these are just the rows.
+
+export async function listOperationShares(opts?: {
+  /** Only shares of what this Command owns. Omit for all. */
+  fromCommand?: CommandCode;
+  /** Only shares reaching this person. */
+  userId?: number;
+}): Promise<OperationShareRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      id: operationShares.id,
+      operationId: operationShares.operationId,
+      shareFromCommand: operationShares.fromCommand,
+      opName: operations.name,
+      opCommand: operations.command,
+      userId: operationShares.userId,
+      userName: users.name,
+      userCIN: users.cin,
+      userCommand: users.command,
+      userTeam: teams.name,
+      level: operationShares.level,
+      sharedByCIN: operationShares.sharedByCIN,
+      createdAt: operationShares.createdAt,
+    })
+    .from(operationShares)
+    .innerJoin(users, eq(users.id, operationShares.userId))
+    .leftJoin(teams, eq(teams.id, users.teamId))
+    .leftJoin(operations, eq(operations.id, operationShares.operationId))
+    .where(
+      opts?.userId != null ? eq(operationShares.userId, opts.userId) : undefined
+    )
+    .orderBy(desc(operationShares.createdAt));
+  const out: OperationShareRow[] = [];
+  for (const r of rows) {
+    const owner = (r.opCommand ?? r.shareFromCommand) as CommandCode | null;
+    if (!owner) continue;
+    if (opts?.fromCommand && owner !== opts.fromCommand) continue;
+    out.push({
+      id: r.id,
+      operationId: r.operationId,
+      operationName: r.opName ?? null,
+      fromCommand: owner,
+      userId: r.userId,
+      userName: r.userName,
+      userCIN: r.userCIN ?? null,
+      userCommand: r.userCommand,
+      userTeam: r.userTeam ?? null,
+      level: r.level,
+      sharedByCIN: r.sharedByCIN,
+      createdAt: r.createdAt,
+    });
+  }
+  return out;
+}
+
+/** Add or change one share. Returns whether it was new. */
+export async function upsertOperationShare(data: {
+  operationId: number | null;
+  fromCommand: CommandCode | null;
+  userId: number;
+  level: "investigator" | "view" | "log" | "manage";
+  sharedByCIN: string;
+}): Promise<"created" | "updated"> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await db
+    .select({ id: operationShares.id })
+    .from(operationShares)
+    .where(
+      and(
+        eq(operationShares.userId, data.userId),
+        data.operationId != null
+          ? eq(operationShares.operationId, data.operationId)
+          : isNull(operationShares.operationId),
+        data.operationId == null && data.fromCommand
+          ? eq(operationShares.fromCommand, data.fromCommand)
+          : undefined
+      )
+    )
+    .limit(1);
+  if (existing.length > 0) {
+    await db
+      .update(operationShares)
+      .set({
+        level: data.level,
+        sharedByCIN: data.sharedByCIN,
+        createdAt: Date.now(),
+      })
+      .where(eq(operationShares.id, existing[0].id));
+    return "updated";
+  }
+  await db.insert(operationShares).values({
+    operationId: data.operationId,
+    fromCommand: data.operationId != null ? null : data.fromCommand,
+    userId: data.userId,
+    level: data.level,
+    sharedByCIN: data.sharedByCIN,
+    createdAt: Date.now(),
+  });
+  return "created";
+}
+
+export async function deleteOperationShare(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(operationShares).where(eq(operationShares.id, id));
+}
+
+// ─── Visitor team assignments ────────────────────────────────────────────────
+// A person from another Command who was given access can be put in one of the
+// HOSTING Command's teams (visitor_team_assignments). users.teamId is left
+// alone — it stays their own Command's team.
+
+export interface VisitorTeamRow {
+  userId: number;
+  /** The hosting Command (owner of the team). */
+  command: CommandCode;
+  teamId: number;
+}
+
+/** Assignments made by one hosting Command, or every Command's. */
+export async function listVisitorTeams(
+  command?: CommandCode | null
+): Promise<VisitorTeamRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      userId: visitorTeamAssignments.userId,
+      command: visitorTeamAssignments.command,
+      teamId: visitorTeamAssignments.teamId,
+    })
+    .from(visitorTeamAssignments)
+    .where(command ? eq(visitorTeamAssignments.command, command) : undefined);
+  return rows;
+}
+
+/**
+ * userId → teamId for the visitors a Command hosts. This is the one place the
+ * "effective team" of a visitor is worked out; callers use it to override
+ * users.teamId when they show people from the viewer's Command's side. With no
+ * Command (an all-region view) every assignment counts.
+ */
+export async function visitorTeamMap(
+  command?: CommandCode | null
+): Promise<Map<number, number>> {
+  const out = new Map<number, number>();
+  for (const r of await listVisitorTeams(command)) {
+    if (!out.has(r.userId)) out.set(r.userId, r.teamId);
+  }
+  return out;
+}
+
+/** Put a visitor in a team of the hosting Command, or (null) take them out. */
+export async function setVisitorTeam(data: {
+  userId: number;
+  command: CommandCode;
+  teamId: number | null;
+  assignedByCIN: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (data.teamId == null) {
+    await clearVisitorTeam(data.userId, data.command);
+    return;
+  }
+  const [existing] = await db
+    .select({ id: visitorTeamAssignments.id })
+    .from(visitorTeamAssignments)
+    .where(
+      and(
+        eq(visitorTeamAssignments.userId, data.userId),
+        eq(visitorTeamAssignments.command, data.command)
+      )
+    )
+    .limit(1);
+  if (existing) {
+    await db
+      .update(visitorTeamAssignments)
+      .set({ teamId: data.teamId, assignedByCIN: data.assignedByCIN })
+      .where(eq(visitorTeamAssignments.id, existing.id));
+  } else {
+    await db.insert(visitorTeamAssignments).values({
+      userId: data.userId,
+      command: data.command,
+      teamId: data.teamId,
+      assignedByCIN: data.assignedByCIN,
+      createdAt: Date.now(),
+    });
+  }
+}
+
+export async function clearVisitorTeam(
+  userId: number,
+  command: CommandCode
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .delete(visitorTeamAssignments)
+    .where(
+      and(
+        eq(visitorTeamAssignments.userId, userId),
+        eq(visitorTeamAssignments.command, command)
+      )
+    );
+}
+
+/**
+ * Once the last share from a Command to a person is gone they are no longer a
+ * visitor there, so their place in that Command's team goes with it.
+ */
+export async function clearVisitorTeamIfNoShares(
+  userId: number,
+  command: CommandCode
+): Promise<void> {
+  const remaining = await listOperationShares({
+    userId,
+    fromCommand: command,
+  });
+  if (remaining.length === 0) await clearVisitorTeam(userId, command);
+}
+
+export async function getOperationShareRow(id: number) {
+  const rows = await listOperationShares();
+  return rows.find(r => r.id === id);
 }
 
 export interface CrossOperationMatch {
@@ -12431,6 +12996,10 @@ export interface IntelTargetProfile {
   bailConditionsText: string | null;
   /** JSON [{key, detail}] — TI / LBS / SEEK / CAD. */
   specialProjects: string | null;
+  /** Freeform Background written in the Target Registry — null until set. */
+  registryBackground: string | null;
+  registryBackgroundUpdatedAt: number | null;
+  registryBackgroundUpdatedByCIN: string | null;
 }
 
 export interface IntelOperationProfile {
@@ -12475,6 +13044,10 @@ export interface IntelOperationProfile {
     bailConditionsText: string | null;
     /** JSON [{key, detail}] — TI / LBS / SEEK / CAD. */
     specialProjects: string | null;
+    /** Freeform Background from the Target Registry — null until set. */
+    registryBackground: string | null;
+    registryBackgroundUpdatedAt: number | null;
+    registryBackgroundUpdatedByCIN: string | null;
     registryAssociates: Array<{
       id: number;
       name: string;
@@ -13577,6 +14150,10 @@ export async function getIntelTargetProfile(
     bailStatus: target.bailStatus ?? null,
     bailConditions: target.bailConditions ?? null,
     bailConditionsText: target.bailConditionsText ?? null,
+    registryBackground: target.registryBackground ?? null,
+    registryBackgroundUpdatedAt: target.registryBackgroundUpdatedAt ?? null,
+    registryBackgroundUpdatedByCIN:
+      target.registryBackgroundUpdatedByCIN ?? null,
   };
 }
 
@@ -13709,6 +14286,10 @@ export async function getIntelOperationProfile(
         bailConditions: target.bailConditions ?? null,
         bailConditionsText: target.bailConditionsText ?? null,
         specialProjects: target.specialProjects ?? null,
+        registryBackground: target.registryBackground ?? null,
+        registryBackgroundUpdatedAt: target.registryBackgroundUpdatedAt ?? null,
+        registryBackgroundUpdatedByCIN:
+          target.registryBackgroundUpdatedByCIN ?? null,
         assocPersons,
         assocVehicles,
         assocLocations,
@@ -14844,7 +15425,10 @@ export interface UserLocationRow {
   deviceId: string;
   name: string;
   role: "observer" | "member" | "admin" | "investigator";
-  team: "TEAM1" | "TEAM2" | "PTT" | null;
+  /** The person's team (see teams), for pin grouping and colour. */
+  teamId: number | null;
+  teamName: string | null;
+  teamColour: string | null;
   lat: number;
   lng: number;
   speed: number | null;
@@ -14889,7 +15473,9 @@ export async function getUserLocations(
       deviceId: userLocations.deviceId,
       name: users.name,
       role: users.role,
-      team: users.team,
+      teamId: users.teamId,
+      teamName: teams.name,
+      teamColour: teams.colour,
       lat: userLocations.lat,
       lng: userLocations.lng,
       speed: userLocations.speed,
@@ -14904,6 +15490,7 @@ export async function getUserLocations(
     })
     .from(userLocations)
     .innerJoin(users, eq(users.id, userLocations.userId))
+    .leftJoin(teams, eq(teams.id, users.teamId))
     .where(
       and(
         eq(userLocations.sharingEnabled, true),
@@ -16040,9 +16627,9 @@ export interface IncompleteSheetReport {
  * for the Reports page. Enriches each sheet with team membership data from
  * the users table so the "Team Blended" logic can be applied client-side.
  */
-export async function getIncompleteRunningSheets(): Promise<
-  IncompleteSheetReport[]
-> {
+export async function getIncompleteRunningSheets(
+  viewerCommand?: CommandCode | null
+): Promise<IncompleteSheetReport[]> {
   const db = await getDb();
   if (!db) return [];
 
@@ -16063,10 +16650,15 @@ export async function getIncompleteRunningSheets(): Promise<
     db.select().from(users),
   ]);
 
-  // Build CIN → team map from users table
+  // Build CIN → team name map from users table
+  const teamNames = await teamNameMap();
   const cinTeamMap = new Map<string, string>();
+  // A visitor hosted by the viewer's Command counts in that Command's team.
+  const visitorTeams = await visitorTeamMap(viewerCommand);
   for (const u of allUsers) {
-    if (u.cin && u.team) cinTeamMap.set(u.cin, u.team);
+    const teamId = visitorTeams.get(u.id) ?? u.teamId;
+    const name = teamId != null ? teamNames.get(teamId) : undefined;
+    if (u.cin && name) cinTeamMap.set(u.cin, name);
   }
 
   // Compute certification status per sheet
@@ -16210,14 +16802,16 @@ export interface OutstandingTodoUser {
  * Returns all users ranked by total outstanding to-do actions
  * (uncertified rows they are a member of + governance items they own as TL/Author).
  */
-export async function getOutstandingTodosByUser(): Promise<
-  OutstandingTodoUser[]
-> {
+export async function getOutstandingTodosByUser(
+  viewerCommand?: CommandCode | null
+): Promise<OutstandingTodoUser[]> {
   const db = await getDb();
   if (!db) return [];
 
   const allUsers = await db.select().from(users);
   const usersWithCin = allUsers.filter(u => u.cin && u.cin.trim() !== "");
+  const teamNames = await teamNameMap();
+  const visitorTeams = await visitorTeamMap(viewerCommand);
 
   const results: OutstandingTodoUser[] = [];
 
@@ -16245,7 +16839,8 @@ export async function getOutstandingTodosByUser(): Promise<
     results.push({
       cin,
       name: user.name,
-      team: user.team ?? null,
+      team:
+        teamNames.get(visitorTeams.get(user.id) ?? user.teamId ?? -1) ?? null,
       uncertifiedCount,
       governanceCount,
       totalCount,

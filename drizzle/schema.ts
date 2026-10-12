@@ -24,7 +24,12 @@ export const users = mysqlTable("users", {
   name: varchar("name", { length: 255 }).notNull(),
   cin: varchar("cin", { length: 64 }).notNull().unique(),
   unit: varchar("unit", { length: 255 }),
-  team: mysqlEnum("team", ["TEAM1", "TEAM2", "PTT"]),
+  /** Legacy fixed team (TEAM1/TEAM2/PTT). Superseded by `teamId` (teams are
+   * per-Command records now); kept only so a deploy can be rolled back. Never
+   * read or written by the app. */
+  legacyTeam: mysqlEnum("team", ["TEAM1", "TEAM2", "PTT"]),
+  /** The team (see `teams`) this person belongs to, within their Command. */
+  teamId: int("teamId"),
   email: varchar("email", { length: 320 }),
   phone: varchar("phone", { length: 32 }),
   // "investigator" is a fourth, map-only tier — see INVESTIGATOR_ALLOWED_PATHS
@@ -41,6 +46,20 @@ export const users = mysqlTable("users", {
   // Forces a password change on next login (e.g. admin-issued temporary
   // password). Enforced server-side in _core/trpc.ts, not just client UI.
   mustChangePassword: boolean("mustChangePassword").default(false).notNull(),
+  // Home Command (region) — see shared/commands.ts. Existing users land in
+  // WESTERN when the column is added.
+  command: mysqlEnum("command", [
+    "WESTERN",
+    "NORTHERN",
+    "EASTERN",
+    "SOUTHERN",
+    "CENTRAL",
+  ])
+    .default("WESTERN")
+    .notNull(),
+  // All-region admin: sees every Command, and can open restricted operations
+  // from Region Search. Set by an admin on the user's profile.
+  allRegions: boolean("allRegions").default(false).notNull(),
   // Selectable accent colour palette — see shared/const.ts COLOR_PALETTES.
   // Null falls back to the default palette client-side.
   colorPalette: varchar("colorPalette", { length: 32 }),
@@ -151,6 +170,20 @@ export const operations = mysqlTable("operations", {
   promisNumber: varchar("promisNumber", { length: 128 }),
   imsNumber: varchar("imsNumber", { length: 128 }),
   investigationUnit: varchar("investigationUnit", { length: 255 }),
+  // The Command (region) that owns this operation — see shared/commands.ts.
+  // Existing operations land in WESTERN when the column is added.
+  command: mysqlEnum("command", [
+    "WESTERN",
+    "NORTHERN",
+    "EASTERN",
+    "SOUTHERN",
+    "CENTRAL",
+  ])
+    .default("WESTERN")
+    .notNull(),
+  // Restricted: other Commands still see this operation's matches (with all
+  // the details) in Region Search, but can't open it in Intelligence.
+  restricted: boolean("restricted").default(false).notNull(),
   createdBy: int("createdBy").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -163,6 +196,118 @@ export const operations = mysqlTable("operations", {
 
 export type Operation = typeof operations.$inferSelect;
 export type InsertOperation = typeof operations.$inferInsert;
+
+// ─── Operation shares (access across Commands) ──────────────────────────────
+// An admin of the owning Command gives a named person in another Command
+// access to one operation (`operationId`) or to every operation the Command
+// owns, present and future (`fromCommand`, with `operationId` null). Exactly
+// one of the two is set. `level` is what the person may do there: view =
+// read, log = also add rows and certify, manage = also edit the operation.
+// Revoking deletes the row (the audit log keeps who shared and who revoked);
+// everything already logged stays. See shared/operationAccess.ts.
+/** A team within one Command (Western's "Team 1", Eastern's own, …). Managed
+ * from User Management; people point at it with users.teamId. */
+export const teams = mysqlTable(
+  "teams",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    command: mysqlEnum("command", [
+      "WESTERN",
+      "NORTHERN",
+      "EASTERN",
+      "SOUTHERN",
+      "CENTRAL",
+    ]).notNull(),
+    name: varchar("name", { length: 64 }).notNull(),
+    /** Pin colour on the live map, as #rrggbb. Null = a default grey. */
+    colour: varchar("colour", { length: 9 }),
+    /** JSON string[] — Assumed Identity phones shown in the Crash Helper. */
+    aiPhones: text("aiPhones"),
+    sortOrder: int("sortOrder").notNull().default(0),
+    /** When the team shows in Map Settings → Teams: "always" (the default,
+     * and what every temporary team uses until it is deleted) or "online" —
+     * only while someone in it is logged in. */
+    mapVisibility: mysqlEnum("mapVisibility", ["always", "online"])
+      .notNull()
+      .default("always"),
+    /** True = members' location sharing is switched on automatically when
+     * they log in and cannot be switched off (e.g. Investigators). */
+    forceShare: boolean("forceShare").notNull().default(false),
+    createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+  },
+  t => ({
+    byCommandName: uniqueIndex("teams_command_name_idx").on(t.command, t.name),
+  })
+);
+
+export type Team = typeof teams.$inferSelect;
+export type InsertTeam = typeof teams.$inferInsert;
+
+export const operationShares = mysqlTable(
+  "operation_shares",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    operationId: int("operationId"),
+    fromCommand: mysqlEnum("fromCommand", [
+      "WESTERN",
+      "NORTHERN",
+      "EASTERN",
+      "SOUTHERN",
+      "CENTRAL",
+    ]),
+    userId: int("userId").notNull(),
+    level: mysqlEnum("level", [
+      "investigator",
+      "view",
+      "log",
+      "manage",
+    ]).notNull(),
+    sharedByCIN: varchar("sharedByCIN", { length: 64 }).notNull(),
+    createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+  },
+  t => ({
+    byUser: index("operation_shares_user_idx").on(t.userId),
+    byOperation: index("operation_shares_operation_idx").on(t.operationId),
+  })
+);
+
+/**
+ * A person from another Command who has been given access (operation_shares)
+ * can be put in one of the HOSTING Command's teams. Kept apart from
+ * users.teamId, which stays their own Command's team, so they keep both: the
+ * hosting Command sees them in its team, their home Command still sees them
+ * in theirs. One row per person per hosting Command.
+ */
+export const visitorTeamAssignments = mysqlTable(
+  "visitor_team_assignments",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    /** The Command whose team this is (the one hosting the visitor). */
+    command: mysqlEnum("command", [
+      "WESTERN",
+      "NORTHERN",
+      "EASTERN",
+      "SOUTHERN",
+      "CENTRAL",
+    ]).notNull(),
+    teamId: int("teamId").notNull(),
+    assignedByCIN: varchar("assignedByCIN", { length: 64 }).notNull(),
+    createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+  },
+  t => ({
+    byUserCommand: uniqueIndex("visitor_team_user_command_idx").on(
+      t.userId,
+      t.command
+    ),
+    byTeam: index("visitor_team_team_idx").on(t.teamId),
+  })
+);
+
+export type VisitorTeamAssignment = typeof visitorTeamAssignments.$inferSelect;
+
+export type OperationShare = typeof operationShares.$inferSelect;
+export type InsertOperationShare = typeof operationShares.$inferInsert;
 
 // ─── Running Sheets ───────────────────────────────────────────────────────────
 
@@ -315,6 +460,10 @@ export const attachmentEntityLinks = mysqlTable(
     targetId: int("targetId"), // set when category = "target"
     entityKey: varchar("entityKey", { length: 512 }), // normalized label, set when category != "target"
     entityLabel: varchar("entityLabel", { length: 512 }).notNull(), // display label at link time
+    // True when the photo was added through the Target Registry (Add Target /
+    // an associate's card). Those photos win the profile picture and the
+    // photoboard over every other upload — see shared/profilePhoto.ts.
+    fromRegistry: boolean("fromRegistry").default(false).notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   table => ({
@@ -580,6 +729,19 @@ export const targets = mysqlTable("targets", {
   // specialProjects, so a new running sheet's summary can copy it straight
   // across. detail is the agency ("AFP" / "WAPOL"), free text like the summary.
   specialProjects: text("specialProjects"),
+
+  // Freeform Background written in the Target Registry (plain text, line
+  // breaks kept). One per target: it shows on the Target profile and on the
+  // Operation profile of every operation the target is linked to. Distinct
+  // from operation_target_links.background, the read-only narrative imported
+  // verbatim from a document for one operation.
+  registryBackground: text("registryBackground"),
+  registryBackgroundUpdatedAt: bigint("registryBackgroundUpdatedAt", {
+    mode: "number",
+  }),
+  registryBackgroundUpdatedByCIN: varchar("registryBackgroundUpdatedByCIN", {
+    length: 64,
+  }),
 
   // Primary/home address structured parts — compose into hbf/hb
   addrUnitNo: varchar("addrUnitNo", { length: 32 }),
@@ -881,6 +1043,9 @@ export const auditLogs = mysqlTable("audit_logs", {
     "user_archived",
     "user_restored",
     "operation_status_changed",
+    "operation_updated",
+    "operation_shared",
+    "operation_share_revoked",
     "password_changed",
     "attachment_added",
     "attachment_deleted",
@@ -890,6 +1055,7 @@ export const auditLogs = mysqlTable("audit_logs", {
     "smeac_briefing_deleted",
     "uco_guide_posted",
     "uco_guide_deleted",
+    "target_background_updated",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),

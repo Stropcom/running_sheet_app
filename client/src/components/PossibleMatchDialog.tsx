@@ -283,7 +283,7 @@ export function PossibleMatchDialog({
         <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <User className="h-3.5 w-3.5" />
           {CATEGORY_LABEL[current.match.category] ?? current.match.category}
-          <span className="text-muted-foreground/60">·</span>
+          <span className="text-muted-foreground">·</span>
           {Math.round(current.match.similarity * 100)}% similar
         </div>
 

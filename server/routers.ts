@@ -8,6 +8,28 @@ import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
 import { CIN_LINK_CATEGORY } from "@shared/attachmentLinking";
 import { resolveTrackedTarget } from "@shared/trackedTarget";
+import { TARGET_BACKGROUND_MAX } from "@shared/targetBackground";
+import { COMMAND_CODES, COMMAND_LABELS } from "@shared/commands";
+import {
+  canShareOperation,
+  SHARE_LEVELS,
+  SHARE_LEVEL_LABEL,
+  type ShareLevel,
+} from "@shared/operationAccess";
+import {
+  commandsOfUsers,
+  filterAuditLogs,
+  filterByIntelligenceScope,
+  filterByOperationAccess,
+  filterLocationRows,
+  intelligenceOperationIds,
+  invalidateAccessCache,
+  operationsForUser,
+  operationsForMap,
+  reachableFor,
+  scopeRegistryTargets,
+  toAccessUser,
+} from "./operationAccess";
 import {
   sanitizeTargetSpecialProjects,
   mergeSpecialProjects,
@@ -110,6 +132,12 @@ import {
   recomputeRunningSheetTitlesForOperation,
   createSheetRow,
   createUser,
+  listTeams,
+  getTeamById,
+  createTeam,
+  updateTeam,
+  deleteTeam,
+  teamNameTaken,
   archiveUser,
   restoreUser,
   getInvestigatorAllowedOperationIds,
@@ -167,6 +195,7 @@ import {
   updateTarget,
   deleteTarget,
   getTargetById,
+  setTargetBackground,
   findPossibleDuplicateTarget,
   findPossibleDuplicatePerson,
   mergeTargetFieldDetails,
@@ -178,6 +207,15 @@ import {
   getIntelTargetPatternOfLife,
   extractEntitiesFromText,
   checkPossibleDuplicates,
+  searchRegions,
+  listOperationShares,
+  upsertOperationShare,
+  deleteOperationShare,
+  getOperationShareRow,
+  listVisitorTeams,
+  setVisitorTeam,
+  clearVisitorTeamIfNoShares,
+  visitorTeamMap,
   checkCrossOperationEntity,
   markEntitiesNotDuplicate,
   mergeEntities,
@@ -271,6 +309,8 @@ import {
   setUserOnFoot,
   setUserPinAppearance,
   clearUserLocation,
+  mustShareLocation,
+  listTeamIdsWithOnlineMembers,
   getUserLocationState,
   getUserLocationHistories,
   getCustomMarkers,
@@ -521,6 +561,35 @@ const targetStatusFieldsSchema = {
     ),
 };
 
+/** Saves a target's freeform Background and writes the audit entry — shared
+ * by target.registry.setBackground (editing on the registry card) and the
+ * two create procedures (typed in Add Target to Registry). */
+async function saveTargetBackgroundWithAudit(
+  user: { id: number; cin?: string | null },
+  target: { id: number; name: string; registryBackground?: string | null },
+  background: string
+) {
+  const saved = await setTargetBackground(
+    target.id,
+    background,
+    user.cin ?? null
+  );
+  await createAuditLog({
+    sheetId: 0,
+    userId: user.id,
+    userName: user.cin ?? "Unknown",
+    userCIN: user.cin ?? null,
+    action: "target_background_updated",
+    details: `Background ${
+      saved.registryBackground ? "updated" : "cleared"
+    } on target "${target.name}" (${
+      (target.registryBackground ?? "").length
+    } to ${(saved.registryBackground ?? "").length} characters)`,
+    createdAt: Date.now(),
+  });
+  return saved;
+}
+
 const smeacTeamSlotSchema = z.object({
   name: z.string(),
   cin: z.string().optional().nullable(),
@@ -643,6 +712,136 @@ async function storeTargetDocumentSourceFile(params: {
 
 // ─── App Router ───────────────────────────────────────────────────────────────
 
+/** WIPC members are sensitive: each belongs to the Command of the admin who
+ * created them, and only that Command's admins (or an all-region admin) see
+ * or change them. */
+async function assertCanManageWipcMember(
+  admin: { command: string; allRegions: boolean },
+  memberId: number
+) {
+  if (admin.allRegions) return;
+  const [members, commands] = await Promise.all([
+    listWipcMembers(),
+    commandsOfUsers(),
+  ]);
+  const m = members.find(x => x.id === memberId);
+  if (m && commands.get(m.createdBy) !== admin.command) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "That WIPC member belongs to another Command.",
+    });
+  }
+}
+
+/** An admin manages people in their own Command; only an all-region admin
+ * reaches across Commands. */
+async function assertCanManageUser(
+  admin: { command: (typeof COMMAND_CODES)[number]; allRegions: boolean },
+  targetUserId: number
+) {
+  const target = await getUserById(targetUserId);
+  if (!target) return;
+  if (!admin.allRegions && target.command !== admin.command) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `${target.name} belongs to ${COMMAND_LABELS[target.command]}. Only that Command's admins can change their account.`,
+    });
+  }
+}
+
+/**
+ * A visitor the viewer's Command hosts shows in that Command's team on the
+ * live map (pin colour and grouping), whatever their own Command's team is.
+ */
+async function withHostedTeams<
+  T extends {
+    userId: number;
+    teamId: number | null;
+    teamName: string | null;
+    teamColour: string | null;
+  },
+>(
+  viewer: { command: (typeof COMMAND_CODES)[number]; allRegions: boolean },
+  rows: T[]
+): Promise<T[]> {
+  const hosted = await visitorTeamMap(
+    viewer.allRegions ? null : viewer.command
+  );
+  if (hosted.size === 0) return rows;
+  const byId = new Map((await listTeams()).map(t => [t.id, t]));
+  return rows.map(r => {
+    const t = byId.get(hosted.get(r.userId) ?? -1);
+    return t
+      ? { ...r, teamId: t.id, teamName: t.name, teamColour: t.colour }
+      : r;
+  });
+}
+
+const TEAM_COLOUR_RE = /^#[0-9a-fA-F]{6}$/;
+const teamInput = {
+  name: z.string().trim().min(1, "Give the team a name.").max(64),
+  /** #rrggbb */
+  colour: z
+    .string()
+    .regex(TEAM_COLOUR_RE, "Pick a colour.")
+    .nullable()
+    .optional(),
+  /** Assumed Identity phones for the Crash Helper. */
+  aiPhones: z.array(z.string().trim().min(1).max(32)).max(10).optional(),
+  /** Map Settings → Teams: always listed, or only while someone is logged in. */
+  mapVisibility: z.enum(["always", "online"]).default("always"),
+  /** Members' location sharing is forced on at login and can't be turned off. */
+  forceShare: z.boolean().default(false),
+};
+
+/** A team can only be given to someone in the same Command. */
+async function assertTeamFitsCommand(
+  teamId: number,
+  command: (typeof COMMAND_CODES)[number]
+) {
+  const team = await getTeamById(teamId);
+  if (!team || team.command !== command) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `That team doesn't belong to ${COMMAND_LABELS[command]}.`,
+    });
+  }
+}
+
+/** An admin manages their own Command's teams; an all-region admin any. */
+async function assertCanManageTeam(
+  admin: { command: (typeof COMMAND_CODES)[number]; allRegions: boolean },
+  teamId: number
+) {
+  const team = await getTeamById(teamId);
+  if (!team) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Team not found." });
+  }
+  if (!admin.allRegions && team.command !== admin.command) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: `That team belongs to ${COMMAND_LABELS[team.command]}. Only that Command's admins can change it.`,
+    });
+  }
+  return team;
+}
+
+/** Until somebody is an all-region admin, any admin may make the first one
+ * (otherwise nobody could ever be). After that only an all-region admin can. */
+async function noAllRegionAdminYet(): Promise<boolean> {
+  return (await getAllUsers()).every(u => !u.allRegions);
+}
+
+/** Whole-system maintenance tools act on every Command's data. */
+function requireAllRegions(user: { allRegions: boolean }) {
+  if (!user.allRegions) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Only an all-region admin can run system-wide tools.",
+    });
+  }
+}
+
 export const appRouter = router({
   system: systemRouter,
 
@@ -656,6 +855,11 @@ export const appRouter = router({
       // Never return passwordHash to the client
       const { passwordHash: _ph, ...safe } = user;
       return safe;
+    }),
+
+    /** What other Commands have shared with the signed-in person. */
+    mySharedAccess: protectedProcedure.query(async ({ ctx }) => {
+      return listOperationShares({ userId: ctx.user.id });
     }),
 
     updatePassword: protectedProcedure
@@ -728,7 +932,14 @@ export const appRouter = router({
   // ─── Auth ────────────────────────────────────────────────────────────────────
 
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query(async opts => {
+      const user = opts.ctx.user;
+      if (!user) return user;
+      // Also says whether their team forces location sharing on (the app
+      // turns Show & Share on and locks it) — read here, not from the team
+      // list, because map-only Investigator accounts can't list teams.
+      return { ...user, mustShareLocation: await mustShareLocation(user) };
+    }),
 
     login: publicProcedure
       .input(
@@ -852,9 +1063,26 @@ export const appRouter = router({
     list: protectedProcedure.query(async ({ ctx }) => {
       await autoArchiveEligibleOperations();
       const all = await getOperations();
-      if (ctx.user.role !== "investigator") return all;
+      if (ctx.user.role !== "investigator")
+        return operationsForUser(toAccessUser(ctx.user), all);
       const allowed = new Set(getInvestigatorAllowedOperationIds(ctx.user));
-      return all.filter(op => allowed.has(op.id));
+      return operationsForUser(
+        toAccessUser(ctx.user),
+        all.filter(op => allowed.has(op.id))
+      );
+    }),
+
+    /** Operations the Mapping page offers: what they can open, plus what was
+     * shared at Investigator level (those carry mapOnly: true). */
+    listForMap: protectedProcedure.query(async ({ ctx }) => {
+      const all = await getOperations();
+      if (ctx.user.role !== "investigator")
+        return operationsForMap(toAccessUser(ctx.user), all);
+      const allowed = new Set(getInvestigatorAllowedOperationIds(ctx.user));
+      return operationsForMap(
+        toAccessUser(ctx.user),
+        all.filter(op => allowed.has(op.id))
+      );
     }),
 
     get: protectedProcedure
@@ -876,16 +1104,43 @@ export const appRouter = router({
           promisNumber: z.string().optional(),
           imsNumber: z.string().optional(),
           investigationUnit: z.string().optional(),
+          /** Admins only — see the checks below. */
+          command: z.enum(COMMAND_CODES).optional(),
+          restricted: z.boolean().optional(),
         })
       )
       .mutation(async ({ input, ctx }) => {
+        const isAdmin = ctx.user.role === "admin";
+        if (!isAdmin && (input.restricted || input.command)) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Only an admin can set an operation's Command or mark it Restricted.",
+          });
+        }
         const id = await createOperation({
           name: input.name,
           promisNumber: input.promisNumber ?? null,
           imsNumber: input.imsNumber ?? null,
           investigationUnit: input.investigationUnit ?? null,
+          // An operation belongs to its creator's Command unless an admin
+          // says otherwise.
+          command: input.command ?? ctx.user.command,
+          restricted: input.restricted ?? false,
           createdBy: ctx.user.id,
         });
+        if (input.restricted) {
+          await createAuditLog({
+            sheetId: 0,
+            userId: ctx.user.id,
+            userName: ctx.user.cin ?? "Unknown",
+            userCIN: ctx.user.cin ?? undefined,
+            action: "operation_updated",
+            details: `Operation "${input.name}" (ID ${id}) created as Restricted`,
+            createdAt: Date.now(),
+          });
+        }
+        invalidateAccessCache();
         return { id };
       }),
 
@@ -897,11 +1152,57 @@ export const appRouter = router({
           promisNumber: z.string().optional().nullable(),
           imsNumber: z.string().optional().nullable(),
           investigationUnit: z.string().optional().nullable(),
+          /** Admins only — see the checks below. */
+          command: z.enum(COMMAND_CODES).optional(),
+          restricted: z.boolean().optional(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const { id, ...rest } = input;
+        if (
+          (rest.restricted !== undefined || rest.command !== undefined) &&
+          ctx.user.role !== "admin"
+        ) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message:
+              "Only an admin can set an operation's Command or mark it Restricted.",
+          });
+        }
+        const before =
+          rest.restricted !== undefined || rest.command !== undefined
+            ? await getOperationById(id)
+            : undefined;
         await updateOperation(id, rest);
+        invalidateAccessCache();
+        if (
+          before &&
+          ((rest.restricted !== undefined &&
+            rest.restricted !== before.restricted) ||
+            (rest.command !== undefined && rest.command !== before.command))
+        ) {
+          const parts: string[] = [];
+          if (
+            rest.restricted !== undefined &&
+            rest.restricted !== before.restricted
+          )
+            parts.push(
+              rest.restricted ? "marked Restricted" : "no longer Restricted"
+            );
+          if (rest.command !== undefined && rest.command !== before.command)
+            parts.push(
+              `moved from ${COMMAND_LABELS[before.command]} to ${COMMAND_LABELS[rest.command]}`
+            );
+          await createAuditLog({
+            sheetId: 0,
+            userId: ctx.user.id,
+            userName: ctx.user.cin ?? "Unknown",
+            userCIN: ctx.user.cin ?? undefined,
+            action: "operation_updated",
+            details: `Operation "${before.name}" (ID ${id}) ${parts.join("; ")}`,
+            createdAt: Date.now(),
+          });
+        }
         // The operation name is baked into every sheet's auto-generated
         // title — resync them all when it changes.
         if (rest.name !== undefined) {
@@ -932,20 +1233,30 @@ export const appRouter = router({
 
     deepSearch: protectedProcedure
       .input(z.object({ query: z.string() }))
-      .query(async ({ input }) => {
-        return deepSearchOperations(input.query);
+      .query(async ({ input, ctx }) => {
+        return filterByOperationAccess(
+          toAccessUser(ctx.user),
+          await deepSearchOperations(input.query),
+          m => m.operationId
+        );
       }),
 
     listByStatus: protectedProcedure
       .input(
         z.object({ status: z.enum(["active", "before_court", "archive"]) })
       )
-      .query(async ({ input }) => {
-        return getOperationsByStatus(input.status);
+      .query(async ({ input, ctx }) => {
+        return operationsForUser(
+          toAccessUser(ctx.user),
+          await getOperationsByStatus(input.status)
+        );
       }),
 
-    listAll: protectedProcedure.query(async () => {
-      return getAllOperations();
+    listAll: protectedProcedure.query(async ({ ctx }) => {
+      return operationsForUser(
+        toAccessUser(ctx.user),
+        await getAllOperations()
+      );
     }),
 
     setStatus: adminProcedure
@@ -985,8 +1296,12 @@ export const appRouter = router({
   // ─── Running Sheets ──────────────────────────────────────────────────────────
 
   sheet: router({
-    list: protectedProcedure.query(async () => {
-      return getRunningSheets();
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await getRunningSheets(),
+        s => s.operationId
+      );
     }),
 
     listByOperation: protectedProcedure
@@ -1209,13 +1524,21 @@ export const appRouter = router({
     outstandingForMe: protectedProcedure.query(async ({ ctx }) => {
       const cin = ctx.user.cin;
       if (!cin) return [];
-      return getOutstandingSheetsForCin(cin);
+      return filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await getOutstandingSheetsForCin(cin),
+        s => s.operationId
+      );
     }),
 
     governanceTodo: protectedProcedure.query(async ({ ctx }) => {
       const cin = ctx.user.cin;
       if (!cin) return [];
-      return getGovernanceTodoForCin(cin);
+      return filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await getGovernanceTodoForCin(cin),
+        s => s.operationId
+      );
     }),
 
     /**
@@ -1866,8 +2189,12 @@ export const appRouter = router({
       }),
 
     /** Photo count per operation, for the top-level Images folder list. */
-    countsByOperation: protectedProcedure.query(async () => {
-      return getAttachmentCountsByOperation();
+    countsByOperation: protectedProcedure.query(async ({ ctx }) => {
+      return filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await getAttachmentCountsByOperation(),
+        r => r.operationId
+      );
     }),
 
     listBySheet: protectedProcedure
@@ -1934,6 +2261,8 @@ export const appRouter = router({
           ]),
           targetId: z.number().optional(),
           entityLabel: z.string().min(1),
+          // Set by the Target Registry screens only (see shared/profilePhoto.ts).
+          fromRegistry: z.boolean().optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -1970,8 +2299,10 @@ export const appRouter = router({
         return getEntityLinksByAttachmentId(input.attachmentId);
       }),
 
-    entityLinkCounts: protectedProcedure.query(async () => {
-      return getEntityLinkCounts();
+    entityLinkCounts: protectedProcedure.query(async ({ ctx }) => {
+      return getEntityLinkCounts(
+        await intelligenceOperationIds(toAccessUser(ctx.user))
+      );
     }),
 
     byEntity: protectedProcedure
@@ -1988,8 +2319,12 @@ export const appRouter = router({
           entityLabel: z.string().optional(),
         })
       )
-      .query(async ({ input }) => {
-        return getAttachmentsForEntity(input);
+      .query(async ({ input, ctx }) => {
+        return filterByIntelligenceScope(
+          toAccessUser(ctx.user),
+          await getAttachmentsForEntity(input),
+          a => a.operationId
+        );
       }),
 
     // Hand-uploaded photos (profiles / baseball cards) of the people living
@@ -2014,7 +2349,7 @@ export const appRouter = router({
           entityLabel: z.string().optional(),
         })
       )
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
         if (input.category === "target") {
           if (!input.targetId)
             throw new TRPCError({
@@ -2022,17 +2357,25 @@ export const appRouter = router({
               message: "targetId is required.",
             });
           const links = await getLinkedOperationsForTarget(input.targetId);
-          return links.map(l => ({
-            id: l.operationId,
-            name: l.operationName ?? "Unknown",
-          }));
+          return filterByIntelligenceScope(
+            toAccessUser(ctx.user),
+            links.map(l => ({
+              id: l.operationId,
+              name: l.operationName ?? "Unknown",
+            })),
+            o => o.id
+          );
         }
         if (!input.entityLabel)
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "entityLabel is required.",
           });
-        return getLinkedOperationsForEntity(input.category, input.entityLabel);
+        return filterByIntelligenceScope(
+          toAccessUser(ctx.user),
+          await getLinkedOperationsForEntity(input.category, input.entityLabel),
+          o => o.id
+        );
       }),
 
     // Runs RetinaFace detection (+ MobileFace embedding, held server-side
@@ -2281,6 +2624,7 @@ export const appRouter = router({
           category: z.enum(["target", "associate"]),
           targetId: z.number().optional(),
           entityLabel: z.string().min(1),
+          fromRegistry: z.boolean().optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -2320,6 +2664,7 @@ export const appRouter = router({
           category: input.category,
           targetId: input.targetId,
           entityLabel: input.entityLabel,
+          fromRegistry: input.fromRegistry,
         });
         await createPersonDetection({
           attachmentId: input.attachmentId,
@@ -2933,7 +3278,11 @@ export const appRouter = router({
       }),
 
     list: protectedProcedure.query(async ({ ctx }) => {
-      const rows = await listSmeacBriefings();
+      const rows = await filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await listSmeacBriefings(),
+        r => r.operationId
+      );
       // Drafts are only visible to their own creator; posted is visible to all.
       return rows.filter(
         r => r.status === "posted" || r.createdBy === ctx.user.id
@@ -3074,7 +3423,11 @@ export const appRouter = router({
       }),
 
     list: protectedProcedure.query(async ({ ctx }) => {
-      const rows = await listUcoGuideBriefings();
+      const rows = await filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await listUcoGuideBriefings(),
+        r => r.operationId
+      );
       return rows.filter(
         r => r.status === "posted" || r.createdBy === ctx.user.id
       );
@@ -3173,8 +3526,8 @@ export const appRouter = router({
         return getAuditLogsBySheet(input.sheetId);
       }),
 
-    all: protectedProcedure.query(async () => {
-      return getAllAuditLogs();
+    all: protectedProcedure.query(async ({ ctx }) => {
+      return filterAuditLogs(toAccessUser(ctx.user), await getAllAuditLogs());
     }),
   }),
 
@@ -3231,8 +3584,351 @@ export const appRouter = router({
 
   admin: router({
     listUsers: adminProcedure.query(async () => {
-      return getAllUsers();
+      // Never send password hashes to the browser, even to an admin — every
+      // admin can now see people from every Command.
+      const teamName = new Map((await listTeams()).map(t => [t.id, t.name]));
+      return (await getAllUsers()).map(
+        ({ passwordHash: _passwordHash, legacyTeam: _legacy, ...rest }) => ({
+          ...rest,
+          teamName:
+            rest.teamId != null ? (teamName.get(rest.teamId) ?? null) : null,
+        })
+      );
     }),
+
+    // ─── Teams (per Command) ────────────────────────────────────────────────
+    createTeam: adminProcedure
+      .input(
+        z.object({
+          command: z.enum(COMMAND_CODES).optional(),
+          ...teamInput,
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const command = input.command ?? ctx.user.command;
+        if (!ctx.user.allRegions && command !== ctx.user.command) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: `Only a ${COMMAND_LABELS[command]} admin can add its teams.`,
+          });
+        }
+        if (await teamNameTaken(command, input.name)) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `${COMMAND_LABELS[command]} already has a team called "${input.name}".`,
+          });
+        }
+        const id = await createTeam({
+          command,
+          name: input.name,
+          colour: input.colour ?? null,
+          aiPhones: input.aiPhones ?? [],
+          mapVisibility: input.mapVisibility,
+          forceShare: input.forceShare,
+        });
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_updated",
+          details: `Team "${input.name}" added to ${COMMAND_LABELS[command]}`,
+          createdAt: Date.now(),
+        });
+        return { id };
+      }),
+
+    updateTeam: adminProcedure
+      .input(z.object({ id: z.number(), ...teamInput }))
+      .mutation(async ({ input, ctx }) => {
+        const team = await assertCanManageTeam(ctx.user, input.id);
+        if (
+          input.name !== team.name &&
+          (await teamNameTaken(team.command, input.name, team.id))
+        ) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `${COMMAND_LABELS[team.command]} already has a team called "${input.name}".`,
+          });
+        }
+        await updateTeam(team.id, {
+          name: input.name,
+          colour: input.colour ?? null,
+          aiPhones: input.aiPhones ?? [],
+          mapVisibility: input.mapVisibility,
+          forceShare: input.forceShare,
+        });
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_updated",
+          details: `Team "${team.name}" (${COMMAND_LABELS[team.command]}) updated${input.name !== team.name ? ` — now "${input.name}"` : ""}`,
+          createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
+
+    deleteTeam: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const team = await assertCanManageTeam(ctx.user, input.id);
+        const moved = await deleteTeam(team.id);
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_updated",
+          details: `Team "${team.name}" (${COMMAND_LABELS[team.command]}) deleted; ${moved} ${moved === 1 ? "person" : "people"} now have no team`,
+          createdAt: Date.now(),
+        });
+        return { success: true, moved };
+      }),
+
+    // ─── Sharing operations across Commands ────────────────────────────────
+    // An admin of the Command that owns an operation gives named people in
+    // other Commands access to it. Rule: shared/operationAccess.ts.
+
+    /** Shares this admin may see: what their Command shared out, and what
+     * reaches their Command's people (an all-region admin: all). */
+    listShares: adminProcedure.query(async ({ ctx }) => {
+      const all = await listOperationShares();
+      if (ctx.user.allRegions) return all;
+      // What this Command shared out, and what reaches its own people.
+      return all.filter(
+        s =>
+          s.fromCommand === ctx.user.command ||
+          s.userCommand === ctx.user.command
+      );
+    }),
+
+    /** Shares that reach one person, as far as this admin may see them: what
+     * their own Command shared, plus anything shared INTO their Command that
+     * reaches this person. Other Commands' sharing stays private. */
+    userShares: adminProcedure
+      .input(z.object({ userId: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const [target, rows] = await Promise.all([
+          getUserById(input.userId),
+          listOperationShares({ userId: input.userId }),
+        ]);
+        if (!target) return [];
+        return rows.filter(
+          r =>
+            ctx.user.allRegions ||
+            r.fromCommand === ctx.user.command ||
+            target.command === ctx.user.command
+        );
+      }),
+
+    /** Which of the hosting Command's teams each visitor is in. An admin
+     * sees their own Command's (an all-region admin: every Command's). */
+    listVisitorTeams: adminProcedure.query(async ({ ctx }) =>
+      listVisitorTeams(ctx.user.allRegions ? null : ctx.user.command)
+    ),
+
+    /** Put a visitor (someone this Command shared access with) in one of its
+     * teams, or take them out (teamId null). Their own team is untouched. */
+    setVisitorTeam: adminProcedure
+      .input(
+        z.object({
+          userId: z.number(),
+          teamId: z.number().nullable(),
+          /** The hosting Command. Defaults to the admin's own; only an
+           * all-region admin may name another. */
+          command: z.enum(COMMAND_CODES).optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const command = input.command ?? ctx.user.command;
+        if (!ctx.user.allRegions && command !== ctx.user.command) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: `Only a ${COMMAND_LABELS[command]} admin can put visitors in its teams.`,
+          });
+        }
+        const visitor = await getUserById(input.userId);
+        if (!visitor) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Person not found.",
+          });
+        }
+        const shared = await listOperationShares({
+          userId: input.userId,
+          fromCommand: command,
+        });
+        if (shared.length === 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `${visitor.name} hasn't been given access to ${COMMAND_LABELS[command]} operations, so they aren't a visitor there.`,
+          });
+        }
+        let teamLabel = "no team";
+        if (input.teamId != null) {
+          await assertTeamFitsCommand(input.teamId, command);
+          teamLabel = `"${(await getTeamById(input.teamId))?.name ?? "?"}"`;
+        }
+        await setVisitorTeam({
+          userId: input.userId,
+          command,
+          teamId: input.teamId,
+          assignedByCIN: ctx.user.cin ?? "Unknown",
+        });
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "user_updated",
+          details: `Visitor ${visitor.name} (CIN: ${visitor.cin ?? "?"}) put in ${COMMAND_LABELS[command]} team: ${teamLabel}`,
+          createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
+
+    createShares: adminProcedure
+      .input(
+        z.object({
+          userIds: z.array(z.number()).min(1).max(300),
+          scope: z.enum(["all", "operations"]),
+          operationIds: z.array(z.number()).optional(),
+          /** Which Command's operations "all" means. Defaults to the admin's
+           * own; only an all-region admin may name another. */
+          fromCommand: z.enum(COMMAND_CODES).optional(),
+          level: z.enum(SHARE_LEVELS as [ShareLevel, ...ShareLevel[]]),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const me = toAccessUser(ctx.user);
+        const targets: Array<{
+          operationId: number | null;
+          fromCommand: (typeof COMMAND_CODES)[number] | null;
+          label: string;
+          owner: (typeof COMMAND_CODES)[number];
+        }> = [];
+        if (input.scope === "all") {
+          const from = input.fromCommand ?? ctx.user.command;
+          if (!canShareOperation(me, { id: 0, command: from })) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: `Only a ${COMMAND_LABELS[from]} admin can share its operations.`,
+            });
+          }
+          targets.push({
+            operationId: null,
+            fromCommand: from,
+            label: `every ${COMMAND_LABELS[from]} operation`,
+            owner: from,
+          });
+        } else {
+          const ids = Array.from(new Set(input.operationIds ?? []));
+          if (ids.length === 0) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Pick at least one operation to share.",
+            });
+          }
+          for (const id of ids) {
+            const op = await getOperationById(id);
+            if (!op || op.deletedAt) {
+              throw new TRPCError({
+                code: "NOT_FOUND",
+                message: "An operation you picked no longer exists.",
+              });
+            }
+            if (!canShareOperation(me, { id: op.id, command: op.command })) {
+              throw new TRPCError({
+                code: "FORBIDDEN",
+                message: `Only a ${COMMAND_LABELS[op.command]} admin can share ${op.name}.`,
+              });
+            }
+            targets.push({
+              operationId: op.id,
+              fromCommand: null,
+              label: op.name,
+              owner: op.command,
+            });
+          }
+        }
+
+        let created = 0;
+        let updated = 0;
+        let skipped = 0;
+        const sharedWith: string[] = [];
+        for (const userId of Array.from(new Set(input.userIds))) {
+          const person = await getUserById(userId);
+          if (!person || person.archivedAt) {
+            skipped++;
+            continue;
+          }
+          sharedWith.push(person.cin ?? person.name);
+          for (const t of targets) {
+            // Sharing with someone in the owning Command changes nothing —
+            // they already have it.
+            if (person.command === t.owner) {
+              skipped++;
+              continue;
+            }
+            const r = await upsertOperationShare({
+              operationId: t.operationId,
+              fromCommand: t.fromCommand,
+              userId,
+              level: input.level,
+              sharedByCIN: ctx.user.cin ?? "Unknown",
+            });
+            if (r === "created") created++;
+            else updated++;
+          }
+        }
+        invalidateAccessCache();
+        if (created + updated > 0) {
+          await createAuditLog({
+            sheetId: 0,
+            userId: ctx.user.id,
+            userName: ctx.user.cin ?? "Unknown",
+            userCIN: ctx.user.cin ?? undefined,
+            action: "operation_shared",
+            details: `Shared ${targets.map(t => t.label).join(", ")} at ${SHARE_LEVEL_LABEL[input.level]} with ${sharedWith.length} ${sharedWith.length === 1 ? "person" : "people"} (CIN: ${sharedWith.join(", ")})`,
+            createdAt: Date.now(),
+          });
+        }
+        return { created, updated, skipped };
+      }),
+
+    revokeShare: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        const share = await getOperationShareRow(input.id);
+        if (!share) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Share not found.",
+          });
+        }
+        if (!ctx.user.allRegions && share.fromCommand !== ctx.user.command) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: `Only a ${COMMAND_LABELS[share.fromCommand]} admin can revoke this.`,
+          });
+        }
+        await deleteOperationShare(input.id);
+        // No access left from that Command: no longer a visitor in its team.
+        await clearVisitorTeamIfNoShares(share.userId, share.fromCommand);
+        invalidateAccessCache();
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? undefined,
+          action: "operation_share_revoked",
+          details: `Revoked access to ${share.operationName ?? `every ${COMMAND_LABELS[share.fromCommand]} operation`} from ${share.userName} (CIN: ${share.userCIN ?? "?"})`,
+          createdAt: Date.now(),
+        });
+        return { success: true };
+      }),
 
     getUser: adminProcedure
       .input(z.object({ id: z.number() }))
@@ -3253,7 +3949,9 @@ export const appRouter = router({
           name: z.string().min(1),
           cin: z.string().min(1),
           unit: z.string().optional(),
-          team: z.enum(["TEAM1", "TEAM2", "PTT"]).optional(),
+          command: z.enum(COMMAND_CODES).optional(),
+          allRegions: z.boolean().optional(),
+          teamId: z.number().nullable().optional(),
           phone: z.string().optional(),
           username: z.string().min(1),
           password: z.string().min(1),
@@ -3262,12 +3960,33 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
+        if (!ctx.user.allRegions) {
+          if (input.command && input.command !== ctx.user.command) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Only an all-region admin can add people to another Command. Make yourself one on your profile first.",
+            });
+          }
+          if (input.allRegions && !(await noAllRegionAdminYet())) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Only an all-region admin can make another one.",
+            });
+          }
+        }
+        const newCommand = input.command ?? ctx.user.command;
+        if (input.teamId != null)
+          await assertTeamFitsCommand(input.teamId, newCommand);
         const passwordHash = await bcrypt.hash(input.password, 12);
         const id = await createUser({
           name: input.name,
           cin: input.cin.toUpperCase(),
           unit: input.unit,
-          team: input.team,
+          command: newCommand,
+          allRegions:
+            input.role === "admin" ? (input.allRegions ?? false) : false,
+          teamId: input.teamId ?? null,
           phone: input.phone || null,
           username: input.username.trim().toLowerCase(),
           passwordHash,
@@ -3301,7 +4020,9 @@ export const appRouter = router({
           name: z.string().min(1).optional(),
           cin: z.string().min(1).optional(),
           unit: z.string().optional(),
-          team: z.enum(["TEAM1", "TEAM2", "PTT"]).nullable().optional(),
+          command: z.enum(COMMAND_CODES).optional(),
+          allRegions: z.boolean().optional(),
+          teamId: z.number().nullable().optional(),
           phone: z.string().nullable().optional(),
           username: z.string().min(1).optional(),
           password: z.string().min(1).optional(),
@@ -3313,10 +4034,52 @@ export const appRouter = router({
       )
       .mutation(async ({ input, ctx }) => {
         const { id, password, investigatorOperationIds, ...rest } = input;
+        await assertCanManageUser(ctx.user, id);
+        if (!ctx.user.allRegions) {
+          const current = await getUserById(id);
+          if (rest.command && current && rest.command !== current.command) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message:
+                "Only an all-region admin can move someone to another Command.",
+            });
+          }
+          // Only a CHANGE to the all-region flag matters (saving a profile
+          // sends the unchanged value back).
+          if (
+            rest.allRegions !== undefined &&
+            current &&
+            rest.allRegions !== current.allRegions &&
+            !(rest.allRegions && (await noAllRegionAdminYet()))
+          ) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Only an all-region admin can change who is one.",
+            });
+          }
+        }
         const updateData: Record<string, unknown> = { ...rest };
+        // A team belongs to one Command: keep the pair consistent.
+        {
+          const current = await getUserById(id);
+          const finalCommand = rest.command ?? current?.command;
+          if (rest.teamId != null && finalCommand) {
+            await assertTeamFitsCommand(rest.teamId, finalCommand);
+          } else if (
+            rest.teamId === undefined &&
+            rest.command &&
+            current &&
+            rest.command !== current.command
+          ) {
+            // Moved to another Command without a new team: they leave theirs.
+            updateData.teamId = null;
+          }
+        }
         if (password) {
           updateData.passwordHash = await bcrypt.hash(password, 12);
         }
+        // All-region is an admin-only setting; dropping the admin role drops it.
+        if (rest.role && rest.role !== "admin") updateData.allRegions = false;
         if (rest.cin) updateData.cin = rest.cin.toUpperCase();
         if (rest.username)
           updateData.username = rest.username.trim().toLowerCase();
@@ -3353,6 +4116,7 @@ export const appRouter = router({
             code: "FORBIDDEN",
             message: "Cannot delete your own account.",
           });
+        await assertCanManageUser(ctx.user, input.id);
         await deleteUser(input.id);
         await createAuditLog({
           sheetId: 0,
@@ -3390,6 +4154,7 @@ export const appRouter = router({
             code: "FORBIDDEN",
             message: "Cannot archive your own account.",
           });
+        await assertCanManageUser(ctx.user, input.id);
         await archiveUser(input.id, ctx.user.cin ?? "Unknown");
         await createAuditLog({
           sheetId: 0,
@@ -3406,6 +4171,7 @@ export const appRouter = router({
     restoreUser: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
+        await assertCanManageUser(ctx.user, input.id);
         await restoreUser(input.id);
         await createAuditLog({
           sheetId: 0,
@@ -3423,16 +4189,47 @@ export const appRouter = router({
 
   users: router({
     /** Returns all registered users as {cin, name, unit} for CIN autocomplete/validation */
-    listForCin: protectedProcedure.query(async () => {
+    listForCin: protectedProcedure.query(async ({ ctx }) => {
       const all = await getAllUsers();
+      const teamName = new Map((await listTeams()).map(t => [t.id, t.name]));
+      // A visitor the caller's Command hosts is in that Command's team.
+      const hosted = await visitorTeamMap(
+        ctx.user.allRegions ? null : ctx.user.command
+      );
       return all
         .filter(u => !u.archivedAt)
-        .map(u => ({
-          cin: u.cin,
-          name: u.name,
-          unit: u.unit ?? "",
-          team: u.team ?? "",
-        }));
+        .map(u => {
+          const teamId = hosted.get(u.id) ?? u.teamId;
+          return {
+            cin: u.cin,
+            name: u.name,
+            unit: u.unit ?? "",
+            teamId,
+            teamName: teamId != null ? (teamName.get(teamId) ?? "") : "",
+          };
+        });
+    }),
+
+    /** Teams, in display order: the caller's Command's (an all-region admin:
+     * every Command's — filter by `command`). */
+    listTeams: protectedProcedure.query(async ({ ctx }) =>
+      ctx.user.allRegions ? listTeams() : listTeams(ctx.user.command)
+    ),
+
+    /** Ids of teams that have someone logged in right now — what decides
+     * whether an "online" team (Admin, Investigators) shows in Map Settings
+     * → Teams. Only the caller's own Command's teams (all-region: every
+     * Command's), the same set listTeams returns. */
+    teamsWithOnlineMembers: protectedProcedure.query(async ({ ctx }) => {
+      const visible = new Set(
+        (ctx.user.allRegions
+          ? await listTeams()
+          : await listTeams(ctx.user.command)
+        ).map(t => t.id)
+      );
+      return (await listTeamIdsWithOnlineMembers()).filter(id =>
+        visible.has(id)
+      );
     }),
   }),
 
@@ -3506,8 +4303,12 @@ export const appRouter = router({
       }),
 
     /** List all targets across all operations (for cross-op linking) */
-    listAll: protectedProcedure.query(async () => {
-      return getAllTargets();
+    listAll: protectedProcedure.query(async ({ ctx }) => {
+      return filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await getAllTargets(),
+        t => t.operationId
+      );
     }),
 
     /** Get a single target by ID */
@@ -3535,8 +4336,11 @@ export const appRouter = router({
     // ─── Target Registry sub-router ─────────────────────────────────────────────────────────────────────────
     registry: router({
       /** List all targets in the global registry with linked operations */
-      list: protectedProcedure.query(async () => {
-        return getAllTargetsForRegistry();
+      list: protectedProcedure.query(async ({ ctx }) => {
+        return scopeRegistryTargets(
+          toAccessUser(ctx.user),
+          await getAllTargetsForRegistry()
+        );
       }),
 
       /** Create a new target in the global registry */
@@ -3567,6 +4371,13 @@ export const appRouter = router({
             // from a document import — stored on the (target, operation)
             // link as its "{Operation name} background".
             background: z.string().optional().nullable(),
+            // The freeform Background typed in Add Target to Registry —
+            // plain text, stored on the target itself (targets.registryBackground).
+            registryBackground: z
+              .string()
+              .max(TARGET_BACKGROUND_MAX)
+              .optional()
+              .nullable(),
             // The full parsed document snapshot (name/addresses/vehicles/
             // associates/background), verbatim as the officer reviewed it —
             // present only when this save came from "Import from Document".
@@ -3589,6 +4400,7 @@ export const appRouter = router({
           const {
             linkToOperationId,
             background,
+            registryBackground,
             documentSnapshotJson,
             documentSourceFileName,
             documentSourceFileBase64,
@@ -3600,6 +4412,13 @@ export const appRouter = router({
             createdBy: ctx.user.id,
           });
           await linkTargetToOperation(result.id, linkToOperationId, background);
+          if (registryBackground?.trim()) {
+            await saveTargetBackgroundWithAudit(
+              ctx.user,
+              { id: result.id, name: data.name },
+              registryBackground
+            );
+          }
           if (documentSnapshotJson) {
             let sourceFileUrl: string | null = null;
             let renderablePdfUrl: string | null = null;
@@ -3654,6 +4473,12 @@ export const appRouter = router({
             // from a document import — stored on the (target, operation)
             // link as its "{Operation name} background".
             background: z.string().optional().nullable(),
+            // See target.registry.create's registryBackground.
+            registryBackground: z
+              .string()
+              .max(TARGET_BACKGROUND_MAX)
+              .optional()
+              .nullable(),
             // See target.registry.create's documentSnapshotJson.
             documentSnapshotJson: z.string().optional().nullable(),
             documentSourceFileName: z.string().optional().nullable(),
@@ -3668,6 +4493,7 @@ export const appRouter = router({
           const {
             linkToOperationId,
             background,
+            registryBackground,
             documentSnapshotJson,
             documentSourceFileName,
             documentSourceFileBase64,
@@ -3680,6 +4506,13 @@ export const appRouter = router({
             existingAssociateId
           );
           await linkTargetToOperation(result.id, linkToOperationId, background);
+          if (registryBackground?.trim()) {
+            await saveTargetBackgroundWithAudit(
+              ctx.user,
+              { id: result.id, name: data.name },
+              registryBackground
+            );
+          }
           if (documentSnapshotJson) {
             let sourceFileUrl: string | null = null;
             let renderablePdfUrl: string | null = null;
@@ -3755,6 +4588,47 @@ export const appRouter = router({
           });
         }),
 
+      /** Saves the freeform Background written on the Target Registry card.
+       * One per target: it shows on the Target profile and on the Operation
+       * profile of every operation the target is linked to. Plain text only. */
+      setBackground: protectedProcedure
+        .input(
+          z.object({
+            id: z.number(),
+            background: z.string().max(TARGET_BACKGROUND_MAX),
+            /** "append" adds the text after whatever the target already has
+             * (used when a Background typed in Add Target is merged into an
+             * existing target); the default replaces it. */
+            mode: z.enum(["replace", "append"]).default("replace"),
+          })
+        )
+        .mutation(async ({ input, ctx }) => {
+          if (ctx.user.role === "observer") {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Observers can't edit a target's Background.",
+            });
+          }
+          const before = await getTargetById(input.id);
+          if (!before) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Target not found",
+            });
+          }
+          const existing = before.registryBackground?.trim();
+          const next =
+            input.mode === "append" && existing
+              ? `${existing}\n\n${input.background.trim()}`
+              : input.background;
+          const saved = await saveTargetBackgroundWithAudit(
+            ctx.user,
+            before,
+            next
+          );
+          return saved;
+        }),
+
       /** Delete a target from the registry (soft-delete → Recycle Bin) */
       delete: protectedProcedure
         .input(z.object({ id: z.number() }))
@@ -3788,8 +4662,12 @@ export const appRouter = router({
       /** Get all operations linked to a target */
       getLinkedOperations: protectedProcedure
         .input(z.object({ targetId: z.number() }))
-        .query(async ({ input }) => {
-          return getLinkedOperationsForTarget(input.targetId);
+        .query(async ({ input, ctx }) => {
+          return filterByIntelligenceScope(
+            toAccessUser(ctx.user),
+            await getLinkedOperationsForTarget(input.targetId),
+            l => l.operationId
+          );
         }),
 
       /** Fuzzy-checks a candidate name against existing targets — backs the "possible duplicate" prompt when adding a new target. */
@@ -4550,8 +5428,14 @@ export const appRouter = router({
           operationIds: z.array(z.number()).default([]),
         })
       )
-      .query(async ({ input }) => {
-        return getUserLocations(input.operationIds);
+      .query(async ({ input, ctx }) => {
+        return withHostedTeams(
+          ctx.user,
+          await filterLocationRows(
+            toAccessUser(ctx.user),
+            await getUserLocations(input.operationIds)
+          )
+        );
       }),
 
     /** Update (upsert) the caller's location and sharing preference */
@@ -4569,6 +5453,8 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        // A team that must share (Investigators) can't be switched off.
+        const forced = await mustShareLocation(ctx.user);
         await upsertUserLocation(
           ctx.user.id,
           input.deviceId,
@@ -4577,7 +5463,7 @@ export const appRouter = router({
           ctx.user.role === "investigator"
             ? getInvestigatorAllowedOperationIds(ctx.user)
             : input.operationIds,
-          input.sharingEnabled,
+          forced ? true : input.sharingEnabled,
           input.speed ?? null,
           input.heading ?? null,
           input.accuracy ?? null
@@ -4640,8 +5526,21 @@ export const appRouter = router({
           sinceMs: z.number(),
         })
       )
-      .query(async ({ input }) => {
-        return getUserLocationHistories(input.userIds, input.sinceMs);
+      .query(async ({ input, ctx }) => {
+        // Only people whose live location this person is allowed to see.
+        const visible = new Set(
+          (
+            await filterLocationRows(
+              toAccessUser(ctx.user),
+              await getUserLocations([])
+            )
+          ).map(r => r.userId)
+        );
+        visible.add(ctx.user.id);
+        return getUserLocationHistories(
+          input.userIds.filter(id => visible.has(id)),
+          input.sinceMs
+        );
       }),
 
     /** Get the target details (DEP/ARR/etc.) for a specific running sheet */
@@ -4673,6 +5572,8 @@ export const appRouter = router({
     clearUserLocation: protectedProcedure
       .input(z.object({ deviceId: z.string() }))
       .mutation(async ({ ctx, input }) => {
+        // Someone on a team that must share can't stop sharing.
+        if (await mustShareLocation(ctx.user)) return { ok: true };
         await clearUserLocation(ctx.user.id, input.deviceId);
         return { ok: true };
       }),
@@ -4689,6 +5590,29 @@ export const appRouter = router({
       .input(z.object({ text: z.string() }))
       .query(async ({ input }) => {
         return extractEntitiesFromText(input.text);
+      }),
+
+    /** Region Search: which Commands hold a person, vehicle or address. Everyone
+     * signed in sees the same matches; `canOpen` says whether the viewer may
+     * open each in Intelligence (restricted operations are closed to other
+     * Commands). See shared/regionSearch.ts. */
+    regionSearch: protectedProcedure
+      .input(
+        z.object({
+          query: z.string().trim().min(1).max(100),
+          type: z.enum(["person", "vehicle", "address"]).optional(),
+          command: z.enum(COMMAND_CODES).optional(),
+        })
+      )
+      .query(async ({ input, ctx }) => {
+        return searchRegions(
+          {
+            command: ctx.user.command,
+            allRegions: ctx.user.allRegions,
+            reachableOperationIds: await reachableFor(toAccessUser(ctx.user)),
+          },
+          input
+        );
       }),
 
     /** Fuzzy-duplicate check for a not-yet-saved entity label — backs the live confirm-dialog prompt. */
@@ -4776,7 +5700,15 @@ export const appRouter = router({
     /** Manual position/appearance corrections for auto-generated Intelligence
      * map pins — see the intelPinOverrides schema comment. */
     getPinOverrides: protectedProcedure.query(async () => {
-      return getIntelPinOverrides();
+      const overrides = await getIntelPinOverrides();
+      // Keyed by entity label: keep those for entities this person can see.
+      const norm = (x: string) => x.toLowerCase().replace(/\s+/g, " ").trim();
+      const known = new Set<string>();
+      for (const e of await getAllIntelligenceEntities()) {
+        known.add(norm(e.shortForm));
+        for (const a of e.aliasLabels ?? []) known.add(norm(a));
+      }
+      return overrides.filter(o => known.has(norm(o.label)));
     }),
 
     savePinOverride: protectedProcedure
@@ -4813,7 +5745,18 @@ export const appRouter = router({
 
     /** Lists all confirmed entity merges (most recent first) — backs an "undo merge" view. */
     listEntityMerges: protectedProcedure.query(async () => {
-      return listEntityMerges();
+      const merges = await listEntityMerges();
+      // The merge list names entities, so show only merges involving ones
+      // this person can see (the request's Intelligence scope).
+      const norm = (x: string) => x.toLowerCase().replace(/\s+/g, " ").trim();
+      const known = new Set<string>();
+      for (const e of await getAllIntelligenceEntities()) {
+        known.add(norm(e.shortForm));
+        for (const a of e.aliasLabels ?? []) known.add(norm(a));
+      }
+      return merges.filter(
+        m => known.has(norm(m.winnerLabel)) || known.has(norm(m.loserLabel))
+      );
     }),
 
     /** Silent lookup: has this exact spelling already been confirmed against a Target/Associate? Backs auto-correcting a row's text on save without re-prompting. */
@@ -5590,9 +6533,18 @@ export const appRouter = router({
   // ─── Calendar ───────────────────────────────────────────────────────────────
   calendar: router({
     /** Return all operations and running sheets as calendar events */
-    events: protectedProcedure.query(async () => {
-      const operations = await getOperations();
-      const sheets = await getRunningSheets();
+    events: protectedProcedure.query(async ({ ctx }) => {
+      const me = toAccessUser(ctx.user);
+      const operations = await filterByOperationAccess(
+        me,
+        await getOperations(),
+        o => o.id
+      );
+      const sheets = await filterByOperationAccess(
+        me,
+        await getRunningSheets(),
+        s => s.operationId
+      );
       const events: {
         id: string;
         title: string;
@@ -6332,7 +7284,12 @@ export const appRouter = router({
         userId: ctx.user.id,
         action: "READ_MEMBERS",
       });
-      return listWipcMembers();
+      const members = await listWipcMembers();
+      if (ctx.user.allRegions) return members;
+      const commands = await commandsOfUsers();
+      return members.filter(
+        m => commands.get(m.createdBy) === ctx.user.command
+      );
     }),
 
     saveMember: protectedProcedure
@@ -6357,6 +7314,7 @@ export const appRouter = router({
             message: "Admin access required",
           });
         if (input.id) {
+          await assertCanManageWipcMember(ctx.user, input.id);
           await updateWipcMember(input.id, input);
           await createWipcAuditEntry({
             userId: ctx.user.id,
@@ -6389,6 +7347,7 @@ export const appRouter = router({
           action: "DELETE_MEMBER",
           targetId: input.id,
         });
+        await assertCanManageWipcMember(ctx.user, input.id);
         await deleteWipcMember(input.id);
         return { ok: true };
       }),
@@ -6405,9 +7364,29 @@ export const appRouter = router({
 
   // ─── Recycle Bin ──────────────────────────────────────────────────────────────
   recycleBin: router({
-    list: protectedProcedure.query(async () => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       await purgeExpiredRecycleBinItems();
-      return getRecycleBinItems();
+      const items = await getRecycleBinItems();
+      const me = toAccessUser(ctx.user);
+      // An operation's own entry follows its id; everything else follows the
+      // operation it belonged to. Items with neither (e.g. a deleted target)
+      // can't be placed, so they stay with admins when access is restricted.
+      const allowed = await filterByOperationAccess(me, items, i =>
+        i.type === "operation" ? i.id : (i.operationId ?? -1)
+      );
+      const placed = new Set(
+        allowed.filter(i => i.type === "operation" || i.operationId != null)
+      );
+      const everything = allowed.length === items.length;
+      return everything
+        ? items
+        : items.filter(
+            i =>
+              placed.has(i) ||
+              (ctx.user.role === "admin" &&
+                i.type !== "operation" &&
+                i.operationId == null)
+          );
     }),
     reinstate: protectedProcedure
       .input(
@@ -6831,22 +7810,50 @@ export const appRouter = router({
      * Returns all non-deleted, non-closed running sheets with full status info
      * for the Reports page (incomplete sheets).
      */
-    incompleteSheets: protectedProcedure.query(async () => {
-      return getIncompleteRunningSheets();
+    incompleteSheets: protectedProcedure.query(async ({ ctx }) => {
+      return filterByOperationAccess(
+        toAccessUser(ctx.user),
+        await getIncompleteRunningSheets(
+          ctx.user.allRegions ? null : ctx.user.command
+        ),
+        r => r.operationId
+      );
     }),
 
     /**
      * Returns all users ranked by total outstanding to-do actions.
      */
-    outstandingTodos: protectedProcedure.query(async () => {
-      return getOutstandingTodosByUser();
+    outstandingTodos: protectedProcedure.query(async ({ ctx }) => {
+      const rows = await getOutstandingTodosByUser(
+        ctx.user.allRegions ? null : ctx.user.command
+      );
+      if (ctx.user.allRegions) return rows;
+      // A ranking of people: your own Command's, plus visitors it hosts in
+      // one of its teams.
+      const hosted = await visitorTeamMap(ctx.user.command);
+      const mine = new Set(
+        (await getAllUsers())
+          .filter(
+            u => (u.command === ctx.user.command || hosted.has(u.id)) && u.cin
+          )
+          .map(u => u.cin)
+      );
+      return rows.filter(r => mine.has(r.cin));
     }),
 
     /** Weekly Activity Report — what the unit did in a given Monday-start week. */
     weeklyActivity: protectedProcedure
       .input(z.object({ weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
-      .query(async ({ input }) => {
-        return getWeeklyActivityReport(input.weekStart);
+      .query(async ({ input, ctx }) => {
+        const report = await getWeeklyActivityReport(input.weekStart);
+        return {
+          ...report,
+          operations: await filterByOperationAccess(
+            toAccessUser(ctx.user),
+            report.operations,
+            o => o.operationId
+          ),
+        };
       }),
 
     /** Weekly Tasking Report — what the unit can do in a given Monday-start week. */
@@ -8362,21 +9369,24 @@ export const appRouter = router({
 
   // ─── Admin Utilities ────────────────────────────────────────────────────────
   adminUtils: router({
-    backfillGoogleAddresses: adminProcedure.mutation(async () => {
+    backfillGoogleAddresses: adminProcedure.mutation(async ({ ctx }) => {
+      requireAllRegions(ctx.user);
       const result = await backfillGoogleAddressesInObservations();
       return result;
     }),
 
     /** Photos whose owning operation is gone (soft-deleted or hard-deleted)
      * but that never got cleaned up themselves — see getOrphanedAttachments. */
-    getOrphanedAttachments: adminProcedure.query(async () => {
+    getOrphanedAttachments: adminProcedure.query(async ({ ctx }) => {
+      requireAllRegions(ctx.user);
       return getOrphanedAttachments();
     }),
 
     /** Permanently purges every currently-orphaned attachment. Bypasses the
      * normal 7-day Recycle Bin grace period since these were already
      * deleted along with their operation, just never actually removed. */
-    purgeOrphanedAttachments: adminProcedure.mutation(async () => {
+    purgeOrphanedAttachments: adminProcedure.mutation(async ({ ctx }) => {
+      requireAllRegions(ctx.user);
       const count = await purgeOrphanedAttachments();
       return { purged: count };
     }),

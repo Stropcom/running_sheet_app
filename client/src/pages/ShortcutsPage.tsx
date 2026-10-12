@@ -240,7 +240,7 @@ export default function ShortcutsPage() {
                             : "Add to RS chips"
                         }
                         className={[
-                          "h-7 px-2 rounded text-[11px] font-bold border transition-colors select-none",
+                          "h-7 px-2 rounded text-xs font-bold border transition-colors select-none",
                           s.showInRs
                             ? "bg-primary/10 border-primary/40 text-primary hover:bg-destructive/10 hover:border-destructive/40 hover:text-destructive"
                             : "bg-muted border-border text-muted-foreground hover:bg-primary/10 hover:border-primary/40 hover:text-primary",

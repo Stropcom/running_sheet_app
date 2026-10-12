@@ -43,7 +43,7 @@ export function OperationPicker({ value, onChange, disabled }: Props) {
           <button
             type="button"
             disabled={disabled}
-            className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl border-2 border-border bg-background hover:bg-accent/50 active:scale-[0.98] transition-all text-left disabled:opacity-50 disabled:pointer-events-none"
+            className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md border border-input bg-card shadow-xs hover:bg-accent/40 active:scale-[0.99] transition-all text-left disabled:opacity-50 disabled:pointer-events-none"
           >
             <span
               className={cn(

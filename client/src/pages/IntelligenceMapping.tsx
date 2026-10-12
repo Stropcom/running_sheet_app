@@ -13,6 +13,21 @@ import {
 } from "@shared/vehicleEventPatterns";
 import { DivIconOverlay, wasAnyMarkerJustTapped } from "@/lib/divIconOverlay";
 import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
+import {
+  useMustShareLocation,
+  useTeams,
+  useTeamsWithOnlineMembers,
+} from "@/lib/teams";
+import { teamShownOnMap } from "@shared/teamMap";
+import {
+  NEARBY_BAND_COLOURS,
+  NEARBY_RADIUS_M,
+  distanceBand,
+  foldIntoTargetAddresses,
+  formatNearbyDistance,
+  locationsWithin,
+  movedEnough,
+} from "@shared/nearbyLocations";
 import { detectUnidentifiedRepeat } from "@shared/unidentified";
 import { entryMentionsAddress, popupShortAddress } from "@shared/markerLink";
 import { fullStreetTypes } from "@shared/streetTypes";
@@ -486,7 +501,9 @@ interface LiveUser {
   deviceId: string;
   name: string;
   role: "observer" | "member" | "admin" | "investigator";
-  team: "TEAM1" | "TEAM2" | "PTT" | null;
+  teamId: number | null;
+  teamName: string | null;
+  teamColour: string | null;
   lat: number;
   lng: number;
   speed: number | null;
@@ -655,6 +672,56 @@ const LS_MAP_SETTINGS_KEY = "runlog_map_settings";
 // unboundedly; oldest entries (by insertion order) are evicted first.
 const GEOCODE_CACHE_KEY = "runlog_geocode_cache_v1";
 const GEOCODE_CACHE_MAX_ENTRIES = 5000;
+
+// ── NEARBY LOCATION diamonds ───────────────────────────────────────────────────
+// A diamond (fill = type: red target address, purple associate / observed;
+// ring and distance pill = how close: red 100 m or less, amber 250 m, blue
+// 500 m). Drawn in addition to the normal pins, under them.
+const NEARBY_HOUSE_GLYPH =
+  '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" style="position:absolute;left:10px;top:10px;fill:#fff;pointer-events:none"><path d="M3 11 12 3l9 8v9h-6v-6H9v6H3z"/></svg>';
+
+function createNearbyDiamondElement(
+  type: IntelMapLocation["type"],
+  distance: number
+): HTMLElement {
+  const el = document.createElement("div");
+  el.className = "nearby-diamond";
+  el.style.cssText = "position:relative;width:38px;height:38px;cursor:pointer;";
+  const shape = document.createElement("div");
+  shape.className = "nearby-diamond-shape";
+  shape.style.cssText = `position:absolute;inset:5px;transform:rotate(45deg);background:${
+    type === "target_address" ? "#dc2626" : "#7c3aed"
+  };border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,0.45);`;
+  el.appendChild(shape);
+  el.insertAdjacentHTML("beforeend", NEARBY_HOUSE_GLYPH);
+  const pill = document.createElement("div");
+  pill.className = "nearby-diamond-pill";
+  pill.style.cssText =
+    "position:absolute;left:50%;top:41px;transform:translateX(-50%);color:#fff;font:800 12px/1.35 system-ui,sans-serif;padding:1px 7px;border-radius:999px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.4);pointer-events:none;";
+  el.appendChild(pill);
+  updateNearbyDiamondElement(el, distance);
+  return el;
+}
+
+/** Re-colours a diamond and rewrites its distance as the officer moves. */
+function updateNearbyDiamondElement(el: HTMLElement, distance: number) {
+  const colour = NEARBY_BAND_COLOURS[distanceBand(distance)];
+  const shape = el.querySelector<HTMLElement>(".nearby-diamond-shape");
+  if (shape) shape.style.border = `3px solid ${colour}`;
+  const pill = el.querySelector<HTMLElement>(".nearby-diamond-pill");
+  if (pill) {
+    pill.style.background = colour;
+    pill.textContent = formatNearbyDistance(distance);
+  }
+  el.classList.toggle("nearby-diamond-close", distance <= 100);
+}
+
+/** The address string the Geocoder is asked for — same rule the pins use. */
+function geocodeQueryForLabel(label: string): string {
+  return label.includes(",") || /\d/.test(label)
+    ? `${label}, Western Australia, Australia`
+    : `${label}, Perth, Western Australia, Australia`;
+}
 
 // Trims oldest entries (Map insertion order) down to the cap, then writes
 // the cache to localStorage. Takes the Map directly rather than being a
@@ -877,22 +944,27 @@ function rectanglePolygonPath(
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-const TEAM_COLOURS: Record<string, string> = {
-  TEAM1: "#ec4899", // pink
-  TEAM2: "#1976d2", // blue
-  PTT: "#f9a825", // yellow
-  null: "#6b7280", // grey for unassigned
-};
-// Investigator accounts have no TEAM1/TEAM2/PTT (they aren't a
-// surveillance team member), so they'd otherwise fall through to the
-// generic "unassigned" grey above — deliberately darker instead, so their
-// pin still reads as a distinct, recognised category rather than looking
-// like a misconfigured account.
+// Pin colour comes from the person's team (User Management → Teams); anyone
+// without a team is grey.
+const NO_TEAM_PIN_COLOUR = "#6b7280"; // grey for unassigned
+// Investigator accounts have no team (they aren't a surveillance team
+// member), so they'd otherwise fall through to the generic "unassigned" grey
+// above — deliberately darker instead, so their pin still reads as a
+// distinct, recognised category rather than looking like a misconfigured
+// account.
 const INVESTIGATOR_PIN_COLOUR = "#374151"; // dark grey
 
-function getTeamColour(team: string | null, role?: LiveUser["role"]): string {
+/** Key a live user's team goes by in the hide/collapse sets ("null" = none). */
+function teamKeyOf(u: { teamId: number | null }): string {
+  return u.teamId != null ? String(u.teamId) : "null";
+}
+
+function getTeamColour(
+  u: { teamColour: string | null } | null,
+  role?: LiveUser["role"]
+): string {
   if (role === "investigator") return INVESTIGATOR_PIN_COLOUR;
-  return TEAM_COLOURS[team ?? "null"] ?? "#6b7280";
+  return u?.teamColour ?? NO_TEAM_PIN_COLOUR;
 }
 
 // Live team pin — directional "sonar" ring cadence + reach once a member
@@ -2100,6 +2172,18 @@ export default function IntelligenceMapping() {
   );
   const showMarkerEntityCountRef = useRef(showMarkerEntityCount);
   showMarkerEntityCountRef.current = showMarkerEntityCount;
+  // NEARBY LOCATION — every Intelligence / Target Registry location within
+  // 500 m of the officer, as diamonds on top of the normal pins. Off by
+  // default; remembered per device like the other Map Settings switches.
+  const [nearbyOn, setNearbyOn] = useState<boolean>(() => {
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return JSON.parse(s).nearbyOn === true;
+    } catch {
+      /* ignore */
+    }
+    return false;
+  });
   // Bottom-of-screen bar showing the officer's own current street + heading
   // (see StreetHeadingBar) — a display preference like mapDarkMode, not tied
   // to GPS sharing itself, so it follows the same local-only persistence.
@@ -3045,7 +3129,9 @@ export default function IntelligenceMapping() {
   const traceLinesRef = useRef<Map<number, google.maps.Polyline>>(new Map());
   // Remembers each user's last-known team so a trace line keeps its colour
   // even if that officer briefly drops out of the live liveUsers list.
-  const traceUserTeamRef = useRef<Map<number, LiveUser["team"]>>(new Map());
+  const traceUserTeamRef = useRef<Map<number, { teamColour: string | null }>>(
+    new Map()
+  );
   // Key: userId -> epoch ms when Track was switched on for that officer, so
   // each line starts where they started rather than showing earlier history.
   const trackStartsRef = useRef<Map<number, number>>(new Map());
@@ -3101,6 +3187,7 @@ export default function IntelligenceMapping() {
           panelWidthProfile,
           showStreetHeadingBar,
           showMarkerEntityCount,
+          nearbyOn,
         })
       );
     } catch {
@@ -3121,6 +3208,7 @@ export default function IntelligenceMapping() {
     panelWidthProfile,
     showStreetHeadingBar,
     showMarkerEntityCount,
+    nearbyOn,
   ]);
 
   // Save map center/zoom to localStorage whenever the map stops moving (idle event)
@@ -3176,7 +3264,7 @@ export default function IntelligenceMapping() {
 
   // Data
   const { data: operations, isLoading: opsLoading } =
-    trpc.operation.list.useQuery();
+    trpc.operation.listForMap.useQuery();
   const {
     data: locations,
     isLoading: locsLoading,
@@ -3194,6 +3282,11 @@ export default function IntelligenceMapping() {
   // giving them the map at all) — it's only the Teams PANEL (the
   // sidebar roster with per-team hide/collapse controls) they don't get;
   // see its own "not for Investigator" comment further down.
+  const mapTeams = useTeams();
+  const onlineTeamIds = useTeamsWithOnlineMembers(!isInvestigator);
+  // Their team (Investigators) forces Show & Share on: it switches on by
+  // itself and the switch is locked.
+  const mustShare = useMustShareLocation();
   const { data: liveUsers } = trpc.intelligence.userLocations.useQuery(
     { operationIds: selectedOpIds },
     { refetchInterval: 1000, enabled: true }
@@ -3967,11 +4060,13 @@ export default function IntelligenceMapping() {
   }, []); // no deps — uses refs only
 
   const handleSharingToggle = (checked: boolean) => {
+    // Locked on for a team that must share.
+    if (!checked && mustShare) return;
     setSharingEnabled(checked);
     // Tell the app-wide location service at once (it follows this switch).
     broadcastSharing(user?.id, checked);
     if (checked) {
-      if (!isMobile) {
+      if (!isMobile && !mustShare) {
         setGpsError(
           "Location sharing is designed for mobile devices. Your desktop location may be inaccurate."
         );
@@ -4002,7 +4097,7 @@ export default function IntelligenceMapping() {
     function handleStorageChange(e: StorageEvent) {
       if (!user?.id || e.key !== `runlog_sharing_u${user.id}`) return;
       const turnedOffElsewhere = e.newValue === "false";
-      if (turnedOffElsewhere && sharingEnabled) {
+      if (turnedOffElsewhere && sharingEnabled && !mustShare) {
         setSharingEnabled(false);
         setGpsError(null);
         stopWatching();
@@ -4010,7 +4105,14 @@ export default function IntelligenceMapping() {
     }
     window.addEventListener("storage", handleStorageChange);
     return () => window.removeEventListener("storage", handleStorageChange);
-  }, [user?.id, sharingEnabled, stopWatching]);
+  }, [user?.id, sharingEnabled, stopWatching, mustShare]);
+
+  // A team that must share (Investigators): sharing switches on by itself as
+  // soon as they are on the app, and stays on.
+  useEffect(() => {
+    if (mustShare && !sharingEnabled) handleSharingToggle(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mustShare, sharingEnabled]);
 
   // Update operationIds in the DB when selectedOpIds change while sharing
   useEffect(() => {
@@ -4139,7 +4241,7 @@ export default function IntelligenceMapping() {
       const isThisDevice =
         u.userId === user?.id && u.deviceId === deviceIdRef.current;
       if (isThisDevice && !showOwnLocation) continue;
-      if (hiddenTeams.has(u.team ?? "null")) continue;
+      if (hiddenTeams.has(teamKeyOf(u))) continue;
       if (hiddenUsers.has(u.userId)) continue;
       // Same look as the flat map: name pill, with the state marker (heading
       // shape / green dot / red dot / walking figure) resting on the spot.
@@ -4154,7 +4256,7 @@ export default function IntelligenceMapping() {
       const heading = u.heading ?? 0;
       const pin = composeFlyTeamPin({
         name: u.name.toUpperCase(),
-        colour: u.pinColor ?? getTeamColour(u.team, u.role),
+        colour: u.pinColor ?? getTeamColour(u, u.role),
         state,
         onFoot: u.onFoot,
         // Walk or run is all the picture needs from the speed, and the
@@ -4538,8 +4640,7 @@ export default function IntelligenceMapping() {
   // the indicator centres itself on the overlay's local (0,0) via its own
   // translate, independent of the pill's width/height entirely.
   const createUserPinElement = useCallback((liveUser: LiveUser) => {
-    const color =
-      liveUser.pinColor ?? getTeamColour(liveUser.team, liveUser.role);
+    const color = liveUser.pinColor ?? getTeamColour(liveUser, liveUser.role);
     const label = liveUser.name.toUpperCase();
     const pinKey = `${liveUser.userId}_${liveUser.deviceId}`;
     const isMoving = liveUser.speed != null && liveUser.speed > 0.5;
@@ -5287,8 +5388,7 @@ export default function IntelligenceMapping() {
         u.userId === currentUserId && u.deviceId === currentDeviceId;
       if (isThisDevice && !showOwnLocation) return false;
       // Per-team visibility (manual hide buttons in the team list)
-      const teamKey = u.team ?? "null";
-      if (hiddenTeams.has(teamKey)) return false;
+      if (hiddenTeams.has(teamKeyOf(u))) return false;
       // Per-user visibility (manual hide button per user)
       if (hiddenUsers.has(u.userId)) return false;
       return true;
@@ -5429,7 +5529,7 @@ export default function IntelligenceMapping() {
   useEffect(() => {
     if (!liveUsers) return;
     for (const u of liveUsers as LiveUser[]) {
-      traceUserTeamRef.current.set(u.userId, u.team);
+      traceUserTeamRef.current.set(u.userId, { teamColour: u.teamColour });
     }
   }, [liveUsers]);
 
@@ -7146,7 +7246,10 @@ export default function IntelligenceMapping() {
   useEffect(() => {
     (window as any).__intelStartMove = (label: string) => {
       infoWindowRef.current?.close();
-      const marker = markersRef.current.find((m: any) => m.title === label);
+      // A normal pin, or (when only NEARBY LOCATION is showing it) the diamond.
+      const marker =
+        markersRef.current.find((m: any) => m.title === label) ??
+        nearbyMarkersRef.current.get(label);
       if (!marker) return;
       const origPos = marker.position as google.maps.LatLngLiteral | null;
       if (!origPos) return;
@@ -7200,24 +7303,320 @@ export default function IntelligenceMapping() {
     };
   }, []);
 
+  // ── NEARBY LOCATION ──────────────────────────────────────────────────────────
+  // Needs: the officer's own position (its own GPS watch, so it works whether
+  // or not Show & Share is on), every location they can reach (not just the
+  // operations selected on the map), each one's coordinates (the same
+  // geocoding + local cache the normal pins use), then the ones within 500 m
+  // drawn as diamonds with a translucent 500 m circle. Clicking a diamond
+  // opens the same popup a normal pin does. Nothing here runs while it is off.
+  const nearbyMarkersRef = useRef<Map<string, DivIconOverlay>>(new Map());
+  const nearbyCircleRef = useRef<google.maps.Circle | null>(null);
+  const nearbyWithinRef = useRef<Map<string, IntelMapLocation>>(new Map());
+  const nearbyFailedRef = useRef<Set<string>>(new Set());
+  const [nearbyPos, setNearbyPos] = useState<google.maps.LatLngLiteral | null>(
+    null
+  );
+  const [nearbyCoords, setNearbyCoords] = useState<
+    Map<string, google.maps.LatLngLiteral>
+  >(new Map());
+  const nearbyOpIds = useMemo(
+    () => ((operations ?? []) as Array<{ id: number }>).map(o => o.id),
+    [operations]
+  );
+  // Every operation they can reach — not just the ones selected on the map.
+  const { data: nearbyAll } = trpc.intelligence.mappingLocations.useQuery(
+    { operationIds: nearbyOpIds },
+    {
+      enabled: nearbyOn && nearbyOpIds.length > 0,
+      refetchInterval: 120_000,
+    }
+  );
+  const nearbyRegistryOpIds = nearbyOpIds.slice(0, 200);
+  const { data: nearbyPeople } =
+    trpc.intelligence.registeredPeopleForMap.useQuery(
+      { operationIds: nearbyRegistryOpIds },
+      { enabled: nearbyOn && nearbyRegistryOpIds.length > 0 }
+    );
+  const nearbyRegistryRef = useRef<MapPeopleLookup | undefined>(undefined);
+  nearbyRegistryRef.current = useMemo(
+    () => (nearbyPeople ? buildMapPeopleLookup(nearbyPeople) : undefined),
+    [nearbyPeople]
+  );
+  const { data: nearbyPersonPhotos } =
+    trpc.attachment.personPhotosByAddress.useQuery(
+      { operationIds: nearbyRegistryOpIds },
+      { enabled: nearbyOn && nearbyRegistryOpIds.length > 0 }
+    );
+  const nearbyPhotoKeysRef = useRef<Set<string>>(new Set());
+  nearbyPhotoKeysRef.current = useMemo(
+    () => new Set((nearbyPersonPhotos ?? []).map(g => g.addressKey)),
+    [nearbyPersonPhotos]
+  );
+
+  // The officer's own position — only while NEARBY LOCATION is on.
+  useEffect(() => {
+    if (!nearbyOn) {
+      setNearbyPos(null);
+      return;
+    }
+    if (!navigator.geolocation) {
+      toast.error(
+        "This device can't give its position, so Nearby Location is off."
+      );
+      setNearbyOn(false);
+      return;
+    }
+    let last: google.maps.LatLngLiteral | null = null;
+    let warned = false;
+    const id = navigator.geolocation.watchPosition(
+      pos => {
+        const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        if (movedEnough(last, p)) {
+          last = p;
+          setNearbyPos(p);
+        }
+      },
+      err => {
+        if (warned) return;
+        warned = true;
+        toast.error(`Nearby Location can't see your position: ${err.message}`);
+      },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 }
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [nearbyOn]);
+
+  // Coordinates for every location: a manually-moved position first, then the
+  // geocode cache, then the Geocoder (a few a second, remembered afterwards).
+  useEffect(() => {
+    if (!nearbyOn || !nearbyAll || !mapReady) return;
+    const geocoder = geocoderRef.current;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const resolved = new Map<string, google.maps.LatLngLiteral>();
+    const pending: IntelMapLocation[] = [];
+    for (const loc of nearbyAll as IntelMapLocation[]) {
+      const ov = pinOverridesRef.current.get(loc.label);
+      if (ov?.lat != null && ov?.lng != null) {
+        resolved.set(loc.label, { lat: ov.lat, lng: ov.lng });
+        continue;
+      }
+      const query = geocodeQueryForLabel(loc.label);
+      const cached = geocodeCacheRef.current.get(query);
+      if (cached) {
+        resolved.set(loc.label, cached);
+      } else if (!nearbyFailedRef.current.has(query)) {
+        pending.push(loc);
+      }
+    }
+    setNearbyCoords(new Map(resolved));
+    if (!geocoder || pending.length === 0) return;
+    let index = 0;
+    let unflushed = 0;
+    const flush = () => {
+      if (unflushed > 0) {
+        persistGeocodeCache(geocodeCacheRef.current);
+        setNearbyCoords(new Map(resolved));
+        unflushed = 0;
+      }
+    };
+    const step = () => {
+      if (cancelled) return;
+      if (index >= pending.length) {
+        flush();
+        return;
+      }
+      const loc = pending[index++];
+      const query = geocodeQueryForLabel(loc.label);
+      geocoder.geocode({ address: query }, (results, status) => {
+        if (cancelled) return;
+        if (status === "OK" && results && results[0]) {
+          const at = results[0].geometry.location;
+          const pos = { lat: at.lat(), lng: at.lng() };
+          geocodeCacheRef.current.set(query, pos);
+          resolved.set(loc.label, pos);
+          if (++unflushed >= 5) flush();
+        } else if (status === "OVER_QUERY_LIMIT") {
+          index--; // try this one again, slower
+          timer = setTimeout(step, 2000);
+          return;
+        } else {
+          nearbyFailedRef.current.add(query);
+        }
+        timer = setTimeout(step, 300);
+      });
+    };
+    step();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      flush();
+    };
+  }, [nearbyOn, nearbyAll, mapReady, pinOverrides]);
+
+  // The same popup a normal pin opens.
+  const openNearbyPopup = useCallback((label: string) => {
+    const loc = nearbyWithinRef.current.get(label);
+    if (!loc || !mapRef.current || loc.lat == null || loc.lng == null) return;
+    if (!infoWindowRef.current) {
+      infoWindowRef.current = new google.maps.InfoWindow({
+        pixelOffset: new google.maps.Size(0, -40),
+      });
+    }
+    infoWindowRef.current.setContent(
+      buildInfoWindowContent(
+        loc,
+        pinOverridesRef.current.get(label),
+        photoKeysRef.current.has(normalizeEntityLabelClient(label)) ||
+          nearbyPhotoKeysRef.current.has(addressMatchKey(label)) ||
+          personPhotosByKeyRef.current.has(addressMatchKey(label)),
+        nearbyRegistryRef.current ?? registeredPeopleLookupRef.current
+      )
+    );
+    infoWindowRef.current.setPosition({ lat: loc.lat, lng: loc.lng });
+    openInfoWindowDeferred(infoWindowRef, mapRef.current);
+  }, []);
+
+  // Draw (and keep up to date) the circle and the diamonds.
+  useEffect(() => {
+    const clearAll = () => {
+      nearbyMarkersRef.current.forEach(m => {
+        m.map = null;
+      });
+      nearbyMarkersRef.current.clear();
+      nearbyWithinRef.current.clear();
+      if (nearbyCircleRef.current) {
+        nearbyCircleRef.current.setMap(null);
+        nearbyCircleRef.current = null;
+      }
+    };
+    const map = mapRef.current;
+    if (!nearbyOn || !mapReady || !map || !nearbyPos) {
+      clearAll();
+      return;
+    }
+    // The translucent 500 m area. Not clickable, so taps pass through to the
+    // map and the pins.
+    if (!nearbyCircleRef.current) {
+      nearbyCircleRef.current = new google.maps.Circle({
+        map,
+        center: nearbyPos,
+        radius: NEARBY_RADIUS_M,
+        strokeColor: "#d97706",
+        strokeOpacity: 0.9,
+        strokeWeight: 2,
+        fillColor: "#f59e0b",
+        fillOpacity: 0.12,
+        clickable: false,
+      });
+    } else {
+      nearbyCircleRef.current.setCenter(nearbyPos);
+    }
+    const located: IntelMapLocation[] = [];
+    for (const l of (nearbyAll as IntelMapLocation[] | undefined) ?? []) {
+      const c = nearbyCoords.get(l.label);
+      if (c) located.push({ ...l, lat: c.lat, lng: c.lng });
+    }
+    const within = locationsWithin(
+      foldIntoTargetAddresses(
+        located as Array<IntelMapLocation & { lat: number; lng: number }>
+      ),
+      nearbyPos
+    );
+    nearbyWithinRef.current = new Map(within.map(l => [l.label, l]));
+    const keep = new Set<string>();
+    for (const loc of within) {
+      keep.add(loc.label);
+      const position = { lat: loc.lat, lng: loc.lng };
+      const existing = nearbyMarkersRef.current.get(loc.label);
+      if (existing) {
+        existing.position = position;
+        updateNearbyDiamondElement(existing.content, loc.distance);
+        continue;
+      }
+      const marker = new DivIconOverlay({
+        map,
+        position,
+        content: createNearbyDiamondElement(loc.type, loc.distance),
+        title: loc.label,
+        // Under the normal pins: the diamond shows around one that is already
+        // on the map, and stands alone where there isn't one.
+        zIndex: -1,
+      });
+      marker.addListener("click", () => openNearbyPopup(loc.label));
+      nearbyMarkersRef.current.set(loc.label, marker);
+    }
+    nearbyMarkersRef.current.forEach((m, label) => {
+      if (!keep.has(label)) {
+        m.map = null;
+        nearbyMarkersRef.current.delete(label);
+      }
+    });
+  }, [nearbyOn, mapReady, nearbyPos, nearbyAll, nearbyCoords, openNearbyPopup]);
+  // Gone with the page.
+  useEffect(
+    () => () => {
+      nearbyMarkersRef.current.forEach(m => {
+        m.map = null;
+      });
+      nearbyMarkersRef.current.clear();
+      nearbyCircleRef.current?.setMap(null);
+      nearbyCircleRef.current = null;
+    },
+    []
+  );
+
   // ── Stats ────────────────────────────────────────────────────────────────────
   const targetPins =
     locations?.filter(l => l.type === "target_address").length ?? 0;
   const obsPins = locations?.filter(l => l.type === "observation").length ?? 0;
 
   // ── Group live users by team for the settings panel ──────────────────────────
-  const liveUsersByTeam = {
-    TEAM1: [] as LiveUser[],
-    TEAM2: [] as LiveUser[],
-    PTT: [] as LiveUser[],
-    unassigned: [] as LiveUser[],
-  };
+  // One row per team: the viewer's own teams first (so an empty team still
+  // shows "No units online"), then any other team that has someone live.
+  const teamRows: Array<{
+    key: string;
+    label: string;
+    colour: string;
+    users: LiveUser[];
+  }> = mapTeams
+    // Team 1, Team 2, PTT, Capability and any team an admin has added always
+    // show (a temporary team stays until it is deleted); a team set to
+    // "online" (Admin, Investigators) shows only while someone in it is
+    // logged in — see shared/teamMap.ts.
+    .filter(t =>
+      teamShownOnMap(
+        t,
+        onlineTeamIds,
+        ((liveUsers ?? []) as LiveUser[]).some(u => u.teamId === t.id)
+      )
+    )
+    .map(t => ({
+      key: String(t.id),
+      label: t.name,
+      colour: t.colour ?? NO_TEAM_PIN_COLOUR,
+      users: [],
+    }));
+  const unassignedLiveUsers: LiveUser[] = [];
   if (liveUsers) {
     for (const u of liveUsers as LiveUser[]) {
-      if (u.team === "TEAM1") liveUsersByTeam.TEAM1.push(u);
-      else if (u.team === "TEAM2") liveUsersByTeam.TEAM2.push(u);
-      else if (u.team === "PTT") liveUsersByTeam.PTT.push(u);
-      else liveUsersByTeam.unassigned.push(u);
+      if (u.teamId == null) {
+        unassignedLiveUsers.push(u);
+        continue;
+      }
+      const key = String(u.teamId);
+      let row = teamRows.find(r => r.key === key);
+      if (!row) {
+        row = {
+          key,
+          label: u.teamName ?? "Team",
+          colour: u.teamColour ?? NO_TEAM_PIN_COLOUR,
+          users: [],
+        };
+        teamRows.push(row);
+      }
+      row.users.push(u);
     }
   }
 
@@ -7953,7 +8352,7 @@ export default function IntelligenceMapping() {
             !(customMarkers && customMarkers.length > 0) && (
               <div className="absolute top-16 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
                 <div className="relative bg-card/90 backdrop-blur-sm border border-border rounded-lg px-4 py-2.5 shadow-md text-center max-w-[260px] flex items-center gap-2.5">
-                  <MapPin className="h-4 w-4 text-muted-foreground/50 flex-shrink-0" />
+                  <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                   <p className="text-[11px] text-muted-foreground leading-tight">
                     {selectedOpIds.length > 0 || selectedTargetIds.length > 0
                       ? "No locations found for selected filters."
@@ -7961,7 +8360,7 @@ export default function IntelligenceMapping() {
                   </p>
                   <button
                     onClick={() => setDismissedNoLocs(true)}
-                    className="flex-shrink-0 ml-1 text-muted-foreground/60 hover:text-foreground transition-colors"
+                    className="flex-shrink-0 ml-1 text-muted-foreground hover:text-foreground transition-colors"
                     aria-label="Dismiss"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -8651,7 +9050,7 @@ export default function IntelligenceMapping() {
                       registeredPeopleLookupRef.current
                     )
                   : member
-                    ? `<strong style="font-size:13px">${member.name}</strong><div style="font-size:12px;color:#555">${member.team ?? "Team member"}</div>`
+                    ? `<strong style="font-size:13px">${member.name}</strong><div style="font-size:12px;color:#555">${member.teamName ?? "Team member"}</div>`
                     : `<strong style="font-size:13px">${cm.label ?? "Marker"}</strong>${
                         cm.address
                           ? `<div style="font-size:12px">${cm.address}</div>`
@@ -9474,7 +9873,8 @@ export default function IntelligenceMapping() {
                 </span>
                 <button
                   onClick={() => handleSharingToggle(!sharingEnabled)}
-                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+                  disabled={mustShare}
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 disabled:cursor-default disabled:opacity-100 disabled:active:scale-100 ${
                     sharingEnabled
                       ? "border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20"
                       : "border-border bg-card hover:bg-accent/40"
@@ -9538,134 +9938,117 @@ export default function IntelligenceMapping() {
 
                   {/* Team rows — collapsible with memory */}
                   <div className="flex flex-col gap-2">
-                    {[
-                      {
-                        key: "TEAM1",
-                        label: "Team 1",
-                        colour: TEAM_COLOURS.TEAM1,
-                        users: liveUsersByTeam.TEAM1,
-                      },
-                      {
-                        key: "TEAM2",
-                        label: "Team 2",
-                        colour: TEAM_COLOURS.TEAM2,
-                        users: liveUsersByTeam.TEAM2,
-                      },
-                      {
-                        key: "PTT",
-                        label: "PTT",
-                        colour: TEAM_COLOURS.PTT,
-                        users: liveUsersByTeam.PTT,
-                      },
-                    ].map(({ key, label, colour, users: teamUsers }) => {
-                      const isCollapsed = collapsedTeams.has(key);
-                      return (
-                        <div
-                          key={key}
-                          className="rounded-xl border-2 border-border overflow-hidden"
-                        >
-                          {/* Team header — tap to collapse/expand */}
-                          <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
-                            <button
-                              onClick={() =>
-                                setCollapsedTeams(prev => {
-                                  const next = new Set(prev);
-                                  next.has(key)
-                                    ? next.delete(key)
-                                    : next.add(key);
-                                  return next;
-                                })
-                              }
-                              className="flex items-center gap-2 flex-1 min-w-0"
-                            >
-                              <div
-                                className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                                style={{ background: colour }}
-                              />
-                              <span
-                                className="text-[11px] font-semibold"
-                                style={{ color: colour }}
+                    {teamRows.map(
+                      ({ key, label, colour, users: teamUsers }) => {
+                        const isCollapsed = collapsedTeams.has(key);
+                        return (
+                          <div
+                            key={key}
+                            className="rounded-xl border-2 border-border overflow-hidden"
+                          >
+                            {/* Team header — tap to collapse/expand */}
+                            <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/40 transition-colors">
+                              <button
+                                onClick={() =>
+                                  setCollapsedTeams(prev => {
+                                    const next = new Set(prev);
+                                    next.has(key)
+                                      ? next.delete(key)
+                                      : next.add(key);
+                                    return next;
+                                  })
+                                }
+                                className="flex items-center gap-2 flex-1 min-w-0"
                               >
-                                {label}
-                              </span>
-                              {teamUsers.length > 0 && (
-                                <span className="text-[10px] text-muted-foreground">
-                                  ({teamUsers.length})
+                                <div
+                                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                                  style={{ background: colour }}
+                                />
+                                <span
+                                  className="text-[11px] font-semibold"
+                                  style={{ color: colour }}
+                                >
+                                  {label}
                                 </span>
-                              )}
-                              {isCollapsed ? (
-                                <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />
-                              ) : (
-                                <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />
-                              )}
-                            </button>
-                            <button
-                              onClick={() => toggleTeamVisibility(key)}
-                              className="ml-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground flex-shrink-0 px-2.5 py-1 rounded-md border border-border/50 bg-background/50 transition-colors"
-                            >
-                              {hiddenTeams.has(key) ? "Show" : "Hide"}
-                            </button>
-                          </div>
-                          {/* Team members — shown when not collapsed */}
-                          {!isCollapsed && (
-                            <div className="px-3 py-2 border-t border-border bg-card">
-                              {teamUsers.length === 0 ? (
-                                <p className="text-[10px] text-muted-foreground/50 italic">
-                                  No units online
-                                </p>
-                              ) : (
-                                <div className="flex flex-col gap-0.5">
-                                  {teamUsers.map(u => (
-                                    <div
-                                      key={u.userId}
-                                      className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
-                                    >
-                                      <span className="text-[11px] text-foreground font-medium truncate">
-                                        {u.name.toUpperCase()}
-                                        {u.userId === user?.id && (
-                                          <span className="ml-1 text-[9px] text-muted-foreground">
-                                            (you)
-                                          </span>
-                                        )}
-                                      </span>
-                                      <div className="flex items-center gap-1 flex-shrink-0">
-                                        <button
-                                          onClick={() =>
-                                            toggleUserTrace(u.userId)
-                                          }
-                                          className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors ${
-                                            tracedUserIds.has(u.userId)
-                                              ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
-                                              : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
-                                          }`}
-                                        >
-                                          {tracedUserIds.has(u.userId)
-                                            ? "Tracking"
-                                            : "Track"}
-                                        </button>
-                                        <button
-                                          onClick={() =>
-                                            toggleUserVisibility(u.userId)
-                                          }
-                                          className="text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border/50 bg-background/50 text-muted-foreground hover:text-foreground transition-colors"
-                                        >
-                                          {hiddenUsers.has(u.userId)
-                                            ? "Show"
-                                            : "Hide"}
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                                {teamUsers.length > 0 && (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    ({teamUsers.length})
+                                  </span>
+                                )}
+                                {isCollapsed ? (
+                                  <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />
+                                ) : (
+                                  <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />
+                                )}
+                              </button>
+                              <button
+                                onClick={() => toggleTeamVisibility(key)}
+                                className="ml-2 text-[11px] font-semibold text-muted-foreground hover:text-foreground flex-shrink-0 px-2.5 py-1 rounded-md border border-border/50 bg-background/50 transition-colors"
+                              >
+                                {hiddenTeams.has(key) ? "Show" : "Hide"}
+                              </button>
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                            {/* Team members — shown when not collapsed */}
+                            {!isCollapsed && (
+                              <div className="px-3 py-2 border-t border-border bg-card">
+                                {teamUsers.length === 0 ? (
+                                  <p className="text-[10px] text-muted-foreground italic">
+                                    No units online
+                                  </p>
+                                ) : (
+                                  <div className="flex flex-col gap-0.5">
+                                    {teamUsers.map(u => (
+                                      <div
+                                        key={u.userId}
+                                        className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
+                                      >
+                                        <span className="text-[11px] text-foreground font-medium truncate">
+                                          {u.name.toUpperCase()}
+                                          {u.userId === user?.id && (
+                                            <span className="ml-1 text-[9px] text-muted-foreground">
+                                              (you)
+                                            </span>
+                                          )}
+                                        </span>
+                                        <div className="flex items-center gap-1 flex-shrink-0">
+                                          <button
+                                            onClick={() =>
+                                              toggleUserTrace(u.userId)
+                                            }
+                                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors ${
+                                              tracedUserIds.has(u.userId)
+                                                ? "border-indigo-500 text-indigo-400 bg-indigo-500/10"
+                                                : "border-border/50 text-muted-foreground hover:text-foreground bg-background/50"
+                                            }`}
+                                          >
+                                            {tracedUserIds.has(u.userId)
+                                              ? "Tracking"
+                                              : "Track"}
+                                          </button>
+                                          <button
+                                            onClick={() =>
+                                              toggleUserVisibility(u.userId)
+                                            }
+                                            className="text-[11px] font-semibold px-2.5 py-1 rounded-md border border-border/50 bg-background/50 text-muted-foreground hover:text-foreground transition-colors"
+                                          >
+                                            {hiddenUsers.has(u.userId)
+                                              ? "Show"
+                                              : "Hide"}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
+                    )}
 
                     {/* Unassigned users */}
-                    {liveUsersByTeam.unassigned.length > 0 &&
+                    {unassignedLiveUsers.length > 0 &&
                       (() => {
                         const isCollapsed = collapsedTeams.has("null");
                         return (
@@ -9688,7 +10071,7 @@ export default function IntelligenceMapping() {
                                   Unassigned
                                 </span>
                                 <span className="text-[10px] text-muted-foreground">
-                                  ({liveUsersByTeam.unassigned.length})
+                                  ({unassignedLiveUsers.length})
                                 </span>
                                 {isCollapsed ? (
                                   <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto" />
@@ -9706,7 +10089,7 @@ export default function IntelligenceMapping() {
                             {!isCollapsed && (
                               <div className="px-3 py-2 border-t border-border bg-card">
                                 <div className="flex flex-col gap-0.5">
-                                  {liveUsersByTeam.unassigned.map(u => (
+                                  {unassignedLiveUsers.map(u => (
                                     <div
                                       key={u.userId}
                                       className="flex items-center justify-between px-1 py-1 rounded-lg hover:bg-accent/30"
@@ -9888,9 +10271,7 @@ export default function IntelligenceMapping() {
                     }`}
                     aria-pressed={on}
                     title={
-                      disabled
-                        ? "Turn Target logger on to use this"
-                        : undefined
+                      disabled ? "Turn Target logger on to use this" : undefined
                     }
                   >
                     <Icon
@@ -9926,6 +10307,46 @@ export default function IntelligenceMapping() {
                 )}
               </div>
               {/* end Target Logger */}
+
+              {/* ── NEARBY LOCATION — one switch, off by default. On: every
+                Intelligence Folder / Target Registry location within 500 m
+                of you is shown as a diamond, with a translucent 500 m area,
+                in addition to the normal pins. ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Nearby Location
+                </span>
+                <button
+                  onClick={() => setNearbyOn(v => !v)}
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+                    nearbyOn
+                      ? "border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20"
+                      : "border-border bg-card hover:bg-accent/40"
+                  }`}
+                  aria-pressed={nearbyOn}
+                >
+                  <LocateFixed
+                    className={`h-3.5 w-3.5 flex-shrink-0 ${
+                      nearbyOn ? "text-amber-500" : "text-muted-foreground"
+                    }`}
+                  />
+                  <span
+                    className={`text-xs font-semibold truncate flex-1 text-left ${
+                      nearbyOn ? "text-amber-500" : "text-foreground"
+                    }`}
+                  >
+                    Nearby location
+                  </span>
+                  <span
+                    className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                      nearbyOn ? "text-amber-500" : "text-muted-foreground"
+                    }`}
+                  >
+                    {nearbyOn ? "On" : "Off"}
+                  </span>
+                </button>
+              </div>
+              {/* end Nearby Location */}
             </div>
           )}
           {/* end Pane Body */}
@@ -10010,7 +10431,7 @@ export default function IntelligenceMapping() {
                 })}
               </div>
 
-              <p className="text-[11px] text-muted-foreground/60 mt-3 text-center">
+              <p className="text-[11px] text-muted-foreground mt-3 text-center">
                 {quickLinks.length}/2 slots used — Operations and active sheet
                 are always shown
               </p>

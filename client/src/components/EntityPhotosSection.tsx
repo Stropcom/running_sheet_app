@@ -3,20 +3,34 @@ import { X, Link2Off } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { formatAttachmentBanner } from "@/lib/attachmentBanner";
+import { useLocation } from "wouter";
+import { ProfileCard } from "@/components/ProfileKit";
 
 /** Shows photos linked to one Intelligence entity (Target/Vehicle/Associate/Location). */
 export function EntityPhotosSection({
   category,
   targetId,
   entityLabel,
+  showEmpty = false,
+  id = "photos",
+  label = "Photos",
 }: {
   category: "target" | "vehicle" | "associate" | "location";
   targetId?: number;
   entityLabel?: string;
+  /** Show a "no photos yet" card instead of nothing (vehicle / location). */
+  showEmpty?: boolean;
+  id?: string;
+  label?: string;
 }) {
+  const [, navigate] = useLocation();
   const utils = trpc.useUtils();
   const [lightbox, setLightbox] = useState<string | null>(null);
-  const { data: photos } = trpc.attachment.byEntity.useQuery({ category, targetId, entityLabel });
+  const { data: photos } = trpc.attachment.byEntity.useQuery({
+    category,
+    targetId,
+    entityLabel,
+  });
 
   const unlink = trpc.attachment.unlinkFromEntity.useMutation({
     onSuccess: () => {
@@ -27,17 +41,33 @@ export function EntityPhotosSection({
     onError: e => toast.error(e.message),
   });
 
-  if (!photos || photos.length === 0) return null;
+  if (!photos) return null;
+  if (photos.length === 0) {
+    if (!showEmpty) return null;
+    return (
+      <ProfileCard id={id} label={label} count={0}>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border-2 border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+          <span>No photos linked yet.</span>
+          <button
+            type="button"
+            onClick={() => navigate("/images")}
+            className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-bold text-foreground hover:bg-muted/60"
+          >
+            Add photo
+          </button>
+        </div>
+      </ProfileCard>
+    );
+  }
 
   return (
-    <div className="rounded-xl border border-border/60 bg-card p-4 mb-4">
-      <div className="flex items-center gap-2 mb-2">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Photos</p>
-        <span className="text-xs text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">{photos.length}</span>
-      </div>
+    <ProfileCard id={id} label={label} count={photos.length}>
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
         {(photos as any[]).map(p => (
-          <div key={p.id} className="group relative rounded-lg overflow-hidden border border-border bg-muted/20">
+          <div
+            key={p.id}
+            className="group relative rounded-lg overflow-hidden border border-border bg-muted/20"
+          >
             <img
               src={p.url}
               alt="Linked photograph"
@@ -45,7 +75,9 @@ export function EntityPhotosSection({
               onClick={() => setLightbox(p.url)}
             />
             <div className="absolute inset-x-0 bottom-0 bg-black/60 px-1.5 py-0.5">
-              <p className="text-[9px] text-white truncate">{formatAttachmentBanner(p)}</p>
+              <p className="text-[9px] text-white truncate">
+                {formatAttachmentBanner(p)}
+              </p>
             </div>
             <button
               onClick={() => unlink.mutate({ linkId: p.linkId })}
@@ -69,9 +101,13 @@ export function EntityPhotosSection({
           >
             <X className="h-5 w-5" />
           </button>
-          <img src={lightbox} alt="Linked photograph" className="max-w-full max-h-full rounded shadow-2xl" />
+          <img
+            src={lightbox}
+            alt="Linked photograph"
+            className="max-w-full max-h-full rounded shadow-2xl"
+          />
         </div>
       )}
-    </div>
+    </ProfileCard>
   );
 }

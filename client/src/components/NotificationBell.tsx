@@ -155,7 +155,7 @@ export function NotificationBell({
                       <p className="text-xs text-muted-foreground line-clamp-2">
                         {n.body}
                       </p>
-                      <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
                         {formatDistanceToNow(new Date(n.createdAt), {
                           addSuffix: true,
                         })}

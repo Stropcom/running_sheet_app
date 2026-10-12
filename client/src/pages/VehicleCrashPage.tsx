@@ -1,3 +1,4 @@
+import { useMyTeams } from "@/lib/teams";
 import { useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -33,13 +34,6 @@ const REPAIRER_NAME = "BRB Smash Repair";
 const REPAIRER_ADDRESS = "5/7 Pitt Way, Booragoon";
 const REPAIRER_CONTACT = "Bill — do not speak to any other staff";
 const REPAIRER_AFTERHOURS = "0419 908 520";
-
-// Assumed Identity phones, by team — logged-in user's own team (users.team)
-// is highlighted in the Full SOP's Stage 3 section, see AiPhonesBlock below.
-const AI_PHONES: Record<"TEAM1" | "TEAM2", string[]> = {
-  TEAM1: ["0493 197 381", "0494 183 973"],
-  TEAM2: ["0494 155 400", "0494 177 049"],
-};
 
 type Screen = "menu" | "sop" | "wizard";
 type ScenarioKey = "A1" | "A2" | "B1" | "B2" | "C1";
@@ -127,71 +121,70 @@ function needsPoliceReport(answers: Answers): boolean {
 // ─── Small building blocks for the SOP reference viewer ────────────────────
 function SopP({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[13px] leading-relaxed text-muted-foreground mb-2 last:mb-0">
+    <p className="text-sm leading-relaxed text-foreground/85 mb-2 last:mb-0">
       {children}
     </p>
   );
 }
 function SopSub({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70 mt-3 mb-1 first:mt-0">
+    <p className="text-xs font-bold uppercase tracking-wide text-foreground/80 mt-4 mb-1 first:mt-0">
       {children}
     </p>
   );
 }
 function SopTable({ rows }: { rows: [string, string][] }) {
   return (
-    <div className="rounded-lg border border-border overflow-hidden my-2">
-      <div className="grid grid-cols-[70px_1fr] bg-blue-500/10 text-[10px] font-bold uppercase tracking-wide text-blue-400 px-3 py-1.5">
+    <div className="rounded-lg border border-border bg-card shadow-sm overflow-hidden my-3">
+      <div className="grid grid-cols-[70px_1fr] border-b border-border bg-muted/70 text-xs font-bold uppercase tracking-wide text-foreground px-3 py-2">
         <span>Scenario</span>
         <span>Description</span>
       </div>
       {rows.map(([k, v]) => (
         <div
           key={k}
-          className="grid grid-cols-[70px_1fr] px-3 py-2 text-[12.5px] border-t border-border"
+          className="grid grid-cols-[70px_1fr] px-3 py-2 text-sm border-t border-border"
         >
           <span className="font-semibold text-foreground">{k}</span>
-          <span className="text-muted-foreground">{v}</span>
+          <span className="text-foreground/85">{v}</span>
         </div>
       ))}
     </div>
   );
 }
 
-// Both teams' AI phones are shown (any member may need to recognise or
-// reach the other team's AI number), with the logged-in user's own team
-// (users.team) picked out so it doesn't need to be found by scanning.
+// Every team's AI phones in the person's Command are shown (any member may
+// need to recognise or reach another team's AI number), with the logged-in
+// user's own team picked out so it doesn't need to be found by scanning.
+// Teams and their phones are set in User Management → Teams.
 function AiPhonesBlock() {
   const { user } = useAuth();
-  const myTeam =
-    user?.team === "TEAM1" || user?.team === "TEAM2" ? user.team : null;
+  const teams = useMyTeams().filter(t => t.aiPhones.length > 0);
+  if (teams.length === 0) return null;
   return (
-    <div className="rounded-lg border border-border overflow-hidden my-2">
-      <div className="bg-blue-500/10 text-[10px] font-bold uppercase tracking-wide text-blue-400 px-3 py-1.5">
+    <div className="rounded-lg border border-border bg-card shadow-sm overflow-hidden my-3">
+      <div className="border-b border-border bg-muted/70 text-xs font-bold uppercase tracking-wide text-foreground px-3 py-2">
         Assumed Identity Phones
       </div>
-      {(["TEAM1", "TEAM2"] as const).map((team, i) => {
-        const mine = team === myTeam;
+      {teams.map((team, i) => {
+        const mine = team.id === user?.teamId;
         return (
           <div
-            key={team}
-            className={`px-3 py-2 text-[12.5px] ${i > 0 ? "border-t border-border" : ""} ${
-              mine ? "bg-indigo-500/5" : ""
+            key={team.id}
+            className={`px-3 py-2 text-sm ${i > 0 ? "border-t border-border" : ""} ${
+              mine ? "bg-indigo-50 dark:bg-indigo-500/10" : ""
             }`}
           >
             <div className="flex items-center gap-2">
-              <span className="font-semibold text-foreground">
-                {team === "TEAM1" ? "Team 1" : "Team 2"}
-              </span>
+              <span className="font-semibold text-foreground">{team.name}</span>
               {mine && (
-                <span className="text-[9.5px] font-bold uppercase tracking-wide text-indigo-400 bg-indigo-500/10 rounded px-1.5 py-0.5">
+                <span className="text-xs font-bold uppercase tracking-wide text-white bg-indigo-600 rounded px-1.5 py-0.5">
                   Your team
                 </span>
               )}
             </div>
-            <p className="text-muted-foreground mt-0.5">
-              {AI_PHONES[team].join(" or ")}
+            <p className="text-foreground/85 mt-0.5">
+              {team.aiPhones.join(" or ")}
             </p>
           </div>
         );
@@ -230,7 +223,7 @@ const SOP_SECTIONS: SopSection[] = [
           </b>
           :
         </SopP>
-        <ul className="list-disc list-inside text-[13px] text-muted-foreground mb-2 space-y-0.5">
+        <ul className="list-disc list-inside text-sm text-foreground/85 mb-2 space-y-0.5">
           <li>Applicable state and territory legislation</li>
           <li>AFP professional standards obligations</li>
           <li>AFP capability protection requirements</li>
@@ -326,7 +319,7 @@ const SOP_SECTIONS: SopSection[] = [
     num: "7",
     label: "Five Stages",
     body: (
-      <ol className="list-decimal list-inside text-[13px] text-muted-foreground space-y-1">
+      <ol className="list-decimal list-inside text-sm text-foreground/85 space-y-1">
         <li>
           <b className="text-foreground">Scenario Identification</b> — what type
           of crash
@@ -421,7 +414,7 @@ const SOP_SECTIONS: SopSection[] = [
           Members will use an Assumed Identity (AI) in all crash-related
           interactions, unless an exception under Stage 4 applies.
         </SopP>
-        <ul className="list-disc list-inside text-[13px] text-muted-foreground mb-2 space-y-1">
+        <ul className="list-disc list-inside text-sm text-foreground/85 mb-2 space-y-1">
           <li>
             <b className="text-foreground">Personal and vehicle details</b> —
             where required to give a name/address, produce a licence, or provide
@@ -569,18 +562,16 @@ const SOP_SECTIONS: SopSection[] = [
           details provided at the scene.
         </SopP>
         <SopSub>Approved repairer — the only one to use</SopSub>
-        <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 px-3 py-2.5 mb-2">
-          <p className="text-[13px] font-bold text-foreground">
-            {REPAIRER_NAME}
-          </p>
-          <p className="text-[12.5px] text-muted-foreground mt-1">
+        <div className="rounded-lg border border-indigo-300 bg-indigo-50 dark:border-indigo-500/40 dark:bg-indigo-500/10 px-3 py-2.5 mb-2">
+          <p className="text-sm font-bold text-foreground">{REPAIRER_NAME}</p>
+          <p className="text-sm text-foreground/85 mt-1">
             Address: {REPAIRER_ADDRESS}
             <br />
             Contact: {REPAIRER_CONTACT}
             <br />
             After-hours: {REPAIRER_AFTERHOURS}
           </p>
-          <p className="text-[12.5px] text-muted-foreground mt-1.5">
+          <p className="text-sm text-foreground/85 mt-1.5">
             <b className="text-foreground">Approved Tow / Tilt-Tray Provider</b>{" "}
             — linked to {REPAIRER_NAME}, same contact (Bill).
           </p>
@@ -610,7 +601,7 @@ const SOP_SECTIONS: SopSection[] = [
     num: "9",
     label: "Immediate Post-Crash Checklist",
     body: (
-      <ol className="list-decimal list-inside text-[13px] text-muted-foreground space-y-1.5">
+      <ol className="list-decimal list-inside text-sm text-foreground/85 space-y-1.5">
         <li>
           <b className="text-foreground">Stop immediately</b>
         </li>
@@ -673,41 +664,45 @@ function CrashMenu({ onSelect }: { onSelect: (s: Screen) => void }) {
     <div className="flex flex-col gap-3">
       <button
         onClick={() => onSelect("sop")}
-        className="flex items-center gap-3.5 p-4 rounded-xl border border-border/60 bg-card/60 hover:bg-muted/40 transition-colors text-left"
+        className="flex items-center gap-3.5 p-4 rounded-xl border border-border bg-card shadow-sm hover:bg-muted/40 transition-colors text-left"
       >
-        <div className="w-11 h-11 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
-          <BookOpen className="h-5 w-5 text-blue-400" />
+        <div className="w-11 h-11 rounded-xl border border-blue-300 bg-blue-50 dark:border-blue-500/30 dark:bg-blue-500/10 flex items-center justify-center shrink-0">
+          <BookOpen className="h-5 w-5 text-blue-700 dark:text-blue-300" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-foreground">Full SOP</p>
-          <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+          <p className="text-xs text-foreground/85 mt-0.5 leading-snug">
             The complete Vehicle Crash Standard Operating Procedure, as a
             collapsible reference.
           </p>
         </div>
-        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        <ChevronRight className="h-4 w-4 text-foreground/85 shrink-0" />
       </button>
       <button
         onClick={() => onSelect("wizard")}
-        className="flex items-center gap-3.5 p-4 rounded-xl border border-border/60 bg-card/60 hover:bg-muted/40 transition-colors text-left"
+        className="flex items-center gap-3.5 p-4 rounded-xl border border-border bg-card shadow-sm hover:bg-muted/40 transition-colors text-left"
       >
-        <div className="w-11 h-11 rounded-xl bg-violet-500/10 flex items-center justify-center shrink-0">
-          <Siren className="h-5 w-5 text-violet-400" />
+        <div className="w-11 h-11 rounded-xl border border-violet-300 bg-violet-50 dark:border-violet-500/30 dark:bg-violet-500/10 flex items-center justify-center shrink-0">
+          <Siren className="h-5 w-5 text-violet-700 dark:text-violet-300" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-bold text-foreground">Crash Helper</p>
-          <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+          <p className="text-xs text-foreground/85 mt-0.5 leading-snug">
             Answer a few quick questions at the scene — get exactly what to do
             now, and what to report afterwards.
           </p>
         </div>
-        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+        <ChevronRight className="h-4 w-4 text-foreground/85 shrink-0" />
       </button>
     </div>
   );
 }
 
 // ─── Full SOP viewer ────────────────────────────────────────────────────
+// Each SOP section is its own solid card (same as the Crash Helper's topic
+// panels): a grey titled band with the section number, the body underneath
+// separated by a full-strength rule. Sub-sections (7.1, 7.2 …) are indented
+// a step and use a slate number so the hierarchy reads at a glance.
 function CrashSopViewer() {
   const [openSet, setOpenSet] = useState<Set<string>>(new Set());
   const toggle = (num: string) =>
@@ -717,33 +712,40 @@ function CrashSopViewer() {
       return next;
     });
   return (
-    <div className="rounded-xl border border-border/60 bg-card/60 overflow-hidden">
-      {SOP_SECTIONS.map((s, i) => (
-        <Collapsible
-          key={s.num}
-          open={openSet.has(s.num)}
-          onOpenChange={() => toggle(s.num)}
-        >
-          <CollapsibleTrigger asChild>
-            <button
-              className={`w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-muted/40 transition-colors ${i > 0 ? "border-t border-border/60" : ""}`}
-            >
-              <span className="text-[10px] font-bold text-indigo-400 bg-indigo-500/10 rounded px-1.5 py-0.5 shrink-0">
-                {s.num}
-              </span>
-              <span className="text-sm font-semibold text-foreground flex-1">
-                {s.label}
-              </span>
-              <ChevronRight
-                className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform ${openSet.has(s.num) ? "rotate-90" : ""}`}
-              />
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="px-4 pb-4 pl-11">
-            {s.body}
-          </CollapsibleContent>
-        </Collapsible>
-      ))}
+    <div className="flex flex-col gap-3">
+      {SOP_SECTIONS.map(s => {
+        const open = openSet.has(s.num);
+        const sub = s.num.includes(".");
+        return (
+          <Collapsible
+            key={s.num}
+            open={open}
+            onOpenChange={() => toggle(s.num)}
+            className={`overflow-hidden rounded-xl border border-border bg-card shadow-sm ${sub ? "sm:ml-6" : ""}`}
+          >
+            <CollapsibleTrigger asChild>
+              <button
+                className={`flex w-full items-center gap-3 bg-muted/70 px-4 py-3 text-left transition-colors hover:bg-muted ${open ? "border-b border-border" : ""}`}
+              >
+                <span
+                  className={`shrink-0 rounded px-2 py-0.5 text-xs font-bold text-white ${sub ? "bg-slate-600" : "bg-indigo-600"}`}
+                >
+                  {s.num}
+                </span>
+                <span className="flex-1 text-sm font-bold text-foreground">
+                  {s.label}
+                </span>
+                <ChevronRight
+                  className={`h-4 w-4 shrink-0 text-foreground/70 transition-transform ${open ? "rotate-90" : ""}`}
+                />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="px-4 py-4">
+              {s.body}
+            </CollapsibleContent>
+          </Collapsible>
+        );
+      })}
     </div>
   );
 }
@@ -761,7 +763,7 @@ function OptionButton({
   return (
     <button
       onClick={onClick}
-      className="w-full text-left p-3.5 rounded-xl border border-border/60 bg-card/60 hover:border-indigo-400/60 hover:bg-indigo-500/5 transition-colors"
+      className="w-full text-left p-3.5 rounded-xl border-2 border-border bg-card shadow-sm hover:border-indigo-500 hover:bg-indigo-50 transition-colors"
     >
       <p className="text-sm font-bold text-foreground">{title}</p>
       <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{sub}</p>
@@ -808,9 +810,9 @@ function RepairerCard() {
 }
 
 // Groups results by topic (Identity, Declaration, Vehicle, Reporting…) —
-// each topic gets its own bordered panel rather than just a plain label
-// inline in one continuous list, so SAFETY/IDENTITY/DECLARATION/etc. read
-// as clearly separate blocks at a glance, especially on a phone/tablet
+// each topic is its own solid panel with a titled header band, and each step
+// sits in its own bordered card, so the topics and the steps inside them
+// read as clearly separate blocks at a glance, especially on a phone/tablet
 // screen in bright light. Items stay numbered, but the numbering runs
 // continuously across panel boundaries so it still reads as a single
 // procedure, just clustered by subject. Caution items use red, not amber —
@@ -831,35 +833,37 @@ function GroupedResultList({ items }: { items: ResultItem[] }) {
   }
   let n = 0;
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-3.5">
       {groups.map(g => (
         <div
           key={g.name}
-          className="rounded-lg border border-border/60 bg-background/50 px-3 py-2.5"
+          className="overflow-hidden rounded-xl border border-border bg-card shadow-sm"
         >
-          <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70 pb-1.5">
+          <p className="border-b border-border bg-muted/70 px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-foreground">
             {g.name}
           </p>
-          <div className="flex flex-col">
+          <div className="flex flex-col gap-2 p-2.5">
             {g.items.map((it, i) => {
               n++;
               return (
                 <div
                   key={i}
-                  className={`flex gap-2.5 py-2 border-t border-dashed border-border/50 first:border-t-0 text-sm text-foreground ${
-                    it.caution ? "bg-red-500/5 -mx-2 px-2 rounded-lg" : ""
+                  className={`flex gap-3 rounded-lg border px-3 py-3 text-[15px] leading-relaxed text-foreground ${
+                    it.caution
+                      ? "border-red-500/30 bg-red-500/10"
+                      : "border-border/70 bg-background"
                   }`}
                 >
                   <span
-                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
+                    className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                       it.caution
-                        ? "bg-red-500/15 text-red-500"
-                        : "bg-indigo-500/10 text-indigo-400"
+                        ? "bg-red-600 text-white"
+                        : "bg-indigo-600 text-white"
                     }`}
                   >
                     {n}
                   </span>
-                  <span className="leading-snug flex-1 min-w-0">{it.text}</span>
+                  <span className="min-w-0 flex-1">{it.text}</span>
                 </div>
               );
             })}
@@ -874,9 +878,9 @@ function CrashWizard() {
   const [step, setStep] = useState(1);
   const [answers, setAnswers] = useState<Answers>(EMPTY_ANSWERS);
   const { user } = useAuth();
-  const myTeam =
-    user?.team === "TEAM1" || user?.team === "TEAM2" ? user.team : null;
-  const myAiPhones = myTeam ? AI_PHONES[myTeam] : null;
+  const myTeam = useMyTeams().find(t => t.id === user?.teamId) ?? null;
+  const myAiPhones =
+    myTeam && myTeam.aiPhones.length > 0 ? myTeam.aiPhones : null;
 
   const restart = () => {
     setStep(1);
@@ -1065,8 +1069,8 @@ function CrashWizard() {
         Use your <b>Assumed Identity</b> details for anything you're required to
         give — registration, name, address, licence, phone.
         {myAiPhones && (
-          <p className="mt-1.5 text-muted-foreground">
-            Your AI phone ({myTeam === "TEAM1" ? "Team 1" : "Team 2"}):{" "}
+          <p className="mt-2 text-foreground/80">
+            Your AI phone ({myTeam?.name}):{" "}
             <b className="text-foreground">{myAiPhones.join(" or ")}</b>
           </p>
         )}
@@ -1090,7 +1094,7 @@ function CrashWizard() {
         <>
           A <b>declaration exception may apply</b> — only permitted where one of
           these applies:
-          <ul className="list-disc list-inside mt-1.5 space-y-0.5 text-muted-foreground">
+          <ul className="list-disc pl-5 mt-2 space-y-1 text-foreground/80">
             <li>Serious injury requiring medical treatment to the operative</li>
             <li>A fatality to any person involved</li>
             <li>
@@ -1102,7 +1106,7 @@ function CrashWizard() {
             Get authorisation from your <b>Team Leader / Inspector CTO WC</b>{" "}
             first. If disclosed:
           </p>
-          <ul className="list-disc list-inside mt-1.5 space-y-0.5 text-muted-foreground">
+          <ul className="list-disc pl-5 mt-2 space-y-1 text-foreground/80">
             <li>Emergency services only — Police, SJA, FESA</li>
             <li>Never media, the public, or other parties in the incident</li>
             <li>
@@ -1184,7 +1188,7 @@ function CrashWizard() {
     text: (
       <>
         <b>Take photos before leaving the scene:</b>
-        <ul className="list-disc list-inside mt-1.5 space-y-0.5 text-muted-foreground">
+        <ul className="list-disc pl-5 mt-2 space-y-1 text-foreground/80">
           <li>Damage to the SU vehicle</li>
           <li>The scene / area</li>
           <li>Wide-angle shots of all four sides — required by Comcover</li>
@@ -1205,7 +1209,7 @@ function CrashWizard() {
       <>
         <b>Notify SSU, CPT, and HUMINT Finance</b> as soon as practicable — the
         initial information is the same for all three:
-        <ul className="list-disc list-inside mt-1.5 space-y-0.5 text-muted-foreground">
+        <ul className="list-disc pl-5 mt-2 space-y-1 text-foreground/80">
           <li>Nature of the crash ({answers.scenario})</li>
           <li>Circumstances of the crash</li>
           <li>Police attendance or response, if any</li>
@@ -1285,10 +1289,10 @@ function CrashWizard() {
   return (
     <div>
       <div
-        className={`flex items-start gap-2.5 p-3.5 rounded-xl mb-4 text-sm font-semibold ${
+        className={`mb-4 flex items-start gap-2.5 rounded-xl border-2 p-4 text-[15px] font-semibold leading-snug ${
           exceptionFlagged
-            ? "bg-red-500/10 border border-red-500/25 text-red-400"
-            : "bg-green-500/10 border border-green-500/25 text-green-500"
+            ? "border-red-500/50 bg-red-500/10 text-red-700 dark:text-red-300"
+            : "border-green-600/40 bg-green-500/10 text-green-800 dark:text-green-300"
         }`}
       >
         {exceptionFlagged ? (
@@ -1303,26 +1307,26 @@ function CrashWizard() {
         </span>
       </div>
 
-      <div className="rounded-xl border border-border/60 bg-card/60 overflow-hidden mb-3">
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-violet-500/10 text-violet-400">
-          <Camera className="h-3.5 w-3.5" />
-          <span className="text-[11px] font-bold uppercase tracking-wide">
+      <div className="mb-5 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex items-center gap-2 border-b border-border bg-violet-500/15 px-4 py-3 text-violet-800 dark:text-violet-200">
+          <Camera className="h-4 w-4" />
+          <span className="text-sm font-bold uppercase tracking-wider">
             At the Scene
           </span>
         </div>
-        <div className="p-3">
+        <div className="bg-muted/30 p-3">
           <GroupedResultList items={scene} />
         </div>
       </div>
 
-      <div className="rounded-xl border border-border/60 bg-card/60 overflow-hidden mb-4">
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-500/10 text-blue-400">
-          <ListChecks className="h-3.5 w-3.5" />
-          <span className="text-[11px] font-bold uppercase tracking-wide">
+      <div className="mb-5 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex items-center gap-2 border-b border-border bg-blue-500/15 px-4 py-3 text-blue-800 dark:text-blue-200">
+          <ListChecks className="h-4 w-4" />
+          <span className="text-sm font-bold uppercase tracking-wider">
             After / Reporting
           </span>
         </div>
-        <div className="p-3">
+        <div className="bg-muted/30 p-3">
           <GroupedResultList items={after} />
         </div>
       </div>
@@ -1346,12 +1350,14 @@ export default function VehicleCrashPage() {
     <DashboardLayout>
       <div className="flex flex-col gap-6 p-6 w-full">
         <div className="flex items-center gap-3">
-          <Car className="h-5 w-5 text-slate-400" />
+          <div className="rounded-xl border-2 border-slate-300 bg-slate-50 p-2.5 dark:border-slate-600 dark:bg-slate-800">
+            <Car className="h-5 w-5 text-slate-700 dark:text-slate-300" />
+          </div>
           <div>
             <h1 className="text-xl font-semibold text-foreground">
               {titles[screen]}
             </h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="text-xs text-foreground/70 mt-0.5">
               AFP Western Command Surveillance Unit — Vehicle Crash SOP
             </p>
           </div>
@@ -1362,10 +1368,10 @@ export default function VehicleCrashPage() {
             <button
               key={s}
               onClick={() => setScreen(s)}
-              className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-colors ${
+              className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors ${
                 screen === s
-                  ? "bg-indigo-500 border-indigo-500 text-white"
-                  : "bg-card/60 border-border/60 text-muted-foreground hover:bg-muted/40"
+                  ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
+                  : "bg-card border-border text-foreground/80 shadow-sm hover:bg-muted/40"
               }`}
             >
               {s === "menu"

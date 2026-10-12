@@ -27,6 +27,13 @@ import { toast } from "sonner";
 import { Link } from "wouter";
 import { useTheme } from "@/contexts/ThemeContext";
 import { COLOR_PALETTES, DEFAULT_COLOR_PALETTE } from "@shared/const";
+import { CommandChip } from "@/components/admin/CommandChip";
+import { LevelPill } from "@/components/admin/LevelPill";
+import {
+  COMMAND_LABELS,
+  COMMAND_SHORT,
+  type CommandCode,
+} from "@shared/commands";
 
 // Where each entity type's profile page lives — see App.tsx's
 // /intelligence/{associate,vehicle,location}/:label routes. "business"
@@ -46,18 +53,21 @@ const ROLE_LABELS: Record<
 > = {
   admin: {
     label: "Admin",
-    color: "text-amber-400",
-    badge: "border-amber-400/30 text-amber-400 bg-amber-400/10",
+    color: "text-amber-700 dark:text-amber-300",
+    badge:
+      "border-amber-300 dark:border-amber-500/40 text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10",
   },
   member: {
     label: "Member",
-    color: "text-emerald-400",
-    badge: "border-emerald-400/30 text-emerald-400 bg-emerald-400/10",
+    color: "text-emerald-700 dark:text-emerald-300",
+    badge:
+      "border-emerald-300 dark:border-emerald-500/40 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10",
   },
   observer: {
     label: "Observer",
-    color: "text-sky-400",
-    badge: "border-sky-400/30 text-sky-400 bg-sky-400/10",
+    color: "text-sky-700 dark:text-sky-300",
+    badge:
+      "border-sky-300 dark:border-sky-500/40 text-sky-700 dark:text-sky-300 bg-sky-50 dark:bg-sky-500/10",
   },
 };
 
@@ -112,19 +122,56 @@ function InfoRow({
   value?: string | null;
 }) {
   return (
-    <div className="flex items-start gap-4 py-3.5 border-b border-border/50 last:border-0">
+    <div className="flex items-start gap-4 py-3.5 border-b border-border last:border-0">
       <div className="w-8 h-8 rounded-lg bg-muted/60 flex items-center justify-center shrink-0 mt-0.5">
-        <Icon className="w-4 h-4 text-muted-foreground" />
+        <Icon className="w-4 h-4 text-foreground/70" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-0.5">
+        <p className="text-xs text-foreground/70 uppercase tracking-wider font-medium mb-0.5">
           {label}
         </p>
         <p className="text-sm font-medium text-foreground truncate">
-          {value || (
-            <span className="text-muted-foreground italic">Not set</span>
-          )}
+          {value || <span className="text-foreground/70 italic">Not set</span>}
         </p>
+      </div>
+    </div>
+  );
+}
+
+/** Operations other Commands have shared with this person. */
+function MySharedAccess({ command }: { command?: CommandCode }) {
+  const { data: shares } = trpc.profile.mySharedAccess.useQuery();
+  if (!shares || shares.length === 0) return null;
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
+      <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
+        <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
+          <Shield className="w-4 h-4 text-primary" />
+          Shared with you
+        </h2>
+      </div>
+      <p className="text-xs text-foreground/70 mb-4">
+        Operations from other Commands you can open
+        {command ? ` (you belong to ${COMMAND_LABELS[command]})` : ""}.
+      </p>
+      <div className="flex flex-col gap-2">
+        {shares.map(s => (
+          <div
+            key={s.id}
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2.5"
+          >
+            <CommandChip command={s.fromCommand} />
+            <span className="text-sm font-semibold">
+              {s.operationName ??
+                `Every ${COMMAND_SHORT[s.fromCommand]} operation`}
+            </span>
+            <LevelPill level={s.level} />
+            <span className="ml-auto text-xs text-foreground/70">
+              Shared by CIN {s.sharedByCIN} ·{" "}
+              {new Date(s.createdAt).toLocaleDateString()}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -146,7 +193,7 @@ function PasswordField({
   const [show, setShow] = useState(false);
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-xs text-muted-foreground uppercase tracking-wider font-medium">
+      <label className="text-xs text-foreground/70 uppercase tracking-wider font-medium">
         {label}
       </label>
       <div className="relative">
@@ -160,7 +207,7 @@ function PasswordField({
         <button
           type="button"
           onClick={() => setShow(s => !s)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-foreground/70 hover:text-foreground transition-colors"
           tabIndex={-1}
         >
           {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -184,7 +231,7 @@ function ScanResultsList({
 }) {
   if (results.length === 0) {
     return (
-      <div className="flex items-center gap-2 text-sm text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-lg px-3 py-2.5">
+      <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/40 rounded-lg px-3 py-2.5">
         <CheckCheck className="w-4 h-4 shrink-0" />
         {emptyMessage}
       </div>
@@ -192,7 +239,7 @@ function ScanResultsList({
   }
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+      <p className="text-xs font-semibold text-foreground/70 uppercase tracking-wide">
         {results.length} possible issue{results.length > 1 ? "s" : ""}
       </p>
       {results.map((f, i) => {
@@ -200,7 +247,7 @@ function ScanResultsList({
         return (
           <div
             key={i}
-            className="rounded-lg border border-border/60 bg-muted/20 p-3"
+            className="rounded-lg border border-border bg-muted/20 p-3"
           >
             <div className="flex items-start justify-between gap-3 mb-2">
               <p className="text-sm text-foreground">{f.reason}</p>
@@ -209,14 +256,14 @@ function ScanResultsList({
                 onClick={() => onDismiss(f)}
                 disabled={dismissingKey === key}
                 title="Not this one — stop flagging it"
-                className="text-[11px] font-medium text-muted-foreground hover:text-destructive border border-border rounded px-2 py-1 shrink-0 transition-colors disabled:opacity-50"
+                className="text-xs font-medium text-foreground/70 hover:text-destructive border border-border rounded px-2 py-1 shrink-0 transition-colors disabled:opacity-50"
               >
                 {dismissingKey === key ? "Dismissing…" : "Dismiss"}
               </button>
             </div>
             <div className="flex flex-col gap-2">
               {f.occurrences.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic">
+                <p className="text-xs text-foreground/70 italic">
                   No linked running sheet row to check.
                 </p>
               ) : (
@@ -230,7 +277,7 @@ function ScanResultsList({
                       {o.operationName} — {o.sheetTitle}
                     </Link>
                     {o.observationSnippet && (
-                      <p className="text-xs text-muted-foreground italic pl-4 border-l-2 border-border/60 ml-1">
+                      <p className="text-xs text-foreground/70 italic pl-4 border-l-2 border-border ml-1">
                         "{o.observationSnippet}
                         {o.observationSnippet.length >= 160 ? "…" : ""}"
                       </p>
@@ -240,7 +287,7 @@ function ScanResultsList({
               )}
               <Link
                 href={`/intelligence/${ENTITY_PROFILE_PATH[f.type]}/${encodeURIComponent(f.shortForm)}`}
-                className="text-xs text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1"
+                className="text-xs text-foreground/70 hover:text-foreground hover:underline flex items-center gap-1"
               >
                 <ExternalLink className="w-3 h-3 shrink-0" />
                 View entity profile
@@ -446,12 +493,14 @@ export default function MyProfilePage() {
         </div>
 
         {/* Profile Information Card */}
-        <div className="rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-          <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
-            <User className="w-4 h-4 text-primary" />
-            Profile Information
-          </h2>
-          <p className="text-xs text-muted-foreground mb-4">
+        <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
+          <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
+            <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
+              <User className="w-4 h-4 text-primary" />
+              Profile Information
+            </h2>
+          </div>
+          <p className="text-xs text-foreground/70 mb-4">
             Your account details as set by an administrator.
           </p>
 
@@ -471,7 +520,15 @@ export default function MyProfilePage() {
             <div>
               <InfoRow icon={User} label="Full Name" value={profile?.name} />
               <InfoRow icon={Hash} label="CIN" value={profile?.cin} />
-              <InfoRow icon={Building2} label="Unit" value={profile?.unit} />
+              <InfoRow
+                icon={Building2}
+                label="Unit — Command"
+                value={
+                  profile?.command
+                    ? COMMAND_LABELS[profile.command as CommandCode]
+                    : undefined
+                }
+              />
               <InfoRow
                 icon={Phone}
                 label="Mobile Phone"
@@ -493,14 +550,18 @@ export default function MyProfilePage() {
           )}
         </div>
 
+        <MySharedAccess command={profile?.command as CommandCode | undefined} />
+
         {/* Intelligence Entity Scan Card — admin-only */}
         {profile?.role === "admin" && (
-          <div className="rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-            <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
-              <ScanSearch className="w-4 h-4 text-primary" />
-              Intelligence Entity Scan
-            </h2>
-            <p className="text-xs text-muted-foreground mb-4">
+          <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
+            <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
+              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
+                <ScanSearch className="w-4 h-4 text-primary" />
+                Intelligence Entity Scan
+              </h2>
+            </div>
+            <p className="text-xs text-foreground/70 mb-4">
               A backup check over every entity mined into the Intelligence
               folder — flags shapes that suggest a parsing slip (a placeholder
               code like UM1/UF1 that landed as a real entity, a vehicle rego
@@ -536,15 +597,17 @@ export default function MyProfilePage() {
 
         {/* Missed-Entity Scan Card (Local AI Step 2, beta) — admin-only */}
         {profile?.role === "admin" && (
-          <div className="rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-            <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
-              <ScanSearch className="w-4 h-4 text-primary" />
-              Missed-Entity Scan
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded px-1.5 py-0.5">
-                Beta
-              </span>
-            </h2>
-            <p className="text-xs text-muted-foreground mb-4">
+          <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
+            <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
+              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
+                <ScanSearch className="w-4 h-4 text-primary" />
+                Missed-Entity Scan
+                <span className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/40 rounded px-1.5 py-0.5">
+                  Beta
+                </span>
+              </h2>
+            </div>
+            <p className="text-xs text-foreground/70 mb-4">
               Runs a small on-device model over every observation, looking for a
               person's name written in a way the usual rules didn't recognise —
               never sent anywhere, runs entirely on this server. Only flags
@@ -564,7 +627,7 @@ export default function MyProfilePage() {
             </Button>
 
             {missedScanModelStatus === "missing" && (
-              <p className="text-xs text-muted-foreground mt-3">
+              <p className="text-xs text-foreground/70 mt-3">
                 The local model isn't installed on this deployment yet — see{" "}
                 <span className="font-mono">
                   scripts/dev/ner-model-setup.md
@@ -598,16 +661,18 @@ export default function MyProfilePage() {
 
         {/* Appearance Card */}
         {toggleTheme && (
-          <div className="rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-            <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
-              {theme === "dark" ? (
-                <Moon className="w-4 h-4 text-primary" />
-              ) : (
-                <Sun className="w-4 h-4 text-primary" />
-              )}
-              Appearance
-            </h2>
-            <p className="text-xs text-muted-foreground mb-4">
+          <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
+            <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
+              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
+                {theme === "dark" ? (
+                  <Moon className="w-4 h-4 text-primary" />
+                ) : (
+                  <Sun className="w-4 h-4 text-primary" />
+                )}
+                Appearance
+              </h2>
+            </div>
+            <p className="text-xs text-foreground/70 mb-4">
               Choose your preferred colour theme.
             </p>
             <div className="flex gap-3">
@@ -616,7 +681,7 @@ export default function MyProfilePage() {
                 className={`flex-1 flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium transition-all ${
                   theme === "light"
                     ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
+                    : "border-border text-foreground/70 hover:border-border hover:text-foreground"
                 }`}
               >
                 <Sun className="w-4 h-4" />
@@ -627,7 +692,7 @@ export default function MyProfilePage() {
                 className={`flex-1 flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium transition-all ${
                   theme === "dark"
                     ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
+                    : "border-border text-foreground/70 hover:border-border hover:text-foreground"
                 }`}
               >
                 <Moon className="w-4 h-4" />
@@ -635,7 +700,7 @@ export default function MyProfilePage() {
               </button>
             </div>
 
-            <p className="text-xs text-muted-foreground mt-5 mb-3">
+            <p className="text-xs text-foreground/70 mt-5 mb-3">
               Choose your colour theme — each option changes the background and
               sidebar as well as the accent, previewed here in whichever of
               light/dark you've picked above.
@@ -652,11 +717,11 @@ export default function MyProfilePage() {
                     className={`flex flex-col items-center justify-center gap-2 min-h-[84px] rounded-lg border px-2 py-2.5 text-xs font-medium text-center transition-all ${
                       selected
                         ? "border-primary bg-primary/10 text-primary"
-                        : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
+                        : "border-border text-foreground/70 hover:border-border hover:text-foreground"
                     }`}
                   >
                     <span
-                      className="relative w-8 h-8 rounded-full border border-border/50 shrink-0 overflow-hidden"
+                      className="relative w-8 h-8 rounded-full border border-border shrink-0 overflow-hidden"
                       style={{ backgroundColor: swatch.bg }}
                     >
                       <span
@@ -676,12 +741,14 @@ export default function MyProfilePage() {
         )}
 
         {/* Change Password Card */}
-        <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-          <h2 className="text-sm font-semibold text-foreground mb-1 flex items-center gap-2">
-            <KeyRound className="w-4 h-4 text-primary" />
-            Change Password
-          </h2>
-          <p className="text-xs text-muted-foreground mb-5">
+        <div className="overflow-hidden rounded-xl border border-border bg-card p-6 shadow-sm">
+          <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
+            <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-primary" />
+              Change Password
+            </h2>
+          </div>
+          <p className="text-xs text-foreground/70 mb-5">
             Enter your current password to set a new one.
           </p>
 
@@ -709,7 +776,7 @@ export default function MyProfilePage() {
             />
 
             {success && (
-              <div className="flex items-center gap-2 text-sm text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-lg px-3 py-2.5">
+              <div className="flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-500/40 rounded-lg px-3 py-2.5">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
                 Password updated successfully.
               </div>

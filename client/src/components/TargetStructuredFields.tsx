@@ -124,7 +124,7 @@ export function parseExtraAddresses(
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+    <label className="text-xs font-semibold text-foreground/80 uppercase tracking-wide">
       {children}
     </label>
   );

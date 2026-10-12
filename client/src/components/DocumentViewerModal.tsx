@@ -905,7 +905,7 @@ const PdfPages = forwardRef<
             Couldn't display this PDF.
           </p>
           {errorDetail && (
-            <p className="mt-2 px-6 text-[11px] text-muted-foreground/70 font-mono break-words">
+            <p className="mt-2 px-6 text-[11px] text-muted-foreground font-mono break-words">
               {errorDetail}
             </p>
           )}
@@ -998,7 +998,7 @@ function DocxContent({ url }: { url: string }) {
           Couldn't display this document.
         </p>
         {errorDetail && (
-          <p className="mt-2 px-6 text-[11px] text-muted-foreground/70 font-mono break-words">
+          <p className="mt-2 px-6 text-[11px] text-muted-foreground font-mono break-words">
             {errorDetail}
           </p>
         )}

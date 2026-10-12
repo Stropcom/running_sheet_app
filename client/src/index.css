@@ -139,7 +139,9 @@
   --destructive: oklch(0.55 0.22 25);
   --destructive-foreground: oklch(0.98 0 0);
   --border: oklch(0.88 0.008 250);
-  --input: oklch(0.92 0.0064 250);
+  /* Form controls (inputs, selects, outline buttons) need a border you can
+     actually see — it was nearly the same as the page. */
+  --input: oklch(0.72 0.012 250);
   --ring: oklch(0.5 0.16 220);
   --sidebar: oklch(0.22 0.03 250);
   --sidebar-foreground: oklch(0.85 0.01 250);
@@ -716,12 +718,122 @@ button:active:not(:disabled) {
 
 .running-sheet-table td {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid oklch(0.2 0.012 250);
+  border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
 
 .running-sheet-table tr:last-child td {
   border-bottom: none;
+}
+
+/* Running Sheet rows as cards on a phone (below 768px). The table stays a
+   table on iPad and laptop. One DOM, so the row editor, shortcuts and
+   autosave are exactly the same code: only the layout changes. Each row is a
+   bordered card: time in a grey band, the observation at full width, then the
+   CIN chips (see CinCertifyCell). */
+@media (max-width: 767px) {
+  .running-sheet-cards,
+  .running-sheet-cards tbody,
+  .running-sheet-cards tr,
+  .running-sheet-cards td {
+    display: block;
+    width: 100%;
+  }
+  .running-sheet-cards thead {
+    display: none;
+  }
+  .running-sheet-cards tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    padding: 0.5rem 0;
+  }
+  .running-sheet-cards tr[id^="sheet-row-"] {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 0.75rem;
+    background: var(--card);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+  }
+  .running-sheet-cards tr[id^="sheet-row-"] > td {
+    padding: 0.75rem;
+    border-bottom: none;
+  }
+  .running-sheet-cards tr[id^="sheet-row-"] > td:first-child {
+    padding: 0.5rem 0.75rem;
+    background: color-mix(in oklab, var(--muted) 70%, transparent);
+    border-bottom: 1px solid var(--border);
+  }
+  /* Beats the inline 2.5rem of blank space the table layout reserves. */
+  .running-sheet-cards tr[id^="sheet-row-"] > td:nth-child(2) {
+    padding-bottom: 0.5rem !important;
+  }
+  .running-sheet-cards tr[id^="sheet-row-"] > td:last-child {
+    padding-top: 0.25rem;
+  }
+  .running-sheet-cards tr.row-locked {
+    border-left-width: 3px;
+  }
+  .running-sheet-cards tr.date-divider-row {
+    padding: 0.125rem 0;
+  }
+  .running-sheet-cards tr.date-divider-row > td {
+    padding: 0.25rem 0.75rem;
+    border-bottom: none;
+  }
+}
+
+/* Audit Log rows as small cards on a phone: timestamp and CIN on one line,
+   then the action, the details and (when there is one) the row. */
+@media (max-width: 767px) {
+  .audit-cards,
+  .audit-cards tbody,
+  .audit-cards td {
+    display: block;
+    width: 100%;
+  }
+  .audit-cards thead {
+    display: none;
+  }
+  .audit-cards tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 0.75rem;
+    row-gap: 0.25rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .audit-cards td {
+    padding: 0;
+    border-bottom: none;
+    width: auto;
+  }
+  .audit-cards td:nth-child(1) {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .audit-cards td:nth-child(3) {
+    grid-column: 2;
+    grid-row: 1;
+    text-align: right;
+  }
+  .audit-cards td:nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .audit-cards td:nth-child(5) {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+  .audit-cards td:nth-child(4) {
+    grid-column: 1 / -1;
+    grid-row: 4;
+  }
+  .audit-cards td.audit-empty {
+    display: none;
+  }
 }
 
 /* Fade-in animation */
@@ -892,5 +1004,60 @@ html.app-no-scroll body.app-vv-shifted {
      itself, which now applies to every page. */
   .app-canvas.app-canvas-fill {
     background-image: none;
+  }
+}
+
+/* Profile pages: brief highlight when a photoboard tile or jump chip scrolls
+   to a card. Fades out on its own; the class is removed by the timeout in
+   scrollToSection (components/ProfileKit.tsx). */
+.profile-flash {
+  animation: profile-flash 1.6s ease-out;
+}
+@keyframes profile-flash {
+  0% {
+    box-shadow: 0 0 0 3px #f59e0b;
+    background-color: color-mix(in oklab, #f59e0b 22%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+    background-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .profile-flash {
+    animation: none;
+    outline: 3px solid #f59e0b;
+  }
+}
+
+/* NEARBY LOCATION: a diamond 100 m or closer pulses a red ring. */
+.nearby-diamond-close::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 3px solid #dc2626;
+  opacity: 0;
+  pointer-events: none;
+  animation: nearby-pulse 1.8s ease-out infinite;
+}
+@keyframes nearby-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.7);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nearby-diamond-close::before {
+    animation: none;
+    opacity: 0.6;
   }
 }

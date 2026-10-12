@@ -19,6 +19,10 @@ import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
 import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 import { addressMatchKey } from "@shared/addressMatchKey";
+import {
+  pickProfilePhoto,
+  type ProfilePhotoCandidate,
+} from "@shared/profilePhoto";
 import { normaliseTargetBackground } from "@shared/targetBackground";
 import { isLoggedIn, type TeamMapVisibility } from "@shared/teamMap";
 import { aliasMentionCompatible } from "./personAliasMatch";
@@ -2514,6 +2518,7 @@ export async function getPersonPhotosByAddress(operationIds: number[]): Promise<
       url: string;
       personLabel: string;
       createdAt: Date | null;
+      isMain: boolean;
     }>;
   }>
 > {
@@ -2615,6 +2620,7 @@ export async function getPersonPhotosByAddress(operationIds: number[]): Promise<
       category: attachmentEntityLinks.category,
       targetId: attachmentEntityLinks.targetId,
       entityKey: attachmentEntityLinks.entityKey,
+      fromRegistry: attachmentEntityLinks.fromRegistry,
     })
     .from(attachmentEntityLinks)
     .where(
@@ -2656,13 +2662,32 @@ export async function getPersonPhotosByAddress(operationIds: number[]): Promise<
     .orderBy(desc(rowAttachments.createdAt));
   const photoById = new Map(photoRows.map(p => [p.id, p]));
 
-  const byAddress = new Map<
-    string,
-    Map<
-      number,
-      { id: number; url: string; personLabel: string; createdAt: Date | null }
-    >
-  >();
+  type MapPhoto = {
+    id: number;
+    url: string;
+    personLabel: string;
+    createdAt: Date | null;
+    /** The person's main profile photo (registry photo first — see
+     * shared/profilePhoto.ts); the map's Images viewer leads with these. */
+    isMain: boolean;
+  };
+  // Each person's main photo, picked from everything linked to them.
+  const candidatesByPerson = new Map<string, ProfilePhotoCandidate[]>();
+  const personKeyOf = (l: (typeof links)[number]) =>
+    l.category === "target" ? `t:${l.targetId}` : `a:${l.entityKey}`;
+  for (const l of links) {
+    const photo = photoById.get(l.attachmentId);
+    if (!photo) continue;
+    const key = personKeyOf(l);
+    const list = candidatesByPerson.get(key) ?? [];
+    list.push({
+      id: photo.id,
+      fromRegistry: l.fromRegistry,
+      createdAt: photo.createdAt,
+    });
+    candidatesByPerson.set(key, list);
+  }
+  const byAddress = new Map<string, Map<number, MapPhoto>>();
   for (const l of links) {
     const photo = photoById.get(l.attachmentId);
     if (!photo) continue;
@@ -2672,26 +2697,38 @@ export async function getPersonPhotosByAddress(operationIds: number[]): Promise<
         : associatePeople.get(l.entityKey ?? "");
     if (!person) continue;
     const forAddress =
-      byAddress.get(person.addressKey) ??
-      new Map<
-        number,
-        { id: number; url: string; personLabel: string; createdAt: Date | null }
-      >();
+      byAddress.get(person.addressKey) ?? new Map<number, MapPhoto>();
+    const personMain = pickProfilePhoto(
+      candidatesByPerson.get(personKeyOf(l)) ?? []
+    );
+    const isMain = personMain?.id === photo.id;
+    const seen = forAddress.get(photo.id);
     // One photo linked to a target AND the same person as an associate shows
-    // once.
-    if (!forAddress.has(photo.id))
+    // once (and counts as main if it is main for either).
+    if (seen) {
+      if (isMain) seen.isMain = true;
+    } else {
       forAddress.set(photo.id, {
         id: photo.id,
         url: photo.url,
         personLabel: person.label,
         createdAt: photo.createdAt ?? null,
+        isMain,
       });
+    }
     byAddress.set(person.addressKey, forAddress);
   }
   return Array.from(byAddress, ([addressKey, photos]) => ({
     addressKey,
-    photos: Array.from(photos.values()).sort(
-      (a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)
+    // Main profile photos first (by name), then the rest newest first.
+    photos: Array.from(photos.values()).sort((a, b) =>
+      a.isMain !== b.isMain
+        ? a.isMain
+          ? -1
+          : 1
+        : a.isMain
+          ? a.personLabel.localeCompare(b.personLabel)
+          : (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)
     ),
   }));
 }

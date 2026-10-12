@@ -37,6 +37,9 @@ export function ImagesPip({
     url: string;
     personLabel: string;
     createdAt: string | number | Date | null;
+    /** The person's main profile photo (the registry's first) — these lead
+     * the viewer, ahead of the running-sheet photos. */
+    isMain?: boolean;
   }>;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -59,20 +62,25 @@ export function ImagesPip({
     personLabel?: string;
   }>;
   const rowPhotoIds = new Set(rowPhotos.map(p => p.id));
+  const personEntries = (personPhotos ?? [])
+    .filter(p => !rowPhotoIds.has(p.id))
+    .map(p => ({
+      id: p.id,
+      url: p.url,
+      rowDate: null,
+      rowTime: null,
+      memberCINs: [] as string[],
+      isManualUpload: true,
+      createdAt: p.createdAt,
+      personLabel: p.personLabel,
+      isMain: !!p.isMain,
+    }));
+  // Main profile photos first, then the running-sheet photos, then any other
+  // photos of the people who live here.
   const photos = [
-    ...rowPhotos,
-    ...(personPhotos ?? [])
-      .filter(p => !rowPhotoIds.has(p.id))
-      .map(p => ({
-        id: p.id,
-        url: p.url,
-        rowDate: null,
-        rowTime: null,
-        memberCINs: [] as string[],
-        isManualUpload: true,
-        createdAt: p.createdAt,
-        personLabel: p.personLabel,
-      })),
+    ...personEntries.filter(p => p.isMain),
+    ...rowPhotos.map(p => ({ ...p, isMain: false })),
+    ...personEntries.filter(p => !p.isMain),
   ];
   const count = photos.length;
 
@@ -321,9 +329,11 @@ export function ImagesPip({
             )}
             {current && (
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-2.5 pt-4 pb-1.5 text-[10px] text-white/90 truncate pointer-events-none">
-                {current.personLabel
-                  ? `${current.personLabel} · ${formatAttachmentBanner(current)}`
-                  : formatAttachmentBanner(current)}
+                {current.isMain
+                  ? `${current.personLabel} · Profile photo`
+                  : current.personLabel
+                    ? `${current.personLabel} · ${formatAttachmentBanner(current)}`
+                    : formatAttachmentBanner(current)}
               </div>
             )}
           </>

@@ -13,14 +13,12 @@ import { labelledImportedBackground } from "@shared/targetBackground";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -45,6 +43,8 @@ import {
   Check,
   Loader2,
   Image as ImageIcon,
+  FileText,
+  Target as TargetIcon,
 } from "lucide-react";
 import {
   TargetIdentityFields,
@@ -92,8 +92,42 @@ import type {
   DocumentImportPrefill,
   StagedImage,
 } from "@/components/ImportTargetDocumentDialog";
-import { FORM_TONES } from "@/lib/formKit";
+import {
+  FORM_NESTED_PANEL,
+  FORM_NESTED_TITLE,
+  FORM_TONES,
+} from "@/lib/formKit";
 import { AddTargetBackgroundPanel } from "@/components/RegistryBackgroundPanel";
+import {
+  AddAnotherButton,
+  NoneBox,
+  SectionPanel,
+  StatusMark,
+  StepNote,
+  StepTabs,
+  type TabMark,
+  type TabSpec,
+} from "@/components/AddTargetKit";
+import {
+  STEP_LABEL,
+  STEP_ORDER,
+  addressHasDetail,
+  canEnterStep,
+  firstOpenStep,
+  personAddressProblem,
+  personIsBlank,
+  personIsDone,
+  personVehicleProblem,
+  sectionStatus,
+  stepProblem,
+  stepStatus,
+  targetAddressProblem,
+  targetVehicleProblem,
+  type PersonLike,
+  type StepKey,
+  type StepsInput,
+  vehicleIsBlank,
+} from "@/lib/addTargetSteps";
 import { cn } from "@/lib/utils";
 
 // Referenced only for the merge dialog's incoming.wildFields shape — Wild
@@ -188,6 +222,10 @@ export interface StagedAssociate {
    * target's own (live, as it's typed). Editing the resident's address
    * flips this off so it can differ. */
   addressFollowsTarget?: boolean;
+  /** "No known address" / "No known vehicle" ticked on this person — the
+   * section is complete with nothing entered (see lib/addTargetSteps.ts). */
+  noAddress?: boolean;
+  noVehicle?: boolean;
   /** Set when the officer confirmed the Surname-blur match is the same
    * person as this existing Target — saved via createLinkedFromTarget. */
   linkedTargetId?: number | null;
@@ -298,6 +336,40 @@ export function readImageFile(file: File): Promise<{
     reader.onerror = () => reject(new Error("Could not read that file."));
     reader.readAsDataURL(file);
   });
+}
+
+// What one Addresses / Vehicles section needs to render — the same shape
+// serves the target itself and every resident / associate card (see
+// renderAddressSection / renderVehicleSection inside AddTargetDialog).
+interface AddressSectionConfig {
+  /** "target" or a staged person's key — scopes the photos on its entries. */
+  ownerKey: string;
+  title: string;
+  firstTitle: string;
+  /** "the target", "this person" — reads in "where … lives". */
+  who: string;
+  primary: StructuredAddressParts;
+  onPrimary: (v: StructuredAddressParts) => void;
+  extras: ExtraAddress[];
+  onExtras: (next: ExtraAddress[]) => void;
+  /** The "No known address" box; null when the address IS the target. */
+  none: { checked: boolean; onChange: (on: boolean) => void } | null;
+  problem: string | null;
+  /** Residents only: "Lives at the target's address". */
+  follows?: { on: boolean; text: string; onChange: (on: boolean) => void };
+}
+interface VehicleSectionConfig {
+  ownerKey: string;
+  title: string;
+  firstTitle: string;
+  who: string;
+  primary: StructuredVehicleParts & { vehicleType: string };
+  onPrimary: (v: StructuredVehicleParts & { vehicleType: string }) => void;
+  extras: ExtraVehicle[];
+  onExtras: (next: ExtraVehicle[]) => void;
+  /** The "No known vehicles" box; null when the vehicle IS the target. */
+  none: { checked: boolean; onChange: (on: boolean) => void } | null;
+  problem: string | null;
 }
 
 export function AddTargetDialog({
@@ -411,8 +483,26 @@ export function AddTargetDialog({
   const [vehicle, setVehicle] = useState<
     StructuredVehicleParts & { vehicleType: string }
   >(() => initialVehicle ?? EMPTY_VEHICLE_PARTS);
-  const [dep, setDep] = useState("");
-  const [arr, setArr] = useState("");
+  // Which tab is showing, and the "nothing to add" boxes that complete a
+  // section with no entries (see lib/addTargetSteps.ts for the rules).
+  const [step, setStep] = useState<StepKey>("target");
+  const [noAddress, setNoAddress] = useState(false);
+  const [noVehicle, setNoVehicle] = useState(false);
+  const [noResidents, setNoResidents] = useState(false);
+  const [noAssociates, setNoAssociates] = useState(false);
+  const [noBackground, setNoBackground] = useState(false);
+  // Which resident / associate card is open on its tab.
+  const [selectedKey, setSelectedKey] = useState<
+    Record<"resident" | "associate", string | null>
+  >({ resident: null, associate: null });
+  // Next was pressed while blocked (the red line gets an outline), and the
+  // "that tab is locked" message — each remembered against what was wrong
+  // at the time so it clears itself once that changes.
+  const [flashFor, setFlashFor] = useState<string | null>(null);
+  const [lockedNote, setLockedNote] = useState<{
+    text: string;
+    open: StepKey | null;
+  } | null>(null);
   const [registryBackground, setRegistryBackground] = useState("");
   // A document import's narrative is copied into the Background box, labelled
   // "From <Operation> document:" so a target imported from several operations'
@@ -541,6 +631,7 @@ export function AddTargetDialog({
     StagedImage["linkTo"] | null
   >(null);
   const manualImageInputRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   const triggerManualImageUpload = (linkTo: StagedImage["linkTo"]) => {
     setManualImageTarget(linkTo);
@@ -634,8 +725,15 @@ export function AddTargetDialog({
     setShowMdlError(false);
     setAddress(EMPTY_ADDRESS_PARTS);
     setVehicle(EMPTY_VEHICLE_PARTS);
-    setDep("");
-    setArr("");
+    setStep("target");
+    setNoAddress(false);
+    setNoVehicle(false);
+    setNoResidents(false);
+    setNoAssociates(false);
+    setNoBackground(false);
+    setSelectedKey({ resident: null, associate: null });
+    setFlashFor(null);
+    setLockedNote(null);
     setExtraAddresses([]);
     setExtraVehicles([]);
     setAssociates([]);
@@ -720,8 +818,8 @@ export function AddTargetDialog({
       hb: hb || null,
       v1f: v1f || null,
       v1: v1 || null,
-      dep: dep || null,
-      arr: arr || null,
+      dep: null,
+      arr: null,
       extraAddresses: JSON.stringify(
         extraAddresses.map(ea => ({ ...ea, ...composeAddress(ea) }))
       ),
@@ -853,6 +951,39 @@ export function AddTargetDialog({
     return idByKey;
   };
 
+  // The full label (what the Vehicle / Location profile keys its photos by)
+  // of the vehicle or address a staged photo belongs to; "" when that entry
+  // hasn't composed into a full vehicle/address.
+  const resolveItemLabel = (
+    l: Extract<StagedImage["linkTo"], { type: "item" }>
+  ): string => {
+    const staged =
+      l.ownerKey === "target"
+        ? null
+        : (associates.find(a => a.key === l.ownerKey) ?? null);
+    if (l.ownerKey !== "target" && !staged) return "";
+    if (l.category === "vehicle") {
+      const item =
+        l.itemKey === "primary"
+          ? staged
+            ? staged.vehicle
+            : vehicle
+          : (staged ? (staged.extraVehicles ?? []) : extraVehicles).find(
+              x => x.id === l.itemKey
+            );
+      return item ? composeVehicle(item).full : "";
+    }
+    const item =
+      l.itemKey === "primary"
+        ? staged
+          ? effectiveStaged(staged).address
+          : address
+        : (staged ? (staged.extraAddresses ?? []) : extraAddresses).find(
+            x => x.id === l.itemKey
+          );
+    return item ? composeAddress(item).full : "";
+  };
+
   // Uploads every image the officer kept on the import review screen
   // against the just-saved target's Operation, then runs on-device face
   // recognition (server/faceRecognition/ — no external AI/LLM call, see
@@ -932,6 +1063,36 @@ export function AddTargetDialog({
         let linkedTargetId: number | undefined = targetId;
         let entityLabel = targetEntityLabel;
         const linkTo = img.linkTo;
+        // A photo of one vehicle / address: linked by that vehicle's or
+        // address's own label (the same way the Vehicle / Location profile
+        // reads its photos). Falls back to the target if the entry never
+        // composed into a full label, so the photo isn't lost.
+        if (linkTo.type === "item") {
+          const itemLabel = resolveItemLabel(linkTo);
+          const uploadedItem = await uploadImageMut.mutateAsync({
+            operationId: opId,
+            dataBase64: img.dataBase64,
+            mimeType: img.mimeType,
+            fileName: `${linkTo.category}-photo-${img.key}.png`,
+          });
+          await linkToEntityMut.mutateAsync(
+            itemLabel
+              ? {
+                  attachmentId: uploadedItem.id,
+                  category: linkTo.category,
+                  entityLabel: itemLabel,
+                  fromRegistry: true,
+                }
+              : {
+                  attachmentId: uploadedItem.id,
+                  category: "target" as const,
+                  targetId,
+                  entityLabel: targetEntityLabel,
+                  fromRegistry: true,
+                }
+          );
+          continue;
+        }
         if (linkTo.type === "associate") {
           const associateId = associateIdByKey[linkTo.associateKey];
           const staged = associates.find(a => a.key === linkTo.associateKey);
@@ -1024,8 +1185,7 @@ export function AddTargetDialog({
 
   // Builds the create payload for "Yes, same person — link and copy": every
   // shared identity field comes from the matched Associate record, not
-  // whatever the officer had typed in this form — DEP/ARR (target-only,
-  // an associate has no equivalent) stay whatever the officer entered here.
+  // whatever the officer had typed in this form.
   const buildLinkedPayload = (associate: {
     id: number;
     name: string;
@@ -1073,8 +1233,8 @@ export function AddTargetDialog({
     hb: associate.hb,
     v1f: associate.v1f,
     v1: associate.v1,
-    dep: dep || null,
-    arr: arr || null,
+    dep: null,
+    arr: null,
     extraAddresses: associate.extraAddresses ?? "[]",
     extraVehicles: associate.extraVehicles ?? "[]",
     firstNames: associate.firstNames,
@@ -1441,8 +1601,8 @@ export function AddTargetDialog({
       hb,
       v1f,
       v1,
-      dep,
-      arr,
+      dep: "",
+      arr: "",
       extraVehicles: extraVehicles.map(ev => {
         const c = composeVehicle(ev);
         return { full: c.full, short: c.short };
@@ -1460,163 +1620,223 @@ export function AddTargetDialog({
     };
   };
 
-  // The Address and Vehicle sections split into their PRIMARY box (one
-  // element, placed side by side with Person Identity in the responsive
-  // grid below) and their dynamic extras (a variable-length list, always
-  // full-width beneath the grid regardless of screen size) — whichever one
-  // is this target's PRIMARY identity (Home Address/Location Identity for
-  // a Location target, Vehicle 1/Vehicle Identity for a Vehicle target)
-  // renders first, instead of always in the same fixed Address-then-Vehicle
-  // order that only made sense when a target was always a person and both
-  // were just optional attributes of them.
-  const addressPrimaryBox = (
-    <div className={cn(FORM_TONES.address.panel, "p-3")}>
-      <p className={FORM_TONES.address.band}>
-        <Home className="w-3 h-3" />
-        {targetType === "location" ? "Location Identity" : "Home Address"}
-      </p>
-      <TargetAddressFields value={address} onChange={setAddress} />
-    </div>
-  );
+  // ── Sections shared by the target and by every resident / associate ──
+  // Each section opens with its first form already on screen (no Add button
+  // to hunt for), has an "Add another …" button at its bottom, and is only
+  // complete once filled in or its "nothing to add" box is ticked (the rules
+  // live in lib/addTargetSteps.ts). Every vehicle and address can have a photo.
+  const itemPhoto = (
+    category: "vehicle" | "location",
+    ownerKey: string,
+    itemKey: string
+  ) =>
+    manualImageUploadSection(
+      { type: "item", category, ownerKey, itemKey },
+      "border-border"
+    );
+  const dropItemImages = (ownerKey: string, itemKey: string) =>
+    setManualImages(v =>
+      v.filter(
+        img =>
+          !(
+            img.linkTo.type === "item" &&
+            img.linkTo.ownerKey === ownerKey &&
+            img.linkTo.itemKey === itemKey
+          )
+      )
+    );
 
-  const addressExtras = (
-    <>
-      {/* Dynamic extra addresses */}
-      {extraAddresses.map((ea, i) => (
-        <div
-          key={i}
-          className={cn(FORM_TONES.address.panel, "p-3 flex flex-col gap-2")}
-        >
-          <div className={cn(FORM_TONES.address.band, "justify-between")}>
-            <span className="flex items-center gap-1.5">
-              <Home className="w-3 h-3" /> Additional Address {i + 2}
-            </span>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 text-destructive hover:text-destructive"
-              onClick={() =>
-                setExtraAddresses(v => v.filter((_, idx) => idx !== i))
-              }
-            >
-              <X className="w-3 h-3" />
-            </Button>
-          </div>
-          <TargetAddressFields
-            value={ea}
-            onChange={v =>
-              setExtraAddresses(list =>
-                list.map((item, idx) => (idx === i ? { ...item, ...v } : item))
-              )
-            }
-            label={ea.label}
-            onLabelChange={v =>
-              setExtraAddresses(list =>
-                list.map((item, idx) =>
-                  idx === i ? { ...item, label: v } : item
-                )
-              )
-            }
-          />
-          {isPartialAddress(ea) && (
-            <p className="text-xs text-destructive">
-              Missing a house number, street type or suburb — this address won't
-              save until every field is filled in.
-            </p>
-          )}
-        </div>
-      ))}
-      <Button
-        size="sm"
-        variant="outline"
-        className="gap-1.5 self-start"
-        onClick={() =>
-          setExtraAddresses(v => [
-            ...v,
-            {
-              ...EMPTY_ADDRESS_PARTS,
-              id: makeExtraId(),
-              label: "",
-              full: "",
-              short: "",
-            },
-          ])
-        }
+  const renderAddressSection = (c: AddressSectionConfig) => {
+    const following = !!c.follows?.on;
+    const noneOn = !!c.none?.checked;
+    const all = [c.primary, ...c.extras];
+    return (
+      <SectionPanel
+        icon={<Home className="w-3.5 h-3.5" />}
+        title={c.title}
+        status={following ? "done" : sectionStatus(c.problem, noneOn)}
+        count={following || noneOn ? 0 : all.filter(addressHasDetail).length}
       >
-        <Plus className="w-3.5 h-3.5" /> Add Address
-      </Button>
-    </>
-  );
-
-  const vehiclePrimaryBox = (
-    <div className={cn(FORM_TONES.vehicle.panel, "p-3")}>
-      <p className={FORM_TONES.vehicle.band}>
-        <Car className="w-3 h-3" />
-        {targetType === "vehicle" ? "Vehicle Identity" : "Vehicle 1"}
-      </p>
-      <TargetVehicleFields value={vehicle} onChange={setVehicle} />
-    </div>
-  );
-
-  const vehicleExtras = (
-    <>
-      {/* Dynamic extra vehicles */}
-      {extraVehicles.map((ev, i) => (
-        <div
-          key={i}
-          className={cn(FORM_TONES.vehicle.panel, "p-3 flex flex-col gap-2")}
-        >
-          <div className={cn(FORM_TONES.vehicle.band, "justify-between")}>
-            <span className="flex items-center gap-1.5">
-              <Car className="w-3 h-3" /> Vehicle {i + 2}
-            </span>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 text-destructive hover:text-destructive"
-              onClick={() =>
-                setExtraVehicles(v => v.filter((_, idx) => idx !== i))
-              }
-            >
-              <X className="w-3 h-3" />
-            </Button>
-          </div>
-          <TargetVehicleFields
-            value={ev}
-            onChange={v =>
-              setExtraVehicles(list =>
-                list.map((item, idx) => (idx === i ? { ...item, ...v } : item))
-              )
-            }
+        {c.follows && (
+          <NoneBox
+            checked={c.follows.on}
+            onChange={c.follows.onChange}
+            title="Lives at the target’s address"
+            hint={c.follows.text}
           />
-          {isPartialVehicle(ev) && (
-            <p className="text-xs text-destructive">
-              Missing a colour, make or model — this vehicle won't save until
-              every field is filled in.
-            </p>
-          )}
-        </div>
-      ))}
-      <Button
-        size="sm"
-        variant="outline"
-        className="gap-1.5 self-start"
-        onClick={() =>
-          setExtraVehicles(v => [
-            ...v,
-            {
-              ...EMPTY_VEHICLE_PARTS,
-              id: makeExtraId(),
-              full: "",
-              short: "",
-            },
-          ])
-        }
+        )}
+        {!following && (
+          <>
+            {c.none && (
+              <NoneBox
+                checked={c.none.checked}
+                onChange={c.none.onChange}
+                title="No known address"
+                hint={`Tick if nothing is known about where ${c.who} lives.`}
+                locked={all.some(addressHasDetail)}
+                needed={!noneOn && !!c.problem}
+              />
+            )}
+            <div
+              className={cn("flex flex-col gap-3", noneOn && "opacity-45")}
+              inert={noneOn}
+            >
+              <div className={cn(FORM_NESTED_PANEL, "p-3 flex flex-col gap-3")}>
+                <p className={cn(FORM_NESTED_TITLE, "mb-0")}>
+                  <Home className="w-3 h-3" /> {c.firstTitle}
+                </p>
+                <TargetAddressFields value={c.primary} onChange={c.onPrimary} />
+                {itemPhoto("location", c.ownerKey, "primary")}
+              </div>
+              {c.extras.map((ea, i) => (
+                <div
+                  key={ea.id}
+                  className={cn(FORM_NESTED_PANEL, "p-3 flex flex-col gap-3")}
+                >
+                  <div className="flex items-center justify-between">
+                    <p className={cn(FORM_NESTED_TITLE, "mb-0")}>
+                      <Home className="w-3 h-3" /> Address {i + 2}
+                    </p>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 text-destructive hover:text-destructive"
+                      aria-label={`Remove address ${i + 2}`}
+                      onClick={() => {
+                        c.onExtras(c.extras.filter(x => x.id !== ea.id));
+                        dropItemImages(c.ownerKey, ea.id);
+                      }}
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  </div>
+                  <TargetAddressFields
+                    value={ea}
+                    onChange={v =>
+                      c.onExtras(
+                        c.extras.map(x => (x.id === ea.id ? { ...x, ...v } : x))
+                      )
+                    }
+                    label={ea.label}
+                    onLabelChange={v =>
+                      c.onExtras(
+                        c.extras.map(x =>
+                          x.id === ea.id ? { ...x, label: v } : x
+                        )
+                      )
+                    }
+                  />
+                  {itemPhoto("location", c.ownerKey, ea.id)}
+                </div>
+              ))}
+              <AddAnotherButton
+                disabled={noneOn}
+                onClick={() =>
+                  c.onExtras([
+                    ...c.extras,
+                    {
+                      ...EMPTY_ADDRESS_PARTS,
+                      id: makeExtraId(),
+                      label: "",
+                      full: "",
+                      short: "",
+                    },
+                  ])
+                }
+              >
+                Add another address
+              </AddAnotherButton>
+            </div>
+          </>
+        )}
+      </SectionPanel>
+    );
+  };
+
+  const renderVehicleSection = (c: VehicleSectionConfig) => {
+    const noneOn = !!c.none?.checked;
+    const all = [c.primary, ...c.extras];
+    return (
+      <SectionPanel
+        icon={<Car className="w-3.5 h-3.5" />}
+        title={c.title}
+        status={sectionStatus(c.problem, noneOn)}
+        count={noneOn ? 0 : all.filter(v => !vehicleIsBlank(v)).length}
       >
-        <Plus className="w-3.5 h-3.5" /> Add Vehicle
-      </Button>
-    </>
-  );
+        {c.none && (
+          <NoneBox
+            checked={c.none.checked}
+            onChange={c.none.onChange}
+            title="No known vehicles"
+            hint={`Tick if ${c.who} has no vehicle to record.`}
+            locked={all.some(v => !vehicleIsBlank(v))}
+            needed={!noneOn && !!c.problem}
+          />
+        )}
+        <div
+          className={cn("flex flex-col gap-3", noneOn && "opacity-45")}
+          inert={noneOn}
+        >
+          <div className={cn(FORM_NESTED_PANEL, "p-3 flex flex-col gap-3")}>
+            <p className={cn(FORM_NESTED_TITLE, "mb-0")}>
+              <Car className="w-3 h-3" /> {c.firstTitle}
+            </p>
+            <TargetVehicleFields value={c.primary} onChange={c.onPrimary} />
+            {itemPhoto("vehicle", c.ownerKey, "primary")}
+          </div>
+          {c.extras.map((ev, i) => (
+            <div
+              key={ev.id}
+              className={cn(FORM_NESTED_PANEL, "p-3 flex flex-col gap-3")}
+            >
+              <div className="flex items-center justify-between">
+                <p className={cn(FORM_NESTED_TITLE, "mb-0")}>
+                  <Car className="w-3 h-3" /> Vehicle {i + 2}
+                </p>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 text-destructive hover:text-destructive"
+                  aria-label={`Remove vehicle ${i + 2}`}
+                  onClick={() => {
+                    c.onExtras(c.extras.filter(x => x.id !== ev.id));
+                    dropItemImages(c.ownerKey, ev.id);
+                  }}
+                >
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+              <TargetVehicleFields
+                value={ev}
+                onChange={v =>
+                  c.onExtras(
+                    c.extras.map(x => (x.id === ev.id ? { ...x, ...v } : x))
+                  )
+                }
+              />
+              {itemPhoto("vehicle", c.ownerKey, ev.id)}
+            </div>
+          ))}
+          <AddAnotherButton
+            disabled={noneOn}
+            onClick={() =>
+              c.onExtras([
+                ...c.extras,
+                {
+                  ...EMPTY_VEHICLE_PARTS,
+                  id: makeExtraId(),
+                  full: "",
+                  short: "",
+                },
+              ])
+            }
+          >
+            Add another vehicle
+          </AddAnotherButton>
+        </div>
+      </SectionPanel>
+    );
+  };
 
   // A staged resident that still follows the target takes the target's
   // current Home Address (business name excluded — on an associate card it
@@ -1761,7 +1981,11 @@ export function AddTargetDialog({
     setManualImages(v =>
       v.filter(
         img =>
-          !(img.linkTo.type === "associate" && img.linkTo.associateKey === key)
+          !(
+            (img.linkTo.type === "associate" &&
+              img.linkTo.associateKey === key) ||
+            (img.linkTo.type === "item" && img.linkTo.ownerKey === key)
+          )
       )
     );
   };
@@ -1770,270 +1994,311 @@ export function AddTargetDialog({
     associate: {
       heading: "Associates",
       cardLabel: "Associate",
-      addLabel: "Add Associate",
+      addLabel: "Add another associate",
+      noneTitle: "No associates",
+      noneHint: "Tick if the target has no known associates.",
       tone: "associate" as const,
-      headingText: "text-violet-700 dark:text-violet-400",
       photoBorder: "border-violet-500",
+      pill: "border-violet-600",
     },
     resident: {
       heading: "Other Home Address Residents",
       cardLabel: "Resident",
-      addLabel: "Add Resident",
+      addLabel: "Add another resident",
+      noneTitle: "No other residents",
+      noneHint: "Tick if nobody else lives at the target’s home address.",
       tone: "resident" as const,
-      headingText: "text-rose-700 dark:text-rose-400",
       photoBorder: "border-rose-500",
+      pill: "border-rose-600",
     },
   } as const;
 
-  function renderStagedSection(kind: "associate" | "resident") {
-    const cfg = STAGED_KINDS[kind];
-    const inSection = associates.filter(
-      a => (a.relationship ?? "associate") === kind
+  const blankStaged = (kind: "associate" | "resident"): StagedAssociate => ({
+    key: makeExtraId(),
+    relationship: kind,
+    addressFollowsTarget: kind === "resident",
+    identity: EMPTY_NAME_PARTS,
+    address: EMPTY_ADDRESS_PARTS,
+    vehicle: EMPTY_VEHICLE_PARTS,
+  });
+
+  const stagedOfKind = (kind: "associate" | "resident") =>
+    associates.filter(a => (a.relationship ?? "associate") === kind);
+
+  // A person's name for pills, cards and messages ("Paul HOGAN", or the
+  // business that stands in for it).
+  const stagedName = (a: StagedAssociate): string => {
+    const first = a.identity.firstNames.trim();
+    const sur = a.identity.surname.trim().toUpperCase();
+    return (
+      `${first} ${sur}`.trim() || (a.address.businessName ?? "").trim() || ""
     );
-    // A resident section with nothing staged still shows (with its Add
-    // button) so the option is discoverable, same as Associates.
+  };
+
+  // Everything the step rules need, in one place (lib/addTargetSteps.ts).
+  const stepsInput: StepsInput = {
+    targetType,
+    hasOperation: !!operation,
+    identity,
+    mdlChosen: !mdlMissing(status),
+    address,
+    extraAddresses,
+    noAddress,
+    vehicle,
+    extraVehicles,
+    noVehicle,
+    residents: stagedOfKind("resident"),
+    noResidents,
+    associates: stagedOfKind("associate"),
+    noAssociates,
+    background: registryBackground,
+    noBackground,
+    personLabel: (p, kind) =>
+      stagedName(p as StagedAssociate) ||
+      `New ${kind === "resident" ? "resident" : "associate"}`,
+  };
+
+  // Every section of a kind opens with one blank person already showing, so
+  // the form is there to fill in (or the "none" box to tick) without hunting
+  // for an Add button. Ticking "none" removes it; unticking brings it back.
+  useEffect(() => {
+    if (!open) return;
+    if (step !== "residents" && step !== "associates") return;
+    const kind = step === "residents" ? "resident" : "associate";
+    if (step === "residents" ? noResidents : noAssociates) return;
+    if (stagedOfKind(kind).length > 0) return;
+    const fresh = blankStaged(kind);
+    setAssociates(v => [...v, fresh]);
+    setSelectedKey(k => ({ ...k, [kind]: fresh.key }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, step, associates, noResidents, noAssociates]);
+
+  const hasStagedPhoto = (key: string) =>
+    manualImages.some(
+      img =>
+        (img.linkTo.type === "associate" && img.linkTo.associateKey === key) ||
+        (img.linkTo.type === "item" && img.linkTo.ownerKey === key)
+    );
+
+  const setNoneForKind = (kind: "associate" | "resident", on: boolean) => {
+    if (kind === "resident") setNoResidents(on);
+    else setNoAssociates(on);
+    if (!on) return;
+    // The forms are blank (the box can't be ticked otherwise) — drop them.
+    const keys = new Set(stagedOfKind(kind).map(a => a.key));
+    setAssociates(v => v.filter(a => !keys.has(a.key)));
+  };
+
+  function renderPersonCard(
+    kind: "associate" | "resident",
+    assoc: StagedAssociate,
+    index: number
+  ) {
+    const cfg = STAGED_KINDS[kind];
+    const nameOk = !!composeAssociateName(
+      assoc.identity,
+      assoc.address.businessName
+    ).name;
+    const targetAddressText = composeAddress(address).full
+      ? `${address.houseNo} ${address.streetName} ${address.streetType}, ${address.suburb}`
+      : "The target’s address isn’t filled in yet";
     return (
       <div
-        className={cn(
-          FORM_TONES[cfg.tone].panel,
-          "mt-2 p-3 flex flex-col gap-2"
-        )}
+        key={assoc.key}
+        className={cn(FORM_TONES[cfg.tone].panel, "p-3 flex flex-col gap-3")}
       >
-        <p className={FORM_TONES[cfg.tone].band}>
-          <Users className="w-3.5 h-3.5" /> {cfg.heading}
-        </p>
-        {inSection.map((assoc, i) => {
-          const extraAddrs = assoc.extraAddresses ?? [];
-          const extraVehs = assoc.extraVehicles ?? [];
-          return (
-            <div
-              key={assoc.key}
-              className="rounded-md border border-border bg-muted/40 p-3 flex flex-col gap-3"
-            >
-              <div className="flex items-center justify-between">
-                <span
-                  className={`text-xs font-bold ${cfg.headingText} uppercase tracking-wide flex items-center gap-1.5`}
-                >
-                  <Users className="w-3 h-3" /> {cfg.cardLabel} {i + 1}
-                </span>
-                <div className="flex items-center gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 px-2 text-xs"
-                    onClick={() =>
-                      patchStaged(assoc.key, {
-                        relationship:
-                          kind === "resident" ? "associate" : "resident",
-                      })
-                    }
-                  >
-                    {kind === "resident"
-                      ? "Move to Associates"
-                      : "Move to Residents"}
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6 text-destructive hover:text-destructive"
-                    onClick={() => removeStaged(assoc.key)}
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
-              </div>
-              <TargetIdentityFields
-                value={assoc.identity}
-                onChange={v => patchStaged(assoc.key, { identity: v })}
-                onSurnameBlur={() => checkStagedNameOnBlur(assoc.key)}
-              />
-              {manualImageUploadSection(
-                { type: "associate", associateKey: assoc.key },
-                cfg.photoBorder
-              )}
-              <div className="rounded-md border border-border bg-muted/40 p-3">
-                <p className="text-xs font-bold text-foreground/80 uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                  <Home className="w-3 h-3" /> Home Address
-                </p>
-                {assoc.addressFollowsTarget && (
-                  <p className="text-xs text-muted-foreground italic mb-2">
-                    Same as the target's Home Address — edit below to change it
-                    for this person only.
-                  </p>
-                )}
-                <TargetAddressFields
-                  value={effectiveStaged(assoc).address}
-                  onChange={v =>
-                    patchStaged(assoc.key, {
-                      address: v,
-                      addressFollowsTarget: false,
-                    })
-                  }
-                />
-              </div>
-              {extraAddrs.map((ea, ai) => (
-                <div
-                  key={ea.id}
-                  className="rounded-md border border-border bg-muted/40 p-3 flex flex-col gap-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-foreground/80 uppercase tracking-wide flex items-center gap-1.5">
-                      <Home className="w-3 h-3" /> Additional Address {ai + 2}
-                    </span>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 text-destructive hover:text-destructive"
-                      onClick={() =>
-                        patchStaged(assoc.key, {
-                          extraAddresses: extraAddrs.filter(
-                            x => x.id !== ea.id
-                          ),
-                        })
-                      }
-                    >
-                      <X className="w-3 h-3" />
-                    </Button>
-                  </div>
-                  <TargetAddressFields
-                    value={ea}
-                    onChange={v =>
-                      patchStaged(assoc.key, {
-                        extraAddresses: extraAddrs.map(x =>
-                          x.id === ea.id ? { ...x, ...v } : x
-                        ),
-                      })
-                    }
-                    label={ea.label}
-                    onLabelChange={v =>
-                      patchStaged(assoc.key, {
-                        extraAddresses: extraAddrs.map(x =>
-                          x.id === ea.id ? { ...x, label: v } : x
-                        ),
-                      })
-                    }
-                  />
-                  {isPartialAddress(ea) && (
-                    <p className="text-xs text-destructive">
-                      Missing a house number, street type or suburb — this
-                      address won't save until every field is filled in.
-                    </p>
-                  )}
-                </div>
-              ))}
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 self-start"
-                onClick={() =>
-                  patchStaged(assoc.key, {
-                    extraAddresses: [
-                      ...extraAddrs,
-                      {
-                        ...EMPTY_ADDRESS_PARTS,
-                        id: makeExtraId(),
-                        label: "",
-                        full: "",
-                        short: "",
-                      },
-                    ],
-                  })
-                }
-              >
-                <Plus className="w-3.5 h-3.5" /> Add Address
-              </Button>
-              <div className="rounded-md border border-border bg-muted/40 p-3">
-                <p className="text-xs font-bold text-foreground/80 uppercase tracking-wide flex items-center gap-1.5 mb-2">
-                  <Car className="w-3 h-3" /> Vehicle 1
-                </p>
-                <TargetVehicleFields
-                  value={assoc.vehicle}
-                  onChange={v => patchStaged(assoc.key, { vehicle: v })}
-                />
-              </div>
-              {extraVehs.map((ev, vi) => (
-                <div
-                  key={ev.id}
-                  className="rounded-md border border-border bg-muted/40 p-3 flex flex-col gap-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-foreground/80 uppercase tracking-wide flex items-center gap-1.5">
-                      <Car className="w-3 h-3" /> Vehicle {vi + 2}
-                    </span>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 text-destructive hover:text-destructive"
-                      onClick={() =>
-                        patchStaged(assoc.key, {
-                          extraVehicles: extraVehs.filter(x => x.id !== ev.id),
-                        })
-                      }
-                    >
-                      <X className="w-3 h-3" />
-                    </Button>
-                  </div>
-                  <TargetVehicleFields
-                    value={ev}
-                    onChange={v =>
-                      patchStaged(assoc.key, {
-                        extraVehicles: extraVehs.map(x =>
-                          x.id === ev.id ? { ...x, ...v } : x
-                        ),
-                      })
-                    }
-                  />
-                  {isPartialVehicle(ev) && (
-                    <p className="text-xs text-destructive">
-                      Missing a colour, make or model — this vehicle won't save
-                      until every field is filled in.
-                    </p>
-                  )}
-                </div>
-              ))}
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 self-start"
-                onClick={() =>
-                  patchStaged(assoc.key, {
-                    extraVehicles: [
-                      ...extraVehs,
-                      {
-                        ...EMPTY_VEHICLE_PARTS,
-                        id: makeExtraId(),
-                        full: "",
-                        short: "",
-                      },
-                    ],
-                  })
-                }
-              >
-                <Plus className="w-3.5 h-3.5" /> Add Vehicle
-              </Button>
-            </div>
-          );
-        })}
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5 self-start"
-          onClick={() =>
-            setAssociates(v => [
-              ...v,
-              {
-                key: makeExtraId(),
-                relationship: kind,
-                addressFollowsTarget: kind === "resident",
-                identity: EMPTY_NAME_PARTS,
-                address: EMPTY_ADDRESS_PARTS,
-                vehicle: EMPTY_VEHICLE_PARTS,
-              },
-            ])
-          }
+        <div
+          className={cn(
+            FORM_TONES[cfg.tone].band,
+            "mb-0 justify-between gap-2"
+          )}
         >
-          <Plus className="w-3.5 h-3.5" /> {cfg.addLabel}
-        </Button>
+          <span className="flex min-w-0 items-center gap-2">
+            <Users className="w-3.5 h-3.5 shrink-0" /> {cfg.cardLabel}{" "}
+            {index + 1}
+            <span className="truncate font-bold normal-case tracking-normal text-foreground">
+              {stagedName(assoc)}
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-1 normal-case tracking-normal">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-xs"
+              onClick={() =>
+                patchStaged(
+                  assoc.key,
+                  kind === "resident"
+                    ? {
+                        relationship: "associate",
+                        // Keep the address the resident was showing (the
+                        // target's) as their own.
+                        address: effectiveStaged(assoc).address,
+                        addressFollowsTarget: false,
+                      }
+                    : { relationship: "resident" }
+                )
+              }
+            >
+              {kind === "resident" ? "Move to Associates" : "Move to Residents"}
+            </Button>
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-7 w-7 text-destructive hover:text-destructive"
+              aria-label={`Remove ${cfg.cardLabel.toLowerCase()}`}
+              onClick={() => removeStaged(assoc.key)}
+            >
+              <X className="w-3 h-3" />
+            </Button>
+          </span>
+        </div>
+
+        <SectionPanel
+          icon={<User className="w-3.5 h-3.5" />}
+          title="Person"
+          status={nameOk ? "done" : "todo"}
+        >
+          <TargetIdentityFields
+            value={assoc.identity}
+            onChange={v => patchStaged(assoc.key, { identity: v })}
+            onSurnameBlur={() => checkStagedNameOnBlur(assoc.key)}
+          />
+          {manualImageUploadSection(
+            { type: "associate", associateKey: assoc.key },
+            cfg.photoBorder
+          )}
+        </SectionPanel>
+
+        {renderAddressSection({
+          ownerKey: assoc.key,
+          title: "Addresses",
+          firstTitle: "Home address",
+          who: "this person",
+          primary: assoc.address,
+          onPrimary: v =>
+            patchStaged(assoc.key, { address: v, addressFollowsTarget: false }),
+          extras: assoc.extraAddresses ?? [],
+          onExtras: next => patchStaged(assoc.key, { extraAddresses: next }),
+          none: {
+            checked: !!assoc.noAddress,
+            onChange: on => patchStaged(assoc.key, { noAddress: on }),
+          },
+          problem: personAddressProblem(assoc),
+          follows:
+            kind === "resident"
+              ? {
+                  on: !!assoc.addressFollowsTarget,
+                  text: targetAddressText,
+                  onChange: on =>
+                    patchStaged(
+                      assoc.key,
+                      on
+                        ? { addressFollowsTarget: true, noAddress: false }
+                        : {
+                            addressFollowsTarget: false,
+                            // Start from the target's address so only the
+                            // difference needs typing.
+                            address: { ...address, businessName: "" },
+                          }
+                    ),
+                }
+              : undefined,
+        })}
+
+        {renderVehicleSection({
+          ownerKey: assoc.key,
+          title: "Vehicles",
+          firstTitle: "Vehicle 1",
+          who: "this person",
+          primary: assoc.vehicle,
+          onPrimary: v => patchStaged(assoc.key, { vehicle: v }),
+          extras: assoc.extraVehicles ?? [],
+          onExtras: next => patchStaged(assoc.key, { extraVehicles: next }),
+          none: {
+            checked: !!assoc.noVehicle,
+            onChange: on => patchStaged(assoc.key, { noVehicle: on }),
+          },
+          problem: personVehicleProblem(assoc),
+        })}
+      </div>
+    );
+  }
+
+  // The Residents and Associates tabs: the "nothing to add" box, then a grid
+  // of buttons (one per person, plus "Add another"), then the chosen
+  // person's card with its first form already open.
+  function renderPeopleStep(kind: "associate" | "resident") {
+    const cfg = STAGED_KINDS[kind];
+    const list = stagedOfKind(kind);
+    const none = kind === "resident" ? noResidents : noAssociates;
+    const current = list.find(a => a.key === selectedKey[kind]) ?? list[0];
+    const locked = list.some(a => !personIsBlank(a) || hasStagedPhoto(a.key));
+    const problem = stepProblem(
+      stepsInput,
+      kind === "resident" ? "residents" : "associates"
+    );
+    return (
+      <div className="flex flex-col gap-3">
+        <NoneBox
+          checked={none}
+          onChange={on => setNoneForKind(kind, on)}
+          title={cfg.noneTitle}
+          hint={cfg.noneHint}
+          locked={locked}
+          lockedHint="Clear the entries below to tick this."
+          needed={!none && !!problem}
+        />
+        <div
+          className={cn("flex flex-col gap-3", none && "opacity-45")}
+          inert={none}
+        >
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {list.map(a => {
+              const isCurrent = current?.key === a.key;
+              const addrText = a.addressFollowsTarget
+                ? "At the target’s address"
+                : a.noAddress
+                  ? "No known address"
+                  : addressHasDetail(a.address)
+                    ? `${a.address.houseNo} ${a.address.streetName}, ${a.address.suburb}`.trim()
+                    : "No address yet";
+              return (
+                <button
+                  key={a.key}
+                  type="button"
+                  onClick={() => setSelectedKey(k => ({ ...k, [kind]: a.key }))}
+                  className={cn(
+                    "flex min-h-[3.25rem] items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2 text-left transition-colors hover:bg-muted/50",
+                    isCurrent ? cn("border-2", cfg.pill) : "border-border"
+                  )}
+                >
+                  <span className="flex min-w-0 flex-col">
+                    <b className="truncate text-sm">
+                      {stagedName(a) || `New ${cfg.cardLabel.toLowerCase()}`}
+                    </b>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {addrText}
+                    </span>
+                  </span>
+                  <StatusMark mark={personIsDone(a) ? "done" : "todo"} />
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => {
+                const next = blankStaged(kind);
+                setAssociates(v => [...v, next]);
+                setSelectedKey(k => ({ ...k, [kind]: next.key }));
+              }}
+              className="flex min-h-[3.25rem] items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-border bg-card px-3 py-2 text-sm font-bold transition-colors hover:bg-muted/50"
+            >
+              <Plus className="h-4 w-4" /> {cfg.addLabel}
+            </button>
+          </div>
+          {current && renderPersonCard(kind, current, list.indexOf(current))}
+        </div>
       </div>
     );
   }
@@ -2041,6 +2306,8 @@ export function AddTargetDialog({
   // Who a staged photo is of, for the name printed under its thumbnail.
   const photoOwnerLabel = (linkTo: StagedImage["linkTo"]): string => {
     if (linkTo.type === "existingAssociate") return linkTo.entityLabel;
+    if (linkTo.type === "item")
+      return linkTo.category === "vehicle" ? "This vehicle" : "This address";
     if (linkTo.type === "associate") {
       const staged = associates.find(a => a.key === linkTo.associateKey);
       if (staged) {
@@ -2064,12 +2331,22 @@ export function AddTargetDialog({
     linkTo: StagedImage["linkTo"],
     accentBorderClass: string
   ) {
-    const matches = (img: StagedImage) =>
-      linkTo.type === "target"
-        ? img.linkTo.type === "target"
-        : img.linkTo.type === "associate" &&
-          linkTo.type === "associate" &&
-          img.linkTo.associateKey === linkTo.associateKey;
+    const matches = (img: StagedImage) => {
+      if (linkTo.type === "target") return img.linkTo.type === "target";
+      if (linkTo.type === "associate")
+        return (
+          img.linkTo.type === "associate" &&
+          img.linkTo.associateKey === linkTo.associateKey
+        );
+      if (linkTo.type === "item")
+        return (
+          img.linkTo.type === "item" &&
+          img.linkTo.category === linkTo.category &&
+          img.linkTo.ownerKey === linkTo.ownerKey &&
+          img.linkTo.itemKey === linkTo.itemKey
+        );
+      return false;
+    };
     const staged = manualImages.filter(matches);
     return (
       <div className="flex flex-col gap-2">
@@ -2117,6 +2394,283 @@ export function AddTargetDialog({
     );
   }
 
+  // ── Tabs, footer and what each one says ──
+  const openStep = firstOpenStep(stepsInput);
+  const stepIndex = STEP_ORDER.indexOf(step);
+  const stepIsLast = stepIndex === STEP_ORDER.length - 1;
+  const stepBlocker = stepProblem(stepsInput, step);
+  const allDone = openStep === null;
+  const TAB_ICONS: Record<StepKey, React.ReactNode> = {
+    target: <TargetIcon className="h-4 w-4" />,
+    residents: <Users className="h-4 w-4" />,
+    associates: <Users className="h-4 w-4" />,
+    background: <FileText className="h-4 w-4" />,
+  };
+  const tabs: TabSpec[] = STEP_ORDER.map(k => ({
+    key: k,
+    label: STEP_LABEL[k],
+    icon: TAB_ICONS[k],
+    mark: (canEnterStep(stepsInput, k)
+      ? stepStatus(stepsInput, k)
+      : "locked") as TabMark,
+  }));
+
+  let noteProblem: string | null = null;
+  let noteDone: string | null = null;
+  if (lockedNote && lockedNote.open === openStep) noteProblem = lockedNote.text;
+  else if (stepBlocker) noteProblem = stepBlocker;
+  else if (!stepIsLast)
+    noteDone = `This section is done. Next opens ${STEP_LABEL[STEP_ORDER[stepIndex + 1]]}.`;
+  else if (allDone) noteDone = "Everything is filled in. You can save.";
+  else
+    noteProblem = `Go back: ${STEP_LABEL[openStep!]} still needs filling in.`;
+  const noteFlash = noteProblem !== null && flashFor === noteProblem;
+
+  const goToStep = (k: StepKey) => {
+    if (!canEnterStep(stepsInput, k)) {
+      const text = `“${STEP_LABEL[k]}” is locked. Finish “${STEP_LABEL[openStep!]}” first.`;
+      setLockedNote({ text, open: openStep });
+      setFlashFor(text);
+      return;
+    }
+    setLockedNote(null);
+    setFlashFor(null);
+    setStep(k);
+    bodyRef.current?.scrollTo({ top: 0 });
+  };
+  const handleNextClick = () => {
+    if (stepBlocker) {
+      setFlashFor(stepBlocker);
+      return;
+    }
+    goToStep(STEP_ORDER[stepIndex + 1]);
+  };
+  const handleBackClick = () => {
+    if (stepIndex > 0) goToStep(STEP_ORDER[stepIndex - 1]);
+    else if (onBack) {
+      resetState();
+      onBack();
+    }
+  };
+  const handleSaveClick = () => {
+    if (!allDone) {
+      if (noteProblem) setFlashFor(noteProblem);
+      return;
+    }
+    handleSave();
+  };
+
+  const whoLabel =
+    targetType === "person"
+      ? `${identity.firstNames.trim()} ${identity.surname.trim().toUpperCase()}`.trim()
+      : computePrimaryIdentity(targetType, identity, address, vehicle).name;
+
+  // ── The Target tab ──
+  const personIdentityBox = (
+    <SectionPanel
+      icon={<User className="w-3.5 h-3.5" />}
+      title="Person Identity"
+      status={
+        composeTargetName(identity).name && !mdlMissing(status)
+          ? "done"
+          : "todo"
+      }
+    >
+      <TargetIdentityFields
+        value={identity}
+        onChange={setIdentity}
+        onSurnameBlur={checkNameOnBlur}
+        status={status}
+        onStatusChange={setStatus}
+        showMdlError={showMdlError}
+      />
+      {manualImageUploadSection({ type: "target" }, "border-sky-500")}
+    </SectionPanel>
+  );
+
+  const addressesBox = renderAddressSection({
+    ownerKey: "target",
+    title:
+      targetType === "location"
+        ? "Location Identity"
+        : targetType === "vehicle"
+          ? "Registered Address"
+          : "Addresses",
+    firstTitle:
+      targetType === "location"
+        ? "Location"
+        : targetType === "vehicle"
+          ? "Registered address"
+          : "Home address",
+    who: targetType === "vehicle" ? "the vehicle’s keeper" : "the target",
+    primary: address,
+    onPrimary: setAddress,
+    extras: extraAddresses,
+    onExtras: setExtraAddresses,
+    none:
+      targetType === "location"
+        ? null
+        : { checked: noAddress, onChange: setNoAddress },
+    problem: targetAddressProblem(stepsInput),
+  });
+
+  const vehiclesBox = renderVehicleSection({
+    ownerKey: "target",
+    title: targetType === "vehicle" ? "Vehicle Identity" : "Vehicles",
+    firstTitle: targetType === "vehicle" ? "Vehicle" : "Vehicle 1",
+    who: "the target",
+    primary: vehicle,
+    onPrimary: setVehicle,
+    extras: extraVehicles,
+    onExtras: setExtraVehicles,
+    none:
+      targetType === "vehicle"
+        ? null
+        : { checked: noVehicle, onChange: setNoVehicle },
+    problem: targetVehicleProblem(stepsInput),
+  });
+
+  const targetTab = (
+    <div className="flex flex-col gap-3">
+      <SectionPanel
+        icon={<TargetIcon className="w-3.5 h-3.5" />}
+        title="What is the target?"
+      >
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-foreground/80 uppercase tracking-wide">
+            Operation <span className="text-destructive">*</span>
+          </label>
+          <OperationPicker
+            value={operation}
+            onChange={setOperation}
+            disabled={saving || checkingDup}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-foreground/80 uppercase tracking-wide">
+            Target Type
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            {(
+              [
+                ["person", "Person", User],
+                ["vehicle", "Vehicle", Car],
+                ["location", "Location", MapPin],
+              ] as const
+            ).map(([value, label, Icon]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setTargetType(value)}
+                className={`flex flex-col items-center justify-center gap-1 rounded-lg border py-2.5 text-xs font-semibold transition-colors ${
+                  targetType === value
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background text-muted-foreground border-border hover:bg-muted/50"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </SectionPanel>
+
+      {targetType === "person" && personIdentityBox}
+      {targetType === "vehicle" ? (
+        <>
+          {vehiclesBox}
+          {addressesBox}
+        </>
+      ) : (
+        <>
+          {addressesBox}
+          {vehiclesBox}
+        </>
+      )}
+
+      {/* Photos — staged from a document import (see
+          ImportTargetDocumentDialog.tsx). Duplicate-photo detection only
+          has a target to compare against once dupMatch names one (see the
+          effect above) — a photo the target already has on file defaults
+          unticked, same "officer stays in control" pattern as a matched
+          associate defaulting to skip. */}
+      {(initialImages ?? []).length > 0 && (
+        <div
+          className={cn(
+            FORM_TONES.photo.panel,
+            "mt-2 p-3 flex flex-col gap-2.5"
+          )}
+        >
+          <p className={FORM_TONES.photo.band}>
+            <ImageIcon className="w-3.5 h-3.5" /> Photos
+          </p>
+          {checkingImageDuplicates && (
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Checking for photos already on file…
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2.5">
+            {(initialImages ?? []).map(img => {
+              const kept = imageChoices[img.key] ?? true;
+              const isDup = duplicateImageKeys.has(img.key);
+              const ownerLabel = photoOwnerLabel(img.linkTo);
+              return (
+                <div
+                  key={img.key}
+                  className="flex flex-col items-center gap-1 w-20"
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setImageChoices(prev => ({
+                        ...prev,
+                        [img.key]: !kept,
+                      }))
+                    }
+                    title={
+                      kept
+                        ? "Tap to discard this photo"
+                        : "Tap to keep this photo"
+                    }
+                    className={`relative rounded-md overflow-hidden border-2 transition-colors ${
+                      kept
+                        ? "border-indigo-500"
+                        : "border-border opacity-40 grayscale"
+                    }`}
+                  >
+                    <img
+                      src={`data:${img.mimeType};base64,${img.dataBase64}`}
+                      alt="Extracted from document"
+                      className="w-20 h-20 object-cover block"
+                    />
+                    {kept && (
+                      <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-indigo-500 text-white flex items-center justify-center">
+                        <Check className="h-2.5 w-2.5" />
+                      </span>
+                    )}
+                    {isDup && (
+                      <span className="absolute bottom-0 left-0 right-0 bg-amber-500 text-white text-[8px] font-bold text-center py-0.5 leading-none">
+                        ALREADY HAVE
+                      </span>
+                    )}
+                  </button>
+                  <span
+                    className="text-[10px] leading-tight text-center text-muted-foreground break-words w-full"
+                    title={ownerLabel}
+                  >
+                    {ownerLabel}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <>
       <Dialog
@@ -2126,11 +2680,15 @@ export function AddTargetDialog({
         }}
       >
         <DialogContent
-          className="md:max-w-2xl lg:max-w-5xl max-h-[90vh] overflow-y-auto wide-scrollbar bold-entered"
+          className="flex flex-col gap-0 overflow-hidden p-0 h-[min(92dvh,860px)] max-sm:h-dvh max-sm:max-h-none max-sm:max-w-full max-sm:rounded-none sm:max-w-xl md:max-w-2xl lg:max-w-5xl bold-entered"
           onInteractOutside={e => e.preventDefault()}
         >
-          <DialogHeader>
+          <DialogHeader className="shrink-0 border-b px-4 py-3 pr-12 text-left sm:px-6">
             <DialogTitle>Add Target to Registry</DialogTitle>
+            <DialogDescription className="sr-only">
+              Fill in each tab, or tick that there is nothing to add, to
+              continue.
+            </DialogDescription>
           </DialogHeader>
           <input
             ref={manualImageInputRef}
@@ -2139,252 +2697,89 @@ export function AddTargetDialog({
             className="hidden"
             onChange={handleManualImageSelected}
           />
-          <div className="flex flex-col gap-3 py-2">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-foreground/80 uppercase tracking-wide">
-                Operation <span className="text-destructive">*</span>
-              </label>
-              <OperationPicker
-                value={operation}
-                onChange={setOperation}
-                disabled={saving || checkingDup}
+          <StepTabs tabs={tabs} current={step} onSelect={goToStep} />
+          <div
+            ref={bodyRef}
+            className="flex-1 min-h-0 overflow-y-auto wide-scrollbar bg-muted/40 px-4 py-4 sm:px-6"
+          >
+            {step === "target" && targetTab}
+            {step === "residents" && renderPeopleStep("resident")}
+            {step === "associates" && renderPeopleStep("associate")}
+            {step === "background" && (
+              <AddTargetBackgroundPanel
+                value={registryBackground}
+                onChange={setRegistryBackground}
+                none={noBackground}
+                onNoneChange={on => {
+                  setNoBackground(on);
+                }}
               />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-foreground/80 uppercase tracking-wide">
-                Target Type
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setTargetType("person")}
-                  className={`flex-1 flex flex-col items-center justify-center gap-1 rounded-lg border py-2.5 text-xs font-semibold transition-colors ${
-                    targetType === "person"
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-background text-muted-foreground border-border hover:bg-muted/50"
-                  }`}
-                >
-                  <User className="w-4 h-4" />
-                  Person
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTargetType("vehicle")}
-                  className={`flex-1 flex flex-col items-center justify-center gap-1 rounded-lg border py-2.5 text-xs font-semibold transition-colors ${
-                    targetType === "vehicle"
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-background text-muted-foreground border-border hover:bg-muted/50"
-                  }`}
-                >
-                  <Car className="w-4 h-4" />
-                  Vehicle
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTargetType("location")}
-                  className={`flex-1 flex flex-col items-center justify-center gap-1 rounded-lg border py-2.5 text-xs font-semibold transition-colors ${
-                    targetType === "location"
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-background text-muted-foreground border-border hover:bg-muted/50"
-                  }`}
-                >
-                  <MapPin className="w-4 h-4" />
-                  Location
-                </button>
-              </div>
-            </div>
-
-            {/* Stacked vertically, one full-width box per row — same as the
-                dynamic extras (additional addresses/vehicles) below, so
-                the whole dialog reads as one consistent list rather than
-                the primary boxes sitting apart in a grid while everything
-                else stacks. The wider dialog width (see DialogContent's
-                className) still gives each box more breathing room on
-                iPad/laptop, just without splitting them into columns. */}
-            {targetType === "person" && (
-              <div className={cn(FORM_TONES.person.panel, "p-3")}>
-                <p className={FORM_TONES.person.band}>
-                  <User className="w-3 h-3" />
-                  Person Identity
-                </p>
-                <TargetIdentityFields
-                  value={identity}
-                  onChange={setIdentity}
-                  onSurnameBlur={checkNameOnBlur}
-                  status={status}
-                  onStatusChange={setStatus}
-                  showMdlError={showMdlError}
-                />
-                <div className="mt-3 pt-3 border-t border-sky-500/20">
-                  {manualImageUploadSection(
-                    { type: "target" },
-                    "border-sky-500"
-                  )}
-                </div>
-              </div>
             )}
-
-            {targetType === "vehicle" ? (
-              <>
-                {vehiclePrimaryBox}
-                {vehicleExtras}
-                {addressPrimaryBox}
-                {addressExtras}
-              </>
-            ) : (
-              <>
-                {addressPrimaryBox}
-                {addressExtras}
-                {vehiclePrimaryBox}
-                {vehicleExtras}
-              </>
-            )}
-
-            {/* Other Home Address Residents — people living at the target's
-                home address who aren't associates. Same staged shape as an
-                associate (and saved through the same mutation, tagged
-                relationship = "resident"), just its own rose section above
-                Associates so the two groups read as separate lists. */}
-            {renderStagedSection("resident")}
-
-            {/* Associates — same position as AssociatesSection on the
-                saved target's own card (server/db.ts requires a real
-                targetId, so these are staged here and created right after
-                the target itself saves). */}
-            {renderStagedSection("associate")}
-
-            {/* Background — freeform, same panel and position as on the
-                saved target's registry card (directly under Associates). */}
-            <AddTargetBackgroundPanel
-              value={registryBackground}
-              onChange={setRegistryBackground}
+          </div>
+          <div className="shrink-0 flex flex-col gap-2 border-t bg-muted/60 px-4 py-3 sm:px-6">
+            <StepNote
+              problem={noteProblem}
+              doneText={noteDone}
+              flash={noteFlash}
             />
-
-            {/* Photos — staged from a document import (see
-                ImportTargetDocumentDialog.tsx). Duplicate-photo detection
-                only has a target to compare against once dupMatch names one
-                (see the effect above) — a photo the target already has on
-                file defaults unticked, same "officer stays in control"
-                pattern as a matched associate defaulting to skip. */}
-            {(initialImages ?? []).length > 0 && (
-              <div
-                className={cn(
-                  FORM_TONES.photo.panel,
-                  "mt-2 p-3 flex flex-col gap-2.5"
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+              <span className="truncate text-sm text-muted-foreground">
+                <b className="text-foreground">
+                  {whoLabel || `New ${targetType} target`}
+                </b>{" "}
+                · step {stepIndex + 1} of {STEP_ORDER.length}
+              </span>
+              <div className="grid grid-cols-3 gap-2 lg:flex">
+                <Button
+                  variant="outline"
+                  className="lg:min-w-28"
+                  onClick={resetAndClose}
+                  disabled={saving || checkingDup}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="outline"
+                  className="lg:min-w-28"
+                  onClick={handleBackClick}
+                  disabled={
+                    saving || checkingDup || (stepIndex === 0 && !onBack)
+                  }
+                >
+                  ← Back
+                </Button>
+                {stepIsLast ? (
+                  <Button
+                    className="lg:min-w-28 aria-disabled:opacity-50"
+                    onClick={handleSaveClick}
+                    aria-disabled={!allDone}
+                    disabled={saving || checkingDup}
+                  >
+                    {checkingDup
+                      ? "Checking…"
+                      : saving
+                        ? "Saving…"
+                        : "Save Target"}
+                  </Button>
+                ) : (
+                  <Button
+                    className="lg:min-w-28 aria-disabled:opacity-50"
+                    onClick={handleNextClick}
+                    aria-disabled={!!stepBlocker}
+                    disabled={saving || checkingDup}
+                  >
+                    <span>
+                      Next
+                      <span className="max-sm:hidden">
+                        : {STEP_LABEL[STEP_ORDER[stepIndex + 1]]}
+                      </span>{" "}
+                      →
+                    </span>
+                  </Button>
                 )}
-              >
-                <p className={FORM_TONES.photo.band}>
-                  <ImageIcon className="w-3.5 h-3.5" /> Photos
-                </p>
-                {checkingImageDuplicates && (
-                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Checking for photos already on file…
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-2.5">
-                  {(initialImages ?? []).map(img => {
-                    const kept = imageChoices[img.key] ?? true;
-                    const isDup = duplicateImageKeys.has(img.key);
-                    const ownerLabel = photoOwnerLabel(img.linkTo);
-                    return (
-                      <div
-                        key={img.key}
-                        className="flex flex-col items-center gap-1 w-20"
-                      >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setImageChoices(prev => ({
-                              ...prev,
-                              [img.key]: !kept,
-                            }))
-                          }
-                          title={
-                            kept
-                              ? "Tap to discard this photo"
-                              : "Tap to keep this photo"
-                          }
-                          className={`relative rounded-md overflow-hidden border-2 transition-colors ${
-                            kept
-                              ? "border-indigo-500"
-                              : "border-border opacity-40 grayscale"
-                          }`}
-                        >
-                          <img
-                            src={`data:${img.mimeType};base64,${img.dataBase64}`}
-                            alt="Extracted from document"
-                            className="w-20 h-20 object-cover block"
-                          />
-                          {kept && (
-                            <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-indigo-500 text-white flex items-center justify-center">
-                              <Check className="h-2.5 w-2.5" />
-                            </span>
-                          )}
-                          {isDup && (
-                            <span className="absolute bottom-0 left-0 right-0 bg-amber-500 text-white text-[8px] font-bold text-center py-0.5 leading-none">
-                              ALREADY HAVE
-                            </span>
-                          )}
-                        </button>
-                        <span
-                          className="text-[10px] leading-tight text-center text-muted-foreground break-words w-full"
-                          title={ownerLabel}
-                        >
-                          {ownerLabel}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Depart / Arrive — simple single-line fields, so they pair up
-                side by side from sm rather than needing the wider md/lg
-                grid the bordered identity boxes above need room for. */}
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-foreground/80 uppercase tracking-wide">
-                  Depart (DEP)
-                </label>
-                <Input value={dep} onChange={e => setDep(e.target.value)} />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-foreground/80 uppercase tracking-wide">
-                  Arrive (ARR)
-                </label>
-                <Input value={arr} onChange={e => setArr(e.target.value)} />
               </div>
             </div>
           </div>
-          <DialogFooter className="sm:justify-between">
-            <Button
-              variant="outline"
-              onClick={resetAndClose}
-              disabled={saving || checkingDup}
-            >
-              Cancel
-            </Button>
-            <div className="flex flex-col-reverse gap-2 sm:flex-row">
-              {onBack && (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    resetState();
-                    onBack();
-                  }}
-                  disabled={saving || checkingDup}
-                >
-                  Back
-                </Button>
-              )}
-              <Button onClick={handleSave} disabled={saving || checkingDup}>
-                {checkingDup ? "Checking…" : saving ? "Saving…" : "Save Target"}
-              </Button>
-            </div>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 

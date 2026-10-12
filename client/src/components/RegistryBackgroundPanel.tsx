@@ -6,6 +6,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FORM_HINT, FORM_LABEL, FORM_TONES } from "@/lib/formKit";
+import { NoneBox, SectionPanel } from "@/components/AddTargetKit";
 import { cn } from "@/lib/utils";
 import {
   TARGET_BACKGROUND_MAX,
@@ -147,43 +148,65 @@ export function RegistryBackgroundPanel({
 /**
  * The same Background panel for Add Target to Registry: just the freeform
  * box (saved with the target when it is created). It can be edited later
- * from the target's card in the registry.
+ * from the target's card in the registry. In the dialog it has to be filled
+ * in or ticked "No background to add" before the target can be saved.
  */
 export function AddTargetBackgroundPanel({
   value,
   onChange,
+  none,
+  onNoneChange,
 }: {
   value: string;
   onChange: (next: string) => void;
+  /** "No background to add" ticked. */
+  none: boolean;
+  onNoneChange: (next: boolean) => void;
 }) {
+  const hasText = value.trim().length > 0;
   return (
-    <div className={cn(FORM_TONES.neutral.panel, "p-3 flex flex-col gap-2")}>
-      <div className={FORM_TONES.neutral.band}>
-        <FileText className="w-3 h-3" /> Background
-      </div>
-      <label htmlFor="add-target-background" className={FORM_LABEL}>
-        Background (freeform)
-      </label>
-      <Textarea
-        id="add-target-background"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        maxLength={TARGET_BACKGROUND_MAX}
-        rows={8}
-        spellCheck
-        className="min-h-40 text-sm leading-relaxed"
-        aria-describedby="add-target-background-help"
+    <SectionPanel
+      icon={<FileText className="w-3.5 h-3.5" />}
+      title="Background"
+      status={none ? "none" : hasText ? "done" : "todo"}
+    >
+      <NoneBox
+        checked={none}
+        onChange={onNoneChange}
+        title="No background to add"
+        hint="Tick if there is nothing to record yet."
+        locked={hasText}
+        lockedHint="Clear the background below to tick this."
+        needed={!none && !hasText}
       />
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-        <p id="add-target-background-help" className={FORM_HINT}>
-          Plain text. Line breaks are kept. Shown on this target's profile and
-          on every operation profile the target is linked to. It can be edited
-          later from the target's card in the registry.
-        </p>
-        <p className={cn(FORM_HINT, "tabular-nums")}>
-          {value.length.toLocaleString()} characters
-        </p>
+      <div
+        className={cn("flex flex-col gap-2", none && "opacity-45")}
+        inert={none}
+      >
+        <label htmlFor="add-target-background" className={FORM_LABEL}>
+          Background (freeform)
+        </label>
+        <Textarea
+          id="add-target-background"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          maxLength={TARGET_BACKGROUND_MAX}
+          rows={8}
+          spellCheck
+          className="min-h-40 text-sm leading-relaxed"
+          aria-describedby="add-target-background-help"
+        />
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+          <p id="add-target-background-help" className={FORM_HINT}>
+            Plain text. Line breaks are kept. Shown on this target's profile and
+            on every operation profile the target is linked to. It can be edited
+            later from the target's card in the registry.
+          </p>
+          <p className={cn(FORM_HINT, "tabular-nums")}>
+            {value.length.toLocaleString()} characters
+          </p>
+        </div>
       </div>
-    </div>
+    </SectionPanel>
   );
 }

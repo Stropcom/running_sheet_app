@@ -148,7 +148,17 @@ export interface StagedImage {
   linkTo:
     | { type: "target" }
     | { type: "associate"; associateKey: string }
-    | { type: "existingAssociate"; associateId: number; entityLabel: string };
+    | { type: "existingAssociate"; associateId: number; entityLabel: string }
+    /** A photo of one vehicle or address the officer attached in Add Target
+     * to Registry (never produced by a document import). ownerKey is
+     * "target" or a staged associate's key; itemKey is "primary" or the
+     * extra entry's id. Linked as a vehicle/location photo on save. */
+    | {
+        type: "item";
+        category: "vehicle" | "location";
+        ownerKey: string;
+        itemKey: string;
+      };
 }
 
 export interface DocumentImportPrefill {

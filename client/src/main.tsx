@@ -1,10 +1,11 @@
 import { trpc } from "@/lib/trpc";
-import { COOKIE_NAME, UNAUTHED_ERR_MSG } from '@shared/const';
+import { COOKIE_NAME, UNAUTHED_ERR_MSG } from "@shared/const";
 import { registerSW } from "virtual:pwa-register";
 
 // Register service worker — auto-updates in the background
 registerSW({ immediate: true });
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { rosterCommandHeaders } from "@/lib/rosterCommand";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
@@ -52,6 +53,9 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson,
       headers() {
+        // An all-region admin's pick of whose roster to show (ignored by the
+        // server for everyone else).
+        const extra = rosterCommandHeaders();
         // Preview auto-login fallback: when the browser blocks iframe cookies
         // (Safari ITP / private browsing / WebView), the runtime mirrors the
         // session into sessionStorage so we can forward it as a Bearer token.
@@ -63,13 +67,13 @@ const trpcClient = trpc.createClient({
             const pair = raw.split(";").find(s => s.trim().startsWith(prefix));
             const token = pair?.trim().slice(prefix.length);
             if (token) {
-              return { Authorization: `Bearer ${token}` };
+              return { ...extra, Authorization: `Bearer ${token}` };
             }
           }
         } catch {
           // sessionStorage unavailable
         }
-        return {};
+        return extra;
       },
       fetch(input, init) {
         return globalThis.fetch(input, {

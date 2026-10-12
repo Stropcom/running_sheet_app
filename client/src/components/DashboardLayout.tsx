@@ -1,3 +1,4 @@
+import { RosterCommandBar, isRosterPath } from "@/components/RosterCommandBar";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { APP_VERSION } from "@shared/const";
@@ -2564,6 +2565,7 @@ function DashboardLayoutContent({
             }`}
           >
             <PullToRefresh disabled={location === "/intelligence/mapping"}>
+              {isRosterPath(location) && <RosterCommandBar />}
               {children}
             </PullToRefresh>
           </main>

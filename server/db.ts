@@ -19,6 +19,7 @@ import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
 import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 import { addressMatchKey } from "@shared/addressMatchKey";
+import { rosterCommand, rosterCommandForWrite } from "./rosterContext";
 import {
   pickProfilePhoto,
   type ProfilePhotoCandidate,
@@ -16907,13 +16908,32 @@ export async function setSidebarOrder(
 
 // ─── Operation Manager ────────────────────────────────────────────────────────
 
+// Each Command has its own tasking board (see server/rosterScope.ts): inside a
+// request every read and write is limited to the request's Command, and new
+// rows are stamped with it.
+const inOpCommand = (
+  column:
+    | typeof opManagerPriorityRows.command
+    | typeof opManagerTaskingCells.command
+    | typeof opManagerSupervisorContacts.command
+    | typeof opManagerPostedWeeks.command
+) => {
+  const command = rosterCommand();
+  return command ? eq(column, command) : undefined;
+};
+
 export async function getOpManagerPriorityBoard(weekStart: string) {
   const db = await getDb();
   if (!db) return [];
   return db
     .select()
     .from(opManagerPriorityRows)
-    .where(eq(opManagerPriorityRows.weekStart, weekStart))
+    .where(
+      and(
+        eq(opManagerPriorityRows.weekStart, weekStart),
+        inOpCommand(opManagerPriorityRows.command)
+      )
+    )
     .orderBy(opManagerPriorityRows.sortOrder);
 }
 
@@ -16933,11 +16953,17 @@ export async function saveOpManagerPriorityBoard(
   if (!db) throw new Error("Database not available");
   await db
     .delete(opManagerPriorityRows)
-    .where(eq(opManagerPriorityRows.weekStart, weekStart));
+    .where(
+      and(
+        eq(opManagerPriorityRows.weekStart, weekStart),
+        inOpCommand(opManagerPriorityRows.command)
+      )
+    );
   if (rows.length === 0) return [];
+  const command = rosterCommandForWrite();
   await db
     .insert(opManagerPriorityRows)
-    .values(rows.map(r => ({ ...r, weekStart })));
+    .values(rows.map(r => ({ ...r, weekStart, command })));
   return getOpManagerPriorityBoard(weekStart);
 }
 
@@ -16947,7 +16973,12 @@ export async function getOpManagerTaskingCalendar(weekStart: string) {
   return db
     .select()
     .from(opManagerTaskingCells)
-    .where(eq(opManagerTaskingCells.weekStart, weekStart));
+    .where(
+      and(
+        eq(opManagerTaskingCells.weekStart, weekStart),
+        inOpCommand(opManagerTaskingCells.command)
+      )
+    );
 }
 
 export async function saveOpManagerTaskingCell(
@@ -16969,7 +17000,8 @@ export async function saveOpManagerTaskingCell(
       and(
         eq(opManagerTaskingCells.weekStart, weekStart),
         eq(opManagerTaskingCells.dayIndex, dayIndex),
-        eq(opManagerTaskingCells.teamRow, teamRow)
+        eq(opManagerTaskingCells.teamRow, teamRow),
+        inOpCommand(opManagerTaskingCells.command)
       )
     )
     .limit(1);
@@ -16979,9 +17011,13 @@ export async function saveOpManagerTaskingCell(
       .set(data)
       .where(eq(opManagerTaskingCells.id, existing[0].id));
   } else {
-    await db
-      .insert(opManagerTaskingCells)
-      .values({ weekStart, dayIndex, teamRow, ...data });
+    await db.insert(opManagerTaskingCells).values({
+      command: rosterCommandForWrite(),
+      weekStart,
+      dayIndex,
+      teamRow,
+      ...data,
+    });
   }
 }
 
@@ -16991,7 +17027,12 @@ export async function getOpManagerSupervisorContacts(weekStart: string) {
   return db
     .select()
     .from(opManagerSupervisorContacts)
-    .where(eq(opManagerSupervisorContacts.weekStart, weekStart))
+    .where(
+      and(
+        eq(opManagerSupervisorContacts.weekStart, weekStart),
+        inOpCommand(opManagerSupervisorContacts.command)
+      )
+    )
     .orderBy(opManagerSupervisorContacts.sortOrder);
 }
 
@@ -17009,11 +17050,17 @@ export async function saveOpManagerSupervisorContacts(
   if (!db) throw new Error("Database not available");
   await db
     .delete(opManagerSupervisorContacts)
-    .where(eq(opManagerSupervisorContacts.weekStart, weekStart));
+    .where(
+      and(
+        eq(opManagerSupervisorContacts.weekStart, weekStart),
+        inOpCommand(opManagerSupervisorContacts.command)
+      )
+    );
   if (contacts.length === 0) return [];
+  const command = rosterCommandForWrite();
   await db
     .insert(opManagerSupervisorContacts)
-    .values(contacts.map(c => ({ ...c, weekStart })));
+    .values(contacts.map(c => ({ ...c, weekStart, command })));
   return getOpManagerSupervisorContacts(weekStart);
 }
 
@@ -17025,14 +17072,20 @@ export async function listAllOpManagerWeeks() {
     await Promise.all([
       db
         .selectDistinct({ weekStart: opManagerTaskingCells.weekStart })
-        .from(opManagerTaskingCells),
+        .from(opManagerTaskingCells)
+        .where(inOpCommand(opManagerTaskingCells.command)),
       db
         .selectDistinct({ weekStart: opManagerSupervisorContacts.weekStart })
-        .from(opManagerSupervisorContacts),
+        .from(opManagerSupervisorContacts)
+        .where(inOpCommand(opManagerSupervisorContacts.command)),
       db
         .selectDistinct({ weekStart: opManagerPriorityRows.weekStart })
-        .from(opManagerPriorityRows),
-      db.select().from(opManagerPostedWeeks),
+        .from(opManagerPriorityRows)
+        .where(inOpCommand(opManagerPriorityRows.command)),
+      db
+        .select()
+        .from(opManagerPostedWeeks)
+        .where(inOpCommand(opManagerPostedWeeks.command)),
     ]);
   const postedMap = new Map(postedRows.map(p => [p.weekStart, p.postedAt]));
   const allWeekStarts = new Set([
@@ -17060,7 +17113,12 @@ export async function copyOpManagerWeek(
   if (contacts.length > 0) {
     await db
       .delete(opManagerSupervisorContacts)
-      .where(eq(opManagerSupervisorContacts.weekStart, toWeekStart));
+      .where(
+        and(
+          eq(opManagerSupervisorContacts.weekStart, toWeekStart),
+          inOpCommand(opManagerSupervisorContacts.command)
+        )
+      );
     await db.insert(opManagerSupervisorContacts).values(
       contacts.map(({ id: _id, weekStart: _ws, ...rest }) => ({
         ...rest,
@@ -17072,7 +17130,12 @@ export async function copyOpManagerWeek(
   if (priority.length > 0) {
     await db
       .delete(opManagerPriorityRows)
-      .where(eq(opManagerPriorityRows.weekStart, toWeekStart));
+      .where(
+        and(
+          eq(opManagerPriorityRows.weekStart, toWeekStart),
+          inOpCommand(opManagerPriorityRows.command)
+        )
+      );
     await db.insert(opManagerPriorityRows).values(
       priority.map(({ id: _id, weekStart: _ws, ...rest }) => ({
         ...rest,
@@ -17085,7 +17148,12 @@ export async function copyOpManagerWeek(
   if (tasking.length > 0) {
     await db
       .delete(opManagerTaskingCells)
-      .where(eq(opManagerTaskingCells.weekStart, toWeekStart));
+      .where(
+        and(
+          eq(opManagerTaskingCells.weekStart, toWeekStart),
+          inOpCommand(opManagerTaskingCells.command)
+        )
+      );
     await db.insert(opManagerTaskingCells).values(
       tasking.map(({ id: _id, weekStart: _ws, shiftTime: _st, ...rest }) => ({
         ...rest,
@@ -17104,6 +17172,7 @@ export async function getPostedWeeks() {
   return db
     .select()
     .from(opManagerPostedWeeks)
+    .where(inOpCommand(opManagerPostedWeeks.command))
     .orderBy(opManagerPostedWeeks.weekStart);
 }
 
@@ -17113,7 +17182,12 @@ export async function isWeekPosted(weekStart: string) {
   const rows = await db
     .select()
     .from(opManagerPostedWeeks)
-    .where(eq(opManagerPostedWeeks.weekStart, weekStart));
+    .where(
+      and(
+        eq(opManagerPostedWeeks.weekStart, weekStart),
+        inOpCommand(opManagerPostedWeeks.command)
+      )
+    );
   return rows.length > 0;
 }
 
@@ -17123,7 +17197,12 @@ export async function markWeekPosted(weekStart: string, postedBy: number) {
   // Upsert — if already posted, update postedAt
   await db
     .insert(opManagerPostedWeeks)
-    .values({ weekStart, postedBy, postedAt: new Date() })
+    .values({
+      command: rosterCommandForWrite(),
+      weekStart,
+      postedBy,
+      postedAt: new Date(),
+    })
     .onDuplicateKeyUpdate({ set: { postedAt: new Date(), postedBy } });
   return { weekStart, postedAt: new Date() };
 }

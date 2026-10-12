@@ -1,6 +1,7 @@
 import {
   and,
   eq,
+  sql,
   gte,
   lte,
   lt,
@@ -50,6 +51,30 @@ import {
 } from "../drizzle/schema";
 import { runEbaChecks, type ShiftRecord } from "./ctoRosterEbaEngine";
 import { computeShiftInterval } from "../shared/ctoRosterShiftDuration";
+import { rosterCommand, rosterCommandForWrite } from "./rosterContext";
+
+// ── Per-Command scope ────────────────────────────────────────────────────────
+// Each Command has its own roster (see server/rosterScope.ts). Inside a
+// request, lists are limited to the request's Command and new rows are stamped
+// with it; internal callers with no request see everything.
+
+/** `command = <this request's Command>` — or nothing when there is no request. */
+function inCommand(column: Parameters<typeof eq>[0]) {
+  const command = rosterCommand();
+  return command ? eq(column, command) : undefined;
+}
+
+/** Limits a query on cto_roster_shifts to this Command's members. */
+async function liveShiftScope() {
+  if (!rosterCommand()) return undefined;
+  const members = await getAllCtoRosterMembers();
+  return members.length > 0
+    ? inArray(
+        ctoRosterShifts.memberId,
+        members.map(m => m.id)
+      )
+    : sql`1 = 0`;
+}
 
 // ── Audit ─────────────────────────────────────────────────────────────────────
 // Fire-and-forget, never throws — an audit failure must never break the
@@ -69,6 +94,7 @@ export async function writeCtoRosterAudit(entry: {
     const db = await getDb();
     if (!db) return;
     await db.insert(ctoRosterAuditLog).values({
+      command: rosterCommandForWrite(),
       userId: entry.userId ?? null,
       userName: entry.userName ?? null,
       action: entry.action,
@@ -91,7 +117,11 @@ export async function writeCtoRosterAudit(entry: {
 export async function getAllCtoRosterTeams(): Promise<CtoRosterTeam[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(ctoRosterTeams).orderBy(ctoRosterTeams.sortOrder);
+  return db
+    .select()
+    .from(ctoRosterTeams)
+    .where(inCommand(ctoRosterTeams.command))
+    .orderBy(ctoRosterTeams.sortOrder);
 }
 
 export async function addCtoRosterTeam(name: string): Promise<number> {
@@ -99,10 +129,13 @@ export async function addCtoRosterTeam(name: string): Promise<number> {
   if (!db) throw new Error("DB not available");
   const [{ maxOrder }] = await db
     .select({ maxOrder: max(ctoRosterTeams.sortOrder) })
-    .from(ctoRosterTeams);
-  const [result] = await db
-    .insert(ctoRosterTeams)
-    .values({ name, sortOrder: (maxOrder ?? -1) + 1 });
+    .from(ctoRosterTeams)
+    .where(inCommand(ctoRosterTeams.command));
+  const [result] = await db.insert(ctoRosterTeams).values({
+    command: rosterCommandForWrite(),
+    name,
+    sortOrder: (maxOrder ?? -1) + 1,
+  });
   return result.insertId as number;
 }
 
@@ -166,6 +199,7 @@ export async function getAllCtoRosterMembers(): Promise<
   const rows = await db
     .select()
     .from(ctoRosterMembers)
+    .where(inCommand(ctoRosterMembers.command))
     .orderBy(ctoRosterMembers.teamId, ctoRosterMembers.sortOrder);
   const users = await getAllRunLogUsers();
   const nameByCin = new Map(users.map(u => [u.cin, u.name]));
@@ -177,6 +211,21 @@ export async function getCtoRosterMembersByTeam(
 ): Promise<CtoRosterMemberWithName[]> {
   const all = await getAllCtoRosterMembers();
   return all.filter(m => m.teamId === teamId);
+}
+
+/** A person's own roster entry, whichever Command's roster it is on — for
+ * "My shifts", which is theirs wherever they are rostered. */
+export async function getCtoRosterMemberByCin(
+  cin: string
+): Promise<CtoRosterMember | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db
+    .select()
+    .from(ctoRosterMembers)
+    .where(eq(ctoRosterMembers.cin, cin))
+    .limit(1);
+  return rows[0];
 }
 
 /** Toggle whether a member counts toward ON DUTY / ON CALL headcount totals. */
@@ -201,14 +250,30 @@ export async function addCtoRosterMember(
   if (!db) throw new Error("DB not available");
   const user = await getUserByCin(cin);
   if (!user) throw new Error(`No RunLog user found with CIN ${cin}`);
+  // A person is on one roster only (the CIN is unique across Commands).
+  const alreadyOn = await db
+    .select({ command: ctoRosterMembers.command })
+    .from(ctoRosterMembers)
+    .where(eq(ctoRosterMembers.cin, cin))
+    .limit(1);
+  if (alreadyOn.length > 0) {
+    throw new Error(
+      alreadyOn[0].command === rosterCommandForWrite()
+        ? `${user.name} is already on this roster.`
+        : `${user.name} is already on another Command's roster — remove them there first.`
+    );
+  }
   const existing = await db
     .select()
     .from(ctoRosterMembers)
     .where(eq(ctoRosterMembers.teamId, teamId));
   const maxSort = existing.reduce((m, r) => Math.max(m, r.sortOrder), 0);
-  const [result] = await db
-    .insert(ctoRosterMembers)
-    .values({ cin, teamId, sortOrder: maxSort + 1 });
+  const [result] = await db.insert(ctoRosterMembers).values({
+    command: rosterCommandForWrite(),
+    cin,
+    teamId,
+    sortOrder: maxSort + 1,
+  });
   return result.insertId as number;
 }
 
@@ -309,15 +374,18 @@ export async function getRelevantCtoRosterSecondments(): Promise<
       .from(ctoRosterSecondments)
       .where(gte(ctoRosterSecondments.endDate, todayStr)),
     getAllCtoRosterMembers(),
-    db.select().from(ctoRosterTeams),
+    db.select().from(ctoRosterTeams).where(inCommand(ctoRosterTeams.command)),
   ]);
   const memberNameById = new Map(members.map(m => [m.id, m.name]));
   const teamNameById = new Map(teams.map(t => [t.id, t.name]));
-  return rows.map(r => ({
-    ...r,
-    memberName: memberNameById.get(r.memberId) ?? "Unknown",
-    destinationTeamName: teamNameById.get(r.destinationTeamId) ?? "Unknown",
-  }));
+  // Only this Command's people (members is already limited to them).
+  return rows
+    .filter(r => !rosterCommand() || memberNameById.has(r.memberId))
+    .map(r => ({
+      ...r,
+      memberName: memberNameById.get(r.memberId) ?? "Unknown",
+      destinationTeamName: teamNameById.get(r.destinationTeamId) ?? "Unknown",
+    }));
 }
 
 /** One secondment at a time per member — reject if one is already active/upcoming. */
@@ -537,7 +605,8 @@ export async function getCtoRosterShiftsForDateRange(
     .where(
       and(
         gte(ctoRosterShifts.shiftDate, startDate),
-        lte(ctoRosterShifts.shiftDate, endDate)
+        lte(ctoRosterShifts.shiftDate, endDate),
+        await liveShiftScope()
       )
     )
     .orderBy(ctoRosterShifts.shiftDate, ctoRosterShifts.memberId);
@@ -753,6 +822,7 @@ export async function getAllCtoRosterDrafts(): Promise<CtoRosterDraft[]> {
   return db
     .select()
     .from(ctoRosterDrafts)
+    .where(inCommand(ctoRosterDrafts.command))
     .orderBy(desc(ctoRosterDrafts.createdAt));
 }
 
@@ -764,7 +834,9 @@ export async function getCtoRosterDraftById(
   const rows = await db
     .select()
     .from(ctoRosterDrafts)
-    .where(eq(ctoRosterDrafts.id, draftId));
+    .where(
+      and(eq(ctoRosterDrafts.id, draftId), inCommand(ctoRosterDrafts.command))
+    );
   return rows[0];
 }
 
@@ -784,7 +856,8 @@ export async function createCtoRosterDraft(
     .where(
       and(
         gte(ctoRosterShifts.shiftDate, startDate),
-        lte(ctoRosterShifts.shiftDate, endDate)
+        lte(ctoRosterShifts.shiftDate, endDate),
+        await liveShiftScope()
       )
     );
   const snapshot: Record<
@@ -797,6 +870,7 @@ export async function createCtoRosterDraft(
       shiftTime: s.shiftTime ?? null,
     };
   const [result] = await db.insert(ctoRosterDrafts).values({
+    command: rosterCommandForWrite(),
     name,
     startDate,
     endDate,
@@ -841,6 +915,7 @@ export async function createStandaloneCtoRosterDraft(
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const [result] = await db.insert(ctoRosterDrafts).values({
+    command: rosterCommandForWrite(),
     name,
     startDate,
     endDate,
@@ -1051,7 +1126,8 @@ export async function getCtoRosterDraftMergeDiff(draftId: number): Promise<{
     .where(
       and(
         gte(ctoRosterShifts.shiftDate, draft.startDate),
-        lte(ctoRosterShifts.shiftDate, draft.endDate)
+        lte(ctoRosterShifts.shiftDate, draft.endDate),
+        await liveShiftScope()
       )
     );
   const liveMap = new Map(
@@ -1116,7 +1192,8 @@ export async function mergeCtoRosterDraft(
     .where(
       and(
         gte(ctoRosterShifts.shiftDate, draft.startDate),
-        lte(ctoRosterShifts.shiftDate, draft.endDate)
+        lte(ctoRosterShifts.shiftDate, draft.endDate),
+        await liveShiftScope()
       )
     );
   const liveMap = new Map(
@@ -1130,11 +1207,19 @@ export async function mergeCtoRosterDraft(
     (resolutions ?? []).map(r => [`${r.memberId}_${r.shiftDate}`, r.resolution])
   );
 
+  // A draft can only change this Command's own members' shifts.
+  const mergeableMemberIds = rosterCommand()
+    ? new Set((await getAllCtoRosterMembers()).map(m => m.id))
+    : null;
   let applied = 0,
     skipped = 0,
     conflicts = 0;
   const affectedMemberIds = new Set<number>();
   for (const ds of draftShiftRows) {
+    if (mergeableMemberIds && !mergeableMemberIds.has(ds.memberId)) {
+      skipped++;
+      continue;
+    }
     const key = `${ds.memberId}_${ds.shiftDate}`;
     const live = liveMap.get(key);
     const liveCode = live?.shiftCode ?? "";
@@ -1340,6 +1425,7 @@ export async function saveCtoRosterDraftAsRoster(
   if (!draft) throw new Error("Draft not found.");
 
   const [rResult] = await db.insert(ctoRosterSavedRosters).values({
+    command: draft.command,
     name,
     startDate: draft.startDate,
     endDate: draft.endDate,
@@ -1413,6 +1499,7 @@ export async function getAllCtoRosterSavedRosters(): Promise<
   return db
     .select()
     .from(ctoRosterSavedRosters)
+    .where(inCommand(ctoRosterSavedRosters.command))
     .orderBy(desc(ctoRosterSavedRosters.createdAt));
 }
 
@@ -1424,7 +1511,12 @@ export async function getCtoRosterSavedRosterById(
   const rows = await db
     .select()
     .from(ctoRosterSavedRosters)
-    .where(eq(ctoRosterSavedRosters.id, id));
+    .where(
+      and(
+        eq(ctoRosterSavedRosters.id, id),
+        inCommand(ctoRosterSavedRosters.command)
+      )
+    );
   return rows[0];
 }
 
@@ -1929,6 +2021,8 @@ export async function runCtoRosterEbaCheck(
     const conditions = [];
     if (startDate) conditions.push(gte(ctoRosterShifts.shiftDate, startDate));
     if (endDate) conditions.push(lte(ctoRosterShifts.shiftDate, endDate));
+    const memberScope = await liveShiftScope();
+    if (memberScope) conditions.push(memberScope);
     rawShifts = await db
       .select({
         memberId: ctoRosterShifts.memberId,
@@ -2016,7 +2110,11 @@ const DEFAULT_OUTLOOK_SETTINGS: {
 export async function getCtoRosterOutlookSettings() {
   const db = await getDb();
   if (!db) return DEFAULT_OUTLOOK_SETTINGS;
-  const rows = await db.select().from(ctoRosterOutlookSettings).limit(1);
+  const rows = await db
+    .select()
+    .from(ctoRosterOutlookSettings)
+    .where(eq(ctoRosterOutlookSettings.command, rosterCommandForWrite()))
+    .limit(1);
   if (rows.length === 0) return DEFAULT_OUTLOOK_SETTINGS;
   const row = rows[0];
   let teamMinimums: Record<string, number>;
@@ -2039,12 +2137,20 @@ export async function updateCtoRosterOutlookSettings(
 ): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const rows = await db.select().from(ctoRosterOutlookSettings).limit(1);
+  const command = rosterCommandForWrite();
+  const rows = await db
+    .select()
+    .from(ctoRosterOutlookSettings)
+    .where(eq(ctoRosterOutlookSettings.command, command))
+    .limit(1);
   const teamMinimumsJson = JSON.stringify(teamMinimums);
   if (rows.length === 0) {
-    await db
-      .insert(ctoRosterOutlookSettings)
-      .values({ teamMinimums: teamMinimumsJson, onCallMin, combinedMin });
+    await db.insert(ctoRosterOutlookSettings).values({
+      command,
+      teamMinimums: teamMinimumsJson,
+      onCallMin,
+      combinedMin,
+    });
   } else {
     await db
       .update(ctoRosterOutlookSettings)
@@ -2064,6 +2170,8 @@ export async function getCtoRosterAuditLog(
   const db = await getDb();
   if (!db) return { entries: [], total: 0 };
   const conditions = [];
+  const scoped = inCommand(ctoRosterAuditLog.command);
+  if (scoped) conditions.push(scoped);
   if (userId) conditions.push(eq(ctoRosterAuditLog.userId, userId));
   if (action) conditions.push(eq(ctoRosterAuditLog.action, action));
   const where = conditions.length > 0 ? and(...conditions) : undefined;
@@ -2462,7 +2570,7 @@ export async function getWeeklyTaskingReport(
     getAllCtoRosterMembers(),
     getCtoRosterOutlookSettings(),
     getCtoRosterShiftsForDateRange(weekStart, weekEnd),
-    getOutstandingTodosByUser(),
+    getOutstandingTodosByUser(rosterCommand()),
   ]);
 
   const priorityRows: WeeklyTaskingPriorityRow[] = priorityRowsRaw

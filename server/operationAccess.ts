@@ -356,7 +356,9 @@ async function singleRefs(
   ]);
   const sheetIds = [...num(raw.sheetId)];
   const rowIds = [...num(raw.rowId)];
-  const memberIds = [...num(raw.memberId)];
+  // `memberId` is a running-sheet row member everywhere except the CTO Roster,
+  // where it is a roster member (checked by server/rosterScope.ts instead).
+  const memberIds = path.startsWith("ctoRoster.") ? [] : [...num(raw.memberId)];
   const attachmentIds = [...num(raw.attachmentId)];
   const linkIds = [
     ...num(raw.linkId),

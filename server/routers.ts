@@ -30,6 +30,7 @@ import {
   scopeRegistryTargets,
   toAccessUser,
 } from "./operationAccess";
+import { rosterCommandForWrite } from "./rosterContext";
 import {
   sanitizeTargetSpecialProjects,
   mergeSpecialProjects,
@@ -51,6 +52,7 @@ import { systemRouter } from "./_core/systemRouter";
 import {
   getAllCtoRosterTeams,
   getAllCtoRosterMembers,
+  getCtoRosterMemberByCin,
   getCtoRosterShiftsForDateRange,
   getCtoRosterShiftsForMember,
   upsertCtoRosterShift,
@@ -7868,6 +7870,8 @@ export const appRouter = router({
   opManager: router({
     listUsers: certifierOrAdminProcedure.query(async () => {
       const users = await getAllUsers();
+      // Deliberately everyone: SMEAC / UCO briefings use this list for their
+      // recipients, which can cross Commands.
       return users
         .filter(u => !u.archivedAt)
         .map(u => ({
@@ -8006,7 +8010,9 @@ export const appRouter = router({
         const targetUserIds =
           input.userIds && input.userIds.length > 0
             ? input.userIds
-            : (await getAllUsers()).map(u => u.id);
+            : (await getAllUsers())
+                .filter(u => u.command === rosterCommandForWrite())
+                .map(u => u.id);
         await createNotificationsForUsers(targetUserIds, {
           title,
           body,
@@ -8227,8 +8233,10 @@ export const appRouter = router({
           })
         )
         .query(async ({ ctx, input }) => {
-          const members = await getAllCtoRosterMembers();
-          const me = members.find(m => m.cin === ctx.user.cin);
+          // Their own entry, whichever Command's roster it is on.
+          const me = ctx.user.cin
+            ? await getCtoRosterMemberByCin(ctx.user.cin)
+            : undefined;
           if (!me) return [];
           return getCtoRosterShiftsForMember(
             me.id,

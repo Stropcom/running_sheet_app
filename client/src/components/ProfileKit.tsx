@@ -14,12 +14,29 @@ import { SectionHeading } from "@/components/ProfileSectionHeading";
  * (solid white cards, grey titled bands, nothing under 12px).
  */
 
+/** How a person is named on the profile pages: the registry's composed name
+ * without the ", born 31 January 1992" part — "Bianca Lucia MORETTI
+ * (MORETTI)", the same as an associate. */
+export function displayPersonName(name: string): string {
+  return name
+    .replace(/,\s*born\b[^()]*/i, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** "Adrian Paul KENNEDY" → ["Adrian Paul", "KENNEDY"]. A name with no
  * UPPERCASE surname comes back whole in the first slot. */
 export function splitPersonName(name: string): [string, string] {
-  const t = name.trim().split(/\s+/);
+  const clean = displayPersonName(name);
+  const t = clean.split(/\s+/);
   const i = t.findIndex(w => /^[A-Z'’-]{2,}$/.test(w));
-  return i < 0 ? [name, ""] : [t.slice(0, i).join(" "), t.slice(i).join(" ")];
+  return i < 0 ? [clean, ""] : [t.slice(0, i).join(" "), t.slice(i).join(" ")];
+}
+
+/** Just the surname ("MORETTI") — for short labels like jump chips. */
+export function surnameOnly(name: string): string {
+  const [given, sur] = splitPersonName(name);
+  return (sur || given).replace(/\s*\(.*\)\s*$/, "");
 }
 
 /** Scrolls to a section/card by element id and flashes it briefly. */
@@ -48,7 +65,7 @@ export function JumpBar({
   return (
     <nav
       aria-label="Jump to"
-      className="sticky top-14 z-30 -mx-1 mb-4 flex items-center gap-2 overflow-x-auto border-b border-border bg-background/95 px-1 py-2 backdrop-blur md:top-0 md:flex-wrap md:overflow-visible"
+      className="sticky top-0 z-30 -mx-1 mb-4 flex items-center gap-2 overflow-x-auto border-b border-border bg-background/95 px-1 py-2 backdrop-blur md:flex-wrap md:overflow-visible"
     >
       <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-foreground/70">
         Jump to
@@ -92,11 +109,7 @@ export function ProfileCard({
     <section
       id={id}
       aria-label={label}
-      className={cn(
-        SECTION_CARD,
-        "mb-4 scroll-mt-28 md:scroll-mt-16",
-        className
-      )}
+      className={cn(SECTION_CARD, "mb-4 scroll-mt-20", className)}
     >
       {right ? (
         <div className="-mx-4 -mt-4 mb-3 flex items-center gap-2 border-b border-border bg-muted/70 px-4 py-2.5">
@@ -267,7 +280,7 @@ export function Photoboard({
                         window.setTimeout(() => scrollToSection(id), 60);
                       } else scrollToSection(id);
                     }}
-                    aria-label={`${p.name}, ${p.role}. Show details`}
+                    aria-label={`${displayPersonName(p.name)}, ${p.role}. Show details`}
                     className={cn(
                       "flex min-w-0 flex-col overflow-hidden rounded-lg border-2 text-center transition-shadow hover:shadow-[0_0_0_3px_color-mix(in_oklab,var(--primary)_35%,transparent)] focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-primary",
                       TILE_BORDER[p.role]

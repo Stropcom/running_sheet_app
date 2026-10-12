@@ -3,7 +3,7 @@ import {
   ProfileDropdownRow,
   type ProfileKind,
 } from "@/components/ProfileDropdown";
-import { PersonThumb } from "@/components/ProfileKit";
+import { PersonThumb, displayPersonName } from "@/components/ProfileKit";
 import { cn } from "@/lib/utils";
 
 type Tone = "target" | "associate" | "resident";
@@ -55,7 +55,7 @@ export function PersonLinkRow({
   anchorId?: string;
 }) {
   return (
-    <div id={anchorId} className="scroll-mt-28 rounded-lg md:scroll-mt-16">
+    <div id={anchorId} className="scroll-mt-20 rounded-lg">
       <ProfileDropdownRow
         kind={kind}
         refId={refId}
@@ -75,7 +75,7 @@ export function PersonLinkRow({
         />
         <span className="min-w-0 flex-1">
           <span className="block break-words text-sm font-semibold text-foreground">
-            {name}
+            {displayPersonName(name)}
           </span>
           {sub && (
             <span className="block break-words text-xs text-muted-foreground">

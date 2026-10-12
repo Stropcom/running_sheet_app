@@ -58,7 +58,9 @@ import {
   Photoboard,
   ProfileCard,
   SheetsCard,
+  displayPersonName,
   splitPersonName,
+  surnameOnly,
   type PhotoboardRow,
 } from "@/components/ProfileKit";
 import { registryPersonAddresses } from "@/lib/profileSection";
@@ -355,7 +357,7 @@ function TargetBlock({
   return (
     <div
       id={`t-${target.targetId}`}
-      className="flex scroll-mt-28 flex-col gap-3 md:scroll-mt-16"
+      className="flex scroll-mt-20 flex-col gap-3"
     >
       <div className="flex items-stretch overflow-hidden rounded-xl border-2 border-blue-600 bg-blue-100 text-blue-950 dark:bg-blue-950/50 dark:text-blue-100">
         <button
@@ -372,20 +374,9 @@ function TargetBlock({
             {total > 1 ? `Target ${index + 1} of ${total}` : "Target"}
           </span>
           <span className="min-w-[12ch] flex-1 break-words text-base font-extrabold">
-            {target.name}
+            {displayPersonName(target.name)}
           </span>
           {target.isIndicesOnly && <IndicesBadge />}
-          <span className="text-xs opacity-90">
-            {[
-              target.tgt ? `TGT ${target.tgt}` : null,
-              target.hbf
-                ? formatIntelAddress(target.hbf).replace(/\.$/, "")
-                : null,
-              `${target.registryAssociates.length} registered ${target.registryAssociates.length === 1 ? "person" : "people"}`,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </span>
         </button>
         <button
           type="button"
@@ -400,7 +391,7 @@ function TargetBlock({
         <div id={bodyId} className="flex flex-col">
           {target.photos.length > 1 && (
             <ProfileCard
-              label={`Photos of ${splitPersonName(target.name)[1] || target.name}`}
+              label={`Photos of ${surnameOnly(target.name)}`}
               count={target.photos.length}
             >
               <IntelPhotoStrip photos={target.photos} />
@@ -416,10 +407,7 @@ function TargetBlock({
             </ProfileCard>
           )}
           {entries.length === 0 && (
-            <div
-              id={`p-t${target.targetId}`}
-              className="scroll-mt-28 md:scroll-mt-16"
-            />
+            <div id={`p-t${target.targetId}`} className="scroll-mt-20" />
           )}
           {hasStatus && (
             <ProfileCard label="Status">
@@ -630,7 +618,7 @@ export function OperationProfileContent({
       const people = t.registryAssociates;
       return {
         tag: all.length > 1 ? `Target ${i + 1}` : "Target",
-        heading: t.name,
+        heading: displayPersonName(t.name),
         sub: `${people.length} registered ${people.length === 1 ? "person" : "people"}`,
         people: [
           {
@@ -658,7 +646,7 @@ export function OperationProfileContent({
     { id: "photoboard", label: "Photoboard" },
     ...(typedProfile?.targets ?? []).map(t => ({
       id: `t-${t.targetId}`,
-      label: splitPersonName(t.name)[1] || t.name,
+      label: surnameOnly(t.name),
       before: () => openTarget(t.targetId),
     })),
     { id: "imported-documents", label: "Documents" },

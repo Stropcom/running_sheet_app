@@ -55,6 +55,7 @@ import {
   JumpBar,
   Photoboard,
   SheetsCard,
+  displayPersonName,
   personCardId,
   splitPersonName,
   type PhotoboardRow,
@@ -570,7 +571,7 @@ export function TargetProfileContent({
     ? [
         {
           tag: "Target",
-          heading: profile.name,
+          heading: displayPersonName(profile.name),
           sub: `${associatesOnly.length + residents.length} registered ${
             associatesOnly.length + residents.length === 1 ? "person" : "people"
           }`,
@@ -773,7 +774,7 @@ export function TargetProfileContent({
           {/* Operations */}
           <div
             id="operations"
-            className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-28 md:scroll-mt-16"
+            className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-20"
           >
             <SectionHeading label="Operations" count={totalOperationsCount} />
             {totalOperationsCount > 1 && (
@@ -827,7 +828,7 @@ export function TargetProfileContent({
             return (
               <div
                 id="details"
-                className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-28 md:scroll-mt-16"
+                className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-20"
               >
                 <SectionHeading
                   label="Registered Details"
@@ -933,7 +934,7 @@ export function TargetProfileContent({
           {associatesOnly.length > 0 && (
             <div
               id="associates"
-              className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-28 md:scroll-mt-16"
+              className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-20"
             >
               <SectionHeading
                 label="Registered Associates"
@@ -960,7 +961,7 @@ export function TargetProfileContent({
             profile.assocLocations.length > 0) && (
             <div
               id="associations"
-              className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-28 md:scroll-mt-16"
+              className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-20"
             >
               <SectionHeading
                 label="Operational Associations"
@@ -1046,7 +1047,7 @@ export function TargetProfileContent({
                 <div
                   key={`imports-${op.id}`}
                   id={`documents${op.id === profile.operations[0]?.id ? "" : "-" + op.id}`}
-                  className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-28 md:scroll-mt-16"
+                  className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-20"
                 >
                   <SectionHeading label={`Imported Documents — ${op.name}`} />
                   <p className="text-xs text-muted-foreground mb-3">

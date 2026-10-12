@@ -476,7 +476,7 @@ export function LocationProfileContent({
 
           <div
             id="map"
-            className="mb-4 scroll-mt-28 overflow-hidden rounded-xl border border-border bg-card shadow-sm md:scroll-mt-16"
+            className="mb-4 scroll-mt-20 overflow-hidden rounded-xl border border-border bg-card shadow-sm"
           >
             <div className="flex items-center gap-2 border-b border-border bg-muted/70 px-4 py-2.5">
               <MapPin className="w-4 h-4 text-emerald-600" />

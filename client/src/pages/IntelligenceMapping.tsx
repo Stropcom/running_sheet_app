@@ -7,11 +7,12 @@ import {
   useState,
 } from "react";
 import { orderRsChips } from "@shared/rsChips";
+import { joinVehicleLists } from "@shared/vehicleList";
 import {
-  joinVehicleLists,
-  joinVehicleListsAtCaret,
-  justTypedSpaceAfterVehicle,
-} from "@shared/vehicleList";
+  justTypedSpaceAfterBracket,
+  tidyObservation,
+  tidyObservationAtCaret,
+} from "@shared/observationTidy";
 import {
   matchVehicleArrival,
   extractArrivalAddress,
@@ -2386,6 +2387,9 @@ export default function IntelligenceMapping() {
   // input" is the traceability that matters for review, not a precise
   // split of which words came from which source.
   const rsInlineUsedVoiceRef = useRef(false);
+  // True once the officer has typed in the box (as opposed to a chip filling it),
+  // so the tidy-up pass only ever runs on text they wrote themselves.
+  const rsInlineTypedRef = useRef(false);
   const [rsCountdown, setRsCountdown] = useState<number>(30); // countdown seconds
   const rsInlineTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rsCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
@@ -7611,6 +7615,7 @@ export default function IntelligenceMapping() {
     setRsInlineCins(new Set());
     rsInlineCinsRef.current = new Set();
     rsInlineUsedVoiceRef.current = false;
+    rsInlineTypedRef.current = false;
     setRsCountdown(30);
     setRsInlineTypingMode(false);
     setRsInlineUndoStack([]);
@@ -7619,7 +7624,9 @@ export default function IntelligenceMapping() {
   const submitInlineField = () => {
     if (!rsInlineLabel) return;
     const finalText = rsInlineText.trim()
-      ? joinVehicleLists(rsInlineText.trim())
+      ? rsInlineTypedRef.current
+        ? tidyObservation(rsInlineText.trim(), true)
+        : joinVehicleLists(rsInlineText.trim())
       : rsInlineLabel;
     // Capture CINs and the voice-usage flag BEFORE closeInlineField clears
     // both refs.
@@ -12092,15 +12099,19 @@ export default function IntelligenceMapping() {
                             }}
                             onChange={e => {
                               let next = e.target.value;
-                              // A space typed right after a vehicle bracket:
-                              // vehicles listed one after another get "and" /
-                              // commas between them (shared/vehicleList.ts).
+                              // Typed by hand (not added by a chip): the
+                              // tidy-up pass may run on this entry.
+                              rsInlineTypedRef.current = true;
+                              // A space typed right after a bracket tidies
+                              // what has been typed so far (vehicle lists,
+                              // spaces, capitals — shared/observationTidy.ts).
                               const typedAt =
                                 e.target.selectionStart ?? next.length;
-                              if (justTypedSpaceAfterVehicle(next, typedAt)) {
-                                const joined = joinVehicleListsAtCaret(
+                              if (justTypedSpaceAfterBracket(next, typedAt)) {
+                                const joined = tidyObservationAtCaret(
                                   next,
-                                  typedAt
+                                  typedAt,
+                                  false
                                 );
                                 if (joined.changed) {
                                   next = joined.text;
@@ -12197,9 +12208,14 @@ export default function IntelligenceMapping() {
                               closeRsMentionDropdown();
                               closeRsVehicleMentionDropdown();
                               rsAddressField.close();
-                              // Leaving the field punctuates vehicles listed
-                              // one after another ("A, B and C").
-                              const tidy = joinVehicleLists(rsInlineText);
+                              // Leaving the field tidies what was typed by
+                              // hand (vehicle lists, spaces, capitals, closing
+                              // full stop). Text made only by chips and the
+                              // Target Logger buttons keeps just the vehicle
+                              // list punctuation.
+                              const tidy = rsInlineTypedRef.current
+                                ? tidyObservation(rsInlineText, true)
+                                : joinVehicleLists(rsInlineText);
                               if (tidy !== rsInlineText) {
                                 pushInlineUndo(rsInlineText);
                                 setRsInlineText(tidy);
@@ -12373,15 +12389,16 @@ export default function IntelligenceMapping() {
                                     const bracket = `(Vehicle ${word.toUpperCase()})`;
                                     const newText = `${before}${word} ${bracket} ${after}`;
                                     // The bracket is now complete and followed
-                                    // by a space — a vehicle listed straight
-                                    // after another gets "and" / a comma.
-                                    const joined = joinVehicleListsAtCaret(
+                                    // by a space — tidy what has been typed so
+                                    // far (vehicle lists, spaces, capitals).
+                                    const joined = tidyObservationAtCaret(
                                       newText,
                                       before.length +
                                         word.length +
                                         1 +
                                         bracket.length +
-                                        1
+                                        1,
+                                      false
                                     );
                                     pushInlineUndo(rsInlineText);
                                     setRsInlineText(joined.text);

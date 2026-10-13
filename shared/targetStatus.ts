@@ -34,14 +34,36 @@ export function formatBail(t: {
   return "Yes";
 }
 
-// ─── Special projects (TI / LBS / SEEK / CAD) ───────────────────────────────
+// ─── Special projects (TI / LBS / SEEK / CAD / Tracker / LD / Coyotes) ──────
 // Stored as the same JSON array the Sheet Summary uses for its own Special
 // Projects — [{ key, detail }] — so the two stay interchangeable. A target
-// only ever carries these four; the Summary also offers Tracker/LD/Coyotes/
-// Other, which are per-deployment and never come from the registry.
+// carries these seven (and they sync both ways with the Summary); the Summary
+// also offers Other, which is per-deployment and never comes from the
+// registry. "None" in the Add Target dialog is just an answer (saved as no
+// projects), not a stored entry.
 
-export const TARGET_SPECIAL_PROJECTS = ["TI", "LBS", "SEEK", "CAD"] as const;
+export const TARGET_SPECIAL_PROJECTS = [
+  "TI",
+  "LBS",
+  "SEEK",
+  "CAD",
+  "Tracker",
+  "LD",
+  "Coyotes",
+] as const;
 export type TargetSpecialProject = (typeof TARGET_SPECIAL_PROJECTS)[number];
+
+/** What the box beside each project asks for — the same hints the Sheet
+ * Summary shows. */
+export const SPECIAL_PROJECT_HINTS: Record<TargetSpecialProject, string> = {
+  TI: "AFP or WAPOL",
+  LBS: "AFP or WAPOL",
+  SEEK: "AFP or WAPOL",
+  CAD: "AFP or WAPOL",
+  Tracker: "Vehicle details",
+  LD: "Vehicle Residence Business details",
+  Coyotes: "Location",
+};
 
 export interface SpecialProjectEntry {
   key: string;
@@ -66,8 +88,8 @@ export function parseSpecialProjects(
   }
 }
 
-/** Keeps only the four registry projects (each once, in TI/LBS/SEEK/CAD
- * order) and returns the JSON to store, or null when none are ticked. */
+/** Keeps only the seven registry projects (each once, in TI/LBS/SEEK/CAD/
+ * Tracker/LD/Coyotes order) and returns the JSON to store, or null when none are ticked. */
 export function sanitizeTargetSpecialProjects(
   raw: string | null | undefined
 ): string | null {
@@ -103,11 +125,11 @@ export function mergeSpecialProjects(
   return merged.length ? JSON.stringify(merged) : null;
 }
 
-/** Makes a summary's TI/LBS/SEEK/CAD entries exactly match the target's, in
+/** Makes a summary's TI/LBS/SEEK/CAD/Tracker/LD/Coyotes entries exactly match the target's, in
  * both directions of the registry↔summary sync: a project the target lacks
  * is removed from the summary, one it has is added (or has its detail
- * updated), and every other entry the summary holds (Tracker, LD, Coyotes,
- * Other) is left alone. Returns JSON, or null when the result is empty. */
+ * updated), and every other entry the summary holds (Other) is
+ * left alone. Returns JSON, or null when the result is empty. */
 export function applyTargetProjectsToSummary(
   summaryRaw: string | null | undefined,
   targetRaw: string | null | undefined

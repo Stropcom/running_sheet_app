@@ -624,7 +624,7 @@ const NAV_KEY_MAP: Record<
     path: "/images",
     Icon: ImageIcon,
     label: "Images",
-    iconColor: "text-pink-400",
+    iconColor: "text-cyan-400",
   },
   calendar: {
     path: "/calendar",
@@ -1432,9 +1432,9 @@ function entityBlocksHtml(
       (a, b) => roleOrder[a.role] - roleOrder[b.role]
     )) {
       if (p.role === "target")
-        addBlock("TARGET ADDRESS", "#dc2626", p.name, p.vehicles, true);
+        addBlock("TARGET ADDRESS", "#e11d48", p.name, p.vehicles, true);
       else if (p.role === "resident")
-        addBlock("OTHER RESIDENT", "#e11d48", p.name, p.vehicles, false);
+        addBlock("OTHER RESIDENT", "#0284c7", p.name, p.vehicles, false);
       else addBlock("ASSOCIATE ADDRESS", "#7c3aed", p.name, p.vehicles, true);
     }
   } else if (loc.type === "target_address") {
@@ -5218,7 +5218,7 @@ export default function IntelligenceMapping() {
         "display:flex;align-items:center;gap:6px;white-space:nowrap;" +
         "background:#fff;color:#14181d;border:2px " +
         (unsure ? "dashed" : "solid") +
-        " #e0338a;border-radius:999px;padding:3px 10px 3px 7px;" +
+        " #e11d48;border-radius:999px;padding:3px 10px 3px 7px;" +
         "font:600 11px/1.2 system-ui,sans-serif;box-shadow:0 2px 6px rgba(0,0,0,.3);";
       const em = document.createElement("span");
       em.textContent = TARGET_EMOJI[pos.state];
@@ -5234,7 +5234,7 @@ export default function IntelligenceMapping() {
       pill.appendChild(label);
       const stem = document.createElement("div");
       stem.style.cssText =
-        "width:2px;height:8px;background:#e0338a;border-radius:1px;";
+        "width:2px;height:8px;background:#e11d48;border-radius:1px;";
       flag.appendChild(pill);
       flag.appendChild(stem);
       targetFlagRef.current = new DivIconOverlay({
@@ -9390,8 +9390,8 @@ export default function IntelligenceMapping() {
                 }}
                 className="flex items-center gap-2 min-w-0 flex-1 text-left hover:opacity-75 transition-opacity"
               >
-                <ChevronLeft className="h-4 w-4 text-pink-500 flex-shrink-0" />
-                <ImageIcon className="h-4 w-4 text-pink-500 flex-shrink-0" />
+                <ChevronLeft className="h-4 w-4 text-cyan-500 flex-shrink-0" />
+                <ImageIcon className="h-4 w-4 text-cyan-500 flex-shrink-0" />
                 <span className="font-bold text-sm tracking-tight truncate">
                   Operation Images
                 </span>
@@ -9851,13 +9851,13 @@ export default function IntelligenceMapping() {
                           setPaneOperationProfileId(null);
                           setPaneSheetDetailId(null);
                         }}
-                        className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-pink-500/40 bg-pink-500/10 hover:bg-pink-500/20 active:scale-[0.98] transition-all min-w-0"
+                        className="flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 active:scale-[0.98] transition-all min-w-0"
                       >
-                        <ImageIcon className="h-3.5 w-3.5 text-pink-500 flex-shrink-0" />
-                        <span className="text-xs font-semibold text-pink-500 truncate flex-1 text-left">
+                        <ImageIcon className="h-3.5 w-3.5 text-cyan-500 flex-shrink-0" />
+                        <span className="text-xs font-semibold text-cyan-500 truncate flex-1 text-left">
                           {op.name} Images
                         </span>
-                        <ExternalLink className="h-3 w-3 text-pink-500/60 flex-shrink-0" />
+                        <ExternalLink className="h-3 w-3 text-cyan-500/60 flex-shrink-0" />
                       </button>
                     ))
                 )}

@@ -55,7 +55,7 @@ function typeIcon(type: RecycleBinItem["type"]) {
   if (type === "map_marker")
     return <MapPin className="w-5 h-5 text-orange-700 dark:text-orange-300" />;
   if (type === "attachment")
-    return <Camera className="w-5 h-5 text-pink-700 dark:text-pink-300" />;
+    return <Camera className="w-5 h-5 text-cyan-700 dark:text-cyan-300" />;
   if (type === "smeac_briefing")
     return (
       <ShieldAlert className="w-5 h-5 text-amber-700 dark:text-amber-300" />
@@ -80,7 +80,7 @@ function typeBadgeClass(type: RecycleBinItem["type"]) {
   if (type === "sheet") return "bg-teal-100 text-teal-700 border-teal-200";
   if (type === "map_marker")
     return "bg-orange-100 text-orange-700 border-orange-200";
-  if (type === "attachment") return "bg-pink-100 text-pink-700 border-pink-200";
+  if (type === "attachment") return "bg-cyan-100 text-cyan-700 border-cyan-200";
   if (type === "smeac_briefing")
     return "bg-amber-100 text-amber-700 border-amber-200";
   if (type === "uco_guide")

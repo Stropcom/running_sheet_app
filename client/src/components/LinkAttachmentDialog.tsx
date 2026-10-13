@@ -86,10 +86,10 @@ const CATEGORY_STYLES: Record<
   { icon: string; activeBorder: string; activeBg: string; activeText: string }
 > = {
   target: {
-    icon: "text-sky-500",
-    activeBorder: "border-sky-500",
-    activeBg: "bg-sky-500/10",
-    activeText: "text-sky-600 dark:text-sky-400",
+    icon: "text-rose-500",
+    activeBorder: "border-rose-500",
+    activeBg: "bg-rose-500/10",
+    activeText: "text-rose-600 dark:text-rose-400",
   },
   vehicle: {
     icon: "text-amber-500",
@@ -110,10 +110,10 @@ const CATEGORY_STYLES: Record<
     activeText: "text-emerald-600 dark:text-emerald-400",
   },
   unidentified_person: {
-    icon: "text-rose-500",
-    activeBorder: "border-rose-500",
-    activeBg: "bg-rose-500/10",
-    activeText: "text-rose-600 dark:text-rose-400",
+    icon: "text-blue-900 dark:text-blue-300",
+    activeBorder: "border-blue-900 dark:border-blue-300",
+    activeBg: "bg-blue-900/10 dark:bg-blue-400/10",
+    activeText: "text-blue-900 dark:text-blue-300",
   },
 };
 

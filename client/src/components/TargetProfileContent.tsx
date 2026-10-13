@@ -10,6 +10,7 @@ import {
   type CrossLinkVia,
 } from "@/lib/crossLinkText";
 import { shortPersonName } from "@/components/PhotoOwnerCaption";
+import { HereProvider, isHere, useHere } from "@/lib/currentProfiles";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -556,6 +557,16 @@ export function TargetProfileContent({
   const totalOperationsCount = profile
     ? profile.operations.length + crossOpExtras.length
     : 0;
+  // Operations we're already inside (this target opened within an operation's
+  // profile) aren't listed again.
+  const here = useHere("target", targetId);
+  const shownOperations = (profile?.operations ?? []).filter(
+    op => !isHere(here, "operation", op.id)
+  );
+  const shownCrossOps = crossOpExtras.filter(
+    op => !isHere(here, "operation", op.id)
+  );
+  const shownOperationsCount = shownOperations.length + shownCrossOps.length;
 
   // Photoboard: the target first, then their registered associates (and
   // other home-address residents), each linked to their card below.
@@ -632,455 +643,478 @@ export function TargetProfileContent({
   }
 
   return (
-    <div className={embedded ? "pt-1" : "px-4 py-6"}>
-      {isLoading && (
-        <div className="space-y-3">
-          {[...Array(5)].map((_, i) => (
-            <Skeleton key={i} className="h-14 w-full rounded-xl" />
-          ))}
-        </div>
-      )}
+    <HereProvider value={here}>
+      <div className={embedded ? "pt-1" : "px-4 py-6"}>
+        {isLoading && (
+          <div className="space-y-3">
+            {[...Array(5)].map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-xl" />
+            ))}
+          </div>
+        )}
 
-      {error && (
-        <div className="text-center py-16 text-muted-foreground">
-          <p className="text-sm">Profile not found or could not be loaded.</p>
-        </div>
-      )}
+        {error && (
+          <div className="text-center py-16 text-muted-foreground">
+            <p className="text-sm">Profile not found or could not be loaded.</p>
+          </div>
+        )}
 
-      {profile && (
-        <>
-          {/* Header */}
-          {!embedded && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm mb-5">
-              <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
-                <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap sm:gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
-                        <User className="w-3 h-3" /> Person — Target
-                      </span>
-                      {profile.isIndicesOnly && (
-                        <IndicesBadge variant="on-dark" size="header" />
+        {profile && (
+          <>
+            {/* Header */}
+            {!embedded && (
+              <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm mb-5">
+                <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
+                  <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap sm:gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
+                          <User className="w-3 h-3" /> Person — Target
+                        </span>
+                        {profile.isIndicesOnly && (
+                          <IndicesBadge variant="on-dark" size="header" />
+                        )}
+                      </div>
+                      <h1 className="text-lg sm:text-2xl leading-snug font-bold tracking-tight break-words">
+                        {profile.name}
+                      </h1>
+                      {profile.tgt && (
+                        <p className="text-sm opacity-75 mt-1">
+                          TGT Alias: {profile.tgt}
+                        </p>
                       )}
+                      <PreviousNotes
+                        items={historyFor("name")}
+                        variant="dark"
+                      />
+                      <PreviousNotes items={historyFor("tgt")} variant="dark" />
                     </div>
-                    <h1 className="text-lg sm:text-2xl leading-snug font-bold tracking-tight break-words">
-                      {profile.name}
-                    </h1>
-                    {profile.tgt && (
-                      <p className="text-sm opacity-75 mt-1">
-                        TGT Alias: {profile.tgt}
-                      </p>
-                    )}
-                    <PreviousNotes items={historyFor("name")} variant="dark" />
-                    <PreviousNotes items={historyFor("tgt")} variant="dark" />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={exportPdf}
+                      className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0"
+                    >
+                      <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
+                    </Button>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={exportPdf}
-                    className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0"
-                  >
-                    <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
-                  </Button>
+                </div>
+                {/* Stats */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
+                  {[
+                    {
+                      label: "Operations",
+                      value: totalOperationsCount,
+                    },
+                    {
+                      label: "Running Sheets",
+                      value:
+                        profile.linkedSheets.length +
+                        profile.mentionedSheets.length,
+                    },
+                    {
+                      label: "Associations",
+                      value:
+                        profile.assocPersons.length +
+                        profile.assocVehicles.length +
+                        profile.assocLocations.length,
+                    },
+                    { label: "Observations", value: profile.observationCount },
+                  ].map(stat => (
+                    <div key={stat.label} className="px-4 py-3 text-center">
+                      <p className="text-xl font-bold text-blue-900 dark:text-blue-300">
+                        {stat.value}
+                      </p>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider">
+                        {stat.label}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               </div>
-              {/* Stats */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
-                {[
-                  {
-                    label: "Operations",
-                    value: totalOperationsCount,
-                  },
-                  {
-                    label: "Running Sheets",
-                    value:
-                      profile.linkedSheets.length +
-                      profile.mentionedSheets.length,
-                  },
-                  {
-                    label: "Associations",
-                    value:
-                      profile.assocPersons.length +
-                      profile.assocVehicles.length +
-                      profile.assocLocations.length,
-                  },
-                  { label: "Observations", value: profile.observationCount },
-                ].map(stat => (
-                  <div key={stat.label} className="px-4 py-3 text-center">
-                    <p className="text-xl font-bold text-blue-900 dark:text-blue-300">
-                      {stat.value}
-                    </p>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider">
-                      {stat.label}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+            )}
 
-          {!embedded && <JumpBar items={jumpItems} />}
+            {!embedded && <JumpBar items={jumpItems} />}
 
-          {!embedded && <Photoboard rows={photoboardRows} />}
+            {!embedded && <Photoboard rows={photoboardRows} />}
 
-          {/* More than one photo of the target: the full set, with the
+            {/* More than one photo of the target: the full set, with the
               unlink control. (The photoboard shows just the first.) */}
-          {photos.length > 1 && (
-            <EntityPhotosSection category="target" targetId={targetId} />
-          )}
+            {photos.length > 1 && (
+              <EntityPhotosSection category="target" targetId={targetId} />
+            )}
 
-          {profile.identicalProfile && (
-            <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-300 dark:border-indigo-800">
-              <Link2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-indigo-800 dark:text-indigo-300">
-                  Identical profile — this is the same person as{" "}
-                  <strong>{profile.identicalProfile.label}</strong>, filed as an
-                  Associate. All intelligence below is combined across both
-                  records, so nothing is missed by looking at just this one.
-                </p>
-                <button
-                  onClick={() =>
-                    navigate(
-                      `/intelligence/associate/${encodeURIComponent(profile.identicalProfile!.label)}`
-                    )
-                  }
-                  className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 underline underline-offset-2 mt-1"
-                >
-                  View Associate profile →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Operations */}
-          <div
-            id="operations"
-            className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-20"
-          >
-            <SectionHeading label="Operations" count={totalOperationsCount} />
-            {totalOperationsCount > 1 && (
-              <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
-                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                <p className="text-xs text-amber-800 dark:text-amber-300">
-                  Linked across {totalOperationsCount} separate operations —
-                  worth checking for a cross-operation connection.
-                </p>
+            {profile.identicalProfile && (
+              <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-300 dark:border-indigo-800">
+                <Link2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-indigo-800 dark:text-indigo-300">
+                    Identical profile — this is the same person as{" "}
+                    <strong>{profile.identicalProfile.label}</strong>, filed as
+                    an Associate. All intelligence below is combined across both
+                    records, so nothing is missed by looking at just this one.
+                  </p>
+                  <button
+                    onClick={() =>
+                      navigate(
+                        `/intelligence/associate/${encodeURIComponent(profile.identicalProfile!.label)}`
+                      )
+                    }
+                    className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 underline underline-offset-2 mt-1"
+                  >
+                    View Associate profile →
+                  </button>
+                </div>
               </div>
             )}
-            <div className="space-y-2">
-              {profile.operations.map(op => (
-                <ProfileDropdownRow key={op.id} kind="operation" refId={op.id}>
-                  <Folder className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                  <span className="text-xs font-medium text-foreground flex-1 min-w-0 break-words">
-                    {op.name}
-                  </span>
-                </ProfileDropdownRow>
-              ))}
-              {crossOpExtras.map(op => (
-                <ProfileDropdownRow
-                  key={`cross-${op.id}`}
-                  kind="operation"
-                  refId={op.id}
-                  headerClassName="inline-flex w-full items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 transition-colors text-left"
-                  title={
-                    op.kind === "shared"
-                      ? sharedLinksTooltip(op.links)
-                      : `Not formally linked — ${shortPersonName(profile.name)} was named in an observation on this operation`
-                  }
-                >
-                  <Folder className="w-3 h-3 shrink-0" />
-                  <span className="min-w-0 break-words">{op.name}</span>
-                  <span className="text-xs uppercase tracking-wide opacity-70 flex-1 min-w-0">
-                    {op.kind === "shared"
-                      ? op.links
-                          .map(l => sharedLinkChipText(l.via, l.sharedValue))
-                          .join(" · ")
-                      : `${shortPersonName(profile.name)} mentioned`}
-                  </span>
-                </ProfileDropdownRow>
-              ))}
-            </div>
-          </div>
 
-          {/* Registered Details */}
-          {(() => {
-            const entries = targetDetailEntries(profile);
-            if (!entries.length) return null;
-            return (
+            {/* Operations */}
+            {shownOperationsCount > 0 && (
               <div
-                id="details"
+                id="operations"
                 className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-20"
               >
                 <SectionHeading
-                  label="Registered Details"
-                  count={entries.length}
+                  label="Operations"
+                  count={shownOperationsCount}
                 />
-                <RegisteredDetailPanels
-                  entries={entries}
-                  after={e =>
-                    e.id === "hbf" || e.id === "v1f" ? (
-                      <PreviousNotes items={historyFor(e.id)} />
-                    ) : null
+                {shownOperationsCount > 1 && (
+                  <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-800 dark:text-amber-300">
+                      Linked across {shownOperationsCount} separate operations —
+                      worth checking for a cross-operation connection.
+                    </p>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  {shownOperations.map(op => (
+                    <ProfileDropdownRow
+                      key={op.id}
+                      kind="operation"
+                      refId={op.id}
+                    >
+                      <Folder className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                      <span className="text-xs font-medium text-foreground flex-1 min-w-0 break-words">
+                        {op.name}
+                      </span>
+                    </ProfileDropdownRow>
+                  ))}
+                  {shownCrossOps.map(op => (
+                    <ProfileDropdownRow
+                      key={`cross-${op.id}`}
+                      kind="operation"
+                      refId={op.id}
+                      headerClassName="inline-flex w-full items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 transition-colors text-left"
+                      title={
+                        op.kind === "shared"
+                          ? sharedLinksTooltip(op.links)
+                          : `Not formally linked — ${shortPersonName(profile.name)} was named in an observation on this operation`
+                      }
+                    >
+                      <Folder className="w-3 h-3 shrink-0" />
+                      {/* Stacked on a phone, side by side from sm up. */}
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-1.5">
+                        <span className="min-w-0 break-words">{op.name}</span>
+                        <span className="min-w-0 text-xs uppercase tracking-wide opacity-70 sm:flex-1">
+                          {op.kind === "shared"
+                            ? op.links
+                                .map(l =>
+                                  sharedLinkChipText(l.via, l.sharedValue)
+                                )
+                                .join(" · ")
+                            : `${shortPersonName(profile.name)} mentioned`}
+                        </span>
+                      </span>
+                    </ProfileDropdownRow>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Registered Details */}
+            {(() => {
+              const entries = targetDetailEntries(profile);
+              if (!entries.length) return null;
+              return (
+                <div
+                  id="details"
+                  className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-20"
+                >
+                  <SectionHeading
+                    label="Registered Details"
+                    count={entries.length}
+                  />
+                  <RegisteredDetailPanels
+                    entries={entries}
+                    after={e =>
+                      e.id === "hbf" || e.id === "v1f" ? (
+                        <PreviousNotes items={historyFor(e.id)} />
+                      ) : null
+                    }
+                  />
+                </div>
+              );
+            })()}
+
+            {/* Status — MDL, bail and special projects, in their own section
+              below Registered Details. */}
+            {(profile.mdlStatus ||
+              profile.bailStatus ||
+              profile.specialProjects) && (
+              <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+                <SectionHeading
+                  label="Status"
+                  count={
+                    [
+                      profile.mdlStatus,
+                      profile.bailStatus,
+                      formatSpecialProjects(profile.specialProjects),
+                    ].filter(Boolean).length
                   }
                 />
+                <div className="grid grid-cols-1 gap-2 text-sm">
+                  {profile.mdlStatus && (
+                    <div className="flex gap-3 items-start">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0 pt-0.5">
+                        MDL
+                      </span>
+                      <span className="text-sm text-foreground">
+                        {mdlLabel(profile.mdlStatus)}
+                      </span>
+                    </div>
+                  )}
+                  {profile.bailStatus && (
+                    <div className="flex gap-3 items-start">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0 pt-0.5">
+                        Bail
+                      </span>
+                      <span className="text-sm text-foreground">
+                        {formatBail(profile)}
+                      </span>
+                    </div>
+                  )}
+                  {formatSpecialProjects(profile.specialProjects) && (
+                    <div className="flex gap-3 items-start">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0 pt-0.5">
+                        Special Projects
+                      </span>
+                      <span className="text-sm text-foreground">
+                        {formatSpecialProjects(profile.specialProjects)}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
-            );
-          })()}
+            )}
 
-          {/* Status — MDL, bail and special projects, in their own section
-              below Registered Details. */}
-          {(profile.mdlStatus ||
-            profile.bailStatus ||
-            profile.specialProjects) && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-              <SectionHeading
-                label="Status"
-                count={
-                  [
-                    profile.mdlStatus,
-                    profile.bailStatus,
-                    formatSpecialProjects(profile.specialProjects),
-                  ].filter(Boolean).length
-                }
-              />
-              <div className="grid grid-cols-1 gap-2 text-sm">
-                {profile.mdlStatus && (
-                  <div className="flex gap-3 items-start">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0 pt-0.5">
-                      MDL
-                    </span>
-                    <span className="text-sm text-foreground">
-                      {mdlLabel(profile.mdlStatus)}
-                    </span>
-                  </div>
-                )}
-                {profile.bailStatus && (
-                  <div className="flex gap-3 items-start">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0 pt-0.5">
-                      Bail
-                    </span>
-                    <span className="text-sm text-foreground">
-                      {formatBail(profile)}
-                    </span>
-                  </div>
-                )}
-                {formatSpecialProjects(profile.specialProjects) && (
-                  <div className="flex gap-3 items-start">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0 pt-0.5">
-                      Special Projects
-                    </span>
-                    <span className="text-sm text-foreground">
-                      {formatSpecialProjects(profile.specialProjects)}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+            <BackgroundCard
+              id="background"
+              text={profile.registryBackground}
+              updatedAt={profile.registryBackgroundUpdatedAt}
+              updatedByCIN={profile.registryBackgroundUpdatedByCIN}
+            />
 
-          <BackgroundCard
-            id="background"
-            text={profile.registryBackground}
-            updatedAt={profile.registryBackgroundUpdatedAt}
-            updatedByCIN={profile.registryBackgroundUpdatedByCIN}
-          />
-
-          {/* Other Home Address Residents — recorded directly on this target in the
+            {/* Other Home Address Residents — recorded directly on this target in the
               Target Registry, a guaranteed link rather than inferred from
               observation-text co-occurrence. */}
-          {residents.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-              <SectionHeading
-                label="Other Home Address Residents"
-                count={residents.length}
-              />
-              <div className="flex flex-col gap-2">
-                {residents.map(a => (
-                  <RegistryPersonRow
-                    key={a.id}
-                    name={a.name}
-                    isIndicesOnly={a.isIndicesOnly}
-                    kind="resident"
-                    sub={registryPersonAddresses(a.hbf, a.extraAddresses).join(
-                      "\n"
-                    )}
-                    anchorId={embedded ? undefined : personCardId(a.name)}
-                  />
-                ))}
+            {residents.length > 0 && (
+              <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+                <SectionHeading
+                  label="Other Home Address Residents"
+                  count={residents.length}
+                />
+                <div className="flex flex-col gap-2">
+                  {residents.map(a => (
+                    <RegistryPersonRow
+                      key={a.id}
+                      name={a.name}
+                      isIndicesOnly={a.isIndicesOnly}
+                      kind="resident"
+                      sub={registryPersonAddresses(
+                        a.hbf,
+                        a.extraAddresses
+                      ).join("\n")}
+                      anchorId={embedded ? undefined : personCardId(a.name)}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Registered Associates — recorded directly on this target in the
+            {/* Registered Associates — recorded directly on this target in the
               Target Registry, a guaranteed link rather than inferred from
               observation-text co-occurrence. */}
-          {associatesOnly.length > 0 && (
-            <div
-              id="associates"
-              className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-20"
-            >
-              <SectionHeading
-                label="Registered Associates"
-                count={associatesOnly.length}
-              />
-              <div className="flex flex-col gap-2">
-                {associatesOnly.map(a => (
-                  <RegistryPersonRow
-                    key={a.id}
-                    name={a.name}
-                    isIndicesOnly={a.isIndicesOnly}
-                    kind="associate"
-                    sub={registryPersonAddresses(a.hbf, a.extraAddresses).join(
-                      "\n"
-                    )}
-                    anchorId={embedded ? undefined : personCardId(a.name)}
-                  />
-                ))}
+            {associatesOnly.length > 0 && (
+              <div
+                id="associates"
+                className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-20"
+              >
+                <SectionHeading
+                  label="Registered Associates"
+                  count={associatesOnly.length}
+                />
+                <div className="flex flex-col gap-2">
+                  {associatesOnly.map(a => (
+                    <RegistryPersonRow
+                      key={a.id}
+                      name={a.name}
+                      isIndicesOnly={a.isIndicesOnly}
+                      kind="associate"
+                      sub={registryPersonAddresses(
+                        a.hbf,
+                        a.extraAddresses
+                      ).join("\n")}
+                      anchorId={embedded ? undefined : personCardId(a.name)}
+                    />
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Operational Associations */}
-          {(profile.assocPersons.length > 0 ||
-            profile.assocVehicles.length > 0 ||
-            profile.assocLocations.length > 0) && (
-            <div
-              id="associations"
-              className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-20"
-            >
-              <SectionHeading
-                label="Operational Associations"
-                count={
-                  profile.assocPersons.length +
-                  profile.assocVehicles.length +
-                  profile.assocLocations.length
-                }
-              />
-              <p className="text-xs text-muted-foreground mb-3 italic">
-                Entities observed in the same running sheet rows as this target
-              </p>
-              <Separator className="mb-3" />
+            {/* Operational Associations */}
+            {(profile.assocPersons.length > 0 ||
+              profile.assocVehicles.length > 0 ||
+              profile.assocLocations.length > 0) && (
+              <div
+                id="associations"
+                className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-20"
+              >
+                <SectionHeading
+                  label="Operational Associations"
+                  count={
+                    profile.assocPersons.length +
+                    profile.assocVehicles.length +
+                    profile.assocLocations.length
+                  }
+                />
+                <p className="text-xs text-muted-foreground mb-3 italic">
+                  Entities observed in the same running sheet rows as this
+                  target
+                </p>
+                <Separator className="mb-3" />
 
-              {profile.assocPersons.length > 0 && (
-                <div className="mb-3">
-                  <SectionHeading
-                    sub
-                    label="Associated Persons"
-                    count={profile.assocPersons.length}
-                  />
-                  <div className="flex flex-col gap-2">
-                    {profile.assocPersons.map(p => (
-                      <IntelEntityDropdown key={p.id} item={p} />
-                    ))}
+                {profile.assocPersons.length > 0 && (
+                  <div className="mb-3">
+                    <SectionHeading
+                      sub
+                      label="Associated Persons"
+                      count={profile.assocPersons.length}
+                    />
+                    <div className="flex flex-col gap-2">
+                      {profile.assocPersons.map(p => (
+                        <IntelEntityDropdown key={p.id} item={p} />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {profile.assocVehicles.length > 0 && (
-                <div className="mb-3">
-                  <SectionHeading
-                    sub
-                    label="Associated Vehicles"
-                    count={profile.assocVehicles.length}
-                  />
-                  <div className="flex flex-col gap-2">
-                    {profile.assocVehicles.map(v => (
-                      <IntelEntityDropdown key={v.id} item={v} />
-                    ))}
+                {profile.assocVehicles.length > 0 && (
+                  <div className="mb-3">
+                    <SectionHeading
+                      sub
+                      label="Associated Vehicles"
+                      count={profile.assocVehicles.length}
+                    />
+                    <div className="flex flex-col gap-2">
+                      {profile.assocVehicles.map(v => (
+                        <IntelEntityDropdown key={v.id} item={v} />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {profile.assocLocations.length > 0 && (
-                <div className="mb-3">
-                  <SectionHeading
-                    sub
-                    label="Associated Locations"
-                    count={profile.assocLocations.length}
-                  />
-                  <div className="flex flex-col gap-2">
-                    {profile.assocLocations.map(l => (
-                      <IntelEntityDropdown key={l.id} item={l} />
-                    ))}
+                {profile.assocLocations.length > 0 && (
+                  <div className="mb-3">
+                    <SectionHeading
+                      sub
+                      label="Associated Locations"
+                      count={profile.assocLocations.length}
+                    />
+                    <div className="flex flex-col gap-2">
+                      {profile.assocLocations.map(l => (
+                        <IntelEntityDropdown key={l.id} item={l} />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          )}
-          <SheetsCard
-            assigned={profile.linkedSheets}
-            mentioned={profile.mentionedSheets as SheetLink[]}
-            id="sheets"
-          />
+                )}
+              </div>
+            )}
+            <SheetsCard
+              assigned={profile.linkedSheets}
+              mentioned={profile.mentionedSheets as SheetLink[]}
+              id="sheets"
+            />
 
-          {/* Imported Documents — every document uploaded for this target,
+            {/* Imported Documents — every document uploaded for this target,
               grouped by operation, each version clearly numbered with
               "Current" marked — mirrors the Operation profile's own
               "Imported Documents" panel instead of folding older versions
               into a single free-text background block. */}
-          {profile.operations
-            .filter(op =>
-              (documentImports ?? []).some(
-                (i: DocumentImportRow) => i.operationId === op.id
+            {profile.operations
+              .filter(op =>
+                (documentImports ?? []).some(
+                  (i: DocumentImportRow) => i.operationId === op.id
+                )
               )
-            )
-            .map(op => {
-              const versionsForOp = (documentImports ?? []).filter(
-                (i: DocumentImportRow) => i.operationId === op.id
-              );
-              return (
-                <div
-                  key={`imports-${op.id}`}
-                  id={`documents${op.id === profile.operations[0]?.id ? "" : "-" + op.id}`}
-                  className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-20"
-                >
-                  <SectionHeading label={`Imported Documents — ${op.name}`} />
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Every document uploaded for this target on this operation,
-                    verbatim as parsed.
-                  </p>
-                  <div className="space-y-2">
-                    {(() => {
-                      const totalParsed = versionsForOp.filter(
-                        isParsedDocumentImport
-                      ).length;
-                      let parsedCount = 0;
-                      let lastParsedRow: DocumentImportRow | null = null;
-                      return versionsForOp.map(row => {
-                        const parsed = isParsedDocumentImport(row);
-                        if (parsed) parsedCount++;
-                        const card = (
-                          <ImportedDocumentCard
-                            key={row.id}
-                            row={row}
-                            version={parsed ? parsedCount : 0}
-                            isCurrent={parsed && parsedCount === totalParsed}
-                            subject={profile.name}
-                            previous={parsed ? lastParsedRow : null}
-                          />
-                        );
-                        if (parsed) lastParsedRow = row;
-                        return card;
-                      });
-                    })()}
+              .map(op => {
+                const versionsForOp = (documentImports ?? []).filter(
+                  (i: DocumentImportRow) => i.operationId === op.id
+                );
+                return (
+                  <div
+                    key={`imports-${op.id}`}
+                    id={`documents${op.id === profile.operations[0]?.id ? "" : "-" + op.id}`}
+                    className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4 scroll-mt-20"
+                  >
+                    <SectionHeading label={`Imported Documents — ${op.name}`} />
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Every document uploaded for this target on this operation,
+                      verbatim as parsed.
+                    </p>
+                    <div className="space-y-2">
+                      {(() => {
+                        const totalParsed = versionsForOp.filter(
+                          isParsedDocumentImport
+                        ).length;
+                        let parsedCount = 0;
+                        let lastParsedRow: DocumentImportRow | null = null;
+                        return versionsForOp.map(row => {
+                          const parsed = isParsedDocumentImport(row);
+                          if (parsed) parsedCount++;
+                          const card = (
+                            <ImportedDocumentCard
+                              key={row.id}
+                              row={row}
+                              version={parsed ? parsedCount : 0}
+                              isCurrent={parsed && parsedCount === totalParsed}
+                              subject={profile.name}
+                              previous={parsed ? lastParsedRow : null}
+                            />
+                          );
+                          if (parsed) lastParsedRow = row;
+                          return card;
+                        });
+                      })()}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
 
-          {embedded && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate(`/intelligence/target/${targetId}`)}
-              className="text-xs"
-            >
-              <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Open full profile
-            </Button>
-          )}
-        </>
-      )}
-    </div>
+            {embedded && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/intelligence/target/${targetId}`)}
+                className="text-xs"
+              >
+                <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Open full
+                profile
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+    </HereProvider>
   );
 }

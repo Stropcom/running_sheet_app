@@ -403,9 +403,9 @@ function SortableNavItem({
           isActive={location === "/images" || location.startsWith("/images")}
           onClick={() => setLocation("/images")}
           tooltip="Images"
-          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-pink-400/50 shadow-sm"
+          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-cyan-400/50 shadow-sm"
         >
-          <Image className="h-4 w-4 text-pink-400" />
+          <Image className="h-4 w-4 text-cyan-400" />
           <span
             className={`flex-1 ${location === "/images" || location.startsWith("/images") ? "text-sidebar-foreground font-medium" : "text-sidebar-foreground/80"}`}
           >
@@ -1054,10 +1054,10 @@ function SortableNavTile({
         setNodeRef={setNodeRef}
         style={style}
         gripListeners={gripListeners}
-        icon={<Image className="h-5 w-5 text-pink-400" />}
+        icon={<Image className="h-5 w-5 text-cyan-400" />}
         label="Images"
         isActive={location === "/images" || location.startsWith("/images")}
-        activeBorderClass="data-[active=true]:border-pink-400/60"
+        activeBorderClass="data-[active=true]:border-cyan-400/60"
         onClick={() => setLocation("/images")}
       />
     );

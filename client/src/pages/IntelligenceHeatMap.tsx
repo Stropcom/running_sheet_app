@@ -9,6 +9,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Flame, MapPin, Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  ROW_ITEM,
+  SECTION_BAND,
+  SECTION_CARD,
+  SECTION_COUNT,
+  SECTION_TITLE,
+} from "@/lib/pageKit";
+import { FORM_LABEL } from "@/lib/formKit";
 import { toast } from "sonner";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import {
@@ -304,148 +313,165 @@ export default function IntelligenceHeatMap() {
     }
   };
 
+  // Ranked busiest first — the number beside each location is its rank.
+  const rows = [...(locations ?? [])].sort((a, b) => b.count - a.count);
+  const totalSightings = rows.reduce((n, l) => n + l.count, 0);
+  const WHEN_OPTIONS = [
+    { value: "last7", label: "7 days" },
+    { value: "last30", label: "30 days" },
+    { value: "custom", label: "Custom" },
+    { value: "sheet", label: "Sheet" },
+  ] as const;
+
   return (
-    <div className="flex flex-col h-full">
-      {/* ── Filters ── */}
-      <div className="flex flex-wrap items-start justify-between gap-3 px-1 pb-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Operation
+    <section className={SECTION_CARD} aria-labelledby="heat-map-title">
+      {/* ── Title band: what this is, how much is shown, the one action ── */}
+      <div className={`${SECTION_BAND} flex-wrap justify-between`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 id="heat-map-title" className={SECTION_TITLE}>
+            Heat Map
+          </h2>
+          {rows.length > 0 && (
+            <span className={SECTION_COUNT}>
+              {totalSightings} observation{totalSightings === 1 ? "" : "s"} ·{" "}
+              {rows.length} location{rows.length === 1 ? "" : "s"}
             </span>
-            <Select
-              value={operationId != null ? String(operationId) : undefined}
-              onValueChange={v => setOperationId(Number(v))}
-            >
-              <SelectTrigger className="w-48 h-9 text-xs">
-                <SelectValue placeholder="Select an operation…" />
-              </SelectTrigger>
-              <SelectContent>
-                {(operations ?? []).map((op: any) => (
-                  <SelectItem key={op.id} value={String(op.id)}>
-                    {op.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Target
-            </span>
-            <Select
-              value={targetId != null ? String(targetId) : "all"}
-              onValueChange={v => setTargetId(v === "all" ? null : Number(v))}
-              disabled={operationId == null}
-            >
-              <SelectTrigger className="w-48 h-9 text-xs">
-                <SelectValue placeholder="All Targets" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Targets</SelectItem>
-                {(targets ?? []).map((t: any) => (
-                  <SelectItem key={t.id} value={String(t.id)}>
-                    {t.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              When
-            </span>
-            <div className="flex gap-1.5 flex-wrap">
-              {(
-                [
-                  { value: "last7", label: "Last 7 Days" },
-                  { value: "last30", label: "Last 30 Days" },
-                  { value: "custom", label: "Custom…" },
-                  { value: "sheet", label: "Running Sheet" },
-                ] as const
-              ).map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => setWhenMode(opt.value)}
-                  disabled={operationId == null}
-                  className={`px-3 h-9 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 ${
-                    whenMode === opt.value
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted/70"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {whenMode === "sheet" && operationId != null && (
-            <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Sheet
-              </span>
-              <Select
-                value={sheetId != null ? String(sheetId) : undefined}
-                onValueChange={v => setSheetId(Number(v))}
-              >
-                <SelectTrigger className="w-48 h-9 text-xs">
-                  <SelectValue placeholder="Select a sheet…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(sheets ?? []).map((s: any) => (
-                    <SelectItem key={s.id} value={String(s.id)}>
-                      {s.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {whenMode === "custom" && (
-            <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Date range
-              </span>
-              <div className="flex gap-2 items-center h-9">
-                <input
-                  type="date"
-                  value={customFrom}
-                  onChange={e => setCustomFrom(e.target.value)}
-                  className="border border-border/60 rounded-md px-2 h-9 text-xs bg-background text-foreground"
-                />
-                <span className="text-xs text-muted-foreground">to</span>
-                <input
-                  type="date"
-                  value={customTo}
-                  onChange={e => setCustomTo(e.target.value)}
-                  className="border border-border/60 rounded-md px-2 h-9 text-xs bg-background text-foreground"
-                />
-              </div>
-            </div>
           )}
         </div>
-
-        <button
+        <Button
+          variant="outline"
+          className="h-9 min-w-28 gap-1.5"
           onClick={handleExportPdf}
           disabled={operationId == null || exporting}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border bg-card text-sm font-medium text-foreground hover:bg-muted/50 transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <Download className="w-4 h-4" />
+          <Download className="h-4 w-4" />
           {exporting ? "Exporting…" : "Export PDF"}
-        </button>
+        </Button>
       </div>
 
-      {/* ── Map + Top Locations ── */}
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 px-1 pb-1">
-        <div className="relative rounded-xl border border-border overflow-hidden bg-muted/20 min-h-[420px]">
+      {/* ── Filters: equal columns ─────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-3 pb-4 sm:grid-cols-2 lg:grid-cols-3 lg:items-end">
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className={FORM_LABEL}>Operation</span>
+          <Select
+            value={operationId != null ? String(operationId) : undefined}
+            onValueChange={v => setOperationId(Number(v))}
+          >
+            <SelectTrigger className="h-10 w-full">
+              <SelectValue placeholder="Select an operation…" />
+            </SelectTrigger>
+            <SelectContent>
+              {(operations ?? []).map((op: any) => (
+                <SelectItem key={op.id} value={String(op.id)}>
+                  {op.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className={FORM_LABEL}>Target</span>
+          <Select
+            value={targetId != null ? String(targetId) : "all"}
+            onValueChange={v => setTargetId(v === "all" ? null : Number(v))}
+            disabled={operationId == null}
+          >
+            <SelectTrigger className="h-10 w-full">
+              <SelectValue placeholder="All Targets" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Targets</SelectItem>
+              {(targets ?? []).map((t: any) => (
+                <SelectItem key={t.id} value={String(t.id)}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* When: four equal parts */}
+        <div className="flex min-w-0 flex-col gap-1 sm:col-span-2 lg:col-span-1">
+          <span className={FORM_LABEL} id="heat-when-label">
+            When
+          </span>
+          <div
+            role="group"
+            aria-labelledby="heat-when-label"
+            className="grid h-10 grid-cols-4 overflow-hidden rounded-md border border-input bg-background"
+          >
+            {WHEN_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                aria-pressed={whenMode === opt.value}
+                onClick={() => setWhenMode(opt.value)}
+                disabled={operationId == null}
+                className={`border-r border-input text-sm font-bold transition-colors last:border-r-0 disabled:cursor-not-allowed disabled:opacity-50 ${
+                  whenMode === opt.value
+                    ? "bg-primary text-primary-foreground"
+                    : "text-foreground hover:bg-muted/60"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {whenMode === "sheet" && operationId != null && (
+          <div className="flex min-w-0 flex-col gap-1 sm:col-span-2 lg:col-span-1 lg:col-start-3">
+            <span className={FORM_LABEL}>Running sheet</span>
+            <Select
+              value={sheetId != null ? String(sheetId) : undefined}
+              onValueChange={v => setSheetId(Number(v))}
+            >
+              <SelectTrigger className="h-10 w-full">
+                <SelectValue placeholder="Select a sheet…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(sheets ?? []).map((s: any) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    {s.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {whenMode === "custom" && (
+          <div className="flex min-w-0 flex-col gap-1 sm:col-span-2 lg:col-span-1 lg:col-start-3">
+            <span className={FORM_LABEL}>Date range</span>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <input
+                type="date"
+                value={customFrom}
+                onChange={e => setCustomFrom(e.target.value)}
+                aria-label="From"
+                className="h-10 min-w-0 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+              />
+              <span className="text-sm text-muted-foreground">to</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={e => setCustomTo(e.target.value)}
+                aria-label="To"
+                className="h-10 min-w-0 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Map beside the ranked locations (stacked on phone / iPad) ──── */}
+      <div className="-mx-4 -mb-4 grid grid-cols-1 overflow-hidden border-t border-border lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="relative h-[60vh] min-h-[420px] bg-muted/40">
           {operationId == null ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
-              <Flame className="w-8 h-8 opacity-30" />
-              <p className="text-sm">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
+              <Flame className="h-8 w-8 opacity-40" />
+              <p className="text-sm font-medium">
                 Select an Operation to see its heat map.
               </p>
             </div>
@@ -459,33 +485,33 @@ export default function IntelligenceHeatMap() {
                   mapRef.current = map;
                 }}
               />
-              {!isLoading && (locations ?? []).length === 0 && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground bg-background/70 pointer-events-none">
-                  <MapPin className="w-8 h-8 opacity-30" />
-                  <p className="text-sm">
+              {!isLoading && rows.length === 0 && (
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/70 text-muted-foreground">
+                  <MapPin className="h-8 w-8 opacity-40" />
+                  <p className="text-sm font-medium">
                     No locations found for this selection.
                   </p>
                 </div>
               )}
               {isLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-background/70 pointer-events-none">
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/70">
                   <p className="text-sm text-muted-foreground">
                     Loading heat map…
                   </p>
                 </div>
               )}
-              {!isLoading && (locations ?? []).length > 0 && (
-                <div className="absolute left-3 bottom-3 bg-card border border-border rounded-lg px-3 py-2 shadow-sm w-44">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+              {!isLoading && rows.length > 0 && (
+                <div className="absolute bottom-3 left-3 w-48 rounded-lg border border-border bg-card px-3 py-2 shadow-sm">
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/70">
                     Observation density
                   </p>
                   <div
-                    className="h-1.5 rounded-full"
+                    className="h-2 rounded-full"
                     style={{
                       background: `linear-gradient(90deg, ${HEAT_RAMP.join(",")})`,
                     }}
                   />
-                  <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                  <div className="mt-1 flex justify-between text-xs text-muted-foreground">
                     <span>Fewer</span>
                     <span>More</span>
                   </div>
@@ -495,38 +521,60 @@ export default function IntelligenceHeatMap() {
           )}
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-3 overflow-y-auto">
-          <h3 className="text-xs font-semibold mb-1">Top Locations</h3>
-          <p className="text-[11px] text-muted-foreground mb-2">
-            {(locations ?? []).length} location
-            {(locations ?? []).length === 1 ? "" : "s"}
-          </p>
-          {(locations ?? []).map(loc => (
-            <div
-              key={loc.label}
-              className="flex items-center gap-2.5 py-2 border-t border-border first:border-t-0"
-            >
-              <span
-                className="w-2.5 h-2.5 rounded-full shrink-0"
-                style={{ background: colourFor(loc.count) }}
-              />
-              <span className="flex-1 min-w-0 text-xs font-medium truncate">
-                {loc.label}
-              </span>
-              <span className="text-xs font-bold tabular-nums shrink-0">
-                {loc.count}
-              </span>
-            </div>
-          ))}
-          {!isLoading &&
-            operationId != null &&
-            (locations ?? []).length === 0 && (
-              <p className="text-xs text-muted-foreground py-4 text-center">
+        <aside
+          aria-label="Top locations"
+          className="flex flex-col border-t border-border lg:max-h-[60vh] lg:border-l lg:border-t-0"
+        >
+          <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/70 px-3.5 py-2.5">
+            <span className="text-[13px] font-bold uppercase tracking-wide text-foreground">
+              Top locations
+            </span>
+            <span className={SECTION_COUNT}>{rows.length}</span>
+          </div>
+          <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto p-2.5">
+            {rows.map((loc, i) => (
+              <div
+                key={loc.label}
+                className={`${ROW_ITEM} grid grid-cols-[26px_minmax(0,1fr)_auto] items-center gap-2.5 px-2.5 py-2.5`}
+              >
+                <span
+                  className="grid h-6 w-6 place-items-center rounded-full text-xs font-extrabold tabular-nums text-white"
+                  style={{ background: colourFor(loc.count) }}
+                >
+                  {i + 1}
+                </span>
+                <span className="min-w-0">
+                  <span className="block break-words text-[13px] font-semibold leading-snug text-foreground">
+                    {loc.label}
+                  </span>
+                  <span className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-muted">
+                    <span
+                      className="block h-full rounded-full"
+                      style={{
+                        width: `${Math.round((loc.count / maxCount) * 100)}%`,
+                        background: colourFor(loc.count),
+                      }}
+                    />
+                  </span>
+                </span>
+                <span className="text-sm font-bold tabular-nums text-foreground">
+                  {loc.count}
+                </span>
+              </div>
+            ))}
+            {!isLoading && operationId != null && rows.length === 0 && (
+              <p className="px-1 py-4 text-center text-sm text-muted-foreground">
                 Nothing to show yet.
               </p>
             )}
-        </div>
+            {operationId == null && (
+              <p className="px-1 py-2 text-sm text-muted-foreground">
+                Pick an operation to rank its locations.
+              </p>
+            )}
+          </div>
+        </aside>
       </div>
-    </div>
+    </section>
   );
 }

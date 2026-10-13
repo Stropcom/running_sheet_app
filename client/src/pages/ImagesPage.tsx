@@ -22,6 +22,21 @@ import { DeletePhotoButton } from "@/components/DeletePhotoButton";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { CompareFacesDialog } from "@/components/CompareFacesDialog";
 import { formatAttachmentBanner } from "@/lib/attachmentBanner";
+import { cn } from "@/lib/utils";
+
+/** Photo tile: a photo linked to a registered target gets the target colour
+ * (rose) as a full-strength border, matching the Target Registry. */
+function photoTileClass(a: { linkedEntities?: Array<{ category: string }> }) {
+  const linkedToTarget = (a.linkedEntities ?? []).some(
+    e => e.category === "target"
+  );
+  return cn(
+    "group relative rounded-xl overflow-hidden border bg-card flex flex-col",
+    linkedToTarget
+      ? "border-rose-600 ring-2 ring-rose-600 dark:border-rose-500 dark:ring-rose-500"
+      : "border-border"
+  );
+}
 
 // Folder progression: Images → Operation → Running Sheet → RS images
 
@@ -88,8 +103,8 @@ function OperationFolderList({
     <div className="px-4 py-8">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-6">
         <div className="flex items-center gap-3 flex-1">
-          <div className="p-2.5 rounded-lg bg-pink-50 dark:bg-pink-500/10 border border-pink-300 dark:border-pink-500/40 shrink-0">
-            <ImageIcon className="w-5 h-5 text-pink-700 dark:text-pink-300" />
+          <div className="p-2.5 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-300 dark:border-cyan-500/40 shrink-0">
+            <ImageIcon className="w-5 h-5 text-cyan-700 dark:text-cyan-300" />
           </div>
           <h1 className="text-xl font-semibold text-foreground">Images</h1>
         </div>
@@ -134,12 +149,12 @@ function OperationFolderList({
             return (
               <div
                 key={op.id}
-                className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-pink-500/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
+                className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-cyan-500/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
                 onClick={() => onSelect(op.id)}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="p-2.5 rounded-lg bg-pink-50 dark:bg-pink-500/10 border border-pink-300 dark:border-pink-500/40 shrink-0 w-fit">
-                    <FolderOpen className="w-5 h-5 text-pink-700 dark:text-pink-300" />
+                  <div className="p-2.5 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-300 dark:border-cyan-500/40 shrink-0 w-fit">
+                    <FolderOpen className="w-5 h-5 text-cyan-700 dark:text-cyan-300" />
                   </div>
                   <span className="text-xs text-muted-foreground shrink-0 mt-1.5">
                     {count} photo{count === 1 ? "" : "s"}
@@ -159,11 +174,11 @@ function OperationFolderList({
             return (
               <div
                 key={op.id}
-                className="group flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-pink-500/30 transition-all duration-150 cursor-pointer"
+                className="group flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-cyan-500/30 transition-all duration-150 cursor-pointer"
                 onClick={() => onSelect(op.id)}
               >
-                <div className="p-2.5 rounded-lg bg-pink-50 dark:bg-pink-500/10 border border-pink-300 dark:border-pink-500/40 shrink-0">
-                  <FolderOpen className="w-5 h-5 text-pink-700 dark:text-pink-300" />
+                <div className="p-2.5 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-300 dark:border-cyan-500/40 shrink-0">
+                  <FolderOpen className="w-5 h-5 text-cyan-700 dark:text-cyan-300" />
                 </div>
                 <span className="font-semibold text-foreground truncate flex-1">
                   {op.name}
@@ -292,8 +307,8 @@ export function SheetFolderList({
             <ArrowLeft className="w-4 h-4" />
           </Button>
         )}
-        <div className="p-2.5 rounded-lg bg-pink-50 dark:bg-pink-500/10 border border-pink-300 dark:border-pink-500/40">
-          <ImageIcon className="w-5 h-5 text-pink-700 dark:text-pink-300" />
+        <div className="p-2.5 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-300 dark:border-cyan-500/40">
+          <ImageIcon className="w-5 h-5 text-cyan-700 dark:text-cyan-300" />
         </div>
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold text-foreground truncate">
@@ -375,11 +390,11 @@ export function SheetFolderList({
           {sheets.map(s => (
             <div
               key={s.sheetId}
-              className="group flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-pink-500/30 transition-all duration-150 cursor-pointer"
+              className="group flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-cyan-500/30 transition-all duration-150 cursor-pointer"
               onClick={() => onSelect(s.sheetId)}
             >
-              <div className="p-2.5 rounded-lg bg-pink-50 dark:bg-pink-500/10 border border-pink-300 dark:border-pink-500/40 shrink-0">
-                <FolderOpen className="w-5 h-5 text-pink-700 dark:text-pink-300" />
+              <div className="p-2.5 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-300 dark:border-cyan-500/40 shrink-0">
+                <FolderOpen className="w-5 h-5 text-cyan-700 dark:text-cyan-300" />
               </div>
               <span className="font-semibold text-foreground truncate flex-1">
                 {s.sheetTitle || `Sheet #${s.sheetId}`}
@@ -394,15 +409,12 @@ export function SheetFolderList({
         <div className="flex flex-col gap-6">
           {groupedBySheet.map(group => (
             <div key={group.sheetId}>
-              <div className="mb-2 px-3 py-1.5 rounded-lg bg-pink-50 dark:bg-pink-500/10 border border-pink-300 dark:border-pink-500/40 text-xs font-semibold text-pink-700 dark:text-pink-300 truncate">
+              <div className="mb-2 px-3 py-1.5 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-300 dark:border-cyan-500/40 text-xs font-semibold text-cyan-700 dark:text-cyan-300 truncate">
                 {group.sheetTitle || `Sheet #${group.sheetId}`}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {group.photos.map((a: any) => (
-                  <div
-                    key={a.id}
-                    className="group relative rounded-xl overflow-hidden border border-border bg-card flex flex-col"
-                  >
+                  <div key={a.id} className={photoTileClass(a)}>
                     <div className="relative">
                       <img
                         src={a.url}
@@ -540,8 +552,8 @@ export function SheetGallery({
             <ArrowLeft className="w-4 h-4" />
           </Button>
         )}
-        <div className="p-2.5 rounded-lg bg-pink-50 dark:bg-pink-500/10 border border-pink-300 dark:border-pink-500/40">
-          <ImageIcon className="w-5 h-5 text-pink-700 dark:text-pink-300" />
+        <div className="p-2.5 rounded-lg bg-cyan-50 dark:bg-cyan-500/10 border border-cyan-300 dark:border-cyan-500/40">
+          <ImageIcon className="w-5 h-5 text-cyan-700 dark:text-cyan-300" />
         </div>
         <div className="min-w-0">
           <h1 className="text-xl font-semibold text-foreground truncate">
@@ -574,10 +586,7 @@ export function SheetGallery({
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {attachments.map((a: any) => (
-            <div
-              key={a.id}
-              className="group relative rounded-xl overflow-hidden border border-border bg-card flex flex-col"
-            >
+            <div key={a.id} className={photoTileClass(a)}>
               <div className="relative">
                 <img
                   src={a.url}

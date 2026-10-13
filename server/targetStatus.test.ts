@@ -37,16 +37,22 @@ import {
 } from "../shared/targetStatus";
 
 describe("special projects", () => {
-  it("keeps only the four registry projects, once each, in order", () => {
+  it("keeps only the seven registry projects, once each, in order", () => {
     const raw = JSON.stringify([
       { key: "CAD", detail: " WAPOL " },
-      { key: "Tracker", detail: "x" },
+      { key: "Other", detail: "x" },
+      { key: "Coyotes", detail: "Fremantle" },
+      { key: "LD", detail: "Camry" },
+      { key: "Tracker", detail: "1ABC123" },
       { key: "TI", detail: "AFP" },
       { key: "TI", detail: "dup" },
     ]);
     expect(JSON.parse(sanitizeTargetSpecialProjects(raw)!)).toEqual([
       { key: "TI", detail: "AFP" },
       { key: "CAD", detail: "WAPOL" },
+      { key: "Tracker", detail: "1ABC123" },
+      { key: "LD", detail: "Camry" },
+      { key: "Coyotes", detail: "Fremantle" },
     ]);
     expect(sanitizeTargetSpecialProjects("")).toBeNull();
     expect(sanitizeTargetSpecialProjects("not json")).toBeNull();
@@ -94,20 +100,23 @@ describe("special projects", () => {
 import { applyTargetProjectsToSummary } from "../shared/targetStatus";
 
 describe("registry ↔ summary project sync", () => {
-  it("makes the summary's TI/LBS/SEEK/CAD match the target and leaves the rest", () => {
+  it("makes the summary's seven registry projects match the target and leaves the rest", () => {
     const summary = JSON.stringify([
       { key: "Tracker", detail: "1ABC123" },
+      { key: "Other", detail: "Fremantle" },
       { key: "TI", detail: "AFP" },
       { key: "CAD", detail: "WAPOL" },
     ]);
     const target = JSON.stringify([
       { key: "TI", detail: "WAPOL" },
       { key: "LBS", detail: "AFP" },
+      { key: "Tracker", detail: "1XYZ999" },
     ]);
-    // TI detail follows the target, CAD (not on the target) is removed, LBS
-    // is added, and the per-deployment Tracker is untouched.
+    // TI and Tracker follow the target, CAD (not on the target) is removed,
+    // LBS is added, and the per-deployment Other is untouched.
     expect(JSON.parse(applyTargetProjectsToSummary(summary, target)!)).toEqual([
-      { key: "Tracker", detail: "1ABC123" },
+      { key: "Tracker", detail: "1XYZ999" },
+      { key: "Other", detail: "Fremantle" },
       { key: "TI", detail: "WAPOL" },
       { key: "LBS", detail: "AFP" },
     ]);
@@ -116,10 +125,10 @@ describe("registry ↔ summary project sync", () => {
   it("clears the four projects when the target has none, keeping others", () => {
     const summary = JSON.stringify([
       { key: "LBS", detail: "AFP" },
-      { key: "Coyotes", detail: "Fremantle" },
+      { key: "Other", detail: "Fremantle" },
     ]);
     expect(JSON.parse(applyTargetProjectsToSummary(summary, null)!)).toEqual([
-      { key: "Coyotes", detail: "Fremantle" },
+      { key: "Other", detail: "Fremantle" },
     ]);
     expect(
       applyTargetProjectsToSummary(

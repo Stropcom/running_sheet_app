@@ -2304,7 +2304,7 @@ export default function IntelligencePage() {
                         >
                           {icon}
                         </span>
-                        <div className="text-right shrink-0">
+                        <div className="hidden text-right shrink-0 sm:block">
                           <p className="text-sm font-bold text-foreground">
                             {entity.occurrences.length}×
                           </p>
@@ -2333,7 +2333,7 @@ export default function IntelligencePage() {
                         {photoCountForEntity(entity) > 0 && (
                           <span
                             title={`${photoCountForEntity(entity)} linked photo${photoCountForEntity(entity) === 1 ? "" : "s"}`}
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-pink-500/10 text-pink-700 dark:text-pink-400 border border-pink-500/40 shrink-0"
+                            className="hidden items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-pink-500/10 text-pink-700 dark:text-pink-400 border border-pink-500/40 shrink-0 sm:inline-flex"
                           >
                             <Camera className="w-3 h-3" />
                             {photoCountForEntity(entity)}
@@ -2416,7 +2416,7 @@ export default function IntelligencePage() {
                           {entity.isIndicesOnly && <IndicesBadge />}
                         </div>
                       </div>
-                      <div className="text-right shrink-0">
+                      <div className="hidden text-right shrink-0 sm:block">
                         <p className="text-sm font-bold text-foreground">
                           {entity.occurrences.length}×
                         </p>
@@ -2430,7 +2430,7 @@ export default function IntelligencePage() {
                       {photoCountForEntity(entity) > 0 && (
                         <span
                           title={`${photoCountForEntity(entity)} linked photo${photoCountForEntity(entity) === 1 ? "" : "s"}`}
-                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-pink-500/10 text-pink-700 dark:text-pink-400 border border-pink-500/40 shrink-0"
+                          className="hidden items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-pink-500/10 text-pink-700 dark:text-pink-400 border border-pink-500/40 shrink-0 sm:inline-flex"
                         >
                           <Camera className="w-3 h-3" />
                           {photoCountForEntity(entity)}

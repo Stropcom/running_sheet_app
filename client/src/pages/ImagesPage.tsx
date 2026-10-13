@@ -22,6 +22,21 @@ import { DeletePhotoButton } from "@/components/DeletePhotoButton";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { CompareFacesDialog } from "@/components/CompareFacesDialog";
 import { formatAttachmentBanner } from "@/lib/attachmentBanner";
+import { cn } from "@/lib/utils";
+
+/** Photo tile: a photo linked to a registered target gets the target colour
+ * (rose) as a full-strength border, matching the Target Registry. */
+function photoTileClass(a: { linkedEntities?: Array<{ category: string }> }) {
+  const linkedToTarget = (a.linkedEntities ?? []).some(
+    e => e.category === "target"
+  );
+  return cn(
+    "group relative rounded-xl overflow-hidden border bg-card flex flex-col",
+    linkedToTarget
+      ? "border-rose-600 ring-2 ring-rose-600 dark:border-rose-500 dark:ring-rose-500"
+      : "border-border"
+  );
+}
 
 // Folder progression: Images → Operation → Running Sheet → RS images
 
@@ -399,10 +414,7 @@ export function SheetFolderList({
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {group.photos.map((a: any) => (
-                  <div
-                    key={a.id}
-                    className="group relative rounded-xl overflow-hidden border border-border bg-card flex flex-col"
-                  >
+                  <div key={a.id} className={photoTileClass(a)}>
                     <div className="relative">
                       <img
                         src={a.url}
@@ -574,10 +586,7 @@ export function SheetGallery({
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {attachments.map((a: any) => (
-            <div
-              key={a.id}
-              className="group relative rounded-xl overflow-hidden border border-border bg-card flex flex-col"
-            >
+            <div key={a.id} className={photoTileClass(a)}>
               <div className="relative">
                 <img
                   src={a.url}

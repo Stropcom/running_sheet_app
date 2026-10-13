@@ -1138,8 +1138,8 @@ export function checkAbbreviatedStreetTypes(
 // ── Vehicles listed one after another with no punctuation ─────────────────
 
 // Two or more vehicles written back to back ("… (Vehicle A) … (Vehicle B)")
-// need "and" between two, or commas with "and" before the last for more
-// (shared/vehicleList.ts). New text is punctuated as it is typed; this flags
+// need "and" between two, or commas with "and" before the last for more, and
+// "a" / "an" in front of each (shared/vehicleList.ts). New text is punctuated as it is typed; this flags
 // rows written before that rule, with a one-tap fix. One finding per list.
 export function checkVehicleLists(
   rows: ObservationTextForSheet[]
@@ -1152,7 +1152,11 @@ export function checkVehicleLists(
         ruleId: "vehicle-list-unpunctuated",
         category: "formatting",
         reason:
-          'These vehicles are listed one after another — put commas between them, with "and" before the last.',
+          fix.needsPunctuation && fix.needsArticles
+            ? 'These vehicles are listed one after another — put commas between them, "and" before the last, and "a" / "an" in front of each.'
+            : fix.needsArticles
+              ? 'These vehicles are listed one after another — each needs "a" / "an" in front of it.'
+              : 'These vehicles are listed one after another — put commas between them, with "and" before the last.',
         rowId: row.rowId,
         timeMinutes: row.timeMinutes,
         snippet: wordSnippet(text, fix.start, fix.end),

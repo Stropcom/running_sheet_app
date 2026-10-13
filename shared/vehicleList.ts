@@ -5,6 +5,9 @@
  *       → "… (Vehicle 1TDM414) and … (Vehicle 1TMD414)"
  *   three or more: commas between them, with "and" before the last —
  *       "A, B and C", "A, B, C and D" (no comma before the "and").
+ * and each described vehicle in the list starts with "a" / "an" (a capital
+ * "A" at the start of a sentence): "A white Lexus …, a white Toyota … and a
+ * silver Ford …".
  *
  * A vehicle ends at its "(Vehicle REGO)" bracket; what sits between one
  * bracket and the next is the next vehicle's description. Only a gap that
@@ -16,6 +19,8 @@
  * main running sheet and the RS Quick Entry pop-up) and by Check Sheet, which
  * offers a one-tap fix for rows written before this rule.
  */
+
+import { COLOUR_PHRASE_SOURCE, leadingColourPhrase } from "./vehicleColour";
 
 export interface VehicleEdit {
   /** Where in the original text. */
@@ -73,6 +78,9 @@ const BODY_WORDS = new Set(
   ).split(" ")
 );
 
+/** An article already in front of a description. */
+const ARTICLE_START = /^(?:a|an|the|one|another)\s+/i;
+
 function isDescription(desc: string, rego: string): boolean {
   const d = desc.trim();
   if (d === "") return true; // "(Vehicle A) (Vehicle B)"
@@ -83,9 +91,11 @@ function isDescription(desc: string, rego: string): boolean {
   )
     return true;
   if (/[.;:!?\n()]/.test(d)) return false;
-  const bearing = /^(.*?),\s*bearing\b/i.exec(d);
-  const head = bearing ? bearing[1] : d;
-  if (!bearing && /,/.test(d)) return false;
+  // "a white Toyota …" — a leading article is part of the description.
+  const body = d.replace(ARTICLE_START, "");
+  const bearing = /^(.*?),\s*bearing\b/i.exec(body);
+  const head = bearing ? bearing[1] : body;
+  if (!bearing && /,/.test(body)) return false;
   const words = head.split(/\s+/).filter(Boolean);
   if (words.length === 0 || words.length > (bearing ? 10 : 6)) return false;
   if (BODY_WORDS.has(words[0].toLowerCase())) return false;
@@ -156,25 +166,148 @@ export function findVehicleChains(text: string): VehicleChain[] {
   return chains;
 }
 
+/** "a" or "an" for a description opening with this word. */
+function articleFor(word: string): "a" | "an" {
+  const w = word.toLowerCase();
+  if (/^u(?:ni|ti|se|s[aeiou]|ro)/.test(w)) return "a"; // "utility", "unit"
+  return /^[aeiou]/.test(w) ? "an" : "a";
+}
+
 /**
- * The edits that punctuate every list that has an unpunctuated link. A list
- * with at least one bare link is written out in full: ", " between each pair
- * and " and " before the last, so a list that grew one vehicle at a time
- * ("A and B" + C) becomes "A, B and C". A list already fully punctuated is
- * never touched.
+ * Where the FIRST vehicle's description starts. Only its bracket is a sure
+ * thing, so this looks back through the same sentence for a colour-led
+ * description that runs, in a few plain words, up to ", bearing … (Vehicle …)".
+ * Returns null when the start isn't clear (then no article is added).
  */
-export function vehicleListEdits(text: string): VehicleEdit[] {
+function firstDescriptionStart(
+  text: string,
+  bracketStart: number
+): { start: number; sentenceStart: boolean; hasArticle: boolean } | null {
+  const before = text.slice(0, bracketStart);
+  let boundary = -1;
+  for (let i = before.length - 1; i >= 0; i--) {
+    if (/[.!?:;\n]/.test(before[i])) {
+      boundary = i;
+      break;
+    }
+  }
+  const segStart = boundary + 1;
+  const re = new RegExp(`(?<![A-Za-z])(${COLOUR_PHRASE_SOURCE})(?=\\s)`, "gi");
+  re.lastIndex = segStart;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(before)) !== null) {
+    const p = m.index;
+    const rest = before.slice(p);
+    const bearing = /,\s*bearing\b/i.exec(rest);
+    if (!bearing) continue;
+    if (/[.;:!?()]/.test(rest)) continue;
+    // the words after the colour, up to ", bearing", must read as a description
+    const afterColour = rest.slice(m[1].length, bearing.index);
+    const words = afterColour.split(/\s+/).filter(Boolean);
+    if (words.length > 8) continue;
+    if (
+      words.some(w =>
+        NOT_A_DESCRIPTION.has(w.toLowerCase().replace(/[^a-z]/g, ""))
+      )
+    )
+      continue;
+    const lead = before.slice(segStart, p);
+    return {
+      start: p,
+      sentenceStart: lead.trim() === "",
+      hasArticle: /(?:^|\s)(?:a|an|the|one|another)\s*$/i.test(lead),
+    };
+  }
+  return null;
+}
+
+/** The edit that puts "a" / "an" (and a lower-case colour) at the start of a description. */
+function articleEdit(
+  text: string,
+  start: number,
+  end: number,
+  rego: string,
+  capital: boolean
+): VehicleEdit | null {
+  const desc = text.slice(start, end);
+  const trimmed = desc.trim();
+  if (!trimmed) return null; // nothing described: "(Vehicle A) (Vehicle B)"
+  if (
+    trimmed.toUpperCase().replace(/\s+/g, "") ===
+    rego.toUpperCase().replace(/\s+/g, "")
+  )
+    return null; // just a rego
+  if (ARTICLE_START.test(desc)) return null;
+  const colour = leadingColourPhrase(desc);
+  const firstWord = desc.split(/\s+/)[0];
+  const art = articleFor(firstWord);
+  const word = capital ? art[0].toUpperCase() + art.slice(1) : art;
+  if (colour)
+    return {
+      start,
+      end: start + colour.length,
+      insert: `${word} ${colour.toLowerCase()}`,
+    };
+  return { start, end: start, insert: `${word} ` };
+}
+
+interface ChainEdits {
+  edits: VehicleEdit[];
+  /** What this list still needs: its punctuation, its "a" / "an", or both. */
+  needsPunctuation: boolean;
+  needsArticles: boolean;
+}
+
+function chainEdits(text: string, chain: VehicleChain): ChainEdits {
   const edits: VehicleEdit[] = [];
-  for (const chain of findVehicleChains(text)) {
-    if (!chain.links.some(l => l.kind === "bare")) continue;
+  let needsPunctuation = false;
+  let needsArticles = false;
+  // Punctuation: a list with any unpunctuated link is written out in full.
+  if (chain.links.some(l => l.kind === "bare")) {
     const last = chain.links.length - 1;
     chain.links.forEach((l, i) => {
       const want = i === last ? " and " : ", ";
-      if (text.slice(l.sepStart, l.sepEnd) !== want)
+      if (text.slice(l.sepStart, l.sepEnd) !== want) {
         edits.push({ start: l.sepStart, end: l.sepEnd, insert: want });
+        needsPunctuation = true;
+      }
     });
   }
-  return edits;
+  // Articles: every described vehicle in the list starts with a / an.
+  const first = firstDescriptionStart(text, chain.brackets[0].start);
+  if (first && !first.hasArticle) {
+    const e = articleEdit(
+      text,
+      first.start,
+      chain.brackets[0].start,
+      chain.brackets[0].rego,
+      first.sentenceStart
+    );
+    if (e) {
+      edits.push(e);
+      needsArticles = true;
+    }
+  }
+  chain.links.forEach((l, i) => {
+    const b = chain.brackets[i + 1];
+    const e = articleEdit(text, l.sepEnd, b.start, b.rego, false);
+    if (e) {
+      edits.push(e);
+      needsArticles = true;
+    }
+  });
+  return { edits, needsPunctuation, needsArticles };
+}
+
+/**
+ * The edits that tidy every list of vehicles written one after another:
+ * ", " between each pair and " and " before the last (a list with any
+ * unpunctuated link is written out in full, so one that grew a vehicle at a
+ * time — "A and B" + C — becomes "A, B and C"), and "a" / "an" in front of each
+ * described vehicle. A list that is already right is never touched.
+ */
+export function vehicleListEdits(text: string): VehicleEdit[] {
+  return findVehicleChains(text).flatMap(c => chainEdits(text, c).edits);
 }
 
 export function applyEdits(text: string, edits: VehicleEdit[]): string {
@@ -224,36 +357,38 @@ export function justTypedSpaceAfterVehicle(
 }
 
 /**
- * One finding per list that still needs punctuating, for Check Sheet:
- * `wrong` is the whole list (first bracket to last), `correct` the same
- * stretch punctuated.
+ * One finding per list that still needs tidying, for Check Sheet: `wrong` is
+ * the stretch from the list's first description to its last bracket, `correct`
+ * the same stretch tidied.
  */
-export function vehicleListFixes(
-  text: string
-): Array<{ start: number; end: number; wrong: string; correct: string }> {
-  const out: Array<{
-    start: number;
-    end: number;
-    wrong: string;
-    correct: string;
-  }> = [];
+export function vehicleListFixes(text: string): Array<{
+  start: number;
+  end: number;
+  wrong: string;
+  correct: string;
+  needsPunctuation: boolean;
+  needsArticles: boolean;
+}> {
+  const out: ReturnType<typeof vehicleListFixes> = [];
   for (const chain of findVehicleChains(text)) {
-    if (!chain.links.some(l => l.kind === "bare")) continue;
-    const start = chain.brackets[0].start;
+    const { edits, needsPunctuation, needsArticles } = chainEdits(text, chain);
+    if (edits.length === 0) continue;
+    const start = Math.min(chain.brackets[0].start, ...edits.map(e => e.start));
     const end = chain.brackets[chain.brackets.length - 1].end;
-    const last = chain.links.length - 1;
-    const edits: VehicleEdit[] = [];
-    chain.links.forEach((l, i) => {
-      const want = i === last ? " and " : ", ";
-      if (text.slice(l.sepStart, l.sepEnd) !== want)
-        edits.push({
-          start: l.sepStart - start,
-          end: l.sepEnd - start,
-          insert: want,
-        });
-    });
     const wrong = text.slice(start, end);
-    out.push({ start, end, wrong, correct: applyEdits(wrong, edits) });
+    const shifted = edits.map(e => ({
+      start: e.start - start,
+      end: e.end - start,
+      insert: e.insert,
+    }));
+    out.push({
+      start,
+      end,
+      wrong,
+      correct: applyEdits(wrong, shifted),
+      needsPunctuation,
+      needsArticles,
+    });
   }
   return out;
 }

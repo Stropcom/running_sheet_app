@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PROFILE_PHOTO_GRID, PROFILE_PHOTO_TILE } from "@/lib/pageKit";
 import { User, Car, MapPin } from "lucide-react";
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import {
@@ -87,27 +88,50 @@ export function IntelPhotoStrip({
   size = "w-16 h-16",
 }: {
   photos: IntelEntityPhoto[];
+  /** Tailwind size classes for a small inline thumbnail, or "medium" for the
+   * profile photo grid (same tiles as the Photos card — see pageKit). */
   size?: string;
 }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   if (!photos.length) return null;
+  const medium = size === "medium";
   return (
     <>
-      <div className="flex flex-wrap gap-1.5 mt-1.5">
-        {photos.map(p => (
-          <button
-            key={p.id}
-            onClick={() => setLightbox(p.url)}
-            title={formatAttachmentBanner(p)}
-            className={`${size} rounded-md overflow-hidden border border-border/60 shrink-0 hover:opacity-80 transition-opacity`}
-          >
-            <img
-              src={p.url}
-              alt="Linked photograph"
-              className="w-full h-full object-cover"
-            />
-          </button>
-        ))}
+      <div
+        className={
+          medium ? PROFILE_PHOTO_GRID : "flex flex-wrap gap-1.5 mt-1.5"
+        }
+      >
+        {photos.map(p =>
+          medium ? (
+            <div key={p.id} className={PROFILE_PHOTO_TILE}>
+              <img
+                src={p.url}
+                alt="Linked photograph"
+                className="w-full aspect-square object-cover cursor-zoom-in"
+                onClick={() => setLightbox(p.url)}
+              />
+              <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
+                <p className="text-xs text-white truncate">
+                  {formatAttachmentBanner(p)}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <button
+              key={p.id}
+              onClick={() => setLightbox(p.url)}
+              title={formatAttachmentBanner(p)}
+              className={`${size} rounded-md overflow-hidden border border-border/60 shrink-0 hover:opacity-80 transition-opacity`}
+            >
+              <img
+                src={p.url}
+                alt="Linked photograph"
+                className="w-full h-full object-cover"
+              />
+            </button>
+          )
+        )}
       </div>
       {lightbox && (
         <div

@@ -132,6 +132,7 @@ import { FLY_COMPASS_FIXED_ICONS } from "@/lib/flyCompassFixed";
 import { ImagesPip } from "@/components/ImagesPip";
 import { addressMatchKey } from "@shared/addressMatchKey";
 import { shortPersonDisplayName } from "@shared/addressFormat";
+import { markerEntityCount } from "@shared/markerEntityCount";
 import { StreetHeadingBar } from "@/components/StreetHeadingBar";
 import { UcoGuideMapOverlay } from "@/components/UcoGuideMapOverlay";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
@@ -1292,56 +1293,6 @@ function popupPersonLines(persons: string[], fontSize: string): string {
         `<div style="font-size:${fontSize};color:#111;padding:1px 0;">${p}</div>`
     )
     .join("");
-}
-
-/** A vehicle's identity for de-duplication: its registration when the line
- * leads with one ("1NAV48 Charcoal Mazda …"), else the whole line. */
-function vehicleDedupeKey(v: string): string {
-  const shown = formatIntelVehicle(v).trim();
-  const first = shown.split(/\s+/)[0] ?? "";
-  return /\d/.test(first) && /^[A-Za-z0-9-]{3,8}$/.test(first)
-    ? first.toUpperCase()
-    : shown.toLowerCase();
-}
-
-/** Total distinct entities linked to a map marker, for its count badge: the
- * people (linked targets, people seen there, and registered residents /
- * associates at the address) plus every vehicle (seen there, or on the
- * registry record of anyone counted) — each person and each vehicle once. */
-function markerEntityCount(
-  loc: {
-    label: string;
-    linkedTargets: Array<{
-      name: string;
-      v1f?: string | null;
-      v2f?: string | null;
-    }>;
-    assocPersons: string[];
-    assocVehicles: string[];
-  },
-  registry: MapPeopleLookup | undefined
-): number {
-  const people = new Set<string>();
-  const vehicles = new Set<string>();
-  const addVehicle = (v?: string | null) => {
-    if (v && v.trim()) vehicles.add(vehicleDedupeKey(v));
-  };
-  const addPerson = (name: string) => {
-    const key = shortPopupName(name).toLowerCase();
-    if (!key) return;
-    people.add(key);
-    registry?.byName.get(key)?.vehicles.forEach(addVehicle);
-  };
-  for (const t of loc.linkedTargets) {
-    addPerson(t.name);
-    addVehicle(t.v1f);
-    addVehicle(t.v2f);
-  }
-  loc.assocPersons.forEach(addPerson);
-  loc.assocVehicles.forEach(addVehicle);
-  for (const p of registry?.byAddress.get(addressMatchKey(loc.label)) ?? [])
-    addPerson(p.name);
-  return people.size + vehicles.size;
 }
 
 // Mirrors server/db.ts's normalizeEntityLabel exactly — the map needs the
@@ -4184,7 +4135,10 @@ export default function IntelligenceMapping() {
         override?.markerColour ?? (isTarget ? "red" : "purple"),
         override?.rotation ?? 0,
         showMarkerEntityCountRef.current
-          ? markerEntityCount(entry.loc, registry)
+          ? markerEntityCount(
+              { ...entry.loc, secondaryLocs: entry.secondaryLocs },
+              registry
+            )
           : 0,
         isTarget ? "#dc2626" : "#7c3aed",
         photoKeysRef.current.has(normalizeEntityLabelClient(label)),
@@ -4893,7 +4847,10 @@ export default function IntelligenceMapping() {
               merged.linkedTargets.length +
               merged.assocPersons.length +
               merged.assocVehicles.length;
-            const newPinEl = createPinElement(merged);
+            const newPinEl = createPinElement({
+              ...merged,
+              secondaryLocs: targetEntry.secondaryLocs,
+            });
             targetMarker.content = newPinEl;
             // Update geocodedIntelRef so the click handler has fresh data
             geocodedIntelRef.current.set(targetMarker.title ?? "", {

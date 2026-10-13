@@ -389,7 +389,7 @@ export function TargetStatusFields({
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {onProjectsNoneChange && (
             <label
-              className={`flex h-10 items-center justify-center gap-1.5 rounded-md border border-border bg-background text-sm font-semibold ${
+              className={`flex h-10 items-center justify-start gap-2.5 px-4 rounded-md border border-border bg-background text-sm font-semibold ${
                 projects.length > 0 && !projectsNone
                   ? "cursor-not-allowed opacity-50"
                   : "cursor-pointer"
@@ -415,7 +415,7 @@ export function TargetStatusFields({
             return (
               <label
                 key={key}
-                className={`flex h-10 items-center justify-center gap-1.5 rounded-md border border-border bg-background text-sm ${
+                className={`flex h-10 items-center justify-start gap-2.5 px-4 rounded-md border border-border bg-background text-sm ${
                   projectsNone
                     ? "cursor-not-allowed opacity-45"
                     : "cursor-pointer"

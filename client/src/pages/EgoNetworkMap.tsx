@@ -861,7 +861,7 @@ export default function EgoNetworkMap({
                               NODE_COLORS.unknown,
                           }}
                         />
-                        <span className="absolute bottom-[calc(100%+6px)] left-1/2 line-clamp-2 w-max max-w-[170px] -translate-x-1/2 whitespace-normal break-words rounded border border-border bg-card px-2 py-0.5 text-center text-xs font-bold leading-tight text-foreground">
+                        <span className="absolute bottom-[calc(100%+6px)] left-1/2 line-clamp-2 w-max max-w-[170px] -translate-x-1/2 whitespace-normal break-words px-1 text-center text-xs font-bold leading-tight text-foreground [text-shadow:0_0_3px_var(--card),0_0_3px_var(--card),0_0_5px_var(--card)]">
                           {canvasName(focusNode.label)}
                         </span>
                       </div>
@@ -896,7 +896,7 @@ export default function EgoNetworkMap({
                               per-parent slot bound is what stops a busy
                               branch's labels overlapping its neighbours'. */}
                           <span
-                            className={`line-clamp-2 whitespace-normal break-words rounded border border-border bg-card px-1.5 py-0.5 text-center text-xs leading-tight ${
+                            className={`line-clamp-2 whitespace-normal break-words px-1 text-center text-xs leading-tight [text-shadow:0_0_3px_var(--card),0_0_3px_var(--card),0_0_5px_var(--card)] ${
                               p.hop === 1
                                 ? "max-w-[124px] font-semibold text-foreground"
                                 : "max-w-[104px] text-muted-foreground"

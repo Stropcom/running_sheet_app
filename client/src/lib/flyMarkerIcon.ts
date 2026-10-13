@@ -536,7 +536,7 @@ export interface FlyTargetFlagSpec {
   lift: number;
 }
 
-const FLAG_PINK = "#e0338a";
+const FLAG_PINK = "#e11d48";
 // The 3D map shows a picture at its own pixel size and ignores the width and
 // height it is given, so the flag must be drawn at exactly its on-screen size
 // (a 2x picture appears twice as big, and twice as high above the pin).

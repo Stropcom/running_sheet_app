@@ -93,13 +93,13 @@ export function RegistryBackgroundPanel({
         <span className="font-semibold uppercase tracking-wide">
           Appears on
         </span>
-        <span className="rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 font-semibold text-sky-800 dark:text-sky-300">
+        <span className="rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 font-semibold text-rose-800 dark:text-rose-300">
           Target profile
         </span>
         {operationNames.map(n => (
           <span
             key={n}
-            className="rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 font-semibold text-sky-800 dark:text-sky-300"
+            className="rounded-md border border-blue-600/40 bg-blue-600/10 px-2 py-0.5 font-semibold text-blue-800 dark:text-blue-300"
           >
             Operation {n}
           </span>

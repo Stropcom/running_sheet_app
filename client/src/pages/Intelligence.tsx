@@ -164,8 +164,14 @@ const TYPE_ICONS: Record<EntityType, React.ReactNode> = {
   unknown: <HelpCircle className="w-3.5 h-3.5" />,
 };
 
+// A registered target (rose) is told apart from other people mined from
+// observation text (navy) — see TYPE_COLORS.person.
+const TARGET_COLOR =
+  "bg-rose-500/10 text-rose-700 border-rose-500/30 dark:text-rose-400";
+
 const TYPE_COLORS: Record<EntityType, string> = {
-  person: "bg-blue-500/10 text-blue-600 border-blue-500/30 dark:text-blue-400",
+  person:
+    "bg-blue-900/10 text-blue-900 border-blue-900/30 dark:bg-blue-400/10 dark:text-blue-300 dark:border-blue-400/30",
   vehicle:
     "bg-amber-500/10 text-amber-600 border-amber-500/30 dark:text-amber-400",
   address:
@@ -849,7 +855,7 @@ function ProfileDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <span
-              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${TYPE_COLORS[entity.type]}`}
+              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${entity.isTarget ? TARGET_COLOR : TYPE_COLORS[entity.type]}`}
             >
               {TYPE_ICONS[entity.type]}
               {TYPE_LABELS[entity.type]}
@@ -1524,13 +1530,13 @@ const ENTITY_TAB_COLORS: Record<
     activeBorder: "border-slate-500",
   },
   targets: {
-    icon: "text-sky-600",
-    activeBg: "bg-sky-500/15 shadow-sm",
-    activeText: "text-sky-700 dark:text-sky-400",
-    bar: "bg-sky-500",
-    idleBorder: "border-sky-500/45",
+    icon: "text-rose-600",
+    activeBg: "bg-rose-500/15 shadow-sm",
+    activeText: "text-rose-700 dark:text-rose-400",
+    bar: "bg-rose-500",
+    idleBorder: "border-rose-500/45",
     idleBg: "bg-card",
-    activeBorder: "border-sky-500",
+    activeBorder: "border-rose-500",
   },
   associates: {
     icon: "text-violet-600",
@@ -2256,7 +2262,7 @@ export default function IntelligencePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {sortedByTab(filteredByTab).map(entity => {
                   const iconColor = entity.isTarget
-                    ? TYPE_COLORS.person
+                    ? TARGET_COLOR
                     : TYPE_COLORS[entity.type];
                   const icon =
                     entity.type === "address" || entity.type === "business" ? (
@@ -2326,14 +2332,14 @@ export default function IntelligencePage() {
                       </div>
                       <div className="flex items-center justify-between gap-2">
                         <span
-                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${entity.isTarget ? TYPE_COLORS.person : TYPE_COLORS[entity.type]}`}
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${entity.isTarget ? TARGET_COLOR : TYPE_COLORS[entity.type]}`}
                         >
                           {TYPE_LABELS[entity.type]}
                         </span>
                         {photoCountForEntity(entity) > 0 && (
                           <span
                             title={`${photoCountForEntity(entity)} linked photo${photoCountForEntity(entity) === 1 ? "" : "s"}`}
-                            className="hidden items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-pink-500/10 text-pink-700 dark:text-pink-400 border border-pink-500/40 shrink-0 sm:inline-flex"
+                            className="hidden items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-500/40 shrink-0 sm:inline-flex"
                           >
                             <Camera className="w-3 h-3" />
                             {photoCountForEntity(entity)}
@@ -2348,7 +2354,7 @@ export default function IntelligencePage() {
               <div className="rounded-xl border border-border overflow-hidden bg-card shadow-sm">
                 {sortedByTab(filteredByTab).map((entity, idx) => {
                   const iconColor = entity.isTarget
-                    ? TYPE_COLORS.person
+                    ? TARGET_COLOR
                     : TYPE_COLORS[entity.type];
                   const icon =
                     entity.type === "address" || entity.type === "business" ? (
@@ -2430,7 +2436,7 @@ export default function IntelligencePage() {
                       {photoCountForEntity(entity) > 0 && (
                         <span
                           title={`${photoCountForEntity(entity)} linked photo${photoCountForEntity(entity) === 1 ? "" : "s"}`}
-                          className="hidden items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-pink-500/10 text-pink-700 dark:text-pink-400 border border-pink-500/40 shrink-0 sm:inline-flex"
+                          className="hidden items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-semibold bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-500/40 shrink-0 sm:inline-flex"
                         >
                           <Camera className="w-3 h-3" />
                           {photoCountForEntity(entity)}

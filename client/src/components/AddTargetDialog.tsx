@@ -2008,8 +2008,8 @@ export function AddTargetDialog({
       noneTitle: "No other residents",
       noneHint: "Tick if nobody else lives at the target’s home address.",
       tone: "resident" as const,
-      photoBorder: "border-rose-500",
-      pill: "border-rose-600",
+      photoBorder: "border-sky-500",
+      pill: "border-sky-600",
     },
   } as const;
 
@@ -2485,7 +2485,7 @@ export function AddTargetDialog({
         showMdlError={showMdlError}
         flagUnanswered={false}
       />
-      {manualImageUploadSection({ type: "target" }, "border-sky-500")}
+      {manualImageUploadSection({ type: "target" }, "border-rose-500")}
     </SectionPanel>
   );
 
@@ -2637,7 +2637,7 @@ export function AddTargetDialog({
                     }
                     className={`relative rounded-md overflow-hidden border-2 transition-colors ${
                       kept
-                        ? "border-indigo-500"
+                        ? "border-cyan-500"
                         : "border-border opacity-40 grayscale"
                     }`}
                   >
@@ -2647,7 +2647,7 @@ export function AddTargetDialog({
                       className="w-20 h-20 object-cover block"
                     />
                     {kept && (
-                      <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-indigo-500 text-white flex items-center justify-center">
+                      <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-cyan-500 text-white flex items-center justify-center">
                         <Check className="h-2.5 w-2.5" />
                       </span>
                     )}

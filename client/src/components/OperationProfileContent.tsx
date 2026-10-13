@@ -179,10 +179,10 @@ function buildOperationProfileHtml(
 .stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; padding:16px 32px; background:${BLUE_LIGHT} !important; border-bottom:2px solid ${BLUE_MID}; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .stat-box { text-align:center; } .stat-num { font-size:20px; font-weight:700; color:${BLUE_DARK} !important; } .stat-label { font-size:9px; text-transform:uppercase; letter-spacing:0.08em; color:#64748b; }
 .content { padding:20px 32px; } .section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:12px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-.pb-label { display:flex; gap:8px; align-items:baseline; margin:10px 0 6px; font-size:11px; } .pb-label span { font-size:9px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; border:1px solid #1d4ed8; background:${BLUE_LIGHT} !important; color:${BLUE_DARK}; border-radius:4px; padding:1px 6px; }
+.pb-label { display:flex; gap:8px; align-items:baseline; margin:10px 0 6px; font-size:11px; } .pb-label span { font-size:9px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; border:1px solid #e11d48; background:#ffe4ea !important; color:#9f1239; border-radius:4px; padding:1px 6px; }
 .pb-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-bottom:8px; }
 .pb-tile { border:2px solid ${GREY_BORDER}; border-radius:6px; overflow:hidden; background:#fff; break-inside:avoid; }
-.pb-tile.target { border-color:#1d4ed8; background:${BLUE_LIGHT} !important; } .pb-tile.resident { border-color:#e11d48; }
+.pb-tile.target { border-color:#e11d48; background:#ffe4ea !important; } .pb-tile.resident { border-color:#0284c7; }
 .pb-tile img, .pb-none { width:100%; aspect-ratio:4/5; object-fit:cover; object-position:top; display:block; }
 .pb-none { display:flex; align-items:center; justify-content:center; background:#f1f5f9; color:#64748b; font-size:9px; font-weight:600; }
 .pb-name { padding:3px 4px 5px; text-align:center; font-size:9px; line-height:1.25; } .pb-name b { display:block; font-size:10px; }
@@ -360,7 +360,7 @@ function TargetBlock({
       id={`t-${target.targetId}`}
       className="flex scroll-mt-20 flex-col gap-3"
     >
-      <div className="flex items-stretch overflow-hidden rounded-xl border-2 border-blue-600 bg-blue-100 text-blue-950 dark:bg-blue-950/50 dark:text-blue-100">
+      <div className="flex items-stretch overflow-hidden rounded-xl border-2 border-rose-600 bg-rose-100 text-rose-950 dark:bg-rose-950/50 dark:text-rose-100">
         <button
           type="button"
           onClick={onToggle}
@@ -371,7 +371,7 @@ function TargetBlock({
           <ChevronRight
             className={`h-[18px] w-[18px] shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
           />
-          <span className="rounded-md border border-blue-600 bg-white/60 px-2 py-0.5 text-xs font-extrabold uppercase tracking-wide dark:bg-white/10">
+          <span className="rounded-md border border-rose-600 bg-white/60 px-2 py-0.5 text-xs font-extrabold uppercase tracking-wide dark:bg-white/10">
             {total > 1 ? `Target ${index + 1} of ${total}` : "Target"}
           </span>
           <span className="min-w-[12ch] flex-1 break-words text-base font-extrabold">
@@ -382,7 +382,7 @@ function TargetBlock({
         <button
           type="button"
           onClick={() => navigate(`/intelligence/target/${target.targetId}`)}
-          className="shrink-0 border-l border-blue-600/40 px-3 text-xs font-bold hover:bg-white/40 dark:hover:bg-white/10"
+          className="shrink-0 border-l border-rose-600/40 px-3 text-xs font-bold hover:bg-white/40 dark:hover:bg-white/10"
         >
           Full Profile
         </button>
@@ -752,7 +752,7 @@ export function OperationProfileContent({
                     kind="target"
                     refId={l.targetId}
                   >
-                    <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                    <User className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                     {/* Name and link side by side from sm up; stacked on a
                         phone so the name never gets squeezed to a sliver. */}
                     <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-3">

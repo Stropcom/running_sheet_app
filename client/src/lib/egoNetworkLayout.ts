@@ -9,8 +9,8 @@
 // Same palette/labels as the Association Map — the two views show the same
 // entities, so a target has to read as the same colour in both.
 export const NODE_COLORS: Record<string, string> = {
-  target: "#ef4444",
-  person: "#3b82f6",
+  target: "#e11d48",
+  person: "#1e40af",
   vehicle: "#f97316",
   address: "#22c55e",
   business: "#a855f7",

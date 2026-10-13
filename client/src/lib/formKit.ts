@@ -7,8 +7,8 @@
  *    from the base components in components/ui — nothing to do per screen.
  *  - Panels: a white card with a full-strength border and a tinted header
  *    band. The tint is the entity colour the Intelligence chips already use
- *    (person = sky, address = emerald, vehicle = amber, associate = violet,
- *    resident = rose, photo = indigo, other = slate), so colour still tells
+ *    (target/person = rose, address = emerald, vehicle = amber, associate = violet,
+ *    resident = sky, photo = cyan, other = slate), so colour still tells
  *    you what a panel is without tinting the fields themselves.
  *  - The header band pulls to the card's edges with -mx-3 -mt-3, so a panel
  *    using it must have p-3 padding.
@@ -36,8 +36,8 @@ const BAND =
 export const FORM_TONES: Record<FormTone, ToneClasses> = {
   person: {
     panel:
-      "overflow-hidden rounded-lg border border-sky-500/40 bg-card shadow-sm",
-    band: `${BAND} border-sky-500/30 bg-sky-500/15 text-sky-800 dark:text-sky-300`,
+      "overflow-hidden rounded-lg border border-rose-500/40 bg-card shadow-sm",
+    band: `${BAND} border-rose-500/30 bg-rose-500/15 text-rose-800 dark:text-rose-300`,
   },
   address: {
     panel:
@@ -56,13 +56,13 @@ export const FORM_TONES: Record<FormTone, ToneClasses> = {
   },
   resident: {
     panel:
-      "overflow-hidden rounded-lg border border-rose-500/40 bg-card shadow-sm",
-    band: `${BAND} border-rose-500/30 bg-rose-500/15 text-rose-800 dark:text-rose-300`,
+      "overflow-hidden rounded-lg border border-sky-500/40 bg-card shadow-sm",
+    band: `${BAND} border-sky-500/30 bg-sky-500/15 text-sky-800 dark:text-sky-300`,
   },
   photo: {
     panel:
-      "overflow-hidden rounded-lg border border-indigo-500/40 bg-card shadow-sm",
-    band: `${BAND} border-indigo-500/30 bg-indigo-500/15 text-indigo-800 dark:text-indigo-300`,
+      "overflow-hidden rounded-lg border border-cyan-500/40 bg-card shadow-sm",
+    band: `${BAND} border-cyan-500/30 bg-cyan-500/15 text-cyan-800 dark:text-cyan-300`,
   },
   neutral: {
     panel:

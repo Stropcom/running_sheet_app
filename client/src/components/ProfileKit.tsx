@@ -227,9 +227,9 @@ export type PhotoboardRow = {
 
 const TILE_BORDER: Record<PhotoboardPerson["role"], string> = {
   target:
-    "border-blue-600 bg-blue-100 text-blue-950 dark:bg-blue-950/50 dark:text-blue-100",
+    "border-rose-600 bg-rose-100 text-rose-950 dark:border-rose-400 dark:bg-rose-950/50 dark:text-rose-100",
   associate: "border-border bg-card text-foreground",
-  resident: "border-rose-500 bg-card text-foreground dark:border-rose-400",
+  resident: "border-sky-600 bg-card text-foreground dark:border-sky-400",
 };
 
 /** Photos of the people on this profile, named and linked to their card.
@@ -253,7 +253,7 @@ export function Photoboard({
       right={
         <span className="flex flex-wrap items-center gap-3 text-xs text-foreground/80">
           <span className="inline-flex items-center gap-1.5">
-            <i className="inline-block h-3.5 w-3.5 rounded border-2 border-blue-600 bg-blue-100 dark:bg-blue-950/50" />
+            <i className="inline-block h-3.5 w-3.5 rounded border-2 border-rose-600 bg-rose-100 dark:bg-rose-950/50" />
             Target
           </span>
           <span className="inline-flex items-center gap-1.5">
@@ -262,7 +262,7 @@ export function Photoboard({
           </span>
           {hasResident && (
             <span className="inline-flex items-center gap-1.5">
-              <i className="inline-block h-3.5 w-3.5 rounded border-2 border-rose-500 bg-card" />
+              <i className="inline-block h-3.5 w-3.5 rounded border-2 border-sky-600 bg-card" />
               Resident
             </span>
           )}
@@ -273,7 +273,7 @@ export function Photoboard({
         {rows.map((row, rowIndex) => (
           <div key={row.tag + row.heading}>
             <div className="mb-2 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-              <span className="rounded-md border border-blue-600 bg-blue-100 px-2 py-0.5 text-xs font-extrabold uppercase tracking-wide text-blue-950 dark:bg-blue-950/50 dark:text-blue-100">
+              <span className="rounded-md border border-rose-600 bg-rose-100 px-2 py-0.5 text-xs font-extrabold uppercase tracking-wide text-rose-950 dark:bg-rose-950/50 dark:text-rose-100">
                 {row.tag}
               </span>
               <b className="text-sm text-foreground">{row.heading}</b>
@@ -487,7 +487,7 @@ export async function fetchFirstPhotoUrl(
 
 /** Styles for pdfPersonRowHtml. */
 export const PDF_PERSON_ROW_CSS =
-  ".pr { display:flex; gap:10px; align-items:center; border:1px solid #e2e8f0; border-radius:6px; padding:6px 8px; margin-bottom:6px; break-inside:avoid; } .pr .pp { width:44px; height:56px; border-radius:4px; overflow:hidden; border:2px solid #cbd5e1; background:#f1f5f9; flex-shrink:0; } .pr.target .pp { border-color:#1d4ed8; } .pr .pp img { width:100%; height:100%; object-fit:cover; object-position:top; display:block; } .pr .pn { flex:1; font-size:11px; font-weight:700; } .pr .pn small { display:block; font-size:9px; font-weight:400; color:#64748b; } .pr .pt { font-size:9px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; border:1px solid #cbd5e1; border-radius:4px; padding:1px 6px; } .pr.target .pt { border-color:#1d4ed8; background:#dbeafe !important; color:#1e3a8a; }";
+  ".pr { display:flex; gap:10px; align-items:center; border:1px solid #e2e8f0; border-radius:6px; padding:6px 8px; margin-bottom:6px; break-inside:avoid; } .pr .pp { width:44px; height:56px; border-radius:4px; overflow:hidden; border:2px solid #cbd5e1; background:#f1f5f9; flex-shrink:0; } .pr.target .pp { border-color:#e11d48; } .pr.resident .pp { border-color:#0284c7; } .pr .pp img { width:100%; height:100%; object-fit:cover; object-position:top; display:block; } .pr .pn { flex:1; font-size:11px; font-weight:700; } .pr .pn small { display:block; font-size:9px; font-weight:400; color:#64748b; } .pr .pt { font-size:9px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; border:1px solid #cbd5e1; border-radius:4px; padding:1px 6px; } .pr.target .pt { border-color:#e11d48; background:#ffe4ea !important; color:#9f1239; } .pr.resident .pt { border-color:#0284c7; background:#e0f2fe !important; color:#075985; }";
 
 /** A person row for the PDF exports: photo, name, quiet line, tag. */
 export function pdfPersonRowHtml(p: {

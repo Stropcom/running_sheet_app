@@ -395,7 +395,7 @@ export function AssociateProfileContent({
                     kind="target"
                     refId={t.targetId}
                   >
-                    <User className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                    <User className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                     <span className="text-xs font-medium text-foreground flex-1 min-w-0 break-words">
                       {t.name}
                     </span>

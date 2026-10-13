@@ -9,16 +9,16 @@ import { cn } from "@/lib/utils";
 type Tone = "target" | "associate" | "resident";
 
 const THUMB_BORDER: Record<Tone, string> = {
-  target: "border-blue-600",
+  target: "border-rose-600",
   associate: "border-border",
-  resident: "border-rose-500",
+  resident: "border-sky-600",
 };
 const TAG: Record<Tone, string> = {
   target:
-    "border-blue-600 bg-blue-100 text-blue-950 dark:bg-blue-950/50 dark:text-blue-100",
+    "border-rose-600 bg-rose-100 text-rose-950 dark:bg-rose-950/50 dark:text-rose-100",
   associate: "border-border bg-card text-foreground/80",
   resident:
-    "border-rose-500/60 bg-rose-100 text-rose-900 dark:bg-rose-950/40 dark:text-rose-200",
+    "border-sky-600/60 bg-sky-100 text-sky-900 dark:bg-sky-950/40 dark:text-sky-200",
 };
 const TAG_TEXT: Record<Tone, string> = {
   target: "Target",

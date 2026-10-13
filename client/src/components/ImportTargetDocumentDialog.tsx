@@ -1318,7 +1318,7 @@ export function ImportTargetDocumentDialog({
                                 }
                                 className={`relative shrink-0 rounded-md overflow-hidden border-2 transition-colors ${
                                   kept
-                                    ? "border-indigo-500"
+                                    ? "border-cyan-500"
                                     : "border-border grayscale"
                                 }`}
                               >
@@ -1328,7 +1328,7 @@ export function ImportTargetDocumentDialog({
                                   className="w-16 h-16 object-cover block"
                                 />
                                 {kept && (
-                                  <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-indigo-500 text-white flex items-center justify-center">
+                                  <span className="absolute top-1 right-1 h-4 w-4 rounded-full bg-cyan-500 text-white flex items-center justify-center">
                                     <Check className="h-2.5 w-2.5" />
                                   </span>
                                 )}
@@ -1349,7 +1349,7 @@ export function ImportTargetDocumentDialog({
                                       }
                                       className={`px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors ${
                                         linkKey === "target"
-                                          ? "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400"
+                                          ? "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400"
                                           : "border-border text-muted-foreground hover:bg-muted/50"
                                       }`}
                                     >
@@ -1602,7 +1602,7 @@ export function ImportTargetDocumentDialog({
                   diff cards' added/changed/removed. */}
               <div className="rounded-lg border border-border/60 p-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-sky-500 shrink-0" />
+                  <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 shrink-0" />
                   Identity
                 </span>
                 <span className="flex items-center gap-1.5">
@@ -1618,7 +1618,7 @@ export function ImportTargetDocumentDialog({
                   Associates section
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-sm bg-indigo-500 shrink-0" />
+                  <span className="w-2.5 h-2.5 rounded-sm bg-cyan-500 shrink-0" />
                   Photos section
                 </span>
                 <span className="flex items-center gap-1.5">

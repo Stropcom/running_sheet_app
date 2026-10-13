@@ -77,6 +77,7 @@ import {
   type StructuredVehicleParts,
 } from "@/lib/addressFormat";
 import type { TargetType } from "@shared/types";
+import { parseSpecialProjects } from "@shared/targetStatus";
 import {
   TargetMergeDialog,
   type ExistingTargetLike,
@@ -491,6 +492,8 @@ export function AddTargetDialog({
   const [noResidents, setNoResidents] = useState(false);
   const [noAssociates, setNoAssociates] = useState(false);
   const [noBackground, setNoBackground] = useState(false);
+  // "None" ticked under Special Projects (an answer; saved as no projects).
+  const [noSpecialProjects, setNoSpecialProjects] = useState(false);
   // Which resident / associate card is open on its tab.
   const [selectedKey, setSelectedKey] = useState<
     Record<"resident" | "associate", string | null>
@@ -731,6 +734,7 @@ export function AddTargetDialog({
     setNoResidents(false);
     setNoAssociates(false);
     setNoBackground(false);
+    setNoSpecialProjects(false);
     setSelectedKey({ resident: null, associate: null });
     setFlashFor(null);
     setLockedNote(null);
@@ -1654,6 +1658,7 @@ export function AddTargetDialog({
       <SectionPanel
         icon={<Home className="w-3.5 h-3.5" />}
         title={c.title}
+        tone="address"
         status={following ? "done" : sectionStatus(c.problem, noneOn)}
         count={following || noneOn ? 0 : all.filter(addressHasDetail).length}
       >
@@ -1760,6 +1765,7 @@ export function AddTargetDialog({
       <SectionPanel
         icon={<Car className="w-3.5 h-3.5" />}
         title={c.title}
+        tone="vehicle"
         status={sectionStatus(c.problem, noneOn)}
         count={noneOn ? 0 : all.filter(v => !vehicleIsBlank(v)).length}
       >
@@ -2035,12 +2041,19 @@ export function AddTargetDialog({
     );
   };
 
+  // Special Projects count as answered once one is ticked or "None" is.
+  const projectsAnswered =
+    noSpecialProjects ||
+    parseSpecialProjects(status.specialProjects).length > 0;
+
   // Everything the step rules need, in one place (lib/addTargetSteps.ts).
   const stepsInput: StepsInput = {
     targetType,
     hasOperation: !!operation,
     identity,
     mdlChosen: !mdlMissing(status),
+    bailChosen: !!status.bailStatus,
+    projectsAnswered,
     address,
     extraAddresses,
     noAddress,
@@ -2157,6 +2170,7 @@ export function AddTargetDialog({
         <SectionPanel
           icon={<User className="w-3.5 h-3.5" />}
           title="Person"
+          tone={cfg.tone}
           status={nameOk ? "done" : "todo"}
         >
           <TargetIdentityFields
@@ -2470,8 +2484,12 @@ export function AddTargetDialog({
     <SectionPanel
       icon={<User className="w-3.5 h-3.5" />}
       title="Person Identity"
+      tone="person"
       status={
-        composeTargetName(identity).name && !mdlMissing(status)
+        composeTargetName(identity).name &&
+        !mdlMissing(status) &&
+        !!status.bailStatus &&
+        projectsAnswered
           ? "done"
           : "todo"
       }
@@ -2484,6 +2502,9 @@ export function AddTargetDialog({
         onStatusChange={setStatus}
         showMdlError={showMdlError}
         flagUnanswered={false}
+        requiredAnswers
+        projectsNone={noSpecialProjects}
+        onProjectsNoneChange={setNoSpecialProjects}
       />
       {manualImageUploadSection({ type: "target" }, "border-rose-500")}
     </SectionPanel>

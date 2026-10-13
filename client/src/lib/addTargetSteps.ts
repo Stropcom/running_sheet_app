@@ -241,6 +241,10 @@ export interface StepsInput {
   identity: StructuredNameParts;
   /** MDL answered (a Person target must pick Active, None or Suspended). */
   mdlChosen: boolean;
+  /** Bail answered (Yes or No). */
+  bailChosen: boolean;
+  /** Special Projects answered: at least one ticked, or "None" ticked. */
+  projectsAnswered: boolean;
   address: Addr;
   extraAddresses: Addr[];
   noAddress: boolean;
@@ -293,6 +297,9 @@ export function targetIdentityProblem(i: StepsInput): string | null {
       return "Add the target’s first name and surname to continue.";
     }
     if (!i.mdlChosen) return "Pick the MDL status to continue.";
+    if (!i.bailChosen) return "Pick the Bail status to continue.";
+    if (!i.projectsAnswered)
+      return "Tick the Special Projects, or None, to continue.";
   }
   return null;
 }

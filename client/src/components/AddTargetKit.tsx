@@ -8,7 +8,7 @@
 
 import type { ReactNode } from "react";
 import { Check, Lock, Minus, Plus } from "lucide-react";
-import { FORM_HINT, FORM_TONES } from "@/lib/formKit";
+import { FORM_HINT, FORM_TONES, type FormTone } from "@/lib/formKit";
 import { cn } from "@/lib/utils";
 import type { SectionStatus, StepKey } from "@/lib/addTargetSteps";
 
@@ -127,13 +127,15 @@ export function StepTabs({
   );
 }
 
-/** A titled section: neutral card, header band with the title on the left and
- * the status chip on the right. */
+/** A titled section: card with a header band (title on the left, status chip
+ * on the right) in the entity's colour — person rose, address emerald,
+ * vehicle amber, and so on (see lib/formKit.ts). */
 export function SectionPanel({
   icon,
   title,
   status,
   count,
+  tone = "neutral",
   children,
   className,
 }: {
@@ -141,18 +143,19 @@ export function SectionPanel({
   title: string;
   status?: SectionStatus;
   count?: number;
+  tone?: FormTone;
   children: ReactNode;
   className?: string;
 }) {
   return (
     <section
       className={cn(
-        FORM_TONES.neutral.panel,
+        FORM_TONES[tone].panel,
         "p-3 flex flex-col gap-3",
         className
       )}
     >
-      <div className={cn(FORM_TONES.neutral.band, "mb-0 justify-between")}>
+      <div className={cn(FORM_TONES[tone].band, "mb-0 justify-between")}>
         <span className="flex items-center gap-2">
           {icon}
           {title}
@@ -177,7 +180,6 @@ export function NoneBox({
   hint,
   locked,
   lockedHint = "Clear the entries below to tick this.",
-  needed,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
@@ -186,7 +188,8 @@ export function NoneBox({
   /** Something is typed in the section, so "none" can't be ticked. */
   locked?: boolean;
   lockedHint?: string;
-  /** Highlight as the thing still to do on this section. */
+  /** No longer styled (the red line above the buttons says what is missing);
+   * kept so existing callers still type-check. */
   needed?: boolean;
 }) {
   return (
@@ -197,12 +200,8 @@ export function NoneBox({
       disabled={locked && !checked}
       onClick={() => onChange(!checked)}
       className={cn(
-        "flex w-full items-center gap-3 rounded-lg border-2 px-3 py-2.5 text-left transition-colors",
-        checked
-          ? "border-emerald-700 bg-emerald-100 dark:bg-emerald-950"
-          : needed
-            ? "border-dashed border-destructive/70 bg-card"
-            : "border-dashed border-border bg-card",
+        "flex w-full items-center gap-3 rounded-lg border bg-card px-3 py-2.5 text-left transition-colors",
+        checked ? "border-emerald-600" : "border-border",
         locked && !checked
           ? "cursor-not-allowed opacity-50"
           : "hover:bg-muted/50"
@@ -212,7 +211,7 @@ export function NoneBox({
         className={cn(
           "grid h-[22px] w-[22px] shrink-0 place-items-center rounded-md border-2",
           checked
-            ? "border-emerald-700 bg-emerald-700 text-white"
+            ? "border-emerald-600 bg-emerald-600 text-white"
             : "border-input bg-background"
         )}
       >
@@ -259,7 +258,7 @@ export function StepNote({
 }: {
   problem: string | null;
   doneText: string | null;
-  /** Called attention to (Next pressed while blocked): a heavier outline. */
+  /** Called attention to (Next pressed while blocked): underlined. */
   flash?: boolean;
 }) {
   if (!problem && !doneText) return null;
@@ -267,11 +266,11 @@ export function StepNote({
     <p
       role={problem ? "alert" : "status"}
       className={cn(
-        "flex items-center gap-2 rounded-lg px-3 py-1.5 text-[13px] font-bold",
+        "flex items-center gap-2 px-1 text-[13px] font-bold",
         problem
-          ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
-          : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-        flash && problem && "outline outline-[3px] outline-destructive"
+          ? "text-red-700 dark:text-red-400"
+          : "text-emerald-700 dark:text-emerald-400",
+        flash && problem && "underline decoration-2 underline-offset-4"
       )}
     >
       <StatusMark mark={problem ? "todo" : "done"} />

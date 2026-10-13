@@ -31,7 +31,9 @@ import {
   MDL_LABELS,
   YES_NO,
   YES_NO_LABELS,
+  SPECIAL_PROJECT_HINTS,
   TARGET_SPECIAL_PROJECTS,
+  type TargetSpecialProject,
   parseSpecialProjects,
   sanitizeTargetSpecialProjects,
 } from "@shared/targetStatus";
@@ -210,12 +212,24 @@ export function statusPartsToPayload(status: TargetStatusParts) {
   };
 }
 
+/** The red asterisk beside a field that has to be answered. */
+function RequiredStar() {
+  return (
+    <span className="text-destructive" aria-label="required">
+      *
+    </span>
+  );
+}
+
 export function TargetStatusFields({
   value,
   onChange,
   disabled,
   showMdlError,
   flagUnanswered = true,
+  requiredAnswers = false,
+  projectsNone = false,
+  onProjectsNoneChange,
 }: {
   value: TargetStatusParts;
   onChange: (v: TargetStatusParts) => void;
@@ -226,6 +240,10 @@ export function TargetStatusFields({
    * Target dialog turns this off: its helper line already says what is
    * missing. */
   flagUnanswered?: boolean;
+  /** See TargetIdentityFields. */
+  requiredAnswers?: boolean;
+  projectsNone?: boolean;
+  onProjectsNoneChange?: (next: boolean) => void;
 }) {
   const bailYes = value.bailStatus === "yes";
   const conditionsYes = bailYes && value.bailConditions === "yes";
@@ -259,7 +277,9 @@ export function TargetStatusFields({
         className={`grid grid-cols-1 gap-3 ${bailYes ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
       >
         <div className="flex flex-col gap-1.5">
-          <FieldLabel>MDL *</FieldLabel>
+          <FieldLabel>
+            MDL <RequiredStar />
+          </FieldLabel>
           <Select
             value={value.mdlStatus}
             onValueChange={v => onChange({ ...value, mdlStatus: v })}
@@ -286,7 +306,7 @@ export function TargetStatusFields({
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <FieldLabel>Bail</FieldLabel>
+          <FieldLabel>Bail {requiredAnswers && <RequiredStar />}</FieldLabel>
           <Select
             value={value.bailStatus}
             onValueChange={v =>
@@ -361,14 +381,42 @@ export function TargetStatusFields({
           agency box, exactly as on the Sheet Summary (and stored the same
           way, so a new running sheet's summary copies it across). */}
       <div className="flex flex-col gap-2">
-        <FieldLabel>Special Projects</FieldLabel>
-        <div className="grid grid-cols-4 gap-2">
+        <FieldLabel>
+          Special Projects {requiredAnswers && <RequiredStar />}
+        </FieldLabel>
+        {onProjectsNoneChange && (
+          <label
+            className={`flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm font-semibold ${
+              projects.length > 0 && !projectsNone
+                ? "cursor-not-allowed opacity-50"
+                : "cursor-pointer"
+            }`}
+            title={
+              projects.length > 0 && !projectsNone
+                ? "Untick the projects below to tick this."
+                : undefined
+            }
+          >
+            <input
+              type="checkbox"
+              checked={projectsNone}
+              disabled={disabled || (projects.length > 0 && !projectsNone)}
+              onChange={e => onProjectsNoneChange(e.target.checked)}
+              className="w-4 h-4 rounded border-border accent-emerald-600"
+            />
+            None
+          </label>
+        )}
+        <div
+          className={`grid grid-cols-3 gap-2 ${projectsNone ? "opacity-45" : ""}`}
+          inert={projectsNone}
+        >
           {TARGET_SPECIAL_PROJECTS.map(key => {
             const checked = projects.some(p => p.key === key);
             return (
               <label
                 key={key}
-                className="flex items-center justify-center gap-1.5 text-sm cursor-pointer rounded-md border border-border/60 bg-background/60 py-1.5"
+                className="flex items-center justify-center gap-1.5 text-sm cursor-pointer rounded-md border border-border bg-background py-1.5"
               >
                 <input
                   type="checkbox"
@@ -377,29 +425,42 @@ export function TargetStatusFields({
                   onChange={() => toggleProject(key)}
                   className="w-4 h-4 rounded border-border"
                 />
-                {key}
+                {key === "Tracker" ? "TRACKER" : key}
               </label>
             );
           })}
         </div>
         {projects.length > 0 && (
           <div className="flex flex-col gap-2">
-            {projects.map(p => (
-              <div key={p.key} className="flex items-center gap-2">
-                <span className="text-xs font-medium text-muted-foreground w-12 shrink-0">
-                  {p.key}
-                </span>
-                <Input
-                  value={p.detail}
-                  disabled={disabled}
-                  onChange={e =>
-                    setProjectDetail(p.key, e.target.value.toUpperCase())
-                  }
-                  placeholder="AFP or WAPOL"
-                  className="text-sm"
-                />
-              </div>
-            ))}
+            {projects.map(p => {
+              const isHint = (
+                TARGET_SPECIAL_PROJECTS as readonly string[]
+              ).includes(p.key);
+              const upper = p.key !== "Tracker" && p.key !== "LD";
+              return (
+                <div key={p.key} className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground w-16 shrink-0">
+                    {p.key === "Tracker" ? "TRACKER" : p.key}
+                  </span>
+                  <Input
+                    value={p.detail}
+                    disabled={disabled}
+                    onChange={e =>
+                      setProjectDetail(
+                        p.key,
+                        upper ? e.target.value.toUpperCase() : e.target.value
+                      )
+                    }
+                    placeholder={
+                      isHint
+                        ? SPECIAL_PROJECT_HINTS[p.key as TargetSpecialProject]
+                        : "Details"
+                    }
+                    className="text-sm"
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -416,6 +477,9 @@ export function TargetIdentityFields({
   onStatusChange,
   showMdlError,
   flagUnanswered,
+  requiredAnswers,
+  projectsNone,
+  onProjectsNoneChange,
 }: {
   value: StructuredNameParts;
   onChange: (v: StructuredNameParts) => void;
@@ -427,6 +491,12 @@ export function TargetIdentityFields({
   showMdlError?: boolean;
   /** Pass false to stop MDL / Bail being shaded red until answered. */
   flagUnanswered?: boolean;
+  /** Add Target dialog: MDL, Bail and Special Projects all have to be
+   * answered, so each carries a red asterisk and Special Projects gets a
+   * "None" box (an answer, saved as no projects). */
+  requiredAnswers?: boolean;
+  projectsNone?: boolean;
+  onProjectsNoneChange?: (next: boolean) => void;
   /** Fired when the Surname field loses focus — lets a caller (e.g. the Add
    * Target dialog) run a possible-duplicate check as soon as a full name is
    * entered, rather than only at Save. Optional so callers that don't need
@@ -491,6 +561,9 @@ export function TargetIdentityFields({
           disabled={disabled}
           showMdlError={showMdlError}
           flagUnanswered={flagUnanswered}
+          requiredAnswers={requiredAnswers}
+          projectsNone={projectsNone}
+          onProjectsNoneChange={onProjectsNoneChange}
         />
       )}
     </div>

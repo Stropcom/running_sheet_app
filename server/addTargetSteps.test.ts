@@ -64,6 +64,8 @@ const input = (over: Partial<StepsInput> = {}): StepsInput => ({
   hasOperation: true,
   identity: { firstNames: "Amira", surname: "Rahman", bornDate: "" },
   mdlChosen: true,
+  bailChosen: true,
+  projectsAnswered: true,
   address: fullAddr(),
   extraAddresses: [],
   noAddress: false,
@@ -198,6 +200,14 @@ describe("steps", () => {
   it("the Target tab needs an operation, a name, MDL, and address + vehicle (or none)", () => {
     expect(stepStatus(input({ hasOperation: false }), "target")).toBe("todo");
     expect(stepStatus(input({ mdlChosen: false }), "target")).toBe("todo");
+    expect(stepStatus(input({ bailChosen: false }), "target")).toBe("todo");
+    expect(stepStatus(input({ projectsAnswered: false }), "target")).toBe(
+      "todo"
+    );
+    expect(targetStepProblem(input({ bailChosen: false }))).toMatch(/Bail/);
+    expect(targetStepProblem(input({ projectsAnswered: false }))).toMatch(
+      /Special Projects/
+    );
     expect(
       stepStatus(
         input({ identity: { firstNames: "A", surname: "", bornDate: "" } }),

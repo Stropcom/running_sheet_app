@@ -48,6 +48,33 @@ describe("orderRsChips", () => {
     expect(labels(out)).toEqual(["DSO", "SC", "HBF", "TGT", "PT"]);
   });
 
+  it("puts HB straight after AR (between AR and CP), wherever AR is", () => {
+    const o = ["SC", "DSO", "AR", "CP", "PT"];
+    expect(
+      labels(orderRsChips(chips("CP", "HB", "PT", "AR", "SC", "DSO", "HBF"), o))
+    ).toEqual(["SC", "HBF", "DSO", "AR", "HB", "CP", "PT"]);
+    // AR dragged to the end: HB goes with it.
+    const moved = ["SC", "DSO", "CP", "PT", "AR"];
+    expect(
+      labels(orderRsChips(chips("AR", "HB", "CP", "PT", "SC", "DSO"), moved))
+    ).toEqual(["SC", "DSO", "CP", "PT", "AR", "HB"]);
+  });
+
+  it("keeps HB after AR even when AR is hidden from the chips", () => {
+    const o = ["SC", "AR", "CP"];
+    expect(labels(orderRsChips(chips("CP", "HB", "SC"), o))).toEqual([
+      "SC",
+      "HB",
+      "CP",
+    ]);
+  });
+
+  it("puts HB after the fixed block when there is no AR shortcut", () => {
+    expect(
+      labels(orderRsChips(chips("HB", "DSO", "TGT", "SC"), ["SC", "DSO"]))
+    ).toEqual(["SC", "TGT", "HB", "DSO"]);
+  });
+
   it("keeps the fixed block after SC even when SC is hidden from the chips", () => {
     const out = orderRsChips(chips("DSO", "PT", "V1F"), ["DSO", "SC", "PT"]);
     expect(labels(out)).toEqual(["DSO", "V1F", "PT"]);
@@ -93,9 +120,9 @@ describe("orderRsChips", () => {
 
 describe("fixedChipRank", () => {
   it("knows the target chips and nothing else", () => {
-    for (const l of ["HBF", "V1F", "V1", "V8F", "V8", "TGT", "HB"])
+    for (const l of ["HBF", "V1F", "V1", "V8F", "V8", "TGT"])
       expect(fixedChipRank(l)).not.toBeNull();
-    for (const l of ["SC", "DSO", "VEH", "RACK", "DEP", "ARR", "#1"])
+    for (const l of ["SC", "DSO", "VEH", "RACK", "DEP", "ARR", "#1", "HB"])
       expect(fixedChipRank(l)).toBeNull();
   });
 });

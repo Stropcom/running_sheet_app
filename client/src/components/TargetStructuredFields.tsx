@@ -779,7 +779,9 @@ export function TargetVehicleFields({
           <Input
             value={value.colour}
             disabled={disabled}
-            onChange={e => onChange({ ...value, colour: e.target.value })}
+            onChange={e =>
+              onChange({ ...value, colour: e.target.value.toLowerCase() })
+            }
             placeholder="red"
           />
         </div>

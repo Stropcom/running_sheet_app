@@ -69,7 +69,7 @@ const CHIP_PDF_COLORS: Record<string, string> = {
   vehicle: "background:#fef3c7;color:#d97706;border:1px solid #fcd34d",
   address: "background:#d1fae5;color:#059669;border:1px solid #6ee7b7",
   business: "background:#ede9fe;color:#7c3aed;border:1px solid #c4b5fd",
-  target: "background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd",
+  target: "background:#ffe4e6;color:#be123c;border:1px solid #fda4af",
 };
 
 function escHtml(s: string | null | undefined): string {

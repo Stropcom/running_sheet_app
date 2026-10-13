@@ -396,7 +396,7 @@ function TargetBlock({
               label={`Photos of ${surnameOnly(target.name)}`}
               count={target.photos.length}
             >
-              <IntelPhotoStrip photos={target.photos} />
+              <IntelPhotoStrip photos={target.photos} size="medium" />
             </ProfileCard>
           )}
           {entries.length > 0 && (

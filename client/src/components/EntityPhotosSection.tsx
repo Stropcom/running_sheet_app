@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { formatAttachmentBanner } from "@/lib/attachmentBanner";
 import { useLocation } from "wouter";
 import { ProfileCard } from "@/components/ProfileKit";
+import { PROFILE_PHOTO_GRID, PROFILE_PHOTO_TILE } from "@/lib/pageKit";
 
 /** Shows photos linked to one Intelligence entity (Target/Vehicle/Associate/Location). */
 export function EntityPhotosSection({
@@ -62,29 +63,26 @@ export function EntityPhotosSection({
 
   return (
     <ProfileCard id={id} label={label} count={photos.length}>
-      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+      <div className={PROFILE_PHOTO_GRID}>
         {(photos as any[]).map(p => (
-          <div
-            key={p.id}
-            className="group relative rounded-lg overflow-hidden border border-border bg-muted/20"
-          >
+          <div key={p.id} className={PROFILE_PHOTO_TILE}>
             <img
               src={p.url}
               alt="Linked photograph"
               className="w-full aspect-square object-cover cursor-zoom-in"
               onClick={() => setLightbox(p.url)}
             />
-            <div className="absolute inset-x-0 bottom-0 bg-black/60 px-1.5 py-0.5">
-              <p className="text-[9px] text-white truncate">
+            <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1">
+              <p className="text-xs text-white truncate">
                 {formatAttachmentBanner(p)}
               </p>
             </div>
             <button
               onClick={() => unlink.mutate({ linkId: p.linkId })}
               title="Unlink photo"
-              className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
+              className="absolute top-1.5 right-1.5 h-6 w-6 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
             >
-              <Link2Off className="h-2.5 w-2.5" />
+              <Link2Off className="h-3 w-3" />
             </button>
           </div>
         ))}

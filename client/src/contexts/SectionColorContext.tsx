@@ -84,6 +84,15 @@ const SECTION_COLORS: Record<string, SectionColor> = {
     bg: "bg-slate-400/8",
     hex: "#94a3b8",
   },
+  // The Administration folder (Archive, Audit Log, Draft Mode, Intel Export,
+  // Recycle Bin, Shortcuts, Help). Court / Procedures pages keep the grey above.
+  administrationFolder: {
+    name: "Administration",
+    text: "text-emerald-400",
+    border: "border-emerald-400/50",
+    bg: "bg-emerald-400/8",
+    hex: "#34d399",
+  },
   userManagement: {
     name: "User Management",
     text: "text-blue-400",
@@ -94,23 +103,44 @@ const SECTION_COLORS: Record<string, SectionColor> = {
 };
 
 function getSectionKey(location: string): string {
-  if (location === "/" || location.startsWith("/operation/") || location.startsWith("/sheet/")) return "operations";
+  if (
+    location === "/" ||
+    location.startsWith("/operation/") ||
+    location.startsWith("/sheet/")
+  )
+    return "operations";
   if (location.startsWith("/governance")) return "governance";
   if (location.startsWith("/todo")) return "todo";
   if (location.startsWith("/intelligence/mapping")) return "mapping";
   if (location.startsWith("/calendar")) return "calendar";
-  if (location.startsWith("/shortcuts")) return "shortcuts";
   if (location.startsWith("/intelligence")) return "intelligence";
   if (location.startsWith("/target-registry")) return "targetRegistry";
   if (location.startsWith("/operation-manager")) return "operationManager";
-  if (location.startsWith("/court") || location === "/audit" || location === "/draft" || location === "/operation-management" || location === "/recycle-bin" || location === "/help" || location.startsWith("/reports")) return "administration";
+  if (
+    location === "/audit" ||
+    location === "/draft" ||
+    location === "/operation-management" ||
+    location === "/recycle-bin" ||
+    location === "/help" ||
+    location.startsWith("/shortcuts") ||
+    location.startsWith("/administration/intel-export")
+  )
+    return "administrationFolder";
+  if (location.startsWith("/court") || location.startsWith("/reports"))
+    return "administration";
   if (location === "/profile" || location === "/admin") return "userManagement";
   return "operations";
 }
 
-const SectionColorContext = createContext<SectionColor>(SECTION_COLORS.operations);
+const SectionColorContext = createContext<SectionColor>(
+  SECTION_COLORS.operations
+);
 
-export function SectionColorProvider({ children }: { children: React.ReactNode }) {
+export function SectionColorProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [location] = useLocation();
   const color = useMemo(() => {
     const key = getSectionKey(location);

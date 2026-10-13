@@ -13,6 +13,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import { initialShortcutOrder } from "../shared/rsChips";
 import { createPool as createPromisePool } from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt, fingerprintVaultKey } from "./wipcVault";
 import { cosineSimilarity } from "./faceRecognition";
@@ -4478,15 +4479,70 @@ export async function getLinkedOperationsForTarget(targetId: number) {
 export async function listShortcuts() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(shortcuts).orderBy(shortcuts.trigger);
+  return db
+    .select()
+    .from(shortcuts)
+    .orderBy(shortcuts.sortOrder, shortcuts.trigger);
 }
 
 export async function createShortcut(
-  data: Omit<InsertShortcut, "id" | "createdAt" | "updatedAt">
+  data: Omit<InsertShortcut, "id" | "createdAt" | "updatedAt" | "sortOrder">
 ) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  await db.insert(shortcuts).values(data);
+  // A new shortcut goes to the end of the list (and so the end of the chips).
+  const [last] = await db
+    .select({ max: sql<number>`COALESCE(MAX(${shortcuts.sortOrder}), 0)` })
+    .from(shortcuts);
+  await db
+    .insert(shortcuts)
+    .values({ ...data, sortOrder: Number(last?.max ?? 0) + 1 });
+}
+
+/** Save a new Shortcuts-page order. `ids` is every shortcut, first to last. */
+export async function reorderShortcuts(ids: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db.transaction(async tx => {
+    for (let i = 0; i < ids.length; i++) {
+      await tx
+        .update(shortcuts)
+        .set({ sortOrder: i + 1 })
+        .where(eq(shortcuts.id, ids[i]));
+    }
+  });
+}
+
+/**
+ * Give every shortcut that has no place yet a position: the first time round
+ * (the column was added with everything at 0) that is the order the chips used
+ * to appear on the main running sheet, then the rest A to Z. A shortcut added
+ * later by startup (a missing default) goes after the ones already placed.
+ */
+export async function ensureShortcutOrder() {
+  const db = await getDb();
+  if (!db) return;
+  const rows = await db
+    .select({
+      id: shortcuts.id,
+      trigger: shortcuts.trigger,
+      sortOrder: shortcuts.sortOrder,
+    })
+    .from(shortcuts);
+  const unplaced = rows.filter(r => r.sortOrder <= 0);
+  if (unplaced.length === 0) return;
+  const start = Math.max(0, ...rows.map(r => r.sortOrder));
+  await db.transaction(async tx => {
+    for (const o of initialShortcutOrder(unplaced)) {
+      await tx
+        .update(shortcuts)
+        .set({ sortOrder: start + o.sortOrder })
+        .where(eq(shortcuts.id, o.id));
+    }
+  });
+  console.log(
+    `[Shortcuts] Placed ${unplaced.length} shortcut(s) in the chip order`
+  );
 }
 
 export async function updateShortcut(

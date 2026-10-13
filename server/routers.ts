@@ -240,6 +240,7 @@ import {
   searchRegisteredPersonMentions,
   searchKnownAddresses,
   listShortcuts,
+  reorderShortcuts,
   createShortcut,
   updateShortcut,
   deleteShortcut,
@@ -5146,6 +5147,27 @@ export const appRouter = router({
         const { id, ...data } = input;
         if (data.trigger) data.trigger = data.trigger.toLowerCase();
         await updateShortcut(id, data);
+        return { success: true };
+      }),
+    /** Save the Shortcuts-page order (which is also the order of the chips in
+     * the running sheet and RS QE) — admin only, like add / edit. `ids` must be
+     * every shortcut, first to last. */
+    reorder: adminProcedure
+      .input(z.object({ ids: z.array(z.number()).min(1).max(1000) }))
+      .mutation(async ({ input }) => {
+        const current = await listShortcuts();
+        const have = new Set(current.map(s => s.id));
+        if (
+          new Set(input.ids).size !== input.ids.length ||
+          input.ids.length !== have.size ||
+          input.ids.some(id => !have.has(id))
+        ) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "The shortcut list changed — refresh and try again.",
+          });
+        }
+        await reorderShortcuts(input.ids);
         return { success: true };
       }),
     /** Toggle whether a shortcut appears as a chip in RS and RS QE — any authenticated user */

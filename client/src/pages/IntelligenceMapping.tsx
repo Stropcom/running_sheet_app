@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { RS_CANONICAL_CHIP_ORDER } from "@/lib/rsChipOrder";
+import { orderRsChips } from "@shared/rsChips";
 import {
   matchVehicleArrival,
   extractArrivalAddress,
@@ -2720,36 +2720,9 @@ export default function IntelligenceMapping() {
   useEffect(() => {
     if (!mapQeOpen) mapQeMarkerIdRef.current = null;
   }, [mapQeOpen]);
-  // Quick Entry shortcut chip order — persisted to localStorage so user can reorder them.
-  // Shared with SheetDetail's canonical order so the QE popup's fallback (used only
-  // when a sheet has no saved custom order yet) can't drift out of sync with the main RS.
-  const QE_CANONICAL_ORDER = RS_CANONICAL_CHIP_ORDER;
-  // QE chips mirror the main RS chip order (read from the active sheet's localStorage key)
-  // No drag in QE — main RS is the single source of truth for chip order
-  const [qeChipOrder, setQeChipOrder] = useState<string[]>(QE_CANONICAL_ORDER);
-  // Sync QE chip order from the active RS sheet's saved order whenever the sheet changes
-  // Also listen to storage events so the QE updates live when chips are reordered on the main RS
-  useEffect(() => {
-    const syncOrder = () => {
-      if (!rsSelectedSheetId) {
-        setQeChipOrder(QE_CANONICAL_ORDER);
-        return;
-      }
-      try {
-        const s = localStorage.getItem(
-          `runsheet_field_order_${rsSelectedSheetId}`
-        );
-        if (s) {
-          setQeChipOrder(JSON.parse(s));
-          return;
-        }
-      } catch {}
-      setQeChipOrder(QE_CANONICAL_ORDER);
-    };
-    syncOrder();
-    window.addEventListener("storage", syncOrder);
-    return () => window.removeEventListener("storage", syncOrder);
-  }, [rsSelectedSheetId]);
+  // QE chips use the same order as the main RS: the Shortcuts page order, with
+  // the target's own chips fixed after SC (see shared/rsChips.ts). Nothing to
+  // store or sync here.
   const [cmLabel, setCmLabel] = useState("");
   const [cmAddress, setCmAddress] = useState("");
   const [cmNote, setCmNote] = useState("");
@@ -12641,8 +12614,8 @@ export default function IntelligenceMapping() {
                                   {(() => {
                                     // ── QE chips: exact mirror of main RS chip set, values, and order ──────────
                                     // Single source of truth: assignedTarget (target.getById) for all target fields.
-                                    // Chip set matches SheetDetail exactly: TGT, HBF, HB, V1F, V1, extra vehicles, wildcards, DEP, ARR, folder shortcuts.
-                                    // Order: qeChipOrder (read from RS localStorage key) with wildcards always last.
+                                    // Chip set matches SheetDetail exactly: TGT, HBF, HB, V1F, V1, extra vehicles, folder shortcuts.
+                                    // Order: Shortcuts page order, target chips fixed after SC.
                                     const appendText = (text: string) => {
                                       pushInlineUndo(rsInlineText);
                                       setRsInlineText(prev =>
@@ -12686,32 +12659,6 @@ export default function IntelligenceMapping() {
                                               getValue: () => ev.short,
                                             });
                                           }
-                                        }
-                                      );
-                                    } catch {}
-
-                                    // Wild field chips (#1, #2, …)
-                                    const wildChips: Array<{
-                                      label: string;
-                                      display: string;
-                                      getValue: () => string | null;
-                                    }> = [];
-                                    try {
-                                      const wfs: Array<{
-                                        label: string;
-                                        value: string;
-                                      }> = JSON.parse(t.wildFields ?? "[]");
-                                      wfs.forEach(
-                                        (wf: {
-                                          label: string;
-                                          value: string;
-                                        }) => {
-                                          if (wf.value)
-                                            wildChips.push({
-                                              label: wf.label,
-                                              display: wf.label,
-                                              getValue: () => wf.value,
-                                            });
                                         }
                                       );
                                     } catch {}
@@ -12771,17 +12718,6 @@ export default function IntelligenceMapping() {
                                         getValue: () => t.v1 ?? null,
                                       },
                                       ...extraVehicleChips,
-                                      ...wildChips,
-                                      {
-                                        label: "DEP",
-                                        display: "DEP",
-                                        getValue: () => t.dep ?? null,
-                                      },
-                                      {
-                                        label: "ARR",
-                                        display: "ARR",
-                                        getValue: () => t.arr ?? null,
-                                      },
                                       ...folderShortcutChips,
                                     ];
 
@@ -12790,57 +12726,13 @@ export default function IntelligenceMapping() {
                                     );
                                     if (available.length === 0) return null;
 
-                                    // Apply saved RS order — wildcards always last (mirrors SheetDetail)
-                                    const isWildcard = (lbl: string) =>
-                                      /^#\d+$/.test(lbl);
-                                    const nonWildAvail = available.filter(
-                                      s => !isWildcard(s.label)
+                                    // Same order as the main RS (shared/rsChips.ts)
+                                    const orderedChips = orderRsChips(
+                                      available,
+                                      ((generalShortcuts as any[]) ?? []).map(
+                                        (s: any) => s.trigger as string
+                                      )
                                     );
-                                    const wildAvail = available.filter(s =>
-                                      isWildcard(s.label)
-                                    );
-                                    const orderedNonWild =
-                                      qeChipOrder.length > 0
-                                        ? [
-                                            ...(qeChipOrder
-                                              .filter(lbl => !isWildcard(lbl))
-                                              .map(lbl =>
-                                                nonWildAvail.find(
-                                                  s => s.label === lbl
-                                                )
-                                              )
-                                              .filter(
-                                                Boolean
-                                              ) as typeof available),
-                                            ...nonWildAvail.filter(
-                                              s =>
-                                                !qeChipOrder.includes(s.label)
-                                            ),
-                                          ]
-                                        : nonWildAvail;
-                                    const orderedWild =
-                                      qeChipOrder.length > 0
-                                        ? [
-                                            ...(qeChipOrder
-                                              .filter(isWildcard)
-                                              .map(lbl =>
-                                                wildAvail.find(
-                                                  s => s.label === lbl
-                                                )
-                                              )
-                                              .filter(
-                                                Boolean
-                                              ) as typeof available),
-                                            ...wildAvail.filter(
-                                              s =>
-                                                !qeChipOrder.includes(s.label)
-                                            ),
-                                          ]
-                                        : wildAvail;
-                                    const orderedChips = [
-                                      ...orderedNonWild,
-                                      ...orderedWild,
-                                    ];
 
                                     // Display rules — same as SheetDetail:
                                     // Vn short (V1/V2/…): show label + rego; everything else: trigger label only
@@ -12855,8 +12747,6 @@ export default function IntelligenceMapping() {
                                       "HBF",
                                       "HB",
                                       "V1F",
-                                      "DEP",
-                                      "ARR",
                                     ]);
                                     const isVnShort = (lbl: string) =>
                                       /^V\d+$/.test(lbl);

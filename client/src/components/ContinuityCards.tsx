@@ -216,7 +216,7 @@ export function ContinuityCards({
         <span className="flex-1 truncate text-[13px] font-bold uppercase tracking-wide text-foreground">
           Target Logger
         </span>
-        <span className="rounded-full bg-rose-500 px-1.5 text-xs font-semibold leading-4 text-white">
+        <span className="rounded-full bg-primary px-1.5 text-xs font-semibold leading-4 text-primary-foreground">
           {live.length}
         </span>
         <ChevronDown
@@ -305,7 +305,7 @@ export function ContinuityCards({
                           onClick={() => onAction(a.text, a.mode)}
                           disabled={busy}
                           title={a.text}
-                          className="cursor-pointer disabled:cursor-wait disabled:opacity-60 rounded-md border border-rose-500/30 bg-rose-500/5 px-2 py-1 text-left font-mono text-xs font-semibold text-rose-500 transition-all hover:bg-rose-500/15 active:scale-[0.98] @max-xl:py-1.5 @max-xl:text-xs"
+                          className="cursor-pointer disabled:cursor-wait disabled:opacity-60 rounded-md border border-primary/45 bg-[color-mix(in_oklab,var(--primary)_9%,var(--card))] px-2 py-1 text-left font-mono text-xs font-semibold text-primary transition-all hover:bg-[color-mix(in_oklab,var(--primary)_18%,var(--card))] active:scale-[0.98] @max-xl:py-1.5 @max-xl:text-xs"
                         >
                           {a.label}
                         </button>

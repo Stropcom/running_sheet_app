@@ -1,4 +1,5 @@
 import { fullStreetTypes } from "./streetTypes";
+import { lowercaseLeadingColour } from "./vehicleColour";
 /**
  * Address/vehicle "Intelligence short-form" rendering — pure string logic,
  * used by both the client (Intelligence folder display) and the server
@@ -108,6 +109,16 @@ export function formatIntelAddress(shortForm: string): string {
  *    (stripped of leading "a " or "A ")
  */
 export function formatIntelVehicle(
+  shortForm: string,
+  fullObservation?: string
+): string {
+  // A vehicle's colour is always lower case in the Intelligence folder.
+  return lowercaseLeadingColour(
+    formatIntelVehicleRaw(shortForm, fullObservation)
+  );
+}
+
+function formatIntelVehicleRaw(
   shortForm: string,
   fullObservation?: string
 ): string {

@@ -5,18 +5,20 @@
  *  - The shortcut chips follow the order of the Shortcuts page (an admin drags
  *    them into place there; it is saved on the server, so it is the same for
  *    everyone, on every sheet and device).
- *  - The chips that come from the target itself (HBF, the vehicle pairs V1F/V1,
- *    V2F/V2…, TGT, HB) cannot be moved. They sit as one block straight after
- *    SC, in this fixed order.
+ *  - The chips that come from the target itself cannot be moved:
+ *      · HBF, the vehicle pairs V1F/V1, V2F/V2… and TGT are one block straight
+ *        after SC, in that fixed order;
+ *      · HB sits straight after AR (so, in the default order, between AR and
+ *        CP).
  *
  * Pure and deterministic so it can be tested without the screens.
  */
 
-/** Chips taken from the target's own record rather than the Shortcuts page. */
 const VEHICLE_FULL = /^V(\d+)F$/;
 const VEHICLE_SHORT = /^V(\d+)$/;
 
-/** Fixed rank of a target chip (lower = earlier), or null for any other chip. */
+/** Fixed rank within the block after SC (lower = earlier), or null for any
+ * other chip. HB is not in the block — see HB_AFTER. */
 export function fixedChipRank(label: string): number | null {
   const l = label.toUpperCase();
   if (l === "HBF") return 0;
@@ -25,9 +27,11 @@ export function fixedChipRank(label: string): number | null {
   m = VEHICLE_SHORT.exec(l);
   if (m) return 11 + Number(m[1]) * 2;
   if (l === "TGT") return 1000;
-  if (l === "HB") return 1001;
   return null;
 }
+
+/** The shortcut HB follows. */
+export const HB_AFTER = "AR";
 
 /** The shortcut the fixed block follows. */
 export const FIXED_BLOCK_AFTER = "SC";
@@ -90,23 +94,23 @@ export function orderRsChips<T extends { label: string }>(
   shortcutOrder: string[]
 ): T[] {
   const order = shortcutOrder.map(t => t.toUpperCase());
-  const fixed = chips
-    .filter(c => fixedChipRank(c.label) !== null)
-    .sort((a, b) => fixedChipRank(a.label)! - fixedChipRank(b.label)!);
-  const others = chips.filter(c => fixedChipRank(c.label) === null);
-  const pos = (c: T) => {
+  const scAt = order.indexOf(FIXED_BLOCK_AFTER);
+  const arAt = order.indexOf(HB_AFTER);
+  // Everything is placed by a sort key on the Shortcuts-page scale: a shortcut
+  // chip at its list position, the fixed block half a step after SC (or ahead
+  // of everything when there is no SC), and HB half a step after AR (or just
+  // after the fixed block when there is no AR). Ties keep the order given.
+  const blockKey = scAt === -1 ? -1 : scAt + 0.5;
+  const keyOf = (c: T): number => {
+    const rank = fixedChipRank(c.label);
+    if (rank !== null) return blockKey + rank * 1e-6;
+    if (c.label.toUpperCase() === "HB")
+      return arAt === -1 ? blockKey + 0.01 : arAt + 0.5;
     const i = order.indexOf(c.label.toUpperCase());
     return i === -1 ? Number.MAX_SAFE_INTEGER : i;
   };
-  const sorted = others
-    .map((c, i) => ({ c, i }))
-    .sort((a, b) => pos(a.c) - pos(b.c) || a.i - b.i)
+  return chips
+    .map((c, i) => ({ c, i, k: keyOf(c) }))
+    .sort((a, b) => a.k - b.k || a.i - b.i)
     .map(x => x.c);
-  // The fixed block goes straight after SC. If SC is not a shortcut at all
-  // the block leads the row.
-  const anchor = order.indexOf(FIXED_BLOCK_AFTER);
-  if (anchor === -1) return [...fixed, ...sorted];
-  const head = sorted.filter(c => pos(c) <= anchor);
-  const tail = sorted.filter(c => pos(c) > anchor);
-  return [...head, ...fixed, ...tail];
 }

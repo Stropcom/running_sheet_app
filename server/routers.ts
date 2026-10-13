@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { storageGetBytes, storagePut } from "./storage";
 import { convertDocxToPdf } from "./documentImport/docxToPdf";
 import { detectAndEmbedFaces, cosineSimilarity } from "./faceRecognition";
+import { lowerVehicleColour } from "@shared/vehicleColour";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COOKIE_NAME, SESSION_EXPIRY_MS, COLOR_PALETTES } from "@shared/const";
@@ -545,7 +546,12 @@ const structuredTargetFieldsSchema = {
   addrBusinessName: z.string().optional().nullable(),
   vehRegistration: z.string().optional().nullable(),
   vehState: z.string().optional().nullable(),
-  vehColour: z.string().optional().nullable(),
+  // A vehicle's colour is always saved in lower case (shared/vehicleColour.ts).
+  vehColour: z
+    .string()
+    .optional()
+    .nullable()
+    .transform(v => (typeof v === "string" ? lowerVehicleColour(v) : v)),
   vehMake: z.string().optional().nullable(),
   vehModel: z.string().optional().nullable(),
   vehType: z.string().optional().nullable(),

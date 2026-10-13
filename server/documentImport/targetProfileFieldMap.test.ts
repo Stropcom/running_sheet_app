@@ -268,7 +268,7 @@ describe("mapDocumentToTargetProfile", () => {
     expect(result.associateBlocks[0].vehicle).toMatchObject({
       registration: "1GHF389",
       state: "WA",
-      colour: "Red",
+      colour: "red",
       make: "BYD",
       model: "Sealion 6",
     });
@@ -364,19 +364,19 @@ describe("mapDocumentToTargetProfile", () => {
     expect(result.vehicles).toHaveLength(3);
     expect(result.vehicles[0]).toMatchObject({
       registration: "1ANR693",
-      colour: "White",
+      colour: "white",
       make: "Volvo",
       model: "XC60",
     });
     expect(result.vehicles[1]).toMatchObject({
       registration: "1ECP118",
-      colour: "Black",
+      colour: "black",
       make: "Toyota",
       model: "Prado",
     });
     expect(result.vehicles[2]).toMatchObject({
       registration: "1NRH440",
-      colour: "Red",
+      colour: "red",
       make: "Mazda",
     });
 
@@ -427,7 +427,7 @@ describe("mapDocumentToTargetProfile", () => {
     });
     expect(result.associateBlocks[0].vehicle).toMatchObject({
       registration: "1BCW552",
-      colour: "Grey",
+      colour: "grey",
       make: "Toyota",
     });
     expect(result.associateBlocks[1]).toMatchObject({
@@ -441,7 +441,7 @@ describe("mapDocumentToTargetProfile", () => {
     });
     expect(result.associateBlocks[1].vehicle).toMatchObject({
       registration: "1FYK813",
-      colour: "Blue",
+      colour: "blue",
       make: "Kia",
     });
 
@@ -809,7 +809,7 @@ describe("mapDocumentToTargetProfile", () => {
     // found (REID's) got misattributed to MCKENZIE instead of her own.
     expect(mckenzie!.vehicle).toMatchObject({
       registration: "1OLI77",
-      colour: "Red",
+      colour: "red",
       make: "Volvo",
     });
 
@@ -1103,7 +1103,7 @@ describe("mapDocumentToTargetProfile — PDF documents", () => {
       }),
       vehicle: expect.objectContaining({
         registration: "1MRF63",
-        colour: "Blue",
+        colour: "blue",
       }),
     });
     // The document's second associate, introduced on its own name-only
@@ -1367,7 +1367,7 @@ describe("mapDocumentToTargetProfile — PDF documents", () => {
       ).toBe(false);
     });
 
-    it("keeps the target's own fields and imports 'pearl white' as colour White", async () => {
+    it("keeps the target's own fields and imports 'pearl white' as colour white", async () => {
       const result = mapDocumentToTargetProfile(
         await readPdfText(readFileSync(PDF_SIDE_BY_SIDE_FIXTURE_PATH))
       );
@@ -1379,7 +1379,7 @@ describe("mapDocumentToTargetProfile — PDF documents", () => {
       expect(result.addresses).toHaveLength(4);
       const lexus = result.vehicles.find(v => v.registration === "1TDM414");
       expect(lexus).toMatchObject({
-        colour: "White",
+        colour: "white",
         make: "Lexus",
         model: "NX350h",
         year: "2023",

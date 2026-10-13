@@ -216,8 +216,8 @@ function parseDescription(
     year = words.shift()!;
   }
 
-  const titleCase = (w: string) =>
-    w[0].toUpperCase() + w.slice(1).toLowerCase();
+  // A vehicle's colour is always lower case (shared/vehicleColour.ts).
+  const lowerCase = (w: string) => w.toLowerCase();
 
   let colour = "";
   if (
@@ -226,9 +226,9 @@ function parseDescription(
     COLOURS.has(words[1].toLowerCase())
   ) {
     words.shift(); // drop the modifier ("dark"/"light"/...) — not a colour
-    colour = titleCase(words.shift()!);
+    colour = lowerCase(words.shift()!);
   } else if (words.length > 0 && COLOURS.has(words[0].toLowerCase())) {
-    colour = titleCase(words.shift()!);
+    colour = lowerCase(words.shift()!);
   }
 
   const { rest, vehicleType } = stripVehicleType(words);

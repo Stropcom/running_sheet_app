@@ -17,7 +17,7 @@ describe("findVehicleLines", () => {
       registration: "1ABC123",
       state: "WA",
       year: "2022",
-      colour: "Black",
+      colour: "black",
       make: "Toyota",
       model: "Landcruiser",
       vehicleType: "station sedan",
@@ -28,7 +28,7 @@ describe("findVehicleLines", () => {
       registration: "1KEEPUP",
       state: "WA",
       year: "2023",
-      colour: "Black",
+      colour: "black",
       make: "Yamaha",
       model: "YZF",
       vehicleType: "Motorbike",
@@ -57,7 +57,7 @@ describe("findVehicleLines", () => {
       registration: "1KINGZ",
       state: "WA",
       year: "2021",
-      colour: "White",
+      colour: "white",
       make: "BMW",
       model: "X5",
       vehicleType: "4WD",
@@ -68,7 +68,7 @@ describe("findVehicleLines", () => {
       registration: "SLICK1",
       state: "WA",
       year: "2019",
-      colour: "Black",
+      colour: "black",
       make: "Audi",
       model: "RS3",
       vehicleType: "hatch",
@@ -82,7 +82,7 @@ describe("findVehicleLines", () => {
       registration: "1FAD378",
       state: "",
       year: "",
-      colour: "Red",
+      colour: "red",
       make: "Ford",
       model: "Ranger",
       vehicleType: "Utility",
@@ -134,7 +134,7 @@ describe("findVehicleLines", () => {
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       registration: "1TLN902",
-      colour: "Black",
+      colour: "black",
       make: "Lexus",
       model: "NX350h",
       confident: true,
@@ -156,7 +156,7 @@ describe("findVehicleLines", () => {
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       registration: "1RFK221",
-      colour: "Grey",
+      colour: "grey",
       make: "Lexus",
       model: "RX350",
       confident: true,
@@ -176,7 +176,7 @@ describe("findVehicleLines", () => {
     expect(result[0]).toMatchObject({
       registration: "1PORT9",
       state: "WA",
-      colour: "Silver",
+      colour: "silver",
       make: "Toyota",
       model: "HiAce",
       vehicleType: "Van",
@@ -184,7 +184,7 @@ describe("findVehicleLines", () => {
     expect(result[1]).toMatchObject({
       registration: "UNKNOWN",
       state: "",
-      colour: "Black",
+      colour: "black",
       make: "Ducati",
       vehicleType: "Motorbike",
     });
@@ -193,13 +193,13 @@ describe("findVehicleLines", () => {
   it("recognises 'no rego'/'plate unknown'/'unknown plate' the same way", () => {
     expect(
       findVehicleLines("no rego white Holden Commodore.")[0]
-    ).toMatchObject({ registration: "UNKNOWN", colour: "White" });
+    ).toMatchObject({ registration: "UNKNOWN", colour: "white" });
     expect(
       findVehicleLines("plate unknown white Holden Commodore.")[0]
-    ).toMatchObject({ registration: "UNKNOWN", colour: "White" });
+    ).toMatchObject({ registration: "UNKNOWN", colour: "white" });
     expect(
       findVehicleLines("unknown plate white Holden Commodore.")[0]
-    ).toMatchObject({ registration: "UNKNOWN", colour: "White" });
+    ).toMatchObject({ registration: "UNKNOWN", colour: "white" });
   });
 });
 
@@ -211,12 +211,12 @@ describe("compound colours", () => {
   // "dark" is dropped rather than kept as part of the colour — it's a
   // shade/intensity word, not a colour itself (officer correction on a
   // real training case).
-  it("reads 'dark blue' as colour 'Blue', not make='dark'", () => {
+  it("reads 'dark blue' as colour 'blue', not make='dark'", () => {
     const result = parseVehicleLine(
       "1SEA310 (WA) dark blue Volvo XC60 station sedan"
     );
     expect(result).toMatchObject({
-      colour: "Blue",
+      colour: "blue",
       make: "Volvo",
       model: "XC60",
       vehicleType: "station sedan",
@@ -228,7 +228,7 @@ describe("compound colours", () => {
     expect(
       parseVehicleLine("1TDM414 (WA) 2023 pearl white Lexus NX350h wagon.")
     ).toMatchObject({
-      colour: "White",
+      colour: "white",
       make: "Lexus",
       model: "NX350h",
       vehicleType: "station sedan",
@@ -238,14 +238,14 @@ describe("compound colours", () => {
     for (const word of ["pearlescent", "matte", "matt", "gloss", "glossy"]) {
       expect(
         parseVehicleLine(`1ABC123 (WA) ${word} black Holden Commodore`)
-      ).toMatchObject({ colour: "Black", make: "Holden", model: "Commodore" });
+      ).toMatchObject({ colour: "black", make: "Holden", model: "Commodore" });
     }
   });
 
   it("reads 'light grey' the same way, dropping 'light'", () => {
     const result = parseVehicleLine("1ABC123 (WA) light grey Mazda 3 hatch");
     expect(result).toMatchObject({
-      colour: "Grey",
+      colour: "grey",
       make: "Mazda",
       model: "3",
       vehicleType: "hatch",
@@ -255,7 +255,7 @@ describe("compound colours", () => {
   it("still reads a plain single-word colour correctly", () => {
     const result = parseVehicleLine("1ABC123 (WA) blue Volvo XC60 wagon");
     expect(result).toMatchObject({
-      colour: "Blue",
+      colour: "blue",
       make: "Volvo",
       model: "XC60",
     });
@@ -270,7 +270,7 @@ describe("compound colours", () => {
       "1CDR891 (WA) burgundy Skoda Octavia hatch"
     );
     expect(result).toMatchObject({
-      colour: "Burgundy",
+      colour: "burgundy",
       make: "Skoda",
       model: "Octavia",
       confident: true,
@@ -308,7 +308,7 @@ describe("parseVehicleLine", () => {
       "1SBC214 (WA) dark grey Toyota Prado station sedan."
     );
     expect(result).not.toBeNull();
-    expect(result!.colour).toBe("Grey");
+    expect(result!.colour).toBe("grey");
     expect(result!.make).toBe("Toyota");
     expect(result!.model).toBe("Prado");
     expect(result!.vehicleType).toBe("station sedan");
@@ -318,7 +318,7 @@ describe("parseVehicleLine", () => {
   it("drops a 'light' colour modifier the same way", () => {
     const result = parseVehicleLine("1ABC123 (WA) light blue Mazda CX-5");
     expect(result).not.toBeNull();
-    expect(result!.colour).toBe("Blue");
+    expect(result!.colour).toBe("blue");
     expect(result!.make).toBe("Mazda");
     expect(result!.model).toBe("CX-5");
     expect(result!.confident).toBe(true);

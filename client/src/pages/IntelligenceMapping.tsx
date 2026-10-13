@@ -8,6 +8,11 @@ import {
 } from "react";
 import { orderRsChips } from "@shared/rsChips";
 import {
+  joinVehicleLists,
+  joinVehicleListsAtCaret,
+  justTypedSpaceAfterVehicle,
+} from "@shared/vehicleList";
+import {
   matchVehicleArrival,
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
@@ -7656,7 +7661,9 @@ export default function IntelligenceMapping() {
 
   const submitInlineField = () => {
     if (!rsInlineLabel) return;
-    const finalText = rsInlineText.trim() ? rsInlineText.trim() : rsInlineLabel;
+    const finalText = rsInlineText.trim()
+      ? joinVehicleLists(rsInlineText.trim())
+      : rsInlineLabel;
     // Capture CINs and the voice-usage flag BEFORE closeInlineField clears
     // both refs.
     const cinsToAttach = new Set(rsInlineCinsRef.current);
@@ -12127,7 +12134,26 @@ export default function IntelligenceMapping() {
                               if (inlineReadOnly) enableInlineTyping();
                             }}
                             onChange={e => {
-                              const next = e.target.value;
+                              let next = e.target.value;
+                              // A space typed right after a vehicle bracket:
+                              // vehicles listed one after another get "and" /
+                              // commas between them (shared/vehicleList.ts).
+                              const typedAt =
+                                e.target.selectionStart ?? next.length;
+                              if (justTypedSpaceAfterVehicle(next, typedAt)) {
+                                const joined = joinVehicleListsAtCaret(
+                                  next,
+                                  typedAt
+                                );
+                                if (joined.changed) {
+                                  next = joined.text;
+                                  const ta = e.target;
+                                  const caret = joined.caret;
+                                  requestAnimationFrame(() =>
+                                    ta.setSelectionRange(caret, caret)
+                                  );
+                                }
+                              }
                               const now = Date.now();
                               // Group rapid keystrokes into a single undo step; only
                               // snapshot when there's been a pause since the last one.
@@ -12138,8 +12164,10 @@ export default function IntelligenceMapping() {
                               setRsInlineText(next);
                               resetInlineTimer();
 
-                              const cursorPos =
-                                e.target.selectionStart ?? next.length;
+                              const cursorPos = Math.min(
+                                e.target.selectionStart ?? next.length,
+                                next.length
+                              );
                               // A street number + start of a street, or "@"
                               // + a place name, opens the address list and
                               // takes priority over the name/rego triggers.
@@ -12212,6 +12240,13 @@ export default function IntelligenceMapping() {
                               closeRsMentionDropdown();
                               closeRsVehicleMentionDropdown();
                               rsAddressField.close();
+                              // Leaving the field punctuates vehicles listed
+                              // one after another ("A, B and C").
+                              const tidy = joinVehicleLists(rsInlineText);
+                              if (tidy !== rsInlineText) {
+                                pushInlineUndo(rsInlineText);
+                                setRsInlineText(tidy);
+                              }
                             }}
                             onKeyDown={e => {
                               if (
@@ -12380,20 +12415,25 @@ export default function IntelligenceMapping() {
                                     const after = rsInlineText.slice(pos);
                                     const bracket = `(Vehicle ${word.toUpperCase()})`;
                                     const newText = `${before}${word} ${bracket} ${after}`;
-                                    pushInlineUndo(rsInlineText);
-                                    setRsInlineText(newText);
-                                    resetInlineTimer();
-                                    closeRsVehicleMentionDropdown();
-                                    requestAnimationFrame(() => {
-                                      const newPos =
-                                        before.length +
+                                    // The bracket is now complete and followed
+                                    // by a space — a vehicle listed straight
+                                    // after another gets "and" / a comma.
+                                    const joined = joinVehicleListsAtCaret(
+                                      newText,
+                                      before.length +
                                         word.length +
                                         1 +
                                         bracket.length +
-                                        1;
+                                        1
+                                    );
+                                    pushInlineUndo(rsInlineText);
+                                    setRsInlineText(joined.text);
+                                    resetInlineTimer();
+                                    closeRsVehicleMentionDropdown();
+                                    requestAnimationFrame(() => {
                                       textarea.setSelectionRange(
-                                        newPos,
-                                        newPos
+                                        joined.caret,
+                                        joined.caret
                                       );
                                     });
                                   }

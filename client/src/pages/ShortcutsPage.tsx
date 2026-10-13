@@ -204,8 +204,8 @@ export default function ShortcutsPage() {
           {isAdmin
             ? " Drag a shortcut by its handle to move it."
             : " An administrator can drag shortcuts to change the order."}{" "}
-          The target&rsquo;s own chips (HBF, vehicles, TGT, HB) are fixed and
-          always sit straight after SC.
+          The target&rsquo;s own chips are fixed: HBF, the vehicles and TGT sit
+          straight after SC, and HB sits straight after AR.
         </p>
 
         {/* Add form */}

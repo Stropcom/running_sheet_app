@@ -232,8 +232,8 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .sheet-dot { width:6px; height:6px; border-radius:50%; background:${BLUE_MID}; flex-shrink:0; }
 .pb-grid { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; }
 .pb-tile { border:2px solid ${GREY_BORDER}; border-radius:6px; overflow:hidden; background:#fff; break-inside:avoid; }
-.pb-tile.target { border-color:#1d4ed8; background:${BLUE_LIGHT} !important; }
-.pb-tile.resident { border-color:#e11d48; }
+.pb-tile.target { border-color:#e11d48; background:#ffe4ea !important; }
+.pb-tile.resident { border-color:#0284c7; }
 .pb-tile img, .pb-none { width:100%; aspect-ratio:4/5; object-fit:cover; object-position:top; display:block; }
 .pb-none { display:flex; align-items:center; justify-content:center; background:#f1f5f9; color:#64748b; font-size:9px; font-weight:600; }
 .pb-name { padding:3px 4px 5px; text-align:center; font-size:9px; line-height:1.25; }

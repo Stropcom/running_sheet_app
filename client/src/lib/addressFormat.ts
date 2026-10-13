@@ -30,6 +30,7 @@ import {
   format as formatDate,
 } from "date-fns";
 import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
+import { lowerVehicleColour } from "@shared/vehicleColour";
 import { fullStreetTypes } from "@shared/streetTypes";
 
 export { formatIntelAddress, formatIntelVehicle };
@@ -803,7 +804,8 @@ export function composeVehicle(
 } {
   const registration = parts.registration.trim().toUpperCase();
   const state = (parts.state.trim() || "WA").toUpperCase();
-  const colour = parts.colour.trim();
+  // A vehicle's colour is always lower case (shared/vehicleColour.ts).
+  const colour = lowerVehicleColour(parts.colour);
   const make = parts.make.trim();
   const model = parts.model.trim();
   const vehicleType = (parts.vehicleType ?? "").trim();
@@ -837,7 +839,8 @@ export function composeVehicleTargetName(
   tgt: string;
 } {
   const registration = parts.registration.trim().toUpperCase();
-  const colour = parts.colour.trim();
+  // A vehicle's colour is always lower case (shared/vehicleColour.ts).
+  const colour = lowerVehicleColour(parts.colour);
   const make = parts.make.trim();
   const model = parts.model.trim();
   const vehicleType = (parts.vehicleType ?? "").trim();

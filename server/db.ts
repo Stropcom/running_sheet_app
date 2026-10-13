@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { initialShortcutOrder } from "../shared/rsChips";
+import { findVehicleChains, joinVehicleLists } from "../shared/vehicleList";
 import { createPool as createPromisePool } from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt, fingerprintVaultKey } from "./wipcVault";
 import { cosineSimilarity } from "./faceRecognition";
@@ -5958,7 +5959,19 @@ export async function getSheetEntityChips(
 // locked row before this can run.
 export function normalizeObservationPunctuation(text: string): string {
   if (!text) return text;
-  let result = text;
+  // Vehicles listed one after another get "and" / commas between them
+  // (shared/vehicleList.ts — also done live as the officer types; idempotent,
+  // so this only catches text that reached the server some other way).
+  let result = joinVehicleLists(text);
+  // A vehicle list's final "and" ("A, B and C") takes no comma before it, so
+  // Rule 1 below must not add one to the bracket in front of it.
+  const vehicleAndLinks = new Set<number>();
+  for (const chain of findVehicleChains(result)) {
+    for (const l of chain.links) {
+      if (/^\s+and\s+$/i.test(result.slice(l.sepStart, l.sepEnd)))
+        vehicleAndLinks.add(l.sepStart);
+    }
+  }
 
   // Rule 1: comma right after a "(Vehicle REGO)" bracket, unless the next
   // non-space character already closes the clause (,.;:)\n) or the
@@ -5971,6 +5984,7 @@ export function normalizeObservationPunctuation(text: string): string {
       const ws = peek?.[1] ?? "";
       const nextChar = peek?.[2];
       if (nextChar === undefined) return bracket; // end of text — leave alone
+      if (vehicleAndLinks.has(offset + bracket.length)) return bracket; // "A and B"
       if (ws.includes("\n")) return bracket; // paragraph break already separates it
       if (/[,.;:)]/.test(nextChar)) return bracket; // already closed
       // ws (if any) is NOT part of the regex match, so it's left untouched

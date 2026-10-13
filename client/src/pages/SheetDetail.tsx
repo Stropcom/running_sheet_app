@@ -14,6 +14,11 @@ import {
   detectPlaceSuggestTrigger,
 } from "@shared/addressSuggestTrigger";
 import { orderRsChips } from "@shared/rsChips";
+import {
+  joinVehicleLists,
+  joinVehicleListsAtCaret,
+  justTypedSpaceAfterVehicle,
+} from "@shared/vehicleList";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2263,9 +2268,21 @@ function EditableCell({
   }
 
   function handleObservationInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    const val = e.target.value;
+    let val = e.target.value;
+    let cursorPos = e.target.selectionStart ?? val.length;
+    // A space typed right after a vehicle bracket: vehicles written one after
+    // another get "and" / commas between them (shared/vehicleList.ts).
+    if (justTypedSpaceAfterVehicle(val, cursorPos)) {
+      const joined = joinVehicleListsAtCaret(val, cursorPos);
+      if (joined.changed) {
+        val = joined.text;
+        cursorPos = joined.caret;
+        const ta = e.target;
+        const caret = joined.caret;
+        requestAnimationFrame(() => ta.setSelectionRange(caret, caret));
+      }
+    }
     setDraft(val);
-    const cursorPos = e.target.selectionStart ?? val.length;
 
     if (usedVehicleRegos) {
       const vehicleTrigger = detectVehicleMentionTrigger(
@@ -2477,11 +2494,16 @@ function EditableCell({
       const after = draft.slice(pos);
       const bracket = `(Vehicle ${word.toUpperCase()})`;
       const newText = `${before}${word} ${bracket} ${after}`;
-      setDraft(newText);
+      // The bracket is now complete and followed by a space — a vehicle
+      // listed straight after another gets "and" / a comma before it.
+      const joined = joinVehicleListsAtCaret(
+        newText,
+        before.length + word.length + 1 + bracket.length + 1
+      );
+      setDraft(joined.text);
       closeVehicleMentionDropdown();
       requestAnimationFrame(() => {
-        const newPos = before.length + word.length + 1 + bracket.length + 1;
-        textarea.setSelectionRange(newPos, newPos);
+        textarea.setSelectionRange(joined.caret, joined.caret);
       });
       return;
     }
@@ -2581,7 +2603,10 @@ function EditableCell({
               closeVehicleMentionDropdown();
               closeAddressDropdown();
               notifyObservationBlur();
-              const conv = convertGoogleAddresses(draft);
+              // Leaving the field tidies the whole observation: Google
+              // addresses to RS format, and vehicles listed one after
+              // another punctuated ("A, B and C").
+              const conv = joinVehicleLists(convertGoogleAddresses(draft));
               if (conv !== draft) {
                 setDraft(conv);
                 commit(conv);

@@ -61,6 +61,7 @@ import { findFuzzyMatches, DEFAULT_FUZZY_THRESHOLD } from "./fuzzyMatch";
 import { aliasMentionCompatible } from "./personAliasMatch";
 import { findUnidentifiedMentions } from "@shared/unidentified";
 import { findAbbreviatedStreetTypes } from "@shared/streetTypes";
+import { vehicleListFixes } from "@shared/vehicleList";
 
 export type SheetCheckCategory =
   | "formatting"
@@ -1134,6 +1135,35 @@ export function checkAbbreviatedStreetTypes(
   return findings;
 }
 
+// ── Vehicles listed one after another with no punctuation ─────────────────
+
+// Two or more vehicles written back to back ("… (Vehicle A) … (Vehicle B)")
+// need "and" between two, or commas with "and" before the last for more
+// (shared/vehicleList.ts). New text is punctuated as it is typed; this flags
+// rows written before that rule, with a one-tap fix. One finding per list.
+export function checkVehicleLists(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
+  const findings: SheetCheckFinding[] = [];
+  for (const row of rows) {
+    const text = row.observation;
+    for (const fix of vehicleListFixes(text)) {
+      findings.push({
+        ruleId: "vehicle-list-unpunctuated",
+        category: "formatting",
+        reason:
+          'These vehicles are listed one after another — put commas between them, with "and" before the last.',
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        snippet: wordSnippet(text, fix.start, fix.end),
+        suggestedFix: { wrong: fix.wrong, correct: fix.correct },
+        findingKey: `ROW_${row.rowId}::VEHICLE_LIST::${fix.start}`,
+      });
+    }
+  }
+  return findings;
+}
+
 // ── Double spaces between words ───────────────────────────────────────────
 
 // Two or more spaces in a row in the middle of a line ("entered  Kinky Lizard")
@@ -1584,6 +1614,7 @@ export async function checkRunningSheet(
   const repeatedUnidentified = checkRepeatedUnidentified(rows);
   const doubleSpaces = checkDoubleSpaces(rows);
   const abbreviatedStreets = checkAbbreviatedStreetTypes(rows);
+  const vehicleLists = checkVehicleLists(rows);
   const bareVehicleEntities = findSheetBareVehicleEntities(
     sheetId,
     rows,
@@ -1611,6 +1642,7 @@ export async function checkRunningSheet(
     ...repeatedUnidentified,
     ...doubleSpaces,
     ...abbreviatedStreets,
+    ...vehicleLists,
     ...consistency,
     ...bareAddressConsistency,
     ...spelling,

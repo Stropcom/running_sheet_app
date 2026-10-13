@@ -11,6 +11,7 @@ import { VehicleProfileContent } from "@/components/VehicleProfileContent";
 import { LocationProfileContent } from "@/components/LocationProfileContent";
 import { TargetProfileContent } from "@/components/TargetProfileContent";
 import { OperationProfileContent } from "@/components/OperationProfileContent";
+import { isHere, useHereAbove } from "@/lib/currentProfiles";
 
 /**
  * A link to another Intelligence profile that opens in place instead of
@@ -66,8 +67,12 @@ export function ProfileDropdownRow({
 }) {
   const [open, setOpen] = useState(false);
   const inside = useContext(InsideProfileDropdown);
+  const here = useHereAbove();
   const [, navigate] = useLocation();
   const headerClass = headerClassName ?? DEFAULT_HEADER;
+
+  // A link to a profile we're already in is pointless — show nothing.
+  if (isHere(here, kind, refId)) return null;
 
   // Already inside an opened profile: a plain link, one level deep only.
   if (inside) {

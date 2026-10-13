@@ -5,6 +5,7 @@ import {
   type CrossLinkVia,
 } from "@/lib/crossLinkText";
 import { useLocation } from "wouter";
+import { HereProvider, isHere, useHere } from "@/lib/currentProfiles";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -219,7 +220,18 @@ export function AssociateProfileContent({
       { label },
       { enabled: !!label }
     );
-  const profile = data as IntelAssociateProfile | undefined;
+  const here = useHere("associate", label);
+  const rawProfile = data as IntelAssociateProfile | undefined;
+  // Links back to a profile we're already inside are left out.
+  const profile = rawProfile && {
+    ...rawProfile,
+    linkedTargets: rawProfile.linkedTargets.filter(
+      t => !isHere(here, "target", t.targetId)
+    ),
+    sharedEntityLinks: rawProfile.sharedEntityLinks.filter(
+      l => !isHere(here, "operation", l.operationId)
+    ),
+  };
   const { data: photosData } = trpc.attachment.byEntity.useQuery(
     { category: "associate", entityLabel: label },
     { enabled: !!label }
@@ -249,272 +261,277 @@ export function AssociateProfileContent({
   }
 
   return (
-    <div className={embedded ? "pt-1" : "px-4 pb-6 pt-5"}>
-      {isLoading && (
-        <div className="space-y-3">
-          {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-14 w-full rounded-xl" />
-          ))}
-        </div>
-      )}
-      {error && (
-        <div className="text-center py-16 text-muted-foreground">
-          <p className="text-sm">Profile not found.</p>
-        </div>
-      )}
-      {profile && (
-        <>
-          {!embedded && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm mb-5">
-              <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
-                <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap sm:gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
-                        <User className="w-3 h-3" /> Associate
-                      </span>
-                      {profile.isIndicesOnly && (
-                        <IndicesBadge variant="on-dark" size="header" />
-                      )}
+    <HereProvider value={here}>
+      <div className={embedded ? "pt-1" : "px-4 pb-6 pt-5"}>
+        {isLoading && (
+          <div className="space-y-3">
+            {[...Array(4)].map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-xl" />
+            ))}
+          </div>
+        )}
+        {error && (
+          <div className="text-center py-16 text-muted-foreground">
+            <p className="text-sm">Profile not found.</p>
+          </div>
+        )}
+        {profile && (
+          <>
+            {!embedded && (
+              <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm mb-5">
+                <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
+                  <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap sm:gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
+                          <User className="w-3 h-3" /> Associate
+                        </span>
+                        {profile.isIndicesOnly && (
+                          <IndicesBadge variant="on-dark" size="header" />
+                        )}
+                      </div>
+                      <h1 className="text-lg sm:text-2xl leading-snug font-bold tracking-tight break-words">
+                        {profile.label}
+                      </h1>
                     </div>
-                    <h1 className="text-lg sm:text-2xl leading-snug font-bold tracking-tight break-words">
-                      {profile.label}
-                    </h1>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={exportPdf}
-                    className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0"
-                  >
-                    <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
-                  </Button>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
-                {[
-                  {
-                    label: "Linked Targets",
-                    value: profile.linkedTargets.length,
-                  },
-                  {
-                    label: "Running Sheets",
-                    value: profile.linkedSheets.length,
-                  },
-                  {
-                    label: "Associations",
-                    value:
-                      profile.assocVehicles.length +
-                      profile.assocLocations.length,
-                  },
-                ].map(stat => (
-                  <div key={stat.label} className="px-4 py-3 text-center">
-                    <p className="text-xl font-bold text-blue-900 dark:text-blue-300">
-                      {stat.value}
-                    </p>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider">
-                      {stat.label}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <EntityPhotosSection
-            category="associate"
-            entityLabel={profile.label}
-          />
-
-          {profile.identicalProfile && (
-            <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-300 dark:border-indigo-800">
-              <Link2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-indigo-800 dark:text-indigo-300">
-                  Identical profile — this is the same person as{" "}
-                  <strong>{profile.identicalProfile.label}</strong>, filed as a
-                  Target. All intelligence below is combined across both
-                  records, so nothing is missed by looking at just this one.
-                </p>
-                <button
-                  onClick={() =>
-                    navigate(
-                      `/intelligence/target/${profile.identicalProfile!.id}`
-                    )
-                  }
-                  className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 underline underline-offset-2 mt-1"
-                >
-                  View Target profile →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {profile.registryAssociateId &&
-            registeredDetailRows(profile).length > 0 && (
-              <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-                <SectionHeading
-                  label="Registered Details"
-                  count={registeredDetailRows(profile).length}
-                />
-                <div className="space-y-2">
-                  {registeredDetailRows(profile).map(r => (
-                    <div
-                      key={r.label}
-                      className="px-3 py-2 rounded-lg border border-border bg-background"
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={exportPdf}
+                      className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0"
                     >
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">
-                        {r.label}
+                      <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
+                  {[
+                    {
+                      label: "Linked Targets",
+                      value: profile.linkedTargets.length,
+                    },
+                    {
+                      label: "Running Sheets",
+                      value: profile.linkedSheets.length,
+                    },
+                    {
+                      label: "Associations",
+                      value:
+                        profile.assocVehicles.length +
+                        profile.assocLocations.length,
+                    },
+                  ].map(stat => (
+                    <div key={stat.label} className="px-4 py-3 text-center">
+                      <p className="text-xl font-bold text-blue-900 dark:text-blue-300">
+                        {stat.value}
                       </p>
-                      <p className="text-sm text-foreground">{r.value}</p>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider">
+                        {stat.label}
+                      </p>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-          {(profile.linkedTargets.length > 0 || sharedOnlyOps.length > 0) && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-              <SectionHeading
-                label="Linked Targets"
-                count={profile.linkedTargets.length}
-              />
-              {totalOpsCount > 1 && (
-                <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-800 dark:text-amber-300">
-                    Linked across {totalOpsCount} separate operations — worth
-                    checking for a cross-operation connection.
-                  </p>
-                </div>
-              )}
-              <div className="space-y-1">
-                {profile.linkedTargets.map(t => (
-                  <ProfileDropdownRow
-                    key={`${t.targetId}-${t.operationId}`}
-                    kind="target"
-                    refId={t.targetId}
-                  >
-                    <User className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                    <span className="text-xs font-medium text-foreground flex-1 min-w-0 break-words">
-                      {t.name}
-                    </span>
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      {t.operationName}
-                    </span>
-                  </ProfileDropdownRow>
-                ))}
-              </div>
-              {profile.sharedEntityLinks.length > 0 && (
-                <div className="mt-3">
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Shared vehicle / address
-                  </p>
-                  <div className="space-y-2">
-                    {profile.sharedEntityLinks.map(l => (
-                      <ProfileDropdownRow
-                        key={`${l.targetId ?? "sighted"}-${l.operationId}-${l.via}`}
-                        kind="operation"
-                        refId={l.operationId}
-                        headerClassName="inline-flex w-full items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 transition-colors text-left"
-                        title={
-                          l.targetName
-                            ? `Not formally linked — ${l.targetName} ${sharedLinkSentence(l.via, l.sharedValue)}`
-                            : `This ${l.via} (${sharedLinkSubject(l.via, l.sharedValue)}) was also sighted on this operation`
-                        }
-                      >
-                        <Folder className="w-3 h-3 shrink-0" />
-                        <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-1.5">
-                          <span className="min-w-0 break-words">
-                            {l.operationName}
-                          </span>
-                          <span className="min-w-0 text-xs uppercase tracking-wide opacity-70 sm:flex-1">
-                            {sharedLinkChipText(l.via, l.sharedValue)}
-                          </span>
-                        </span>
-                      </ProfileDropdownRow>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+            <EntityPhotosSection
+              category="associate"
+              entityLabel={profile.label}
+            />
 
-          {profile.linkedSheets.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-              <SectionHeading
-                label="Running Sheets"
-                count={profile.linkedSheets.length}
-              />
-              <div className="space-y-1">
-                {profile.linkedSheets.map(s => (
+            {profile.identicalProfile && (
+              <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-300 dark:border-indigo-800">
+                <Link2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-indigo-800 dark:text-indigo-300">
+                    Identical profile — this is the same person as{" "}
+                    <strong>{profile.identicalProfile.label}</strong>, filed as
+                    a Target. All intelligence below is combined across both
+                    records, so nothing is missed by looking at just this one.
+                  </p>
                   <button
-                    key={s.id}
-                    onClick={() => navigate(`/sheet/${s.id}`)}
-                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background hover:bg-accent/10 transition-colors text-left"
+                    onClick={() =>
+                      navigate(
+                        `/intelligence/target/${profile.identicalProfile!.id}`
+                      )
+                    }
+                    className="text-xs font-semibold text-indigo-700 dark:text-indigo-300 underline underline-offset-2 mt-1"
                   >
-                    <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <span className="text-xs font-medium text-foreground flex-1 truncate">
-                      {s.title}
-                    </span>
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      {s.operationName}
-                    </span>
+                    View Target profile →
                   </button>
-                ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {(profile.assocVehicles.length > 0 ||
-            profile.assocLocations.length > 0) && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-              <SectionHeading
-                label="Associations"
-                count={
-                  profile.assocVehicles.length + profile.assocLocations.length
+            {profile.registryAssociateId &&
+              registeredDetailRows(profile).length > 0 && (
+                <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+                  <SectionHeading
+                    label="Registered Details"
+                    count={registeredDetailRows(profile).length}
+                  />
+                  <div className="space-y-2">
+                    {registeredDetailRows(profile).map(r => (
+                      <div
+                        key={r.label}
+                        className="px-3 py-2 rounded-lg border border-border bg-background"
+                      >
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">
+                          {r.label}
+                        </p>
+                        <p className="text-sm text-foreground">{r.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            {(profile.linkedTargets.length > 0 || sharedOnlyOps.length > 0) && (
+              <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+                <SectionHeading
+                  label="Linked Targets"
+                  count={profile.linkedTargets.length}
+                />
+                {totalOpsCount > 1 && (
+                  <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-800 dark:text-amber-300">
+                      Linked across {totalOpsCount} separate operations — worth
+                      checking for a cross-operation connection.
+                    </p>
+                  </div>
+                )}
+                <div className="space-y-1">
+                  {profile.linkedTargets.map(t => (
+                    <ProfileDropdownRow
+                      key={`${t.targetId}-${t.operationId}`}
+                      kind="target"
+                      refId={t.targetId}
+                    >
+                      <User className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                      <span className="text-xs font-medium text-foreground flex-1 min-w-0 break-words">
+                        {t.name}
+                      </span>
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {t.operationName}
+                      </span>
+                    </ProfileDropdownRow>
+                  ))}
+                </div>
+                {profile.sharedEntityLinks.length > 0 && (
+                  <div className="mt-3">
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Shared vehicle / address
+                    </p>
+                    <div className="space-y-2">
+                      {profile.sharedEntityLinks.map(l => (
+                        <ProfileDropdownRow
+                          key={`${l.targetId ?? "sighted"}-${l.operationId}-${l.via}`}
+                          kind="operation"
+                          refId={l.operationId}
+                          headerClassName="inline-flex w-full items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 hover:bg-amber-100 transition-colors text-left"
+                          title={
+                            l.targetName
+                              ? `Not formally linked — ${l.targetName} ${sharedLinkSentence(l.via, l.sharedValue)}`
+                              : `This ${l.via} (${sharedLinkSubject(l.via, l.sharedValue)}) was also sighted on this operation`
+                          }
+                        >
+                          <Folder className="w-3 h-3 shrink-0" />
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-1.5">
+                            <span className="min-w-0 break-words">
+                              {l.operationName}
+                            </span>
+                            <span className="min-w-0 text-xs uppercase tracking-wide opacity-70 sm:flex-1">
+                              {sharedLinkChipText(l.via, l.sharedValue)}
+                            </span>
+                          </span>
+                        </ProfileDropdownRow>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {profile.linkedSheets.length > 0 && (
+              <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+                <SectionHeading
+                  label="Running Sheets"
+                  count={profile.linkedSheets.length}
+                />
+                <div className="space-y-1">
+                  {profile.linkedSheets.map(s => (
+                    <button
+                      key={s.id}
+                      onClick={() => navigate(`/sheet/${s.id}`)}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-background hover:bg-accent/10 transition-colors text-left"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span className="text-xs font-medium text-foreground flex-1 truncate">
+                        {s.title}
+                      </span>
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {s.operationName}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(profile.assocVehicles.length > 0 ||
+              profile.assocLocations.length > 0) && (
+              <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+                <SectionHeading
+                  label="Associations"
+                  count={
+                    profile.assocVehicles.length + profile.assocLocations.length
+                  }
+                />
+                {profile.assocVehicles.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Vehicles
+                    </p>
+                    <div className="flex flex-col gap-2">
+                      {profile.assocVehicles.map(v => (
+                        <IntelEntityDropdown key={v.id} item={v} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {profile.assocLocations.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Locations
+                    </p>
+                    <div className="flex flex-col gap-2">
+                      {profile.assocLocations.map(l => (
+                        <IntelEntityDropdown key={l.id} item={l} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {embedded && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  navigate(
+                    `/intelligence/associate/${encodeURIComponent(profile.label)}`
+                  )
                 }
-              />
-              {profile.assocVehicles.length > 0 && (
-                <div className="mb-3">
-                  <p className="text-xs text-muted-foreground mb-1">Vehicles</p>
-                  <div className="flex flex-col gap-2">
-                    {profile.assocVehicles.map(v => (
-                      <IntelEntityDropdown key={v.id} item={v} />
-                    ))}
-                  </div>
-                </div>
-              )}
-              {profile.assocLocations.length > 0 && (
-                <div className="mb-3">
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Locations
-                  </p>
-                  <div className="flex flex-col gap-2">
-                    {profile.assocLocations.map(l => (
-                      <IntelEntityDropdown key={l.id} item={l} />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          {embedded && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                navigate(
-                  `/intelligence/associate/${encodeURIComponent(profile.label)}`
-                )
-              }
-              className="text-xs"
-            >
-              <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Open full profile
-            </Button>
-          )}
-        </>
-      )}
-    </div>
+                className="text-xs"
+              >
+                <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Open full
+                profile
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+    </HereProvider>
   );
 }

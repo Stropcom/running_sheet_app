@@ -19,6 +19,7 @@ import {
 } from "@/lib/crossLinkText";
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { HereProvider, isHere, useHere } from "@/lib/currentProfiles";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -549,6 +550,7 @@ export function OperationProfileContent({
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
   const { data: profile, isLoading, error } = useOperationProfile(operationId);
+  const here = useHere("operation", operationId);
   // Which target blocks are open. Until the officer opens/closes one, only
   // the first target's block is open.
   const [openIds, setOpenIds] = useState<Set<number> | null>(null);
@@ -582,6 +584,10 @@ export function OperationProfileContent({
   }
 
   const typedProfile = profile as IntelOperationProfile | undefined;
+  // A target we're already inside isn't offered as a link to itself.
+  const crossLinks = (typedProfile?.crossOperationLinks ?? []).filter(
+    l => !isHere(here, "target", l.targetId)
+  );
 
   const isOpen = (id: number, index: number) =>
     openIds ? openIds.has(id) : index === 0;
@@ -644,178 +650,183 @@ export function OperationProfileContent({
   ];
 
   return (
-    <div className={embedded ? "pt-1" : "px-6 lg:px-8 py-6"}>
-      {isLoading && (
-        <div className="space-y-3">
-          {[...Array(5)].map((_, i) => (
-            <Skeleton key={i} className="h-14 w-full rounded-xl" />
-          ))}
-        </div>
-      )}
-
-      {error && (
-        <div className="text-center py-16 text-muted-foreground">
-          <p className="text-sm">Profile not found or could not be loaded.</p>
-        </div>
-      )}
-
-      {typedProfile && (
-        <>
-          {/* Header */}
-          {!embedded && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm mb-5">
-              <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
-                <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap sm:gap-4">
-                  <div>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30 mb-3">
-                      Operation
-                    </span>
-                    <h1 className="text-lg sm:text-2xl leading-snug font-bold tracking-tight break-words">
-                      {typedProfile.operationName}
-                    </h1>
-                    <div className="flex flex-wrap gap-3 mt-2 text-sm opacity-75">
-                      {typedProfile.promisNumber && (
-                        <span>PROMIS: {typedProfile.promisNumber}</span>
-                      )}
-                      {typedProfile.imsNumber && (
-                        <span>IMS: {typedProfile.imsNumber}</span>
-                      )}
-                      {typedProfile.investigationUnit && (
-                        <span>Unit: {typedProfile.investigationUnit}</span>
-                      )}
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={exportPdf}
-                    className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0"
-                  >
-                    <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
-                  </Button>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
-                {[
-                  { label: "Targets", value: typedProfile.targets.length },
-                  {
-                    label: "Running Sheets",
-                    value: typedProfile.linkedSheets.length,
-                  },
-                  {
-                    label: "Associations",
-                    value: typedProfile.targets.reduce(
-                      (s, t) =>
-                        s +
-                        t.assocPersons.length +
-                        t.assocVehicles.length +
-                        t.assocLocations.length,
-                      0
-                    ),
-                  },
-                ].map(stat => (
-                  <div
-                    key={stat.label}
-                    className="px-2 py-3 text-center sm:px-4"
-                  >
-                    <p className="text-xl font-bold text-blue-900 dark:text-blue-300">
-                      {stat.value}
-                    </p>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide sm:tracking-wider">
-                      {stat.label}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {typedProfile.crossOperationLinks.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-              <SectionHeading
-                label="Cross-operation links"
-                count={typedProfile.crossOperationLinks.length}
-              />
-              <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
-                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                <p className="text-xs text-amber-800 dark:text-amber-300">
-                  {typedProfile.crossOperationLinks.length} target
-                  {typedProfile.crossOperationLinks.length !== 1 ? "s" : ""} in
-                  this operation also reach into another operation — worth
-                  checking for a cross-operation connection.
-                </p>
-              </div>
-              <div className="space-y-1">
-                {typedProfile.crossOperationLinks.map(l => (
-                  <ProfileDropdownRow
-                    key={`${l.targetId}-${l.otherOperationId}-${l.via}`}
-                    kind="target"
-                    refId={l.targetId}
-                  >
-                    <User className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                    {/* Name and link side by side from sm up; stacked on a
-                        phone so the name never gets squeezed to a sliver. */}
-                    <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-3">
-                      <span className="text-xs font-medium text-foreground min-w-0 break-words sm:flex-1">
-                        {l.targetName}
-                      </span>
-                      <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-amber-700 dark:text-amber-400">
-                        <Folder className="w-3 h-3 shrink-0" />
-                        <span className="font-semibold">
-                          {l.otherOperationName}
-                        </span>
-                        <span className="text-xs uppercase tracking-wide opacity-70">
-                          {sharedLinkChipText(l.via, l.sharedValue)}
-                        </span>
-                      </span>
-                    </span>
-                  </ProfileDropdownRow>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {!embedded && typedProfile.targets.length > 0 && (
-            <JumpBar items={jumpItems} />
-          )}
-
-          {!embedded && typedProfile.targets.length > 0 && (
-            <Photoboard
-              rows={photoboardRows}
-              onBeforeGo={(_, rowIndex) =>
-                openTarget(typedProfile.targets[rowIndex].targetId)
-              }
-            />
-          )}
-
-          <div className="flex flex-col gap-4">
-            {typedProfile.targets.map((target, i) => (
-              <TargetBlock
-                key={target.targetId}
-                target={target}
-                index={i}
-                total={typedProfile.targets.length}
-                operationName={typedProfile.operationName}
-                open={isOpen(target.targetId, i)}
-                onToggle={() => toggleTarget(target.targetId, i)}
-                embedded={embedded}
-              />
+    <HereProvider value={here}>
+      <div className={embedded ? "pt-1" : "px-6 lg:px-8 py-6"}>
+        {isLoading && (
+          <div className="space-y-3">
+            {[...Array(5)].map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-xl" />
             ))}
           </div>
+        )}
 
-          <ImportedDocumentsSection operationId={operationId} />
-          {embedded && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => navigate(`/intelligence/operation/${operationId}`)}
-              className="text-xs"
-            >
-              <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Open full profile
-            </Button>
-          )}
-        </>
-      )}
-    </div>
+        {error && (
+          <div className="text-center py-16 text-muted-foreground">
+            <p className="text-sm">Profile not found or could not be loaded.</p>
+          </div>
+        )}
+
+        {typedProfile && (
+          <>
+            {/* Header */}
+            {!embedded && (
+              <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm mb-5">
+                <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-5 text-white">
+                  <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap sm:gap-4">
+                    <div>
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30 mb-3">
+                        Operation
+                      </span>
+                      <h1 className="text-lg sm:text-2xl leading-snug font-bold tracking-tight break-words">
+                        {typedProfile.operationName}
+                      </h1>
+                      <div className="flex flex-wrap gap-3 mt-2 text-sm opacity-75">
+                        {typedProfile.promisNumber && (
+                          <span>PROMIS: {typedProfile.promisNumber}</span>
+                        )}
+                        {typedProfile.imsNumber && (
+                          <span>IMS: {typedProfile.imsNumber}</span>
+                        )}
+                        {typedProfile.investigationUnit && (
+                          <span>Unit: {typedProfile.investigationUnit}</span>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={exportPdf}
+                      className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0"
+                    >
+                      <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 divide-x divide-y sm:divide-y-0 divide-border/60 bg-blue-50/50 dark:bg-blue-950/20">
+                  {[
+                    { label: "Targets", value: typedProfile.targets.length },
+                    {
+                      label: "Running Sheets",
+                      value: typedProfile.linkedSheets.length,
+                    },
+                    {
+                      label: "Associations",
+                      value: typedProfile.targets.reduce(
+                        (s, t) =>
+                          s +
+                          t.assocPersons.length +
+                          t.assocVehicles.length +
+                          t.assocLocations.length,
+                        0
+                      ),
+                    },
+                  ].map(stat => (
+                    <div
+                      key={stat.label}
+                      className="px-2 py-3 text-center sm:px-4"
+                    >
+                      <p className="text-xl font-bold text-blue-900 dark:text-blue-300">
+                        {stat.value}
+                      </p>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide sm:tracking-wider">
+                        {stat.label}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {crossLinks.length > 0 && (
+              <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+                <SectionHeading
+                  label="Cross-operation links"
+                  count={crossLinks.length}
+                />
+                <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800 dark:text-amber-300">
+                    {crossLinks.length} target
+                    {crossLinks.length !== 1 ? "s" : ""} in this operation also
+                    reach into another operation — worth checking for a
+                    cross-operation connection.
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  {crossLinks.map(l => (
+                    <ProfileDropdownRow
+                      key={`${l.targetId}-${l.otherOperationId}-${l.via}`}
+                      kind="target"
+                      refId={l.targetId}
+                    >
+                      <User className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                      {/* Name and link side by side from sm up; stacked on a
+                        phone so the name never gets squeezed to a sliver. */}
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-3">
+                        <span className="text-xs font-medium text-foreground min-w-0 break-words sm:flex-1">
+                          {l.targetName}
+                        </span>
+                        <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-amber-700 dark:text-amber-400">
+                          <Folder className="w-3 h-3 shrink-0" />
+                          <span className="font-semibold">
+                            {l.otherOperationName}
+                          </span>
+                          <span className="text-xs uppercase tracking-wide opacity-70">
+                            {sharedLinkChipText(l.via, l.sharedValue)}
+                          </span>
+                        </span>
+                      </span>
+                    </ProfileDropdownRow>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!embedded && typedProfile.targets.length > 0 && (
+              <JumpBar items={jumpItems} />
+            )}
+
+            {!embedded && typedProfile.targets.length > 0 && (
+              <Photoboard
+                rows={photoboardRows}
+                onBeforeGo={(_, rowIndex) =>
+                  openTarget(typedProfile.targets[rowIndex].targetId)
+                }
+              />
+            )}
+
+            <div className="flex flex-col gap-4">
+              {typedProfile.targets.map((target, i) => (
+                <TargetBlock
+                  key={target.targetId}
+                  target={target}
+                  index={i}
+                  total={typedProfile.targets.length}
+                  operationName={typedProfile.operationName}
+                  open={isOpen(target.targetId, i)}
+                  onToggle={() => toggleTarget(target.targetId, i)}
+                  embedded={embedded}
+                />
+              ))}
+            </div>
+
+            <ImportedDocumentsSection operationId={operationId} />
+            {embedded && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  navigate(`/intelligence/operation/${operationId}`)
+                }
+                className="text-xs"
+              >
+                <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Open full
+                profile
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+    </HereProvider>
   );
 }

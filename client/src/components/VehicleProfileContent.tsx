@@ -1,4 +1,5 @@
 import { useLocation } from "wouter";
+import { HereProvider, isHere, useHere } from "@/lib/currentProfiles";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -163,7 +164,21 @@ export function VehicleProfileContent({
     { label },
     { enabled: !!label }
   );
-  const profile = data as IntelVehicleProfile | undefined;
+  const here = useHere("vehicle", label);
+  const rawProfile = data as IntelVehicleProfile | undefined;
+  // Links to a profile we're already inside are left out.
+  const profile = rawProfile && {
+    ...rawProfile,
+    linkedOperations: rawProfile.linkedOperations.filter(
+      o => !isHere(here, "operation", o.id)
+    ),
+    linkedTargets: rawProfile.linkedTargets.filter(
+      t => !isHere(here, "target", t.targetId)
+    ),
+    linkedAssociates: rawProfile.linkedAssociates.filter(
+      a => !isHere(here, "associate", a.name)
+    ),
+  };
   const { data: photosData } = trpc.attachment.byEntity.useQuery(
     { category: "vehicle", entityLabel: label },
     { enabled: !!label }
@@ -228,248 +243,252 @@ export function VehicleProfileContent({
   }
 
   return (
-    <div className={embedded ? "pt-1" : "px-4 pb-6 pt-5"}>
-      {isLoading && (
-        <div className="space-y-3">
-          {[...Array(4)].map((_, i) => (
-            <Skeleton key={i} className="h-14 w-full rounded-xl" />
-          ))}
-        </div>
-      )}
-      {error && (
-        <div className="text-center py-16 text-muted-foreground">
-          <p className="text-sm">Profile not found.</p>
-        </div>
-      )}
-      {profile && (
-        <>
-          {!embedded && (
-            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm mb-5">
-              <div className="bg-gradient-to-r from-amber-900 to-amber-800 px-6 py-5 text-white">
-                <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap sm:gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
-                        <Car className="w-3 h-3" /> Vehicle
-                      </span>
-                      {profile.isIndicesOnly && (
-                        <IndicesBadge variant="on-dark" size="header" />
+    <HereProvider value={here}>
+      <div className={embedded ? "pt-1" : "px-4 pb-6 pt-5"}>
+        {isLoading && (
+          <div className="space-y-3">
+            {[...Array(4)].map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full rounded-xl" />
+            ))}
+          </div>
+        )}
+        {error && (
+          <div className="text-center py-16 text-muted-foreground">
+            <p className="text-sm">Profile not found.</p>
+          </div>
+        )}
+        {profile && (
+          <>
+            {!embedded && (
+              <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm mb-5">
+                <div className="bg-gradient-to-r from-amber-900 to-amber-800 px-6 py-5 text-white">
+                  <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap sm:gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 border border-white/30">
+                          <Car className="w-3 h-3" /> Vehicle
+                        </span>
+                        {profile.isIndicesOnly && (
+                          <IndicesBadge variant="on-dark" size="header" />
+                        )}
+                      </div>
+                      <h1 className="text-lg sm:text-2xl leading-snug font-bold tracking-tight break-words">
+                        {formatIntelVehicle(
+                          profile.label,
+                          profile.firstObservation ?? undefined
+                        )}
+                      </h1>
+                      {profile.linkedTargets.length > 0 && (
+                        <p className="text-sm opacity-75 mt-1">
+                          Linked to:{" "}
+                          {profile.linkedTargets.map(t => t.name).join(", ")}
+                        </p>
+                      )}
+                      {profile.isPrevious && (
+                        <span className="inline-block mt-2 px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wide bg-white/15 text-white">
+                          Previous
+                        </span>
                       )}
                     </div>
-                    <h1 className="text-lg sm:text-2xl leading-snug font-bold tracking-tight break-words">
-                      {formatIntelVehicle(
-                        profile.label,
-                        profile.firstObservation ?? undefined
-                      )}
-                    </h1>
-                    {profile.linkedTargets.length > 0 && (
-                      <p className="text-sm opacity-75 mt-1">
-                        Linked to:{" "}
-                        {profile.linkedTargets.map(t => t.name).join(", ")}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={exportPdf}
+                      className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0"
+                    >
+                      <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 divide-x divide-y sm:divide-y-0 divide-border/60 bg-amber-50/50 dark:bg-amber-950/20">
+                  {[
+                    {
+                      label: "Operations",
+                      value: profile.linkedOperations.length,
+                    },
+                    {
+                      label: "Running Sheets",
+                      value: profile.linkedSheets.length,
+                    },
+                    {
+                      label: "Associations",
+                      value:
+                        profile.assocPersons.length +
+                        profile.assocLocations.length,
+                    },
+                  ].map(stat => (
+                    <div key={stat.label} className="px-4 py-3 text-center">
+                      <p className="text-xl font-bold text-amber-900 dark:text-amber-300">
+                        {stat.value}
                       </p>
-                    )}
-                    {profile.isPrevious && (
-                      <span className="inline-block mt-2 px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wide bg-white/15 text-white">
-                        Previous
+                      <p className="text-xs text-muted-foreground uppercase tracking-wider">
+                        {stat.label}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!embedded && <JumpBar items={jumpItems} />}
+
+            <EntityPhotosSection
+              category="vehicle"
+              entityLabel={profile.label}
+              showEmpty
+            />
+
+            {profile.linkedOperations.length > 0 && (
+              <ProfileCard
+                id="operations"
+                label="Operations"
+                count={profile.linkedOperations.length}
+              >
+                {profile.linkedOperations.length > 1 && (
+                  <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-800 dark:text-amber-300">
+                      This vehicle has been seen across{" "}
+                      {profile.linkedOperations.length} separate operations —
+                      worth checking for a cross-operation connection.
+                    </p>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  {profile.linkedOperations.map(op => (
+                    <ProfileDropdownRow
+                      key={op.id}
+                      kind="operation"
+                      refId={op.id}
+                    >
+                      <Folder className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                      <span className="text-xs font-medium text-foreground flex-1 min-w-0 break-words">
+                        {op.name}
                       </span>
-                    )}
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={exportPdf}
-                    className="bg-white/10 border-white/30 text-white hover:bg-white/20 shrink-0"
-                  >
-                    <FileDown className="w-4 h-4 mr-1.5" /> Export PDF
-                  </Button>
+                    </ProfileDropdownRow>
+                  ))}
                 </div>
-              </div>
-              <div className="grid grid-cols-3 divide-x divide-y sm:divide-y-0 divide-border/60 bg-amber-50/50 dark:bg-amber-950/20">
-                {[
-                  {
-                    label: "Operations",
-                    value: profile.linkedOperations.length,
-                  },
-                  {
-                    label: "Running Sheets",
-                    value: profile.linkedSheets.length,
-                  },
-                  {
-                    label: "Associations",
-                    value:
-                      profile.assocPersons.length +
-                      profile.assocLocations.length,
-                  },
-                ].map(stat => (
-                  <div key={stat.label} className="px-4 py-3 text-center">
-                    <p className="text-xl font-bold text-amber-900 dark:text-amber-300">
-                      {stat.value}
-                    </p>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider">
-                      {stat.label}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+              </ProfileCard>
+            )}
 
-          {!embedded && <JumpBar items={jumpItems} />}
-
-          <EntityPhotosSection
-            category="vehicle"
-            entityLabel={profile.label}
-            showEmpty
-          />
-
-          {profile.linkedOperations.length > 0 && (
-            <ProfileCard
-              id="operations"
-              label="Operations"
-              count={profile.linkedOperations.length}
-            >
-              {profile.linkedOperations.length > 1 && (
-                <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800">
-                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-800 dark:text-amber-300">
-                    This vehicle has been seen across{" "}
-                    {profile.linkedOperations.length} separate operations —
-                    worth checking for a cross-operation connection.
-                  </p>
+            {profile.linkedTargets.length > 0 && (
+              <ProfileCard
+                id="targets"
+                label={
+                  profile.linkedTargets.length > 1
+                    ? "Registered Targets"
+                    : "Registered Target"
+                }
+                count={profile.linkedTargets.length}
+              >
+                <div className="space-y-2">
+                  {profile.linkedTargets.map(t => (
+                    <PersonLinkRow
+                      key={t.targetId}
+                      kind="target"
+                      refId={t.targetId}
+                      targetId={t.targetId}
+                      name={t.name}
+                      tone="target"
+                      sub="Registered vehicle"
+                    />
+                  ))}
                 </div>
-              )}
-              <div className="space-y-2">
-                {profile.linkedOperations.map(op => (
-                  <ProfileDropdownRow
-                    key={op.id}
-                    kind="operation"
-                    refId={op.id}
-                  >
-                    <Folder className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                    <span className="text-xs font-medium text-foreground flex-1 min-w-0 break-words">
-                      {op.name}
-                    </span>
-                  </ProfileDropdownRow>
-                ))}
-              </div>
-            </ProfileCard>
-          )}
+              </ProfileCard>
+            )}
 
-          {profile.linkedTargets.length > 0 && (
-            <ProfileCard
-              id="targets"
-              label={
-                profile.linkedTargets.length > 1
-                  ? "Registered Targets"
-                  : "Registered Target"
-              }
-              count={profile.linkedTargets.length}
-            >
-              <div className="space-y-2">
-                {profile.linkedTargets.map(t => (
-                  <PersonLinkRow
-                    key={t.targetId}
-                    kind="target"
-                    refId={t.targetId}
-                    targetId={t.targetId}
-                    name={t.name}
-                    tone="target"
-                    sub="Registered vehicle"
-                  />
-                ))}
-              </div>
-            </ProfileCard>
-          )}
-
-          {profile.linkedAssociates.length > 0 && (
-            <ProfileCard
-              id="associates"
-              label={
-                profile.linkedAssociates.length > 1
-                  ? "Registered Associates"
-                  : "Registered Associate"
-              }
-              count={profile.linkedAssociates.length}
-            >
-              <div className="space-y-2">
-                {profile.linkedAssociates.map(a => (
-                  <PersonLinkRow
-                    key={a.associateId}
-                    kind="associate"
-                    refId={a.name}
-                    name={a.name}
-                    tone="associate"
-                    sub={`Associate of ${a.targetName}`}
-                  />
-                ))}
-              </div>
-            </ProfileCard>
-          )}
-
-          {(profile.assocPersons.length > 0 ||
-            profile.assocLocations.length > 0) && (
-            <ProfileCard
-              id="associations"
-              label="Operational Associations"
-              count={
-                profile.assocPersons.length + profile.assocLocations.length
-              }
-            >
-              <p className="mb-3 text-xs italic text-muted-foreground">
-                Entities observed in the same running sheet rows as this vehicle
-              </p>
-              <div className="flex flex-col gap-4">
-                {profile.assocPersons.length > 0 && (
-                  <div>
-                    <SectionHeading
-                      sub
-                      label="Associated Persons"
-                      count={profile.assocPersons.length}
+            {profile.linkedAssociates.length > 0 && (
+              <ProfileCard
+                id="associates"
+                label={
+                  profile.linkedAssociates.length > 1
+                    ? "Registered Associates"
+                    : "Registered Associate"
+                }
+                count={profile.linkedAssociates.length}
+              >
+                <div className="space-y-2">
+                  {profile.linkedAssociates.map(a => (
+                    <PersonLinkRow
+                      key={a.associateId}
+                      kind="associate"
+                      refId={a.name}
+                      name={a.name}
+                      tone="associate"
+                      sub={`Associate of ${a.targetName}`}
                     />
-                    <div className="flex flex-col gap-2">
-                      {profile.assocPersons.map(p => (
-                        <IntelEntityDropdown key={p.id} item={p} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {profile.assocLocations.length > 0 && (
-                  <div>
-                    <SectionHeading
-                      sub
-                      label="Associated Locations"
-                      count={profile.assocLocations.length}
-                    />
-                    <div className="flex flex-col gap-2">
-                      {profile.assocLocations.map(l => (
-                        <IntelEntityDropdown key={l.id} item={l} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </ProfileCard>
-          )}
+                  ))}
+                </div>
+              </ProfileCard>
+            )}
 
-          {profile.linkedSheets.length > 0 && (
-            <SheetsCard assigned={profile.linkedSheets} id="sheets" />
-          )}
-          {embedded && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                navigate(
-                  `/intelligence/vehicle/${encodeURIComponent(profile.label)}`
-                )
-              }
-              className="text-xs"
-            >
-              <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Open full profile
-            </Button>
-          )}
-        </>
-      )}
-    </div>
+            {(profile.assocPersons.length > 0 ||
+              profile.assocLocations.length > 0) && (
+              <ProfileCard
+                id="associations"
+                label="Operational Associations"
+                count={
+                  profile.assocPersons.length + profile.assocLocations.length
+                }
+              >
+                <p className="mb-3 text-xs italic text-muted-foreground">
+                  Entities observed in the same running sheet rows as this
+                  vehicle
+                </p>
+                <div className="flex flex-col gap-4">
+                  {profile.assocPersons.length > 0 && (
+                    <div>
+                      <SectionHeading
+                        sub
+                        label="Associated Persons"
+                        count={profile.assocPersons.length}
+                      />
+                      <div className="flex flex-col gap-2">
+                        {profile.assocPersons.map(p => (
+                          <IntelEntityDropdown key={p.id} item={p} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {profile.assocLocations.length > 0 && (
+                    <div>
+                      <SectionHeading
+                        sub
+                        label="Associated Locations"
+                        count={profile.assocLocations.length}
+                      />
+                      <div className="flex flex-col gap-2">
+                        {profile.assocLocations.map(l => (
+                          <IntelEntityDropdown key={l.id} item={l} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </ProfileCard>
+            )}
+
+            {profile.linkedSheets.length > 0 && (
+              <SheetsCard assigned={profile.linkedSheets} id="sheets" />
+            )}
+            {embedded && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  navigate(
+                    `/intelligence/vehicle/${encodeURIComponent(profile.label)}`
+                  )
+                }
+                className="text-xs"
+              >
+                <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Open full
+                profile
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+    </HereProvider>
   );
 }

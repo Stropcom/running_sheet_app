@@ -384,48 +384,51 @@ export function TargetStatusFields({
         <FieldLabel>
           Special Projects {requiredAnswers && <RequiredStar />}
         </FieldLabel>
-        {onProjectsNoneChange && (
-          <label
-            className={`flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm font-semibold ${
-              projects.length > 0 && !projectsNone
-                ? "cursor-not-allowed opacity-50"
-                : "cursor-pointer"
-            }`}
-            title={
-              projects.length > 0 && !projectsNone
-                ? "Untick the projects below to tick this."
-                : undefined
-            }
-          >
-            <input
-              type="checkbox"
-              checked={projectsNone}
-              disabled={disabled || (projects.length > 0 && !projectsNone)}
-              onChange={e => onProjectsNoneChange(e.target.checked)}
-              className="w-4 h-4 rounded border-border accent-emerald-600"
-            />
-            None
-          </label>
-        )}
-        <div
-          className={`grid grid-cols-3 gap-2 ${projectsNone ? "opacity-45" : ""}`}
-          inert={projectsNone}
-        >
+        {/* Eight equal boxes: None first (Add Target only), then the seven
+            projects — 4 across on a laptop/iPad, 2 across on a phone. */}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {onProjectsNoneChange && (
+            <label
+              className={`flex h-10 items-center justify-center gap-1.5 rounded-md border border-border bg-background text-sm font-semibold ${
+                projects.length > 0 && !projectsNone
+                  ? "cursor-not-allowed opacity-50"
+                  : "cursor-pointer"
+              }`}
+              title={
+                projects.length > 0 && !projectsNone
+                  ? "Untick the projects to tick this."
+                  : undefined
+              }
+            >
+              <input
+                type="checkbox"
+                checked={projectsNone}
+                disabled={disabled || (projects.length > 0 && !projectsNone)}
+                onChange={e => onProjectsNoneChange(e.target.checked)}
+                className="w-4 h-4 rounded border-border accent-emerald-600"
+              />
+              NONE
+            </label>
+          )}
           {TARGET_SPECIAL_PROJECTS.map(key => {
             const checked = projects.some(p => p.key === key);
             return (
               <label
                 key={key}
-                className="flex items-center justify-center gap-1.5 text-sm cursor-pointer rounded-md border border-border bg-background py-1.5"
+                className={`flex h-10 items-center justify-center gap-1.5 rounded-md border border-border bg-background text-sm ${
+                  projectsNone
+                    ? "cursor-not-allowed opacity-45"
+                    : "cursor-pointer"
+                }`}
               >
                 <input
                   type="checkbox"
                   checked={checked}
-                  disabled={disabled}
+                  disabled={disabled || projectsNone}
                   onChange={() => toggleProject(key)}
                   className="w-4 h-4 rounded border-border"
                 />
-                {key === "Tracker" ? "TRACKER" : key}
+                {key.toUpperCase()}
               </label>
             );
           })}
@@ -436,11 +439,11 @@ export function TargetStatusFields({
               const isHint = (
                 TARGET_SPECIAL_PROJECTS as readonly string[]
               ).includes(p.key);
-              const upper = p.key !== "Tracker" && p.key !== "LD";
+              const upper = !["Tracker", "LD", "Coyotes"].includes(p.key);
               return (
                 <div key={p.key} className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-muted-foreground w-16 shrink-0">
-                    {p.key === "Tracker" ? "TRACKER" : p.key}
+                  <span className="text-xs font-medium text-muted-foreground w-20 shrink-0">
+                    {p.key.toUpperCase()}
                   </span>
                   <Input
                     value={p.detail}

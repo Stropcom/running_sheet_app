@@ -13,7 +13,7 @@ import {
   detectAddressSuggestTrigger,
   detectPlaceSuggestTrigger,
 } from "@shared/addressSuggestTrigger";
-import { RS_CANONICAL_CHIP_ORDER } from "@/lib/rsChipOrder";
+import { orderRsChips } from "@shared/rsChips";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -156,24 +156,6 @@ import {
 import { compressAttachmentImage } from "@/lib/imageCompress";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { setLastActiveContext } from "@/lib/lastActiveContext";
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-  horizontalListSortingStrategy,
-  arrayMove,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
 import { useLocation, useParams, useSearch } from "wouter";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -2845,71 +2827,36 @@ function EditableCell({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-// ── SortableChip — dnd-kit sortable chip for the target field chip row ──────
-function SortableChip({
-  id,
+// ── ShortcutChip — a quick-insert chip in the target / shortcuts panel ──────
+// Fixed in place: the order comes from the Shortcuts page (see
+// shared/rsChips.ts), so there is nothing to drag.
+function ShortcutChip({
   label,
   value,
   showValue,
   onInsert,
 }: {
-  id: string;
   label: string;
   value?: string | null;
   showValue: boolean;
   onInsert: () => void;
 }) {
-  const isMobile = useIsMobile();
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id });
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
-    zIndex: isDragging ? 50 : undefined,
-  };
   return (
-    <div ref={setNodeRef} style={style} className="flex items-center">
-      <button
-        onMouseDown={e => e.preventDefault()}
-        onClick={onInsert}
-        title={`Insert: ${value}`}
-        className="flex items-center gap-1 pl-1 pr-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all select-none cursor-pointer"
-      >
-        {/* Grip handle — desktop only */}
-        {!isMobile && (
-          <span
-            {...attributes}
-            {...listeners}
-            className="flex flex-col gap-[2.5px] opacity-40 shrink-0 cursor-grab active:cursor-grabbing px-0.5 touch-none"
-            onMouseDown={e => e.stopPropagation()}
-          >
-            <span className="flex gap-[2.5px]">
-              <span className="w-[3px] h-[3px] rounded-full bg-primary" />
-              <span className="w-[3px] h-[3px] rounded-full bg-primary" />
-            </span>
-            <span className="flex gap-[2.5px]">
-              <span className="w-[3px] h-[3px] rounded-full bg-primary" />
-              <span className="w-[3px] h-[3px] rounded-full bg-primary" />
-            </span>
-          </span>
-        )}
-        <span className="text-xs font-bold text-primary uppercase tracking-wide">
-          {label}
+    <button
+      onMouseDown={e => e.preventDefault()}
+      onClick={onInsert}
+      title={`Insert: ${value}`}
+      className="flex items-center gap-1 px-2 py-0.5 rounded border border-primary/30 bg-primary/8 hover:bg-primary/15 active:scale-95 transition-all select-none cursor-pointer"
+    >
+      <span className="text-xs font-bold text-primary uppercase tracking-wide">
+        {label}
+      </span>
+      {showValue && value && (
+        <span className="text-xs font-mono text-foreground/80 max-w-[160px] truncate">
+          {value}
         </span>
-        {showValue && value && (
-          <span className="text-xs font-mono text-foreground/80 max-w-[160px] truncate">
-            {value}
-          </span>
-        )}
-      </button>
-    </div>
+      )}
+    </button>
   );
 }
 
@@ -2935,14 +2882,6 @@ export default function SheetDetail({
 
   const utils = trpc.useUtils();
   const { isOnline, syncStatus } = useOffline();
-  // Sensors for chip drag-to-reorder (separate from CinRow sensors)
-  const chipSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 250, tolerance: 5 },
-    })
-  );
-
   // Offline-aware local row state — used when offline
   const [offlineRows, setOfflineRows] = useState<typeof rows | null>(null);
   const [hasPendingOfflineChanges, setHasPendingOfflineChanges] =
@@ -4300,75 +4239,6 @@ export default function SheetDetail({
       }
     }
   );
-  // Shortcut chip order for the target panel — persisted per sheet in localStorage
-  // Canonical default chip order — used when no saved order exists in localStorage
-  // Generates: SC, HBF, V1F, V1, V2F, V2, V3F, V3, V4F, V4 ... (up to 8 vehicles), then fixed shortcuts, then DEP/ARR, then wild fields
-  const CANONICAL_CHIP_ORDER = RS_CANONICAL_CHIP_ORDER;
-  const [targetFieldOrder, setTargetFieldOrder] = useState<string[]>(() => {
-    try {
-      const s = localStorage.getItem(`runsheet_field_order_${sheetId}`);
-      if (s) {
-        const saved: string[] = JSON.parse(s);
-        // Migrate: a chip added to CANONICAL_CHIP_ORDER after a sheet
-        // already had a saved order isn't in that saved order yet, so the
-        // "not in order" fallback below appends it at the very end instead
-        // of the position it was meant to sit at. Insert it right after
-        // its intended neighbour instead, same as the existing ARR/DEP fix
-        // below — new shortcuts should land next to the chip they were
-        // created next to, not the tail of the row.
-        let migrated = [...saved];
-        let changed = false;
-        const insertAfter = (id: string, after: string) => {
-          if (migrated.includes(id)) return;
-          const afterIdx = migrated.indexOf(after);
-          if (afterIdx >= 0) migrated.splice(afterIdx + 1, 0, id);
-          else migrated.push(id);
-          changed = true;
-        };
-        insertAfter("ARR", "DEP");
-        insertAfter("RP", "FP");
-        insertAfter("SPV", "DW");
-        // SP was defaulting to the end of the row (not in
-        // CANONICAL_CHIP_ORDER at all until now) — move it next to DW/SPV,
-        // same migration pattern as the others above, rather than leaving
-        // sheets with an already-saved order stuck with it at the tail.
-        insertAfter("SP", "DW");
-        if (changed) {
-          localStorage.setItem(
-            `runsheet_field_order_${sheetId}`,
-            JSON.stringify(migrated)
-          );
-        }
-        return migrated;
-      }
-    } catch {}
-    return CANONICAL_CHIP_ORDER;
-  });
-  const handleChipDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (!over || active.id === over.id) return;
-      setTargetFieldOrder(prev => {
-        // Ensure both chips are in the order array — new shortcuts/wildcards may not be
-        let base = [...prev];
-        if (!base.includes(active.id as string))
-          base = [...base, active.id as string];
-        if (!base.includes(over.id as string))
-          base = [...base, over.id as string];
-        const oldIndex = base.indexOf(active.id as string);
-        const newIndex = base.indexOf(over.id as string);
-        const next = arrayMove(base, oldIndex, newIndex);
-        try {
-          localStorage.setItem(
-            `runsheet_field_order_${sheetId}`,
-            JSON.stringify(next)
-          );
-        } catch {}
-        return next;
-      });
-    },
-    [sheetId]
-  );
   // Track the last focused textarea/input so chip taps can insert text even after blur
   const focusedTextareaRef = useRef<
     HTMLTextAreaElement | HTMLInputElement | null
@@ -5296,20 +5166,6 @@ export default function SheetDetail({
                 });
               } catch {}
             }
-            // Build wild fields
-            const wildFieldItems: { label: string; value: string | null }[] =
-              [];
-            if (t) {
-              try {
-                const wfs: Array<{ label: string; value: string }> = JSON.parse(
-                  (t as any).wildFields ?? "[]"
-                );
-                wfs.forEach(wf => {
-                  if (wf.value)
-                    wildFieldItems.push({ label: wf.label, value: wf.value });
-                });
-              } catch {}
-            }
             const fields: { label: string; value: string | null }[] = t
               ? [
                   { label: "TGT", value: t.tgt },
@@ -5318,9 +5174,6 @@ export default function SheetDetail({
                   { label: "V1F", value: t.v1f },
                   { label: "V1", value: t.v1 ?? null },
                   ...extraVehicleFields,
-                  ...wildFieldItems,
-                  { label: "DEP", value: t.dep },
-                  { label: "ARR", value: t.arr },
                   // All shortcut-folder triggers as chips — only those with showInRs=true, exclude legacy 'D' chip
                   ...(shortcutsData ?? [])
                     .filter(
@@ -6157,48 +6010,13 @@ export default function SheetDetail({
                     {/* Collapsible details */}
                     {targetPanelExpanded &&
                       (() => {
-                        // Apply saved order to the fields list
-                        const visibleFields = fields.filter(f => f.value);
-                        const isWildcard = (lbl: string) => /^#\d+$/.test(lbl);
-                        const nonWildVisible = visibleFields.filter(
-                          f => !isWildcard(f.label)
+                        // Shortcut chips follow the Shortcuts page order; the
+                        // target's own chips (HBF, vehicles, TGT, HB) are a
+                        // fixed block straight after SC (shared/rsChips.ts).
+                        const orderedFields = orderRsChips(
+                          fields.filter(f => f.value),
+                          (shortcutsData ?? []).map(s => s.trigger)
                         );
-                        const wildcardVisible = visibleFields.filter(f =>
-                          isWildcard(f.label)
-                        );
-                        const orderedNonWild =
-                          targetFieldOrder.length > 0
-                            ? [
-                                ...(targetFieldOrder
-                                  .filter(lbl => !isWildcard(lbl))
-                                  .map(lbl =>
-                                    nonWildVisible.find(f => f.label === lbl)
-                                  )
-                                  .filter(Boolean) as typeof visibleFields),
-                                ...nonWildVisible.filter(
-                                  f => !targetFieldOrder.includes(f.label)
-                                ),
-                              ]
-                            : nonWildVisible;
-                        // Wildcards always at the end, in their saved order
-                        const orderedWild =
-                          targetFieldOrder.length > 0
-                            ? [
-                                ...(targetFieldOrder
-                                  .filter(isWildcard)
-                                  .map(lbl =>
-                                    wildcardVisible.find(f => f.label === lbl)
-                                  )
-                                  .filter(Boolean) as typeof visibleFields),
-                                ...wildcardVisible.filter(
-                                  f => !targetFieldOrder.includes(f.label)
-                                ),
-                              ]
-                            : wildcardVisible;
-                        const orderedFields = [
-                          ...orderedNonWild,
-                          ...orderedWild,
-                        ];
                         return (
                           <div className="px-4 pb-3 border-t border-border/40">
                             {hasAnyField &&
@@ -6214,104 +6032,85 @@ export default function SheetDetail({
                                   "HB",
                                   "V1F",
                                   "V2F",
-                                  "DEP",
-                                  "ARR",
                                 ]);
                                 return (
-                                  <DndContext
-                                    sensors={chipSensors}
-                                    collisionDetection={closestCenter}
-                                    onDragEnd={handleChipDragEnd}
-                                  >
-                                    <SortableContext
-                                      items={orderedFields.map(f => f.label)}
-                                      strategy={horizontalListSortingStrategy}
-                                    >
-                                      <div className="flex flex-wrap gap-1.5 pt-2">
-                                        {orderedFields.map(f => {
-                                          const insertIntoFocused = () => {
-                                            const el =
-                                              focusedTextareaRef.current;
-                                            if (el) {
-                                              el.focus();
-                                              const start =
-                                                el.selectionStart ??
-                                                el.value.length;
-                                              const end =
-                                                el.selectionEnd ??
-                                                el.value.length;
-                                              const before = el.value.slice(
-                                                0,
-                                                start
+                                  <>
+                                    <div className="flex flex-wrap gap-1.5 pt-2">
+                                      {orderedFields.map(f => {
+                                        const insertIntoFocused = () => {
+                                          const el = focusedTextareaRef.current;
+                                          if (el) {
+                                            el.focus();
+                                            const start =
+                                              el.selectionStart ??
+                                              el.value.length;
+                                            const end =
+                                              el.selectionEnd ??
+                                              el.value.length;
+                                            const before = el.value.slice(
+                                              0,
+                                              start
+                                            );
+                                            const after = el.value.slice(end);
+                                            const insert =
+                                              before && !before.endsWith(" ")
+                                                ? ` ${f.value!}`
+                                                : f.value!;
+                                            try {
+                                              document.execCommand(
+                                                "insertText",
+                                                false,
+                                                insert
                                               );
-                                              const after = el.value.slice(end);
-                                              const insert =
-                                                before && !before.endsWith(" ")
-                                                  ? ` ${f.value!}`
-                                                  : f.value!;
-                                              try {
-                                                document.execCommand(
-                                                  "insertText",
-                                                  false,
-                                                  insert
+                                            } catch {
+                                              const nativeInputValueSetter =
+                                                Object.getOwnPropertyDescriptor(
+                                                  window.HTMLTextAreaElement
+                                                    .prototype,
+                                                  "value"
+                                                )?.set ||
+                                                Object.getOwnPropertyDescriptor(
+                                                  window.HTMLInputElement
+                                                    .prototype,
+                                                  "value"
+                                                )?.set;
+                                              if (nativeInputValueSetter) {
+                                                nativeInputValueSetter.call(
+                                                  el,
+                                                  before + insert + after
                                                 );
-                                              } catch {
-                                                const nativeInputValueSetter =
-                                                  Object.getOwnPropertyDescriptor(
-                                                    window.HTMLTextAreaElement
-                                                      .prototype,
-                                                    "value"
-                                                  )?.set ||
-                                                  Object.getOwnPropertyDescriptor(
-                                                    window.HTMLInputElement
-                                                      .prototype,
-                                                    "value"
-                                                  )?.set;
-                                                if (nativeInputValueSetter) {
-                                                  nativeInputValueSetter.call(
-                                                    el,
-                                                    before + insert + after
-                                                  );
-                                                  el.dispatchEvent(
-                                                    new Event("input", {
-                                                      bubbles: true,
-                                                    })
-                                                  );
-                                                }
+                                                el.dispatchEvent(
+                                                  new Event("input", {
+                                                    bubbles: true,
+                                                  })
+                                                );
                                               }
                                             }
-                                          };
-                                          const isVnShort = /^V\d+$/.test(
-                                            f.label
-                                          );
-                                          const isVnFull = /^V\d+F$/.test(
-                                            f.label
-                                          );
-                                          const isStandard =
-                                            !isVnShort &&
-                                            (shortcutFolderLabels.has(
-                                              f.label
-                                            ) ||
-                                              TRIGGER_ONLY_LABELS.has(
-                                                f.label
-                                              ) ||
-                                              isVnFull);
-                                          return (
-                                            <SortableChip
-                                              key={f.label}
-                                              id={f.label}
-                                              label={f.label}
-                                              value={f.value}
-                                              showValue={
-                                                isVnShort || !isStandard
-                                              }
-                                              onInsert={insertIntoFocused}
-                                            />
-                                          );
-                                        })}
-                                      </div>
-                                    </SortableContext>
-                                  </DndContext>
+                                          }
+                                        };
+                                        const isVnShort = /^V\d+$/.test(
+                                          f.label
+                                        );
+                                        const isVnFull = /^V\d+F$/.test(
+                                          f.label
+                                        );
+                                        const isStandard =
+                                          !isVnShort &&
+                                          (shortcutFolderLabels.has(f.label) ||
+                                            TRIGGER_ONLY_LABELS.has(f.label) ||
+                                            isVnFull);
+                                        return (
+                                          <ShortcutChip
+                                            key={f.label}
+                                            label={f.label}
+                                            value={f.value}
+                                            showValue={isVnShort || !isStandard}
+                                            onInsert={insertIntoFocused}
+                                          />
+                                        );
+                                      })}
+                                    </div>
+                                  </>
                                 );
                               })()}
                             {/* Entity chips — quick-insert shortcuts mined from this sheet's own

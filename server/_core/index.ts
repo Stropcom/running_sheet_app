@@ -19,6 +19,7 @@ import { serveStatic, setupVite } from "./vite";
 import {
   seedShortcutsIfEmpty,
   ensureDefaultShortcuts,
+  ensureShortcutOrder,
   verifyWipcVaultKeyOrThrow,
 } from "../db";
 import { ENV } from "./env";
@@ -162,6 +163,7 @@ async function startServer() {
 
 startServer()
   .then(() => ensureDefaultShortcuts(1).catch(() => {}))
+  .then(() => ensureShortcutOrder().catch(() => {}))
   .catch(err => {
     console.error(err);
     process.exit(1);

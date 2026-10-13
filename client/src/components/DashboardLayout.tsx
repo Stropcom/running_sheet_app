@@ -154,9 +154,6 @@ type SortableNavItemProps = {
   setReportsExpanded: React.Dispatch<React.SetStateAction<boolean>>;
   courtExpanded: boolean;
   setCourtExpanded: React.Dispatch<React.SetStateAction<boolean>>;
-  shortcutsItemRef: React.RefObject<HTMLLIElement | null>;
-  isObservationFocused: boolean;
-  setShortcutsPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
   subItemClass: (active: boolean) => string;
   sidebarScrollRef: React.RefObject<HTMLDivElement | null>;
 };
@@ -203,9 +200,6 @@ function SortableNavItem({
   setReportsExpanded,
   courtExpanded,
   setCourtExpanded,
-  shortcutsItemRef,
-  isObservationFocused,
-  setShortcutsPanelOpen,
   subItemClass,
   sidebarScrollRef,
 }: SortableNavItemProps) {
@@ -433,44 +427,6 @@ function SortableNavItem({
           >
             Calendar
           </span>
-          {gripHandle}
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-    );
-
-  if (id === "shortcuts")
-    return (
-      <SidebarMenuItem
-        {...itemProps}
-        ref={el => {
-          (itemProps as any).ref(el);
-          (
-            shortcutsItemRef as React.MutableRefObject<HTMLLIElement | null>
-          ).current = el;
-        }}
-      >
-        <SidebarMenuButton
-          isActive={
-            location === "/shortcuts" || location.startsWith("/shortcuts")
-          }
-          onClick={() => setLocation("/shortcuts")}
-          tooltip="Shortcuts"
-          className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-yellow-400/50 shadow-sm"
-          onMouseEnter={() => {
-            if (isObservationFocused) setShortcutsPanelOpen(true);
-          }}
-        >
-          <Zap className="h-4 w-4 text-yellow-400" />
-          <span
-            className={`flex-1 ${location === "/shortcuts" || location.startsWith("/shortcuts") ? "text-sidebar-foreground font-medium" : isObservationFocused ? "text-cyan-300 font-medium" : "text-sidebar-foreground/80"}`}
-          >
-            Shortcuts
-          </span>
-          {isObservationFocused && !isCollapsed && (
-            <span className="ml-1 text-[9px] font-bold text-cyan-500 uppercase tracking-wide">
-              hover
-            </span>
-          )}
           {gripHandle}
         </SidebarMenuButton>
       </SidebarMenuItem>
@@ -1078,23 +1034,6 @@ function SortableNavTile({
     );
   }
 
-  if (id === "shortcuts") {
-    return (
-      <NavTileShell
-        setNodeRef={setNodeRef}
-        style={style}
-        gripListeners={gripListeners}
-        icon={<Zap className="h-5 w-5 text-yellow-400" />}
-        label="Shortcuts"
-        isActive={
-          location === "/shortcuts" || location.startsWith("/shortcuts")
-        }
-        activeBorderClass="data-[active=true]:border-yellow-400/60"
-        onClick={() => setLocation("/shortcuts")}
-      />
-    );
-  }
-
   if (id === "intelligence") {
     return (
       <NavTileShell
@@ -1314,6 +1253,20 @@ function SortableNavTile({
   return null;
 }
 
+// Pages that live under the Administration folder (same list drives the
+// folder's highlight in list view and tile view).
+function isAdministrationPath(location: string): boolean {
+  return (
+    location === "/audit" ||
+    location === "/draft" ||
+    location === "/operation-management" ||
+    location === "/recycle-bin" ||
+    location.startsWith("/administration/intel-export") ||
+    location.startsWith("/shortcuts") ||
+    location === "/help"
+  );
+}
+
 // Administration and User Management aren't part of the draggable navOrder
 // list (same as in list view — they're fixed at the end), so these render as
 // plain tiles with no grip handle rather than going through SortableNavTile.
@@ -1324,51 +1277,50 @@ function AdminNavTile({
   location: string;
   setLocation: (path: string) => void;
 }) {
-  const isActive =
-    location === "/audit" ||
-    location === "/draft" ||
-    location === "/operation-management" ||
-    location === "/recycle-bin" ||
-    location.startsWith("/administration/intel-export") ||
-    location === "/help";
+  const isActive = isAdministrationPath(location);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <div className="w-full">
           <NavTileShell
-            icon={<Settings className="h-5 w-5 text-slate-400" />}
+            icon={<Settings className="h-5 w-5 text-emerald-400" />}
             label="Administration"
             isActive={isActive}
             hasSub
-            activeBorderClass="data-[active=true]:border-slate-400/60"
+            activeBorderClass="data-[active=true]:border-emerald-400/60"
           />
         </div>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuItem onClick={() => setLocation("/operation-management")}>
+          <ArrowRightLeft className="h-4 w-4 mr-2 text-teal-400" />
+          Archive
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setLocation("/audit")}>
-          <ScrollText className="h-4 w-4 mr-2 text-slate-400" />
+          <ScrollText className="h-4 w-4 mr-2 text-fuchsia-400" />
           Audit Log
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setLocation("/draft")}>
-          <WifiOff className="h-4 w-4 mr-2 text-slate-400" />
+          <WifiOff className="h-4 w-4 mr-2 text-orange-400" />
           Draft Mode
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setLocation("/operation-management")}>
-          <ArrowRightLeft className="h-4 w-4 mr-2 text-slate-400" />
-          Archive
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setLocation("/recycle-bin")}>
-          <Trash2 className="h-4 w-4 mr-2 text-slate-400" />
-          Recycle Bin
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => setLocation("/administration/intel-export")}
         >
-          <Database className="h-4 w-4 mr-2 text-slate-400" />
+          <Database className="h-4 w-4 mr-2 text-violet-400" />
           Intel Export
         </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setLocation("/recycle-bin")}>
+          <Trash2 className="h-4 w-4 mr-2 text-red-400" />
+          Recycle Bin
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setLocation("/shortcuts")}>
+          <Zap className="h-4 w-4 mr-2 text-yellow-400" />
+          Shortcuts
+        </DropdownMenuItem>
+        {/* Help stays last */}
         <DropdownMenuItem onClick={() => setLocation("/help")}>
-          <HelpCircle className="h-4 w-4 mr-2 text-slate-400" />
+          <HelpCircle className="h-4 w-4 mr-2 text-sky-400" />
           Help
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -1788,7 +1740,6 @@ function DashboardLayoutContent({
   const { isObservationFocused } = useObservationFocus();
   const [shortcutsPanelOpen, setShortcutsPanelOpen] = useState(false);
   const [shortcutsPanelHovered, setShortcutsPanelHovered] = useState(false);
-  const shortcutsItemRef = useRef<HTMLLIElement>(null);
 
   const { data: shortcutsList } = trpc.shortcuts.list.useQuery(undefined, {
     staleTime: 60_000,
@@ -1868,7 +1819,6 @@ function DashboardLayoutContent({
     "mapping",
     "images",
     "calendar",
-    "shortcuts",
     "intelligence",
     "targetRegistry",
     "operationManager",
@@ -1934,6 +1884,7 @@ function DashboardLayoutContent({
       "/operation-management",
       "/recycle-bin",
       "/help",
+      "/shortcuts",
       "/reports",
       "/administration/smeac",
       "/administration/intel-export",
@@ -2186,9 +2137,6 @@ function DashboardLayoutContent({
                           setReportsExpanded={setReportsExpanded}
                           courtExpanded={courtExpanded}
                           setCourtExpanded={setCourtExpanded}
-                          shortcutsItemRef={shortcutsItemRef}
-                          isObservationFocused={isObservationFocused}
-                          setShortcutsPanelOpen={setShortcutsPanelOpen}
                           subItemClass={subItemClass}
                           sidebarScrollRef={sidebarScrollRef}
                         />
@@ -2202,28 +2150,16 @@ function DashboardLayoutContent({
                       isActive={
                         adminFolderExpanded && !isCollapsed
                           ? false
-                          : location === "/audit" ||
-                            location === "/draft" ||
-                            location === "/operation-management" ||
-                            location === "/recycle-bin" ||
-                            location.startsWith(
-                              "/administration/intel-export"
-                            ) ||
-                            location === "/help"
+                          : isAdministrationPath(location)
                       }
                       onClick={() => setAdminFolderExpanded(v => !v)}
                       tooltip="Administration"
-                      className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-slate-400/50 shadow-sm"
+                      className="h-14 font-normal transition-all rounded-xl border border-sidebar-border/60 bg-sidebar-accent/20 hover:bg-sidebar-accent/50 hover:border-sidebar-border data-[active=true]:bg-sidebar-accent data-[active=true]:border-emerald-400/50 shadow-sm"
                     >
-                      <Settings className="h-4 w-4 text-slate-400" />
+                      <Settings className="h-4 w-4 text-emerald-400" />
                       <span
                         className={`flex-1 ${
-                          location === "/audit" ||
-                          location === "/draft" ||
-                          location === "/operation-management" ||
-                          location === "/recycle-bin" ||
-                          location.startsWith("/administration/intel-export") ||
-                          location === "/help"
+                          isAdministrationPath(location)
                             ? "text-sidebar-foreground font-medium"
                             : "text-sidebar-foreground/80"
                         }`}
@@ -2240,12 +2176,24 @@ function DashboardLayoutContent({
 
                     {adminFolderExpanded && !isCollapsed && (
                       <div className="ml-4 mt-0.5 mb-0.5 border-l border-sidebar-border/50 pl-3 flex flex-col gap-0.5">
+                        {/* Sub-folders are alphabetical, with Help always last. */}
+                        {/* Archive (was Operation Management) */}
+                        <button
+                          onClick={() => setLocation("/operation-management")}
+                          className={subItemClass(
+                            location === "/operation-management"
+                          )}
+                        >
+                          <ArrowRightLeft className="h-3.5 w-3.5 shrink-0 text-teal-400" />
+                          Archive
+                        </button>
+
                         {/* Audit Log */}
                         <button
                           onClick={() => setLocation("/audit")}
                           className={subItemClass(location === "/audit")}
                         >
-                          <ScrollText className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                          <ScrollText className="h-3.5 w-3.5 shrink-0 text-fuchsia-400" />
                           Audit Log
                         </button>
 
@@ -2255,7 +2203,7 @@ function DashboardLayoutContent({
                           className={subItemClass(location === "/draft")}
                         >
                           <WifiOff
-                            className={`h-3.5 w-3.5 shrink-0 ${draftCounts.total > 0 ? "text-blue-400" : "text-slate-400"}`}
+                            className={`h-3.5 w-3.5 shrink-0 ${draftCounts.total > 0 ? "text-blue-400" : "text-orange-400"}`}
                           />
                           <span className="flex-1">Draft Mode</span>
                           {draftCounts.total > 0 && (
@@ -2263,26 +2211,6 @@ function DashboardLayoutContent({
                               {draftCounts.total}
                             </span>
                           )}
-                        </button>
-
-                        {/* Archive (was Operation Management) */}
-                        <button
-                          onClick={() => setLocation("/operation-management")}
-                          className={subItemClass(
-                            location === "/operation-management"
-                          )}
-                        >
-                          <ArrowRightLeft className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                          Archive
-                        </button>
-
-                        {/* Recycle Bin */}
-                        <button
-                          onClick={() => setLocation("/recycle-bin")}
-                          className={subItemClass(location === "/recycle-bin")}
-                        >
-                          <Trash2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                          Recycle Bin
                         </button>
 
                         {/* Intel Export */}
@@ -2294,16 +2222,53 @@ function DashboardLayoutContent({
                             location.startsWith("/administration/intel-export")
                           )}
                         >
-                          <Database className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                          <Database className="h-3.5 w-3.5 shrink-0 text-violet-400" />
                           Intel Export
                         </button>
 
-                        {/* Help */}
+                        {/* Recycle Bin */}
+                        <button
+                          onClick={() => setLocation("/recycle-bin")}
+                          className={subItemClass(location === "/recycle-bin")}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 shrink-0 text-red-400" />
+                          Recycle Bin
+                        </button>
+
+                        {/* Shortcuts — while an observation is being typed it
+                            lights up, and hovering it opens the Shortcuts
+                            Reference panel (this used to be a top-level folder) */}
+                        <button
+                          onClick={() => setLocation("/shortcuts")}
+                          onMouseEnter={() => {
+                            if (isObservationFocused)
+                              setShortcutsPanelOpen(true);
+                          }}
+                          className={subItemClass(
+                            location.startsWith("/shortcuts")
+                          )}
+                        >
+                          <Zap
+                            className={`h-3.5 w-3.5 shrink-0 ${isObservationFocused ? "text-cyan-300" : "text-yellow-400"}`}
+                          />
+                          <span
+                            className={`flex-1 ${isObservationFocused ? "text-cyan-300 font-medium" : ""}`}
+                          >
+                            Shortcuts
+                          </span>
+                          {isObservationFocused && (
+                            <span className="text-[9px] font-bold text-cyan-500 uppercase tracking-wide">
+                              hover
+                            </span>
+                          )}
+                        </button>
+
+                        {/* Help — always last */}
                         <button
                           onClick={() => setLocation("/help")}
                           className={subItemClass(location === "/help")}
                         >
-                          <HelpCircle className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                          <HelpCircle className="h-3.5 w-3.5 shrink-0 text-sky-400" />
                           Help
                         </button>
                       </div>

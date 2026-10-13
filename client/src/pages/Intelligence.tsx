@@ -2323,7 +2323,7 @@ export default function IntelligencePage() {
                         </div>
                       </div>
                       <div className="flex-1">
-                        <p className="font-mono text-[15px] font-semibold leading-snug text-foreground line-clamp-2">
+                        <p className="font-mono text-[15px] font-medium leading-snug text-foreground line-clamp-2">
                           {displayShortForm}
                         </p>
                         <div className="flex flex-wrap items-center gap-1 mt-1">
@@ -2408,7 +2408,7 @@ export default function IntelligencePage() {
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="font-mono text-[15px] font-semibold text-foreground truncate">
+                          <p className="font-mono text-[15px] font-medium text-foreground truncate">
                             {displayShortForm}
                           </p>
                           {entity.lowConfidence && (

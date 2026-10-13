@@ -286,7 +286,19 @@ export function UserAccessGroups({
               ),
               ...visitorsHere,
             ];
-            const list = inTeam.filter(u => matchesPerson(u, query));
+            // Lowest CIN first (numeric, so 99 comes before 459); anyone
+            // without a CIN goes last, by name.
+            const list = inTeam
+              .filter(u => matchesPerson(u, query))
+              .sort((a, b) => {
+                const ca = a.cin ? Number.parseInt(a.cin, 10) : NaN;
+                const cb = b.cin ? Number.parseInt(b.cin, 10) : NaN;
+                if (Number.isNaN(ca) && Number.isNaN(cb))
+                  return a.name.localeCompare(b.name);
+                if (Number.isNaN(ca)) return 1;
+                if (Number.isNaN(cb)) return -1;
+                return ca - cb || a.name.localeCompare(b.name);
+              });
             // An Operations column where the team has Investigators or visitors.
             const showOps = inTeam.some(
               u => u.role === "investigator" || u.command !== viewCommand

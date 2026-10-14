@@ -157,6 +157,7 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { MapHeatOverlay } from "@/components/MapHeatOverlay";
+import { HEAT_RAMP } from "@/lib/heatMapSection";
 import {
   Popover,
   PopoverContent,
@@ -2160,12 +2161,15 @@ export default function IntelligenceMapping() {
   const [heatOn, setHeatOn] = useState<boolean>(() =>
     readHeatSetting("heatOn", false)
   );
-  const [heatOpId, setHeatOpId] = useState<number | null>(() =>
-    readHeatSetting<number | null>("heatOpId", null)
+  // "auto" follows what the top of the pane has selected (the running sheet's
+  // operation and target, else the map's operation); choosing something in the
+  // Heat Map section overrides it.
+  const [heatOpChoice, setHeatOpChoice] = useState<"auto" | number>(() =>
+    readHeatSetting<"auto" | number>("heatOpChoice", "auto")
   );
-  const [heatTargetId, setHeatTargetId] = useState<number | null>(() =>
-    readHeatSetting<number | null>("heatTargetId", null)
-  );
+  const [heatTargetChoice, setHeatTargetChoice] = useState<
+    "auto" | "all" | number
+  >(() => readHeatSetting<"auto" | "all" | number>("heatTargetChoice", "auto"));
   // 0 = full colour, 80 = very faint.
   const [heatTransparency, setHeatTransparency] = useState<number>(() =>
     readHeatSetting("heatTransparency", 30)
@@ -3151,8 +3155,8 @@ export default function IntelligenceMapping() {
           showMarkerEntityCount,
           nearbyOn,
           heatOn,
-          heatOpId,
-          heatTargetId,
+          heatOpChoice,
+          heatTargetChoice,
           heatTransparency,
         })
       );
@@ -3176,8 +3180,8 @@ export default function IntelligenceMapping() {
     showMarkerEntityCount,
     nearbyOn,
     heatOn,
-    heatOpId,
-    heatTargetId,
+    heatOpChoice,
+    heatTargetChoice,
     heatTransparency,
   ]);
 
@@ -3235,31 +3239,6 @@ export default function IntelligenceMapping() {
   // Data
   const { data: operations, isLoading: opsLoading } =
     trpc.operation.listForMap.useQuery();
-  // Heat Map: the targets of the chosen operation, and its places (all time).
-  const { data: heatTargets } = trpc.target.list.useQuery(
-    { operationId: heatOpId! },
-    { enabled: heatOn && heatOpId != null && !isInvestigator }
-  );
-  const { data: heatLocations, error: heatError } =
-    trpc.intelligence.getHeatMapLocations.useQuery(
-      {
-        operationId: heatOpId!,
-        targetId: heatTargetId,
-        when: { mode: "all" },
-      },
-      {
-        enabled: heatOn && heatOpId != null && !isInvestigator,
-        retry: false,
-      }
-    );
-  // Turning it on with no operation chosen yet starts with the first one
-  // selected on the map, else the first the person can reach.
-  useEffect(() => {
-    if (!heatOn || heatOpId != null) return;
-    const first =
-      selectedOpIds[0] ?? ((operations ?? []) as Array<{ id: number }>)[0]?.id;
-    if (first != null) setHeatOpId(first);
-  }, [heatOn, heatOpId, selectedOpIds, operations]);
   const {
     data: locations,
     isLoading: locsLoading,
@@ -3792,6 +3771,67 @@ export default function IntelligenceMapping() {
     { sheetId: rsSelectedSheetId! },
     { enabled: rsSelectedSheetId !== null }
   );
+  // Heat Map — which operation and target. By default the same ones the top
+  // of the pane has selected: the running sheet's operation and its target, else
+  // the map's first selected operation (and a single selected target). Anything
+  // chosen in the Heat Map section overrides that.
+  const heatDefaultOpId: number | null =
+    rsSelectedOpId ??
+    selectedOpIds[0] ??
+    ((operations ?? []) as Array<{ id: number }>)[0]?.id ??
+    null;
+  const heatOpId: number | null =
+    heatOpChoice === "auto" ? heatDefaultOpId : heatOpChoice;
+  const { data: heatTargets } = trpc.target.list.useQuery(
+    { operationId: heatOpId! },
+    { enabled: heatOn && heatOpId != null && !isInvestigator }
+  );
+  const heatDefaultTargetId: number | null =
+    rsSelectedOpId != null && heatOpId === rsSelectedOpId && rsTargetData?.id
+      ? rsTargetData.id
+      : selectedTargetIds.length === 1
+        ? selectedTargetIds[0]
+        : null;
+  // A default target only counts if it really belongs to the operation.
+  const heatDefaultTargetValid =
+    heatDefaultTargetId != null &&
+    ((heatTargets ?? []) as Array<{ id: number }>).some(
+      t => t.id === heatDefaultTargetId
+    );
+  const heatTargetId: number | null =
+    heatTargetChoice === "all"
+      ? null
+      : typeof heatTargetChoice === "number"
+        ? heatTargetChoice
+        : heatDefaultTargetValid
+          ? heatDefaultTargetId
+          : null;
+  const { data: heatLocations, error: heatError } =
+    trpc.intelligence.getHeatMapLocations.useQuery(
+      {
+        operationId: heatOpId!,
+        targetId: heatTargetId,
+        when: { mode: "all" },
+      },
+      {
+        // wait for the operation's targets, so a default target is applied
+        // before the first request rather than after it
+        enabled:
+          heatOn &&
+          heatOpId != null &&
+          !isInvestigator &&
+          (heatTargets !== undefined || heatTargetChoice !== "auto"),
+        retry: false,
+      }
+    );
+  const heatOpName = (
+    (operations ?? []) as Array<{ id: number; name: string }>
+  ).find(o => o.id === heatDefaultOpId)?.name;
+  const heatDefaultTargetName = heatDefaultTargetValid
+    ? ((heatTargets ?? []) as Array<{ id: number; name: string }>).find(
+        t => t.id === heatDefaultTargetId
+      )?.name
+    : undefined;
   // RS Actions pane — create row mutation
   const rsAddMember = trpc.member.add.useMutation();
   const rsCreateRow = trpc.row.create.useMutation();
@@ -9260,6 +9300,27 @@ export default function IntelligenceMapping() {
             />
           )}
 
+          {/* Heat Map key — bottom-left, only while the heat map is on. Sits
+              above Google's own logo/copyright strip, and is hidden while a
+              Fly-mode card is using that corner. */}
+          {heatOn && !isInvestigator && !flySelectedId && (
+            <div className="absolute left-3 bottom-9 z-20 w-48 rounded-lg border border-border bg-card px-3 py-2 shadow-sm pointer-events-none">
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/70">
+                Observation density
+              </p>
+              <div
+                className="h-2 rounded-full"
+                style={{
+                  background: `linear-gradient(90deg, ${HEAT_RAMP.join(",")})`,
+                }}
+              />
+              <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+                <span>Fewer</span>
+                <span>More</span>
+              </div>
+            </div>
+          )}
+
           {showStreetHeadingBar && ownLiveEntry && (
             <StreetHeadingBar
               lat={ownLiveEntry.lat}
@@ -10401,16 +10462,23 @@ export default function IntelligenceMapping() {
                   {heatOn && (
                     <div className="space-y-2">
                       <Select
-                        value={heatOpId != null ? String(heatOpId) : ""}
+                        value={
+                          heatOpChoice === "auto"
+                            ? "auto"
+                            : String(heatOpChoice)
+                        }
                         onValueChange={v => {
-                          setHeatOpId(Number(v));
-                          setHeatTargetId(null);
+                          setHeatOpChoice(v === "auto" ? "auto" : Number(v));
+                          setHeatTargetChoice("auto");
                         }}
                       >
                         <SelectTrigger className="w-full h-9 text-xs rounded-xl border-2">
                           <SelectValue placeholder="Operation…" />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="auto">
+                            Current{heatOpName ? ` — ${heatOpName}` : ""}
+                          </SelectItem>
                           {(
                             (operations ?? []) as Array<{
                               id: number;
@@ -10425,16 +10493,23 @@ export default function IntelligenceMapping() {
                       </Select>
                       <Select
                         value={
-                          heatTargetId != null ? String(heatTargetId) : "all"
+                          heatTargetChoice === "auto"
+                            ? "auto"
+                            : String(heatTargetChoice)
                         }
                         onValueChange={v =>
-                          setHeatTargetId(v === "all" ? null : Number(v))
+                          setHeatTargetChoice(
+                            v === "auto" || v === "all" ? v : Number(v)
+                          )
                         }
                       >
                         <SelectTrigger className="w-full h-9 text-xs rounded-xl border-2">
                           <SelectValue placeholder="Target…" />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="auto">
+                            Current — {heatDefaultTargetName ?? "All targets"}
+                          </SelectItem>
                           <SelectItem value="all">All targets</SelectItem>
                           {(
                             (heatTargets ?? []) as Array<{

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { extractEntitiesFromText } from "./db";
 import { applyEdits } from "../shared/vehicleList";
 import { sentenceJoinEdits, wholeSentenceChips } from "../shared/sentenceJoin";
 import {
@@ -181,5 +182,35 @@ describe("in the tidy-up pass", () => {
       "Karim Elias NAJJAR (NAJJAR) exited 7/31 Marine Parade and walked [route] towards [location].";
     expect(tidyObservation(sentence, true)).toBe(sentence);
     expect(tidyObservation("tv", true)).toBe("tv");
+  });
+});
+
+describe("entity extraction is unaffected by the joining", () => {
+  const V =
+    "white Lexus NX350h station sedan, bearing WA registration 1TDM414 (Vehicle 1TDM414)";
+  const samples = [
+    `Surveillance commenced ${HBF} Out of sight Surveillance ceased`,
+    `Surveillance commenced ${HBF} ${TGT} ${NAJJAR} entered ${V}`,
+    `${TGT} ${NAJJAR} walked to 45 Burrendah Boulevard, WILLETON (Southlands) Out of sight Continued out of sight`,
+    `Surveillance commenced 45 Burrendah Boulevard, WILLETON (45 Burrendah Boulevard) PHOTOGRAPH/S TAKEN`,
+  ];
+  const ids = (t: string) =>
+    extractEntitiesFromText(t)
+      .map(e => `${e.type}:${e.shortForm}`)
+      .sort();
+
+  it("finds the same people, vehicles and places before and after", () => {
+    for (const s of samples)
+      expect(ids(tidyObservation(s, true))).toEqual(ids(s));
+  });
+
+  it("a person listed after another has no joining word in their description", () => {
+    const people = extractEntitiesFromText(
+      tidyObservation(`${TGT} ${NAJJAR} entered`, true)
+    ).filter(e => e.type === "person");
+    expect(people.map(p => p.fullDescription)).toEqual([
+      "Leila Samira HADDAD, born 14 April 1988",
+      "Karim Elias NAJJAR, born 2 May 1985",
+    ]);
   });
 });

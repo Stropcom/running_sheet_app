@@ -5550,7 +5550,13 @@ export function extractEntitiesFromText(text: string): Array<{
     results.push({
       shortForm: displayName,
       rawShortForm: shortForm,
-      fullDescription,
+      // A person listed after another ("A and B", "A, B and C") would
+      // otherwise carry the list's own joining word or comma at the front of
+      // their description. It is never part of the description.
+      fullDescription:
+        type === "person"
+          ? fullDescription.replace(/^[\s,;]*(?:and\s+)?/i, "")
+          : fullDescription,
       type,
       confidence,
     });

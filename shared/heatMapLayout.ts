@@ -102,3 +102,32 @@ export function nudgeApart(
   }
   return out;
 }
+
+/**
+ * The radius (pixels) of a place's soft fade on the Map page: at least
+ * `HEAT_FADE_MIN_PX_BASE` (more for busier places) however far the map is
+ * zoomed out, growing with the real-world area once zoomed in. A fade needs
+ * more room than a hard-edged circle because it thins out towards the edge.
+ */
+export const HEAT_FADE_MIN_PX_BASE = 34;
+export const HEAT_FADE_MIN_PX_EXTRA = 30;
+export const HEAT_FADE_REAL_SCALE = 1.5;
+/** Never larger than this on screen, so zoomed right in a fade doesn't wash
+ * over the whole map. */
+export const HEAT_FADE_MAX_PX = 320;
+
+export function heatFadeRadiusPx(
+  count: number,
+  maxCount: number,
+  lat: number,
+  zoom: number
+): number {
+  const frac = maxCount > 0 ? count / maxCount : 0;
+  const real =
+    (heatRadiusMetres(count, maxCount) * HEAT_FADE_REAL_SCALE) /
+    metresPerPixel(lat, zoom);
+  return Math.min(
+    HEAT_FADE_MAX_PX,
+    Math.max(real, HEAT_FADE_MIN_PX_BASE + frac * HEAT_FADE_MIN_PX_EXTRA)
+  );
+}

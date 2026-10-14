@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   HEAT_NUMBER_DISC_PX,
+  heatFadeRadiusPx,
   heatMinPixels,
   heatRadiusFor,
   heatRadiusMetres,
@@ -73,5 +74,33 @@ describe("nudgeApart", () => {
       { x: 5, y: 5 },
       { x: 5, y: 5 },
     ]);
+  });
+});
+
+describe("soft fade size (Map page)", () => {
+  it("keeps a minimum on-screen size when zoomed out, bigger for busier places", () => {
+    for (const zoom of [8, 10, 12]) {
+      expect(heatFadeRadiusPx(1, 5, -32, zoom)).toBeGreaterThanOrEqual(
+        34 - 1e-9
+      );
+      expect(heatFadeRadiusPx(5, 5, -32, zoom)).toBeGreaterThan(
+        heatFadeRadiusPx(1, 5, -32, zoom)
+      );
+    }
+  });
+
+  it("is capped so a fade never washes over the whole map when zoomed right in", () => {
+    for (const zoom of [16, 17, 18, 19])
+      expect(heatFadeRadiusPx(5, 5, -32, zoom)).toBeLessThanOrEqual(320);
+  });
+
+  it("follows the real-world size once zoomed in far enough", () => {
+    const zoom = 16;
+    const px = heatFadeRadiusPx(1, 5, -32, zoom);
+    expect(px).toBeCloseTo(
+      (heatRadiusMetres(1, 5) * 1.5) / metresPerPixel(-32, zoom),
+      6
+    );
+    expect(px).toBeGreaterThan(34);
   });
 });

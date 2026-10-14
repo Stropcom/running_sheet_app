@@ -155,6 +155,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { MapHeatOverlay } from "@/components/MapHeatOverlay";
+import { HEAT_RAMP } from "@/lib/heatMapSection";
 import {
   Popover,
   PopoverContent,
@@ -227,6 +230,7 @@ import {
   Crosshair,
   Hash,
   Pencil,
+  Flame,
 } from "lucide-react";
 
 // Phone/tablet (touch, no physical keyboard) vs laptop/desktop (mouse +
@@ -2142,6 +2146,34 @@ export default function IntelligenceMapping() {
     }
     return false;
   });
+  // HEAT MAP — a soft fade over every place seen for one operation (and
+  // optionally one target), all time, under the normal pins. Off by default;
+  // the choices are remembered per device like the other Map Settings.
+  const readHeatSetting = <T,>(key: string, fallback: T): T => {
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return (JSON.parse(s)[key] as T) ?? fallback;
+    } catch {
+      /* ignore */
+    }
+    return fallback;
+  };
+  const [heatOn, setHeatOn] = useState<boolean>(() =>
+    readHeatSetting("heatOn", false)
+  );
+  // "auto" follows what the top of the pane has selected (the running sheet's
+  // operation and target, else the map's operation); choosing something in the
+  // Heat Map section overrides it.
+  const [heatOpChoice, setHeatOpChoice] = useState<"auto" | number>(() =>
+    readHeatSetting<"auto" | number>("heatOpChoice", "auto")
+  );
+  const [heatTargetChoice, setHeatTargetChoice] = useState<
+    "auto" | "all" | number
+  >(() => readHeatSetting<"auto" | "all" | number>("heatTargetChoice", "auto"));
+  // 0 = full colour, 80 = very faint.
+  const [heatTransparency, setHeatTransparency] = useState<number>(() =>
+    readHeatSetting("heatTransparency", 30)
+  );
   // Bottom-of-screen bar showing the officer's own current street + heading
   // (see StreetHeadingBar) — a display preference like mapDarkMode, not tied
   // to GPS sharing itself, so it follows the same local-only persistence.
@@ -3122,6 +3154,10 @@ export default function IntelligenceMapping() {
           showStreetHeadingBar,
           showMarkerEntityCount,
           nearbyOn,
+          heatOn,
+          heatOpChoice,
+          heatTargetChoice,
+          heatTransparency,
         })
       );
     } catch {
@@ -3143,6 +3179,10 @@ export default function IntelligenceMapping() {
     showStreetHeadingBar,
     showMarkerEntityCount,
     nearbyOn,
+    heatOn,
+    heatOpChoice,
+    heatTargetChoice,
+    heatTransparency,
   ]);
 
   // Save map center/zoom to localStorage whenever the map stops moving (idle event)
@@ -3731,6 +3771,67 @@ export default function IntelligenceMapping() {
     { sheetId: rsSelectedSheetId! },
     { enabled: rsSelectedSheetId !== null }
   );
+  // Heat Map — which operation and target. By default the same ones the top
+  // of the pane has selected: the running sheet's operation and its target, else
+  // the map's first selected operation (and a single selected target). Anything
+  // chosen in the Heat Map section overrides that.
+  const heatDefaultOpId: number | null =
+    rsSelectedOpId ??
+    selectedOpIds[0] ??
+    ((operations ?? []) as Array<{ id: number }>)[0]?.id ??
+    null;
+  const heatOpId: number | null =
+    heatOpChoice === "auto" ? heatDefaultOpId : heatOpChoice;
+  const { data: heatTargets } = trpc.target.list.useQuery(
+    { operationId: heatOpId! },
+    { enabled: heatOn && heatOpId != null && !isInvestigator }
+  );
+  const heatDefaultTargetId: number | null =
+    rsSelectedOpId != null && heatOpId === rsSelectedOpId && rsTargetData?.id
+      ? rsTargetData.id
+      : selectedTargetIds.length === 1
+        ? selectedTargetIds[0]
+        : null;
+  // A default target only counts if it really belongs to the operation.
+  const heatDefaultTargetValid =
+    heatDefaultTargetId != null &&
+    ((heatTargets ?? []) as Array<{ id: number }>).some(
+      t => t.id === heatDefaultTargetId
+    );
+  const heatTargetId: number | null =
+    heatTargetChoice === "all"
+      ? null
+      : typeof heatTargetChoice === "number"
+        ? heatTargetChoice
+        : heatDefaultTargetValid
+          ? heatDefaultTargetId
+          : null;
+  const { data: heatLocations, error: heatError } =
+    trpc.intelligence.getHeatMapLocations.useQuery(
+      {
+        operationId: heatOpId!,
+        targetId: heatTargetId,
+        when: { mode: "all" },
+      },
+      {
+        // wait for the operation's targets, so a default target is applied
+        // before the first request rather than after it
+        enabled:
+          heatOn &&
+          heatOpId != null &&
+          !isInvestigator &&
+          (heatTargets !== undefined || heatTargetChoice !== "auto"),
+        retry: false,
+      }
+    );
+  const heatOpName = (
+    (operations ?? []) as Array<{ id: number; name: string }>
+  ).find(o => o.id === heatDefaultOpId)?.name;
+  const heatDefaultTargetName = heatDefaultTargetValid
+    ? ((heatTargets ?? []) as Array<{ id: number; name: string }>).find(
+        t => t.id === heatDefaultTargetId
+      )?.name
+    : undefined;
   // RS Actions pane — create row mutation
   const rsAddMember = trpc.member.add.useMutation();
   const rsCreateRow = trpc.row.create.useMutation();
@@ -9199,6 +9300,27 @@ export default function IntelligenceMapping() {
             />
           )}
 
+          {/* Heat Map key — bottom-left, only while the heat map is on. Sits
+              above Google's own logo/copyright strip, and is hidden while a
+              Fly-mode card is using that corner. */}
+          {heatOn && !isInvestigator && !flySelectedId && (
+            <div className="absolute left-3 bottom-9 z-20 w-48 rounded-lg border border-border bg-card px-3 py-2 shadow-sm pointer-events-none">
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-foreground/70">
+                Observation density
+              </p>
+              <div
+                className="h-2 rounded-full"
+                style={{
+                  background: `linear-gradient(90deg, ${HEAT_RAMP.join(",")})`,
+                }}
+              />
+              <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+                <span>Fewer</span>
+                <span>More</span>
+              </div>
+            </div>
+          )}
+
           {showStreetHeadingBar && ownLiveEntry && (
             <StreetHeadingBar
               lat={ownLiveEntry.lat}
@@ -10298,11 +10420,156 @@ export default function IntelligenceMapping() {
                 </button>
               </div>
               {/* end Nearby Location */}
+
+              {/* ── HEAT MAP — one switch, off by default. On: a soft fade
+                at every place seen for the chosen operation (and target),
+                all time, under the normal pins. Not for map-only
+                Investigator accounts (the report's data isn't open to them). ── */}
+              {!isInvestigator && (
+                <div className="px-3 py-3 border-b border-border space-y-2">
+                  <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                    Heat Map
+                  </span>
+                  <button
+                    onClick={() => setHeatOn(v => !v)}
+                    className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+                      heatOn
+                        ? "border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20"
+                        : "border-border bg-card hover:bg-accent/40"
+                    }`}
+                    aria-pressed={heatOn}
+                  >
+                    <Flame
+                      className={`h-3.5 w-3.5 flex-shrink-0 ${
+                        heatOn ? "text-orange-500" : "text-muted-foreground"
+                      }`}
+                    />
+                    <span
+                      className={`text-xs font-semibold truncate flex-1 text-left ${
+                        heatOn ? "text-orange-500" : "text-foreground"
+                      }`}
+                    >
+                      Heat map
+                    </span>
+                    <span
+                      className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                        heatOn ? "text-orange-500" : "text-muted-foreground"
+                      }`}
+                    >
+                      {heatOn ? "On" : "Off"}
+                    </span>
+                  </button>
+                  {heatOn && (
+                    <div className="space-y-2">
+                      <Select
+                        value={
+                          heatOpChoice === "auto"
+                            ? "auto"
+                            : String(heatOpChoice)
+                        }
+                        onValueChange={v => {
+                          setHeatOpChoice(v === "auto" ? "auto" : Number(v));
+                          setHeatTargetChoice("auto");
+                        }}
+                      >
+                        <SelectTrigger className="w-full h-9 text-xs rounded-xl border-2">
+                          <SelectValue placeholder="Operation…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">
+                            Current{heatOpName ? ` — ${heatOpName}` : ""}
+                          </SelectItem>
+                          {(
+                            (operations ?? []) as Array<{
+                              id: number;
+                              name: string;
+                            }>
+                          ).map(o => (
+                            <SelectItem key={o.id} value={String(o.id)}>
+                              {o.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={
+                          heatTargetChoice === "auto"
+                            ? "auto"
+                            : String(heatTargetChoice)
+                        }
+                        onValueChange={v =>
+                          setHeatTargetChoice(
+                            v === "auto" || v === "all" ? v : Number(v)
+                          )
+                        }
+                      >
+                        <SelectTrigger className="w-full h-9 text-xs rounded-xl border-2">
+                          <SelectValue placeholder="Target…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="auto">
+                            Current — {heatDefaultTargetName ?? "All targets"}
+                          </SelectItem>
+                          <SelectItem value="all">All targets</SelectItem>
+                          {(
+                            (heatTargets ?? []) as Array<{
+                              id: number;
+                              name: string;
+                            }>
+                          ).map(t => (
+                            <SelectItem key={t.id} value={String(t.id)}>
+                              {t.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="space-y-1.5 pt-0.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                            Transparency
+                          </span>
+                          <span className="text-[11px] font-bold text-muted-foreground tabular-nums">
+                            {heatTransparency}%
+                          </span>
+                        </div>
+                        <Slider
+                          min={0}
+                          max={80}
+                          step={5}
+                          value={[heatTransparency]}
+                          onValueChange={v => setHeatTransparency(v[0] ?? 30)}
+                          aria-label="Heat map transparency"
+                        />
+                      </div>
+                      {heatError && (
+                        <p className="text-[11px] leading-snug text-red-500">
+                          The heat map isn&apos;t available for this operation.
+                        </p>
+                      )}
+                      {!heatError &&
+                        heatLocations &&
+                        heatLocations.length === 0 && (
+                          <p className="text-[11px] leading-snug text-muted-foreground">
+                            Nothing to show for this selection.
+                          </p>
+                        )}
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* end Heat Map */}
             </div>
           )}
           {/* end Pane Body */}
         </div>
         {/* end RS Actions Right Pane */}
+
+        {/* Heat Map overlay — draws nothing itself, it adds a layer to the map. */}
+        <MapHeatOverlay
+          map={mapReady && heatOn && !isInvestigator ? mapRef.current : null}
+          locations={heatOn && !heatError ? (heatLocations ?? []) : []}
+          strength={1 - heatTransparency / 100}
+        />
 
         {/* ── Quick-Link Editor Modal ── */}
         {editingQuickLinks && (

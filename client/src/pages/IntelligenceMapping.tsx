@@ -7,12 +7,13 @@ import {
   useState,
 } from "react";
 import { orderRsChips } from "@shared/rsChips";
-import { joinVehicleLists } from "@shared/vehicleList";
 import {
+  joinObservationPieces,
   justTypedSpaceAfterBracket,
   tidyObservation,
   tidyObservationAtCaret,
 } from "@shared/observationTidy";
+import { wholeSentenceChips } from "@shared/sentenceJoin";
 import {
   matchVehicleArrival,
   extractArrivalAddress,
@@ -3763,6 +3764,12 @@ export default function IntelligenceMapping() {
   const { data: generalShortcuts } = trpc.shortcuts.list.useQuery(undefined, {
     staleTime: 0,
   });
+  // The chips that are whole sentences — the tidy-up puts a full stop between
+  // two of them (shared/sentenceJoin.ts).
+  const sentenceChips = useMemo(
+    () => wholeSentenceChips((generalShortcuts ?? []).map(s => s.expansion)),
+    [generalShortcuts]
+  );
   // Target shortcuts for the selected sheet's target
   const { data: targetShortcuts } = trpc.targetShortcuts.list.useQuery(
     { targetId: rsTargetData?.id! },
@@ -7625,8 +7632,8 @@ export default function IntelligenceMapping() {
     if (!rsInlineLabel) return;
     const finalText = rsInlineText.trim()
       ? rsInlineTypedRef.current
-        ? tidyObservation(rsInlineText.trim(), true)
-        : joinVehicleLists(rsInlineText.trim())
+        ? tidyObservation(rsInlineText.trim(), true, { sentenceChips })
+        : joinObservationPieces(rsInlineText.trim(), { sentenceChips })
       : rsInlineLabel;
     // Capture CINs and the voice-usage flag BEFORE closeInlineField clears
     // both refs.
@@ -12111,7 +12118,8 @@ export default function IntelligenceMapping() {
                                 const joined = tidyObservationAtCaret(
                                   next,
                                   typedAt,
-                                  false
+                                  false,
+                                  { sentenceChips }
                                 );
                                 if (joined.changed) {
                                   next = joined.text;
@@ -12214,8 +12222,12 @@ export default function IntelligenceMapping() {
                               // Target Logger buttons keeps just the vehicle
                               // list punctuation.
                               const tidy = rsInlineTypedRef.current
-                                ? tidyObservation(rsInlineText, true)
-                                : joinVehicleLists(rsInlineText);
+                                ? tidyObservation(rsInlineText, true, {
+                                    sentenceChips,
+                                  })
+                                : joinObservationPieces(rsInlineText, {
+                                    sentenceChips,
+                                  });
                               if (tidy !== rsInlineText) {
                                 pushInlineUndo(rsInlineText);
                                 setRsInlineText(tidy);
@@ -12398,7 +12410,8 @@ export default function IntelligenceMapping() {
                                         1 +
                                         bracket.length +
                                         1,
-                                      false
+                                      false,
+                                      { sentenceChips }
                                     );
                                     pushInlineUndo(rsInlineText);
                                     setRsInlineText(joined.text);

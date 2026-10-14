@@ -19,6 +19,7 @@ import {
   tidyObservation,
   tidyObservationAtCaret,
 } from "@shared/observationTidy";
+import { wholeSentenceChips } from "@shared/sentenceJoin";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2094,6 +2095,12 @@ function EditableCell({
   onAutoEdited?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
+  // The shortcut chips that are whole sentences — the tidy-up puts a full stop
+  // between two of them (shared/sentenceJoin.ts).
+  const sentenceChips = useMemo(
+    () => wholeSentenceChips(Object.values(shortcuts ?? {})),
+    [shortcuts]
+  );
   // Opened by a card tap: focus it without raising the on-screen keyboard
   // (inputMode "none") until the officer actually taps into the text.
   const [noKeyboard, setNoKeyboard] = useState(false);
@@ -2274,7 +2281,9 @@ function EditableCell({
     // vehicle lists, one space between words, capitals, a space after commas
     // (shared/observationTidy.ts). The closing full stop waits for the end.
     if (justTypedSpaceAfterBracket(val, cursorPos)) {
-      const joined = tidyObservationAtCaret(val, cursorPos, false);
+      const joined = tidyObservationAtCaret(val, cursorPos, false, {
+        sentenceChips,
+      });
       if (joined.changed) {
         val = joined.text;
         cursorPos = joined.caret;
@@ -2501,7 +2510,8 @@ function EditableCell({
       const joined = tidyObservationAtCaret(
         newText,
         before.length + word.length + 1 + bracket.length + 1,
-        false
+        false,
+        { sentenceChips }
       );
       setDraft(joined.text);
       closeVehicleMentionDropdown();
@@ -2614,7 +2624,7 @@ function EditableCell({
               const edited = draft !== (value ?? "");
               const converted = convertGoogleAddresses(draft);
               const conv = edited
-                ? tidyObservation(converted, true)
+                ? tidyObservation(converted, true, { sentenceChips })
                 : converted;
               if (conv !== draft) {
                 setDraft(conv);

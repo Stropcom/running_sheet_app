@@ -34,6 +34,11 @@ const FULL: Record<string, string> = {
   gln: "Glen",
 };
 
+/** The full street-type words ("Street", "Road", "Avenue", …). */
+export const FULL_STREET_TYPES: readonly string[] = Array.from(
+  new Set(Object.values(FULL))
+);
+
 const TYPES = Object.keys(FULL).join("|");
 const STATES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
 

@@ -4,6 +4,9 @@
  *
  *  - vehicles listed one after another get their commas, "and" and "a" / "an"
  *    (shared/vehicleList.ts);
+ *  - the small joining words and full stops between pieces — a full stop
+ *    between two whole sentences, "at" before an address after "Surveillance
+ *    commenced", "and" between people (shared/sentenceJoin.ts);
  *  - one space between words (never a run of two or more);
  *  - a space after a comma that is missing one ("shop,then" → "shop, then");
  *  - a capital letter at the start of the observation and after each full
@@ -18,6 +21,7 @@
  * chips, shortcuts and Target Logger sentences are never passed through it
  * on their own. Pure and deterministic: no AI, same input → same output.
  */
+import { sentenceJoinEdits, type SentenceJoinOptions } from "./sentenceJoin";
 import { leadingColourPhrase } from "./vehicleColour";
 import {
   applyEdits,
@@ -116,14 +120,35 @@ export function tidyEdits(text: string, final: boolean): VehicleEdit[] {
   return edits;
 }
 
-/** The observation tidied: vehicle lists first, then the rules above. */
-export function tidyObservation(text: string, final = false): string {
+/** The observation tidied: vehicle lists first, then joining words, then the rules above. */
+export function tidyObservation(
+  text: string,
+  final = false,
+  opts: SentenceJoinOptions = {}
+): string {
   if (!text) return text;
   // "tv" on its own is a trigger the running sheet acts on — never touched.
   if (text.trim().toLowerCase() === "tv") return text;
-  const joined = joinVehicleLists(text);
-  const edits = tidyEdits(joined, final);
-  return edits.length ? applyEdits(joined, edits) : joined;
+  let out = joinVehicleLists(text);
+  const joins = sentenceJoinEdits(out, opts);
+  if (joins.length) out = applyEdits(out, joins);
+  const edits = tidyEdits(out, final);
+  return edits.length ? applyEdits(out, edits) : out;
+}
+
+/**
+ * Only the joining of pieces — vehicle lists and the joining words — without
+ * the capitals, spacing and full-stop fixes. For text assembled purely from
+ * chips and Target Logger buttons, where nothing was typed to tidy.
+ */
+export function joinObservationPieces(
+  text: string,
+  opts: SentenceJoinOptions = {}
+): string {
+  if (!text || text.trim().toLowerCase() === "tv") return text;
+  const out = joinVehicleLists(text);
+  const joins = sentenceJoinEdits(out, opts);
+  return joins.length ? applyEdits(out, joins) : out;
 }
 
 /** Where a caret at `caret` ends up after `edits` are applied. */
@@ -140,16 +165,26 @@ function shiftCaret(edits: VehicleEdit[], caret: number): number {
 export function tidyObservationAtCaret(
   text: string,
   caret: number,
-  final = false
+  final = false,
+  opts: SentenceJoinOptions = {}
 ): { text: string; caret: number; changed: boolean } {
   if (text.trim().toLowerCase() === "tv")
     return { text, caret, changed: false };
   const v = joinVehicleListsAtCaret(text, caret);
-  const edits = tidyEdits(v.text, final);
-  if (edits.length === 0) return { ...v };
+  let cur = v.text;
+  let at = v.caret;
+  let changed = v.changed;
+  const joins = sentenceJoinEdits(cur, opts);
+  if (joins.length) {
+    cur = applyEdits(cur, joins);
+    at = shiftCaret(joins, at);
+    changed = true;
+  }
+  const edits = tidyEdits(cur, final);
+  if (edits.length === 0) return { text: cur, caret: at, changed };
   return {
-    text: applyEdits(v.text, edits),
-    caret: shiftCaret(edits, v.caret),
+    text: applyEdits(cur, edits),
+    caret: shiftCaret(edits, at),
     changed: true,
   };
 }

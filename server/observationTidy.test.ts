@@ -55,8 +55,8 @@ describe("tidyObservation — capitals", () => {
   });
 
   it("never lower-cases anything", () => {
-    expect(t("HADDAD PHOTOGRAPH/S TAKEN Out of sight")).toBe(
-      "HADDAD PHOTOGRAPH/S TAKEN Out of sight."
+    expect(t("HADDAD PHOTOGRAPH/S TAKEN. Out of sight")).toBe(
+      "HADDAD PHOTOGRAPH/S TAKEN. Out of sight."
     );
   });
 });

@@ -266,12 +266,15 @@ type ExportRow = {
 // matching that here so a photo prints/exports at its natural aspect ratio,
 // same as it already appears on the running sheet itself.
 //
-// Each photo gets its linked CIN ("member" category link — see
+// Each photo gets a caption strip joined to its bottom edge, the same width
+// as the photo, with "Taken by CIN 484" centred in black (several linked
+// CINs read "CIN 484, 503"). A photo not yet linked to a CIN gets the same
+// strip left blank, so every photo in a row is the same height and the strips
+// line up. Black on light grey, so it reads the same in a black-and-white
+// print. Export only — the live sheet keeps its green CIN pills
+// (LinkedEntityPills); the link itself is the "member" category link — see
 // LinkAttachmentDialog's CIN section / autoLinkAttachmentToRowMemberIfSingle
-// in db.ts) printed underneath as a small green pill, same colour as the
-// live app's LinkedEntityPills, so the exported page still shows who the
-// photo is attributed to — particularly useful when several CINs are on the
-// one row. A photo not yet linked to a CIN prints with no pill at all.
+// in db.ts.
 function attachmentImagesHtml(
   attachments: {
     url: string;
@@ -290,16 +293,16 @@ function attachmentImagesHtml(
         const cins = (a.linkedEntities ?? [])
           .filter(e => e.category === "member")
           .map(e => e.label);
-        const pillsHtml = cins
-          .map(
-            cin =>
-              `<span style="display:inline-block;margin-top:2px;padding:1px 6px;border-radius:9999px;background:#059669;color:#fff;font-size:8px;font-weight:600;">${cin}</span>`
-          )
-          .join("");
+        const stripHtml =
+          `<div style="width:100%;box-sizing:border-box;border:1px solid #ccc;border-top:0;border-radius:0 0 4px 4px;background:#f1f1f1;color:#000;font-size:9px;line-height:1.3;padding:2px 4px;text-align:center;-webkit-print-color-adjust:exact;print-color-adjust:exact">` +
+          (cins.length > 0
+            ? `Taken by&nbsp;<strong>CIN ${cins.join(", ")}</strong>`
+            : "&nbsp;") +
+          `</div>`;
         return (
-          `<div style="width:33%;max-width:160px;display:flex;flex-direction:column;align-items:flex-start;gap:1px">` +
-          `<img src="${a.url}" style="width:100%;border:1px solid #ccc;border-radius:4px" />` +
-          pillsHtml +
+          `<div style="width:33%;max-width:160px;display:flex;flex-direction:column;align-items:stretch">` +
+          `<img src="${a.url}" style="display:block;box-sizing:border-box;width:100%;border:1px solid #ccc;border-radius:4px 4px 0 0" />` +
+          stripHtml +
           `</div>`
         );
       })
@@ -487,7 +490,7 @@ function exportToPDF(
   // "PHOTOGRAPH/S TAKEN" (and its variants) is needed live — it drives the
   // photo-upload affordance and the Governance imagery check (see
   // IMAGERY_PHRASE_PATTERN above) — but is redundant once printed: the
-  // photo(s) and their CIN pill(s) (see attachmentImagesHtml) already say
+  // photo(s) and their CIN caption(s) (see attachmentImagesHtml) already say
   // everything the phrase would. Only the phrase text is removed here; any
   // <br/> line breaks around it (already present from the observation's own
   // \n -> <br/> conversion at each call site below) are left as-is, then

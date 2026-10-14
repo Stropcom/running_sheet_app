@@ -18,6 +18,12 @@ import {
   SECTION_TITLE,
 } from "@/lib/pageKit";
 import { FORM_LABEL } from "@/lib/formKit";
+import {
+  HEAT_NUMBER_DISC_PX,
+  heatRadiusFor,
+  heatRadiusMetres,
+  nudgeApart,
+} from "@shared/heatMapLayout";
 import { toast } from "sonner";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import {
@@ -200,63 +206,161 @@ export default function IntelligenceHeatMap() {
   const mapRef = useRef<google.maps.Map | null>(null);
   const circlesRef = useRef<google.maps.Circle[]>([]);
   const dotsRef = useRef<google.maps.Marker[]>([]);
+  const trueDotsRef = useRef<google.maps.Marker[]>([]);
+  const linesRef = useRef<google.maps.Polyline[]>([]);
+
+  // The same number the Top Locations list shows for each place.
+  const rankByLabel = useMemo(() => {
+    const sorted = [...(locations ?? [])].sort((a, b) => b.count - a.count);
+    return new Map(sorted.map((l, i) => [l.label, i + 1]));
+  }, [locations]);
 
   // Google removed the visualization library's HeatmapLayer from the Maps
   // JavaScript API (gone as of v3.65, with deck.gl as their suggested
   // replacement) — this app doesn't pull in third-party map libraries, so
-  // density is instead approximated with overlapping, weighted, semi-
-  // transparent circles: same HEAT_RAMP colour, radius scaled by count. A
-  // small fixed-size dot marks the exact geocoded point at the centre of
-  // each circle, since the circle's own radius grows with count and would
-  // otherwise obscure exactly where the address sits.
+  // density is instead approximated with weighted circles: same HEAT_RAMP
+  // colour, radius scaled by count.
+  //
+  // The circles are sized in metres, which made a one-visit place a few
+  // pixels wide once the map zoomed out to fit a whole region. Each circle
+  // now keeps a minimum on-screen size at every zoom (shared/heatMapLayout.ts)
+  // and has a white outline so it stands out from roads and water. A numbered
+  // disc at each place carries its rank (the number in the Top Locations
+  // list); places that land on top of each other at a wide zoom have their
+  // discs nudged apart, with a thin line back to the true spot.
   useEffect(() => {
-    circlesRef.current.forEach(c => c.setMap(null));
-    circlesRef.current = [];
-    dotsRef.current.forEach(d => d.setMap(null));
-    dotsRef.current = [];
-    if (!mapRef.current || !window.google?.maps) return;
+    const clear = () => {
+      circlesRef.current.forEach(c => c.setMap(null));
+      circlesRef.current = [];
+      dotsRef.current.forEach(d => d.setMap(null));
+      dotsRef.current = [];
+      trueDotsRef.current.forEach(d => d.setMap(null));
+      trueDotsRef.current = [];
+      linesRef.current.forEach(l => l.setMap(null));
+      linesRef.current = [];
+    };
+    clear();
+    const map = mapRef.current;
+    if (!map || !window.google?.maps) return;
     if (!locations || locations.length === 0) return;
 
-    const RADIUS_MIN_M = 120;
-    const RADIUS_MAX_M = 550;
     const bounds = new google.maps.LatLngBounds();
-    for (const l of locations) {
+    locations.forEach(l => {
       const color = colourFor(l.count);
-      const radius =
-        RADIUS_MIN_M + (l.count / maxCount) * (RADIUS_MAX_M - RADIUS_MIN_M);
-      const circle = new google.maps.Circle({
-        center: { lat: l.lat, lng: l.lng },
-        radius,
-        map: mapRef.current,
-        fillColor: color,
-        fillOpacity: 0.45,
-        strokeColor: color,
-        strokeOpacity: 0.85,
-        strokeWeight: 1,
-        clickable: false,
-      });
-      circlesRef.current.push(circle);
-
-      const dot = new google.maps.Marker({
-        position: { lat: l.lat, lng: l.lng },
-        map: mapRef.current,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 4,
-          fillColor: "#ffffff",
-          fillOpacity: 1,
-          strokeColor: color,
+      const frac = l.count / maxCount;
+      const center = { lat: l.lat, lng: l.lng };
+      circlesRef.current.push(
+        new google.maps.Circle({
+          center,
+          radius: heatRadiusMetres(l.count, maxCount),
+          map,
+          fillColor: color,
+          fillOpacity: 0.72,
+          strokeColor: "#ffffff",
+          strokeOpacity: 0.95,
+          strokeWeight: 3,
+          // busier places sit underneath, so a small one is never hidden
+          zIndex: 100 - Math.round(frac * 50),
+          clickable: false,
+        })
+      );
+      const rank = rankByLabel.get(l.label) ?? 0;
+      dotsRef.current.push(
+        new google.maps.Marker({
+          position: center,
+          map,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: HEAT_NUMBER_DISC_PX - 2,
+            fillColor: "#ffffff",
+            fillOpacity: 1,
+            strokeColor: color,
+            strokeWeight: 2.5,
+          },
+          label: {
+            text: String(rank),
+            color: "#1b2333",
+            fontSize: "12px",
+            fontWeight: "700",
+          },
+          clickable: false,
+          zIndex: 2000 - rank,
+        })
+      );
+      trueDotsRef.current.push(
+        new google.maps.Marker({
+          position: center,
+          map: null,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 3,
+            fillColor: "#1b2333",
+            fillOpacity: 1,
+            strokeWeight: 0,
+          },
+          clickable: false,
+          zIndex: 1500,
+        })
+      );
+      linesRef.current.push(
+        new google.maps.Polyline({
+          path: [center, center],
+          map: null,
+          strokeColor: "#1b2333",
+          strokeOpacity: 0.55,
           strokeWeight: 2,
-        },
-        clickable: false,
-        zIndex: 999,
-      });
-      dotsRef.current.push(dot);
+          clickable: false,
+          zIndex: 1400,
+        })
+      );
+      bounds.extend(center);
+    });
 
-      bounds.extend({ lat: l.lat, lng: l.lng });
-    }
-    mapRef.current.fitBounds(bounds, 48);
-  }, [locations, maxCount]);
+    // Sizes and positions that depend on the zoom: circle radius, and the
+    // nudge that keeps neighbouring numbers apart.
+    const layout = () => {
+      const proj = map.getProjection();
+      const zoom = map.getZoom();
+      if (!proj || zoom == null) return;
+      const scale = Math.pow(2, zoom);
+      const centres = locations.map(l => {
+        const w = proj.fromLatLngToPoint(new google.maps.LatLng(l.lat, l.lng))!;
+        return { x: w.x * scale, y: w.y * scale };
+      });
+      const nudged = nudgeApart(centres);
+      locations.forEach((l, i) => {
+        circlesRef.current[i]?.setRadius(
+          heatRadiusFor(l.count, maxCount, l.lat, zoom)
+        );
+        const moved =
+          Math.hypot(nudged[i].x - centres[i].x, nudged[i].y - centres[i].y) >
+          4;
+        const at = moved
+          ? (proj.fromPointToLatLng(
+              new google.maps.Point(nudged[i].x / scale, nudged[i].y / scale)
+            ) ?? new google.maps.LatLng(l.lat, l.lng))
+          : new google.maps.LatLng(l.lat, l.lng);
+        dotsRef.current[i]?.setPosition(at);
+        trueDotsRef.current[i]?.setMap(moved ? map : null);
+        const line = linesRef.current[i];
+        if (line) {
+          line.setPath([{ lat: l.lat, lng: l.lng }, at]);
+          line.setMap(moved ? map : null);
+        }
+      });
+    };
+    const listeners = [
+      map.addListener("zoom_changed", layout),
+      map.addListener("projection_changed", layout),
+      map.addListener("idle", layout),
+    ];
+    map.fitBounds(bounds, 48);
+    layout();
+    return () => {
+      listeners.forEach(h => h.remove());
+      clear();
+    };
+  }, [locations, maxCount, rankByLabel]);
 
   const [exporting, setExporting] = useState(false);
 

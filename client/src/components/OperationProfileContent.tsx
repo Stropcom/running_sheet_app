@@ -551,9 +551,27 @@ export function OperationProfileContent({
   const utils = trpc.useUtils();
   const { data: profile, isLoading, error } = useOperationProfile(operationId);
   const here = useHere("operation", operationId);
-  // Which target blocks are open. Until the officer opens/closes one, only
-  // the first target's block is open.
-  const [openIds, setOpenIds] = useState<Set<number> | null>(null);
+  // Which target blocks are open. They start closed; after that the officer's
+  // last choice is remembered on this device, per operation.
+  const openKey = `runlog_op_profile_open_${operationId}`;
+  const [openIds, setOpenIdsState] = useState<Set<number>>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(openKey) ?? "[]");
+      return new Set<number>(
+        Array.isArray(saved) ? saved.filter(n => typeof n === "number") : []
+      );
+    } catch {
+      return new Set<number>();
+    }
+  });
+  const setOpenIds = (next: Set<number>) => {
+    setOpenIdsState(next);
+    try {
+      localStorage.setItem(openKey, JSON.stringify(Array.from(next)));
+    } catch {
+      /* storage unavailable — the choice just isn't remembered */
+    }
+  };
 
   async function exportPdf() {
     if (!profile) return;
@@ -589,21 +607,16 @@ export function OperationProfileContent({
     l => !isHere(here, "target", l.targetId)
   );
 
-  const isOpen = (id: number, index: number) =>
-    openIds ? openIds.has(id) : index === 0;
-  const currentOpen = () =>
-    openIds ??
-    new Set<number>(
-      typedProfile?.targets[0] ? [typedProfile.targets[0].targetId] : []
-    );
-  const toggleTarget = (id: number, index: number) => {
-    const next = new Set(currentOpen());
-    if (isOpen(id, index)) next.delete(id);
+  const isOpen = (id: number) => openIds.has(id);
+  const toggleTarget = (id: number) => {
+    const next = new Set(openIds);
+    if (next.has(id)) next.delete(id);
     else next.add(id);
     setOpenIds(next);
   };
   const openTarget = (id: number) => {
-    const next = new Set(currentOpen());
+    if (openIds.has(id)) return;
+    const next = new Set(openIds);
     next.add(id);
     setOpenIds(next);
   };
@@ -803,8 +816,8 @@ export function OperationProfileContent({
                   index={i}
                   total={typedProfile.targets.length}
                   operationName={typedProfile.operationName}
-                  open={isOpen(target.targetId, i)}
-                  onToggle={() => toggleTarget(target.targetId, i)}
+                  open={isOpen(target.targetId)}
+                  onToggle={() => toggleTarget(target.targetId)}
                   embedded={embedded}
                 />
               ))}

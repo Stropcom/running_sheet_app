@@ -67,3 +67,48 @@ export function aliasMentionCompatible(
   if (registered.length === 0) return true; // nothing on file to contradict
   return mention.every(m => registered.some(r => wordsCompatible(m, r)));
 }
+
+/**
+ * Regex flags for finding a person's surname alias as a bare word in text.
+ *
+ * Surnames are written in capitals on a running sheet ("PARK departed"), and
+ * many surnames are also ordinary words — PARK (a car park), HILL, ROSE, TAN,
+ * BANKS. Matching an all-caps alias case-insensitively credited the person
+ * with every row that merely said "car park", then listed everyone else in
+ * that row as their associate. So an all-caps alias only matches when it is
+ * written in capitals; anything else keeps the old case-insensitive match.
+ * The cost is under-reporting a surname typed in lower case, never a link
+ * nobody wrote.
+ */
+export function aliasSearchFlags(term: string): "g" | "gi" {
+  const hasUpper = /[A-Z]/.test(term);
+  const hasLower = /[a-z]/.test(term);
+  return hasUpper && !hasLower ? "g" : "gi";
+}
+
+/**
+ * True when a mention names a DIFFERENT registered person who shares the
+ * target's surname alias, and not the target themselves.
+ *
+ * "Hana PARK" is fuzzy-compatible with the target "Soo-Min Hana PARK" (the
+ * given name is part of the target's), but if "Hana PARK" is itself a
+ * registered person (an associate or another target) with exactly those given
+ * names, the mention is that person. It must not be credited to the target.
+ *
+ * @param otherRegisteredNames full names of every other registered person
+ *        who uses the same alias (not the target being matched)
+ */
+export function mentionIsOtherRegisteredPerson(
+  mentionName: string,
+  alias: string,
+  targetName: string,
+  otherRegisteredNames: readonly string[]
+): boolean {
+  const mention = givenNameWords(mentionName, alias).map(w => w.toUpperCase());
+  if (mention.length === 0) return false; // a bare alias is nobody in particular
+  const sameWords = (names: string[]) =>
+    names.length === mention.length &&
+    names.every(w => mention.includes(w.toUpperCase()));
+  if (sameWords(givenNameWords(targetName, alias))) return false;
+  return otherRegisteredNames.some(n => sameWords(givenNameWords(n, alias)));
+}

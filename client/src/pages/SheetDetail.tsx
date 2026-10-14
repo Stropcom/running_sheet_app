@@ -15,10 +15,10 @@ import {
 } from "@shared/addressSuggestTrigger";
 import { orderRsChips } from "@shared/rsChips";
 import {
-  joinVehicleLists,
-  joinVehicleListsAtCaret,
-  justTypedSpaceAfterVehicle,
-} from "@shared/vehicleList";
+  justTypedSpaceAfterBracket,
+  tidyObservation,
+  tidyObservationAtCaret,
+} from "@shared/observationTidy";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2270,10 +2270,11 @@ function EditableCell({
   function handleObservationInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
     let val = e.target.value;
     let cursorPos = e.target.selectionStart ?? val.length;
-    // A space typed right after a vehicle bracket: vehicles written one after
-    // another get "and" / commas between them (shared/vehicleList.ts).
-    if (justTypedSpaceAfterVehicle(val, cursorPos)) {
-      const joined = joinVehicleListsAtCaret(val, cursorPos);
+    // A space typed right after a bracket tidies what has been typed so far:
+    // vehicle lists, one space between words, capitals, a space after commas
+    // (shared/observationTidy.ts). The closing full stop waits for the end.
+    if (justTypedSpaceAfterBracket(val, cursorPos)) {
+      const joined = tidyObservationAtCaret(val, cursorPos, false);
       if (joined.changed) {
         val = joined.text;
         cursorPos = joined.caret;
@@ -2494,11 +2495,13 @@ function EditableCell({
       const after = draft.slice(pos);
       const bracket = `(Vehicle ${word.toUpperCase()})`;
       const newText = `${before}${word} ${bracket} ${after}`;
-      // The bracket is now complete and followed by a space — a vehicle
-      // listed straight after another gets "and" / a comma before it.
-      const joined = joinVehicleListsAtCaret(
+      // The bracket is now complete and followed by a space — tidy what has
+      // been typed so far (a vehicle listed straight after another gets
+      // "and" / a comma and its "a" / "an").
+      const joined = tidyObservationAtCaret(
         newText,
-        before.length + word.length + 1 + bracket.length + 1
+        before.length + word.length + 1 + bracket.length + 1,
+        false
       );
       setDraft(joined.text);
       closeVehicleMentionDropdown();
@@ -2603,10 +2606,16 @@ function EditableCell({
               closeVehicleMentionDropdown();
               closeAddressDropdown();
               notifyObservationBlur();
-              // Leaving the field tidies the whole observation: Google
-              // addresses to RS format, and vehicles listed one after
-              // another punctuated ("A, B and C").
-              const conv = joinVehicleLists(convertGoogleAddresses(draft));
+              // Leaving the field tidies the observation the officer typed:
+              // Google addresses to RS format, then the tidy-up pass (vehicle
+              // lists, spaces, capitals, closing full stop). A cell opened and
+              // left without any change is never touched, so rows made by the
+              // chips or the Target Logger stay exactly as they were.
+              const edited = draft !== (value ?? "");
+              const converted = convertGoogleAddresses(draft);
+              const conv = edited
+                ? tidyObservation(converted, true)
+                : converted;
               if (conv !== draft) {
                 setDraft(conv);
                 commit(conv);

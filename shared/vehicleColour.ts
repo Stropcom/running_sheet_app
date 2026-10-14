@@ -55,10 +55,17 @@ const SHADE_WORDS = [
 
 const COLOUR = `(?:(?:${SHADE_WORDS.join("|")})\\s+)*(?:${COLOUR_WORDS.join("|")})`;
 // "white", "dark blue", "black and silver", "red/white" — then a word boundary.
+export const COLOUR_PHRASE_SOURCE = `${COLOUR}(?:\\s*(?:\\/|and|&)\\s*${COLOUR})?`;
 const LEADING_COLOUR = new RegExp(
-  `^(\\S*\\d\\S*\\s+)?(${COLOUR}(?:\\s*(?:\\/|and|&)\\s*${COLOUR})?)(?=\\s|,|$)`,
+  `^(\\S*\\d\\S*\\s+)?(${COLOUR_PHRASE_SOURCE})(?=\\s|,|$)`,
   "i"
 );
+
+/** The colour at the very start of a description ("dark blue", "white"), or "". */
+export function leadingColourPhrase(desc: string): string {
+  const m = new RegExp(`^(${COLOUR_PHRASE_SOURCE})(?=\\s|,|$)`, "i").exec(desc);
+  return m ? m[1] : "";
+}
 
 /** The value of a Colour field: trimmed, lower case. */
 export function lowerVehicleColour(colour: string | null | undefined): string {

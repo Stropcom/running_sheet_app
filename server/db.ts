@@ -28,7 +28,11 @@ import {
 } from "@shared/profilePhoto";
 import { normaliseTargetBackground } from "@shared/targetBackground";
 import { isLoggedIn, type TeamMapVisibility } from "@shared/teamMap";
-import { aliasMentionCompatible } from "./personAliasMatch";
+import {
+  aliasMentionCompatible,
+  aliasSearchFlags,
+  mentionIsOtherRegisteredPerson,
+} from "./personAliasMatch";
 import {
   regionSearch,
   type RegionEntityType,
@@ -8345,6 +8349,22 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
   // bracket elsewhere in observation text redirects into this associate's
   // entity instead of spawning a lookalike duplicate.
   const associateAliasToKey = new Map<string, string>();
+  // Every registered person (targets and associates) under their surname
+  // alias, so a mention that is exactly a *different* registered person with
+  // the target's surname ("Hana PARK" vs the target "Soo-Min Hana PARK") is
+  // never folded into the target.
+  const registeredNamesByAlias = new Map<string, string[]>();
+  const noteRegisteredName = (
+    alias: string | null | undefined,
+    name: string
+  ) => {
+    const k = (alias ?? "").trim().toUpperCase();
+    if (!k || !name) return;
+    const list = registeredNamesByAlias.get(k) ?? [];
+    list.push(name);
+    registeredNamesByAlias.set(k, list);
+  };
+  for (const t of targetRows) noteRegisteredName(t.tgt, t.targetName);
 
   const entityMap = new Map<string, IntelligenceEntity>();
 
@@ -8653,6 +8673,7 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
     if (a.tgt && a.tgt.trim()) {
       associateAliasToKey.set(a.tgt.trim().toUpperCase(), assocKey);
     }
+    noteRegisteredName(a.tgt, a.name);
 
     if (!entityMap.has(assocKey)) {
       entityMap.set(assocKey, {
@@ -8919,6 +8940,22 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
       if (
         canonicalName &&
         !aliasMentionCompatible(e.shortForm, aliasUsedForTarget, canonicalName)
+      ) {
+        canonicalName = undefined;
+      }
+      // "Hana PARK" is a different registered person from the target
+      // "Soo-Min Hana PARK" even though the given name fits — see
+      // mentionIsOtherRegisteredPerson.
+      if (
+        canonicalName &&
+        mentionIsOtherRegisteredPerson(
+          e.shortForm,
+          aliasUsedForTarget,
+          canonicalName,
+          (
+            registeredNamesByAlias.get(aliasUsedForTarget.toUpperCase()) ?? []
+          ).filter(n => n !== canonicalName)
+        )
       ) {
         canonicalName = undefined;
       }
@@ -9331,7 +9368,12 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
           const wordBoundary = /^[A-Za-z]/.test(term)
             ? `\\b${escaped}\\b`
             : `(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`;
-          const re = new RegExp(wordBoundary, "gi");
+          // An all-caps surname alias ("PARK") only counts when written in
+          // capitals — see aliasSearchFlags.
+          const re = new RegExp(
+            wordBoundary,
+            entry.type === "person" ? aliasSearchFlags(term) : "gi"
+          );
 
           let tokenMatch: RegExpExecArray | null;
           while ((tokenMatch = re.exec(row.observation)) !== null) {

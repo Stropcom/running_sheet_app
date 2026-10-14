@@ -5,52 +5,60 @@ import {
   justTypedSpaceAfterVehicle,
   vehicleListFixes,
 } from "../shared/vehicleList";
+import { checkVehicleLists } from "./sheetCheck";
+import { normalizeObservationPunctuation } from "./db";
 
+// What an officer writes (or a chip inserts): no article in front.
 const LEXUS =
-  "White Lexus NX350h station sedan, bearing WA registration 1TDM414 (Vehicle 1TDM414)";
+  "white Lexus NX350h station sedan, bearing WA registration 1TDM414 (Vehicle 1TDM414)";
 const KLUGER =
-  "White Toyota Kluger station sedan, bearing WA registration 1TMD414 (Vehicle 1TMD414)";
+  "white Toyota Kluger station sedan, bearing WA registration 1TMD414 (Vehicle 1TMD414)";
 const TRANSIT =
-  "Silver Ford Transit Van, bearing VIC registration TFG414 (Vehicle TFG414)";
+  "silver Ford Transit Van, bearing VIC registration TFG414 (Vehicle TFG414)";
 const HILUX =
   "grey Toyota Hilux utility, bearing WA registration 1AAA111 (Vehicle 1AAA111)";
+const ORANGE =
+  "orange Holden Commodore sedan, bearing WA registration 1OOO111 (Vehicle 1OOO111)";
 
-describe("joinVehicleLists", () => {
+// The same with its article: "A …" at the start of a sentence, "a …" after.
+const cap = (v: string) => `A ${v}`;
+const art = (v: string) => `a ${v}`;
+
+describe("joinVehicleLists — punctuation", () => {
   it("puts 'and' between two vehicles", () => {
     expect(joinVehicleLists(`${LEXUS} ${KLUGER}`)).toBe(
-      `${LEXUS} and ${KLUGER}`
+      `${cap(LEXUS)} and ${art(KLUGER)}`
     );
   });
 
   it("puts commas between, and 'and' before the last, for three (the example)", () => {
     expect(joinVehicleLists(`${LEXUS} ${KLUGER} ${TRANSIT}`)).toBe(
-      `${LEXUS}, ${KLUGER} and ${TRANSIT}`
+      `${cap(LEXUS)}, ${art(KLUGER)} and ${art(TRANSIT)}`
     );
   });
 
   it("works for four or more, with no comma before the 'and'", () => {
     expect(joinVehicleLists(`${LEXUS} ${KLUGER} ${TRANSIT} ${HILUX}`)).toBe(
-      `${LEXUS}, ${KLUGER}, ${TRANSIT} and ${HILUX}`
+      `${cap(LEXUS)}, ${art(KLUGER)}, ${art(TRANSIT)} and ${art(HILUX)}`
     );
   });
 
   it("regularises a list that grew one vehicle at a time", () => {
-    // "A and B" then C is typed straight after: becomes "A, B and C".
-    expect(joinVehicleLists(`${LEXUS} and ${KLUGER} ${TRANSIT}`)).toBe(
-      `${LEXUS}, ${KLUGER} and ${TRANSIT}`
-    );
+    expect(
+      joinVehicleLists(`${cap(LEXUS)} and ${art(KLUGER)} ${TRANSIT}`)
+    ).toBe(`${cap(LEXUS)}, ${art(KLUGER)} and ${art(TRANSIT)}`);
   });
 
-  it("never doubles up on a list that is already punctuated", () => {
-    const done = `${LEXUS}, ${KLUGER} and ${TRANSIT}`;
+  it("never doubles up on a list that is already right", () => {
+    const done = `${cap(LEXUS)}, ${art(KLUGER)} and ${art(TRANSIT)}`;
     expect(joinVehicleLists(done)).toBe(done);
-    const two = `${LEXUS} and ${KLUGER}`;
+    const two = `${cap(LEXUS)} and ${art(KLUGER)}`;
     expect(joinVehicleLists(two)).toBe(two);
-    const oxford = `${LEXUS}, ${KLUGER}, and ${TRANSIT}`;
+    const oxford = `${cap(LEXUS)}, ${art(KLUGER)}, and ${art(TRANSIT)}`;
     expect(joinVehicleLists(oxford)).toBe(oxford);
   });
 
-  it("handles bare regos written by the Space completion", () => {
+  it("handles bare regos written by the Space completion (no description, no article)", () => {
     expect(
       joinVehicleLists("1ABC123 (Vehicle 1ABC123) 1XYZ789 (Vehicle 1XYZ789)")
     ).toBe("1ABC123 (Vehicle 1ABC123) and 1XYZ789 (Vehicle 1XYZ789)");
@@ -70,7 +78,7 @@ describe("joinVehicleLists", () => {
 
   it("doesn't split one vehicle whose model was bracketed early", () => {
     const t =
-      "White Lexus NX350h (Vehicle NX350H) station sedan, bearing WA registration 1TDM414 (Vehicle 1TDM414)";
+      "white Lexus NX350h (Vehicle NX350H) station sedan, bearing WA registration 1TDM414 (Vehicle 1TDM414)";
     expect(joinVehicleLists(t)).toBe(t);
   });
 
@@ -79,11 +87,13 @@ describe("joinVehicleLists", () => {
     expect(joinVehicleLists(t)).toBe(t);
   });
 
-  it("handles a list in the middle of a longer observation, and two separate lists", () => {
+  it("handles two separate lists in a longer observation", () => {
     const t = `Surveillance commenced. ${LEXUS} ${KLUGER} parked at the address. Later ${TRANSIT} ${HILUX} left.`;
-    // second list: " left." follows, fine; first list ends before "parked"
     expect(joinVehicleLists(t)).toBe(
-      `Surveillance commenced. ${LEXUS} and ${KLUGER} parked at the address. Later ${TRANSIT} and ${HILUX} left.`
+      `Surveillance commenced. ${cap(LEXUS)} and ${art(KLUGER)} parked at the address. Later ${art(TRANSIT)} and ${art(HILUX)} left.`.replace(
+        "Later a ",
+        "Later a "
+      )
     );
   });
 
@@ -99,16 +109,76 @@ describe("joinVehicleLists", () => {
   });
 });
 
+describe("joinVehicleLists — 'a' / 'an' in front of each vehicle", () => {
+  it("gives the exact example sentence", () => {
+    expect(joinVehicleLists(`${LEXUS}, ${KLUGER} and ${TRANSIT}`)).toBe(
+      "A white Lexus NX350h station sedan, bearing WA registration 1TDM414 (Vehicle 1TDM414), a white Toyota Kluger station sedan, bearing WA registration 1TMD414 (Vehicle 1TMD414) and a silver Ford Transit Van, bearing VIC registration TFG414 (Vehicle TFG414)"
+    );
+  });
+
+  it("uses a capital 'A' only at the start of a sentence, 'a' elsewhere", () => {
+    expect(joinVehicleLists(`HADDAD arrived in ${LEXUS} and ${KLUGER}.`)).toBe(
+      `HADDAD arrived in ${art(LEXUS)} and ${art(KLUGER)}.`
+    );
+    expect(joinVehicleLists(`Seen: ${LEXUS} ${KLUGER}`)).toBe(
+      `Seen: ${cap(LEXUS)} and ${art(KLUGER)}`
+    );
+    expect(joinVehicleLists(`Sighted. ${LEXUS} ${KLUGER}`)).toBe(
+      `Sighted. ${cap(LEXUS)} and ${art(KLUGER)}`
+    );
+  });
+
+  it("uses 'an' before a vowel sound", () => {
+    expect(joinVehicleLists(`${ORANGE} ${HILUX}`)).toBe(
+      `An ${ORANGE} and ${art(HILUX)}`
+    );
+    expect(joinVehicleLists(`${HILUX} ${ORANGE}`)).toBe(
+      `${cap(HILUX)} and an ${ORANGE}`
+    );
+  });
+
+  it("writes the colour in lower case when it adds the article", () => {
+    expect(
+      joinVehicleLists(
+        "White Lexus, bearing WA registration 1TDM414 (Vehicle 1TDM414) Silver Ford Van, bearing WA registration TFG414 (Vehicle TFG414)"
+      )
+    ).toBe(
+      "A white Lexus, bearing WA registration 1TDM414 (Vehicle 1TDM414) and a silver Ford Van, bearing WA registration TFG414 (Vehicle TFG414)"
+    );
+  });
+
+  it("does not double an article that is already there", () => {
+    const t = `the ${LEXUS} and an ${ORANGE}`;
+    expect(joinVehicleLists(t)).toBe(t);
+  });
+
+  it("leaves narrative before the description alone", () => {
+    expect(
+      joinVehicleLists(`HADDAD in grey jumper drove ${LEXUS} ${KLUGER}`)
+    ).toBe(`HADDAD in grey jumper drove ${art(LEXUS)} and ${art(KLUGER)}`);
+  });
+
+  it("adds nothing to a single vehicle", () => {
+    expect(joinVehicleLists(`${LEXUS} parked up`)).toBe(`${LEXUS} parked up`);
+  });
+
+  it("gives a vehicle with no description no article", () => {
+    expect(joinVehicleLists(`${LEXUS} 1XYZ789 (Vehicle 1XYZ789)`)).toBe(
+      `${cap(LEXUS)} and 1XYZ789 (Vehicle 1XYZ789)`
+    );
+  });
+});
+
 describe("joinVehicleListsAtCaret", () => {
   it("keeps the caret where the officer is typing", () => {
     const text = `${LEXUS} ${KLUGER} `;
     const r = joinVehicleListsAtCaret(text, text.length);
     expect(r.changed).toBe(true);
-    expect(r.text).toBe(`${LEXUS} and ${KLUGER} `);
+    expect(r.text).toBe(`${cap(LEXUS)} and ${art(KLUGER)} `);
     expect(r.caret).toBe(r.text.length);
   });
 
-  it("doesn't move a caret that sits before the edit", () => {
+  it("doesn't move a caret that sits before the edits", () => {
     const text = `Obs: ${LEXUS} ${KLUGER}`;
     const r = joinVehicleListsAtCaret(text, 3);
     expect(r.caret).toBe(3);
@@ -129,26 +199,32 @@ describe("justTypedSpaceAfterVehicle", () => {
 });
 
 describe("vehicleListFixes (Check Sheet)", () => {
-  it("offers one fix per list needing punctuation", () => {
+  it("offers one fix per list needing tidying", () => {
     const text = `Seen: ${LEXUS} ${KLUGER} ${TRANSIT} at the address.`;
     const fixes = vehicleListFixes(text);
     expect(fixes).toHaveLength(1);
-    // From the first vehicle's bracket to the last.
-    expect(fixes[0].wrong).toBe(`(Vehicle 1TDM414) ${KLUGER} ${TRANSIT}`);
-    expect(fixes[0].correct).toBe(
-      `(Vehicle 1TDM414), ${KLUGER} and ${TRANSIT}`
-    );
+    expect(fixes[0].needsPunctuation).toBe(true);
+    expect(fixes[0].needsArticles).toBe(true);
     expect(text.replace(fixes[0].wrong, fixes[0].correct)).toBe(
-      `Seen: ${LEXUS}, ${KLUGER} and ${TRANSIT} at the address.`
+      `Seen: ${cap(LEXUS)}, ${art(KLUGER)} and ${art(TRANSIT)} at the address.`
+    );
+  });
+
+  it("flags a punctuated list that only lacks its articles", () => {
+    const text = `${LEXUS} and ${KLUGER}`;
+    const fixes = vehicleListFixes(text);
+    expect(fixes).toHaveLength(1);
+    expect(fixes[0].needsPunctuation).toBe(false);
+    expect(fixes[0].needsArticles).toBe(true);
+    expect(text.replace(fixes[0].wrong, fixes[0].correct)).toBe(
+      `${cap(LEXUS)} and ${art(KLUGER)}`
     );
   });
 
   it("offers nothing for a list that is already right", () => {
-    expect(vehicleListFixes(`${LEXUS} and ${KLUGER}`)).toEqual([]);
+    expect(vehicleListFixes(`${cap(LEXUS)} and ${art(KLUGER)}`)).toEqual([]);
   });
 });
-
-import { checkVehicleLists } from "./sheetCheck";
 
 describe("checkVehicleLists", () => {
   const row = (observation: string) => ({
@@ -157,7 +233,7 @@ describe("checkVehicleLists", () => {
     observation,
   });
 
-  it("flags an unpunctuated list with a one-tap fix, once per list", () => {
+  it("flags an untidy list with a one-tap fix, once per list", () => {
     const text = `Seen ${LEXUS} ${KLUGER} ${TRANSIT}.`;
     const findings = checkVehicleLists([row(text)] as any);
     expect(findings).toHaveLength(1);
@@ -165,30 +241,37 @@ describe("checkVehicleLists", () => {
     expect(findings[0].category).toBe("formatting");
     const fix = findings[0].suggestedFix!;
     expect(text.replace(fix.wrong, fix.correct)).toBe(
-      `Seen ${LEXUS}, ${KLUGER} and ${TRANSIT}.`
+      `Seen ${art(LEXUS)}, ${art(KLUGER)} and ${art(TRANSIT)}.`
     );
   });
 
-  it("flags nothing on a punctuated list or a single vehicle", () => {
+  it("says what is missing", () => {
+    const f = checkVehicleLists([row(`${LEXUS} and ${KLUGER}`)] as any);
+    expect(f[0].reason).toContain("a");
+    expect(f[0].reason).toContain("in front");
+  });
+
+  it("flags nothing on a tidy list or a single vehicle", () => {
     expect(
-      checkVehicleLists([row(`${LEXUS} and ${KLUGER}`), row(LEXUS)] as any)
+      checkVehicleLists([
+        row(`${cap(LEXUS)} and ${art(KLUGER)}`),
+        row(LEXUS),
+      ] as any)
     ).toEqual([]);
   });
 });
 
-import { normalizeObservationPunctuation } from "./db";
-
 describe("normalizeObservationPunctuation with vehicle lists", () => {
   it("writes the list as 'A and B' without a comma before the 'and'", () => {
     expect(normalizeObservationPunctuation(`${LEXUS} ${KLUGER}`)).toBe(
-      `${LEXUS} and ${KLUGER}`
+      `${cap(LEXUS)} and ${art(KLUGER)}`
     );
   });
 
   it("writes three as 'A, B and C'", () => {
     expect(
       normalizeObservationPunctuation(`${LEXUS} ${KLUGER} ${TRANSIT}`)
-    ).toBe(`${LEXUS}, ${KLUGER} and ${TRANSIT}`);
+    ).toBe(`${cap(LEXUS)}, ${art(KLUGER)} and ${art(TRANSIT)}`);
   });
 
   it("is stable when saved again", () => {
@@ -196,7 +279,9 @@ describe("normalizeObservationPunctuation with vehicle lists", () => {
       `${LEXUS} ${KLUGER} ${TRANSIT} parked up`
     );
     expect(normalizeObservationPunctuation(once)).toBe(once);
-    expect(once).toBe(`${LEXUS}, ${KLUGER} and ${TRANSIT}, parked up`);
+    expect(once).toBe(
+      `${cap(LEXUS)}, ${art(KLUGER)} and ${art(TRANSIT)}, parked up`
+    );
   });
 
   it("still puts the usual comma after a lone vehicle bracket", () => {

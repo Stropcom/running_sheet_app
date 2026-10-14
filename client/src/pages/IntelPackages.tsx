@@ -39,9 +39,8 @@ import {
 import { buildProfileTargetBlockHtml } from "@/lib/profileSection";
 import {
   heatColourFor,
-  buildHeatMapImageHtml,
   buildHeatMapLocationsTableHtml,
-  fetchHeatMapStaticImage,
+  fetchHeatMapMapHtml,
 } from "@/lib/heatMapSection";
 import { buildPatternOfLifeGridsHtml } from "@/lib/patternOfLifeSection";
 
@@ -319,7 +318,7 @@ export default function IntelPackages() {
     if (!locations.length) return null;
 
     const maxCount = Math.max(1, ...locations.map(l => l.count));
-    const mapImageDataUrl = await fetchHeatMapStaticImage(locations, maxCount);
+    const mapHtml = await fetchHeatMapMapHtml(locations, maxCount);
     const rows = locations.map(l => ({
       label: l.label,
       count: l.count,
@@ -330,7 +329,7 @@ export default function IntelPackages() {
       title: "Heat Map",
       html: `<div class="section">
         <div class="section-title">Map</div>
-        <div class="section-body">${buildHeatMapImageHtml(mapImageDataUrl)}</div>
+        <div class="section-body">${mapHtml}</div>
       </div>
       <div class="section">
         <div class="section-title">Top Locations</div>

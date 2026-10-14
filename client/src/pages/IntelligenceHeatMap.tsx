@@ -31,7 +31,7 @@ import {
   heatColourFor,
   buildHeatMapImageHtml,
   buildHeatMapLocationsTableHtml,
-  fetchHeatMapStaticImage,
+  fetchHeatMapMapHtml,
 } from "@/lib/heatMapSection";
 
 type WhenMode = "sheet" | "last7" | "last30" | "custom";
@@ -50,10 +50,10 @@ function exportHeatMapToPDF(params: {
   targetName: string | null;
   whenLabel: string;
   locations: { label: string; count: number; colour: string }[];
-  mapImageDataUrl: string | null;
+  /** The map block (picture + circles + insets), ready to drop in. */
+  mapHtml: string;
 }): boolean {
-  const { operationName, targetName, whenLabel, locations, mapImageDataUrl } =
-    params;
+  const { operationName, targetName, whenLabel, locations, mapHtml } = params;
   const esc = (s: string | null | undefined) =>
     (s ?? "")
       .replace(/&/g, "&amp;")
@@ -71,7 +71,6 @@ function exportHeatMapToPDF(params: {
       ? `<div class="section"><div class="section-title">${esc(title)}</div><div class="section-body">${bodyHtml}</div></div>`
       : "";
 
-  const mapHtml = buildHeatMapImageHtml(mapImageDataUrl);
   const locationsHtml = buildHeatMapLocationsTableHtml(locations);
 
   const generatedAt = new Date().toLocaleString("en-AU", {
@@ -368,11 +367,11 @@ export default function IntelligenceHeatMap() {
     if (operationId == null) return;
     setExporting(true);
     try {
-      let mapImageDataUrl: string | null = null;
+      let mapHtml = buildHeatMapImageHtml(null);
       if (locations && locations.length > 0) {
         toast.info("Capturing map…");
-        mapImageDataUrl = await fetchHeatMapStaticImage(locations, maxCount);
-        if (!mapImageDataUrl) {
+        mapHtml = await fetchHeatMapMapHtml(locations, maxCount);
+        if (mapHtml.includes("muted-note")) {
           // A failed map snapshot shouldn't block exporting the Top
           // Locations table — the document falls back to a muted note in
           // the Map section instead of erroring out entirely.
@@ -405,7 +404,7 @@ export default function IntelligenceHeatMap() {
           count: l.count,
           colour: colourFor(l.count),
         })),
-        mapImageDataUrl,
+        mapHtml,
       });
       if (!ok) {
         toast.error("Pop-up blocked. Please allow pop-ups and try again.");

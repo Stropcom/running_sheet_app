@@ -247,6 +247,9 @@ export const teams = mysqlTable(
     /** True = members' location sharing is switched on automatically when
      * they log in and cannot be switched off (e.g. Investigators). */
     forceShare: boolean("forceShare").notNull().default(false),
+    /** False = the team's "Add team" button is left off the New Running Sheet
+     * dialog (e.g. PTT, Capability, Admin, Investigators). */
+    offerOnNewSheet: boolean("offerOnNewSheet").notNull().default(true),
     createdAt: bigint("createdAt", { mode: "number" }).notNull(),
   },
   t => ({

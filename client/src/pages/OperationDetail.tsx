@@ -1947,6 +1947,9 @@ export default function OperationDetail() {
     enabled: isAuthenticated && user?.role === "admin",
   });
   const myTeams = useMyTeams();
+  // Teams an admin switched off "Offer on New Running Sheet" (e.g. PTT,
+  // Capability, Admin, Investigators) get no button in the New Sheet dialog.
+  const newSheetTeams = myTeams.filter(t => t.offerOnNewSheet);
 
   // Populate edit form when operation loads
   useEffect(() => {
@@ -3009,12 +3012,12 @@ export default function OperationDetail() {
                 </Button>
               </div>
               {/* Team group buttons — only shown to admins who have allUsers loaded */}
-              {user?.role === "admin" && myTeams.length > 0 && (
+              {user?.role === "admin" && newSheetTeams.length > 0 && (
                 <div className="flex gap-1.5 mb-3 flex-wrap">
                   <span className="text-xs text-muted-foreground self-center mr-1">
                     Add team:
                   </span>
-                  {myTeams.map(t => (
+                  {newSheetTeams.map(t => (
                     <Button
                       key={t.id}
                       type="button"

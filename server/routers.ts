@@ -808,6 +808,8 @@ const teamInput = {
   mapVisibility: z.enum(["always", "online"]).default("always"),
   /** Members' location sharing is forced on at login and can't be turned off. */
   forceShare: z.boolean().default(false),
+  /** Offer this team as an "Add team" button on the New Running Sheet. */
+  offerOnNewSheet: z.boolean().default(true),
 };
 
 /** A team can only be given to someone in the same Command. */
@@ -3648,6 +3650,7 @@ export const appRouter = router({
           aiPhones: input.aiPhones ?? [],
           mapVisibility: input.mapVisibility,
           forceShare: input.forceShare,
+          offerOnNewSheet: input.offerOnNewSheet,
         });
         await createAuditLog({
           sheetId: 0,
@@ -3680,6 +3683,7 @@ export const appRouter = router({
           aiPhones: input.aiPhones ?? [],
           mapVisibility: input.mapVisibility,
           forceShare: input.forceShare,
+          offerOnNewSheet: input.offerOnNewSheet,
         });
         await createAuditLog({
           sheetId: 0,

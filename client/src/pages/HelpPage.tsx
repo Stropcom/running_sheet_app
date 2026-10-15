@@ -186,10 +186,10 @@ const HELP_SECTIONS: HelpSection[] = [
       },
       {
         question:
-          "What are the team shortcuts (TEAM 1, TEAM 2, PTT…) when adding CINs?",
+          "What are the team shortcuts (TEAM 1, TEAM 2…) when adding CINs?",
         answer:
-          "When adding CINs, there is an **Add team** button for each of your Command's teams (for example **TEAM 1**, **TEAM 2**, **PTT**). Selecting one adds everyone currently in that team in one action. Individual CINs can still be added or removed after. An admin adds, renames or deletes teams from **User Management → Teams**.",
-        tags: ["TEAM 1", "TEAM 2", "PTT", "group", "CIN", "dropdown"],
+          "When adding CINs, there is an **Add team** button for each of your Command's teams (for example **TEAM 1** and **TEAM 2**). Selecting one adds everyone currently in that team in one action. Individual CINs can still be added or removed after. An admin adds, renames or deletes teams from **User Management → Teams**, and can untick **Offer on New Running Sheet** on a team to leave its button off the New Running Sheet window.",
+        tags: ["TEAM 1", "TEAM 2", "group", "CIN", "dropdown"],
       },
     ],
   },

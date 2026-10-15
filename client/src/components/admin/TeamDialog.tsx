@@ -66,6 +66,7 @@ export function TeamDialog({
     "always"
   );
   const [forceShare, setForceShare] = useState(false);
+  const [offerOnNewSheet, setOfferOnNewSheet] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Start from the team being edited (or a clean form) each time it opens.
@@ -76,6 +77,7 @@ export function TeamDialog({
     setPhones(team?.aiPhones.join("\n") ?? "");
     setMapVisibility(team?.mapVisibility ?? "always");
     setForceShare(team?.forceShare ?? false);
+    setOfferOnNewSheet(team?.offerOnNewSheet ?? true);
   }, [open, team]);
 
   const refresh = () => {
@@ -101,6 +103,7 @@ export function TeamDialog({
       aiPhones: phoneList,
       mapVisibility,
       forceShare,
+      offerOnNewSheet,
     };
     try {
       if (team) {
@@ -225,6 +228,27 @@ export function TeamDialog({
                 <span className="block text-xs text-muted-foreground">
                   Members' Show &amp; Share switches on when they log in and
                   can't be switched off.
+                </span>
+              </span>
+            </label>
+
+            <label
+              htmlFor="team-offer-new-sheet"
+              className="flex cursor-pointer items-start gap-3 rounded-md border border-border bg-background p-3"
+            >
+              <Checkbox
+                id="team-offer-new-sheet"
+                checked={offerOnNewSheet}
+                onCheckedChange={v => setOfferOnNewSheet(v === true)}
+                className="mt-0.5"
+              />
+              <span className="text-sm text-foreground">
+                <span className="font-semibold">
+                  Offer on New Running Sheet
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  Shows an "Add team" button for this team when a new running
+                  sheet is created.
                 </span>
               </span>
             </label>

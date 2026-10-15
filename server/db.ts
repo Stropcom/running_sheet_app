@@ -378,6 +378,8 @@ export interface TeamRow {
   mapVisibility: TeamMapVisibility;
   /** Members' location sharing is forced on at login and can't be turned off. */
   forceShare: boolean;
+  /** Offered as an "Add team" button on the New Running Sheet dialog. */
+  offerOnNewSheet: boolean;
 }
 
 function toTeamRow(t: typeof teams.$inferSelect): TeamRow {
@@ -398,6 +400,7 @@ function toTeamRow(t: typeof teams.$inferSelect): TeamRow {
     sortOrder: t.sortOrder,
     mapVisibility: t.mapVisibility,
     forceShare: t.forceShare,
+    offerOnNewSheet: t.offerOnNewSheet,
   };
 }
 
@@ -442,6 +445,7 @@ export async function createTeam(data: {
   aiPhones: string[];
   mapVisibility?: TeamMapVisibility;
   forceShare?: boolean;
+  offerOnNewSheet?: boolean;
 }): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -459,6 +463,7 @@ export async function createTeam(data: {
     sortOrder: (last?.sortOrder ?? 0) + 1,
     mapVisibility: data.mapVisibility ?? "always",
     forceShare: data.forceShare ?? false,
+    offerOnNewSheet: data.offerOnNewSheet ?? true,
     createdAt: Date.now(),
   });
   return result.insertId as number;
@@ -472,6 +477,7 @@ export async function updateTeam(
     aiPhones?: string[];
     mapVisibility?: TeamMapVisibility;
     forceShare?: boolean;
+    offerOnNewSheet?: boolean;
   }
 ) {
   const db = await getDb();
@@ -484,6 +490,8 @@ export async function updateTeam(
       data.aiPhones.length > 0 ? JSON.stringify(data.aiPhones) : null;
   if (data.mapVisibility !== undefined) set.mapVisibility = data.mapVisibility;
   if (data.forceShare !== undefined) set.forceShare = data.forceShare;
+  if (data.offerOnNewSheet !== undefined)
+    set.offerOnNewSheet = data.offerOnNewSheet;
   if (Object.keys(set).length === 0) return;
   await db.update(teams).set(set).where(eq(teams.id, id));
 }

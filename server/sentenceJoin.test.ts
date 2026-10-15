@@ -57,6 +57,66 @@ describe("full stop between two whole sentences", () => {
   });
 });
 
+describe('"and" after "entered <place>"', () => {
+  const SANTOS =
+    "SANTOS exited the vehicle and walked through the car park, entered";
+  it('adds "and" before lower-case "continued out of sight"', () => {
+    expect(
+      j(
+        `${SANTOS} Crooked Spire Coffee & Art House Midland continued out of sight.`
+      )
+    ).toBe(
+      `${SANTOS} Crooked Spire Coffee & Art House Midland and continued out of sight.`
+    );
+    expect(j("Entered 20 Balanus Way continued out of sight")).toBe(
+      "Entered 20 Balanus Way and continued out of sight"
+    );
+    expect(
+      j("entered 20 Balanus Way (20 Balanus Way) continued out of sight")
+    ).toBe(
+      "entered 20 Balanus Way (20 Balanus Way) and continued out of sight"
+    );
+    expect(j("entered the Bank of Perth continued out of sight")).toBe(
+      "entered the Bank of Perth and continued out of sight"
+    );
+  });
+  it('adds a full stop before a capitalised "Continued out of sight"', () => {
+    expect(j("entered 20 Balanus Way Continued out of sight")).toBe(
+      "entered 20 Balanus Way. Continued out of sight"
+    );
+  });
+  it("leaves it alone when it is already joined or is not plainly a place", () => {
+    for (const t of [
+      "entered 20 Balanus Way and continued out of sight",
+      "entered 20 Balanus Way, continued out of sight",
+      "entered 20 Balanus Way. Continued out of sight",
+      "entered 20 Balanus Way\ncontinued out of sight",
+      "SANTOS continued out of sight",
+      "Miguel Andres SANTOS (SANTOS) continued out of sight",
+      "entered the car park continued out of sight",
+      "entered the continued out of sight",
+      "walked to 20 Balanus Way continued out of sight",
+      "continued out of sight",
+      "(entered 20 Balanus Way continued out of sight)",
+    ])
+      expect(j(t)).toBe(t);
+  });
+  it('only looks back to the last "entered" in the same sentence', () => {
+    expect(j("entered 1 Smith Street. SANTOS continued out of sight")).toBe(
+      "entered 1 Smith Street. SANTOS continued out of sight"
+    );
+  });
+  it("runs as part of the tidy-up", () => {
+    expect(
+      tidyObservation(
+        "SANTOS entered Crooked Spire Coffee & Art House Midland continued out of sight"
+      )
+    ).toBe(
+      "SANTOS entered Crooked Spire Coffee & Art House Midland and continued out of sight"
+    );
+  });
+});
+
 describe("wholeSentenceChips", () => {
   it("keeps plain capitalised phrases and drops fragments, entities and blanks", () => {
     expect(

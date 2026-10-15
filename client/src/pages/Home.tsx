@@ -47,6 +47,22 @@ export default function Home() {
   const { isAuthenticated, user } = useAuth();
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
+  // Sort pills (same two as the Intelligence Folder): remembered per device.
+  const [sortOrder, setSortOrder] = useState<"recent" | "az">(() => {
+    try {
+      return localStorage.getItem("runlog_ops_sort") === "az" ? "az" : "recent";
+    } catch {
+      return "recent";
+    }
+  });
+  const chooseSort = (v: "recent" | "az") => {
+    setSortOrder(v);
+    try {
+      localStorage.setItem("runlog_ops_sort", v);
+    } catch {
+      /* storage unavailable — the choice just isn't remembered */
+    }
+  };
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const { data: deleteStats } = trpc.operation.deleteStats.useQuery(
@@ -137,7 +153,7 @@ export default function Home() {
     ) : null;
   };
 
-  const filtered =
+  const filteredBase =
     isSearching && isOnline
       ? (deepResults ?? []).map(r => ({
           id: r.operationId,
@@ -157,6 +173,18 @@ export default function Home() {
           matchContexts: [] as string[],
           operationStatus: "active" as const,
         }));
+
+  // Most recent = newest first (search results keep their match order, as
+  // they carry no real created date); A → Z = by name.
+  const filtered = [...filteredBase].sort((a, b) => {
+    if (sortOrder === "az")
+      return a.name.localeCompare(b.name, undefined, {
+        sensitivity: "base",
+        numeric: true,
+      });
+    if (isSearching && isOnline) return 0;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
 
   return (
     <DashboardLayout>
@@ -195,7 +223,7 @@ export default function Home() {
         </div>
 
         {/* Search */}
-        <div className="relative mb-5">
+        <div className="relative mb-3">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Search operations, sheets, targets, CINs, observations…"
@@ -208,6 +236,31 @@ export default function Home() {
               Searching…
             </span>
           )}
+        </div>
+
+        {/* Sort — the same two pills as the Intelligence Folder */}
+        <div className="flex flex-wrap items-center gap-2 mb-5">
+          <span className="text-xs text-muted-foreground mr-1">Sort:</span>
+          {(
+            [
+              { value: "recent", label: "Most recent" },
+              { value: "az", label: "A → Z" },
+            ] as const
+          ).map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => chooseSort(opt.value)}
+              aria-pressed={sortOrder === opt.value}
+              className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                sortOrder === opt.value
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-card text-foreground/80 border-input hover:bg-muted/70"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
 
         {/* Operations list */}

@@ -161,6 +161,7 @@ import {
 } from "@shared/addressFormat";
 import { compressAttachmentImage } from "@/lib/imageCompress";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import { robotoFontFaceCss, whenFontsReady } from "@/lib/exportFonts";
 import { setLastActiveContext } from "@/lib/lastActiveContext";
 import { useLocation, useParams, useSearch } from "wouter";
 import { toast } from "sonner";
@@ -630,7 +631,7 @@ function exportToPDF(
           attachmentImagesHtml(row.attachments) +
           OBS_TRAILING_SPACE;
         parts.push(`<tr style="background:${rowBg}">
-          <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
+          <td style="padding:6px 6px 8px;${bb};${cb};font-variant-numeric:tabular-nums;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
           <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
           <td style="padding:6px 6px 8px;${bb};font-size:11px"></td>
         </tr>${spacerRow}`);
@@ -654,7 +655,7 @@ function exportToPDF(
           attachmentImagesHtml(row.attachments) +
           OBS_TRAILING_SPACE;
         parts.push(`<tr style="background:${rowBg}">
-          <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
+          <td style="padding:6px 6px 8px;${bb};${cb};font-variant-numeric:tabular-nums;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
           <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
           <td style="padding:6px 6px 8px;${bb};font-size:11px"><span class="pill pill-certified">&#10003; TEAM</span></td>
         </tr>${spacerRow}`);
@@ -698,7 +699,7 @@ function exportToPDF(
         attachmentImagesHtml(row.attachments) +
         OBS_TRAILING_SPACE;
       parts.push(`<tr style="background:${rowBg}">
-        <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap;vertical-align:top">${row.time ?? ""}</td>
+        <td style="padding:6px 6px 8px;${bb};${cb};font-variant-numeric:tabular-nums;font-size:11px;white-space:nowrap;vertical-align:top">${row.time ?? ""}</td>
         <td style="padding:6px 6px 8px;${bb};${cb};vertical-align:top">${obsHtml}</td>
         <td style="padding:6px 6px 8px;${bb};font-size:11px;vertical-align:top"><div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px">${cinPillsHtml}</div></td>
       </tr>${spacerRow}`);
@@ -708,10 +709,9 @@ function exportToPDF(
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
   <title>${sheetTitle}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet"/>
   <style>
+    /* Roboto is served by RunLog itself (lib/exportFonts.ts) — no request to Google. */
+    ${robotoFontFaceCss()}
     @page{
       margin:20mm 15mm;
       @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
@@ -871,9 +871,10 @@ function exportToPDF(
   win.document.write(html);
   win.document.close();
   win.focus();
-  setTimeout(() => {
-    win.print();
-  }, 400);
+  // Print only once Roboto has loaded, so the PDF never gets a fallback font.
+  void whenFontsReady(win).then(() => {
+    setTimeout(() => win.print(), 150);
+  });
 }
 
 // ─── CIN item helpers ───────────────────────────────────────────────────────

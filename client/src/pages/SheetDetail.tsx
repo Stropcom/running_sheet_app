@@ -517,9 +517,10 @@ function exportToPDF(
   // With no target, Operation takes the whole first row; with no author CIN,
   // Date takes the whole second row.
   //
-  // Strategy: the on-screen preview shows the full banner (first-page-header)
-  // above the table; when printing, that is hidden and the compact version in
-  // the <thead> prints (and repeats) on every page — see the beforeprint JS.
+  // Strategy: the full banner (first-page-header) is page 1 — on screen and in
+  // print; the compact version lives in the <thead> and repeats at the top of
+  // pages 2+ (on page 1 it is covered by the full banner) — see the print
+  // strategy comment in the beforeprint script.
   const escHdr = (v: string) =>
     v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const detailCell = (label: string, value: string, full = false) =>
@@ -534,12 +535,10 @@ function exportToPDF(
       <div class="di"><span class="dl">Imagery taken</span> <b>${imageryRowHtml}</b></div>
     </div>`;
 
-  // Banner + details builder — `compact` is the repeating per-page thead
-  // version (one-line banner, smaller cells). The imagery row is in both:
-  // only the thead version actually prints (beforeprint hides
-  // first-page-header entirely and shows the print-only thead row on every
-  // page), so leaving it out of the compact variant would mean it never
-  // appeared on a printed/PDF page at all — only in the on-screen preview.
+  // Banner + details builder — `compact` is the repeating thead version for
+  // pages 2+ (one-line banner, smaller cells); the full one is page 1 and the
+  // on-screen preview. The imagery row is in both, so it is on every printed
+  // page.
   function coverHeaderHtml(compact: boolean): string {
     return `
       <div class="cover-header${compact ? " compact" : ""}">
@@ -752,6 +751,10 @@ function exportToPDF(
     .di{grid-column:1 / -1;padding:6px 10px;border-bottom:1px solid #c7d5ee;font-size:10.5px}
     .di b{color:#000;font-weight:700}
     .di .dl{margin-right:6px}
+    /* The cell is the only (so "last") cell in its row, which would give it the
+       no-wrap / 1% width rule meant for the certification column — undo that so the
+       compact header wraps like the full one. */
+    .log-table td.thead-meta-cell:last-child{white-space:normal;word-break:normal;width:auto;overflow:visible}
     .thead-meta-cell .details{border-left:none;border-right:none}
     .thead-meta-cell .cover-header.compact + .details .dc{padding:4px 10px}
     .thead-meta-cell .cover-header.compact + .details .dl{font-size:8px}
@@ -798,6 +801,12 @@ function exportToPDF(
       .log-table tbody tr{page-break-inside:avoid;break-inside:avoid}
       /* thead repeats on every page */
       thead{display:table-header-group}
+      /* Page 1 keeps the FULL header. The compact header in the thead also prints
+         on page 1 (a thead repeats on every page, first included), so the full
+         header is pulled down over it: --hc is the compact header's height,
+         measured in the beforeprint script below, and the full header paints on
+         top (opaque, higher z-index) so only the column headings show beneath it. */
+      .first-page-header{position:relative;z-index:5;background:#fff;margin-bottom:calc(-1 * var(--hc, 0px))}
     }
   </style>
   <script>
@@ -805,41 +814,37 @@ function exportToPDF(
       /*
        * PRINT STRATEGY (browser-compatible, no Prince XML):
        *
-       * Screen view:
-       *   - .first-page-header: visible (title + meta + imagery)
-       *   - .print-only elements: hidden
+       * Screen view: the full header (.first-page-header); print-only blocks hidden.
        *
-       * Print view (beforeprint):
-       *   - Hide .first-page-header
-       *   - Show .print-only elements:
-       *       #p1-header div (before the table): title + meta + IMAGERY row
-       *         → sits before the log table so it only appears on page 1
-       *       .thead-meta-row (inside <thead>): title + meta WITHOUT imagery
-       *         → repeats on every page via thead display:table-header-group
-       *
-       * Result:
-       *   Page 1: p1-header (title+meta+imagery) + thead(title+meta+colhdrs) + rows
-       *   Pages 2+: thead(title+meta+colhdrs) + rows
-       *
-       * The meta table appears twice on page 1 (once in p1-header, once in thead).
-       * To eliminate the duplicate: we DON'T show the thead-meta-row on page 1.
-       * Since CSS can't distinguish page 1 from page 2+, we use a different split:
-       *   - p1-header shows ONLY the imagery row (not the full meta)
-       *   - thead-meta-row shows the FULL meta (no imagery)
-       * Page 1: imagery-only div + thead(title+meta+colhdrs) + rows
-       * Pages 2+: thead(title+meta+colhdrs) + rows
-       * Imagery appears above the meta table on page 1 (slightly non-ideal visually
-       * but correct and avoids duplication).
+       * Print: a <thead> repeats on every page — page 1 included — so the compact
+       * header lives in the thead and prints at the top of every page. Page 1 is
+       * meant to show the FULL header instead, so .first-page-header stays visible
+       * and is pulled down over the compact one (see the @media print rule): its
+       * negative bottom margin is the compact header's height, measured here at the
+       * printed content width (A4 less 15mm margins = 180mm) with the same fonts.
+       * Result: page 1 = full header + column headings + rows; pages 2+ = compact
+       * header + column headings + rows.
        */
       window.addEventListener('beforeprint', function(){
-        document.getElementById('first-page-header').style.display = 'none';
+        var cell = document.querySelector('.thead-meta-cell');
+        if (cell) {
+          var probe = document.createElement('div');
+          probe.className = 'thead-meta-cell';
+          probe.style.cssText = 'position:absolute;left:-10000px;top:0;width:180mm;visibility:hidden';
+          probe.innerHTML = cell.innerHTML;
+          document.body.appendChild(probe);
+          var hc = probe.getBoundingClientRect().height;
+          document.body.removeChild(probe);
+          // 1px short so a measuring rounding error can never leave a sliver showing
+          document.documentElement.style.setProperty('--hc', Math.max(0, hc - 1) + 'px');
+        }
         document.querySelectorAll('.print-only').forEach(function(el){
           el.style.removeProperty('display');
           el.style.setProperty('display', el.dataset.pd || 'block', 'important');
         });
       });
       window.addEventListener('afterprint', function(){
-        document.getElementById('first-page-header').style.display = '';
+        document.documentElement.style.removeProperty('--hc');
         document.querySelectorAll('.print-only').forEach(function(el){
           el.style.setProperty('display', 'none', 'important');
         });

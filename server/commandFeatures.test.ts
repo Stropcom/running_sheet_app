@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   COMMAND_FEATURES_OWNER_CIN,
+  DEFAULT_OFF_FEATURES,
   FEATURE_KEYS,
   buildFeatureMatrix,
   featureForPath,
@@ -10,11 +11,21 @@ import {
 import { appRouter } from "./routers";
 
 describe("buildFeatureMatrix", () => {
-  it("starts with everything on for every Command", () => {
+  it("starts with everything on for every Command, except the default-off features", () => {
     const m = buildFeatureMatrix([]);
     for (const c of Object.keys(m))
       for (const f of FEATURE_KEYS)
-        expect(m[c as keyof typeof m][f]).toBe(true);
+        expect(m[c as keyof typeof m][f]).toBe(
+          !DEFAULT_OFF_FEATURES.includes(f)
+        );
+  });
+  it("keeps the integrations demo off until a Command is switched on", () => {
+    expect(buildFeatureMatrix([]).WESTERN.integrations).toBe(false);
+    const m = buildFeatureMatrix([
+      { command: "EASTERN", feature: "integrations", enabled: true },
+    ]);
+    expect(m.EASTERN.integrations).toBe(true);
+    expect(m.WESTERN.integrations).toBe(false);
   });
   it("applies only the saved switches", () => {
     const m = buildFeatureMatrix([
@@ -40,8 +51,23 @@ describe("featuresFor", () => {
       featuresFor({ command: "EASTERN", allRegions: true }, m).roster
     ).toBe(true);
   });
-  it("leaves everything on for an unknown Command", () => {
+  it("leaves everything on for an unknown Command, except the default-off features", () => {
     expect(featuresFor({ command: "NOWHERE" }, m).roster).toBe(true);
+    expect(featuresFor({ command: "NOWHERE" }, m).integrations).toBe(false);
+  });
+  it("does not hand the integrations demo to an all-region admin on its own", () => {
+    expect(
+      featuresFor({ command: "EASTERN", allRegions: true }, m).integrations
+    ).toBe(false);
+    const on = buildFeatureMatrix([
+      { command: "EASTERN", feature: "integrations", enabled: true },
+    ]);
+    expect(
+      featuresFor({ command: "EASTERN", allRegions: true }, on).integrations
+    ).toBe(true);
+    expect(
+      featuresFor({ command: "WESTERN", allRegions: true }, on).integrations
+    ).toBe(false);
   });
 });
 

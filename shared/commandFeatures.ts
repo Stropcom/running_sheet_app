@@ -13,8 +13,21 @@ import { COMMAND_CODES, type CommandCode } from "./commands";
 /** Only this person sees and changes the switches (server and screen). */
 export const COMMAND_FEATURES_OWNER_CIN = "459";
 
-export const FEATURE_KEYS = ["tasking", "roster", "import", "crash"] as const;
+export const FEATURE_KEYS = [
+  "tasking",
+  "roster",
+  "import",
+  "crash",
+  "integrations",
+] as const;
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
+
+/**
+ * Features that start OFF. Everything else starts on; these only appear once
+ * the owner switches them on for a Command — and an all-region admin does not
+ * get them automatically either (they follow the Command's own switch).
+ */
+export const DEFAULT_OFF_FEATURES: readonly FeatureKey[] = ["integrations"];
 
 export interface FeatureInfo {
   key: FeatureKey;
@@ -46,6 +59,12 @@ export const FEATURES: FeatureInfo[] = [
     name: "Vehicle Crash",
     note: "The Crash Helper.",
   },
+  {
+    key: "integrations",
+    name: "Integrations demo",
+    note: "Sample Milestone cameras, trackers and 4Sight pings on the Map page. Starts off.",
+    warn: "Made-up data is drawn against real operations and targets. Nothing is saved, and nothing reaches running sheets or Intelligence.",
+  },
 ];
 
 export function isFeatureKey(v: unknown): v is FeatureKey {
@@ -63,12 +82,14 @@ export interface FeatureSetting {
 
 export type FeatureMatrix = Record<CommandCode, Record<FeatureKey, boolean>>;
 
-/** Every Command × feature, on unless a saved setting says off. */
+/** Every Command × feature, on unless a saved setting says off (and off, for
+ * the default-off features, unless a saved setting says on). */
 export function buildFeatureMatrix(saved: FeatureSetting[]): FeatureMatrix {
   const matrix = {} as FeatureMatrix;
   for (const c of COMMAND_CODES) {
     matrix[c] = {} as Record<FeatureKey, boolean>;
-    for (const f of FEATURE_KEYS) matrix[c][f] = true;
+    for (const f of FEATURE_KEYS)
+      matrix[c][f] = !DEFAULT_OFF_FEATURES.includes(f);
   }
   for (const s of saved) {
     if (matrix[s.command] && isFeatureKey(s.feature))
@@ -83,12 +104,18 @@ export function featuresFor(
   user: { command?: string | null; allRegions?: boolean | null },
   matrix: FeatureMatrix
 ): Record<FeatureKey, boolean> {
-  const all = Object.fromEntries(FEATURE_KEYS.map(f => [f, true])) as Record<
-    FeatureKey,
-    boolean
-  >;
-  if (user.allRegions) return all;
+  const all = Object.fromEntries(
+    FEATURE_KEYS.map(f => [f, !DEFAULT_OFF_FEATURES.includes(f)])
+  ) as Record<FeatureKey, boolean>;
   const row = matrix[user.command as CommandCode];
+  if (user.allRegions) {
+    // Keeps every normal feature; a default-off one follows the Command's switch.
+    const own = { ...all };
+    for (const f of DEFAULT_OFF_FEATURES) own[f] = row ? row[f] : false;
+    for (const f of FEATURE_KEYS)
+      if (!DEFAULT_OFF_FEATURES.includes(f)) own[f] = true;
+    return own;
+  }
   return row ? { ...all, ...row } : all;
 }
 

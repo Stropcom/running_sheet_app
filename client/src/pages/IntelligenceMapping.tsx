@@ -157,6 +157,13 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { MapHeatOverlay } from "@/components/MapHeatOverlay";
+import { IntegrationsDemoOverlay } from "@/components/IntegrationsDemoOverlay";
+import { IntegrationsDemoPane } from "@/components/IntegrationsDemoPane";
+import { IntegrationsDemoScrubber } from "@/components/IntegrationsDemoScrubber";
+import { CameraPip } from "@/components/CameraPip";
+import { useIntegrationsDemo } from "@/lib/useIntegrationsDemo";
+import { useCommandFeature } from "@/lib/commandFeatures";
+import { DEMO_BOUNDS } from "@shared/integrationDemo";
 import { HEAT_RAMP } from "@/lib/heatMapSection";
 import {
   Popover,
@@ -3832,6 +3839,23 @@ export default function IntelligenceMapping() {
         t => t.id === heatDefaultTargetId
       )?.name
     : undefined;
+  // Integrations DEMO (Milestone cameras, trackers, 4Sight pings — made-up
+  // data, drawn against real operations and targets). Only when the owner has
+  // switched the "Integrations demo" feature on for this Command.
+  const integrationsFeature = useCommandFeature("integrations");
+  const integrationsOn = integrationsFeature && !isInvestigator;
+  const integrationsDemo = useIntegrationsDemo();
+  const goToDemoArea = () => {
+    const m = mapRef.current;
+    if (!m) return;
+    m.fitBounds(
+      new google.maps.LatLngBounds(
+        { lat: DEMO_BOUNDS.south, lng: DEMO_BOUNDS.west },
+        { lat: DEMO_BOUNDS.north, lng: DEMO_BOUNDS.east }
+      ),
+      40
+    );
+  };
   // RS Actions pane — create row mutation
   const rsAddMember = trpc.member.add.useMutation();
   const rsCreateRow = trpc.row.create.useMutation();
@@ -9290,6 +9314,23 @@ export default function IntelligenceMapping() {
             onClose={() => setStreetViewPip(null)}
           />
 
+          {/* Integrations demo: the demo clock, and a camera's live view as a
+              picture-in-picture like Street View and photos. */}
+          {integrationsOn && integrationsDemo.anyOn && (
+            <IntegrationsDemoScrubber demo={integrationsDemo} />
+          )}
+          {integrationsOn &&
+            integrationsDemo.pipOpen &&
+            integrationsDemo.pipCamera && (
+              <CameraPip
+                cameras={integrationsDemo.visibleCameras}
+                active={integrationsDemo.pipCamera}
+                onActive={integrationsDemo.setPipCamId}
+                time={integrationsDemo.time}
+                onClose={integrationsDemo.closePip}
+              />
+            )}
+
           {imagesPip && (
             <ImagesPip
               label={imagesPip.label}
@@ -10558,11 +10599,31 @@ export default function IntelligenceMapping() {
                 </div>
               )}
               {/* end Heat Map */}
+
+              {/* ── INTEGRATIONS (sample) — Milestone cameras, trackers and
+                4Sight pings, made-up data. Only when the owner has switched
+                the "Integrations demo" feature on for this Command. ── */}
+              {integrationsOn && (
+                <IntegrationsDemoPane
+                  demo={integrationsDemo}
+                  operations={
+                    (operations ?? []) as Array<{ id: number; name: string }>
+                  }
+                  defaultOpId={heatDefaultOpId}
+                  onGoToArea={goToDemoArea}
+                />
+              )}
             </div>
           )}
           {/* end Pane Body */}
         </div>
         {/* end RS Actions Right Pane */}
+
+        {/* Integrations demo — shapes and pins on the map (made-up data). */}
+        <IntegrationsDemoOverlay
+          map={mapReady && integrationsOn ? mapRef.current : null}
+          demo={integrationsDemo}
+        />
 
         {/* Heat Map overlay — draws nothing itself, it adds a layer to the map. */}
         <MapHeatOverlay

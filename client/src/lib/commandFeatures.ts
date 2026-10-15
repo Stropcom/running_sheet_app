@@ -2,12 +2,17 @@
 // shared/commandFeatures.ts). Arrives with auth.me; everything reads as on
 // until it has loaded, so nothing flickers away.
 import { useAuth } from "@/_core/hooks/useAuth";
-import { FEATURE_KEYS, type FeatureKey } from "@shared/commandFeatures";
+import {
+  DEFAULT_OFF_FEATURES,
+  FEATURE_KEYS,
+  type FeatureKey,
+} from "@shared/commandFeatures";
 
-const ALL_ON = Object.fromEntries(FEATURE_KEYS.map(k => [k, true])) as Record<
-  FeatureKey,
-  boolean
->;
+// Everything reads as on until auth.me has loaded — except the features that
+// start off, which stay hidden so they never flicker in.
+const ALL_ON = Object.fromEntries(
+  FEATURE_KEYS.map(k => [k, !DEFAULT_OFF_FEATURES.includes(k)])
+) as Record<FeatureKey, boolean>;
 
 export function useCommandFeatures(): Record<FeatureKey, boolean> {
   const { user } = useAuth();

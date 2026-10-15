@@ -1259,7 +1259,8 @@ function OperationsTab({
             </p>
             <div className="mt-auto flex flex-wrap items-center gap-2">
               {/* The entity count is the button that opens the entity list
-                  (the tile itself opens the operation profile). */}
+                  (the tile itself opens the operation profile). Hidden on
+                  phones — the list and its panel are tablet/laptop only. */}
               <button
                 type="button"
                 onClick={e => {
@@ -1270,7 +1271,7 @@ function OperationsTab({
                 }}
                 aria-expanded={expandedOpId === op.operationId}
                 title="Show the entity list"
-                className={entityPillClass(expandedOpId === op.operationId)}
+                className={`${entityPillClass(expandedOpId === op.operationId)} max-sm:hidden`}
               >
                 <span className="font-bold">{op.entityCount}</span>
                 {op.entityCount === 1 ? "entity" : "entities"}
@@ -1287,7 +1288,7 @@ function OperationsTab({
             </div>
             {expandedOpId === op.operationId && (
               <div
-                className="-mx-5 -mb-5 cursor-default border-t border-border"
+                className="-mx-5 -mb-5 cursor-default border-t border-border max-sm:hidden"
                 onClick={e => e.stopPropagation()}
               >
                 {entityPanel(op)}
@@ -1330,7 +1331,8 @@ function OperationsTab({
                 </div>
               </button>
               {/* The entity count is the button that opens the entity list;
-                  the row beside it opens the operation profile. */}
+                  the row beside it opens the operation profile. Hidden on
+                  phones, along with the panel it opens. */}
               <button
                 type="button"
                 onClick={() =>
@@ -1338,7 +1340,7 @@ function OperationsTab({
                 }
                 aria-expanded={isExpanded}
                 title="Show the entity list"
-                className={`${entityPillClass(isExpanded)} justify-center sm:min-w-[8.5rem]`}
+                className={`${entityPillClass(isExpanded)} justify-center max-sm:hidden sm:min-w-[8.5rem]`}
               >
                 <span className="font-bold">{op.entityCount}</span>
                 {op.entityCount === 1 ? "entity" : "entities"}
@@ -1359,7 +1361,9 @@ function OperationsTab({
             </div>
 
             {isExpanded && (
-              <div className="border-t border-border">{entityPanel(op)}</div>
+              <div className="border-t border-border max-sm:hidden">
+                {entityPanel(op)}
+              </div>
             )}
           </div>
         );

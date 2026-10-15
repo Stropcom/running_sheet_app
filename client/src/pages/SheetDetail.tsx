@@ -508,40 +508,44 @@ function exportToPDF(
   }
 
   // ── Page headers ────────────────────────────────────────────────────────────
-  // Styled to match the Intelligence Profile / CTO Weekly Tasking exports:
-  // a full-bleed dark-blue cover-header banner with the meta info (Operation/
-  // Target/Date/Prepared By) as rounded pills, instead of the old bordered
-  // label/value table.
+  // Same look as the Supervisor Summary / Weekly Tasking exports (a centred
+  // dark-blue banner: brand dot, "RunLog", title) with the details in labelled
+  // cells in two equal columns, drawn like the log table beneath it:
+  //   Operation | Target
+  //   Date      | Prepared by
+  //   Imagery taken (full width)
+  // With no target, Operation takes the whole first row; with no author CIN,
+  // Date takes the whole second row.
   //
-  // Strategy: use <thead> to repeat a compact version of the banner on every
-  // page. Page 1: show first-page-header (full banner + imagery) above the
-  // table. The <thead> banner row is hidden on page 1 via beforeprint JS.
-  // Pages 2+: <thead> shows (compact banner + column headers) via
-  // display:table-header-group.
-  //
-  // beforeprint: hides first-page-header, removes 'hide-on-print' from thead meta rows.
-  // afterprint:  restores first-page-header, re-adds 'hide-on-print' to thead meta rows.
+  // Strategy: the on-screen preview shows the full banner (first-page-header)
+  // above the table; when printing, that is hidden and the compact version in
+  // the <thead> prints (and repeats) on every page — see the beforeprint JS.
+  const escHdr = (v: string) =>
+    v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const detailCell = (label: string, value: string, full = false) =>
+    `<div class="dc${full ? " dc-full" : ""}"><div class="dl">${label}</div><div class="dv">${escHdr(value)}</div></div>`;
+  const hasTarget = !!targetFullName;
+  const detailsHtml = `
+    <div class="details">
+      ${detailCell("Operation", operationName, !hasTarget)}
+      ${hasTarget ? detailCell("Target", targetFullName ?? "") : ""}
+      ${detailCell("Date", dateStr, !authorCin)}
+      ${authorCin ? detailCell("Prepared by", authorCin) : ""}
+      <div class="di"><span class="dl">Imagery taken</span> <b>${imageryRowHtml}</b></div>
+    </div>`;
 
-  const metaPillsHtml = `
-    <span class="meta-pill">Operation <strong>${operationName}</strong></span>
-    ${targetFullName ? `<span class="meta-pill">Target <strong>${targetFullName}</strong></span>` : ""}
-    <span class="meta-pill">Date <strong>${dateStr}</strong></span>
-    ${authorCin ? `<span class="meta-pill">Prepared by <strong>${authorCin}</strong></span>` : ""}`;
-
-  // Cover-header banner builder — `compact` is used for the repeating
-  // per-page thead version (smaller title). The imagery line is included in
-  // both: only the thead version actually prints (beforeprint hides
+  // Banner + details builder — `compact` is the repeating per-page thead
+  // version (one-line banner, smaller cells). The imagery row is in both:
+  // only the thead version actually prints (beforeprint hides
   // first-page-header entirely and shows the print-only thead row on every
-  // page), so leaving it out of the compact variant meant it never appeared
-  // on a printed/PDF page at all — only in the on-screen preview.
+  // page), so leaving it out of the compact variant would mean it never
+  // appeared on a printed/PDF page at all — only in the on-screen preview.
   function coverHeaderHtml(compact: boolean): string {
     return `
-      <div class="cover-header">
-        <div class="brand-label">RunLog &middot; Surveillance Running Sheet</div>
-        <div class="rs-title${compact ? " rs-title-sm" : ""}">WC SURVEILLANCE RUNNING SHEET</div>
-        <div class="meta-pills">${metaPillsHtml}</div>
-        <div class="imagery-line">Imagery taken: <strong>${imageryRowHtml}</strong></div>
-      </div>`;
+      <div class="cover-header${compact ? " compact" : ""}">
+        <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog</span></div>
+        <div class="rs-title">WC SURVEILLANCE RUNNING SHEET</div>
+      </div>${detailsHtml}`;
   }
 
   // ── Running sheet table ──────────────────────────────────────────────────────
@@ -726,15 +730,34 @@ function exportToPDF(
        No border-radius, deliberately — sits flush above the log table so the
        two read as one continuous document block, and a single rectangle
        renders reliably across page breaks with no edge cases. */
-    .cover-header{background:#1e3a8a;color:#fff;padding:16px 20px 14px}
-    .brand-label{font-size:9px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#93c5fd;margin-bottom:8px}
-    .rs-title{font-size:18px;font-weight:700;letter-spacing:0.03em}
-    .rs-title-sm{font-size:13px}
-    .meta-pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-    .meta-pill{display:inline-flex;align-items:center;gap:4px;padding:4px 11px;border-radius:9999px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.28);font-size:9px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:rgba(255,255,255,0.72)}
-    .meta-pill strong{color:#fff;font-weight:700;text-transform:none;letter-spacing:0;margin-left:2px}
-    .imagery-line{font-size:10px;margin-top:10px;color:rgba(255,255,255,0.78)}
-    .imagery-line strong{color:#fff;font-weight:700}
+    .cover-header{background:#1e3a8a;color:#fff;padding:18px 28px 14px;text-align:center}
+    .brand-row{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px;opacity:0.9}
+    .brand-dot{width:10px;height:10px;border-radius:50%;background:#93c5fd;flex:none}
+    .brand-label{font-size:10px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#93c5fd}
+    .rs-title{font-size:22px;font-weight:800;letter-spacing:0.04em;line-height:1.2;text-transform:uppercase}
+    /* Compact version (repeats at the top of every printed page): one-line banner */
+    .cover-header.compact{padding:8px 28px;display:flex;justify-content:center;align-items:center;gap:14px}
+    .cover-header.compact .brand-row{margin:0}
+    .cover-header.compact .rs-title{font-size:13px;font-weight:800}
+    /* Details — two equal columns of labelled cells, drawn like the log table below.
+       On screen the block sits above the table, so it carries the table's blue side
+       borders; inside the printed thead the table's own border already runs down both
+       sides, so they are dropped there (no doubled line). */
+    .details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));background:#f1f6ff;border:1.5px solid #1e3a8a;border-top:none;border-bottom:none}
+    .dc{padding:7px 10px;border-right:1px solid #c7d5ee;border-bottom:1px solid #c7d5ee;min-width:0}
+    .dc:nth-child(even){border-right:none}
+    .dc-full{grid-column:1 / -1;border-right:none}
+    .dl{font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;font-weight:600}
+    .dv{font-size:12px;font-weight:700;color:#000;line-height:1.3;overflow-wrap:anywhere}
+    .di{grid-column:1 / -1;padding:6px 10px;border-bottom:1px solid #c7d5ee;font-size:10.5px}
+    .di b{color:#000;font-weight:700}
+    .di .dl{margin-right:6px}
+    .thead-meta-cell .details{border-left:none;border-right:none}
+    .thead-meta-cell .cover-header.compact + .details .dc{padding:4px 10px}
+    .thead-meta-cell .cover-header.compact + .details .dl{font-size:8px}
+    .thead-meta-cell .cover-header.compact + .details .dv{font-size:10.5px}
+    .thead-meta-cell .cover-header.compact + .details .di{padding:3px 10px;font-size:9.5px}
+    .thead-meta-cell .cover-header.compact + .details .di .dl{font-size:8px}
     /* Log table — the outer border is a single declaration on the <table> element itself
        (border-collapse:collapse), not assembled from separate per-cell rules. That's what
        guarantees it always renders as one continuous, unbroken, uniform-width rectangle

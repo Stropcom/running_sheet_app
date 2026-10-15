@@ -511,11 +511,11 @@ function exportToPDF(
   // Same look as the Supervisor Summary / Weekly Tasking exports (a centred
   // dark-blue banner: brand dot, "RunLog", title) with the details in labelled
   // cells in two equal columns, drawn like the log table beneath it:
-  //   Operation | Target
-  //   Date      | Prepared by
+  //   Operation | Date
+  //   Target    | Prepared by
   //   Imagery taken (full width)
-  // With no target, Operation takes the whole first row; with no author CIN,
-  // Date takes the whole second row.
+  // With no target, Prepared by takes the whole second row; with no author
+  // CIN, Target takes it.
   //
   // Strategy: the full banner (first-page-header) is page 1 — on screen and in
   // print; the compact version lives in the <thead> and repeats at the top of
@@ -528,10 +528,10 @@ function exportToPDF(
   const hasTarget = !!targetFullName;
   const detailsHtml = `
     <div class="details">
-      ${detailCell("Operation", operationName, !hasTarget)}
-      ${hasTarget ? detailCell("Target", targetFullName ?? "") : ""}
-      ${detailCell("Date", dateStr, !authorCin)}
-      ${authorCin ? detailCell("Prepared by", authorCin) : ""}
+      ${detailCell("Operation", operationName)}
+      ${detailCell("Date", dateStr)}
+      ${hasTarget ? detailCell("Target", targetFullName ?? "", !authorCin) : ""}
+      ${authorCin ? detailCell("Prepared by", authorCin, !hasTarget) : ""}
       <div class="di"><span class="dl">Imagery taken</span> <b>${imageryRowHtml}</b></div>
     </div>`;
 

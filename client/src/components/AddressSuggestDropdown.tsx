@@ -15,13 +15,13 @@ import { MapPin, Globe, WifiOff } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { loadGoogleMaps } from "@/lib/googleMaps";
 import { buildPoiAddress, convertGoogleAddresses } from "@/lib/addressFormat";
+import { addressBiasCentre, watchDevicePosition } from "@/lib/devicePosition";
+import { BIAS_RADIUS_M } from "@shared/addressBias";
 import {
   buildSheetAddressText,
   parseKnownAddress,
   type KnownAddressParts,
 } from "@shared/knownAddress";
-
-const PERTH_FALLBACK = { lat: -31.9505, lng: 115.8605 };
 
 export type AddressSuggestItem =
   | {
@@ -107,7 +107,6 @@ export function useAddressSuggestions(
   const tokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(
     null
   );
-  const gpsRef = useRef<{ lat: number; lng: number } | null>(null);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
@@ -121,20 +120,12 @@ export function useAddressSuggestions(
     };
   }, []);
 
-  // Prime the map loader and a GPS fix once, so the first Google lookup is
-  // already biased to where the officer is standing.
+  // Prime the map loader and keep following the device, so every Google
+  // lookup leans towards where the officer is *now*. A poor fix (a laptop on
+  // an internet-address guess or a VPN) is ignored — see shared/addressBias.ts.
   useEffect(() => {
     loadGoogleMaps().catch(() => {});
-    navigator.geolocation?.getCurrentPosition(
-      pos => {
-        gpsRef.current = {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        };
-      },
-      () => {},
-      { timeout: 5000, maximumAge: 60000 }
-    );
+    return watchDevicePosition();
   }, []);
 
   useEffect(() => {
@@ -168,8 +159,8 @@ export function useAddressSuggestions(
           ...(mode === "address" ? { types: ["address"] } : {}),
           sessionToken: tokenRef.current,
           locationBias: new google.maps.Circle({
-            center: gpsRef.current ?? PERTH_FALLBACK,
-            radius: 50000,
+            center: addressBiasCentre(),
+            radius: BIAS_RADIUS_M,
           }),
         },
         (predictions, status) => {

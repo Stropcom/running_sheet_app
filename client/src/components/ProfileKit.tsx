@@ -489,16 +489,23 @@ export async function fetchFirstPhotoUrl(
  * Layout for every profile PDF export, appended after each export's own CSS:
  * the section bands run the full width of the page, the same as the header
  * banner above them (the content area has no side padding; what sits under a
- * band is inset 10px to line up with the band's own text), and a section is
- * kept on one page where it fits — it moves to the next page whole rather
- * than splitting. A section taller than a page still has to split. A section
- * is any block whose first child is a ".section-title".
+ * band is inset 10px to line up with the band's text).
+ *
+ * Page breaks: only a section that is always short (one holding a
+ * ".detail-grid" or ".ops-list" — Registered Details, Status, Operations) is
+ * kept whole, moving to the next page rather than splitting. Anything that can
+ * be long (Background, associations, sheets, photoboards, imported documents)
+ * is allowed to run across pages — keeping one whole would push it to a fresh
+ * page and leave a big blank gap, or a blank first page when it is taller than
+ * the space left. What never splits is a single row or tile inside them, and a
+ * title or label is never left alone at the bottom of a page.
  */
 export const PDF_SECTION_LAYOUT_CSS =
   ".content { padding:20px 0; } " +
-  "div:has(> .section-title) { break-inside:avoid; page-break-inside:avoid; } " +
+  "div:has(> .section-title):has(> .detail-grid), div:has(> .section-title):has(> .ops-list) { break-inside:avoid; page-break-inside:avoid; } " +
   "div:has(> .section-title) > :not(.section-title) { margin-left:10px; margin-right:10px; } " +
-  ".section-title { break-after:avoid; page-break-after:avoid; }";
+  ".section-title, .sub-title, .pb-label { break-after:avoid; page-break-after:avoid; } " +
+  ".sheet-item, .pr, .pb-tile, div[style*='flex-direction:column;gap:2px'] > div { break-inside:avoid; page-break-inside:avoid; }";
 
 /**
  * A thin border drawn around the printable area of every page of a profile

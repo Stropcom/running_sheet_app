@@ -634,8 +634,8 @@ function exportToPDF(
           attachmentImagesHtml(row.attachments) +
           OBS_TRAILING_SPACE;
         parts.push(`<tr style="background:${rowBg}">
-          <td style="padding:6px 6px 8px;${bb};${cb};font-variant-numeric:tabular-nums;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
-          <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
+          <td style="padding:6px 6px 8px;${bb};${cb};font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">${row.time ?? ""}</td>
+          <td style="padding:6px 6px 8px;${bb};${cb};font-size:12px">${obsHtml}</td>
           <td style="padding:6px 6px 8px;${bb};font-size:11px"></td>
         </tr>${spacerRow}`);
         continue;
@@ -658,8 +658,8 @@ function exportToPDF(
           attachmentImagesHtml(row.attachments) +
           OBS_TRAILING_SPACE;
         parts.push(`<tr style="background:${rowBg}">
-          <td style="padding:6px 6px 8px;${bb};${cb};font-variant-numeric:tabular-nums;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
-          <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
+          <td style="padding:6px 6px 8px;${bb};${cb};font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">${row.time ?? ""}</td>
+          <td style="padding:6px 6px 8px;${bb};${cb};font-size:12px">${obsHtml}</td>
           <td style="padding:6px 6px 8px;${bb};font-size:11px"><span class="pill pill-certified">&#10003; TEAM</span></td>
         </tr>${spacerRow}`);
         continue;
@@ -702,8 +702,8 @@ function exportToPDF(
         attachmentImagesHtml(row.attachments) +
         OBS_TRAILING_SPACE;
       parts.push(`<tr style="background:${rowBg}">
-        <td style="padding:6px 6px 8px;${bb};${cb};font-variant-numeric:tabular-nums;font-size:11px;white-space:nowrap;vertical-align:top">${row.time ?? ""}</td>
-        <td style="padding:6px 6px 8px;${bb};${cb};vertical-align:top">${obsHtml}</td>
+        <td style="padding:6px 6px 8px;${bb};${cb};font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap;vertical-align:top">${row.time ?? ""}</td>
+        <td style="padding:6px 6px 8px;${bb};${cb};vertical-align:top;font-size:12px">${obsHtml}</td>
         <td style="padding:6px 6px 8px;${bb};font-size:11px;vertical-align:top"><div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px">${cinPillsHtml}</div></td>
       </tr>${spacerRow}`);
     }

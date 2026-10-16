@@ -67,6 +67,7 @@ import {
   type PhotoboardRow,
   type SheetLink,
   PDF_SECTION_LAYOUT_CSS,
+  pdfPageFrameCss,
 } from "@/components/ProfileKit";
 
 type ProfilePhoto = RowAttachmentLike & { id: number; url: string };
@@ -242,6 +243,7 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .footer { margin-top:32px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
 @media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .stats-row { background:${BLUE_LIGHT} !important; } .section-title { background:${BLUE_LIGHT} !important; } .op-badge { background:${BLUE_LIGHT} !important; } }
 ${PDF_SECTION_LAYOUT_CSS}
+${pdfPageFrameCss(BLUE_DARK)}
 </style></head><body>
 <div class="cover-header">
   <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog Intelligence Profile</span></div>

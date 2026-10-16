@@ -1,3 +1,4 @@
+import { PDF_SECTION_LAYOUT_CSS } from "@/components/ProfileKit";
 import {
   sharedLinkChipText,
   sharedLinkSentence,
@@ -158,6 +159,7 @@ function buildAssociateProfileHtml(
 .sub-title { font-size:9px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:#64748b; margin-bottom:6px; border-bottom:1px solid ${GREY_BORDER}; padding-bottom:4px; }
 .footer { margin-top:32px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
 @media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .stats-row { background:${BLUE_LIGHT} !important; } .section-title { background:${BLUE_LIGHT} !important; } }
+${PDF_SECTION_LAYOUT_CSS}
 </style></head><body>
 <div class="cover-header">
   <div class="brand-label">RunLog Intelligence Profile — Associate</div>

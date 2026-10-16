@@ -301,7 +301,7 @@ function attachmentImagesHtml(
             : "&nbsp;") +
           `</div>`;
         return (
-          `<div style="width:33%;max-width:160px;display:flex;flex-direction:column;align-items:stretch">` +
+          `<div style="width:66%;max-width:320px;display:flex;flex-direction:column;align-items:stretch;break-inside:avoid;page-break-inside:avoid">` +
           `<img src="${a.url}" style="display:block;box-sizing:border-box;width:100%;border:1px solid #ccc;border-radius:4px 4px 0 0" />` +
           stripHtml +
           `</div>`

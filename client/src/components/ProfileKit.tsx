@@ -485,6 +485,21 @@ export async function fetchFirstPhotoUrl(
   }
 }
 
+/**
+ * Layout for every profile PDF export, appended after each export's own CSS:
+ * the section bands run the full width of the page, the same as the header
+ * banner above them (the content area has no side padding; what sits under a
+ * band is inset 10px to line up with the band's own text), and a section is
+ * kept on one page where it fits — it moves to the next page whole rather
+ * than splitting. A section taller than a page still has to split. A section
+ * is any block whose first child is a ".section-title".
+ */
+export const PDF_SECTION_LAYOUT_CSS =
+  ".content { padding:20px 0; } " +
+  "div:has(> .section-title) { break-inside:avoid; page-break-inside:avoid; } " +
+  "div:has(> .section-title) > :not(.section-title) { margin-left:10px; margin-right:10px; } " +
+  ".section-title { break-after:avoid; page-break-after:avoid; }";
+
 /** Styles for pdfPersonRowHtml. */
 export const PDF_PERSON_ROW_CSS =
   ".pr { display:flex; gap:10px; align-items:center; border:1px solid #e2e8f0; border-radius:6px; padding:6px 8px; margin-bottom:6px; break-inside:avoid; } .pr .pp { width:44px; height:56px; border-radius:4px; overflow:hidden; border:2px solid #cbd5e1; background:#f1f5f9; flex-shrink:0; } .pr.target .pp { border-color:#e11d48; } .pr.resident .pp { border-color:#0284c7; } .pr .pp img { width:100%; height:100%; object-fit:cover; object-position:top; display:block; } .pr .pn { flex:1; font-size:11px; font-weight:700; } .pr .pn small { display:block; font-size:9px; font-weight:400; color:#64748b; } .pr .pt { font-size:9px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; border:1px solid #cbd5e1; border-radius:4px; padding:1px 6px; } .pr.target .pt { border-color:#e11d48; background:#ffe4ea !important; color:#9f1239; } .pr.resident .pt { border-color:#0284c7; background:#e0f2fe !important; color:#075985; }";

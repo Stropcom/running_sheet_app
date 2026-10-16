@@ -64,6 +64,7 @@ import {
   splitPersonName,
   surnameOnly,
   type PhotoboardRow,
+  PDF_SECTION_LAYOUT_CSS,
 } from "@/components/ProfileKit";
 import { registryPersonAddresses } from "@/lib/profileSection";
 
@@ -189,6 +190,7 @@ function buildOperationProfileHtml(
 .pb-name { padding:3px 4px 5px; text-align:center; font-size:9px; line-height:1.25; } .pb-name b { display:block; font-size:10px; }
 .footer { margin-top:32px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
 @media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:${BLUE_DARK} !important; } .stats-row { background:${BLUE_LIGHT} !important; } .section-title { background:${BLUE_LIGHT} !important; } }
+${PDF_SECTION_LAYOUT_CSS}
 </style></head><body>
 <div class="cover-header">
   <div class="brand-label">RunLog Intelligence Profile — Operation</div>

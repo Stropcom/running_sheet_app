@@ -28,10 +28,10 @@ export const FIELD_LABEL =
 export const FIELD_VALUE = "text-sm text-foreground";
 
 /** Photos on a profile (Photos card, a target's photos on an Operation
- * profile): every tile the same medium size — 15rem (240px) square from a
+ * profile): every tile the same size — 11.25rem (180px) square from a
  * tablet up, two equal columns on a phone — however many photos there are.
  * The Photoboard (people portraits) is separate and unchanged. */
 export const PROFILE_PHOTO_GRID =
-  "grid grid-cols-2 gap-3 sm:justify-start sm:[grid-template-columns:repeat(auto-fill,15rem)]";
+  "grid grid-cols-2 gap-3 sm:justify-start sm:[grid-template-columns:repeat(auto-fill,11.25rem)]";
 export const PROFILE_PHOTO_TILE =
   "group relative overflow-hidden rounded-lg border border-border bg-muted/20";

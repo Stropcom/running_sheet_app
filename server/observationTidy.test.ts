@@ -25,14 +25,15 @@ describe("tidyObservation — capitals", () => {
     expect(t("She left.\nhe followed.")).toBe("She left.\nHe followed.");
   });
 
-  it("leaves a sentence that opens with a colour alone (colours stay lower case)", () => {
+  it("a sentence that opens with a colour is not capitalised — a full vehicle gets 'A' instead, colours stay lower case", () => {
     expect(
       t(
         "white Lexus NX350h, bearing WA registration 1TDM414 (Vehicle 1TDM414) parked up"
       )
     ).toBe(
-      "white Lexus NX350h, bearing WA registration 1TDM414 (Vehicle 1TDM414) parked up."
+      "A white Lexus NX350h, bearing WA registration 1TDM414 (Vehicle 1TDM414) parked up."
     );
+    expect(t("white ute was seen")).toBe("white ute was seen.");
   });
 
   it("leaves a rego, a number or a word with a capital inside alone", () => {

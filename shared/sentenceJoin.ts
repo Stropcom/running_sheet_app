@@ -1,7 +1,7 @@
 /**
  * Joining words and punctuation between pieces of an observation an officer
  * has just typed — the small "function words" that hold a sentence together.
- * Four rules, each only ever filling a GAP between two pieces of text; none
+ * Five rules, each only ever filling a GAP between two pieces of text; none
  * rewrites, removes or re-cases a word that is already there:
  *
  *  1. Full stop between two whole sentences. When a whole-sentence phrase
@@ -19,6 +19,12 @@
  *     straight after the place someone entered gets "and" (lower case) or a
  *     full stop (capitalised): "entered Crooked Spire Coffee & Art House
  *     Midland continued out of sight" → "… Midland and continued out of sight".
+ *  5. "A" / "An" before a full vehicle at the start of a sentence. A single
+ *     vehicle described as colour, make, "…, bearing WA registration X
+ *     (Vehicle X)" that opens its sentence gets its article: "white Lexus
+ *     NX350h station sedan, bearing WA registration 1TDM414 (Vehicle
+ *     1TDM414), …" → "A white Lexus …". (Vehicles written in a list already
+ *     get theirs from shared/vehicleList.ts.)
  *
  * Like the rest of the tidy-up (shared/observationTidy.ts) it is only run on
  * text an officer typed — never on a row a chip or the Target Logger made —
@@ -26,7 +32,13 @@
  * Pure and deterministic: no AI, same input → same output.
  */
 import { FULL_STREET_TYPES } from "./streetTypes";
-import type { VehicleEdit } from "./vehicleList";
+import {
+  articleEdit,
+  bracketsOf,
+  findVehicleChains,
+  firstDescriptionStart,
+  type VehicleEdit,
+} from "./vehicleList";
 
 /** The whole-sentence phrases the standard chips insert. */
 export const BUILTIN_SENTENCE_CHIPS: readonly string[] = [
@@ -295,6 +307,23 @@ function enteredPlaceEdits(text: string): VehicleEdit[] {
   return edits;
 }
 
+// ─── 5. "A" / "An" before a full vehicle that opens a sentence ─────────────
+
+function vehicleArticleEdits(text: string): VehicleEdit[] {
+  const inList = new Set<number>();
+  for (const chain of findVehicleChains(text))
+    for (const b of chain.brackets) inList.add(b.start);
+  const edits: VehicleEdit[] = [];
+  for (const b of bracketsOf(text)) {
+    if (inList.has(b.start)) continue; // the list rule writes these
+    const first = firstDescriptionStart(text, b.start);
+    if (!first || !first.sentenceStart || first.hasArticle) continue;
+    const e = articleEdit(text, first.start, b.start, b.rego, true);
+    if (e) edits.push(e);
+  }
+  return edits;
+}
+
 /** Every joining edit for `text`, in order and not overlapping. */
 export function sentenceJoinEdits(
   text: string,
@@ -307,6 +336,7 @@ export function sentenceJoinEdits(
     ...atAddressEdits(text),
     ...personListEdits(text),
     ...enteredPlaceEdits(text),
+    ...vehicleArticleEdits(text),
   ]
     .sort((a, b) => a.start - b.start)
     .filter(

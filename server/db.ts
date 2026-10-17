@@ -2471,19 +2471,42 @@ export async function getAttachmentsForEntity(params: {
   const entityKey = params.entityLabel
     ? normalizeEntityLabel(params.entityLabel)
     : null;
+  // A Target and an Associate that are the same person (the "Identical
+  // profile" link) share their photos: whichever record a photo was linked to,
+  // both show it. See identityLinkedCounterparts.
+  const other =
+    params.category === "target" || params.category === "associate"
+      ? await identityLinkedCounterparts(db, params.category, {
+          targetId: params.targetId,
+          entityKey,
+        })
+      : { targetIds: [], associateKeys: [] };
+  const own =
+    params.category === "target"
+      ? eq(attachmentEntityLinks.targetId, params.targetId ?? -1)
+      : eq(attachmentEntityLinks.entityKey, entityKey ?? "");
   const links = await db
     .select()
     .from(attachmentEntityLinks)
     .where(
-      and(
-        eq(attachmentEntityLinks.category, params.category),
-        params.category === "target"
-          ? eq(attachmentEntityLinks.targetId, params.targetId ?? -1)
-          : eq(attachmentEntityLinks.entityKey, entityKey ?? "")
+      or(
+        and(eq(attachmentEntityLinks.category, params.category), own),
+        other.targetIds.length > 0
+          ? and(
+              eq(attachmentEntityLinks.category, "target"),
+              inArray(attachmentEntityLinks.targetId, other.targetIds)
+            )
+          : undefined,
+        other.associateKeys.length > 0
+          ? and(
+              eq(attachmentEntityLinks.category, "associate"),
+              inArray(attachmentEntityLinks.entityKey, other.associateKeys)
+            )
+          : undefined
       )
     );
   if (links.length === 0) return [];
-  const attachmentIds = links.map(l => l.attachmentId);
+  const attachmentIds = Array.from(new Set(links.map(l => l.attachmentId)));
   const rows = await db
     .select({
       id: rowAttachments.id,
@@ -2511,9 +2534,53 @@ export async function getAttachmentsForEntity(params: {
     .orderBy(desc(rowAttachments.createdAt));
   const withCins = await attachRowMemberCins(db, rows);
   return withCins.map(r => {
-    const link = links.find(l => l.attachmentId === r.id)!;
+    // Prefer the link on the record being asked about, else the other half's.
+    const mine = links.filter(l => l.attachmentId === r.id);
+    const link = mine.find(l => l.category === params.category) ?? mine[0];
     return { ...r, linkId: link.id, fromRegistry: link.fromRegistry };
   });
+}
+
+/**
+ * The other half of a Person Identity Link. A registry Associate that has been
+ * made a Target (or the reverse) is one real person kept as two records
+ * (`targets.linkedAssociateId` / `associates.linkedTargetId`), and the app
+ * combines what it knows across both — but photos are linked to ONE record
+ * (a target by id, an associate by label), so a photo uploaded to the
+ * associate never reached the target's profile. This returns the other half's
+ * photo keys: for a target, the linked associate's label key; for an
+ * associate (by label key), the target ids it is linked to. Only linked
+ * records are ever returned, so an unrelated person with the same name is
+ * never mixed in.
+ */
+async function identityLinkedCounterparts(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  category: "target" | "associate",
+  ref: { targetId?: number; entityKey: string | null }
+): Promise<{ targetIds: number[]; associateKeys: string[] }> {
+  if (category === "target") {
+    if (ref.targetId == null) return { targetIds: [], associateKeys: [] };
+    const rows = await db
+      .select({ name: associates.name })
+      .from(targets)
+      .innerJoin(associates, eq(targets.linkedAssociateId, associates.id))
+      .where(eq(targets.id, ref.targetId));
+    return {
+      targetIds: [],
+      associateKeys: rows.map(r => normalizeEntityLabel(r.name)),
+    };
+  }
+  if (!ref.entityKey) return { targetIds: [], associateKeys: [] };
+  const linked = await db
+    .select({ name: associates.name, targetId: associates.linkedTargetId })
+    .from(associates)
+    .where(
+      and(isNotNull(associates.linkedTargetId), isNull(associates.deletedAt))
+    );
+  const ids = linked
+    .filter(a => normalizeEntityLabel(a.name) === ref.entityKey)
+    .map(a => a.targetId as number);
+  return { targetIds: Array.from(new Set(ids)), associateKeys: [] };
 }
 
 /** Photos of the people who live at each address, for the map's "Images"
@@ -2900,6 +2967,24 @@ async function getAttachmentsForOperationEntities(
   const db = await getDb();
   if (!db) return empty;
 
+  // A target that is the same person as a registry associate also gets that
+  // associate's photos (see identityLinkedCounterparts).
+  const linkedAssociateKeyByTarget = new Map<number, string>();
+  if (targetIds.length) {
+    const linkedRows = await db
+      .select({ targetId: targets.id, name: associates.name })
+      .from(targets)
+      .innerJoin(associates, eq(targets.linkedAssociateId, associates.id))
+      .where(inArray(targets.id, targetIds));
+    for (const r of linkedRows)
+      linkedAssociateKeyByTarget.set(r.targetId, normalizeEntityLabel(r.name));
+  }
+  const associateKeysWanted = Array.from(
+    new Set([
+      ...entityKeys.associate,
+      ...Array.from(linkedAssociateKeyByTarget.values()),
+    ])
+  );
   const conditions = [];
   if (targetIds.length)
     conditions.push(
@@ -2915,11 +3000,11 @@ async function getAttachmentsForOperationEntities(
         inArray(attachmentEntityLinks.entityKey, entityKeys.vehicle)
       )
     );
-  if (entityKeys.associate.length)
+  if (associateKeysWanted.length)
     conditions.push(
       and(
         eq(attachmentEntityLinks.category, "associate"),
-        inArray(attachmentEntityLinks.entityKey, entityKeys.associate)
+        inArray(attachmentEntityLinks.entityKey, associateKeysWanted)
       )
     );
   if (entityKeys.location.length)
@@ -2972,6 +3057,16 @@ async function getAttachmentsForOperationEntities(
       arr.push(photo);
       entityPhotos.set(key, arr);
     }
+  }
+  // Slot each identity-linked associate's photos into its target's list too,
+  // once per photo.
+  for (const [targetId, key] of Array.from(linkedAssociateKeyByTarget)) {
+    const extra = entityPhotos.get(`associate::${key}`) ?? [];
+    if (extra.length === 0) continue;
+    const arr = targetPhotos.get(targetId) ?? [];
+    const have = new Set(arr.map(p => p.id));
+    for (const p of extra) if (!have.has(p.id)) arr.push(p);
+    targetPhotos.set(targetId, arr);
   }
   return { targetPhotos, entityPhotos };
 }

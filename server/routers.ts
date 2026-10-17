@@ -5454,6 +5454,21 @@ export const appRouter = router({
       return { configured: ENV.nearmapApiKey.length > 0 };
     }),
 
+    /** When the Nearmap photos at a spot were taken ("YYYY-MM-DD"), so the Map
+     * page can show how old the imagery is. null when unknown — the label is
+     * then simply not shown. */
+    nearmapCaptureDate: protectedProcedure
+      .input(
+        z.object({
+          lat: z.number().min(-90).max(90),
+          lng: z.number().min(-180).max(180),
+        })
+      )
+      .query(async ({ input }) => {
+        const { fetchNearmapCaptureDate } = await import("./nearmapProxy");
+        return { date: await fetchNearmapCaptureDate(input.lat, input.lng) };
+      }),
+
     /** Intelligence mapping — all locations with linked targets/associates/vehicles */
     mappingLocations: protectedProcedure
       .input(

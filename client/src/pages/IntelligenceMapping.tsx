@@ -93,12 +93,13 @@ import { MissingLocationAlert } from "@/components/MissingLocationAlert";
 import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { SplitViewFrame, splitBoxStyle } from "@/components/SplitViewFrame";
+import { SplitViewFrame } from "@/components/SplitViewFrame";
 import { NearmapPip, createNearmapLayer } from "@/components/NearmapPip";
+import { NearmapAgeLabel } from "@/components/NearmapAgeLabel";
+import { nearmapSpot } from "@shared/nearmapAge";
 import {
   parseSplitSettings,
   splitViewAvailable,
-  zoomForRange,
   type SplitBox,
 } from "@shared/splitView";
 import { useAddressSuggestField } from "@/components/useAddressSuggestField";
@@ -2235,10 +2236,7 @@ export default function IntelligenceMapping() {
   // than a map setting.
   const [nearmapActive, setNearmapActive] = useState(false);
   const nearmapLayerRef = useRef<google.maps.ImageMapType | null>(null);
-  const nearmapActiveRef = useRef(false);
-  nearmapActiveRef.current = nearmapActive;
-  // Adds or removes the Nearmap layer on the flat map (the NM button, and the
-  // Fly + Nearmap swap, which needs it on while Nearmap is the big map).
+  // Adds or removes the Nearmap layer on the flat map (the NM button).
   const setNearmapOverlay = (on: boolean) => {
     const map = mapRef.current;
     if (!map) return;
@@ -2715,12 +2713,11 @@ export default function IntelligenceMapping() {
   } | null>(null);
   // FLY + NEARMAP split view — a small Nearmap window on top of Fly (the NM
   // button in Fly's right-hand column), movable and resizable like the other
-  // picture-in-picture panels. "Swap" trades places: Nearmap becomes the big
-  // flat map and Fly goes into the window. Whether it is on, and the window's
-  // position and size, are remembered per device in runlog_map_settings; the
-  // swap itself is not (a fresh Fly always starts with Fly big). The NM button
-  // exists only in Fly, never on a phone, and only when the server has a
-  // Nearmap key. See shared/splitView.ts.
+  // picture-in-picture panels. Its Follow button (on by default, and back on
+  // whenever the window is reopened) keeps it looking where Fly looks. Whether
+  // it is on, and the window's position and size, are remembered per device in
+  // runlog_map_settings. The NM button exists only in Fly, never on a phone,
+  // and only when the server has a Nearmap key. See shared/splitView.ts.
   const nearmapStatus = trpc.intelligence.nearmapAvailable.useQuery(undefined, {
     staleTime: 5 * 60_000,
     retry: false,
@@ -2737,14 +2734,23 @@ export default function IntelligenceMapping() {
   const [splitBox, setSplitBox] = useState<SplitBox | null>(
     () => readSplitSettings().box
   );
-  const [splitSwapped, setSplitSwapped] = useState(false);
+  const [splitFollow, setSplitFollow] = useState(true);
+  // Where the flat map is looking (to the nearest ~500 m), for the Nearmap
+  // photo-date label — kept only while the Nearmap layer is on.
+  const [nearmapCentre, setNearmapCentre] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   const splitAvailable = splitViewAvailable({
     flyOpen: !!flyView,
     phone: narrowScreen,
     nearmapConfigured: nearmapStatus.data?.configured === true,
   });
   const splitShown = splitAvailable && splitOn;
-  const splitSwappedNow = splitShown && splitSwapped;
+  // A reopened window always starts following again.
+  useEffect(() => {
+    if (!splitShown) setSplitFollow(true);
+  }, [splitShown]);
   // Photos picture-in-picture panel, opened from a marker popup's Images
   // button (only shown when that address already has linked photos).
   const [imagesPip, setImagesPip] = useState<{ label: string } | null>(null);
@@ -4545,45 +4551,22 @@ export default function IntelligenceMapping() {
   // While in Fly, pick up changes (new pins, moved team members, edited
   // shapes) every few seconds without restarting the camera.
   const flyOpen = !!flyView;
-  // A swap ends when the window closes or Fly is left.
-  useEffect(() => {
-    if (splitSwapped && !splitShown) setSplitSwapped(false);
-  }, [splitSwapped, splitShown]);
-  // Swapped: the flat map is the big one, showing Nearmap at the place Fly was
-  // looking; Fly, in the small window, follows the flat map's centre. Leaving
-  // the swap puts Nearmap back the way it was.
+  // Nearmap on: note where the flat map is looking, so the label can say when
+  // the photos there were taken (see NearmapAgeLabel).
   useEffect(() => {
     const map = mapRef.current;
-    if (!splitSwappedNow || !map || !mapReady) return;
-    const cam = getLastFlyCamera();
-    const at = cam?.center ?? flyCenterRef.current;
-    if (at) {
-      map.setCenter(at);
-      map.setZoom(
-        zoomForRange(
-          cam?.range ?? 1000,
-          at.lat,
-          map.getDiv().clientWidth || 800
-        )
-      );
+    if (!nearmapActive || !map || !mapReady) {
+      setNearmapCentre(null);
+      return;
     }
-    const nearmapWasOn = nearmapActiveRef.current;
-    if (!nearmapWasOn) setNearmapOverlay(true);
-    const listener = map.addListener("idle", () => {
+    const note = () => {
       const c = map.getCenter();
-      if (!c) return;
-      setFlyCentreReq(prev => ({
-        lat: c.lat(),
-        lng: c.lng(),
-        n: (prev?.n ?? 0) + 1,
-      }));
-    });
-    return () => {
-      listener.remove();
-      if (!nearmapWasOn) setNearmapOverlay(false);
+      if (c) setNearmapCentre(nearmapSpot(c.lat(), c.lng()));
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [splitSwappedNow, mapReady]);
+    note();
+    const listener = map.addListener("idle", note);
+    return () => listener.remove();
+  }, [nearmapActive, mapReady]);
   // The 3D camera's heading (to 10°), so team arrows point the right way on
   // screen however the view is turned.
   const flyHeadingRef = useRef(0);
@@ -8994,12 +8977,7 @@ export default function IntelligenceMapping() {
           {flyView && (
             <>
               <Map3DView
-                className={
-                  splitSwappedNow
-                    ? "absolute z-30 overflow-hidden rounded-xl"
-                    : "absolute inset-0 z-30"
-                }
-                style={splitSwappedNow ? splitBoxStyle : undefined}
+                className="absolute inset-0 z-30"
                 center={flyView.center}
                 range={flyView.range}
                 tilt={flyView.tilt}
@@ -9045,25 +9023,18 @@ export default function IntelligenceMapping() {
                 }}
               />
               {/* Fly + Nearmap split view: the small movable, resizable
-                window. Normally it holds the Nearmap map; swapped, it is a
-                frame around the 3D map (which is drawn in the same box). */}
+                Nearmap window, with a Follow button and the photo date. */}
               {splitShown && flyView && (
                 <SplitViewFrame
                   box={splitBox}
-                  title={
-                    splitSwappedNow
-                      ? "Fly (3D) · follows Nearmap"
-                      : "Nearmap · follows Fly"
-                  }
-                  swapped={splitSwappedNow}
+                  title="Nearmap"
+                  following={splitFollow}
+                  onFollowChange={setSplitFollow}
                   onBoxChange={setSplitBox}
-                  onSwap={() => setSplitSwapped(v => !v)}
-                  onClose={() => {
-                    setSplitSwapped(false);
-                    setSplitOn(false);
-                  }}
+                  onClose={() => setSplitOn(false)}
                 >
                   <NearmapPip
+                    follow={splitFollow}
                     initial={{
                       lat: flyView.center.lat,
                       lng: flyView.center.lng,
@@ -9074,7 +9045,7 @@ export default function IntelligenceMapping() {
               )}
               {/* North up and 0° tilt — under the Map | Sat | Fly toggle */}
               <div
-                className={`absolute z-40 pointer-events-auto flex flex-col gap-1 ${flyChromeHidden || splitSwappedNow ? "hidden" : ""}`}
+                className={`absolute z-40 pointer-events-auto flex flex-col gap-1 ${flyChromeHidden ? "hidden" : ""}`}
                 style={{ top: `${52 + rightColShift}px`, right: "10px" }}
               >
                 <button
@@ -9145,7 +9116,7 @@ export default function IntelligenceMapping() {
               </div>
               {/* Centre on me / Follow me — same two buttons as the flat map */}
               <div
-                className={`absolute z-40 pointer-events-auto flex gap-1 ${flyChromeHidden || splitSwappedNow ? "hidden" : ""}`}
+                className={`absolute z-40 pointer-events-auto flex gap-1 ${flyChromeHidden ? "hidden" : ""}`}
                 style={{ top: "60px", left: "10px" }}
               >
                 <button
@@ -9439,6 +9410,20 @@ export default function IntelligenceMapping() {
               )}
               onClose={() => setImagesPip(null)}
             />
+          )}
+
+          {/* Nearmap photo date — bottom-left, only while Nearmap is on over the
+              flat map (in Fly the small window carries its own date strip).
+              Sits above Google's logo, and above the Heat Map key when that
+              is showing too. */}
+          {nearmapActive && !flyView && nearmapCentre && (
+            <div
+              className={`absolute left-3 z-20 max-w-[calc(100%-1.5rem)] pointer-events-none ${
+                heatOn && !isInvestigator ? "bottom-[8.5rem]" : "bottom-9"
+              }`}
+            >
+              <NearmapAgeLabel centre={nearmapCentre} variant="map" />
+            </div>
           )}
 
           {/* Heat Map key — bottom-left, only while the heat map is on. Sits

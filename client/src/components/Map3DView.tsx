@@ -108,9 +108,6 @@ interface Map3DViewProps {
   /** Fly the camera to a spot once per change of `n` (Centre on me). */
   centerRequest?: { lat: number; lng: number; n: number } | null;
   className?: string;
-  /** Inline style for the outer box — used to turn the full-screen 3D map into
-   * the small swapped window (see SplitViewFrame). */
-  style?: React.CSSProperties;
 }
 
 /** One marker on the 3D map, with the state that lets it glide. */
@@ -174,7 +171,6 @@ export function Map3DView({
   followId,
   centerRequest,
   className,
-  style,
 }: Map3DViewProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
@@ -886,7 +882,7 @@ export function Map3DView({
   }, [centerRequest?.n]);
 
   return (
-    <div className={className ?? "relative h-full w-full"} style={style}>
+    <div className={className ?? "relative h-full w-full"}>
       <div ref={hostRef} className="absolute inset-0 bg-black" />
       {status === "ready" && debug && (
         <div className="absolute left-2 top-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white/90 pointer-events-none max-w-[70%] truncate">

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { ArrowLeftRight, Maximize2, X } from "lucide-react";
+import { Crosshair, Maximize2, X } from "lucide-react";
 import {
   clampSplitBox,
   defaultSplitBox,
@@ -38,11 +38,11 @@ function writeVars(container: HTMLElement, b: SplitBox) {
 
 /**
  * The small window of the Fly + Nearmap split view: a title bar you drag to
- * move it, a grip in the bottom right corner you drag to resize it, and Swap /
- * close buttons. It is the same kind of window as the Street View and Photos
- * panels. `children` is its content (the Nearmap map); when `swapped` the
- * window is a frame only — the 3D Fly map is drawn in the same box underneath
- * (see `splitBoxStyle`) and only the title bar and grip take the pointer.
+ * move it, a grip in the bottom right corner you drag to resize it, a Follow
+ * button (on by default: the window keeps looking where the 3D map looks; off
+ * lets you look elsewhere in it) and a close button. It is the same kind of
+ * window as the Street View and Photos panels. `children` is its content (the
+ * Nearmap map).
  *
  * Position and size change by direct style / CSS-variable updates (same
  * reasoning as StreetViewPip), and are reported once, when a drag or resize
@@ -51,18 +51,18 @@ function writeVars(container: HTMLElement, b: SplitBox) {
 export function SplitViewFrame({
   box,
   title,
-  swapped,
+  following,
+  onFollowChange,
   onBoxChange,
-  onSwap,
   onClose,
   children,
 }: {
   /** The remembered box, or null to start in the top left. */
   box: SplitBox | null;
   title: string;
-  swapped: boolean;
+  following: boolean;
+  onFollowChange: (following: boolean) => void;
   onBoxChange: (box: SplitBox) => void;
-  onSwap: () => void;
   onClose: () => void;
   children?: React.ReactNode;
 }) {
@@ -193,12 +193,10 @@ export function SplitViewFrame({
   return (
     <div
       ref={frameRef}
-      className={`absolute z-40 rounded-xl border-2 border-sky-600 shadow-2xl overflow-hidden ${
-        swapped ? "pointer-events-none bg-transparent" : "bg-neutral-900"
-      }`}
+      className="absolute z-40 rounded-xl border-2 border-sky-600 bg-neutral-900 shadow-2xl overflow-hidden"
       style={splitBoxStyle}
     >
-      {!swapped && <div className="absolute inset-0">{children}</div>}
+      <div className="absolute inset-0">{children}</div>
       <div
         ref={headRef}
         className="pointer-events-auto absolute inset-x-0 top-0 z-10 flex items-center gap-1 bg-black/75 py-1 pl-2 pr-1 text-[11px] font-semibold text-white cursor-grab active:cursor-grabbing select-none touch-none"
@@ -207,11 +205,20 @@ export function SplitViewFrame({
         <button
           type="button"
           data-split-btn
-          onClick={onSwap}
-          title="Swap: make this window the big map and the big map this window"
-          className="flex items-center gap-1 rounded bg-white/15 px-1.5 py-0.5 text-[11px] font-bold hover:bg-white/30"
+          onClick={() => onFollowChange(!following)}
+          aria-pressed={following}
+          title={
+            following
+              ? "Following the main map — press to stop"
+              : "Not following — press to follow the main map again"
+          }
+          className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-bold transition-colors ${
+            following
+              ? "bg-sky-600 text-white hover:bg-sky-500"
+              : "bg-white/15 hover:bg-white/30"
+          }`}
         >
-          <ArrowLeftRight className="h-3 w-3" /> Swap
+          <Crosshair className="h-3 w-3" /> Follow
         </button>
         <button
           type="button"

@@ -5446,6 +5446,14 @@ export const appRouter = router({
         return profile;
       }),
 
+    /** Whether this server has a Nearmap key — the Map page offers the
+     * Fly + Nearmap split view (NM button) only when it does. The key itself
+     * never leaves the server (tiles go through /api/nearmap/tile). */
+    nearmapAvailable: protectedProcedure.query(async () => {
+      const { ENV } = await import("./_core/env");
+      return { configured: ENV.nearmapApiKey.length > 0 };
+    }),
+
     /** Intelligence mapping — all locations with linked targets/associates/vehicles */
     mappingLocations: protectedProcedure
       .input(

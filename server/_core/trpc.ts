@@ -79,6 +79,7 @@ const INVESTIGATOR_ALLOWED_PATHS = new Set([
   "operation.list",
   "operation.listForMap",
   "intelligence.mappingLocations",
+  "intelligence.nearmapAvailable",
   "intelligence.userLocations",
   "intelligence.myLocationState",
   "intelligence.updateUserLocation",

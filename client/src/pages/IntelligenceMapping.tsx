@@ -93,6 +93,14 @@ import { MissingLocationAlert } from "@/components/MissingLocationAlert";
 import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { SplitViewFrame, splitBoxStyle } from "@/components/SplitViewFrame";
+import { NearmapPip, createNearmapLayer } from "@/components/NearmapPip";
+import {
+  parseSplitSettings,
+  splitViewAvailable,
+  zoomForRange,
+  type SplitBox,
+} from "@shared/splitView";
 import { useAddressSuggestField } from "@/components/useAddressSuggestField";
 import {
   occupantsToVehicle,
@@ -2227,6 +2235,29 @@ export default function IntelligenceMapping() {
   // than a map setting.
   const [nearmapActive, setNearmapActive] = useState(false);
   const nearmapLayerRef = useRef<google.maps.ImageMapType | null>(null);
+  const nearmapActiveRef = useRef(false);
+  nearmapActiveRef.current = nearmapActive;
+  // Adds or removes the Nearmap layer on the flat map (the NM button, and the
+  // Fly + Nearmap swap, which needs it on while Nearmap is the big map).
+  const setNearmapOverlay = (on: boolean) => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!on) {
+      if (nearmapLayerRef.current) {
+        const overlays = map.overlayMapTypes;
+        const idx = overlays.getArray().indexOf(nearmapLayerRef.current);
+        if (idx !== -1) overlays.removeAt(idx);
+        nearmapLayerRef.current = null;
+      }
+      setNearmapActive(false);
+      return;
+    }
+    if (nearmapLayerRef.current) return;
+    const layer = createNearmapLayer();
+    map.overlayMapTypes.push(layer);
+    nearmapLayerRef.current = layer;
+    setNearmapActive(true);
+  };
   // Operations dropdown open state
   const [opsDropdownOpen, setOpsDropdownOpen] = useState(false);
   // Operations picker mode: single-select (default, picking replaces the
@@ -2682,6 +2713,38 @@ export default function IntelligenceMapping() {
     lng: number;
     n: number;
   } | null>(null);
+  // FLY + NEARMAP split view — a small Nearmap window on top of Fly (the NM
+  // button in Fly's right-hand column), movable and resizable like the other
+  // picture-in-picture panels. "Swap" trades places: Nearmap becomes the big
+  // flat map and Fly goes into the window. Whether it is on, and the window's
+  // position and size, are remembered per device in runlog_map_settings; the
+  // swap itself is not (a fresh Fly always starts with Fly big). The NM button
+  // exists only in Fly, never on a phone, and only when the server has a
+  // Nearmap key. See shared/splitView.ts.
+  const nearmapStatus = trpc.intelligence.nearmapAvailable.useQuery(undefined, {
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const readSplitSettings = () => {
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      return parseSplitSettings(s ? JSON.parse(s) : null);
+    } catch {
+      return parseSplitSettings(null);
+    }
+  };
+  const [splitOn, setSplitOn] = useState<boolean>(() => readSplitSettings().on);
+  const [splitBox, setSplitBox] = useState<SplitBox | null>(
+    () => readSplitSettings().box
+  );
+  const [splitSwapped, setSplitSwapped] = useState(false);
+  const splitAvailable = splitViewAvailable({
+    flyOpen: !!flyView,
+    phone: narrowScreen,
+    nearmapConfigured: nearmapStatus.data?.configured === true,
+  });
+  const splitShown = splitAvailable && splitOn;
+  const splitSwappedNow = splitShown && splitSwapped;
   // Photos picture-in-picture panel, opened from a marker popup's Images
   // button (only shown when that address already has linked photos).
   const [imagesPip, setImagesPip] = useState<{ label: string } | null>(null);
@@ -3158,6 +3221,8 @@ export default function IntelligenceMapping() {
           heatOpChoice,
           heatTargetChoice,
           heatTransparency,
+          nmSplitOn: splitOn,
+          nmSplitBox: splitBox,
         })
       );
     } catch {
@@ -3183,6 +3248,8 @@ export default function IntelligenceMapping() {
     heatOpChoice,
     heatTargetChoice,
     heatTransparency,
+    splitOn,
+    splitBox,
   ]);
 
   // Save map center/zoom to localStorage whenever the map stops moving (idle event)
@@ -4478,6 +4545,45 @@ export default function IntelligenceMapping() {
   // While in Fly, pick up changes (new pins, moved team members, edited
   // shapes) every few seconds without restarting the camera.
   const flyOpen = !!flyView;
+  // A swap ends when the window closes or Fly is left.
+  useEffect(() => {
+    if (splitSwapped && !splitShown) setSplitSwapped(false);
+  }, [splitSwapped, splitShown]);
+  // Swapped: the flat map is the big one, showing Nearmap at the place Fly was
+  // looking; Fly, in the small window, follows the flat map's centre. Leaving
+  // the swap puts Nearmap back the way it was.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!splitSwappedNow || !map || !mapReady) return;
+    const cam = getLastFlyCamera();
+    const at = cam?.center ?? flyCenterRef.current;
+    if (at) {
+      map.setCenter(at);
+      map.setZoom(
+        zoomForRange(
+          cam?.range ?? 1000,
+          at.lat,
+          map.getDiv().clientWidth || 800
+        )
+      );
+    }
+    const nearmapWasOn = nearmapActiveRef.current;
+    if (!nearmapWasOn) setNearmapOverlay(true);
+    const listener = map.addListener("idle", () => {
+      const c = map.getCenter();
+      if (!c) return;
+      setFlyCentreReq(prev => ({
+        lat: c.lat(),
+        lng: c.lng(),
+        n: (prev?.n ?? 0) + 1,
+      }));
+    });
+    return () => {
+      listener.remove();
+      if (!nearmapWasOn) setNearmapOverlay(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [splitSwappedNow, mapReady]);
   // The 3D camera's heading (to 10°), so team arrows point the right way on
   // screen however the view is turned.
   const flyHeadingRef = useRef(0);
@@ -8647,31 +8753,7 @@ export default function IntelligenceMapping() {
               onClick={e => {
                 e.stopPropagation();
                 if (!mapRef.current) return;
-                if (nearmapActive) {
-                  if (nearmapLayerRef.current) {
-                    const overlays = mapRef.current.overlayMapTypes;
-                    const idx = overlays
-                      .getArray()
-                      .indexOf(nearmapLayerRef.current);
-                    if (idx !== -1) overlays.removeAt(idx);
-                    nearmapLayerRef.current = null;
-                  }
-                  setNearmapActive(false);
-                } else {
-                  const layer = new google.maps.ImageMapType({
-                    getTileUrl: (coord, zoom) => {
-                      if (coord.x < 0 || coord.y < 0) return null;
-                      return `/api/nearmap/tile?x=${coord.x}&y=${coord.y}&z=${zoom}`;
-                    },
-                    tileSize: new google.maps.Size(256, 256),
-                    name: "Nearmap",
-                    maxZoom: 21,
-                    minZoom: 0,
-                  });
-                  mapRef.current.overlayMapTypes.push(layer);
-                  nearmapLayerRef.current = layer;
-                  setNearmapActive(true);
-                }
+                setNearmapOverlay(!nearmapActive);
               }}
               className={`absolute z-20 pointer-events-auto flex items-center justify-center rounded-lg shadow-md border h-9 w-9 text-[9px] font-bold leading-tight transition-colors ${
                 nearmapActive
@@ -8912,7 +8994,12 @@ export default function IntelligenceMapping() {
           {flyView && (
             <>
               <Map3DView
-                className="absolute inset-0 z-30"
+                className={
+                  splitSwappedNow
+                    ? "absolute z-30 overflow-hidden rounded-xl"
+                    : "absolute inset-0 z-30"
+                }
+                style={splitSwappedNow ? splitBoxStyle : undefined}
                 center={flyView.center}
                 range={flyView.range}
                 tilt={flyView.tilt}
@@ -8957,9 +9044,37 @@ export default function IntelligenceMapping() {
                   flyCenterRef.current = c;
                 }}
               />
+              {/* Fly + Nearmap split view: the small movable, resizable
+                window. Normally it holds the Nearmap map; swapped, it is a
+                frame around the 3D map (which is drawn in the same box). */}
+              {splitShown && flyView && (
+                <SplitViewFrame
+                  box={splitBox}
+                  title={
+                    splitSwappedNow
+                      ? "Fly (3D) · follows Nearmap"
+                      : "Nearmap · follows Fly"
+                  }
+                  swapped={splitSwappedNow}
+                  onBoxChange={setSplitBox}
+                  onSwap={() => setSplitSwapped(v => !v)}
+                  onClose={() => {
+                    setSplitSwapped(false);
+                    setSplitOn(false);
+                  }}
+                >
+                  <NearmapPip
+                    initial={{
+                      lat: flyView.center.lat,
+                      lng: flyView.center.lng,
+                      range: flyView.range,
+                    }}
+                  />
+                </SplitViewFrame>
+              )}
               {/* North up and 0° tilt — under the Map | Sat | Fly toggle */}
               <div
-                className={`absolute z-40 pointer-events-auto flex flex-col gap-1 ${flyChromeHidden ? "hidden" : ""}`}
+                className={`absolute z-40 pointer-events-auto flex flex-col gap-1 ${flyChromeHidden || splitSwappedNow ? "hidden" : ""}`}
                 style={{ top: `${52 + rightColShift}px`, right: "10px" }}
               >
                 <button
@@ -9001,10 +9116,36 @@ export default function IntelligenceMapping() {
                 >
                   0°
                 </button>
+                {splitAvailable && (
+                  <button
+                    title={
+                      splitOn
+                        ? "Hide the Nearmap window"
+                        : "Show the Nearmap window"
+                    }
+                    aria-label={
+                      splitOn
+                        ? "Hide the Nearmap window"
+                        : "Show the Nearmap window"
+                    }
+                    aria-pressed={splitOn}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setSplitOn(v => !v);
+                    }}
+                    className={`flex items-center justify-center rounded-lg shadow-md border h-9 w-9 text-[9px] font-bold leading-tight transition-colors ${
+                      splitOn
+                        ? "bg-sky-600 border-sky-600 text-white"
+                        : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    NM
+                  </button>
+                )}
               </div>
               {/* Centre on me / Follow me — same two buttons as the flat map */}
               <div
-                className={`absolute z-40 pointer-events-auto flex gap-1 ${flyChromeHidden ? "hidden" : ""}`}
+                className={`absolute z-40 pointer-events-auto flex gap-1 ${flyChromeHidden || splitSwappedNow ? "hidden" : ""}`}
                 style={{ top: "60px", left: "10px" }}
               >
                 <button

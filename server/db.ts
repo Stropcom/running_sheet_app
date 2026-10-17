@@ -4210,8 +4210,90 @@ export async function createTargetLinkedToAssociate(
       .update(associates)
       .set({ linkedTargetId: newTargetId })
       .where(eq(associates.id, existingAssociateId));
+    await addReciprocalAssociate(
+      tx,
+      existingAssociateId,
+      newTargetId,
+      data.createdBy
+    );
     return { id: newTargetId };
   });
+}
+
+/**
+ * When an associate X (filed under target A) is promoted to its own Target B,
+ * A is by definition someone B is associated with, so A is filed as an
+ * associate of B too. Runs inside the promotion's transaction.
+ *
+ * - A's identity fields are copied (LINKED_SYNC_FIELDS) and, when A isn't
+ *   already identity-linked to another associate, the new row is linked to A
+ *   (A's profile then shares photos and edits with it, like any other
+ *   Target ↔ Associate pair). Otherwise it is a plain associate row.
+ * - Never duplicates: if B already has an associate row for A — linked to A,
+ *   or the same name — live OR soft-deleted, nothing is added (an officer
+ *   who removed it keeps it removed).
+ * - Skipped when A is gone/deleted or is B itself.
+ */
+async function addReciprocalAssociate(
+  tx: Pick<
+    NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    "select" | "insert" | "update"
+  >,
+  promotedAssociateId: number,
+  newTargetId: number,
+  createdBy: number
+): Promise<number | null> {
+  const [promoted] = await tx
+    .select({ targetId: associates.targetId })
+    .from(associates)
+    .where(eq(associates.id, promotedAssociateId))
+    .limit(1);
+  if (!promoted || promoted.targetId === newTargetId) return null;
+  const [parent] = await tx
+    .select()
+    .from(targets)
+    .where(and(eq(targets.id, promoted.targetId), isNull(targets.deletedAt)))
+    .limit(1);
+  if (!parent) return null;
+
+  const existing = await tx
+    .select({
+      name: associates.name,
+      linkedTargetId: associates.linkedTargetId,
+    })
+    .from(associates)
+    .where(eq(associates.targetId, newTargetId));
+  const key = normalizeEntityLabel(parent.name);
+  if (
+    existing.some(
+      a =>
+        a.linkedTargetId === parent.id || normalizeEntityLabel(a.name) === key
+    )
+  ) {
+    return null;
+  }
+
+  const copied: Record<string, unknown> = {};
+  for (const f of LINKED_SYNC_FIELDS) {
+    copied[f] = (parent as Record<string, unknown>)[f] ?? null;
+  }
+  const link = parent.linkedAssociateId ? null : parent.id;
+  const [result] = await tx.insert(associates).values({
+    ...(copied as Partial<InsertAssociate>),
+    name: parent.name,
+    targetId: newTargetId,
+    relationship: "associate",
+    linkedTargetId: link,
+    createdBy,
+  });
+  const id = (result as any).insertId as number;
+  if (link) {
+    await tx
+      .update(targets)
+      .set({ linkedAssociateId: id })
+      .where(eq(targets.id, parent.id));
+  }
+  return id;
 }
 
 /**

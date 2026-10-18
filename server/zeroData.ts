@@ -8,9 +8,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { RowDataPacket } from "mysql2/promise";
 import {
-  CLEAR_TABLES,
+  ALL_CLEAR_TABLES as CLEAR_TABLES,
   IGNORED_TABLES,
-  KEEP_TABLES,
+  ALL_KEEP_TABLES as KEEP_TABLES,
 } from "../scripts/ops/zero-data-tables.mjs";
 import { areaTotals } from "@shared/zeroDataAreas";
 import { createAuditLog, withDedicatedConnection } from "./db";

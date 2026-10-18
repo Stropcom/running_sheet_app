@@ -93,6 +93,18 @@ export const ZERO_AREAS: ZeroArea[] = [
     ],
   },
   {
+    label: "Integrations (cameras, trackers, signals)",
+    tables: [
+      "cameras",
+      "signal_sensors",
+      "signal_detections",
+      "tracked_assets",
+      "tracked_asset_positions",
+      "external_events",
+      "connector_audit_log",
+    ],
+  },
+  {
     label: "Notifications and audit log",
     tables: ["notifications", "audit_logs"],
   },
@@ -106,6 +118,7 @@ export const ZERO_KEPT = [
   "Sidebar order",
   "WIPC officer profiles",
   "The whole CTO Roster",
+  "Integration connectors",
 ] as const;
 
 /** The word the person types to confirm. */

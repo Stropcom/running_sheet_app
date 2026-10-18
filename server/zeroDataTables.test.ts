@@ -49,10 +49,10 @@ describe("zero-data table lists", () => {
     const { ZERO_AREAS } = await import("../shared/zeroDataAreas");
     const lists = (await import(
       "../scripts/ops/zero-data-tables.mjs" as string
-    )) as { CLEAR_TABLES: string[] };
+    )) as { ALL_CLEAR_TABLES: string[] };
     const inAreas = ZERO_AREAS.flatMap(a => a.tables);
     expect(new Set(inAreas).size).toBe(inAreas.length);
-    expect([...inAreas].sort()).toEqual([...lists.CLEAR_TABLES].sort());
+    expect([...inAreas].sort()).toEqual([...lists.ALL_CLEAR_TABLES].sort());
   });
 
   it("totals rows per area", async () => {
@@ -71,5 +71,36 @@ describe("zero-data table lists", () => {
     expect(formatBytes(1536)).toBe("1.5 KB");
     expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
     expect(formatBytes(300 * 1024 * 1024)).toBe("300 MB");
+  });
+
+  it("lists other branches' tables separately, and only while they aren't in this schema", async () => {
+    const lists = (await import(
+      "../scripts/ops/zero-data-tables.mjs" as string
+    )) as {
+      KEEP_TABLES: string[];
+      CLEAR_TABLES: string[];
+      OTHER_BRANCH_KEEP_TABLES: string[];
+      OTHER_BRANCH_CLEAR_TABLES: string[];
+    };
+    const names = new Set(
+      Object.values(schema)
+        .map(v => {
+          try {
+            return getTableConfig(v as never).name;
+          } catch {
+            return null;
+          }
+        })
+        .filter((n): n is string => !!n)
+    );
+    const extra = [
+      ...lists.OTHER_BRANCH_KEEP_TABLES,
+      ...lists.OTHER_BRANCH_CLEAR_TABLES,
+    ];
+    // Once a branch is merged its tables belong in KEEP_TABLES / CLEAR_TABLES.
+    expect(extra.filter(n => names.has(n))).toEqual([]);
+    const core = new Set([...lists.KEEP_TABLES, ...lists.CLEAR_TABLES]);
+    expect(extra.filter(n => core.has(n))).toEqual([]);
+    expect(new Set(extra).size).toBe(extra.length);
   });
 });

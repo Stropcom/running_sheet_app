@@ -18,13 +18,19 @@ export function invalidateDataEpoch() {
 
 export async function loadDataEpoch(): Promise<number> {
   if (cache && Date.now() - cache.at < TTL_MS) return cache.value;
-  const db = await getDb();
-  if (!db) return cache?.value ?? 0;
-  const [row] = await db
-    .select({ at: max(auditLogs.createdAt) })
-    .from(auditLogs)
-    .where(and(eq(auditLogs.action, "data_zeroed")));
-  const value = Number(row?.at ?? 0);
-  cache = { at: Date.now(), value };
-  return value;
+  // auth.me depends on this: a failed lookup must never stop anyone signing in,
+  // so it answers with the last known value (0 if none) and tries again later.
+  try {
+    const db = await getDb();
+    if (!db) return cache?.value ?? 0;
+    const [row] = await db
+      .select({ at: max(auditLogs.createdAt) })
+      .from(auditLogs)
+      .where(and(eq(auditLogs.action, "data_zeroed")));
+    const value = Number(row?.at ?? 0);
+    cache = { at: Date.now(), value };
+    return value;
+  } catch {
+    return cache?.value ?? 0;
+  }
 }

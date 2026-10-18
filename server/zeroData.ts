@@ -20,6 +20,68 @@ import { invalidateDataEpoch } from "./dataEpoch";
 
 let running = false;
 
+const remoteStorage = () =>
+  !!process.env.BUILT_IN_FORGE_API_URL && !!process.env.BUILT_IN_FORGE_API_KEY;
+
+/** The folder this server keeps photos and documents in (server/storage.ts). */
+const uploadsDir = () => path.join(process.cwd(), "uploads");
+
+/** Files and bytes under `dir` (0/0 if it isn't there). */
+async function folderSize(
+  dir: string
+): Promise<{ files: number; bytes: number }> {
+  let files = 0;
+  let bytes = 0;
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return { files, bytes };
+  }
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      const sub = await folderSize(full);
+      files += sub.files;
+      bytes += sub.bytes;
+    } else if (e.isFile()) {
+      files++;
+      bytes += (await fs.stat(full)).size;
+    }
+  }
+  return { files, bytes };
+}
+
+/**
+ * Deletes everything inside the uploads folder (the folder itself stays, so
+ * the /local-uploads route keeps working). Only ever touches <cwd>/uploads,
+ * and refuses if that is a link.
+ */
+async function checkUploadsFolder(): Promise<boolean> {
+  try {
+    const st = await fs.lstat(uploadsDir());
+    if (!st.isDirectory() || st.isSymbolicLink()) {
+      throw new Error(
+        "Not cleared — the uploads folder isn't a plain folder, so it was left alone."
+      );
+    }
+    return true;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw e;
+  }
+}
+
+async function emptyUploads(): Promise<{ files: number; bytes: number }> {
+  if (!(await checkUploadsFolder())) return { files: 0, bytes: 0 };
+  const dir = uploadsDir();
+  const size = await folderSize(dir);
+  for (const name of await fs.readdir(dir)) {
+    await fs.rm(path.join(dir, name), { recursive: true, force: true });
+  }
+  return size;
+}
+
 async function tablesInDb(
   conn: Parameters<Parameters<typeof withDedicatedConnection>[0]>[0]
 ) {
@@ -50,6 +112,12 @@ export async function zeroDataPreview() {
       areas,
       total: areas.reduce((n, a) => n + a.rows, 0),
       unclassified: unclassified(inDb),
+      // Photos and documents kept on this server's disk (deleted too), or
+      // sitting in remote storage (which can't be deleted from here).
+      remoteStorage: remoteStorage(),
+      files: remoteStorage()
+        ? { files: 0, bytes: 0 }
+        : await folderSize(uploadsDir()),
     };
   });
 }
@@ -58,6 +126,8 @@ export async function zeroData(by: { id: number; cin: string | null }) {
   if (running) throw new Error("A zero is already running.");
   running = true;
   try {
+    // Refuse before anything is cleared, not after.
+    if (!remoteStorage()) await checkUploadsFolder();
     const { cleared, remaining } = await withDedicatedConnection(async conn => {
       const inDb = await tablesInDb(conn);
       const odd = unclassified(inDb);
@@ -87,27 +157,16 @@ export async function zeroData(by: { id: number; cin: string | null }) {
       return { cleared, remaining };
     });
 
-    // Stored files on disk are moved aside, never deleted (remote storage is
-    // left alone, nothing refers to it any more).
+    // Photos and documents kept on this server's disk are deleted for good.
+    // Remote storage (if configured) has no delete here — those files are
+    // left, and nothing refers to them any more.
     let filesNote = "";
-    const remote =
-      !!process.env.BUILT_IN_FORGE_API_URL &&
-      !!process.env.BUILT_IN_FORGE_API_KEY;
-    if (!remote) {
-      const uploads = path.join(process.cwd(), "uploads");
-      try {
-        await fs.access(uploads);
-        const stamp = new Date()
-          .toISOString()
-          .replace(/[:.]/g, "-")
-          .slice(0, 19);
-        const moved = `${uploads}.pre-zero-${stamp}`;
-        await fs.rename(uploads, moved);
-        await fs.mkdir(uploads, { recursive: true });
-        filesNote = ` Stored files moved to ${path.basename(moved)}.`;
-      } catch {
-        // no uploads folder: nothing to move
-      }
+    if (remoteStorage()) {
+      filesNote =
+        "Photos and documents in remote storage were not deleted (they are no longer referenced).";
+    } else {
+      const gone = await emptyUploads();
+      filesNote = `${gone.files} stored file${gone.files === 1 ? "" : "s"} deleted.`;
     }
 
     invalidateFeatureCache();

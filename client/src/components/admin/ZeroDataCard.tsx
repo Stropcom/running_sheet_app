@@ -24,7 +24,11 @@ import { clearAllOfflineData } from "@/lib/offlineStore";
 import { rememberDataEpoch } from "@/lib/dataEpoch";
 import { FORM_LABEL } from "@/lib/formKit";
 import { SECTION_BAND, SECTION_CARD, SECTION_TITLE } from "@/lib/pageKit";
-import { ZERO_CONFIRM_WORD, ZERO_KEPT } from "@shared/zeroDataAreas";
+import {
+  ZERO_CONFIRM_WORD,
+  ZERO_KEPT,
+  formatBytes,
+} from "@shared/zeroDataAreas";
 
 export function ZeroDataCard() {
   const isOwner = useIsFeatureOwner();
@@ -79,8 +83,7 @@ export function ZeroDataCard() {
         <strong className="text-foreground">
           This cannot be undone — there is no backup.
         </strong>{" "}
-        Photos and documents stored on this server are moved to a side folder
-        rather than deleted.
+        Photos and uploaded documents stored on this server are deleted too.
       </p>
 
       {isLoading || !data ? (
@@ -102,6 +105,24 @@ export function ZeroDataCard() {
                 <span className="font-bold tabular-nums">{a.rows}</span>
               </div>
             ))}
+            <div className="flex items-center justify-between gap-3 border-t border-border px-3 py-2 text-sm">
+              <span>
+                {data.remoteStorage
+                  ? "Photos and documents (remote storage)"
+                  : "Photo and document files"}
+              </span>
+              <span className="font-bold tabular-nums">
+                {data.remoteStorage
+                  ? "kept"
+                  : `${data.files.files} · ${formatBytes(data.files.bytes)}`}
+              </span>
+            </div>
+            {data.remoteStorage && (
+              <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
+                These are in remote storage, which can't be deleted from here.
+                Nothing refers to them after a zero.
+              </p>
+            )}
           </div>
           <div className="overflow-hidden rounded-xl border border-border">
             <div className="border-t-4 border-t-emerald-600 bg-muted/70 px-3 py-2 text-xs font-extrabold uppercase tracking-wide">
@@ -173,8 +194,11 @@ export function ZeroDataCard() {
               Zero all data?
             </DialogTitle>
             <DialogDescription>
-              {data ? `${data.total} records` : "All operational records"} will
-              be erased for every Command. This cannot be undone. Make sure
+              {data ? `${data.total} records` : "All operational records"}
+              {data && !data.remoteStorage
+                ? ` and ${data.files.files} photo and document files`
+                : ""}{" "}
+              will be erased for every Command. This cannot be undone. Make sure
               nobody else is using RunLog.
             </DialogDescription>
           </DialogHeader>

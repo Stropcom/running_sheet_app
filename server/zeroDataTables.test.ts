@@ -64,4 +64,12 @@ describe("zero-data table lists", () => {
     );
     expect(t.find(a => a.label === "Map")?.rows).toBe(0);
   });
+
+  it("formats a byte count", async () => {
+    const { formatBytes } = await import("../shared/zeroDataAreas");
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(1536)).toBe("1.5 KB");
+    expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
+    expect(formatBytes(300 * 1024 * 1024)).toBe("300 MB");
+  });
 });

@@ -120,3 +120,16 @@ export function areaTotals(
     rows: a.tables.reduce((n, t) => n + (counts[t] ?? 0), 0),
   }));
 }
+
+/** "12.4 MB" for a byte count. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = bytes / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v >= 100 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}

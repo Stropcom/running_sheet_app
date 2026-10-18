@@ -15,7 +15,10 @@ import {
 import { drizzle } from "drizzle-orm/mysql2";
 import { initialShortcutOrder } from "../shared/rsChips";
 import { findVehicleChains, joinVehicleLists } from "../shared/vehicleList";
-import { createPool as createPromisePool } from "mysql2/promise";
+import {
+  createPool as createPromisePool,
+  type PoolConnection,
+} from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt, fingerprintVaultKey } from "./wipcVault";
 import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
@@ -262,6 +265,23 @@ async function createDbPool(
   }
   console.error("[Database] All connection attempts failed");
   return null;
+}
+
+/**
+ * Runs `fn` on one dedicated connection from the pool, for work that needs
+ * session state to stay put across statements (e.g. SET FOREIGN_KEY_CHECKS).
+ * The connection is always handed back.
+ */
+export async function withDedicatedConnection<T>(
+  fn: (conn: PoolConnection) => Promise<T>
+): Promise<T> {
+  if (!(await getDb()) || !_pool) throw new Error("DB unavailable");
+  const conn = await _pool.getConnection();
+  try {
+    return await fn(conn);
+  } finally {
+    conn.release();
+  }
 }
 
 export async function getDb() {

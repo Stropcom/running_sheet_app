@@ -1077,6 +1077,7 @@ export const auditLogs = mysqlTable("audit_logs", {
     "uco_guide_deleted",
     "target_background_updated",
     "command_feature_changed",
+    "data_zeroed",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),

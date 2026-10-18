@@ -1,4 +1,5 @@
 import { CommandFeaturesCard } from "@/components/admin/CommandFeaturesCard";
+import { ZeroDataCard } from "@/components/admin/ZeroDataCard";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -657,6 +658,11 @@ export default function AdminPage() {
         {/* Command features: only the owner sees this (renders nothing for anyone else) */}
         <div className="mt-6">
           <CommandFeaturesCard />
+        </div>
+
+        {/* Zero data: owner only (renders nothing for anyone else) */}
+        <div className="mt-6">
+          <ZeroDataCard />
         </div>
 
         {/* Create Dialog */}

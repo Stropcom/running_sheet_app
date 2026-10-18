@@ -33,6 +33,9 @@ import {
 } from "./operationAccess";
 import { rosterCommandForWrite } from "./rosterContext";
 import { loadFeatureMatrix, saveFeatureSettings } from "./commandFeatures";
+import { zeroData, zeroDataPreview } from "./zeroData";
+import { loadDataEpoch } from "./dataEpoch";
+import { ZERO_CONFIRM_WORD } from "@shared/zeroDataAreas";
 import {
   FEATURE_KEYS,
   featuresFor,
@@ -963,6 +966,9 @@ export const appRouter = router({
         // are the person who changes the switches (see shared/commandFeatures.ts).
         features: featuresFor(user, await loadFeatureMatrix()),
         isFeatureOwner: isFeatureOwner(user),
+        // When the data was last zeroed — devices drop their offline drafts
+        // when it changes (server/dataEpoch.ts).
+        dataEpoch: await loadDataEpoch(),
       };
     }),
 
@@ -7922,6 +7928,53 @@ export const appRouter = router({
           });
         }
         return loadFeatureMatrix();
+      }),
+  }),
+
+  // ─── Zero data ─────────────────────────────────────────────────────────────
+  // Empties the operational data (server/zeroData.ts). Owner only, with the
+  // typed word and the owner's password again.
+  zeroData: router({
+    preview: protectedProcedure.query(async ({ ctx }) => {
+      if (!isFeatureOwner(ctx.user)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Not available." });
+      }
+      return zeroDataPreview();
+    }),
+
+    run: protectedProcedure
+      .input(
+        z.object({
+          confirm: z.string(),
+          password: z.string().min(1),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        if (!isFeatureOwner(ctx.user)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Not available." });
+        }
+        if (input.confirm.trim() !== ZERO_CONFIRM_WORD) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Type ${ZERO_CONFIRM_WORD} to confirm.`,
+          });
+        }
+        const me = await getUserById(ctx.user.id);
+        if (!me || !(await bcrypt.compare(input.password, me.passwordHash))) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "That password isn't right. Nothing was cleared.",
+          });
+        }
+        try {
+          return await zeroData({ id: ctx.user.id, cin: ctx.user.cin ?? null });
+        } catch (e) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message:
+              e instanceof Error ? e.message : "Couldn't clear the data.",
+          });
+        }
       }),
   }),
 

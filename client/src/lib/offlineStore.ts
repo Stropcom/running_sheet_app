@@ -355,6 +355,23 @@ export async function clearSyncedDrafts(): Promise<void> {
 }
 
 /**
+ * Empties the whole offline store — drafts, the sync queue and cached sheets.
+ * Used when the server's data has been zeroed (see DataResetWatcher): any
+ * unsent draft would otherwise replay against records that no longer exist.
+ */
+export async function clearAllOfflineData(): Promise<void> {
+  const db = await getDB();
+  await Promise.all([
+    db.clear("draftOperations"),
+    db.clear("draftTargets"),
+    db.clear("draftSheets"),
+    db.clear("draftRows"),
+    db.clear("syncQueue"),
+    db.clear("cachedSheets"),
+  ]);
+}
+
+/**
  * Discard a stuck/unwanted draft sheet and all associated data.
  * Removes:
  *  - The draftSheet record

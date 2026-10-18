@@ -73,6 +73,7 @@ import { DraftModeBanner } from "@/components/DraftModeBanner";
 import { SectionColorProvider } from "@/contexts/SectionColorContext";
 import { useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import { applyDataEpoch } from "@/lib/dataEpoch";
 
 /**
  * Resolves a CSS colour string (including `oklch(...)`, which the theme
@@ -171,6 +172,15 @@ function AppearanceApplier() {
     document.documentElement.dataset.palette =
       u.colorPalette ?? DEFAULT_COLOR_PALETTE;
   }, [user]);
+
+  // After the data has been zeroed (Access Management → Zero data) this
+  // device throws away its unsent offline drafts and reloads once.
+  const dataEpoch = (user as { dataEpoch?: number } | null | undefined)
+    ?.dataEpoch;
+  useEffect(() => {
+    if (!dataEpoch) return;
+    void applyDataEpoch(dataEpoch);
+  }, [dataEpoch]);
 
   return null;
 }

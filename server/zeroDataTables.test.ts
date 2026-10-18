@@ -44,4 +44,24 @@ describe("zero-data table lists", () => {
     expect(lists.KEEP_TABLES).toContain("users");
     expect(lists.KEEP_TABLES).toContain("wipc_vault_key_check");
   });
+
+  it("describes every cleared table in exactly one in-app area", async () => {
+    const { ZERO_AREAS } = await import("../shared/zeroDataAreas");
+    const lists = (await import(
+      "../scripts/ops/zero-data-tables.mjs" as string
+    )) as { CLEAR_TABLES: string[] };
+    const inAreas = ZERO_AREAS.flatMap(a => a.tables);
+    expect(new Set(inAreas).size).toBe(inAreas.length);
+    expect([...inAreas].sort()).toEqual([...lists.CLEAR_TABLES].sort());
+  });
+
+  it("totals rows per area", async () => {
+    const { areaTotals } = await import("../shared/zeroDataAreas");
+    const t = areaTotals({ operations: 2, operation_shares: 1, audit_logs: 5 });
+    expect(t.find(a => a.label === "Operations and sharing")?.rows).toBe(3);
+    expect(t.find(a => a.label === "Notifications and audit log")?.rows).toBe(
+      5
+    );
+    expect(t.find(a => a.label === "Map")?.rows).toBe(0);
+  });
 });

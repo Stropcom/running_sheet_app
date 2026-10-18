@@ -20,6 +20,7 @@ import {
   seedShortcutsIfEmpty,
   ensureDefaultShortcuts,
   ensureShortcutOrder,
+  purgeOldLocationHistory,
   verifyWipcVaultKeyOrThrow,
 } from "../db";
 import { ENV } from "./env";
@@ -164,6 +165,7 @@ async function startServer() {
 startServer()
   .then(() => ensureDefaultShortcuts(1).catch(() => {}))
   .then(() => ensureShortcutOrder().catch(() => {}))
+  .then(() => purgeOldLocationHistory().catch(() => {}))
   .catch(err => {
     console.error(err);
     process.exit(1);

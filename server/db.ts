@@ -16066,6 +16066,37 @@ const HISTORY_STATIONARY_HEARTBEAT_MS = 120_000;
  */
 const HISTORY_MAX_ACCURACY_M = 50;
 
+// The trail is only ever read from the moment someone switches Track on, so
+// points older than this are dead weight (the table grows by a point every few
+// seconds per person on the move). Purged opportunistically — no cron, same as
+// purgeExpiredNotifications — at most once an hour, from the write path below
+// and once at startup.
+export const LOCATION_HISTORY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const LOCATION_HISTORY_PURGE_EVERY_MS = 60 * 60 * 1000;
+const LOCATION_HISTORY_PURGE_BATCH = 5000;
+let lastLocationHistoryPurge = 0;
+
+/** Deletes trail points older than 7 days, in batches so no long table lock.
+ * Returns how many were removed. */
+export async function purgeOldLocationHistory(
+  now = Date.now()
+): Promise<number> {
+  lastLocationHistoryPurge = now;
+  const db = await getDb();
+  if (!db) return 0;
+  const cutoff = now - LOCATION_HISTORY_MAX_AGE_MS;
+  let removed = 0;
+  for (;;) {
+    const [res] = (await db.execute(
+      sql`DELETE FROM user_location_history WHERE recordedAt < ${cutoff} LIMIT ${LOCATION_HISTORY_PURGE_BATCH}`
+    )) as unknown as [{ affectedRows?: number }];
+    const n = Number(res?.affectedRows ?? 0);
+    removed += n;
+    if (n < LOCATION_HISTORY_PURGE_BATCH) break;
+  }
+  return removed;
+}
+
 async function recordUserLocationHistory(
   userId: number,
   deviceId: string,
@@ -16114,6 +16145,11 @@ async function recordUserLocationHistory(
     }
   }
   if (!shouldRecord) return;
+
+  if (now - lastLocationHistoryPurge >= LOCATION_HISTORY_PURGE_EVERY_MS) {
+    // Fire and forget: a failed purge must never lose a position.
+    purgeOldLocationHistory(now).catch(() => {});
+  }
 
   await db.insert(userLocationHistory).values({
     userId,

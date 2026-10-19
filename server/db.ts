@@ -46,6 +46,12 @@ import type { CommandCode } from "@shared/commands";
 import { scopeEntities, type OperationShareRow } from "@shared/operationAccess";
 import { intelScope } from "./intelScope";
 import {
+  FingerprintCache,
+  fingerprintSql,
+  fingerprintFromRow,
+  type Fingerprint,
+} from "./intelCache";
+import {
   applyTargetProjectsToSummary,
   sanitizeTargetSpecialProjects,
 } from "@shared/targetStatus";
@@ -4481,6 +4487,7 @@ export async function linkTargetToOperation(
       .update(operationTargetLinks)
       .set({ background })
       .where(eq(operationTargetLinks.id, existing.id));
+    invalidateIntelligenceCache();
   }
 }
 
@@ -8377,11 +8384,40 @@ export async function getWeeklyActivityReport(
   return { weekStart, weekEnd, operations: operationBlocks };
 }
 
+// The unscoped entity set is remembered for a short while and reused only when
+// the source tables haven't changed (server/intelCache.ts). Everyone gets a
+// copy, and the per-request scope below is applied to that copy.
+const intelEntityCache = new FingerprintCache<IntelligenceEntity[]>(v =>
+  structuredClone(v)
+);
+
+/** Drop the remembered set after a write the change check can't see (an
+ * in-place update of a link or alias row). */
+export function invalidateIntelligenceCache() {
+  intelEntityCache.invalidate();
+}
+
+async function loadAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
+  let fp: Fingerprint | null = null;
+  try {
+    const db = await getDb();
+    if (db) {
+      const [rows] = (await db.execute(
+        sql.raw(fingerprintSql())
+      )) as unknown as [Record<string, unknown>[]];
+      fp = fingerprintFromRow(rows?.[0]);
+    }
+  } catch {
+    fp = null; // the check failed: build fresh, remember nothing
+  }
+  return intelEntityCache.get(fp, buildAllIntelligenceEntities);
+}
+
 export async function getAllIntelligenceEntities(opts?: {
   /** Skip the per-request Intelligence scope (Region Search only). */
   unscoped?: boolean;
 }) {
-  const all = await buildAllIntelligenceEntities();
+  const all = await loadAllIntelligenceEntities();
   const scope = intelScope.getStore();
   if (!scope || opts?.unscoped) return all;
   // A registry target's occurrences carry operation 0 even when its running
@@ -10328,6 +10364,7 @@ export async function mergeEntities(
         mergedAt: Date.now(),
       })
       .where(eq(entityAliases.id, existing[0].id));
+    invalidateIntelligenceCache();
   } else {
     await db.insert(entityAliases).values({
       type,

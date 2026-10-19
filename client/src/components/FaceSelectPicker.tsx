@@ -5,7 +5,7 @@ import type { MouseEventHandler } from "react";
 import { toast } from "sonner";
 import { Check, User } from "lucide-react";
 import { PossibleMatchDialog, type PendingMatch } from "@/components/PossibleMatchDialog";
-import { FaceMatchPanel } from "@/components/FaceMatchPanel";
+import { FaceMatchPreview } from "@/components/FaceMatchPreview";
 import { visibleFaces, type DetectedFaceBox } from "@/components/TapSelectFace";
 
 type FaceSelectPickerProps =
@@ -245,7 +245,10 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
       )}
 
       {focusIndex != null && selected.has(focusIndex) && (
-        <FaceMatchPanel
+        <FaceMatchPreview
+          photoUrl={photoUrl}
+          faceKey={focusIndex}
+          bbox={allFaces.find(f => f.index === focusIndex)?.bbox}
           matches={matchesQuery.data?.matches}
           loading={matchesQuery.isFetching && !matchesQuery.data}
           error={matchesQuery.isError}

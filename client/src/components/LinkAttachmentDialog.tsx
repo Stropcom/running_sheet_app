@@ -33,9 +33,9 @@ import {
   TapSelectFace,
   type DetectedFaceBox,
 } from "@/components/TapSelectFace";
-import type { FaceMatchRow } from "@/components/FaceMatchPanel";
 import {
   PossibleMatchDialog,
+  type FaceMatchCandidate,
   type PendingMatch,
 } from "@/components/PossibleMatchDialog";
 import {
@@ -435,7 +435,7 @@ export function LinkAttachmentDialog({
   const tapPhotoUrl = isUploadMode ? preview : photoUrl;
 
   // Similar faces on file for the face the officer tapped — a look only, shown
-  // under the photo (see FaceMatchPanel). An existing photo asks by attachment;
+  // under the photo (see FaceMatchPreview). An existing photo asks by attachment;
   // a photo still being staged for upload sends its bytes, once per tap.
   const existingMatches = trpc.attachment.faceMatches.useQuery(
     { attachmentId: attachmentId ?? 0, faceIndex: selectedFaceIndex ?? 0 },
@@ -451,7 +451,7 @@ export function LinkAttachmentDialog({
   const matchesFromBytes = trpc.attachment.faceMatchesFromBytes.useMutation();
   const [stagedMatches, setStagedMatches] = useState<{
     index: number;
-    rows: FaceMatchRow[];
+    rows: FaceMatchCandidate[];
   } | null>(null);
   const [stagedMatchesFailed, setStagedMatchesFailed] = useState(false);
   useEffect(() => {

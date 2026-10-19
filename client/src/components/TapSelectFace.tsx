@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Check } from "lucide-react";
-import { FaceMatchPanel, type FaceMatchRow } from "@/components/FaceMatchPanel";
+import { FaceMatchPreview } from "@/components/FaceMatchPreview";
+import type { FaceMatchCandidate } from "@/components/PossibleMatchDialog";
 
 export interface DetectedFaceBox {
   index: number;
@@ -58,9 +59,9 @@ export function TapSelectFace({
   loading?: boolean;
   selectedIndex: number | null;
   onSelect: (index: number | null) => void;
-  /** Similar faces on file for the selected face — shown under the photo when
-   * the caller supplies a lookup (matchesLoading / matchesError describe it). */
-  matches?: FaceMatchRow[];
+  /** Similar faces on file for the selected face — opened automatically in the
+   * match pop-up when the caller supplies a lookup (matchesLoading / matchesError describe it). */
+  matches?: FaceMatchCandidate[];
   matchesLoading?: boolean;
   matchesError?: boolean;
 }) {
@@ -163,7 +164,10 @@ export function TapSelectFace({
       </p>
       {selectedIndex != null &&
         (matchesLoading || matchesError || matches !== undefined) && (
-          <FaceMatchPanel
+          <FaceMatchPreview
+            photoUrl={photoUrl}
+            faceKey={selectedIndex}
+            bbox={faces.find(f => f.index === selectedIndex)?.bbox}
             matches={matches}
             loading={matchesLoading}
             error={matchesError}

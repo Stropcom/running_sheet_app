@@ -141,3 +141,53 @@ describe("locateTarget — on a vessel", () => {
     expect(pos?.state).not.toBe("vessel");
   });
 });
+
+describe("where the vessel is: the latest place logged, not an older one", () => {
+  const DRIVO =
+    "HOGAN and CORNELL entered DRIVO Carpark and continued out of sight.";
+  const DEPART_DRIVO =
+    "Vehicle 1FAT001, HOGAN driver, CORNELL front passenger, departed DRIVO Carpark and continued via:";
+  const ARRIVE =
+    "Vehicle 1FAT001, HOGAN driver, arrived at 15 Riverside Road, EAST FREMANTLE WA (15 Riverside Road) and parked on the street opposite the Left Bank Hotel.\n\nHOGAN exited the vehicle and walked along the boat jetty on the Swan River.";
+  const BOARD = "HOGAN boarded the boat in the last pen on the jetty.";
+
+  it("an arrival at an address updates 'last seen', so the boat is there, not at the old car park", () => {
+    const scan = scanWalkEvents(rows(DRIVO, DEPART_DRIVO, ARRIVE, BOARD));
+    const hogan = scan.placements.find(p => p.name === "HOGAN");
+    expect(hogan).toMatchObject({
+      vessel: "the boat",
+      at: "15 Riverside Road",
+    });
+  });
+
+  it("the flag position is that address", () => {
+    const scan = scanWalkEvents(rows(DRIVO, DEPART_DRIVO, ARRIVE, BOARD));
+    const pos = locateTarget({
+      token: "HOGAN",
+      arrivals: [
+        {
+          rego: "1FAT001",
+          names: "HOGAN",
+          address: "15 Riverside Road",
+          rowId: 3,
+        },
+      ],
+      departures: [],
+      walkIns: scan.walkIns,
+      headingTo: scan.headingTo,
+      placements: scan.placements,
+    });
+    expect(pos).toMatchObject({
+      state: "vessel",
+      place: "15 Riverside Road",
+      placeIsEstimate: true,
+    });
+  });
+
+  it("a departure naming people records where they left from", () => {
+    const scan = scanWalkEvents(rows(DRIVO, DEPART_DRIVO));
+    expect(scan.placements.find(p => p.name === "HOGAN")?.at).toBe(
+      "DRIVO Carpark"
+    );
+  });
+});

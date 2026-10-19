@@ -28,6 +28,7 @@
 // 193b Stock Road and continued out of sight." Group 2 (the route) is then
 // undefined, and the "Walked out" chip simply omits its route.
 import {
+  extractArrivalAddress,
   VEHICLE_DEPART_PATTERN,
   matchVehicleArrival,
   matchVehicleSighting,
@@ -614,6 +615,20 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     if (!text) return;
     const where = { sheetId: row.sheetId, rowId: row.id, orderIdx: idx };
 
+    // A vehicle arriving at an address with named people in it puts them there:
+    // it is where they were last logged (a later boarding, or a walk away from
+    // the vehicle, is "from" here). Without this the logger kept an older place
+    // ("Last seen at DRIVO Carpark") and the flag went to it.
+    const arrival = matchVehicleArrival(text);
+    if (arrival) {
+      const arrivedAt = extractArrivalAddress(text);
+      const arrivedPeople = splitPeopleNames(
+        extractOccupantNames(arrival.occupantDesc)
+      ).filter(p => !isUnseenOccupants(p));
+      if (arrivedAt && arrivedPeople.length > 0)
+        setAt(arrivedPeople.join(" and "), bracketLabelOrSelf(arrivedAt));
+    }
+
     // A vehicle seen on the move that names who is in it ("Vehicle 1FAT001,
     // HOGAN driver and sole occupant, travelled on Leach Highway, FREMANTLE
     // and continued via:"): they are in that vehicle now, so no longer inside
@@ -644,6 +659,8 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       ).filter(p => !isUnseenOccupants(p) && !/\bunidentified\b/i.test(p));
       if (people.length > 0) {
         const who = people.join(" and ");
+        const leftFrom = extractDepartureAddress(text);
+        if (leftFrom) setAt(who, bracketLabelOrSelf(leftFrom));
         placePeople(who, departure[1].toUpperCase(), row.id, true);
         leaveAllPlaces(who);
         clearHeadingFor(who);

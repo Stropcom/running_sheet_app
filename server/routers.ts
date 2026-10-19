@@ -477,6 +477,16 @@ import {
 } from "./documentImport/localDocumentAI";
 import { AI_TIME_BUDGET_MS, withinBudget } from "./documentImport/aiBudget";
 import {
+  getAiStats,
+  recordAiImport,
+  resetAiStats,
+} from "./documentImport/aiStats";
+import {
+  DOCUMENT_AI_SETTING,
+  getBoolSetting,
+  setBoolSetting,
+} from "./appSettings";
+import {
   verifyAISuggestion,
   composeParsedValue,
   type AIAssistOutcome,
@@ -5475,7 +5485,11 @@ export const appRouter = router({
           //      pass alone can come back "confirmed" (AI independently
           //      agrees with the rules).
           const MAX_AI_CALLS = 8;
-          const aiModelStatus = await getDocumentAIModelStatus();
+          // The owner's switch (Access Management → Document AI): off skips the
+          // whole AI step, so imports use only the rules' own reading.
+          const aiSwitchedOn = await getBoolSetting(DOCUMENT_AI_SETTING, true);
+          const aiModelStatus: "ready" | "missing" | "incomplete" | "off" =
+            aiSwitchedOn ? await getDocumentAIModelStatus() : "off";
           let aiCallsUsed = 0;
 
           const aiSuggestions: Array<{
@@ -5570,6 +5584,30 @@ export const appRouter = router({
               vehicleAiOutcomes.push({ status: "declined" })
             );
           }
+
+          const countOutcomes = (o: AIAssistOutcome[]) => ({
+            confirmed: o.filter(x => x.status === "confirmed").length,
+            suggested: o.filter(x => x.status === "suggested").length,
+          });
+          const oc = [
+            countOutcomes(aiSuggestions.map(x => x.outcome)),
+            countOutcomes(addressAiOutcomes),
+            countOutcomes(vehicleAiOutcomes),
+          ];
+          recordAiImport({
+            mode:
+              aiModelStatus === "off"
+                ? "off"
+                : aiModelStatus === "ready"
+                  ? "ran"
+                  : "unavailable",
+            calls: aiCallsUsed,
+            confirmed: oc.reduce((n, x) => n + x.confirmed, 0),
+            suggested: oc.reduce((n, x) => n + x.suggested, 0),
+            stoppedEarly: aiSkipped === "budget" || aiSkipped === "busy",
+            aiMs: Date.now() - aiStartedAt,
+            totalMs: Date.now() - startedAt,
+          });
 
           console.log(
             `[ImportTarget] ${input.fileName} (${Math.round(buffer.length / 1024)} KB): ` +
@@ -8501,6 +8539,56 @@ export const appRouter = router({
   // ─── Zero data ─────────────────────────────────────────────────────────────
   // Empties the operational data (server/zeroData.ts). Owner only, with the
   // typed word and the owner's password again.
+  // ─── Document AI switch (owner only) ────────────────────────────────────────
+  // Turns Import Target's on-device AI check on or off, and shows what it has
+  // done since the server started, so the owner can judge whether it helps.
+  documentAi: router({
+    status: protectedProcedure.query(async ({ ctx }) => {
+      if (!isFeatureOwner(ctx.user)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Not available." });
+      }
+      return {
+        enabled: await getBoolSetting(DOCUMENT_AI_SETTING, true),
+        modelStatus: await getDocumentAIModelStatus(),
+        budgetSeconds: Math.round(AI_TIME_BUDGET_MS / 1000),
+        stats: getAiStats(),
+      };
+    }),
+
+    set: protectedProcedure
+      .input(z.object({ enabled: z.boolean() }))
+      .mutation(async ({ input, ctx }) => {
+        if (!isFeatureOwner(ctx.user)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Not available." });
+        }
+        const before = await getBoolSetting(DOCUMENT_AI_SETTING, true);
+        await setBoolSetting(
+          DOCUMENT_AI_SETTING,
+          input.enabled,
+          ctx.user.cin ?? null
+        );
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin,
+          action: "document_ai_changed",
+          details: `Owner CIN ${ctx.user.cin ?? "Unknown"}: Import Target document AI ${before ? "on" : "off"} → ${input.enabled ? "on" : "off"}`,
+          createdAt: Date.now(),
+        });
+        return { enabled: input.enabled };
+      }),
+
+    /** Start the counts again from zero (to compare on against off). */
+    resetStats: protectedProcedure.mutation(async ({ ctx }) => {
+      if (!isFeatureOwner(ctx.user)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Not available." });
+      }
+      resetAiStats();
+      return getAiStats();
+    }),
+  }),
+
   zeroData: router({
     preview: protectedProcedure.query(async ({ ctx }) => {
       if (!isFeatureOwner(ctx.user)) {

@@ -36,6 +36,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
+import { ResizablePhoto } from "@/components/ResizablePhoto";
 import {
   locateTargetFromPending,
   samePlace,
@@ -1646,33 +1647,36 @@ function ObservationAttachments({
   return (
     <div className="mt-2 flex flex-wrap items-end gap-2">
       {row.attachments.map(a => (
-        <div
-          key={a.id}
-          className="relative group"
-          style={{ width: "33%", minWidth: 90, maxWidth: 160 }}
-        >
-          <img
-            src={a.url}
-            alt="Attached photograph"
-            className="w-full rounded border border-border cursor-zoom-in"
-            onClick={() => setLightbox(a.url)}
-          />
-          {canEdit && (
-            <DeletePhotoButton
-              pending={deletePending}
-              onConfirm={() => onDelete(a.id)}
-              positionClassName="absolute -top-1.5 -right-1.5"
-              iconSize="h-3.5 w-3.5 sm:h-4 sm:w-4"
-              glyphSize="h-2 w-2 sm:h-2.5 sm:w-2.5"
-            />
+        <ResizablePhoto key={a.id} photoId={a.id}>
+          {handle => (
+            <>
+              <div className="relative">
+                <img
+                  src={a.url}
+                  alt="Attached photograph"
+                  className="w-full rounded border border-border cursor-zoom-in"
+                  onClick={() => setLightbox(a.url)}
+                />
+                {handle}
+              </div>
+              {canEdit && (
+                <DeletePhotoButton
+                  pending={deletePending}
+                  onConfirm={() => onDelete(a.id)}
+                  positionClassName="absolute -top-1.5 -right-1.5"
+                  iconSize="h-3.5 w-3.5 sm:h-4 sm:w-4"
+                  glyphSize="h-2 w-2 sm:h-2.5 sm:w-2.5"
+                />
+              )}
+              <LinkedEntityPills
+                entities={a.linkedEntities}
+                faceCount={a.faceCount}
+                hasRow
+                onClick={() => setLinking({ id: a.id, url: a.url })}
+              />
+            </>
           )}
-          <LinkedEntityPills
-            entities={a.linkedEntities}
-            faceCount={a.faceCount}
-            hasRow
-            onClick={() => setLinking({ id: a.id, url: a.url })}
-          />
-        </div>
+        </ResizablePhoto>
       ))}
       {preview && uploading && (
         <div style={{ width: "33%", minWidth: 90, maxWidth: 160 }}>

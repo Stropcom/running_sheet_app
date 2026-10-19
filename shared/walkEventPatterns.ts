@@ -621,6 +621,24 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       return;
     }
 
+    // A vehicle departure that names who is in it ("Vehicle 1FAT001, HOGAN
+    // driver, CORNELL front passenger, departed DRIVO Carpark and continued
+    // via:"): the later row wins, so they are in the vehicle now and no longer
+    // "inside" the place an earlier row put them. Unseen occupants say
+    // nothing about anyone, so those leave the walk-ins alone.
+    const departure = text.match(VEHICLE_DEPART_PATTERN);
+    if (departure) {
+      const people = splitPeopleNames(
+        extractOccupantNames(departure[2])
+      ).filter(p => !isUnseenOccupants(p) && !/\bunidentified\b/i.test(p));
+      if (people.length > 0) {
+        const who = people.join(" and ");
+        placePeople(who, departure[1].toUpperCase(), row.id, true);
+        leaveAllPlaces(who);
+        clearHeadingFor(who);
+      }
+    }
+
     const outMatch = text.match(WALK_OUT_PATTERN);
     if (outMatch) {
       leavePlace(

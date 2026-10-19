@@ -112,3 +112,41 @@ describe("scanWalkEvents — identified in the vehicle", () => {
     expect(scan.walkIns).toMatchObject([{ location: "27 Olding Way" }]);
   });
 });
+
+describe("scanWalkEvents — a departure that names its occupants", () => {
+  const ENTERED_CARPARK =
+    "HOGAN and CORNELL entered DRIVO Carpark and continued out of sight.";
+  const NAMED_DEPARTURE =
+    "Vehicle 1FAT001, HOGAN driver, CORNELL front passenger, departed DRIVO Carpark and continued via:";
+
+  it("the later row wins: they are in the vehicle, not inside the carpark", () => {
+    const scan = scanWalkEvents(rows(ENTERED_CARPARK, NAMED_DEPARTURE));
+    expect(scan.walkIns).toEqual([]);
+    expect(scan.placements).toMatchObject([
+      { name: "HOGAN", rego: "1FAT001", inside: true },
+      { name: "CORNELL", rego: "1FAT001", inside: true },
+    ]);
+  });
+
+  it("unseen occupants leave the walk-in alone", () => {
+    const scan = scanWalkEvents(
+      rows(
+        ENTERED_CARPARK,
+        "Vehicle 1FAT001, unseen occupant/s, departed DRIVO Carpark and continued via:"
+      )
+    );
+    expect(scan.walkIns).toMatchObject([{ location: "DRIVO Carpark" }]);
+  });
+
+  it("an even later row placing them elsewhere still overrides", () => {
+    const scan = scanWalkEvents(
+      rows(
+        ENTERED_CARPARK,
+        NAMED_DEPARTURE,
+        "HOGAN and CORNELL entered Flight Club Fremantle and continued out of sight."
+      )
+    );
+    expect(scan.walkIns).toMatchObject([{ location: "Flight Club Fremantle" }]);
+    expect(scan.placements.every(p => p.rego === "")).toBe(true);
+  });
+});

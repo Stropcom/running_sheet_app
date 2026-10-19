@@ -475,6 +475,7 @@ import {
   suggestExtractedValue,
   suggestVerifiedCorrection,
 } from "./documentImport/localDocumentAI";
+import { AI_TIME_BUDGET_MS, withinBudget } from "./documentImport/aiBudget";
 import {
   verifyAISuggestion,
   composeParsedValue,
@@ -5427,6 +5428,7 @@ export const appRouter = router({
           })
         )
         .mutation(async ({ input }) => {
+          const startedAt = Date.now();
           const buffer = Buffer.from(input.dataBase64, "base64");
           const isPdf = /\.pdf$/i.test(input.fileName);
           const read = isPdf
@@ -5440,6 +5442,7 @@ export const appRouter = router({
                 : "Couldn't read this file as a Word document (.docx).",
             });
           }
+          const readMs = Date.now() - startedAt;
           const mapped = mapDocumentToTargetProfile(read);
 
           // Local AI Roadmap Step 3 — additive only, never replaces what
@@ -5488,14 +5491,29 @@ export const appRouter = router({
           const addressAiOutcomes: AIAssistOutcome[] = [];
           const vehicleAiOutcomes: AIAssistOutcome[] = [];
 
+          // The AI pass has a total time limit (see documentImport/aiBudget.ts):
+          // past it, or while an earlier document's model call is still
+          // running, the remaining checks are simply not made ("declined"),
+          // and the rules' own reading is returned as it always is.
+          const aiDeadline = Date.now() + AI_TIME_BUDGET_MS;
+          const aiStartedAt = Date.now();
+          let aiSkipped: "budget" | "busy" | "error" | null = null;
+          const askModel = async (
+            call: () => Promise<string | null>
+          ): Promise<string | null> => {
+            if (aiSkipped === "budget" || aiSkipped === "busy") return null;
+            const r = await withinBudget(aiDeadline, call);
+            if (r.ok) return r.value;
+            aiSkipped = r.reason;
+            return null;
+          };
+
           if (aiModelStatus === "ready") {
             for (const item of mapped.needsReview) {
               if (aiCallsUsed >= MAX_AI_CALLS) break;
               aiCallsUsed++;
-              const raw = await suggestExtractedValue(
-                item.kind,
-                item.label,
-                item.raw
+              const raw = await askModel(() =>
+                suggestExtractedValue(item.kind, item.label, item.raw)
               );
               const outcome: AIAssistOutcome = raw
                 ? verifyAISuggestion(item.kind, raw, null)
@@ -5514,11 +5532,13 @@ export const appRouter = router({
               }
               aiCallsUsed++;
               const currentValue = composeParsedValue("address", a);
-              const raw = await suggestVerifiedCorrection(
-                "address",
-                a.label,
-                a.raw,
-                currentValue
+              const raw = await askModel(() =>
+                suggestVerifiedCorrection(
+                  "address",
+                  a.label,
+                  a.raw,
+                  currentValue
+                )
               );
               addressAiOutcomes.push(
                 raw
@@ -5533,11 +5553,8 @@ export const appRouter = router({
               }
               aiCallsUsed++;
               const currentValue = composeParsedValue("vehicle", v);
-              const raw = await suggestVerifiedCorrection(
-                "vehicle",
-                "",
-                v.raw,
-                currentValue
+              const raw = await askModel(() =>
+                suggestVerifiedCorrection("vehicle", "", v.raw, currentValue)
               );
               vehicleAiOutcomes.push(
                 raw
@@ -5553,6 +5570,13 @@ export const appRouter = router({
               vehicleAiOutcomes.push({ status: "declined" })
             );
           }
+
+          console.log(
+            `[ImportTarget] ${input.fileName} (${Math.round(buffer.length / 1024)} KB): ` +
+              `read ${readMs} ms, AI model ${aiModelStatus}, ${aiCallsUsed} AI check(s) ` +
+              `in ${Date.now() - aiStartedAt} ms${aiSkipped ? ` (stopped early: ${aiSkipped})` : ""}, ` +
+              `total ${Date.now() - startedAt} ms`
+          );
 
           return {
             ...mapped,

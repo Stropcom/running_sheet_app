@@ -635,9 +635,18 @@ export function ImportTargetDocumentDialog({
       }
       await parseMut.mutateAsync({ fileName: file.name, dataBase64 });
     } catch (err: any) {
+      // A web-server error page (HTML, not JSON) means the server stopped
+      // waiting — a very large document taking too long — not a bad file.
+      const raw = String(err?.message ?? "");
+      const serverGaveUp =
+        /is not valid JSON|Unexpected token '<'|<html|Gateway Time-?out|Bad Gateway/i.test(
+          raw
+        );
       setError(
-        err?.message ??
-          "Couldn't read that document — it may be corrupt or in an unsupported format."
+        serverGaveUp
+          ? "The server took too long to read this document and stopped waiting. Try again; if it keeps happening, switch off “Parse & extract fields” to attach the file as it is and fill the form in by hand."
+          : (err?.message ??
+              "Couldn't read that document — it may be corrupt or in an unsupported format.")
       );
     } finally {
       setIsReadingFile(false);

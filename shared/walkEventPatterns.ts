@@ -37,6 +37,7 @@ import { extractOccupantNames } from "./occupantNames";
 import {
   matchVesselBoarding,
   matchVesselDisembark,
+  stripVesselLeave,
   vesselLabel,
 } from "./vesselPatterns";
 import { expandRowSegments } from "./rowSegments";
@@ -444,6 +445,8 @@ export interface ScannedHeadingTo {
   destination: string;
   /** Where they left, e.g. "193b Stock Road". */
   from: string;
+  /** They got off a boat or vessel ("the boat") and are now on foot. */
+  fromVessel?: string;
   sheetId: number;
   rowId: number;
 }
@@ -515,6 +518,9 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   const lastWalkIn = new Map<string, ScannedWalkIn & { orderIdx: number }>();
   const walkedOut = new Set<string>();
   const heading = new Map<string, ScannedHeadingTo & { orderIdx: number }>();
+  // Rows where someone got off a boat, and from what — a walk read from the
+  // same row is "disembarked, on foot" (fromVessel on the heading).
+  const disembarkRows = new Map<number, string>();
   const placed = new Map<string, ScannedPlacement>();
   // The last place each person was logged at (a surname token → the place).
   const lastAt = new Map<string, string>();
@@ -611,7 +617,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   expandRowSegments(rows).forEach((row, idx) => {
     // Street types are read in full ("Robert St" = "Robert Street"), so a
     // place written both ways across rows is still one place.
-    const text = fullStreetTypes(row.observation ?? "");
+    let text = fullStreetTypes(row.observation ?? "");
     if (!text) return;
     const where = { sheetId: row.sheetId, rowId: row.id, orderIdx: idx };
 
@@ -696,6 +702,10 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       if (who && !isVehicleSubject(who)) {
         placePeople(who, "", row.id, true);
         noteActors(disembark.names, text);
+        disembarkRows.set(row.id, disembark.vessel || "the vessel");
+        // Read what is left as ordinary walking, so the walker is "HOGAN",
+        // not "HOGAN disembarked from the boat and".
+        text = stripVesselLeave(text);
       }
     }
 
@@ -968,7 +978,11 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     .map(({ orderIdx: _o, ...rest }) => rest);
   const headingTo = Array.from(heading.values())
     .sort(byRecent)
-    .map(({ orderIdx: _o, ...rest }) => rest);
+    .map(({ orderIdx: _o, ...rest }) =>
+      disembarkRows.has(rest.rowId)
+        ? { ...rest, fromVessel: disembarkRows.get(rest.rowId)! }
+        : rest
+    );
   return {
     walkIns,
     headingTo,

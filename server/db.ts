@@ -6524,6 +6524,7 @@ export interface PendingHeadingTo {
   names: string;
   destination: string;
   from: string;
+  fromVessel?: string;
   sheetId: number;
   rowId: number;
 }

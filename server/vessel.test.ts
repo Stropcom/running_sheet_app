@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   matchVesselBoarding,
   matchVesselDisembark,
+  stripVesselLeave,
 } from "@shared/vesselPatterns";
 import { locateTarget } from "@shared/targetPosition";
 import { isReadAsMovement, scanWalkEvents } from "@shared/walkEventPatterns";
@@ -189,5 +190,78 @@ describe("where the vessel is: the latest place logged, not an older one", () =>
     expect(scan.placements.find(p => p.name === "HOGAN")?.at).toBe(
       "DRIVO Carpark"
     );
+  });
+});
+
+describe("getting off a boat and walking: short wording", () => {
+  const OFF =
+    "HOGAN disembarked from the boat and walked [route] towards [location].";
+  it("strips the getting-off clause so the walker is just HOGAN", () => {
+    expect(stripVesselLeave(OFF)).toBe(
+      "HOGAN walked [route] towards [location]."
+    );
+    expect(
+      stripVesselLeave("HOGAN disembarked and walked along the jetty.")
+    ).toBe("HOGAN walked along the jetty.");
+    expect(stripVesselLeave("HOGAN got off the yacht and walked away.")).toBe(
+      "HOGAN walked away."
+    );
+    expect(stripVesselLeave("HOGAN walked to the shop.")).toBe(
+      "HOGAN walked to the shop."
+    );
+  });
+
+  it("matchVesselDisembark says what he got off", () => {
+    expect(matchVesselDisembark(OFF)).toEqual({
+      names: "HOGAN",
+      vessel: "the boat",
+    });
+    expect(matchVesselDisembark("HOGAN disembarked.")).toEqual({
+      names: "HOGAN",
+      vessel: "",
+    });
+  });
+
+  it("the logger shows HOGAN on foot after getting off, not a long name", () => {
+    const scan = scanWalkEvents(
+      rows("HOGAN boarded the boat in the last pen on the jetty.", OFF)
+    );
+    expect(scan.headingTo).toHaveLength(1);
+    expect(scan.headingTo[0]).toMatchObject({
+      names: "HOGAN",
+      destination: "[location]",
+      fromVessel: "the boat",
+    });
+    expect(scan.placements.every(p => !p.vessel)).toBe(true);
+  });
+
+  it("the flag reads 'HOGAN · disembarked, on foot'", () => {
+    const scan = scanWalkEvents(
+      rows(
+        "Vehicle 1FAT001, HOGAN driver, arrived at 15 Riverside Road, EAST FREMANTLE WA (15 Riverside Road) and parked on the street.\n\nHOGAN exited the vehicle and walked along the boat jetty.",
+        "HOGAN boarded the boat in the last pen on the jetty.",
+        OFF
+      )
+    );
+    const pos = locateTarget({
+      token: "HOGAN",
+      arrivals: [
+        {
+          rego: "1FAT001",
+          names: "HOGAN",
+          address: "15 Riverside Road",
+          rowId: 1,
+        },
+      ],
+      departures: [],
+      walkIns: scan.walkIns,
+      headingTo: scan.headingTo,
+      placements: scan.placements,
+    });
+    expect(pos).toMatchObject({
+      state: "walking",
+      label: "disembarked, on foot",
+      people: ["HOGAN"],
+    });
   });
 });

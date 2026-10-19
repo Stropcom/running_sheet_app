@@ -13798,19 +13798,23 @@ export default function IntelligenceMapping() {
                                   cards.push({
                                     key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                                     title: h.names,
-                                    pill: "Departed on foot",
+                                    pill: h.fromVessel
+                                      ? "Disembarked"
+                                      : "Departed on foot",
                                     attn: true,
                                     who: h.destination.includes("[")
                                       ? "On foot"
                                       : `Walking to ${h.destination}`,
-                                    state: `Left ${h.from}`,
+                                    state: `Left ${h.fromVessel ?? h.from}`,
                                     holds: surnameTokens(h.names),
                                     people: splitPeopleNames(h.names),
                                     locus: {
                                       headline: h.destination.includes("[")
-                                        ? "Departed on foot"
-                                        : `Departed on foot to ${h.destination}`,
-                                      sub: `Left ${h.from}`,
+                                        ? h.fromVessel
+                                          ? "Disembarked, on foot"
+                                          : "Departed on foot"
+                                        : `${h.fromVessel ? "Disembarked, on foot" : "Departed on foot"} to ${h.destination}`,
+                                      sub: `Left ${h.fromVessel ?? h.from}`,
                                     },
                                     actions: [
                                       {

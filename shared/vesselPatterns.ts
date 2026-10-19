@@ -31,7 +31,7 @@ export const VESSEL_BOARD_PATTERN = new RegExp(
 
 /** "HOGAN disembarked from the vessel", "HOGAN got off the boat". */
 export const VESSEL_LEAVE_PATTERN = new RegExp(
-  `([A-Za-z][^.\\n]*?)\\s*\\b(?:${LEAVE_VERB})\\s+(?:off\\s+)?${VESSEL_REF}`,
+  `([A-Za-z][^.\\n]*?)\\s*\\b(?:${LEAVE_VERB})\\s+(?:off\\s+)?(${VESSEL_REF})`,
   "i"
 );
 
@@ -61,13 +61,32 @@ export function matchVesselBoarding(text: string): VesselBoarding | null {
   return { names: m[1].trim(), vessel, rest: trimEnd(m[3] ?? "") };
 }
 
-/** Who got off, or null when the sentence isn't about leaving a vessel. */
-export function matchVesselDisembark(text: string): { names: string } | null {
-  const m =
-    text.match(VESSEL_LEAVE_PATTERN) ??
-    text.match(VESSEL_DISEMBARK_BARE_PATTERN);
-  if (!m) return null;
-  return { names: m[1].trim() };
+/** Who got off and from what ("the boat"; "" when the row only says
+ * "disembarked"), or null when the sentence isn't about leaving a vessel. */
+export function matchVesselDisembark(
+  text: string
+): { names: string; vessel: string } | null {
+  const m = text.match(VESSEL_LEAVE_PATTERN);
+  if (m) return { names: m[1].trim(), vessel: trimEnd(m[2]) };
+  const bare = text.match(VESSEL_DISEMBARK_BARE_PATTERN);
+  if (bare) return { names: bare[1].trim(), vessel: "" };
+  return null;
+}
+
+const LEAVE_CLAUSE = new RegExp(
+  `\\s*\\b(?:${LEAVE_VERB})\\s+(?:off\\s+)?${VESSEL_REF}(?:\\s+and\\b)?`,
+  "i"
+);
+const DISEMBARK_BARE_CLAUSE =
+  /\s*\b(?:disembarked|alighted)\b(?:\s+from\b)?(?:\s+and\b)?/i;
+
+/** The sentence with the getting-off clause taken out, so what is left can be
+ * read as walking: "HOGAN disembarked from the boat and walked [route]
+ * towards [location]." → "HOGAN walked [route] towards [location]." (the
+ * walker is then just HOGAN, not "HOGAN disembarked from the boat and"). */
+export function stripVesselLeave(text: string): string {
+  if (LEAVE_CLAUSE.test(text)) return text.replace(LEAVE_CLAUSE, "");
+  return text.replace(DISEMBARK_BARE_CLAUSE, "");
 }
 
 /** Short wording for a flag or card: "a vessel" → "a vessel", "the white

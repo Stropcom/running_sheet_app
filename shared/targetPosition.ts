@@ -65,6 +65,8 @@ export interface TargetPositionInput {
     names: string;
     destination: string;
     from: string;
+    /** Got off a boat or vessel ("the boat") and is now on foot. */
+    fromVessel?: string;
     rowId: number;
   }[];
   placements: {
@@ -150,7 +152,7 @@ export function locateTarget(
     found.push({
       place: fromVehicle ?? null,
       state: "walking",
-      label: "departed on foot",
+      label: h.fromVessel ? "disembarked, on foot" : "departed on foot",
       people: targetFirst(splitPeopleNames(h.names), t),
       rowId: h.rowId,
       ...(fromArrival ? { rego: fromArrival.rego } : {}),

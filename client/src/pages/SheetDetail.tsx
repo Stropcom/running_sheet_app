@@ -5699,10 +5699,10 @@ export default function SheetDetail({
               continuityCards.push({
                 key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                 title: h.names,
-                pill: "Departed on foot",
+                pill: h.fromVessel ? "Disembarked" : "Departed on foot",
                 attn: true,
                 who: destKnown ? `Walking to ${h.destination}` : "On foot",
-                state: `Left ${h.from}${sinceText(h.rowId)}`,
+                state: `Left ${h.fromVessel ?? h.from}${sinceText(h.rowId)}`,
                 actions: [
                   ...cardAction(
                     chip,
@@ -5729,9 +5729,11 @@ export default function SheetDetail({
                 people: splitPeopleNames(h.names),
                 locus: {
                   headline: destKnown
-                    ? `Departed on foot to ${h.destination}`
-                    : "Departed on foot",
-                  sub: `Left ${h.from}${sinceText(h.rowId)}`,
+                    ? `${h.fromVessel ? "Disembarked, on foot" : "Departed on foot"} to ${h.destination}`
+                    : h.fromVessel
+                      ? "Disembarked, on foot"
+                      : "Departed on foot",
+                  sub: `Left ${h.fromVessel ?? h.from}${sinceText(h.rowId)}`,
                 },
               });
             });

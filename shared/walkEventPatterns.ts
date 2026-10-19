@@ -30,7 +30,9 @@
 import {
   VEHICLE_DEPART_PATTERN,
   matchVehicleArrival,
+  matchVehicleSighting,
 } from "./vehicleEventPatterns";
+import { extractOccupantNames } from "./occupantNames";
 import { expandRowSegments } from "./rowSegments";
 import { fullStreetTypes } from "./streetTypes";
 
@@ -427,6 +429,9 @@ export interface ScannedPlacement {
    * last), when one is known — a vehicle with no arrival row of its own is
    * taken to be around there. */
   at?: string;
+  /** Where the vehicle was travelling when a row identified them in it
+   * ("Leach Highway, FREMANTLE"). */
+  via?: string;
 }
 
 export function scanWalkEvents(rows: WalkScanRow[]): {
@@ -478,7 +483,8 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     names: string,
     rego: string,
     rowId: number,
-    inside = true
+    inside = true,
+    via?: string
   ) => {
     for (const p of splitPeopleNames(cleanWalkerNames(names))) {
       const at = tok(p)
@@ -490,6 +496,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         rowId,
         inside,
         ...(at ? { at } : {}),
+        ...(via ? { via } : {}),
       };
       for (const t of tok(p)) placed.set(t, entry);
     }
@@ -561,6 +568,24 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     const text = fullStreetTypes(row.observation ?? "");
     if (!text) return;
     const where = { sheetId: row.sheetId, rowId: row.id, orderIdx: idx };
+
+    // A vehicle seen on the move that names who is in it ("Vehicle 1FAT001,
+    // HOGAN driver and sole occupant, travelled on Leach Highway, FREMANTLE
+    // and continued via:"): they are in that vehicle now, so no longer inside
+    // the place they were last logged at, and no longer walking anywhere.
+    const sighting = matchVehicleSighting(text);
+    if (sighting) {
+      const people = splitPeopleNames(
+        extractOccupantNames(sighting.occupantDesc)
+      ).filter(p => !isUnseenOccupants(p));
+      if (people.length > 0) {
+        const who = people.join(" and ");
+        placePeople(who, sighting.rego, row.id, true, sighting.route);
+        leaveAllPlaces(who);
+        clearHeadingFor(who);
+      }
+      return;
+    }
 
     const outMatch = text.match(WALK_OUT_PATTERN);
     if (outMatch) {
@@ -1031,7 +1056,11 @@ export function occupantWording(
  */
 export function isReadAsMovement(text: string): boolean {
   if (!text) return false;
-  if (matchVehicleArrival(text) || VEHICLE_DEPART_PATTERN.test(text)) {
+  if (
+    matchVehicleArrival(text) ||
+    VEHICLE_DEPART_PATTERN.test(text) ||
+    matchVehicleSighting(text)
+  ) {
     return true;
   }
   if (

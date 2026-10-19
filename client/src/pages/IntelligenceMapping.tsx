@@ -13379,9 +13379,15 @@ export default function IntelligenceMapping() {
                                     ? movingOcc.join(", ")
                                     : extractOccupantNames(d.occupantDesc) ||
                                       "Occupants not seen",
-                                  state: d.fromAddress
-                                    ? `From ${d.fromAddress}`
-                                    : "No arrival logged yet",
+                                  state: d.via
+                                    ? `Travelling on ${d.via}${
+                                        d.fromAddress
+                                          ? ` — from ${d.fromAddress}`
+                                          : ""
+                                      }`
+                                    : d.fromAddress
+                                      ? `From ${d.fromAddress}`
+                                      : "No arrival logged yet",
                                   holds: movingOcc.length
                                     ? movingOcc.flatMap(n => surnameTokens(n))
                                     : surnameTokens(d.occupantDesc),
@@ -13391,10 +13397,19 @@ export default function IntelligenceMapping() {
                                         extractOccupantNames(d.occupantDesc)
                                       ),
                                   locus: {
-                                    headline: `Departed in ${d.rego}`,
-                                    sub: d.fromAddress
-                                      ? `From ${d.fromAddress}`
-                                      : "No arrival logged yet",
+                                    headline:
+                                      d.via && movingOcc.length
+                                        ? `In ${d.rego}`
+                                        : `Departed in ${d.rego}`,
+                                    sub: d.via
+                                      ? `Travelling on ${d.via}${
+                                          d.fromAddress
+                                            ? ` — from ${d.fromAddress}`
+                                            : ""
+                                        }`
+                                      : d.fromAddress
+                                        ? `From ${d.fromAddress}`
+                                        : "No arrival logged yet",
                                   },
                                   actions: [
                                     {

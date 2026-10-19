@@ -252,3 +252,40 @@ function extractArrivalAddressRaw(text: string): string | null {
   }
   return null;
 }
+
+// A vehicle seen on the move part-way through a trip — "Vehicle 1FAT001,
+// HOGAN driver and sole occupant, travelled on Leach Highway, FREMANTLE and
+// continued via:". Written after a departure whose occupants weren't seen
+// ("Vehicle 1FAT001, unseen occupant/s, departed 27 Olding Way and continued
+// via:") when the target is then identified in the vehicle: the row says who
+// is in it and where it is now, with no arrival yet. Needs the comma before
+// "travelled" like the arrival-via-travel shape above, and never matches a row
+// that also departs or arrives (those have their own rules).
+export const VEHICLE_SIGHTING_PATTERN =
+  /(?:\(Vehicle|Vehicle)\s+([A-Za-z0-9]{5,8})\)?,?\s*((?:(?!\(Vehicle\s)\S)(?:(?!\(Vehicle\s).)*?),\s*(?:travelled|travelling|driving|drove)\s+(?:on|along|down|up|via|through)\s+([^.\n]+?)(?=\s+and\s+continued\b|\s*[.:\n]|\s*$)/i;
+
+export interface VehicleSightingMatch {
+  rego: string;
+  /** Occupants as written, e.g. "HOGAN driver and sole occupant". */
+  occupantDesc: string;
+  /** Where it is travelling, e.g. "Leach Highway, FREMANTLE". */
+  route: string;
+}
+
+export function matchVehicleSighting(
+  text: string
+): VehicleSightingMatch | null {
+  if (!text) return null;
+  if (VEHICLE_DEPART_PATTERN.test(text) || matchVehicleArrival(text)) {
+    return null;
+  }
+  const m = text.match(VEHICLE_SIGHTING_PATTERN);
+  if (!m) return null;
+  const route = fullStreetTypes(m[3].trim().replace(/[,\s]+$/, ""));
+  if (!route) return null;
+  return {
+    rego: m[1].toUpperCase(),
+    occupantDesc: m[2].trim(),
+    route,
+  };
+}

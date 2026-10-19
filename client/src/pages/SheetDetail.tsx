@@ -5634,6 +5634,19 @@ export default function SheetDetail({
             (pendingDepartures ?? []).forEach(d => {
               const chip = vehicleArrivingChips.find(c => c.rego === d.rego);
               if (!chip) return;
+              // A later row saw it on the move ("... HOGAN driver and sole
+              // occupant, travelled on Leach Highway ..."): where it is now,
+              // on top of where it left from.
+              const travelling = d.via
+                ? `Travelling on ${d.via}${d.viaRowId ? ` · ${rowTime(d.viaRowId) ?? ""}` : ""}`.replace(
+                    / · $/,
+                    ""
+                  )
+                : "";
+              const leftFrom = departedState(d);
+              const stateLine = travelling
+                ? `${travelling} — ${leftFrom.charAt(0).toLowerCase()}${leftFrom.slice(1)}`
+                : leftFrom;
               continuityCards.push({
                 key: `dep-${d.rego}`,
                 title: d.rego,
@@ -5643,9 +5656,9 @@ export default function SheetDetail({
                   ? vehicleOccupants(d.occupantDesc, d.rego, d.rowId).join(", ")
                   : extractOccupantNames(d.occupantDesc) ||
                     "Occupants not seen",
-                state: departedState(d),
+                state: stateLine,
                 actions: cardAction(chip, "Vehicle arriving"),
-                latestRowId: d.rowId,
+                latestRowId: Math.max(d.rowId, d.viaRowId ?? 0),
                 ...(() => {
                   const inCar = vehicleOccupants(
                     d.occupantDesc,
@@ -5655,10 +5668,17 @@ export default function SheetDetail({
                   return {
                     holds: inCar.flatMap(n => surnameTokens(n)),
                     people: inCar,
-                    locus: {
-                      headline: `Departed in ${d.rego}`,
-                      sub: departedState(d),
-                    },
+                    locus: travelling
+                      ? {
+                          headline: inCar.length
+                            ? `In ${d.rego}`
+                            : `Departed in ${d.rego}`,
+                          sub: `${travelling} — ${leftFrom.charAt(0).toLowerCase()}${leftFrom.slice(1)}`,
+                        }
+                      : {
+                          headline: `Departed in ${d.rego}`,
+                          sub: leftFrom,
+                        },
                   };
                 })(),
               });

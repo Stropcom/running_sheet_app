@@ -65,12 +65,16 @@ import {
   VEHICLE_DEPART_PATTERN,
   VEHICLE_ARRIVE_PATTERN,
   matchVehicleArrival,
+  matchVehicleSighting,
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
 import {
   scanWalkEvents,
   extractDepartureAddress,
+  isUnseenOccupants,
+  splitPeopleNames,
 } from "@shared/walkEventPatterns";
+import { extractOccupantNames } from "@shared/occupantNames";
 import { expandRowSegments } from "@shared/rowSegments";
 import { VEHICLE_REGO_PATTERN } from "@shared/vehicleRego";
 import {
@@ -6310,6 +6314,11 @@ export interface PendingVehicleDeparture {
   rowId: number;
   /** The place the departure row says it left, when one is written. */
   fromAddress: string | null;
+  /** Where a later row saw it travelling ("Leach Highway, FREMANTLE") — set
+   * when a row identified who is in it (see matchVehicleSighting). */
+  via?: string | null;
+  /** The row that saw it travelling (newer than rowId). */
+  viaRowId?: number | null;
 }
 
 // Returns the most recent still-pending (not yet arrived) departure per
@@ -6341,6 +6350,8 @@ export function computePendingVehicleDepartures(
       sheetId: number;
       rowId: number;
       fromAddress: string | null;
+      via?: string | null;
+      viaRowId?: number | null;
       orderIdx: number;
     }
   >();
@@ -6359,6 +6370,20 @@ export function computePendingVehicleDepartures(
         orderIdx: idx,
       });
       arrivedRegos.delete(rego);
+      return;
+    }
+    // Seen on the move after it left: if the row names who is in it, the
+    // departure's unseen occupants are now known (and where it is).
+    const sighting = matchVehicleSighting(row.observation);
+    if (sighting) {
+      const dep = lastDepartByRego.get(sighting.rego);
+      if (dep && !arrivedRegos.has(sighting.rego)) {
+        const named = extractOccupantNames(sighting.occupantDesc);
+        const known = splitPeopleNames(named).some(p => !isUnseenOccupants(p));
+        if (known) dep.occupantDesc = sighting.occupantDesc;
+        dep.via = sighting.route;
+        dep.viaRowId = row.id;
+      }
       return;
     }
     const arriveMatch = row.observation.match(VEHICLE_ARRIVE_PATTERN);

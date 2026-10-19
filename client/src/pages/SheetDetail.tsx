@@ -5789,6 +5789,48 @@ export default function SheetDetail({
                 });
               });
             }
+            // People aboard a boat or vessel ("boarded a vessel at the end of
+            // the jetty"): where it is can't be told from the row, so it is
+            // where they were last logged, until a row says they got off.
+            {
+              const byVessel = new Map<
+                string,
+                NonNullable<typeof pendingPlacements>
+              >();
+              for (const p of pendingPlacements ?? []) {
+                if (!p.vessel) continue;
+                const k = p.vessel.toLowerCase();
+                byVessel.set(k, [...(byVessel.get(k) ?? []), p]);
+              }
+              byVessel.forEach((ps, vk) => {
+                const vessel = ps[0].vessel ?? vk;
+                const names = ps.map(p => p.name);
+                const at = ps.find(p => p.at)?.at;
+                const rowId = Math.max(...ps.map(p => p.rowId));
+                const where = at
+                  ? `Last seen at ${at}${sinceText(rowId)}`
+                  : `Position not logged${sinceText(rowId)}`;
+                continuityCards.push({
+                  key: `vsl-${vk}`,
+                  title: names.join(" and "),
+                  pill: "On a vessel",
+                  attn: true,
+                  who: `${names.join(", ")} on ${vessel}`,
+                  state: where,
+                  actions: [
+                    {
+                      key: `vsl-off-${vk}`,
+                      label: "Disembarked",
+                      text: `${shortenAlreadyMentionedNames(names.join(" and "), usedBracketCodes)} disembarked from ${vessel} and walked [route] towards [location].`,
+                    },
+                  ],
+                  latestRowId: rowId,
+                  holds: names.flatMap(n => surnameTokens(n)),
+                  people: names,
+                  locus: { headline: `On ${vessel}`, sub: where },
+                });
+              });
+            }
             // The card holding the TARGET leads the band as its tracker: a
             // person's by surname, a vehicle's by its plate (shared rule:
             // trackedTarget). A location target has nothing that moves.

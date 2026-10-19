@@ -13807,6 +13807,56 @@ export default function IntelligenceMapping() {
                                   })
                                 );
 
+                              // People aboard a boat or vessel: shown
+                              // wherever the sheet is, until a row says they
+                              // got off.
+                              {
+                                const byVessel = new Map<
+                                  string,
+                                  NonNullable<typeof rsPendingPlacements>
+                                >();
+                                for (const p of rsPendingPlacements ?? []) {
+                                  if (!p.vessel) continue;
+                                  const k = p.vessel.toLowerCase();
+                                  byVessel.set(k, [
+                                    ...(byVessel.get(k) ?? []),
+                                    p,
+                                  ]);
+                                }
+                                byVessel.forEach((ps, vk) => {
+                                  const vessel = ps[0].vessel ?? vk;
+                                  const crew = ps.map(p => p.name);
+                                  const at = ps.find(p => p.at)?.at;
+                                  const where = at
+                                    ? `Last seen at ${at}`
+                                    : "Position not logged";
+                                  cards.push({
+                                    key: `vsl-${vk}`,
+                                    title: crew.join(" and "),
+                                    pill: "On a vessel",
+                                    attn: true,
+                                    who: `${crew.join(", ")} on ${vessel}`,
+                                    state: where,
+                                    holds: crew.flatMap(n => surnameTokens(n)),
+                                    people: crew,
+                                    locus: {
+                                      headline: `On ${vessel}`,
+                                      sub: where,
+                                    },
+                                    actions: [
+                                      {
+                                        key: `vsl-off-${vk}`,
+                                        label: "Disembarked",
+                                        text: `${names(crew.join(" and "))} disembarked from ${vessel} and walked [route] towards [location].`,
+                                      },
+                                    ],
+                                    latestRowId: Math.max(
+                                      ...ps.map(p => p.rowId)
+                                    ),
+                                  });
+                                });
+                              }
+
                               // The card holding the target leads, as its
                               // tracker (person or vehicle; same rule as the
                               // sheet and the flag).

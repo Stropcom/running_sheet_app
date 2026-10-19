@@ -33,6 +33,11 @@ import {
   matchVehicleSighting,
 } from "./vehicleEventPatterns";
 import { extractOccupantNames } from "./occupantNames";
+import {
+  matchVesselBoarding,
+  matchVesselDisembark,
+  vesselLabel,
+} from "./vesselPatterns";
 import { expandRowSegments } from "./rowSegments";
 import { fullStreetTypes } from "./streetTypes";
 
@@ -466,6 +471,10 @@ export interface ScannedPlacement {
   /** Where the vehicle was travelling when a row identified them in it
    * ("Leach Highway, FREMANTLE"). */
   via?: string;
+  /** On a boat or vessel ("a vessel", "the white yacht"), as the row wrote
+   * it. Set with `rego` "" — they are aboard, not in a vehicle — and with
+   * `at` as where they were last logged (where it is taken to be). */
+  vessel?: string;
 }
 
 export function scanWalkEvents(rows: WalkScanRow[]): {
@@ -518,7 +527,8 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     rego: string,
     rowId: number,
     inside = true,
-    via?: string
+    via?: string,
+    vessel?: string
   ) => {
     for (const p of splitPeopleNames(cleanWalkerNames(names))) {
       const at = tok(p)
@@ -531,6 +541,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         inside,
         ...(at ? { at } : {}),
         ...(via ? { via } : {}),
+        ...(vessel ? { vessel } : {}),
       };
       for (const t of tok(p)) placed.set(t, entry);
     }
@@ -636,6 +647,38 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         placePeople(who, departure[1].toUpperCase(), row.id, true);
         leaveAllPlaces(who);
         clearHeadingFor(who);
+      }
+    }
+
+    // Getting onto a boat or vessel ("HOGAN boarded a vessel at the end of
+    // the jetty."): they are aboard now — not inside a place, not walking —
+    // until a later row puts them somewhere else. Getting off ("disembarked",
+    // "got off the boat") puts them back on foot; whatever else the sentence
+    // says ("... and walked along the jetty") is still read below.
+    const boarding = matchVesselBoarding(text);
+    if (boarding) {
+      const who = resolveWho(boarding.names);
+      if (who && !isVehicleSubject(who)) {
+        placePeople(
+          who,
+          "",
+          row.id,
+          true,
+          undefined,
+          vesselLabel(boarding.vessel)
+        );
+        leaveAllPlaces(who);
+        clearHeadingFor(who);
+        noteActors(boarding.names, text);
+        return;
+      }
+    }
+    const disembark = matchVesselDisembark(text);
+    if (disembark) {
+      const who = resolveWho(disembark.names);
+      if (who && !isVehicleSubject(who)) {
+        placePeople(who, "", row.id, true);
+        noteActors(disembark.names, text);
       }
     }
 
@@ -1111,7 +1154,9 @@ export function isReadAsMovement(text: string): boolean {
   if (
     matchVehicleArrival(text) ||
     VEHICLE_DEPART_PATTERN.test(text) ||
-    matchVehicleSighting(text)
+    matchVehicleSighting(text) ||
+    matchVesselBoarding(text) ||
+    matchVesselDisembark(text)
   ) {
     return true;
   }

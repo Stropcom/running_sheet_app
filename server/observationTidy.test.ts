@@ -158,3 +158,60 @@ describe("justTypedSpaceAfterBracket", () => {
     expect(justTypedSpaceAfterBracket("x cafe ", 7)).toBe(false);
   });
 });
+
+describe("repairing slips made while typing", () => {
+  it("fixes the screenshot case: stray full stop, glued street type, doubled and", () => {
+    expect(
+      tidyObservation(
+        "CORNELL exited the vehicle, entered. 64 Sewell Streetand and continued out of sight."
+      )
+    ).toBe(
+      "CORNELL exited the vehicle, entered 64 Sewell Street and continued out of sight."
+    );
+  });
+
+  it("removes a function word said twice running, keeping the first", () => {
+    expect(tidyObservation("Walked to the the shop and and left.")).toBe(
+      "Walked to the shop and left."
+    );
+    expect(tidyObservation("Went into the and and and shop.")).toBe(
+      "Went into the and shop."
+    );
+  });
+
+  it("leaves words that can legitimately repeat, and bracketed text", () => {
+    expect(tidyObservation("He said that that was so.")).toBe(
+      "He said that that was so."
+    );
+    expect(tidyObservation("Seen at (the the) shop.")).toBe(
+      "Seen at (the the) shop."
+    );
+  });
+
+  it("collapses double commas", () => {
+    expect(tidyObservation("Walked north,, then east, , then stopped.")).toBe(
+      "Walked north, then east, then stopped."
+    );
+  });
+
+  it("removes a full stop in the middle of a sentence only when it is clearly a slip", () => {
+    expect(tidyObservation("Walked to the. shop and left.")).toBe(
+      "Walked to the shop and left."
+    );
+    // a real sentence end after "entered" is kept when a name follows
+    expect(tidyObservation("HOGAN entered. SANTOS walked off.")).toBe(
+      "HOGAN entered. SANTOS walked off."
+    );
+    // a number that isn't an address after "entered." is kept
+    expect(tidyObservation("HOGAN entered. 2 males exited.")).toBe(
+      "HOGAN entered. 2 males exited."
+    );
+  });
+
+  it("keeps the caret in place when typing", () => {
+    const text = "Entered the the shop";
+    const r = tidyObservationAtCaret(text, text.length);
+    expect(r.text).toBe("Entered the shop");
+    expect(r.caret).toBe(r.text.length);
+  });
+});

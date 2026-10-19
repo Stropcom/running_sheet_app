@@ -139,17 +139,21 @@ export function locateTarget(
   }
   for (const h of input.headingTo) {
     if (!has(h.names, t)) continue;
-    // Walking from a vehicle: the place is where that vehicle is parked.
-    const fromVehicle =
+    // Walking from a vehicle: the place is where that vehicle is parked, and
+    // the vehicle is named so the flag goes on ITS marker (not another marker
+    // that happens to resolve to the same address).
+    const fromArrival =
       !h.from || /^the vehicle$/i.test(h.from)
-        ? input.arrivals.find(a => has(a.names, t))?.address
-        : h.from;
+        ? input.arrivals.find(a => has(a.names, t))
+        : undefined;
+    const fromVehicle = fromArrival ? fromArrival.address : h.from;
     found.push({
       place: fromVehicle ?? null,
       state: "walking",
       label: "departed on foot",
       people: targetFirst(splitPeopleNames(h.names), t),
       rowId: h.rowId,
+      ...(fromArrival ? { rego: fromArrival.rego } : {}),
     });
   }
   for (const a of input.arrivals) {

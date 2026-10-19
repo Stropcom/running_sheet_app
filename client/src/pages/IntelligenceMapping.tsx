@@ -7,6 +7,8 @@ import {
   useState,
 } from "react";
 import { orderRsChips } from "@shared/rsChips";
+import { chooseFlagMarker, markerKind } from "@shared/flagMarker";
+import { findVehicleMarker } from "@shared/vehicleMarker";
 import {
   joinObservationPieces,
   justTypedSpaceAfterBracket,
@@ -5299,10 +5301,63 @@ export default function IntelligenceMapping() {
       return;
     }
     const place = pos.place ?? "the vehicle's marker";
+    // Said under the Target location switch when several markers matched the
+    // place and one had to be picked (see shared/flagMarker.ts).
+    let pickNote = "";
     const findPin = (): google.maps.LatLngLiteral | null => {
+      pickNote = "";
       // A vehicle with its own marker is where that marker is — whatever
       // address the rows give.
       if (pos.marker && pos.state === "vehicle") return pos.marker;
+      const markerData = customMarkersDataRef.current as any[];
+      // On foot from a vehicle that has its own marker: he left from THAT
+      // marker, not from some other marker that resolves to the same address
+      // (a boat and a car at 15 Riverside Road).
+      if (pos.rego && pos.state === "walking") {
+        const own = findVehicleMarker(
+          markerData,
+          pos.rego,
+          rsSelectedOpId ?? null
+        );
+        if (own) return { lat: own.lat, lng: own.lng };
+      }
+      // Every custom marker that carries the place — its own address, the
+      // address it is linked to, or a location merged into it. More than one
+      // can: the flag then goes on the most specific one for what the target
+      // is doing (his vehicle's marker, the boat he is on, a place marker
+      // when he is inside or on foot) instead of whichever came first.
+      const carrying = markerData.filter((cm: any) => {
+        if (cm?.lat == null || cm?.lng == null) return false;
+        const names: string[] = [
+          cm.address,
+          cm.linkedIntelLabel,
+          ...(mergedIntelRef.current.get(cm.id) ?? []).map((e: any) => e.label),
+        ].filter(Boolean);
+        return names.some(n => samePlace(String(n), place));
+      });
+      if (carrying.length > 1) {
+        const choice = chooseFlagMarker(
+          carrying.map((cm: any) => ({
+            id: cm.id,
+            lat: cm.lat,
+            lng: cm.lng,
+            label: cm.label ?? null,
+            address: cm.address ?? null,
+            icon: cm.markerIcon ?? null,
+            operationId: cm.operationId ?? null,
+          })),
+          {
+            state: pos.state,
+            rego: pos.rego,
+            operationId: rsSelectedOpId ?? null,
+          }
+        );
+        if (choice) {
+          if (choice.ambiguous)
+            pickNote = ` ${carrying.length} markers share this address, so the flag is on the newest ${markerKind(choice.marker.icon, choice.marker.label)} marker.`;
+          return { lat: choice.marker.lat, lng: choice.marker.lng };
+        }
+      }
       const pins: any[] = [
         ...markersRef.current,
         ...Array.from(customMarkerMapRefs.current.values()),
@@ -5312,21 +5367,8 @@ export default function IntelligenceMapping() {
           return m.position as google.maps.LatLngLiteral;
         }
       }
-      // A custom marker that has absorbed the place's own pin (a house marker
-      // within 40 m, or a manual / Quick Entry merge) carries it instead: the
-      // place is that marker's address, the address it is linked to, or one of
-      // the locations merged into it.
-      for (const cm of customMarkersDataRef.current as any[]) {
-        if (cm?.lat == null || cm?.lng == null) continue;
-        const names: string[] = [
-          cm.address,
-          cm.linkedIntelLabel,
-          ...(mergedIntelRef.current.get(cm.id) ?? []).map((e: any) => e.label),
-        ].filter(Boolean);
-        if (names.some(n => samePlace(String(n), place))) {
-          return { lat: cm.lat, lng: cm.lng };
-        }
-      }
+      if (carrying.length === 1)
+        return { lat: carrying[0].lat, lng: carrying[0].lng };
       return null;
     };
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -5342,7 +5384,9 @@ export default function IntelligenceMapping() {
           );
         return;
       }
-      setTargetFlagStatus(`Showing ${token} at "${place}" — ${pos.label}.`);
+      setTargetFlagStatus(
+        `Showing ${token} at "${place}" — ${pos.label}.${pickNote}`
+      );
       removeFlag();
       const flag = document.createElement("div");
       flag.style.cssText =
@@ -5405,6 +5449,7 @@ export default function IntelligenceMapping() {
     rsTargetPosition,
     rsTrackedTarget,
     rsSelectedSheetId,
+    rsSelectedOpId,
     locations,
     customMarkers,
     trackingSettings.location,

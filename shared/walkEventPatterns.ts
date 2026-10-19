@@ -196,6 +196,12 @@ export const PERSON_EXIT_ONWARD_PATTERN =
 // is the one named as "Vehicle <rego>" later in the same sentence.
 const ENTER_VEHICLE_VERB =
   "(?:entered|got\\s+(?:in|into)|boarded|climbed\\s+(?:in|into)|jumped\\s+(?:in|into))";
+/** After "… Vehicle X (Vehicle X)," the sentence goes on to say they got in:
+ * "and entered via the driver's door", "and got into it", "and sat in".
+ * "entered the car park" is not getting in. */
+const GOT_IN_AFTER_VEHICLE =
+  /\bVehicle\s+[A-Za-z0-9]{5,8}\)?[^.\n]*?\b(?:entered\s+(?:it\b|the\s+(?:vehicle|car)\b(?!\s+park)|(?:via|through|by)\b|the\s+(?:driver|passenger|front|rear|back)\b)|got\s+(?:in|into)\b|climbed\s+(?:in|into)\b|jumped\s+(?:in|into)\b|sat\s+in\b|seated\b)/i;
+
 export const PERSON_ENTER_VEHICLE_PATTERN = new RegExp(
   "([A-Za-z][^.\\n]*?)\\s*\\b" +
     ENTER_VEHICLE_VERB +
@@ -860,8 +866,17 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
           );
           const rego = reg?.[2] ?? reg?.[3];
           if (rego) {
-            // "walked towards Vehicle X" is not "got into Vehicle X".
-            noteJoined(walkers, rego, row.id, !!reg?.[1] || !!reg?.[3]);
+            // "walked towards Vehicle X" is not "got into Vehicle X" — unless
+            // the same sentence then says they got in ("… to Vehicle X, and
+            // entered via the driver's door").
+            noteJoined(
+              walkers,
+              rego,
+              row.id,
+              !!reg?.[1] ||
+                !!reg?.[3] ||
+                GOT_IN_AFTER_VEHICLE.test(walkMatch[2])
+            );
             leaveAllPlaces(walkers);
           }
         }

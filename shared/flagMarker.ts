@@ -105,3 +105,12 @@ export function chooseFlagMarker(
     };
   return { marker: candidates[0], why: "newest", ambiguous: true };
 }
+
+/** Whether a marker of `kind` can be where the target is in `state`. A boat
+ * marker is never where someone in or walking to a car is, and a car marker is
+ * never where someone on a boat is — even when it is the only marker carrying
+ * the place. */
+export function markerFitsState(kind: MarkerKind, state: string): boolean {
+  if (state === "vessel") return kind !== "vehicle";
+  return kind !== "boat";
+}

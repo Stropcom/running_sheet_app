@@ -265,3 +265,56 @@ describe("getting off a boat and walking: short wording", () => {
     });
   });
 });
+
+describe("walked to the car and got in", () => {
+  const BACK =
+    "HOGAN disembarked from the boat and walked along the jetty to Vehicle 1FAT001 (Vehicle 1FAT001), and entered via the driver's door.";
+  const input = (obs: string[]) => {
+    const scan = scanWalkEvents(rows(...obs));
+    return {
+      token: "HOGAN",
+      arrivals: [
+        {
+          rego: "1FAT001",
+          names: "HOGAN",
+          address: "15 Riverside Road",
+          rowId: 1,
+        },
+      ],
+      departures: [],
+      walkIns: scan.walkIns,
+      headingTo: scan.headingTo,
+      placements: scan.placements,
+    };
+  };
+  const earlier = [
+    "Vehicle 1FAT001, HOGAN driver, arrived at 15 Riverside Road, EAST FREMANTLE WA (15 Riverside Road) and parked on the street.\n\nHOGAN exited the vehicle and walked along the boat jetty.",
+    "HOGAN boarded the boat in the last pen on the jetty.",
+  ];
+
+  it("'and entered via the driver's door' means he is IN the vehicle", () => {
+    const scan = scanWalkEvents(rows(...earlier, BACK));
+    expect(scan.placements.find(p => p.name === "HOGAN")).toMatchObject({
+      rego: "1FAT001",
+      inside: true,
+    });
+  });
+
+  it("the flag says 'in 1FAT001', not 'to 1FAT001'", () => {
+    expect(locateTarget(input([...earlier, BACK]))).toMatchObject({
+      state: "vehicle",
+      label: "in 1FAT001",
+      place: "15 Riverside Road",
+    });
+  });
+
+  it("only walking to it, or 'entered the car park', is still just heading there", () => {
+    for (const row of [
+      "HOGAN disembarked from the boat and walked along the jetty to Vehicle 1FAT001 (Vehicle 1FAT001).",
+      "HOGAN walked towards Vehicle 1FAT001 and entered the car park.",
+    ]) {
+      const scan = scanWalkEvents(rows(...earlier, row));
+      expect(scan.placements.find(p => p.name === "HOGAN")?.inside).toBe(false);
+    }
+  });
+});

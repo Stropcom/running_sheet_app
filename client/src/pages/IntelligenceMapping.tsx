@@ -7,7 +7,11 @@ import {
   useState,
 } from "react";
 import { orderRsChips } from "@shared/rsChips";
-import { chooseFlagMarker, markerKind } from "@shared/flagMarker";
+import {
+  chooseFlagMarker,
+  markerFitsState,
+  markerKind,
+} from "@shared/flagMarker";
 import { findVehicleMarker } from "@shared/vehicleMarker";
 import {
   joinObservationPieces,
@@ -5335,6 +5339,25 @@ export default function IntelligenceMapping() {
         ].filter(Boolean);
         return names.some(n => samePlace(String(n), place));
       });
+      // A marker that can't be where he is (a boat marker when he is in a car,
+      // a car marker when he is on a boat) is never the flag's spot, even as
+      // the only marker carrying the place.
+      const unfit = new Set<number>(
+        markerData
+          .filter(
+            (cm: any) =>
+              !markerFitsState(
+                markerKind(cm.markerIcon ?? null, cm.label ?? null),
+                pos.state
+              )
+          )
+          .map((cm: any) => cm.id)
+      );
+      const fitting = carrying.filter((cm: any) => !unfit.has(cm.id));
+      if (fitting.length !== carrying.length) {
+        carrying.length = 0;
+        carrying.push(...fitting);
+      }
       if (carrying.length > 1) {
         const choice = chooseFlagMarker(
           carrying.map((cm: any) => ({
@@ -5360,7 +5383,9 @@ export default function IntelligenceMapping() {
       }
       const pins: any[] = [
         ...markersRef.current,
-        ...Array.from(customMarkerMapRefs.current.values()),
+        ...Array.from(customMarkerMapRefs.current.entries())
+          .filter(([id]) => !unfit.has(id))
+          .map(([, overlay]) => overlay),
       ];
       for (const m of pins) {
         if (m?.title && m.position && samePlace(String(m.title), place)) {

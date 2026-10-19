@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   chooseFlagMarker,
+  markerFitsState,
   markerKind,
   type FlagMarkerCandidate,
 } from "@shared/flagMarker";
@@ -145,5 +146,19 @@ describe("the on-foot flag carries the vehicle he left", () => {
       place: "15 Riverside Road",
       rego: "1FAT001",
     });
+  });
+});
+
+describe("markerFitsState", () => {
+  it("a boat marker is never where someone in or walking to a car is", () => {
+    expect(markerFitsState("boat", "vehicle")).toBe(false);
+    expect(markerFitsState("boat", "walking")).toBe(false);
+    expect(markerFitsState("boat", "vessel")).toBe(true);
+  });
+  it("a car marker is never where someone on a boat is", () => {
+    expect(markerFitsState("vehicle", "vessel")).toBe(false);
+    expect(markerFitsState("vehicle", "vehicle")).toBe(true);
+    expect(markerFitsState("place", "vessel")).toBe(true);
+    expect(markerFitsState("place", "inside")).toBe(true);
   });
 });

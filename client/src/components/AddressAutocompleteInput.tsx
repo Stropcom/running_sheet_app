@@ -30,6 +30,7 @@ import { MapPin } from "lucide-react";
 import {
   convertGoogleAddresses,
   extractShortAddress,
+  formatIntelAddress,
 } from "@/lib/addressFormat";
 import { loadGoogleMaps } from "@/lib/googleMaps";
 
@@ -57,6 +58,12 @@ interface Props {
    */
   searchScope?: "address" | "any";
   /**
+   * Fill the picked suggestion in the short wording the Intelligence folder
+   * uses ("57 Howe Street, OSBORNE PARK") instead of the full running-sheet
+   * form ("57 Howe Street, OSBORNE PARK WA (57 Howe Street)"). Off by default.
+   */
+  intelWording?: boolean;
+  /**
    * Called with the selected place's raw Google address components (for
    * callers that need structured fields — house number, street, suburb,
    * state — rather than a single formatted string) plus its business/place
@@ -82,6 +89,7 @@ export function AddressAutocompleteInput({
   inputClassName = "",
   disabled,
   searchScope = "address",
+  intelWording = false,
 }: Props) {
   const [suggestions, setSuggestions] = useState<
     google.maps.places.AutocompletePrediction[]
@@ -206,11 +214,12 @@ export function AddressAutocompleteInput({
   ) => {
     setSuggestions([]);
     setOpen(false);
+    const fill = (rs: string) => (intelWording ? formatIntelAddress(rs) : rs);
 
     // Geocode to get full structured address, then convert to RS format
     if (typeof google === "undefined") {
       const rsFormatted = convertGoogleAddresses(prediction.description);
-      onChange(rsFormatted);
+      onChange(fill(rsFormatted));
       if (onShortAddress) onShortAddress(extractShortAddress(rsFormatted));
       return;
     }
@@ -225,7 +234,7 @@ export function AddressAutocompleteInput({
       if (status === "OK" && results && results[0]) {
         const formatted = results[0].formatted_address;
         const rsFormatted = convertGoogleAddresses(formatted);
-        onChange(rsFormatted);
+        onChange(fill(rsFormatted));
         if (onShortAddress) onShortAddress(extractShortAddress(rsFormatted));
         if (onPlaceSelected) {
           onPlaceSelected({
@@ -236,7 +245,7 @@ export function AddressAutocompleteInput({
       } else {
         // Fallback to description if geocode fails
         const rsFormatted = convertGoogleAddresses(prediction.description);
-        onChange(rsFormatted);
+        onChange(fill(rsFormatted));
         if (onShortAddress) onShortAddress(extractShortAddress(rsFormatted));
       }
     });

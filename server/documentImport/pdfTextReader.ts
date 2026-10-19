@@ -1549,9 +1549,45 @@ function splitSideBySideFlows(items: PositionedItem[]): {
 // Minimal duck-typed surface of PDFPageProxy actually used below, following
 // the same pattern as RawTextItem above — pdfjs-dist's public type
 // entrypoint doesn't cleanly re-export PDFPageProxy from this module path.
+interface PdfObjStore {
+  get(objId: string, callback: (data: unknown) => void): unknown;
+}
 interface PageImageSource {
   getOperatorList(): Promise<{ fnArray: number[]; argsArray: unknown[][] }>;
-  objs: { get(objId: string, callback: (data: unknown) => void): unknown };
+  objs: PdfObjStore;
+  commonObjs: PdfObjStore;
+}
+
+/** How long to wait for one image object before giving up on that image. */
+export const PDF_IMAGE_WAIT_MS = 5_000;
+
+/**
+ * Fetches a decoded image from pdf.js. An image that is used on more than one
+ * page (a template's repeated icon bar, a logo, a legend) is kept by pdf.js in
+ * the document-wide store, `commonObjs`, under an id starting "g_" — asking the
+ * page's own `objs` for it never answers, so the read used to wait forever (the
+ * import then died as the web server's 504 page). Two guards: pick the store by
+ * the id, and never wait longer than PDF_IMAGE_WAIT_MS for any one image (a
+ * skipped image is a smaller result, never a hung import).
+ */
+export function getPdfObject(
+  page: Pick<PageImageSource, "objs" | "commonObjs">,
+  objId: string,
+  waitMs: number = PDF_IMAGE_WAIT_MS
+): Promise<unknown> {
+  const store = objId.startsWith("g_") ? page.commonObjs : page.objs;
+  return new Promise<unknown>(resolve => {
+    const timer = setTimeout(() => resolve(undefined), waitMs);
+    try {
+      store.get(objId, data => {
+        clearTimeout(timer);
+        resolve(data);
+      });
+    } catch {
+      clearTimeout(timer);
+      resolve(undefined);
+    }
+  });
 }
 
 interface RawPdfImage {
@@ -1700,7 +1736,8 @@ function captionBelowImage(
  * than failing the whole read. */
 async function extractPdfPageImages(
   page: PageImageSource,
-  textItems: PositionedItem[]
+  textItems: PositionedItem[],
+  sharedSeen: Set<string> = new Set()
 ): Promise<ExtractedDocumentImage[]> {
   const images: ExtractedDocumentImage[] = [];
   try {
@@ -1730,10 +1767,14 @@ async function extractPdfPageImages(
       const objId = opList.argsArray[i]?.[0];
       if (typeof objId !== "string" || seen.has(objId)) continue;
       seen.add(objId);
+      // An image shared between pages ("g_" ids) is the same picture every
+      // time it comes up: read it once, on the first page that has it.
+      if (objId.startsWith("g_")) {
+        if (sharedSeen.has(objId)) continue;
+        sharedSeen.add(objId);
+      }
       try {
-        const raw = await new Promise<unknown>(resolve =>
-          page.objs.get(objId, resolve)
-        );
+        const raw = await getPdfObject(page, objId);
         if (!isRawPdfImage(raw)) continue;
         if (!isPhotoShapedSize(raw.width, raw.height)) continue;
         const channels =
@@ -1787,6 +1828,7 @@ export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
     const tableRows: string[][] = [];
     const paragraphs: string[] = [];
     const images: ExtractedDocumentImage[] = [];
+    const sharedImageIds = new Set<string>();
     let paragraphBuffer: string[] = [];
     let prevLineY: number | null = null;
     let prevLineGap = 14;
@@ -1990,7 +2032,7 @@ export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
         prevLineY = null;
       };
 
-      images.push(...(await extractPdfPageImages(page, items)));
+      images.push(...(await extractPdfPageImages(page, items, sharedImageIds)));
 
       const split = splitSideBySideFlows(items);
       if (split) {

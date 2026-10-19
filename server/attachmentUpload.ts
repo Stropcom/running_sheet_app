@@ -3,7 +3,7 @@ import express from "express";
 import heicConvert from "heic-convert";
 import { sdk } from "./_core/sdk";
 import { storagePut } from "./storage";
-import { detectAndEmbedFaces } from "./faceRecognition";
+import { detectFaceBoxes } from "./faceRecognition";
 import {
   autoLinkAttachmentToRowAddresses,
   autoLinkAttachmentToRowMemberIfSingle,
@@ -25,7 +25,8 @@ async function runFaceDetectionForAttachment(
   attachmentId: number,
   buffer: Buffer
 ): Promise<void> {
-  const faces = await detectAndEmbedFaces(buffer);
+  // Detection only: a face count needs the boxes, not an embedding per face.
+  const faces = await detectFaceBoxes(buffer);
   await setAttachmentFaceCount(attachmentId, faces.length);
 }
 

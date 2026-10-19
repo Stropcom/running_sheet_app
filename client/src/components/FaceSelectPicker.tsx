@@ -5,12 +5,8 @@ import type { MouseEventHandler } from "react";
 import { toast } from "sonner";
 import { Check, User } from "lucide-react";
 import { PossibleMatchDialog, type PendingMatch } from "@/components/PossibleMatchDialog";
-
-interface DetectedFaceBox {
-  index: number;
-  bbox: [number, number, number, number];
-  confidence: number;
-}
+import { FaceMatchPanel } from "@/components/FaceMatchPanel";
+import { visibleFaces, type DetectedFaceBox } from "@/components/TapSelectFace";
 
 type FaceSelectPickerProps =
   | {
@@ -52,6 +48,10 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
     isError,
   } = trpc.attachment.detectFaces.useQuery({ attachmentId });
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  // The face most recently tapped on — the one the "similar faces on file"
+  // panel is about — and whether the faces beyond the strongest few are shown.
+  const [focusIndex, setFocusIndex] = useState<number | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{
     w: number;
     h: number;
@@ -126,6 +126,7 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
   };
 
   const toggle = (index: number) => {
+    setFocusIndex(selected.has(index) ? null : index);
     setSelected(prev => {
       if (isEntityMode) return prev.has(index) ? new Set() : new Set([index]);
       const next = new Set(prev);
@@ -135,19 +136,31 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
     });
   };
 
+  const allFaces = (faces ?? []) as DetectedFaceBox[];
+  const extraFaces = allFaces.filter(f => f.strong === false).length;
+  const matchesQuery = trpc.attachment.faceMatches.useQuery(
+    { attachmentId, faceIndex: focusIndex ?? 0 },
+    {
+      enabled: focusIndex != null && selected.has(focusIndex),
+      retry: false,
+    }
+  );
+
   const boxStyles = useMemo(() => {
     if (!faces || !naturalSize) return [];
-    return (faces as DetectedFaceBox[]).map(f => {
+    return visibleFaces(allFaces, showAll, selected).map(f => {
       const [x0, y0, x1, y1] = f.bbox;
       return {
         index: f.index,
+        strong: f.strong !== false,
+        rank: f.rank,
         left: `${(x0 / naturalSize.w) * 100}%`,
         top: `${(y0 / naturalSize.h) * 100}%`,
         width: `${((x1 - x0) / naturalSize.w) * 100}%`,
         height: `${((y1 - y0) / naturalSize.h) * 100}%`,
       };
     });
-  }, [faces, naturalSize]);
+  }, [faces, naturalSize, showAll, selected]);
 
   const noFacesDetected = isError || (faces && faces.length === 0);
   const confirmPending = confirmUnidentified.isPending || confirmEntity.isPending;
@@ -192,7 +205,9 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
                 className={`absolute border-2 rounded transition-colors ${
                   isSelected
                     ? "border-emerald-500 bg-emerald-500/25"
-                    : "border-amber-400 bg-amber-400/10 hover:bg-amber-400/25"
+                    : b.strong
+                      ? "border-amber-400 bg-amber-400/10 hover:bg-amber-400/25"
+                      : "border-dashed border-slate-400 bg-slate-400/10 hover:bg-slate-400/25"
                 }`}
                 style={{
                   left: b.left,
@@ -201,6 +216,11 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
                   height: b.height,
                 }}
               >
+                {b.strong && b.rank != null && (
+                  <span className="absolute -top-2 -left-2 h-5 min-w-5 px-1 rounded-full bg-amber-500 text-white text-[11px] font-bold flex items-center justify-center tabular-nums">
+                    {b.rank}
+                  </span>
+                )}
                 {isSelected && (
                   <span className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-emerald-500 text-white flex items-center justify-center">
                     <Check className="h-3 w-3" />
@@ -210,6 +230,26 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
             );
           })}
         </div>
+      )}
+
+      {!noFacesDetected && extraFaces > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(v => !v)}
+          className="self-start text-xs font-semibold text-primary underline-offset-2 hover:underline"
+        >
+          {showAll
+            ? "Hide the other faces"
+            : `Show ${extraFaces} more face${extraFaces === 1 ? "" : "s"}`}
+        </button>
+      )}
+
+      {focusIndex != null && selected.has(focusIndex) && (
+        <FaceMatchPanel
+          matches={matchesQuery.data?.matches}
+          loading={matchesQuery.isFetching && !matchesQuery.data}
+          error={matchesQuery.isError}
+        />
       )}
 
       <div className="flex justify-end gap-2">

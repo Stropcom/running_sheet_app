@@ -2,7 +2,13 @@ import bcrypt from "bcryptjs";
 import { format } from "date-fns";
 import { storageGetBytes, storagePut } from "./storage";
 import { convertDocxToPdf } from "./documentImport/docxToPdf";
-import { detectAndEmbedFaces, cosineSimilarity } from "./faceRecognition";
+import {
+  detectAndEmbedFaces,
+  detectFaceBoxes,
+  embedFaceAt,
+  cosineSimilarity,
+} from "./faceRecognition";
+import { rankFaces } from "@shared/faceRank";
 import { lowerVehicleColour } from "@shared/vehicleColour";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -583,6 +589,25 @@ const targetStatusFieldsSchema = {
 /** Saves a target's freeform Background and writes the audit entry — shared
  * by target.registry.setBackground (editing on the registry card) and the
  * two create procedures (typed in Add Target to Registry). */
+/** The closest faces on file to the `faceIndex`th face in `buffer`, limited to
+ * operations the person can reach (see attachment.faceMatches). */
+async function faceMatchesFor(
+  user: Parameters<typeof toAccessUser>[0],
+  buffer: Buffer,
+  faceIndex: number
+): Promise<{ matches: FaceMatchCandidate[] }> {
+  const face = await embedFaceAt(buffer, faceIndex);
+  if (!face) return { matches: [] };
+  const candidates = await findSimilarFaces(face.embedding, -1);
+  return {
+    matches: await filterByOperationAccess(
+      toAccessUser(user),
+      candidates,
+      c => c.sourceOperationId
+    ),
+  };
+}
+
 async function saveTargetBackgroundWithAudit(
   user: { id: number; cin?: string | null },
   target: { id: number; name: string; registryBackground?: string | null },
@@ -2426,12 +2451,16 @@ export const appRouter = router({
           });
         try {
           const buffer = await storageGetBytes(attachment.key);
-          const faces = await detectAndEmbedFaces(buffer);
-          return faces.map((f, index) => ({
-            index,
-            bbox: f.bbox,
-            confidence: f.confidence,
-          }));
+          // Boxes only (no embeddings) — see detectFaceBoxes. `rank`/`strong`
+          // say which faces are the strongest few (shared/faceRank.ts).
+          const faces = await detectFaceBoxes(buffer);
+          return rankFaces(
+            faces.map((f, index) => ({
+              index,
+              bbox: f.bbox,
+              confidence: f.confidence,
+            }))
+          );
         } catch (err) {
           console.error("Face detection failed:", err);
           throw new TRPCError({
@@ -2453,17 +2482,69 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         try {
           const buffer = Buffer.from(input.dataBase64, "base64");
-          const faces = await detectAndEmbedFaces(buffer);
-          return faces.map((f, index) => ({
-            index,
-            bbox: f.bbox,
-            confidence: f.confidence,
-          }));
+          const faces = await detectFaceBoxes(buffer);
+          return rankFaces(
+            faces.map((f, index) => ({
+              index,
+              bbox: f.bbox,
+              confidence: f.confidence,
+            }))
+          );
         } catch (err) {
           console.error("Face detection failed:", err);
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
             message: "Face detection failed.",
+          });
+        }
+      }),
+
+    // The officer has tapped ONE face: who else on file looks like it? Embeds
+    // only that face (not every face in the photo) and returns the closest
+    // few — with their photo, the person they're filed as, where the photo
+    // came from and the similarity score — so the officer can judge for
+    // themselves before choosing who it is. Nothing is written and nothing is
+    // linked; it's a look, like compareFaces. Only matches from operations
+    // this person can reach are returned.
+    faceMatches: protectedProcedure
+      .input(z.object({ attachmentId: z.number(), faceIndex: z.number() }))
+      .query(async ({ input, ctx }) => {
+        const attachment = await getAttachmentById(input.attachmentId);
+        if (!attachment)
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Attachment not found.",
+          });
+        try {
+          const buffer = await storageGetBytes(attachment.key);
+          return await faceMatchesFor(ctx.user, buffer, input.faceIndex);
+        } catch (err) {
+          console.error("Face match lookup failed:", err);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Face match lookup failed.",
+          });
+        }
+      }),
+
+    // Same, for a photo not uploaded yet (the Upload Photo staging screen).
+    faceMatchesFromBytes: protectedProcedure
+      .input(
+        z.object({
+          dataBase64: z.string(),
+          mimeType: z.string(),
+          faceIndex: z.number(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        try {
+          const buffer = Buffer.from(input.dataBase64, "base64");
+          return await faceMatchesFor(ctx.user, buffer, input.faceIndex);
+        } catch (err) {
+          console.error("Face match lookup failed:", err);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Face match lookup failed.",
           });
         }
       }),

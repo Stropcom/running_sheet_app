@@ -27,12 +27,13 @@ import {
   IdCard,
   ImagePlus,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   TapSelectFace,
   type DetectedFaceBox,
 } from "@/components/TapSelectFace";
+import type { FaceMatchRow } from "@/components/FaceMatchPanel";
 import {
   PossibleMatchDialog,
   type PendingMatch,
@@ -433,6 +434,66 @@ export function LinkAttachmentDialog({
   const facesLoading = isUploadMode ? uploadFacesLoading : existingFacesLoading;
   const tapPhotoUrl = isUploadMode ? preview : photoUrl;
 
+  // Similar faces on file for the face the officer tapped — a look only, shown
+  // under the photo (see FaceMatchPanel). An existing photo asks by attachment;
+  // a photo still being staged for upload sends its bytes, once per tap.
+  const existingMatches = trpc.attachment.faceMatches.useQuery(
+    { attachmentId: attachmentId ?? 0, faceIndex: selectedFaceIndex ?? 0 },
+    {
+      enabled:
+        open &&
+        !isUploadMode &&
+        attachmentId != null &&
+        selectedFaceIndex != null,
+      retry: false,
+    }
+  );
+  const matchesFromBytes = trpc.attachment.faceMatchesFromBytes.useMutation();
+  const [stagedMatches, setStagedMatches] = useState<{
+    index: number;
+    rows: FaceMatchRow[];
+  } | null>(null);
+  const [stagedMatchesFailed, setStagedMatchesFailed] = useState(false);
+  useEffect(() => {
+    setStagedMatches(null);
+    setStagedMatchesFailed(false);
+    if (!isUploadMode || !file || selectedFaceIndex == null) return;
+    let cancelled = false;
+    const index = selectedFaceIndex;
+    (async () => {
+      try {
+        const dataBase64 = await blobToBase64(file.blob);
+        const res = await matchesFromBytes.mutateAsync({
+          dataBase64,
+          mimeType: file.mimeType,
+          faceIndex: index,
+        });
+        if (!cancelled) setStagedMatches({ index, rows: res.matches });
+      } catch {
+        if (!cancelled) setStagedMatchesFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isUploadMode, file, selectedFaceIndex]);
+  const matchProps = isUploadMode
+    ? {
+        matches:
+          stagedMatches && stagedMatches.index === selectedFaceIndex
+            ? stagedMatches.rows
+            : undefined,
+        matchesLoading:
+          selectedFaceIndex != null && !stagedMatches && !stagedMatchesFailed,
+        matchesError: stagedMatchesFailed,
+      }
+    : {
+        matches: existingMatches.data?.matches,
+        matchesLoading: existingMatches.isFetching && !existingMatches.data,
+        matchesError: existingMatches.isError,
+      };
+
   // Resolves once a link (or upload+link) succeeds — invalidates the usual
   // views, and either shows a possible-match popup or, once that's clear,
   // closes the dialog. Existing mode must defer that close until the popup
@@ -781,6 +842,7 @@ export function LinkAttachmentDialog({
                       loading={uploadFacesLoading}
                       selectedIndex={selectedFaceIndex}
                       onSelect={setSelectedFaceIndex}
+                      {...matchProps}
                     />
                   ) : (
                     <div className="w-full h-56 rounded-lg border border-border bg-background flex items-center justify-center text-xs text-muted-foreground text-center px-2">
@@ -828,6 +890,7 @@ export function LinkAttachmentDialog({
                 loading={facesLoading}
                 selectedIndex={selectedFaceIndex}
                 onSelect={setSelectedFaceIndex}
+                {...matchProps}
               />
             )
           )}

@@ -82,3 +82,10 @@ export const FORM_LABEL =
   "text-xs font-semibold uppercase tracking-wide text-foreground/80";
 /** Helper / hint line under a field. */
 export const FORM_HINT = "text-xs text-muted-foreground";
+
+/** The green "save / confirm" button that ends every photo upload — nothing
+ * about a photo is saved until the officer presses one (Confirm upload, Save
+ * photo, Use This Area …). Same green everywhere so it reads as the "yes, do
+ * it" button. */
+export const FORM_CONFIRM_BUTTON =
+  "bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:ring-emerald-500/40 disabled:bg-emerald-600/50";

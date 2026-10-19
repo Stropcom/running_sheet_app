@@ -77,6 +77,7 @@ import {
   formatSpecialProjects,
   mdlLabel,
 } from "@shared/targetStatus";
+import { PhotoConfirmDialog } from "@/components/PhotoConfirmDialog";
 import {
   EntityPhotoUpload,
   useEntityPhotoSaver,
@@ -1452,6 +1453,13 @@ function AssociateCard({
     { key: string; dataBase64: string; mimeType: string }[]
   >([]);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  // A photo picked for an already-saved associate, waiting for Confirm upload.
+  const [pendingPhoto, setPendingPhoto] = useState<{
+    dataBase64: string;
+    mimeType: string;
+    fileName: string;
+    size: number;
+  } | null>(null);
   const manualImageInputRef = useRef<HTMLInputElement>(null);
   const uploadImageMut = trpc.attachment.uploadManual.useMutation();
   const confirmEntityFaceMut = trpc.attachment.confirmEntityFace.useMutation();
@@ -1570,14 +1578,22 @@ function AssociateCard({
       setManualImages(v => [...v, { key: makeExtraId(), ...img }]);
       return;
     }
+    // An already-saved associate: show the photo and wait for the green
+    // Confirm upload (PhotoConfirmDialog) — nothing uploads on pick.
+    setPendingPhoto({ ...img, fileName: file.name, size: file.size });
+  };
+
+  const confirmPendingPhoto = async () => {
+    if (!pendingPhoto || !associate) return;
     setUploadingPhoto(true);
     try {
-      await uploadAndLinkPhoto(img, associate!.name);
+      await uploadAndLinkPhoto(pendingPhoto, associate.name);
       utils.attachment.byEntity.invalidate({
         category: "associate",
-        entityLabel: associate!.name,
+        entityLabel: associate.name,
       });
       toast.success("Photo added and linked.");
+      setPendingPhoto(null);
     } catch {
       toast.error("Failed to upload that photo.");
     } finally {
@@ -2131,6 +2147,21 @@ function AssociateCard({
               <ImageIcon className="w-3.5 h-3.5" />
               {uploadingPhoto ? "Uploading…" : "Upload Image"}
             </Button>
+            <PhotoConfirmDialog
+              photo={
+                pendingPhoto
+                  ? {
+                      previewUrl: `data:${pendingPhoto.mimeType};base64,${pendingPhoto.dataBase64}`,
+                      fileName: pendingPhoto.fileName,
+                      size: pendingPhoto.size,
+                    }
+                  : null
+              }
+              busy={uploadingPhoto}
+              description="This photo is added to this person only when you press Confirm upload."
+              onConfirm={confirmPendingPhoto}
+              onCancel={() => setPendingPhoto(null)}
+            />
             {manualImages.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {manualImages.map(img => (

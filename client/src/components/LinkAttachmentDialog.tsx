@@ -28,6 +28,7 @@ import {
   ImagePlus,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { FORM_CONFIRM_BUTTON } from "@/lib/formKit";
 import { toast } from "sonner";
 import {
   TapSelectFace,
@@ -1217,7 +1218,11 @@ export function LinkAttachmentDialog({
               >
                 Close
               </Button>
-              <Button disabled={!canConfirm} onClick={handleConfirmUpload}>
+              <Button
+                className={FORM_CONFIRM_BUTTON}
+                disabled={!canConfirm}
+                onClick={handleConfirmUpload}
+              >
                 {anyPending ? "Uploading…" : "Confirm upload"}
               </Button>
             </DialogFooter>

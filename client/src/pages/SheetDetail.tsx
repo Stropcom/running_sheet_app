@@ -35,6 +35,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
+import { PhotoConfirmDialog } from "@/components/PhotoConfirmDialog";
 import {
   SuggestedFaceMatchDialog,
   type FaceMatchSuggestion,
@@ -1597,6 +1598,15 @@ function ObservationAttachments({
   operationId?: number;
 }) {
   const [preview, setPreview] = useState<string | null>(null);
+  // A photo chosen but not yet uploaded — it only goes up when the officer
+  // presses the green Confirm upload (PhotoConfirmDialog).
+  const [pendingPhoto, setPendingPhoto] = useState<{
+    blob: Blob;
+    mimeType: string;
+    fileName: string;
+    previewUrl: string | null;
+  } | null>(null);
+  const [confirmingUpload, setConfirmingUpload] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [linking, setLinking] = useState<{ id: number; url: string } | null>(
     null
@@ -1669,22 +1679,44 @@ function ObservationAttachments({
 
       // If compression failed, the original may be a HEIC/HEIF file the browser
       // can't preview (it gets converted to JPEG server-side) — skip the
-      // raw-bytes preview for it rather than show a broken image icon. Preview
-      // generation is fire-and-forget and doesn't block the actual upload.
+      // raw-bytes preview for it rather than show a broken image icon.
       const isHeic =
         !compressed &&
         (/^image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name));
-      if (!isHeic) {
-        const reader = new FileReader();
-        reader.onload = () => setPreview(reader.result as string);
-        reader.readAsDataURL(blob);
-      }
-      const uploaded = await onUpload(row.id, blob, mimeType, fileName);
-      if (uploaded) setSuggestCheck(uploaded);
+      const previewUrl = isHeic
+        ? null
+        : await new Promise<string | null>(resolve => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+      // Staged only — nothing is uploaded until Confirm upload is pressed.
+      setPendingPhoto({ blob, mimeType, fileName, previewUrl });
     } catch {
       toast.error(
         "Couldn't process that photo — try again, or use a different photo."
       );
+    }
+  };
+
+  const confirmUpload = async () => {
+    if (!pendingPhoto || confirmingUpload) return;
+    setConfirmingUpload(true);
+    try {
+      setPreview(pendingPhoto.previewUrl);
+      const uploaded = await onUpload(
+        row.id,
+        pendingPhoto.blob,
+        pendingPhoto.mimeType,
+        pendingPhoto.fileName
+      );
+      setPendingPhoto(null);
+      if (uploaded) setSuggestCheck(uploaded);
+    } catch {
+      toast.error("Couldn't upload that photo — try again.");
+    } finally {
+      setConfirmingUpload(false);
     }
   };
 
@@ -1747,6 +1779,22 @@ function ObservationAttachments({
           />
         </>
       )}
+
+      <PhotoConfirmDialog
+        photo={
+          pendingPhoto
+            ? {
+                previewUrl: pendingPhoto.previewUrl,
+                fileName: pendingPhoto.fileName,
+                size: pendingPhoto.blob.size,
+              }
+            : null
+        }
+        busy={confirmingUpload}
+        description="This photo is attached to this row only when you press Confirm upload."
+        onConfirm={confirmUpload}
+        onCancel={() => setPendingPhoto(null)}
+      />
 
       {lightbox && (
         <div

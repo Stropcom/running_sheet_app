@@ -254,10 +254,13 @@ export default function IntelligenceHeatMap() {
           radius: heatRadiusMetres(l.count, maxCount),
           map,
           fillColor: color,
-          fillOpacity: 0.72,
-          strokeColor: "#ffffff",
-          strokeOpacity: 0.95,
-          strokeWeight: 3,
+          // See-through, so overlapping places show each other and the map
+          // underneath (two overlaps read ~60%, not solid); the edge is the
+          // circle's own colour so it doesn't cut across a neighbour.
+          fillOpacity: 0.38,
+          strokeColor: color,
+          strokeOpacity: 0.9,
+          strokeWeight: 2,
           // busier places sit underneath, so a small one is never hidden
           zIndex: 100 - Math.round(frac * 50),
           clickable: false,

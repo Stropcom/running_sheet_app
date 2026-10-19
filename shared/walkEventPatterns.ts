@@ -325,10 +325,44 @@ const withCompanions = (names: string, more: string[]) =>
  * ("(JOHNSON)") is read as the place's own short name. A place's own "and"
  * ("Melville Fish and Chips") stays. */
 function presencePlace(raw: string): string {
-  const place = raw
-    .replace(/\s+(?:with|while|who|as|when|accompanied|together)\b.*$/i, "")
-    .replace(/\s+and\s+(?=[a-z]).*$/, "");
+  const place = cutAtDescription(
+    raw
+      .replace(/\s+(?:with|while|who|as|when|accompanied|together)\b.*$/i, "")
+      .replace(/\s+and\s+(?=[a-z]).*$/, "")
+  );
   return placeName(place.trim()).trim();
+}
+
+// Words that may sit inside a place's own name in lower case ("Melville Fish
+// and Chips", "Hotel de Ville", "Kinky Lizard Cafe on Mews") — kept only when a
+// capitalised word follows ("Gino's at the bar" stops at "at").
+const PLACE_NAME_CONNECTOR_RE =
+  /^(?:and|of|the|de|la|le|du|del|von|van|on|at|in|by|near|upon)$/;
+
+/**
+ * A place name is written in capitals / digits; what the people were DOING
+ * there follows in lower case ("Flight Club Fremantle playing darts",
+ * "Gino's at the bar", "Bull Creek Tavern for lunch"). Keeps the leading run of
+ * name words and stops at the first lower-case word that isn't a name
+ * connector, so the place stays the place they entered and the activity never
+ * turns it into a different (un-geocodable) location.
+ */
+function cutAtDescription(text: string): string {
+  const words = text.trim().split(/\s+/);
+  const kept: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (/^[a-z]/.test(w.replace(/^[("'\u2018\u201C]+/, ""))) {
+      const next = words[i + 1];
+      const connector =
+        PLACE_NAME_CONNECTOR_RE.test(w) &&
+        next !== undefined &&
+        /^[("'\u2018\u201C]*[A-Z0-9]/.test(next);
+      if (!connector) break;
+    }
+    kept.push(w);
+  }
+  return kept.join(" ");
 }
 
 /** Who is where, from a presence sentence; null when it isn't one. */

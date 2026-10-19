@@ -24,6 +24,8 @@ import {
   verifyWipcVaultKeyOrThrow,
 } from "../db";
 import { ENV } from "./env";
+import { sdk } from "./sdk";
+import { requireSignedIn } from "../uploadAccess";
 
 // Fail fast rather than silently signing every session with an empty key.
 if (!ENV.cookieSecret || ENV.cookieSecret.length < 32) {
@@ -109,6 +111,10 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  app.use(
+    "/manus-storage",
+    requireSignedIn(req => sdk.authenticateRequest(req))
+  );
   registerStorageProxy(app);
   registerLocalUploadsRoute(app);
   registerRawAttachmentUploadRoute(app);

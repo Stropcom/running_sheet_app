@@ -53,6 +53,8 @@ export function TapSelectFace({
   matches,
   matchesLoading,
   matchesError,
+  matchAnswers,
+  onMatchAnswer,
 }: {
   photoUrl: string;
   faces: DetectedFaceBox[];
@@ -64,6 +66,12 @@ export function TapSelectFace({
   matches?: FaceMatchCandidate[];
   matchesLoading?: boolean;
   matchesError?: boolean;
+  /** Answers given so far for the selected face's matches, and where new ones go. */
+  matchAnswers?: Record<number, "same" | "different">;
+  onMatchAnswer?: (
+    match: FaceMatchCandidate,
+    answer: "same" | "different"
+  ) => void;
 }) {
   const [naturalSize, setNaturalSize] = useState<{
     w: number;
@@ -171,6 +179,8 @@ export function TapSelectFace({
             matches={matches}
             loading={matchesLoading}
             error={matchesError}
+            answers={matchAnswers ?? {}}
+            onAnswer={onMatchAnswer ?? (() => {})}
           />
         )}
     </div>

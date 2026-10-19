@@ -35,11 +35,6 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
-import { PhotoConfirmDialog } from "@/components/PhotoConfirmDialog";
-import {
-  SuggestedFaceMatchDialog,
-  type FaceMatchSuggestion,
-} from "@/components/SuggestedFaceMatchDialog";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import {
   locateTargetFromPending,
@@ -1598,15 +1593,14 @@ function ObservationAttachments({
   operationId?: number;
 }) {
   const [preview, setPreview] = useState<string | null>(null);
-  // A photo chosen but not yet uploaded — it only goes up when the officer
-  // presses the green Confirm upload (PhotoConfirmDialog).
+  // A photo chosen but not yet uploaded: it opens the "Link photo to entity"
+  // window with the photo ready, and only goes up when the officer presses the
+  // green Confirm upload at the bottom right of that window.
   const [pendingPhoto, setPendingPhoto] = useState<{
     blob: Blob;
     mimeType: string;
     fileName: string;
-    previewUrl: string | null;
   } | null>(null);
-  const [confirmingUpload, setConfirmingUpload] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [linking, setLinking] = useState<{ id: number; url: string } | null>(
     null
@@ -1619,45 +1613,7 @@ function ObservationAttachments({
   const rowCins = row.members
     .map(m => m.memberName)
     .filter(cin => cin !== "__SPACE__");
-  // Set right after a photo finishes uploading, so previewFaceMatch (below)
-  // has something to check. Cleared as soon as that check comes back —
-  // whether or not it actually found a suggestion — since it's a one-shot
-  // "just uploaded" check, not a standing subscription for this photo.
-  const [suggestCheck, setSuggestCheck] = useState<{
-    id: number;
-    url: string;
-  } | null>(null);
-  const [suggestion, setSuggestion] = useState<{
-    id: number;
-    url: string;
-    match: FaceMatchSuggestion;
-  } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  // Deliberately narrow: only offers a suggestion for a photo with exactly
-  // one detected face (see previewFaceMatch's own comment) — a photo with 0
-  // or 2+ faces is left completely untouched, same as before this feature
-  // existed, and the officer uses the normal Link badge whenever they want.
-  const { data: facePreview, isFetched: facePreviewFetched } =
-    trpc.attachment.previewFaceMatch.useQuery(
-      { attachmentId: suggestCheck?.id ?? 0 },
-      { enabled: suggestCheck !== null, retry: false }
-    );
-
-  // useQuery in this app's React Query version has no onSuccess/onSettled
-  // callback (removed in v5) — react to the result landing instead.
-  useEffect(() => {
-    if (!suggestCheck || !facePreviewFetched) return;
-    if (facePreview?.suggestion) {
-      setSuggestion({
-        id: suggestCheck.id,
-        url: suggestCheck.url,
-        match: facePreview.suggestion,
-      });
-    }
-    setSuggestCheck(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facePreviewFetched, facePreview]);
 
   if (!IMAGERY_PHRASE_PATTERN.test(row.observation ?? "")) return null;
 
@@ -1677,46 +1633,13 @@ function ObservationAttachments({
         return;
       }
 
-      // If compression failed, the original may be a HEIC/HEIF file the browser
-      // can't preview (it gets converted to JPEG server-side) — skip the
-      // raw-bytes preview for it rather than show a broken image icon.
-      const isHeic =
-        !compressed &&
-        (/^image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name));
-      const previewUrl = isHeic
-        ? null
-        : await new Promise<string | null>(resolve => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = () => resolve(null);
-            reader.readAsDataURL(blob);
-          });
-      // Staged only — nothing is uploaded until Confirm upload is pressed.
-      setPendingPhoto({ blob, mimeType, fileName, previewUrl });
+      // Staged only — nothing is uploaded until Confirm upload is pressed in
+      // the link window.
+      setPendingPhoto({ blob, mimeType, fileName });
     } catch {
       toast.error(
         "Couldn't process that photo — try again, or use a different photo."
       );
-    }
-  };
-
-  const confirmUpload = async () => {
-    if (!pendingPhoto || confirmingUpload) return;
-    setConfirmingUpload(true);
-    try {
-      setPreview(pendingPhoto.previewUrl);
-      const uploaded = await onUpload(
-        row.id,
-        pendingPhoto.blob,
-        pendingPhoto.mimeType,
-        pendingPhoto.fileName
-      );
-      setPendingPhoto(null);
-      if (uploaded) setSuggestCheck(uploaded);
-    } catch {
-      toast.error("Couldn't upload that photo — try again.");
-    } finally {
-      setConfirmingUpload(false);
     }
   };
 
@@ -1780,21 +1703,27 @@ function ObservationAttachments({
         </>
       )}
 
-      <PhotoConfirmDialog
-        photo={
-          pendingPhoto
-            ? {
-                previewUrl: pendingPhoto.previewUrl,
-                fileName: pendingPhoto.fileName,
-                size: pendingPhoto.blob.size,
-              }
-            : null
-        }
-        busy={confirmingUpload}
-        description="This photo is attached to this row only when you press Confirm upload."
-        onConfirm={confirmUpload}
-        onCancel={() => setPendingPhoto(null)}
-      />
+      {pendingPhoto && operationId != null && (
+        <LinkAttachmentDialog
+          open
+          onOpenChange={o => {
+            if (!o) setPendingPhoto(null);
+          }}
+          currentOperationId={operationId}
+          rowCins={row.members
+            .map(m => m.memberName)
+            .filter(cin => cin !== "__SPACE__")}
+          stagedPhoto={{
+            ...pendingPhoto,
+            operationId,
+            upload: async (blob, mimeType, fileName) => {
+              // The same row upload as before — it just waits for Confirm.
+              setPreview(URL.createObjectURL(blob));
+              return onUpload(row.id, blob, mimeType, fileName);
+            },
+          }}
+        />
+      )}
 
       {lightbox && (
         <div
@@ -1819,15 +1748,6 @@ function ObservationAttachments({
           }}
           currentOperationId={operationId}
           rowCins={rowCins}
-        />
-      )}
-
-      {suggestion && (
-        <SuggestedFaceMatchDialog
-          attachmentId={suggestion.id}
-          photoUrl={suggestion.url}
-          suggestion={suggestion.match}
-          onDone={() => setSuggestion(null)}
         />
       )}
     </div>

@@ -77,7 +77,6 @@ import {
   formatSpecialProjects,
   mdlLabel,
 } from "@shared/targetStatus";
-import { PhotoConfirmDialog } from "@/components/PhotoConfirmDialog";
 import {
   EntityPhotoUpload,
   useEntityPhotoSaver,
@@ -1453,13 +1452,6 @@ function AssociateCard({
     { key: string; dataBase64: string; mimeType: string }[]
   >([]);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
-  // A photo picked for an already-saved associate, waiting for Confirm upload.
-  const [pendingPhoto, setPendingPhoto] = useState<{
-    dataBase64: string;
-    mimeType: string;
-    fileName: string;
-    size: number;
-  } | null>(null);
   const manualImageInputRef = useRef<HTMLInputElement>(null);
   const uploadImageMut = trpc.attachment.uploadManual.useMutation();
   const confirmEntityFaceMut = trpc.attachment.confirmEntityFace.useMutation();
@@ -1536,8 +1528,11 @@ function AssociateCard({
       });
     }
     if (manualImages.length === 0) return;
+    const toUpload = manualImages;
+    // Cleared up front so a second Save never uploads them again.
+    setManualImages([]);
     let failed = 0;
-    for (const img of manualImages) {
+    for (const img of toUpload) {
       try {
         await uploadAndLinkPhoto(img, entityLabel);
       } catch {
@@ -1574,31 +1569,10 @@ function AssociateCard({
       toast.error("Could not read that image.");
       return;
     }
-    if (isNew) {
-      setManualImages(v => [...v, { key: makeExtraId(), ...img }]);
-      return;
-    }
-    // An already-saved associate: show the photo and wait for the green
-    // Confirm upload (PhotoConfirmDialog) — nothing uploads on pick.
-    setPendingPhoto({ ...img, fileName: file.name, size: file.size });
-  };
-
-  const confirmPendingPhoto = async () => {
-    if (!pendingPhoto || !associate) return;
-    setUploadingPhoto(true);
-    try {
-      await uploadAndLinkPhoto(pendingPhoto, associate.name);
-      utils.attachment.byEntity.invalidate({
-        category: "associate",
-        entityLabel: associate.name,
-      });
-      toast.success("Photo added and linked.");
-      setPendingPhoto(null);
-    } catch {
-      toast.error("Failed to upload that photo.");
-    } finally {
-      setUploadingPhoto(false);
-    }
+    // Staged either way — a photo is never uploaded on pick. It shows as a
+    // thumbnail and goes up with the card's own Save (savePendingPhotos).
+    setManualImages(v => [...v, { key: makeExtraId(), ...img }]);
+    if (!isNew) setDirty(true);
   };
 
   // Same locked/at-a-glance look as the Target's own panels, but simpler:
@@ -2147,21 +2121,6 @@ function AssociateCard({
               <ImageIcon className="w-3.5 h-3.5" />
               {uploadingPhoto ? "Uploading…" : "Upload Image"}
             </Button>
-            <PhotoConfirmDialog
-              photo={
-                pendingPhoto
-                  ? {
-                      previewUrl: `data:${pendingPhoto.mimeType};base64,${pendingPhoto.dataBase64}`,
-                      fileName: pendingPhoto.fileName,
-                      size: pendingPhoto.size,
-                    }
-                  : null
-              }
-              busy={uploadingPhoto}
-              description="This photo is added to this person only when you press Confirm upload."
-              onConfirm={confirmPendingPhoto}
-              onCancel={() => setPendingPhoto(null)}
-            />
             {manualImages.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {manualImages.map(img => (

@@ -22,6 +22,8 @@ export function FaceMatchPreview({
   matches,
   loading,
   error,
+  answers,
+  onAnswer,
 }: {
   photoUrl: string;
   /** Identifies the tapped face (its index), so a new tap opens it afresh. */
@@ -31,21 +33,37 @@ export function FaceMatchPreview({
   matches: FaceMatchCandidate[] | undefined;
   loading?: boolean;
   error?: boolean;
+  /** What the officer has already answered for this face, by matched link. */
+  answers: Record<number, "same" | "different">;
+  /** Called for each "Same person" / "Not the same person" answer. */
+  onAnswer: (match: FaceMatchCandidate, answer: "same" | "different") => void;
 }) {
   const [open, setOpen] = useState(false);
+  // The matches the pop-up steps through, fixed when it opens — answers given
+  // as it goes shrink `remaining`, which must not shift the pop-up under it.
+  const [shown, setShown] = useState<FaceMatchCandidate[]>([]);
   const [openedFor, setOpenedFor] = useState<number | null>(null);
-  const count = matches?.length ?? 0;
+  // Only matches the officer hasn't answered yet are asked about.
+  const remaining = (matches ?? []).filter(m => !answers[m.entityLinkId]);
+  const count = remaining.length;
+  const answered = (matches?.length ?? 0) - count;
 
   // A different face: close whatever was open and allow a fresh auto-open.
   useEffect(() => {
     setOpen(false);
   }, [faceKey]);
 
+  const openDialog = () => {
+    setShown(remaining);
+    setOpen(true);
+  };
+
   useEffect(() => {
     if (count > 0 && openedFor !== faceKey) {
-      setOpen(true);
+      openDialog();
       setOpenedFor(faceKey);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count, faceKey, openedFor]);
 
   return (
@@ -61,8 +79,10 @@ export function FaceMatchPreview({
           </>
         ) : error ? (
           "Couldn't check for similar faces — you can still pick who it is below."
-        ) : count === 0 ? (
+        ) : (matches?.length ?? 0) === 0 ? (
           "No similar faces on file."
+        ) : count === 0 ? (
+          `All ${answered} similar face${answered === 1 ? "" : "s"} answered.`
         ) : (
           <>
             {count} similar face{count === 1 ? "" : "s"} on file.
@@ -71,17 +91,17 @@ export function FaceMatchPreview({
               size="sm"
               variant="outline"
               className="h-6 px-2 text-xs"
-              onClick={() => setOpen(true)}
+              onClick={openDialog}
             >
               View
             </Button>
           </>
         )}
       </p>
-      {open && count > 0 && (
+      {open && shown.length > 0 && (
         <PossibleMatchDialog
-          preview
-          matches={(matches ?? []).map(match => ({
+          onPreviewAnswer={onAnswer}
+          matches={shown.map(match => ({
             newLinkId: 0,
             newPhotoUrl: photoUrl,
             match,

@@ -1,3 +1,4 @@
+import { FORM_CONFIRM_BUTTON } from "@/lib/formKit";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import {
@@ -18,8 +19,6 @@ import {
   ZoomOut,
   FileText,
   ImageUp,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 
 export interface FaceMatchCandidate {
@@ -183,20 +182,25 @@ export const MAX_ZOOM_INDEX = ZOOM_STEPS.length - 1;
 // face(s) — one candidate at a time, always requiring an explicit human
 // Confirm or Not a match tap. Never applies a match automatically.
 //
-// `preview` is the same dialog opened EARLY — the moment the officer taps a
-// face, before anything is linked — so there is nothing yet to confirm or
-// dismiss (no newLinkId): it is a look at the closest faces on file, with the
-// same zoom and source details, stepped with Previous / Next and closed with
-// Close. The person is chosen afterwards, in the picker underneath.
+// `onPreviewAnswer` opens the same dialog EARLY — the moment the officer taps a
+// face, before anything is linked — so there is no newLinkId yet and nothing is
+// saved here: it asks the same question ("Is it the same person?"), the answer
+// goes to the caller, and the dialog moves on to the next match. "Same person"
+// ends the run (the caller selects that person); "Not the same person" steps
+// to the next candidate and closes after the last.
 export function PossibleMatchDialog({
   matches,
   onDone,
-  preview = false,
+  onPreviewAnswer,
 }: {
   matches: PendingMatch[];
   onDone: () => void;
-  preview?: boolean;
+  onPreviewAnswer?: (
+    match: FaceMatchCandidate,
+    answer: "same" | "different"
+  ) => void;
 }) {
+  const preview = !!onPreviewAnswer;
   const [index, setIndex] = useState(0);
   const [zoomIndex, setZoomIndex] = useState(0);
   const [, setLocation] = useLocation();
@@ -252,15 +256,13 @@ export function PossibleMatchDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-4 w-4 text-primary" />
-            {preview ? "Similar face on file" : "Possible match"}
+            Possible match
             {matches.length > 1 ? ` (${index + 1} of ${matches.length})` : ""}
           </DialogTitle>
         </DialogHeader>
 
         <p className="text-sm text-muted-foreground">
-          {preview
-            ? "This face looks similar to a face already on file. Compare the photos yourself — nothing is linked yet; you choose who it is afterwards."
-            : "This face looks similar to an existing entry. Is it the same person?"}
+          This face looks similar to an existing entry. Is it the same person?
         </p>
 
         <div className="flex items-center justify-center gap-2">
@@ -363,35 +365,27 @@ export function PossibleMatchDialog({
 
         {preview ? (
           <div className="flex justify-center gap-2 pt-2">
-            {matches.length > 1 && (
-              <Button
-                variant="outline"
-                disabled={index === 0}
-                onClick={() => {
-                  setZoomIndex(0);
-                  setIndex(i => Math.max(0, i - 1));
-                }}
-                className="gap-1.5"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-                Previous
-              </Button>
-            )}
-            {matches.length > 1 && (
-              <Button
-                variant="outline"
-                disabled={index >= matches.length - 1}
-                onClick={() => {
-                  setZoomIndex(0);
-                  setIndex(i => Math.min(matches.length - 1, i + 1));
-                }}
-                className="gap-1.5"
-              >
-                Next
-                <ChevronRight className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            <Button onClick={onDone}>Close</Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                onPreviewAnswer!(current.match, "different");
+                advance();
+              }}
+              className="gap-1.5"
+            >
+              <X className="h-3.5 w-3.5" />
+              No — different person
+            </Button>
+            <Button
+              onClick={() => {
+                onPreviewAnswer!(current.match, "same");
+                onDone();
+              }}
+              className={`gap-1.5 ${FORM_CONFIRM_BUTTON}`}
+            >
+              <Check className="h-3.5 w-3.5" />
+              Yes — same person
+            </Button>
           </div>
         ) : (
           <div className="flex justify-center gap-2 pt-2">

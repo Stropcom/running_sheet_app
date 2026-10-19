@@ -5,7 +5,6 @@ import type { MouseEventHandler } from "react";
 import { toast } from "sonner";
 import { Check, User } from "lucide-react";
 import { PossibleMatchDialog, type PendingMatch } from "@/components/PossibleMatchDialog";
-import { FaceMatchPreview } from "@/components/FaceMatchPreview";
 import { visibleFaces, type DetectedFaceBox } from "@/components/TapSelectFace";
 
 type FaceSelectPickerProps =
@@ -138,13 +137,6 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
 
   const allFaces = (faces ?? []) as DetectedFaceBox[];
   const extraFaces = allFaces.filter(f => f.strong === false).length;
-  const matchesQuery = trpc.attachment.faceMatches.useQuery(
-    { attachmentId, faceIndex: focusIndex ?? 0 },
-    {
-      enabled: focusIndex != null && selected.has(focusIndex),
-      retry: false,
-    }
-  );
 
   const boxStyles = useMemo(() => {
     if (!faces || !naturalSize) return [];
@@ -244,16 +236,6 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
         </button>
       )}
 
-      {focusIndex != null && selected.has(focusIndex) && (
-        <FaceMatchPreview
-          photoUrl={photoUrl}
-          faceKey={focusIndex}
-          bbox={allFaces.find(f => f.index === focusIndex)?.bbox}
-          matches={matchesQuery.data?.matches}
-          loading={matchesQuery.isFetching && !matchesQuery.data}
-          error={matchesQuery.isError}
-        />
-      )}
 
       <div className="flex justify-end gap-2">
         <Button

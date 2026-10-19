@@ -20,15 +20,33 @@ import {
   Moon,
   AlertTriangle,
   RefreshCw,
+  Fingerprint,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { toast } from "sonner";
+import {
+  browserSupportsWebAuthn,
+  deviceHasPasskeyFor,
+  guessDeviceKind,
+  passkeyErrorMessage,
+  rememberPasskeyUser,
+  startAuthentication,
+  startRegistration,
+} from "@/lib/passkeyClient";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  // Passkey login (off unless the owner switches it on): set when a correct
+  // password is refused because the account has a passkey, or is locked.
+  const [blocked, setBlocked] = useState<{
+    kind: "has_passkey" | "locked";
+    message: string;
+  } | null>(null);
+  const [code, setCode] = useState("");
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
   const { theme, toggleTheme } = useTheme();
 
   const [, setLocation] = useLocation();
@@ -43,12 +61,27 @@ export default function LoginPage() {
     if (meQuery.data) setLocation("/");
   }, [meQuery.data, setLocation]);
 
+  const passkeyLoginOptions = trpc.passkey.loginOptions.useMutation();
+  const passkeyLogin = trpc.passkey.login.useMutation();
+  const redeemOptions = trpc.passkey.redeemOptions.useMutation();
+  const redeem = trpc.passkey.redeem.useMutation();
+
+  const finishSignIn = (user: { mustChangePassword: boolean }) => {
+    setServerError(null);
+    setBlocked(null);
+    // Set auth cache immediately so DashboardLayout sees the user
+    utils.auth.me.setData(undefined, user as any);
+    setLocation(user.mustChangePassword ? "/change-password" : "/");
+  };
+
   const login = trpc.auth.login.useMutation({
     onSuccess: result => {
-      setServerError(null);
-      // Set auth cache immediately so DashboardLayout sees the user
-      utils.auth.me.setData(undefined, result.user as any);
-      setLocation(result.user.mustChangePassword ? "/change-password" : "/");
+      if (!result.success) {
+        setBlocked(result.blocked);
+        return;
+      }
+      if (result.passkeyWarning) toast.warning(result.passkeyWarning.message);
+      finishSignIn(result.user);
     },
     onError: e => {
       const code = e.data?.code;
@@ -78,6 +111,68 @@ export default function LoginPage() {
     }
     login.mutate({ username: username.trim(), password });
   };
+
+  const signInWithPasskey = async () => {
+    if (!username.trim()) {
+      toast.error("Enter your username first.");
+      return;
+    }
+    setPasskeyBusy(true);
+    try {
+      const { challengeId, options } = await passkeyLoginOptions.mutateAsync({
+        username: username.trim(),
+      });
+      const response = await startAuthentication({ optionsJSON: options });
+      const result = await passkeyLogin.mutateAsync({
+        username: username.trim(),
+        challengeId,
+        response,
+      });
+      finishSignIn(result.user);
+    } catch (e) {
+      toast.error(passkeyErrorMessage(e));
+    } finally {
+      setPasskeyBusy(false);
+    }
+  };
+
+  const registerWithCode = async () => {
+    if (!username.trim() || !code.trim()) {
+      toast.error("Enter your username and the code you were given.");
+      return;
+    }
+    setPasskeyBusy(true);
+    try {
+      const { challengeId, options } = await redeemOptions.mutateAsync({
+        username: username.trim(),
+        code: code.trim(),
+      });
+      const response = await startRegistration({ optionsJSON: options });
+      const kind = guessDeviceKind();
+      const result = await redeem.mutateAsync({
+        username: username.trim(),
+        code: code.trim(),
+        challengeId,
+        response,
+        deviceName:
+          kind === "Laptop" ? "My laptop" : `My ${kind.toLowerCase()}`,
+        deviceKind: kind,
+      });
+      rememberPasskeyUser(username);
+      toast.success("Device registered. You are signed in.");
+      finishSignIn(result.user);
+    } catch (e) {
+      toast.error(passkeyErrorMessage(e));
+    } finally {
+      setPasskeyBusy(false);
+    }
+  };
+
+  // The passkey button only appears on a device where one was registered for
+  // this username, or once the server says this account needs one.
+  const showPasskeyButton =
+    browserSupportsWebAuthn() &&
+    (deviceHasPasskeyFor(username) || blocked?.kind === "has_passkey");
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
@@ -207,7 +302,63 @@ export default function LoginPage() {
                   "Sign In"
                 )}
               </Button>
+              {showPasskeyButton && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full h-10 font-medium"
+                  disabled={passkeyBusy || login.isPending}
+                  onClick={signInWithPasskey}
+                >
+                  {passkeyBusy ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Fingerprint className="w-4 h-4 mr-2" />
+                  )}
+                  Sign in with passkey
+                </Button>
+              )}
             </form>
+            {blocked && (
+              <div className="mt-4 space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+                <p className="font-semibold">
+                  {blocked.kind === "locked"
+                    ? "Your account is locked"
+                    : "Passkey required"}
+                </p>
+                <p>{blocked.message}</p>
+                <div className="space-y-1.5">
+                  <Label
+                    htmlFor="passkey-code"
+                    className="text-xs font-medium uppercase tracking-wider"
+                  >
+                    I have a one-time code
+                  </Label>
+                  <Input
+                    id="passkey-code"
+                    value={code}
+                    onChange={e => setCode(e.target.value)}
+                    placeholder="XXXX-XXXX"
+                    maxLength={9}
+                    autoComplete="off"
+                    className="bg-background border-border h-10 text-center font-mono text-base uppercase tracking-widest"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  className="w-full h-10 font-medium"
+                  disabled={passkeyBusy}
+                  onClick={registerWithCode}
+                >
+                  {passkeyBusy ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Fingerprint className="w-4 h-4 mr-2" />
+                  )}
+                  Register this device
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 

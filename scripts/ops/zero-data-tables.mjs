@@ -11,6 +11,10 @@ export const KEEP_TABLES = [
   "users",
   "teams",
   "command_features",
+  // Passkey login: people and settings, like the users they belong to.
+  "passkey_credentials",
+  "passkey_codes",
+  "passkey_settings",
   "shortcuts",
   "style_guides",
   "style_rules",

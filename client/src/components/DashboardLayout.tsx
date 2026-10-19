@@ -1,5 +1,6 @@
 import { RosterCommandBar, isRosterPath } from "@/components/RosterCommandBar";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { PasskeyBanner } from "@/components/PasskeyBanner";
 import { useCommandFeatures } from "@/lib/commandFeatures";
 import { trpc } from "@/lib/trpc";
 import { APP_VERSION } from "@shared/const";
@@ -2554,6 +2555,7 @@ function DashboardLayoutContent({
           >
             <PullToRefresh disabled={location === "/intelligence/mapping"}>
               {isRosterPath(location) && <RosterCommandBar />}
+              <PasskeyBanner />
               {children}
             </PullToRefresh>
           </main>

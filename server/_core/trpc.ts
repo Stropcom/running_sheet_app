@@ -46,6 +46,10 @@ const ALLOWED_DURING_FORCED_PASSWORD_CHANGE = new Set([
 // able to log in.
 const OBSERVER_ALLOWED_MUTATIONS = new Set([
   "auth.setNewPassword",
+  "passkey.registerOptions",
+  "passkey.register",
+  "passkey.removeMyDevice",
+  "passkey.selfCode",
   "statement.generate",
   "witnessList.generate",
   "wipc.generateStatDec",
@@ -73,6 +77,11 @@ const INVESTIGATOR_ALLOWED_PATHS = new Set([
   "auth.me",
   "auth.logout",
   "auth.setNewPassword",
+  "passkey.status",
+  "passkey.registerOptions",
+  "passkey.register",
+  "passkey.removeMyDevice",
+  "passkey.selfCode",
   "profile.me",
   "profile.updateColorPalette",
   "profile.updatePassword",

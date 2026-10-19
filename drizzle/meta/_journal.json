@@ -883,6 +883,13 @@
       "when": 1792293566676,
       "tag": "0125_wooden_bloodstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "5",
+      "when": 1792404333654,
+      "tag": "0126_left_goblin_queen",
+      "breakpoints": true
     }
   ]
 }

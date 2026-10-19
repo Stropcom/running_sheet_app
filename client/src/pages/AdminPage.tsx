@@ -1,5 +1,6 @@
 import { CommandFeaturesCard } from "@/components/admin/CommandFeaturesCard";
 import { ZeroDataCard } from "@/components/admin/ZeroDataCard";
+import { PasskeyAdminCard } from "@/components/admin/PasskeyAdminCard";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -653,6 +654,12 @@ export default function AdminPage() {
                 : 0
             }
           />
+        </div>
+
+        {/* Passkey login: admins see their own Command's people; only the owner
+            sees the switch (off by default; nothing changes while it is off) */}
+        <div className="mt-6">
+          <PasskeyAdminCard />
         </div>
 
         {/* Command features: only the owner sees this (renders nothing for anyone else) */}

@@ -18,9 +18,9 @@ import readline from "node:readline/promises";
 import { spawnSync } from "node:child_process";
 import { createConnection } from "mysql2/promise";
 import {
-  CLEAR_TABLES,
+  ALL_CLEAR_TABLES as CLEAR_TABLES,
   IGNORED_TABLES,
-  KEEP_TABLES,
+  ALL_KEEP_TABLES as KEEP_TABLES,
 } from "./zero-data-tables.mjs";
 
 const args = new Set(process.argv.slice(2));

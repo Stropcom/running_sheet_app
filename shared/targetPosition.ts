@@ -12,7 +12,13 @@ import {
   vehicleOccupants,
 } from "./walkEventPatterns";
 
-export type TargetState = "inside" | "vehicle" | "walking" | "moving" | "oos";
+export type TargetState =
+  | "inside"
+  | "vehicle"
+  | "walking"
+  | "moving"
+  | "oos"
+  | "vessel";
 
 export interface TargetPosition {
   /** The place as the sheet wrote it, or null when it can't be told (a
@@ -59,6 +65,8 @@ export interface TargetPositionInput {
     names: string;
     destination: string;
     from: string;
+    /** Got off a boat or vessel ("the boat") and is now on foot. */
+    fromVessel?: string;
     rowId: number;
   }[];
   placements: {
@@ -68,6 +76,8 @@ export interface TargetPositionInput {
     inside?: boolean;
     /** Where they were last logged before getting into the vehicle. */
     at?: string;
+    /** On a boat or vessel, as the row wrote it ("a vessel"). */
+    vessel?: string;
     /** The vehicle's own marker on the map, when it has one. */
     vehicleMarker?: {
       lat: number;
@@ -83,6 +93,7 @@ export const TARGET_EMOJI: Record<TargetState, string> = {
   walking: "🚶",
   moving: "🚗",
   oos: "❔",
+  vessel: "🛥️",
 };
 
 const targetFirst = (people: string[], token: string) => [
@@ -130,17 +141,21 @@ export function locateTarget(
   }
   for (const h of input.headingTo) {
     if (!has(h.names, t)) continue;
-    // Walking from a vehicle: the place is where that vehicle is parked.
-    const fromVehicle =
+    // Walking from a vehicle: the place is where that vehicle is parked, and
+    // the vehicle is named so the flag goes on ITS marker (not another marker
+    // that happens to resolve to the same address).
+    const fromArrival =
       !h.from || /^the vehicle$/i.test(h.from)
-        ? input.arrivals.find(a => has(a.names, t))?.address
-        : h.from;
+        ? input.arrivals.find(a => has(a.names, t))
+        : undefined;
+    const fromVehicle = fromArrival ? fromArrival.address : h.from;
     found.push({
       place: fromVehicle ?? null,
       state: "walking",
-      label: "departed on foot",
+      label: h.fromVessel ? "disembarked, on foot" : "departed on foot",
       people: targetFirst(splitPeopleNames(h.names), t),
       rowId: h.rowId,
+      ...(fromArrival ? { rego: fromArrival.rego } : {}),
     });
   }
   for (const a of input.arrivals) {
@@ -225,6 +240,31 @@ export function locateTarget(
       ),
       rowId: mine.rowId,
       rego,
+    });
+  }
+
+  // On a boat or vessel ("boarded a vessel at the end of the jetty"): where it
+  // is can't be told from the row, so it is taken to be where they were last
+  // logged, and said to be a guess.
+  for (const mine of input.placements.filter(p => p.vessel && has(p.name, t))) {
+    const aboard = input.placements.filter(
+      p => p.vessel && p.vessel.toLowerCase() === mine.vessel!.toLowerCase()
+    );
+    found.push({
+      place:
+        mine.at ??
+        [...input.arrivals]
+          .filter(a => has(a.names, t))
+          .sort((a, b) => b.rowId - a.rowId)[0]?.address ??
+        null,
+      placeIsEstimate: true,
+      state: "vessel",
+      label: `on ${mine.vessel}`,
+      people: targetFirst(
+        aboard.map(p => p.name),
+        t
+      ),
+      rowId: mine.rowId,
     });
   }
 

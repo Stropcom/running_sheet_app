@@ -29,7 +29,7 @@ export interface VehicleEdit {
   insert: string;
 }
 
-interface Bracket {
+export interface Bracket {
   start: number;
   end: number;
   rego: string;
@@ -109,7 +109,7 @@ function isDescription(desc: string, rego: string): boolean {
   return true;
 }
 
-function bracketsOf(text: string): Bracket[] {
+export function bracketsOf(text: string): Bracket[] {
   const out: Bracket[] = [];
   const re = new RegExp(BRACKET_RE.source, "gi");
   let m: RegExpExecArray | null;
@@ -179,7 +179,7 @@ function articleFor(word: string): "a" | "an" {
  * description that runs, in a few plain words, up to ", bearing … (Vehicle …)".
  * Returns null when the start isn't clear (then no article is added).
  */
-function firstDescriptionStart(
+export function firstDescriptionStart(
   text: string,
   bracketStart: number
 ): { start: number; sentenceStart: boolean; hasArticle: boolean } | null {
@@ -222,7 +222,7 @@ function firstDescriptionStart(
 }
 
 /** The edit that puts "a" / "an" (and a lower-case colour) at the start of a description. */
-function articleEdit(
+export function articleEdit(
   text: string,
   start: number,
   end: number,

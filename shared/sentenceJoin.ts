@@ -1,7 +1,7 @@
 /**
  * Joining words and punctuation between pieces of an observation an officer
  * has just typed — the small "function words" that hold a sentence together.
- * Three rules, each only ever filling a GAP between two pieces of text; none
+ * Five rules, each only ever filling a GAP between two pieces of text; none
  * rewrites, removes or re-cases a word that is already there:
  *
  *  1. Full stop between two whole sentences. When a whole-sentence phrase
@@ -15,6 +15,16 @@
  *  3. "and" / commas between people. Two or more people introduced one after
  *     another ("Name SURNAME (SURNAME)") with nothing between them are a list:
  *     "A and B", "A, B and C" (the same shape vehicle lists use).
+ *  4. "and" / full stop after "entered <place>". "continued out of sight"
+ *     straight after the place someone entered gets "and" (lower case) or a
+ *     full stop (capitalised): "entered Crooked Spire Coffee & Art House
+ *     Midland continued out of sight" → "… Midland and continued out of sight".
+ *  5. "A" / "An" before a full vehicle at the start of a sentence. A single
+ *     vehicle described as colour, make, "…, bearing WA registration X
+ *     (Vehicle X)" that opens its sentence gets its article: "white Lexus
+ *     NX350h station sedan, bearing WA registration 1TDM414 (Vehicle
+ *     1TDM414), …" → "A white Lexus …". (Vehicles written in a list already
+ *     get theirs from shared/vehicleList.ts.)
  *
  * Like the rest of the tidy-up (shared/observationTidy.ts) it is only run on
  * text an officer typed — never on a row a chip or the Target Logger made —
@@ -22,7 +32,13 @@
  * Pure and deterministic: no AI, same input → same output.
  */
 import { FULL_STREET_TYPES } from "./streetTypes";
-import type { VehicleEdit } from "./vehicleList";
+import {
+  articleEdit,
+  bracketsOf,
+  findVehicleChains,
+  firstDescriptionStart,
+  type VehicleEdit,
+} from "./vehicleList";
 
 /** The whole-sentence phrases the standard chips insert. */
 export const BUILTIN_SENTENCE_CHIPS: readonly string[] = [
@@ -227,6 +243,87 @@ function personListEdits(text: string): VehicleEdit[] {
   return edits;
 }
 
+// ─── 4. "and" after "entered <place>" ──────────────────────────────────────
+
+/** One word of a place name: a Capitalised word, a number/unit, "&" or a small joining word inside it. */
+const PLACE_WORD =
+  /^(?:[A-Z][A-Za-z'’.-]*|\d{1,5}[A-Za-z]?(?:\/\d{1,5}[A-Za-z]?)?|&)$/;
+const PLACE_SMALL_WORDS = new Set(["of", "the", "de", "la", "le"]);
+
+/**
+ * True when `segment` (the words between "entered" and the gap) is plainly a
+ * place: capitalised words / numbers / "&", an optional leading "the", small
+ * words only in the middle, and an optional bracketed short form at the end.
+ * Anything with an ordinary lower-case word ("the car park", "and then") is
+ * not — we would rather miss a join than invent one.
+ */
+function looksLikePlace(segment: string): boolean {
+  let body = segment.trim().replace(/\s*\([^()]*\)$/, "");
+  body = body.replace(/^the\s+/i, "");
+  const words = body.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 12) return false;
+  const last = words[words.length - 1];
+  if (last === "&" || PLACE_SMALL_WORDS.has(last.toLowerCase())) return false;
+  if (!PLACE_WORD.test(words[0]) || words[0] === "&") return false;
+  return words.every(
+    (w, i) =>
+      PLACE_WORD.test(w) || (i > 0 && PLACE_SMALL_WORDS.has(w.toLowerCase()))
+  );
+}
+
+function enteredPlaceEdits(text: string): VehicleEdit[] {
+  const edits: VehicleEdit[] = [];
+  const re =
+    /(?<![A-Za-z0-9])continued[ \t]+out[ \t]+of[ \t]+sight(?![A-Za-z])/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (insideBracket(text, m.index)) continue;
+    const before = text.slice(0, m.index);
+    const gap = /[ \t]+$/.exec(before);
+    if (!gap) continue; // nothing between, a new line, or punctuation
+    const head = before.slice(0, gap.index);
+    // The last "entered" in the same sentence, and only a place after it.
+    const sentenceStart = Math.max(
+      head.lastIndexOf("\n"),
+      head.lastIndexOf("."),
+      head.lastIndexOf(";"),
+      head.lastIndexOf("!"),
+      head.lastIndexOf("?")
+    );
+    const sentence = head.slice(sentenceStart + 1);
+    const entered = Array.from(
+      sentence.matchAll(/(?<![A-Za-z])entered[ \t]+/gi)
+    ).pop();
+    if (!entered) continue;
+    const segment = sentence.slice(entered.index! + entered[0].length);
+    if (!looksLikePlace(segment)) continue;
+    const lower = m[0][0] === m[0][0].toLowerCase();
+    edits.push({
+      start: gap.index,
+      end: gap.index,
+      insert: lower ? " and" : ".",
+    });
+  }
+  return edits;
+}
+
+// ─── 5. "A" / "An" before a full vehicle that opens a sentence ─────────────
+
+function vehicleArticleEdits(text: string): VehicleEdit[] {
+  const inList = new Set<number>();
+  for (const chain of findVehicleChains(text))
+    for (const b of chain.brackets) inList.add(b.start);
+  const edits: VehicleEdit[] = [];
+  for (const b of bracketsOf(text)) {
+    if (inList.has(b.start)) continue; // the list rule writes these
+    const first = firstDescriptionStart(text, b.start);
+    if (!first || !first.sentenceStart || first.hasArticle) continue;
+    const e = articleEdit(text, first.start, b.start, b.rego, true);
+    if (e) edits.push(e);
+  }
+  return edits;
+}
+
 /** Every joining edit for `text`, in order and not overlapping. */
 export function sentenceJoinEdits(
   text: string,
@@ -238,5 +335,14 @@ export function sentenceJoinEdits(
     ...fullStopEdits(text, chips),
     ...atAddressEdits(text),
     ...personListEdits(text),
-  ].sort((a, b) => a.start - b.start);
+    ...enteredPlaceEdits(text),
+    ...vehicleArticleEdits(text),
+  ]
+    .sort((a, b) => a.start - b.start)
+    .filter(
+      (e, i, all) =>
+        i === 0 ||
+        e.start !== all[i - 1].start ||
+        e.insert !== all[i - 1].insert
+    );
 }

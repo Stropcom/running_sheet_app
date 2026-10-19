@@ -43,6 +43,7 @@ import {
 } from "@/lib/egoNetworkLayout";
 import { AddressAutocompleteInput } from "@/components/AddressAutocompleteInput";
 import { EntityAutocompleteInput } from "@/components/EntityAutocompleteInput";
+import { IntelDetailInput } from "@/components/IntelDetailInput";
 import { useOffline } from "@/contexts/OfflineContext";
 
 // ─── Field definitions ─────────────────────────────────────────────────────
@@ -96,6 +97,8 @@ const SPECIAL_PROJECT_OPTIONS = [
   "Coyotes",
   "Other",
 ];
+// Free-text boxes that are written in capitals (AFP, WAPOL …) as you type.
+const SPECIAL_PROJECTS_IN_CAPITALS = ["LBS", "SEEK", "CAD", "TI"];
 const SPECIAL_PROJECT_PLACEHOLDERS: Record<string, string> = {
   LBS: "AFP or WAPOL",
   SEEK: "AFP or WAPOL",
@@ -211,12 +214,15 @@ function ShortcutAddressField({
   target,
   disabled,
   placeholder,
+  intelWording,
 }: {
   value: string;
   onChange: (v: string) => void;
   target: { hb?: string | null; hbf?: string | null } | null | undefined;
   disabled?: boolean;
   placeholder?: string;
+  /** Fill a picked suggestion in the short Intelligence wording. */
+  intelWording?: boolean;
 }) {
   return (
     <AddressAutocompleteInput
@@ -229,6 +235,7 @@ function ShortcutAddressField({
       disabled={disabled}
       placeholder={placeholder ?? "Search address… (or type HB / HBF)"}
       inputClassName="text-sm"
+      intelWording={intelWording}
     />
   );
 }
@@ -1472,6 +1479,7 @@ export default function SheetSummaryPage() {
                               target={targetRecord}
                               disabled={isLocked}
                               placeholder="Search address… (or type HB / HBF)"
+                              intelWording
                             />
                           </div>
                         ) : p.key === "Tracker" ? (
@@ -1480,8 +1488,19 @@ export default function SheetSummaryPage() {
                               value={p.detail}
                               onChange={v => setSpecialProjectDetail(p.key, v)}
                               entityType="vehicle"
+                              fillStyle="intel"
                               disabled={isLocked}
                               placeholder="Vehicle details (searches Intelligence folder)"
+                              inputClassName="text-sm"
+                            />
+                          </div>
+                        ) : p.key === "LD" ? (
+                          <div className="flex-1">
+                            <IntelDetailInput
+                              value={p.detail}
+                              onChange={v => setSpecialProjectDetail(p.key, v)}
+                              disabled={isLocked}
+                              placeholder="Vehicle, residence or business (searches Intelligence folder)"
                               inputClassName="text-sm"
                             />
                           </div>
@@ -1489,13 +1508,18 @@ export default function SheetSummaryPage() {
                           <Input
                             value={p.detail}
                             onChange={e =>
-                              setSpecialProjectDetail(p.key, e.target.value)
+                              setSpecialProjectDetail(
+                                p.key,
+                                SPECIAL_PROJECTS_IN_CAPITALS.includes(p.key)
+                                  ? e.target.value.toUpperCase()
+                                  : e.target.value
+                              )
                             }
                             disabled={isLocked}
                             placeholder={
                               SPECIAL_PROJECT_PLACEHOLDERS[p.key] ?? "Details"
                             }
-                            className="text-sm"
+                            className={`text-sm ${SPECIAL_PROJECTS_IN_CAPITALS.includes(p.key) ? "uppercase" : ""}`}
                           />
                         )}
                       </div>

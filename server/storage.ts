@@ -13,6 +13,8 @@ import path from "path";
 import type { Express } from "express";
 import express from "express";
 import { ENV } from "./_core/env";
+import { sdk } from "./_core/sdk";
+import { UPLOAD_CACHE_CONTROL, requireSignedIn } from "./uploadAccess";
 
 const LOCAL_UPLOAD_DIR = path.join(process.cwd(), "uploads");
 
@@ -21,7 +23,13 @@ function isForgeConfigured(): boolean {
 }
 
 export function registerLocalUploadsRoute(app: Express) {
-  app.use("/local-uploads", express.static(LOCAL_UPLOAD_DIR));
+  app.use(
+    "/local-uploads",
+    requireSignedIn(req => sdk.authenticateRequest(req)),
+    express.static(LOCAL_UPLOAD_DIR, {
+      setHeaders: res => res.setHeader("Cache-Control", UPLOAD_CACHE_CONTROL),
+    })
+  );
 }
 
 function getForgeConfig() {
@@ -30,7 +38,7 @@ function getForgeConfig() {
 
   if (!forgeUrl || !forgeKey) {
     throw new Error(
-      "Storage config missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY",
+      "Storage config missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
     );
   }
 
@@ -51,14 +59,17 @@ function appendHashSuffix(relKey: string): string {
 export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
-  contentType = "application/octet-stream",
+  contentType = "application/octet-stream"
 ): Promise<{ key: string; url: string }> {
   const key = appendHashSuffix(normalizeKey(relKey));
 
   if (!isForgeConfigured()) {
     const filePath = path.join(LOCAL_UPLOAD_DIR, key);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, typeof data === "string" ? Buffer.from(data) : data);
+    await fs.writeFile(
+      filePath,
+      typeof data === "string" ? Buffer.from(data) : data
+    );
     return { key, url: `/local-uploads/${key}` };
   }
 
@@ -99,7 +110,9 @@ export async function storagePut(
   return { key, url: `/manus-storage/${key}` };
 }
 
-export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
+export async function storageGet(
+  relKey: string
+): Promise<{ key: string; url: string }> {
   const key = normalizeKey(relKey);
   return { key, url: `/manus-storage/${key}` };
 }

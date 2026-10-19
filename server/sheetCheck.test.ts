@@ -12,6 +12,8 @@ import {
   findSpaceBeforePunctuation,
   COMMON_MISSPELLINGS,
   findSharedBracketPeople,
+  misspeltVehicleKeyword,
+  checkVehicleKeywordInText,
 } from "./sheetCheck";
 import type { IntelligenceEntity, ObservationTextForSheet } from "./db";
 
@@ -823,5 +825,62 @@ describe("findSharedBracketPeople", () => {
       row(2, "Later spoke to Lawrence TAN (L.TAN) outside."),
     ]);
     expect(f).toHaveLength(0);
+  });
+});
+
+describe('a mistyped "Vehicle" in front of a rego', () => {
+  it("finds the near-miss, in a bracket or in plain text", () => {
+    expect(misspeltVehicleKeyword("Vehcle 1TDM414")).toBe("Vehcle");
+    expect(misspeltVehicleKeyword("Vehcile 1TDM414")).toBe("Vehcile");
+    expect(misspeltVehicleKeyword("Vehical TFG414")).toBe("Vehical");
+    const text =
+      "A white Lexus, bearing WA registration 1TDM414 (Vehcle 1TDM414), parked.";
+    expect(checkVehicleKeywordInText(text)).toEqual([
+      { wrong: "Vehcle", correct: "Vehicle", index: text.indexOf("Vehcle") },
+    ]);
+    expect(checkVehicleKeywordInText("Vehcle 1TDM414 departed.")).toEqual([
+      { wrong: "Vehcle", correct: "Vehicle", index: 0 },
+    ]);
+    expect(checkVehicleKeywordInText("VEHCLE 1TDM414")[0]).toMatchObject({
+      correct: "VEHICLE",
+    });
+  });
+  it("leaves correct spellings and ordinary words alone", () => {
+    for (const t of [
+      "Vehicle 1TDM414",
+      "vehicle 1TDM414",
+      "Vehicles 1TDM414",
+      "Seen leaving 1 Cromer Road",
+      "Vehicle parked",
+      "Station 1TDM414",
+      "Vehcle parked",
+      "Vehcle ABCDEFG",
+    ])
+      expect(checkVehicleKeywordInText(t)).toEqual([]);
+  });
+  it('replaces the long "same vehicle written two ways" finding with nothing extra', () => {
+    const e = [
+      makeEntity({
+        type: "vehicle",
+        shortForm: "1TDM414 white Lexus NX350h station sedan",
+      }),
+      makeEntity({
+        type: "vehicle",
+        shortForm: "Vehcle 1TDM414",
+        occurrences: [
+          {
+            sheetId: 1,
+            sheetTitle: "Sheet 1",
+            operationId: 1,
+            operationName: "Op One",
+            rowId: 2,
+            observationSnippet: "x",
+            timeMinutes: 610,
+            fullDescription: "x",
+          },
+        ],
+      }),
+    ];
+    expect(checkConsistency(e)).toHaveLength(0);
   });
 });

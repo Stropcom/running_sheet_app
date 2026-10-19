@@ -11,6 +11,10 @@ export const KEEP_TABLES = [
   "users",
   "teams",
   "command_features",
+  // Passkey login: people and settings, like the users they belong to.
+  "passkey_credentials",
+  "passkey_codes",
+  "passkey_settings",
   "shortcuts",
   "style_guides",
   "style_rules",
@@ -90,6 +94,32 @@ export const CLEAR_TABLES = [
   "notifications",
   "audit_logs",
 ];
+
+/** Tables that exist in the shared database because another branch's
+ * migrations were applied to it (the external integrations work,
+ * claude/ext-integrations-*), but that aren't in this branch's schema. They
+ * are skipped when absent. When one of those branches is merged here, move its
+ * tables into KEEP_TABLES / CLEAR_TABLES above (server/zeroDataTables.test.ts
+ * fails until you do). */
+export const OTHER_BRANCH_KEEP_TABLES = [
+  // Integration set-up (provider, status) — no operation references
+  "connectors",
+];
+export const OTHER_BRANCH_CLEAR_TABLES = [
+  // Cameras and sensors carry operation ids, which restart at 1 after a zero,
+  // so a leftover one would attach itself to a brand-new operation.
+  "cameras",
+  "signal_sensors",
+  "signal_detections",
+  "tracked_assets",
+  "tracked_asset_positions",
+  "external_events",
+  "connector_audit_log",
+];
+
+/** Everything the script and the in-app Zero data act on. */
+export const ALL_KEEP_TABLES = [...KEEP_TABLES, ...OTHER_BRANCH_KEEP_TABLES];
+export const ALL_CLEAR_TABLES = [...CLEAR_TABLES, ...OTHER_BRANCH_CLEAR_TABLES];
 
 /** Bookkeeping tables the script never touches. */
 export const IGNORED_TABLES = ["__drizzle_migrations"];

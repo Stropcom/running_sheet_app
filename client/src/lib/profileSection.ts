@@ -165,7 +165,7 @@ export function buildProfileTargetBlockHtml(t: ProfileTargetBlock): string {
         <strong style="font-size:12px;color:${BLUE_DARK}">${esc(t.name)}</strong>${t.tgt ? ` <span style="font-size:10px;color:#64748b;margin-left:8px">TGT: ${esc(t.tgt)}</span>` : ""}${t.isIndicesOnly ? ` <span style="display:inline-block;margin-left:8px;padding:1px 7px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:0.04em;background:#e0e7ff;border:1px solid #c7d2fe;color:#4338ca">INDICES</span>` : ""}
       </div>
       <div style="padding:2px 14px 10px">
-        ${t.photos.length ? `${sectionTitle(`Photos (${t.photos.length})`)}${buildPhotoGridHtml(t.photos, 95)}` : ""}
+        ${t.photos.length ? `${sectionTitle(`Photos (${t.photos.length})`)}${buildPhotoGridHtml(t.photos)}` : ""}
         ${details.length ? `${sectionTitle("Registered Details")}${detailGrid(details)}` : ""}
         ${status.length ? `${sectionTitle("Status")}${detailGrid(status)}` : ""}
         ${t.registryBackground?.trim() ? `${sectionTitle("Background")}<div style="white-space:pre-wrap;font-size:10.5px;line-height:1.6;overflow-wrap:anywhere;padding:2px 4px">${esc(t.registryBackground)}</div>` : ""}

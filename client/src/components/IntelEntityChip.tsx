@@ -164,7 +164,7 @@ export function IntelEntityWithPhotos({
       <IntelEntityChip item={item} onClick={onClick} />
       {(item.photos ?? []).length > 0 && (
         <div className="pl-1">
-          <IntelPhotoStrip photos={item.photos!} size="w-14 h-14" />
+          <IntelPhotoStrip photos={item.photos!} size="w-28 h-28" />
         </div>
       )}
     </div>

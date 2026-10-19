@@ -35,11 +35,8 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useIsMobile } from "@/hooks/useMobile";
 import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
-import {
-  SuggestedFaceMatchDialog,
-  type FaceMatchSuggestion,
-} from "@/components/SuggestedFaceMatchDialog";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
+import { ResizablePhoto } from "@/components/ResizablePhoto";
 import {
   locateTargetFromPending,
   samePlace,
@@ -161,6 +158,7 @@ import {
 } from "@shared/addressFormat";
 import { compressAttachmentImage } from "@/lib/imageCompress";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import { robotoFontFaceCss, whenFontsReady } from "@/lib/exportFonts";
 import { setLastActiveContext } from "@/lib/lastActiveContext";
 import { useLocation, useParams, useSearch } from "wouter";
 import { toast } from "sonner";
@@ -300,7 +298,7 @@ function attachmentImagesHtml(
             : "&nbsp;") +
           `</div>`;
         return (
-          `<div style="width:33%;max-width:160px;display:flex;flex-direction:column;align-items:stretch">` +
+          `<div style="width:calc(50% - 4px);max-width:320px;box-sizing:border-box;display:flex;flex-direction:column;align-items:stretch;break-inside:avoid;page-break-inside:avoid">` +
           `<img src="${a.url}" style="display:block;box-sizing:border-box;width:100%;border:1px solid #ccc;border-radius:4px 4px 0 0" />` +
           stripHtml +
           `</div>`
@@ -507,40 +505,43 @@ function exportToPDF(
   }
 
   // ── Page headers ────────────────────────────────────────────────────────────
-  // Styled to match the Intelligence Profile / CTO Weekly Tasking exports:
-  // a full-bleed dark-blue cover-header banner with the meta info (Operation/
-  // Target/Date/Prepared By) as rounded pills, instead of the old bordered
-  // label/value table.
+  // Same look as the Supervisor Summary / Weekly Tasking exports (a centred
+  // dark-blue banner: brand dot, "RunLog", title) with the details in labelled
+  // cells in two equal columns, drawn like the log table beneath it:
+  //   Operation | Date
+  //   Target    | Prepared by
+  //   Imagery taken (full width)
+  // With no target, Prepared by takes the whole second row; with no author
+  // CIN, Target takes it.
   //
-  // Strategy: use <thead> to repeat a compact version of the banner on every
-  // page. Page 1: show first-page-header (full banner + imagery) above the
-  // table. The <thead> banner row is hidden on page 1 via beforeprint JS.
-  // Pages 2+: <thead> shows (compact banner + column headers) via
-  // display:table-header-group.
-  //
-  // beforeprint: hides first-page-header, removes 'hide-on-print' from thead meta rows.
-  // afterprint:  restores first-page-header, re-adds 'hide-on-print' to thead meta rows.
+  // Strategy: the full banner (first-page-header) is page 1 — on screen and in
+  // print; the compact version lives in the <thead> and repeats at the top of
+  // pages 2+ (on page 1 it is covered by the full banner) — see the print
+  // strategy comment in the beforeprint script.
+  const escHdr = (v: string) =>
+    v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const detailCell = (label: string, value: string, full = false) =>
+    `<div class="dc${full ? " dc-full" : ""}"><div class="dl">${label}</div><div class="dv">${escHdr(value)}</div></div>`;
+  const hasTarget = !!targetFullName;
+  const detailsHtml = `
+    <div class="details">
+      ${detailCell("Operation", operationName)}
+      ${detailCell("Date", dateStr)}
+      ${hasTarget ? detailCell("Target", targetFullName ?? "", !authorCin) : ""}
+      ${authorCin ? detailCell("Prepared by", authorCin, !hasTarget) : ""}
+      <div class="di"><span class="dl">Imagery taken</span> <b>${imageryRowHtml}</b></div>
+    </div>`;
 
-  const metaPillsHtml = `
-    <span class="meta-pill">Operation <strong>${operationName}</strong></span>
-    ${targetFullName ? `<span class="meta-pill">Target <strong>${targetFullName}</strong></span>` : ""}
-    <span class="meta-pill">Date <strong>${dateStr}</strong></span>
-    ${authorCin ? `<span class="meta-pill">Prepared by <strong>${authorCin}</strong></span>` : ""}`;
-
-  // Cover-header banner builder — `compact` is used for the repeating
-  // per-page thead version (smaller title). The imagery line is included in
-  // both: only the thead version actually prints (beforeprint hides
-  // first-page-header entirely and shows the print-only thead row on every
-  // page), so leaving it out of the compact variant meant it never appeared
-  // on a printed/PDF page at all — only in the on-screen preview.
+  // Banner + details builder — `compact` is the repeating thead version for
+  // pages 2+ (one-line banner, smaller cells); the full one is page 1 and the
+  // on-screen preview. The imagery row is in both, so it is on every printed
+  // page.
   function coverHeaderHtml(compact: boolean): string {
     return `
-      <div class="cover-header">
-        <div class="brand-label">RunLog &middot; Surveillance Running Sheet</div>
-        <div class="rs-title${compact ? " rs-title-sm" : ""}">WC SURVEILLANCE RUNNING SHEET</div>
-        <div class="meta-pills">${metaPillsHtml}</div>
-        <div class="imagery-line">Imagery taken: <strong>${imageryRowHtml}</strong></div>
-      </div>`;
+      <div class="cover-header${compact ? " compact" : ""}">
+        <div class="brand-row"><div class="brand-dot"></div><span class="brand-label">RunLog</span></div>
+        <div class="rs-title">WC SURVEILLANCE RUNNING SHEET</div>
+      </div>${detailsHtml}`;
   }
 
   // ── Running sheet table ──────────────────────────────────────────────────────
@@ -630,8 +631,8 @@ function exportToPDF(
           attachmentImagesHtml(row.attachments) +
           OBS_TRAILING_SPACE;
         parts.push(`<tr style="background:${rowBg}">
-          <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
-          <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
+          <td style="padding:6px 6px 8px;${bb};${cb};font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">${row.time ?? ""}</td>
+          <td style="padding:6px 6px 8px;${bb};${cb};font-size:12px">${obsHtml}</td>
           <td style="padding:6px 6px 8px;${bb};font-size:11px"></td>
         </tr>${spacerRow}`);
         continue;
@@ -654,8 +655,8 @@ function exportToPDF(
           attachmentImagesHtml(row.attachments) +
           OBS_TRAILING_SPACE;
         parts.push(`<tr style="background:${rowBg}">
-          <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap">${row.time ?? ""}</td>
-          <td style="padding:6px 6px 8px;${bb};${cb}">${obsHtml}</td>
+          <td style="padding:6px 6px 8px;${bb};${cb};font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">${row.time ?? ""}</td>
+          <td style="padding:6px 6px 8px;${bb};${cb};font-size:12px">${obsHtml}</td>
           <td style="padding:6px 6px 8px;${bb};font-size:11px"><span class="pill pill-certified">&#10003; TEAM</span></td>
         </tr>${spacerRow}`);
         continue;
@@ -698,8 +699,8 @@ function exportToPDF(
         attachmentImagesHtml(row.attachments) +
         OBS_TRAILING_SPACE;
       parts.push(`<tr style="background:${rowBg}">
-        <td style="padding:6px 6px 8px;${bb};${cb};font-family:monospace;font-size:11px;white-space:nowrap;vertical-align:top">${row.time ?? ""}</td>
-        <td style="padding:6px 6px 8px;${bb};${cb};vertical-align:top">${obsHtml}</td>
+        <td style="padding:6px 6px 8px;${bb};${cb};font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap;vertical-align:top">${row.time ?? ""}</td>
+        <td style="padding:6px 6px 8px;${bb};${cb};vertical-align:top;font-size:12px">${obsHtml}</td>
         <td style="padding:6px 6px 8px;${bb};font-size:11px;vertical-align:top"><div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px">${cinPillsHtml}</div></td>
       </tr>${spacerRow}`);
     }
@@ -708,10 +709,9 @@ function exportToPDF(
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
   <title>${sheetTitle}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet"/>
   <style>
+    /* Roboto is served by RunLog itself (lib/exportFonts.ts) — no request to Google. */
+    ${robotoFontFaceCss()}
     @page{
       margin:20mm 15mm;
       @top-center{content:'PROTECTED';font-family:'Roboto',sans-serif;font-size:12px;font-weight:700;color:#dc2626;letter-spacing:0.08em}
@@ -726,15 +726,38 @@ function exportToPDF(
        No border-radius, deliberately — sits flush above the log table so the
        two read as one continuous document block, and a single rectangle
        renders reliably across page breaks with no edge cases. */
-    .cover-header{background:#1e3a8a;color:#fff;padding:16px 20px 14px}
-    .brand-label{font-size:9px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#93c5fd;margin-bottom:8px}
-    .rs-title{font-size:18px;font-weight:700;letter-spacing:0.03em}
-    .rs-title-sm{font-size:13px}
-    .meta-pills{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-    .meta-pill{display:inline-flex;align-items:center;gap:4px;padding:4px 11px;border-radius:9999px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.28);font-size:9px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:rgba(255,255,255,0.72)}
-    .meta-pill strong{color:#fff;font-weight:700;text-transform:none;letter-spacing:0;margin-left:2px}
-    .imagery-line{font-size:10px;margin-top:10px;color:rgba(255,255,255,0.78)}
-    .imagery-line strong{color:#fff;font-weight:700}
+    .cover-header{background:#1e3a8a;color:#fff;padding:18px 28px 14px;text-align:center}
+    .brand-row{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:10px;opacity:0.9}
+    .brand-dot{width:10px;height:10px;border-radius:50%;background:#93c5fd;flex:none}
+    .brand-label{font-size:10px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#93c5fd}
+    .rs-title{font-size:22px;font-weight:800;letter-spacing:0.04em;line-height:1.2;text-transform:uppercase}
+    /* Compact version (repeats at the top of every printed page): one-line banner */
+    .cover-header.compact{padding:8px 28px;display:flex;justify-content:center;align-items:center;gap:14px}
+    .cover-header.compact .brand-row{margin:0}
+    .cover-header.compact .rs-title{font-size:13px;font-weight:800}
+    /* Details — two equal columns of labelled cells, drawn like the log table below.
+       On screen the block sits above the table, so it carries the table's blue side
+       borders; inside the printed thead the table's own border already runs down both
+       sides, so they are dropped there (no doubled line). */
+    .details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));background:#f1f6ff;border:1.5px solid #1e3a8a;border-top:none;border-bottom:none}
+    .dc{padding:7px 10px;border-right:1px solid #c7d5ee;border-bottom:1px solid #c7d5ee;min-width:0}
+    .dc:nth-child(even){border-right:none}
+    .dc-full{grid-column:1 / -1;border-right:none}
+    .dl{font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;font-weight:600}
+    .dv{font-size:12px;font-weight:700;color:#000;line-height:1.3;overflow-wrap:anywhere}
+    .di{grid-column:1 / -1;padding:6px 10px;border-bottom:1px solid #c7d5ee;font-size:10.5px}
+    .di b{color:#000;font-weight:700}
+    .di .dl{margin-right:6px}
+    /* The cell is the only (so "last") cell in its row, which would give it the
+       no-wrap / 1% width rule meant for the certification column — undo that so the
+       compact header wraps like the full one. */
+    .log-table td.thead-meta-cell:last-child{white-space:normal;word-break:normal;width:auto;overflow:visible}
+    .thead-meta-cell .details{border-left:none;border-right:none}
+    .thead-meta-cell .cover-header.compact + .details .dc{padding:4px 10px}
+    .thead-meta-cell .cover-header.compact + .details .dl{font-size:8px}
+    .thead-meta-cell .cover-header.compact + .details .dv{font-size:10.5px}
+    .thead-meta-cell .cover-header.compact + .details .di{padding:3px 10px;font-size:9.5px}
+    .thead-meta-cell .cover-header.compact + .details .di .dl{font-size:8px}
     /* Log table — the outer border is a single declaration on the <table> element itself
        (border-collapse:collapse), not assembled from separate per-cell rules. That's what
        guarantees it always renders as one continuous, unbroken, uniform-width rectangle
@@ -775,6 +798,12 @@ function exportToPDF(
       .log-table tbody tr{page-break-inside:avoid;break-inside:avoid}
       /* thead repeats on every page */
       thead{display:table-header-group}
+      /* Page 1 keeps the FULL header. The compact header in the thead also prints
+         on page 1 (a thead repeats on every page, first included), so the full
+         header is pulled down over it: --hc is the compact header's height,
+         measured in the beforeprint script below, and the full header paints on
+         top (opaque, higher z-index) so only the column headings show beneath it. */
+      .first-page-header{position:relative;z-index:5;background:#fff;margin-bottom:calc(-1 * var(--hc, 0px))}
     }
   </style>
   <script>
@@ -782,41 +811,37 @@ function exportToPDF(
       /*
        * PRINT STRATEGY (browser-compatible, no Prince XML):
        *
-       * Screen view:
-       *   - .first-page-header: visible (title + meta + imagery)
-       *   - .print-only elements: hidden
+       * Screen view: the full header (.first-page-header); print-only blocks hidden.
        *
-       * Print view (beforeprint):
-       *   - Hide .first-page-header
-       *   - Show .print-only elements:
-       *       #p1-header div (before the table): title + meta + IMAGERY row
-       *         → sits before the log table so it only appears on page 1
-       *       .thead-meta-row (inside <thead>): title + meta WITHOUT imagery
-       *         → repeats on every page via thead display:table-header-group
-       *
-       * Result:
-       *   Page 1: p1-header (title+meta+imagery) + thead(title+meta+colhdrs) + rows
-       *   Pages 2+: thead(title+meta+colhdrs) + rows
-       *
-       * The meta table appears twice on page 1 (once in p1-header, once in thead).
-       * To eliminate the duplicate: we DON'T show the thead-meta-row on page 1.
-       * Since CSS can't distinguish page 1 from page 2+, we use a different split:
-       *   - p1-header shows ONLY the imagery row (not the full meta)
-       *   - thead-meta-row shows the FULL meta (no imagery)
-       * Page 1: imagery-only div + thead(title+meta+colhdrs) + rows
-       * Pages 2+: thead(title+meta+colhdrs) + rows
-       * Imagery appears above the meta table on page 1 (slightly non-ideal visually
-       * but correct and avoids duplication).
+       * Print: a <thead> repeats on every page — page 1 included — so the compact
+       * header lives in the thead and prints at the top of every page. Page 1 is
+       * meant to show the FULL header instead, so .first-page-header stays visible
+       * and is pulled down over the compact one (see the @media print rule): its
+       * negative bottom margin is the compact header's height, measured here at the
+       * printed content width (A4 less 15mm margins = 180mm) with the same fonts.
+       * Result: page 1 = full header + column headings + rows; pages 2+ = compact
+       * header + column headings + rows.
        */
       window.addEventListener('beforeprint', function(){
-        document.getElementById('first-page-header').style.display = 'none';
+        var cell = document.querySelector('.thead-meta-cell');
+        if (cell) {
+          var probe = document.createElement('div');
+          probe.className = 'thead-meta-cell';
+          probe.style.cssText = 'position:absolute;left:-10000px;top:0;width:180mm;visibility:hidden';
+          probe.innerHTML = cell.innerHTML;
+          document.body.appendChild(probe);
+          var hc = probe.getBoundingClientRect().height;
+          document.body.removeChild(probe);
+          // 1px short so a measuring rounding error can never leave a sliver showing
+          document.documentElement.style.setProperty('--hc', Math.max(0, hc - 1) + 'px');
+        }
         document.querySelectorAll('.print-only').forEach(function(el){
           el.style.removeProperty('display');
           el.style.setProperty('display', el.dataset.pd || 'block', 'important');
         });
       });
       window.addEventListener('afterprint', function(){
-        document.getElementById('first-page-header').style.display = '';
+        document.documentElement.style.removeProperty('--hc');
         document.querySelectorAll('.print-only').forEach(function(el){
           el.style.setProperty('display', 'none', 'important');
         });
@@ -871,9 +896,10 @@ function exportToPDF(
   win.document.write(html);
   win.document.close();
   win.focus();
-  setTimeout(() => {
-    win.print();
-  }, 400);
+  // Print only once Roboto has loaded, so the PDF never gets a fallback font.
+  void whenFontsReady(win).then(() => {
+    setTimeout(() => win.print(), 150);
+  });
 }
 
 // ─── CIN item helpers ───────────────────────────────────────────────────────
@@ -1568,6 +1594,14 @@ function ObservationAttachments({
   operationId?: number;
 }) {
   const [preview, setPreview] = useState<string | null>(null);
+  // A photo chosen but not yet uploaded: it opens the "Link photo to entity"
+  // window with the photo ready, and only goes up when the officer presses the
+  // green Confirm upload at the bottom right of that window.
+  const [pendingPhoto, setPendingPhoto] = useState<{
+    blob: Blob;
+    mimeType: string;
+    fileName: string;
+  } | null>(null);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [linking, setLinking] = useState<{ id: number; url: string } | null>(
     null
@@ -1580,45 +1614,7 @@ function ObservationAttachments({
   const rowCins = row.members
     .map(m => m.memberName)
     .filter(cin => cin !== "__SPACE__");
-  // Set right after a photo finishes uploading, so previewFaceMatch (below)
-  // has something to check. Cleared as soon as that check comes back —
-  // whether or not it actually found a suggestion — since it's a one-shot
-  // "just uploaded" check, not a standing subscription for this photo.
-  const [suggestCheck, setSuggestCheck] = useState<{
-    id: number;
-    url: string;
-  } | null>(null);
-  const [suggestion, setSuggestion] = useState<{
-    id: number;
-    url: string;
-    match: FaceMatchSuggestion;
-  } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  // Deliberately narrow: only offers a suggestion for a photo with exactly
-  // one detected face (see previewFaceMatch's own comment) — a photo with 0
-  // or 2+ faces is left completely untouched, same as before this feature
-  // existed, and the officer uses the normal Link badge whenever they want.
-  const { data: facePreview, isFetched: facePreviewFetched } =
-    trpc.attachment.previewFaceMatch.useQuery(
-      { attachmentId: suggestCheck?.id ?? 0 },
-      { enabled: suggestCheck !== null, retry: false }
-    );
-
-  // useQuery in this app's React Query version has no onSuccess/onSettled
-  // callback (removed in v5) — react to the result landing instead.
-  useEffect(() => {
-    if (!suggestCheck || !facePreviewFetched) return;
-    if (facePreview?.suggestion) {
-      setSuggestion({
-        id: suggestCheck.id,
-        url: suggestCheck.url,
-        match: facePreview.suggestion,
-      });
-    }
-    setSuggestCheck(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facePreviewFetched, facePreview]);
 
   if (!IMAGERY_PHRASE_PATTERN.test(row.observation ?? "")) return null;
 
@@ -1638,20 +1634,9 @@ function ObservationAttachments({
         return;
       }
 
-      // If compression failed, the original may be a HEIC/HEIF file the browser
-      // can't preview (it gets converted to JPEG server-side) — skip the
-      // raw-bytes preview for it rather than show a broken image icon. Preview
-      // generation is fire-and-forget and doesn't block the actual upload.
-      const isHeic =
-        !compressed &&
-        (/^image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name));
-      if (!isHeic) {
-        const reader = new FileReader();
-        reader.onload = () => setPreview(reader.result as string);
-        reader.readAsDataURL(blob);
-      }
-      const uploaded = await onUpload(row.id, blob, mimeType, fileName);
-      if (uploaded) setSuggestCheck(uploaded);
+      // Staged only — nothing is uploaded until Confirm upload is pressed in
+      // the link window.
+      setPendingPhoto({ blob, mimeType, fileName });
     } catch {
       toast.error(
         "Couldn't process that photo — try again, or use a different photo."
@@ -1662,33 +1647,36 @@ function ObservationAttachments({
   return (
     <div className="mt-2 flex flex-wrap items-end gap-2">
       {row.attachments.map(a => (
-        <div
-          key={a.id}
-          className="relative group"
-          style={{ width: "33%", minWidth: 90, maxWidth: 160 }}
-        >
-          <img
-            src={a.url}
-            alt="Attached photograph"
-            className="w-full rounded border border-border cursor-zoom-in"
-            onClick={() => setLightbox(a.url)}
-          />
-          {canEdit && (
-            <DeletePhotoButton
-              pending={deletePending}
-              onConfirm={() => onDelete(a.id)}
-              positionClassName="absolute -top-1.5 -right-1.5"
-              iconSize="h-3.5 w-3.5 sm:h-4 sm:w-4"
-              glyphSize="h-2 w-2 sm:h-2.5 sm:w-2.5"
-            />
+        <ResizablePhoto key={a.id} photoId={a.id}>
+          {handle => (
+            <>
+              <div className="relative">
+                <img
+                  src={a.url}
+                  alt="Attached photograph"
+                  className="w-full rounded border border-border cursor-zoom-in"
+                  onClick={() => setLightbox(a.url)}
+                />
+                {handle}
+              </div>
+              {canEdit && (
+                <DeletePhotoButton
+                  pending={deletePending}
+                  onConfirm={() => onDelete(a.id)}
+                  positionClassName="absolute -top-1.5 -right-1.5"
+                  iconSize="h-3.5 w-3.5 sm:h-4 sm:w-4"
+                  glyphSize="h-2 w-2 sm:h-2.5 sm:w-2.5"
+                />
+              )}
+              <LinkedEntityPills
+                entities={a.linkedEntities}
+                faceCount={a.faceCount}
+                hasRow
+                onClick={() => setLinking({ id: a.id, url: a.url })}
+              />
+            </>
           )}
-          <LinkedEntityPills
-            entities={a.linkedEntities}
-            faceCount={a.faceCount}
-            hasRow
-            onClick={() => setLinking({ id: a.id, url: a.url })}
-          />
-        </div>
+        </ResizablePhoto>
       ))}
       {preview && uploading && (
         <div style={{ width: "33%", minWidth: 90, maxWidth: 160 }}>
@@ -1719,6 +1707,28 @@ function ObservationAttachments({
         </>
       )}
 
+      {pendingPhoto && operationId != null && (
+        <LinkAttachmentDialog
+          open
+          onOpenChange={o => {
+            if (!o) setPendingPhoto(null);
+          }}
+          currentOperationId={operationId}
+          rowCins={row.members
+            .map(m => m.memberName)
+            .filter(cin => cin !== "__SPACE__")}
+          stagedPhoto={{
+            ...pendingPhoto,
+            operationId,
+            upload: async (blob, mimeType, fileName) => {
+              // The same row upload as before — it just waits for Confirm.
+              setPreview(URL.createObjectURL(blob));
+              return onUpload(row.id, blob, mimeType, fileName);
+            },
+          }}
+        />
+      )}
+
       {lightbox && (
         <div
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
@@ -1742,15 +1752,6 @@ function ObservationAttachments({
           }}
           currentOperationId={operationId}
           rowCins={rowCins}
-        />
-      )}
-
-      {suggestion && (
-        <SuggestedFaceMatchDialog
-          attachmentId={suggestion.id}
-          photoUrl={suggestion.url}
-          suggestion={suggestion.match}
-          onDone={() => setSuggestion(null)}
         />
       )}
     </div>
@@ -5605,6 +5606,19 @@ export default function SheetDetail({
             (pendingDepartures ?? []).forEach(d => {
               const chip = vehicleArrivingChips.find(c => c.rego === d.rego);
               if (!chip) return;
+              // A later row saw it on the move ("... HOGAN driver and sole
+              // occupant, travelled on Leach Highway ..."): where it is now,
+              // on top of where it left from.
+              const travelling = d.via
+                ? `Travelling on ${d.via}${d.viaRowId ? ` · ${rowTime(d.viaRowId) ?? ""}` : ""}`.replace(
+                    / · $/,
+                    ""
+                  )
+                : "";
+              const leftFrom = departedState(d);
+              const stateLine = travelling
+                ? `${travelling} — ${leftFrom.charAt(0).toLowerCase()}${leftFrom.slice(1)}`
+                : leftFrom;
               continuityCards.push({
                 key: `dep-${d.rego}`,
                 title: d.rego,
@@ -5614,9 +5628,9 @@ export default function SheetDetail({
                   ? vehicleOccupants(d.occupantDesc, d.rego, d.rowId).join(", ")
                   : extractOccupantNames(d.occupantDesc) ||
                     "Occupants not seen",
-                state: departedState(d),
+                state: stateLine,
                 actions: cardAction(chip, "Vehicle arriving"),
-                latestRowId: d.rowId,
+                latestRowId: Math.max(d.rowId, d.viaRowId ?? 0),
                 ...(() => {
                   const inCar = vehicleOccupants(
                     d.occupantDesc,
@@ -5626,10 +5640,17 @@ export default function SheetDetail({
                   return {
                     holds: inCar.flatMap(n => surnameTokens(n)),
                     people: inCar,
-                    locus: {
-                      headline: `Departed in ${d.rego}`,
-                      sub: departedState(d),
-                    },
+                    locus: travelling
+                      ? {
+                          headline: inCar.length
+                            ? `In ${d.rego}`
+                            : `Departed in ${d.rego}`,
+                          sub: `${travelling} — ${leftFrom.charAt(0).toLowerCase()}${leftFrom.slice(1)}`,
+                        }
+                      : {
+                          headline: `Departed in ${d.rego}`,
+                          sub: leftFrom,
+                        },
                   };
                 })(),
               });
@@ -5682,10 +5703,10 @@ export default function SheetDetail({
               continuityCards.push({
                 key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                 title: h.names,
-                pill: "Departed on foot",
+                pill: h.fromVessel ? "Disembarked" : "Departed on foot",
                 attn: true,
                 who: destKnown ? `Walking to ${h.destination}` : "On foot",
-                state: `Left ${h.from}${sinceText(h.rowId)}`,
+                state: `Left ${h.fromVessel ?? h.from}${sinceText(h.rowId)}`,
                 actions: [
                   ...cardAction(
                     chip,
@@ -5712,9 +5733,11 @@ export default function SheetDetail({
                 people: splitPeopleNames(h.names),
                 locus: {
                   headline: destKnown
-                    ? `Departed on foot to ${h.destination}`
-                    : "Departed on foot",
-                  sub: `Left ${h.from}${sinceText(h.rowId)}`,
+                    ? `${h.fromVessel ? "Disembarked, on foot" : "Departed on foot"} to ${h.destination}`
+                    : h.fromVessel
+                      ? "Disembarked, on foot"
+                      : "Departed on foot",
+                  sub: `Left ${h.fromVessel ?? h.from}${sinceText(h.rowId)}`,
                 },
               });
             });
@@ -5769,6 +5792,48 @@ export default function SheetDetail({
                     headline: `In ${rego}`,
                     sub: `${at ? `${atMarker ? "At" : "Last seen at"} ${at}` : "Position not logged"}${sinceText(rowId)}`,
                   },
+                });
+              });
+            }
+            // People aboard a boat or vessel ("boarded a vessel at the end of
+            // the jetty"): where it is can't be told from the row, so it is
+            // where they were last logged, until a row says they got off.
+            {
+              const byVessel = new Map<
+                string,
+                NonNullable<typeof pendingPlacements>
+              >();
+              for (const p of pendingPlacements ?? []) {
+                if (!p.vessel) continue;
+                const k = p.vessel.toLowerCase();
+                byVessel.set(k, [...(byVessel.get(k) ?? []), p]);
+              }
+              byVessel.forEach((ps, vk) => {
+                const vessel = ps[0].vessel ?? vk;
+                const names = ps.map(p => p.name);
+                const at = ps.find(p => p.at)?.at;
+                const rowId = Math.max(...ps.map(p => p.rowId));
+                const where = at
+                  ? `Last seen at ${at}${sinceText(rowId)}`
+                  : `Position not logged${sinceText(rowId)}`;
+                continuityCards.push({
+                  key: `vsl-${vk}`,
+                  title: names.join(" and "),
+                  pill: "On a vessel",
+                  attn: true,
+                  who: `${names.join(", ")} on ${vessel}`,
+                  state: where,
+                  actions: [
+                    {
+                      key: `vsl-off-${vk}`,
+                      label: "Disembarked",
+                      text: `${shortenAlreadyMentionedNames(names.join(" and "), usedBracketCodes)} disembarked from ${vessel} and walked [route] towards [location].`,
+                    },
+                  ],
+                  latestRowId: rowId,
+                  holds: names.flatMap(n => surnameTokens(n)),
+                  people: names,
+                  locus: { headline: `On ${vessel}`, sub: where },
                 });
               });
             }

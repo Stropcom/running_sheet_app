@@ -36,6 +36,8 @@ import {
   SheetsCard,
   fetchFirstPhotoUrl,
   pdfPersonRowHtml,
+  PDF_SECTION_LAYOUT_CSS,
+  pdfPageFrameCss,
 } from "@/components/ProfileKit";
 import { PersonLinkRow } from "@/components/PersonLinkRow";
 
@@ -100,6 +102,8 @@ function buildLocationProfileHtml(
 ${PDF_PERSON_ROW_CSS}
 .footer { margin-top:32px; padding-top:12px; border-top:1px solid ${GREY_BORDER}; display:flex; justify-content:space-between; font-size:9px; color:#94a3b8; }
 @media print { * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } .cover-header { background:#064e3b !important; } .stats-row { background:#d1fae5 !important; } .section-title { background:#d1fae5 !important; } }
+${PDF_SECTION_LAYOUT_CSS}
+${pdfPageFrameCss("#6ee7b7")}
 </style></head><body>
 <div class="cover-header">
   <div class="brand-label">RunLog Intelligence Profile — Location</div>

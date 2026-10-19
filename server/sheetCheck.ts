@@ -388,6 +388,47 @@ function isSuburbOnlyVariant(a: string, b: string): boolean {
   );
 }
 
+/** Edit distance counting a swap of two neighbouring letters as one edit
+ * ("Vehcile" → "Vehicle"), so typical typing slips stay within 1–2. */
+function typoDistance(a: string, b: string): number {
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1,
+        d[i][j - 1] + 1,
+        d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1])
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+/** True for a plate-shaped token: 3–8 letters/digits with at least one of each. */
+function looksLikeRegoToken(token: string): boolean {
+  return (
+    /^[A-Za-z0-9]{3,8}$/.test(token) &&
+    /\d/.test(token) &&
+    /[A-Za-z]/.test(token)
+  );
+}
+
+/** A mistyped "Vehicle" straight in front of a rego — "Vehcle 1TDM414" — as
+ * found in a bracket label or in the prose. Only a near-miss of the word
+ * *Vehicle* followed by a plate-shaped token counts, so ordinary words never
+ * match. Returns the wrong word, or null. */
+export function misspeltVehicleKeyword(label: string): string | null {
+  const m = /^\s*([A-Za-z]{5,9})[ \t]+([A-Za-z0-9]{3,8})\b/.exec(label);
+  if (!m) return null;
+  const word = m[1].toLowerCase();
+  if (word === "vehicle" || word === "vehicles") return null;
+  if (!looksLikeRegoToken(m[2])) return null;
+  return typoDistance(word, "vehicle") <= 2 ? m[1] : null;
+}
+
 function checkConsistencyForType(
   entities: IntelligenceEntity[],
   type: "address" | "vehicle" | "person" | "business",
@@ -414,6 +455,14 @@ function checkConsistencyForType(
     if (distinctLabels.size < 2) continue;
     const [entityA, entityB] = Array.from(distinctLabels.values());
     if (isTrivialVariant?.(entityA.shortForm, entityB.shortForm)) continue;
+    // "Vehcle 1TDM414" vs "1TDM414 white Lexus…" is just "Vehicle" mistyped —
+    // reported once, briefly, by the spelling check instead.
+    if (
+      type === "vehicle" &&
+      (misspeltVehicleKeyword(entityA.shortForm) ||
+        misspeltVehicleKeyword(entityB.shortForm))
+    )
+      continue;
     const occA = entityA.occurrences[0];
     const occB = entityB.occurrences[0];
     if (!occA || !occB) continue;
@@ -1404,8 +1453,50 @@ export function checkSpellingInText(
   return out;
 }
 
-function checkSpelling(rows: ObservationTextForSheet[]): SheetCheckFinding[] {
+/** Every mistyped "Vehicle" in one row's text, bracket or prose. Pure. */
+export function checkVehicleKeywordInText(
+  text: string
+): Array<{ wrong: string; correct: string; index: number }> {
+  const out: Array<{ wrong: string; correct: string; index: number }> = [];
+  const re =
+    /(?<![A-Za-z0-9])[A-Za-z]{5,9}[ \t]+[A-Za-z0-9]{3,8}(?![A-Za-z0-9])/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const wrong = misspeltVehicleKeyword(m[0]);
+    if (!wrong) continue;
+    out.push({ wrong, correct: applyCasing("vehicle", wrong), index: m.index });
+  }
+  return out;
+}
+
+function checkVehicleKeywordSpelling(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
   const findings: SheetCheckFinding[] = [];
+  for (const row of rows) {
+    for (const hit of checkVehicleKeywordInText(row.observation)) {
+      const start = Math.max(0, hit.index - 30);
+      const end = Math.min(
+        row.observation.length,
+        hit.index + hit.wrong.length + 30
+      );
+      findings.push({
+        ruleId: "vehicle-keyword-misspelt",
+        category: "spelling",
+        reason: `"${hit.wrong}" — did you mean "${hit.correct}"?`,
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        snippet: `${start > 0 ? "…" : ""}${row.observation.slice(start, end)}${end < row.observation.length ? "…" : ""}`,
+        suggestedFix: { wrong: hit.wrong, correct: hit.correct },
+        findingKey: `ROW_${row.rowId}::${hit.wrong.toUpperCase()}::${hit.index}`,
+      });
+    }
+  }
+  return findings;
+}
+
+function checkSpelling(rows: ObservationTextForSheet[]): SheetCheckFinding[] {
+  const findings: SheetCheckFinding[] = [...checkVehicleKeywordSpelling(rows)];
   for (const row of rows) {
     const hits = checkSpellingInText(row.observation);
     for (const hit of hits) {

@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { sdk } from "./_core/sdk";
 import { ENV } from "./_core/env";
+import { latestCaptureDate, nearmapSpot } from "../shared/nearmapAge";
 
 /**
  * Nearmap aerial-imagery overlay, served as a Simple WMS layer through this
@@ -142,4 +143,72 @@ export function registerNearmapProxy(app: Express) {
       }
     }
   );
+}
+
+// ── Capture date ("how old is this imagery?") ──────────────────────────────
+//
+// Nearmap's tiles carry no date, so the Map page asks its Coverage service
+// which surveys cover a spot and takes the newest capture date. Same key, same
+// server-only rule as the tiles above. The answer is cached per ~500 m
+// neighbourhood for an hour (Nearmap surveys change a few times a year), and a
+// failed lookup is remembered for a few minutes so a key without Coverage
+// access isn't asked again on every pan. Nothing here ever throws to the
+// caller: no date just means the label stays hidden. Any failure is logged
+// server-side (status and the start of the body) so it can be diagnosed.
+//
+// The exact query parameters Coverage accepts could not be checked from the
+// dev sandbox (no key, no route out), so this asks for the newest survey with
+// `limit` / `sort` and, if Nearmap refuses those, asks again with none and
+// picks the newest date from whatever comes back.
+
+const NEARMAP_COVERAGE_BASE = "https://api.nearmap.com/coverage/v2/point";
+const COVERAGE_TTL_MS = 60 * 60 * 1000;
+const COVERAGE_FAIL_TTL_MS = 5 * 60 * 1000;
+const coverageCache = new Map<string, { date: string | null; until: number }>();
+
+async function askCoverage(
+  lat: number,
+  lng: number,
+  extra: Record<string, string>
+): Promise<string | null> {
+  const url = new URL(`${NEARMAP_COVERAGE_BASE}/${lng},${lat}`);
+  url.searchParams.set("apikey", ENV.nearmapApiKey);
+  for (const [k, v] of Object.entries(extra)) url.searchParams.set(k, v);
+  const resp = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    console.error(
+      `[NearmapProxy] coverage ${resp.status}: ${body.slice(0, 200)}`
+    );
+    return null;
+  }
+  return latestCaptureDate(await resp.json().catch(() => null));
+}
+
+/** The newest Nearmap capture date ("YYYY-MM-DD") at a spot, or null. */
+export async function fetchNearmapCaptureDate(
+  lat: number,
+  lng: number
+): Promise<string | null> {
+  if (!ENV.nearmapApiKey) return null;
+  const spot = nearmapSpot(lat, lng);
+  const key = `${spot.lat},${spot.lng}`;
+  const hit = coverageCache.get(key);
+  if (hit && hit.until > Date.now()) return hit.date;
+  let date: string | null = null;
+  try {
+    date =
+      (await askCoverage(spot.lat, spot.lng, {
+        limit: "1",
+        sort: "-captureDate",
+        resources: "tiles:Vert",
+      })) ?? (await askCoverage(spot.lat, spot.lng, {}));
+  } catch (err) {
+    console.error("[NearmapProxy] coverage failed:", err);
+  }
+  coverageCache.set(key, {
+    date,
+    until: Date.now() + (date ? COVERAGE_TTL_MS : COVERAGE_FAIL_TTL_MS),
+  });
+  return date;
 }

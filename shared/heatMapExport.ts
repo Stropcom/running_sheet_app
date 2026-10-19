@@ -252,7 +252,7 @@ export function overlayShapesSvg(
   [...order]
     .sort((a, b) => items[b].count - items[a].count)
     .forEach(i => {
-      svg += `<circle cx="${f(pts[i].x)}" cy="${f(pts[i].y)}" r="${f(radius(items[i]))}" fill="${items[i].colour}" fill-opacity="0.72" stroke="#ffffff" stroke-opacity="0.95" stroke-width="3"/>`;
+      svg += `<circle cx="${f(pts[i].x)}" cy="${f(pts[i].y)}" r="${f(radius(items[i]))}" fill="${items[i].colour}" fill-opacity="0.38" stroke="${items[i].colour}" stroke-opacity="0.9" stroke-width="2"/>`;
     });
   order.forEach(i => {
     if (Math.hypot(nudged[i].x - pts[i].x, nudged[i].y - pts[i].y) > 4)

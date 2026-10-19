@@ -15,7 +15,10 @@ import {
 import { drizzle } from "drizzle-orm/mysql2";
 import { initialShortcutOrder } from "../shared/rsChips";
 import { findVehicleChains, joinVehicleLists } from "../shared/vehicleList";
-import { createPool as createPromisePool } from "mysql2/promise";
+import {
+  createPool as createPromisePool,
+  type PoolConnection,
+} from "mysql2/promise";
 import { vaultEncrypt, vaultDecrypt, fingerprintVaultKey } from "./wipcVault";
 import { cosineSimilarity } from "./faceRecognition";
 import { makeRequest, type GeocodingResult } from "./_core/map";
@@ -43,6 +46,12 @@ import type { CommandCode } from "@shared/commands";
 import { scopeEntities, type OperationShareRow } from "@shared/operationAccess";
 import { intelScope } from "./intelScope";
 import {
+  FingerprintCache,
+  fingerprintSql,
+  fingerprintFromRow,
+  type Fingerprint,
+} from "./intelCache";
+import {
   applyTargetProjectsToSummary,
   sanitizeTargetSpecialProjects,
 } from "@shared/targetStatus";
@@ -62,12 +71,16 @@ import {
   VEHICLE_DEPART_PATTERN,
   VEHICLE_ARRIVE_PATTERN,
   matchVehicleArrival,
+  matchVehicleSighting,
   extractArrivalAddress,
 } from "@shared/vehicleEventPatterns";
 import {
   scanWalkEvents,
   extractDepartureAddress,
+  isUnseenOccupants,
+  splitPeopleNames,
 } from "@shared/walkEventPatterns";
+import { extractOccupantNames } from "@shared/occupantNames";
 import { expandRowSegments } from "@shared/rowSegments";
 import { VEHICLE_REGO_PATTERN } from "@shared/vehicleRego";
 import {
@@ -264,6 +277,23 @@ async function createDbPool(
   return null;
 }
 
+/**
+ * Runs `fn` on one dedicated connection from the pool, for work that needs
+ * session state to stay put across statements (e.g. SET FOREIGN_KEY_CHECKS).
+ * The connection is always handed back.
+ */
+export async function withDedicatedConnection<T>(
+  fn: (conn: PoolConnection) => Promise<T>
+): Promise<T> {
+  if (!(await getDb()) || !_pool) throw new Error("DB unavailable");
+  const conn = await _pool.getConnection();
+  try {
+    return await fn(conn);
+  } finally {
+    conn.release();
+  }
+}
+
 export async function getDb() {
   // If we have a pool, do a lightweight health check to detect stale connections
   if (_db && _pool) {
@@ -378,6 +408,8 @@ export interface TeamRow {
   mapVisibility: TeamMapVisibility;
   /** Members' location sharing is forced on at login and can't be turned off. */
   forceShare: boolean;
+  /** Offered as an "Add team" button on the New Running Sheet dialog. */
+  offerOnNewSheet: boolean;
 }
 
 function toTeamRow(t: typeof teams.$inferSelect): TeamRow {
@@ -398,6 +430,7 @@ function toTeamRow(t: typeof teams.$inferSelect): TeamRow {
     sortOrder: t.sortOrder,
     mapVisibility: t.mapVisibility,
     forceShare: t.forceShare,
+    offerOnNewSheet: t.offerOnNewSheet,
   };
 }
 
@@ -442,6 +475,7 @@ export async function createTeam(data: {
   aiPhones: string[];
   mapVisibility?: TeamMapVisibility;
   forceShare?: boolean;
+  offerOnNewSheet?: boolean;
 }): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -459,6 +493,7 @@ export async function createTeam(data: {
     sortOrder: (last?.sortOrder ?? 0) + 1,
     mapVisibility: data.mapVisibility ?? "always",
     forceShare: data.forceShare ?? false,
+    offerOnNewSheet: data.offerOnNewSheet ?? true,
     createdAt: Date.now(),
   });
   return result.insertId as number;
@@ -472,6 +507,7 @@ export async function updateTeam(
     aiPhones?: string[];
     mapVisibility?: TeamMapVisibility;
     forceShare?: boolean;
+    offerOnNewSheet?: boolean;
   }
 ) {
   const db = await getDb();
@@ -484,6 +520,8 @@ export async function updateTeam(
       data.aiPhones.length > 0 ? JSON.stringify(data.aiPhones) : null;
   if (data.mapVisibility !== undefined) set.mapVisibility = data.mapVisibility;
   if (data.forceShare !== undefined) set.forceShare = data.forceShare;
+  if (data.offerOnNewSheet !== undefined)
+    set.offerOnNewSheet = data.offerOnNewSheet;
   if (Object.keys(set).length === 0) return;
   await db.update(teams).set(set).where(eq(teams.id, id));
 }
@@ -2463,19 +2501,42 @@ export async function getAttachmentsForEntity(params: {
   const entityKey = params.entityLabel
     ? normalizeEntityLabel(params.entityLabel)
     : null;
+  // A Target and an Associate that are the same person (the "Identical
+  // profile" link) share their photos: whichever record a photo was linked to,
+  // both show it. See identityLinkedCounterparts.
+  const other =
+    params.category === "target" || params.category === "associate"
+      ? await identityLinkedCounterparts(db, params.category, {
+          targetId: params.targetId,
+          entityKey,
+        })
+      : { targetIds: [], associateKeys: [] };
+  const own =
+    params.category === "target"
+      ? eq(attachmentEntityLinks.targetId, params.targetId ?? -1)
+      : eq(attachmentEntityLinks.entityKey, entityKey ?? "");
   const links = await db
     .select()
     .from(attachmentEntityLinks)
     .where(
-      and(
-        eq(attachmentEntityLinks.category, params.category),
-        params.category === "target"
-          ? eq(attachmentEntityLinks.targetId, params.targetId ?? -1)
-          : eq(attachmentEntityLinks.entityKey, entityKey ?? "")
+      or(
+        and(eq(attachmentEntityLinks.category, params.category), own),
+        other.targetIds.length > 0
+          ? and(
+              eq(attachmentEntityLinks.category, "target"),
+              inArray(attachmentEntityLinks.targetId, other.targetIds)
+            )
+          : undefined,
+        other.associateKeys.length > 0
+          ? and(
+              eq(attachmentEntityLinks.category, "associate"),
+              inArray(attachmentEntityLinks.entityKey, other.associateKeys)
+            )
+          : undefined
       )
     );
   if (links.length === 0) return [];
-  const attachmentIds = links.map(l => l.attachmentId);
+  const attachmentIds = Array.from(new Set(links.map(l => l.attachmentId)));
   const rows = await db
     .select({
       id: rowAttachments.id,
@@ -2503,9 +2564,53 @@ export async function getAttachmentsForEntity(params: {
     .orderBy(desc(rowAttachments.createdAt));
   const withCins = await attachRowMemberCins(db, rows);
   return withCins.map(r => {
-    const link = links.find(l => l.attachmentId === r.id)!;
+    // Prefer the link on the record being asked about, else the other half's.
+    const mine = links.filter(l => l.attachmentId === r.id);
+    const link = mine.find(l => l.category === params.category) ?? mine[0];
     return { ...r, linkId: link.id, fromRegistry: link.fromRegistry };
   });
+}
+
+/**
+ * The other half of a Person Identity Link. A registry Associate that has been
+ * made a Target (or the reverse) is one real person kept as two records
+ * (`targets.linkedAssociateId` / `associates.linkedTargetId`), and the app
+ * combines what it knows across both — but photos are linked to ONE record
+ * (a target by id, an associate by label), so a photo uploaded to the
+ * associate never reached the target's profile. This returns the other half's
+ * photo keys: for a target, the linked associate's label key; for an
+ * associate (by label key), the target ids it is linked to. Only linked
+ * records are ever returned, so an unrelated person with the same name is
+ * never mixed in.
+ */
+async function identityLinkedCounterparts(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  category: "target" | "associate",
+  ref: { targetId?: number; entityKey: string | null }
+): Promise<{ targetIds: number[]; associateKeys: string[] }> {
+  if (category === "target") {
+    if (ref.targetId == null) return { targetIds: [], associateKeys: [] };
+    const rows = await db
+      .select({ name: associates.name })
+      .from(targets)
+      .innerJoin(associates, eq(targets.linkedAssociateId, associates.id))
+      .where(eq(targets.id, ref.targetId));
+    return {
+      targetIds: [],
+      associateKeys: rows.map(r => normalizeEntityLabel(r.name)),
+    };
+  }
+  if (!ref.entityKey) return { targetIds: [], associateKeys: [] };
+  const linked = await db
+    .select({ name: associates.name, targetId: associates.linkedTargetId })
+    .from(associates)
+    .where(
+      and(isNotNull(associates.linkedTargetId), isNull(associates.deletedAt))
+    );
+  const ids = linked
+    .filter(a => normalizeEntityLabel(a.name) === ref.entityKey)
+    .map(a => a.targetId as number);
+  return { targetIds: Array.from(new Set(ids)), associateKeys: [] };
 }
 
 /** Photos of the people who live at each address, for the map's "Images"
@@ -2892,6 +2997,24 @@ async function getAttachmentsForOperationEntities(
   const db = await getDb();
   if (!db) return empty;
 
+  // A target that is the same person as a registry associate also gets that
+  // associate's photos (see identityLinkedCounterparts).
+  const linkedAssociateKeyByTarget = new Map<number, string>();
+  if (targetIds.length) {
+    const linkedRows = await db
+      .select({ targetId: targets.id, name: associates.name })
+      .from(targets)
+      .innerJoin(associates, eq(targets.linkedAssociateId, associates.id))
+      .where(inArray(targets.id, targetIds));
+    for (const r of linkedRows)
+      linkedAssociateKeyByTarget.set(r.targetId, normalizeEntityLabel(r.name));
+  }
+  const associateKeysWanted = Array.from(
+    new Set([
+      ...entityKeys.associate,
+      ...Array.from(linkedAssociateKeyByTarget.values()),
+    ])
+  );
   const conditions = [];
   if (targetIds.length)
     conditions.push(
@@ -2907,11 +3030,11 @@ async function getAttachmentsForOperationEntities(
         inArray(attachmentEntityLinks.entityKey, entityKeys.vehicle)
       )
     );
-  if (entityKeys.associate.length)
+  if (associateKeysWanted.length)
     conditions.push(
       and(
         eq(attachmentEntityLinks.category, "associate"),
-        inArray(attachmentEntityLinks.entityKey, entityKeys.associate)
+        inArray(attachmentEntityLinks.entityKey, associateKeysWanted)
       )
     );
   if (entityKeys.location.length)
@@ -2964,6 +3087,16 @@ async function getAttachmentsForOperationEntities(
       arr.push(photo);
       entityPhotos.set(key, arr);
     }
+  }
+  // Slot each identity-linked associate's photos into its target's list too,
+  // once per photo.
+  for (const [targetId, key] of Array.from(linkedAssociateKeyByTarget)) {
+    const extra = entityPhotos.get(`associate::${key}`) ?? [];
+    if (extra.length === 0) continue;
+    const arr = targetPhotos.get(targetId) ?? [];
+    const have = new Set(arr.map(p => p.id));
+    for (const p of extra) if (!have.has(p.id)) arr.push(p);
+    targetPhotos.set(targetId, arr);
   }
   return { targetPhotos, entityPhotos };
 }
@@ -4107,8 +4240,90 @@ export async function createTargetLinkedToAssociate(
       .update(associates)
       .set({ linkedTargetId: newTargetId })
       .where(eq(associates.id, existingAssociateId));
+    await addReciprocalAssociate(
+      tx,
+      existingAssociateId,
+      newTargetId,
+      data.createdBy
+    );
     return { id: newTargetId };
   });
+}
+
+/**
+ * When an associate X (filed under target A) is promoted to its own Target B,
+ * A is by definition someone B is associated with, so A is filed as an
+ * associate of B too. Runs inside the promotion's transaction.
+ *
+ * - A's identity fields are copied (LINKED_SYNC_FIELDS) and, when A isn't
+ *   already identity-linked to another associate, the new row is linked to A
+ *   (A's profile then shares photos and edits with it, like any other
+ *   Target ↔ Associate pair). Otherwise it is a plain associate row.
+ * - Never duplicates: if B already has an associate row for A — linked to A,
+ *   or the same name — live OR soft-deleted, nothing is added (an officer
+ *   who removed it keeps it removed).
+ * - Skipped when A is gone/deleted or is B itself.
+ */
+async function addReciprocalAssociate(
+  tx: Pick<
+    NonNullable<Awaited<ReturnType<typeof getDb>>>,
+    "select" | "insert" | "update"
+  >,
+  promotedAssociateId: number,
+  newTargetId: number,
+  createdBy: number
+): Promise<number | null> {
+  const [promoted] = await tx
+    .select({ targetId: associates.targetId })
+    .from(associates)
+    .where(eq(associates.id, promotedAssociateId))
+    .limit(1);
+  if (!promoted || promoted.targetId === newTargetId) return null;
+  const [parent] = await tx
+    .select()
+    .from(targets)
+    .where(and(eq(targets.id, promoted.targetId), isNull(targets.deletedAt)))
+    .limit(1);
+  if (!parent) return null;
+
+  const existing = await tx
+    .select({
+      name: associates.name,
+      linkedTargetId: associates.linkedTargetId,
+    })
+    .from(associates)
+    .where(eq(associates.targetId, newTargetId));
+  const key = normalizeEntityLabel(parent.name);
+  if (
+    existing.some(
+      a =>
+        a.linkedTargetId === parent.id || normalizeEntityLabel(a.name) === key
+    )
+  ) {
+    return null;
+  }
+
+  const copied: Record<string, unknown> = {};
+  for (const f of LINKED_SYNC_FIELDS) {
+    copied[f] = (parent as Record<string, unknown>)[f] ?? null;
+  }
+  const link = parent.linkedAssociateId ? null : parent.id;
+  const [result] = await tx.insert(associates).values({
+    ...(copied as Partial<InsertAssociate>),
+    name: parent.name,
+    targetId: newTargetId,
+    relationship: "associate",
+    linkedTargetId: link,
+    createdBy,
+  });
+  const id = (result as any).insertId as number;
+  if (link) {
+    await tx
+      .update(targets)
+      .set({ linkedAssociateId: id })
+      .where(eq(targets.id, parent.id));
+  }
+  return id;
 }
 
 /**
@@ -4272,6 +4487,7 @@ export async function linkTargetToOperation(
       .update(operationTargetLinks)
       .set({ background })
       .where(eq(operationTargetLinks.id, existing.id));
+    invalidateIntelligenceCache();
   }
 }
 
@@ -6105,6 +6321,11 @@ export interface PendingVehicleDeparture {
   rowId: number;
   /** The place the departure row says it left, when one is written. */
   fromAddress: string | null;
+  /** Where a later row saw it travelling ("Leach Highway, FREMANTLE") — set
+   * when a row identified who is in it (see matchVehicleSighting). */
+  via?: string | null;
+  /** The row that saw it travelling (newer than rowId). */
+  viaRowId?: number | null;
 }
 
 // Returns the most recent still-pending (not yet arrived) departure per
@@ -6136,6 +6357,8 @@ export function computePendingVehicleDepartures(
       sheetId: number;
       rowId: number;
       fromAddress: string | null;
+      via?: string | null;
+      viaRowId?: number | null;
       orderIdx: number;
     }
   >();
@@ -6154,6 +6377,20 @@ export function computePendingVehicleDepartures(
         orderIdx: idx,
       });
       arrivedRegos.delete(rego);
+      return;
+    }
+    // Seen on the move after it left: if the row names who is in it, the
+    // departure's unseen occupants are now known (and where it is).
+    const sighting = matchVehicleSighting(row.observation);
+    if (sighting) {
+      const dep = lastDepartByRego.get(sighting.rego);
+      if (dep && !arrivedRegos.has(sighting.rego)) {
+        const named = extractOccupantNames(sighting.occupantDesc);
+        const known = splitPeopleNames(named).some(p => !isUnseenOccupants(p));
+        if (known) dep.occupantDesc = sighting.occupantDesc;
+        dep.via = sighting.route;
+        dep.viaRowId = row.id;
+      }
       return;
     }
     const arriveMatch = row.observation.match(VEHICLE_ARRIVE_PATTERN);
@@ -6294,6 +6531,7 @@ export interface PendingHeadingTo {
   names: string;
   destination: string;
   from: string;
+  fromVessel?: string;
   sheetId: number;
   rowId: number;
 }
@@ -8146,11 +8384,40 @@ export async function getWeeklyActivityReport(
   return { weekStart, weekEnd, operations: operationBlocks };
 }
 
+// The unscoped entity set is remembered for a short while and reused only when
+// the source tables haven't changed (server/intelCache.ts). Everyone gets a
+// copy, and the per-request scope below is applied to that copy.
+const intelEntityCache = new FingerprintCache<IntelligenceEntity[]>(v =>
+  structuredClone(v)
+);
+
+/** Drop the remembered set after a write the change check can't see (an
+ * in-place update of a link or alias row). */
+export function invalidateIntelligenceCache() {
+  intelEntityCache.invalidate();
+}
+
+async function loadAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
+  let fp: Fingerprint | null = null;
+  try {
+    const db = await getDb();
+    if (db) {
+      const [rows] = (await db.execute(
+        sql.raw(fingerprintSql())
+      )) as unknown as [Record<string, unknown>[]];
+      fp = fingerprintFromRow(rows?.[0]);
+    }
+  } catch {
+    fp = null; // the check failed: build fresh, remember nothing
+  }
+  return intelEntityCache.get(fp, buildAllIntelligenceEntities);
+}
+
 export async function getAllIntelligenceEntities(opts?: {
   /** Skip the per-request Intelligence scope (Region Search only). */
   unscoped?: boolean;
 }) {
-  const all = await buildAllIntelligenceEntities();
+  const all = await loadAllIntelligenceEntities();
   const scope = intelScope.getStore();
   if (!scope || opts?.unscoped) return all;
   // A registry target's occurrences carry operation 0 even when its running
@@ -10097,6 +10364,7 @@ export async function mergeEntities(
         mergedAt: Date.now(),
       })
       .where(eq(entityAliases.id, existing[0].id));
+    invalidateIntelligenceCache();
   } else {
     await db.insert(entityAliases).values({
       type,
@@ -15861,6 +16129,37 @@ const HISTORY_STATIONARY_HEARTBEAT_MS = 120_000;
  */
 const HISTORY_MAX_ACCURACY_M = 50;
 
+// The trail is only ever read from the moment someone switches Track on, so
+// points older than this are dead weight (the table grows by a point every few
+// seconds per person on the move). Purged opportunistically — no cron, same as
+// purgeExpiredNotifications — at most once an hour, from the write path below
+// and once at startup.
+export const LOCATION_HISTORY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const LOCATION_HISTORY_PURGE_EVERY_MS = 60 * 60 * 1000;
+const LOCATION_HISTORY_PURGE_BATCH = 5000;
+let lastLocationHistoryPurge = 0;
+
+/** Deletes trail points older than 7 days, in batches so no long table lock.
+ * Returns how many were removed. */
+export async function purgeOldLocationHistory(
+  now = Date.now()
+): Promise<number> {
+  lastLocationHistoryPurge = now;
+  const db = await getDb();
+  if (!db) return 0;
+  const cutoff = now - LOCATION_HISTORY_MAX_AGE_MS;
+  let removed = 0;
+  for (;;) {
+    const [res] = (await db.execute(
+      sql`DELETE FROM user_location_history WHERE recordedAt < ${cutoff} LIMIT ${LOCATION_HISTORY_PURGE_BATCH}`
+    )) as unknown as [{ affectedRows?: number }];
+    const n = Number(res?.affectedRows ?? 0);
+    removed += n;
+    if (n < LOCATION_HISTORY_PURGE_BATCH) break;
+  }
+  return removed;
+}
+
 async function recordUserLocationHistory(
   userId: number,
   deviceId: string,
@@ -15909,6 +16208,11 @@ async function recordUserLocationHistory(
     }
   }
   if (!shouldRecord) return;
+
+  if (now - lastLocationHistoryPurge >= LOCATION_HISTORY_PURGE_EVERY_MS) {
+    // Fire and forget: a failed purge must never lose a position.
+    purgeOldLocationHistory(now).catch(() => {});
+  }
 
   await db.insert(userLocationHistory).values({
     userId,

@@ -28,9 +28,18 @@
 // 193b Stock Road and continued out of sight." Group 2 (the route) is then
 // undefined, and the "Walked out" chip simply omits its route.
 import {
+  extractArrivalAddress,
   VEHICLE_DEPART_PATTERN,
   matchVehicleArrival,
+  matchVehicleSighting,
 } from "./vehicleEventPatterns";
+import { extractOccupantNames } from "./occupantNames";
+import {
+  matchVesselBoarding,
+  matchVesselDisembark,
+  stripVesselLeave,
+  vesselLabel,
+} from "./vesselPatterns";
 import { expandRowSegments } from "./rowSegments";
 import { fullStreetTypes } from "./streetTypes";
 
@@ -187,6 +196,12 @@ export const PERSON_EXIT_ONWARD_PATTERN =
 // is the one named as "Vehicle <rego>" later in the same sentence.
 const ENTER_VEHICLE_VERB =
   "(?:entered|got\\s+(?:in|into)|boarded|climbed\\s+(?:in|into)|jumped\\s+(?:in|into))";
+/** After "… Vehicle X (Vehicle X)," the sentence goes on to say they got in:
+ * "and entered via the driver's door", "and got into it", "and sat in".
+ * "entered the car park" is not getting in. */
+const GOT_IN_AFTER_VEHICLE =
+  /\bVehicle\s+[A-Za-z0-9]{5,8}\)?[^.\n]*?\b(?:entered\s+(?:it\b|the\s+(?:vehicle|car)\b(?!\s+park)|(?:via|through|by)\b|the\s+(?:driver|passenger|front|rear|back)\b)|got\s+(?:in|into)\b|climbed\s+(?:in|into)\b|jumped\s+(?:in|into)\b|sat\s+in\b|seated\b)/i;
+
 export const PERSON_ENTER_VEHICLE_PATTERN = new RegExp(
   "([A-Za-z][^.\\n]*?)\\s*\\b" +
     ENTER_VEHICLE_VERB +
@@ -323,10 +338,44 @@ const withCompanions = (names: string, more: string[]) =>
  * ("(JOHNSON)") is read as the place's own short name. A place's own "and"
  * ("Melville Fish and Chips") stays. */
 function presencePlace(raw: string): string {
-  const place = raw
-    .replace(/\s+(?:with|while|who|as|when|accompanied|together)\b.*$/i, "")
-    .replace(/\s+and\s+(?=[a-z]).*$/, "");
+  const place = cutAtDescription(
+    raw
+      .replace(/\s+(?:with|while|who|as|when|accompanied|together)\b.*$/i, "")
+      .replace(/\s+and\s+(?=[a-z]).*$/, "")
+  );
   return placeName(place.trim()).trim();
+}
+
+// Words that may sit inside a place's own name in lower case ("Melville Fish
+// and Chips", "Hotel de Ville", "Kinky Lizard Cafe on Mews") — kept only when a
+// capitalised word follows ("Gino's at the bar" stops at "at").
+const PLACE_NAME_CONNECTOR_RE =
+  /^(?:and|of|the|de|la|le|du|del|von|van|on|at|in|by|near|upon)$/;
+
+/**
+ * A place name is written in capitals / digits; what the people were DOING
+ * there follows in lower case ("Flight Club Fremantle playing darts",
+ * "Gino's at the bar", "Bull Creek Tavern for lunch"). Keeps the leading run of
+ * name words and stops at the first lower-case word that isn't a name
+ * connector, so the place stays the place they entered and the activity never
+ * turns it into a different (un-geocodable) location.
+ */
+function cutAtDescription(text: string): string {
+  const words = text.trim().split(/\s+/);
+  const kept: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (/^[a-z]/.test(w.replace(/^[("'\u2018\u201C]+/, ""))) {
+      const next = words[i + 1];
+      const connector =
+        PLACE_NAME_CONNECTOR_RE.test(w) &&
+        next !== undefined &&
+        /^[("'\u2018\u201C]*[A-Z0-9]/.test(next);
+      if (!connector) break;
+    }
+    kept.push(w);
+  }
+  return kept.join(" ");
 }
 
 /** Who is where, from a presence sentence; null when it isn't one. */
@@ -402,6 +451,8 @@ export interface ScannedHeadingTo {
   destination: string;
   /** Where they left, e.g. "193b Stock Road". */
   from: string;
+  /** They got off a boat or vessel ("the boat") and are now on foot. */
+  fromVessel?: string;
   sheetId: number;
   rowId: number;
 }
@@ -427,6 +478,13 @@ export interface ScannedPlacement {
    * last), when one is known — a vehicle with no arrival row of its own is
    * taken to be around there. */
   at?: string;
+  /** Where the vehicle was travelling when a row identified them in it
+   * ("Leach Highway, FREMANTLE"). */
+  via?: string;
+  /** On a boat or vessel ("a vessel", "the white yacht"), as the row wrote
+   * it. Set with `rego` "" — they are aboard, not in a vehicle — and with
+   * `at` as where they were last logged (where it is taken to be). */
+  vessel?: string;
 }
 
 export function scanWalkEvents(rows: WalkScanRow[]): {
@@ -466,6 +524,9 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   const lastWalkIn = new Map<string, ScannedWalkIn & { orderIdx: number }>();
   const walkedOut = new Set<string>();
   const heading = new Map<string, ScannedHeadingTo & { orderIdx: number }>();
+  // Rows where someone got off a boat, and from what — a walk read from the
+  // same row is "disembarked, on foot" (fromVessel on the heading).
+  const disembarkRows = new Map<number, string>();
   const placed = new Map<string, ScannedPlacement>();
   // The last place each person was logged at (a surname token → the place).
   const lastAt = new Map<string, string>();
@@ -478,7 +539,9 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     names: string,
     rego: string,
     rowId: number,
-    inside = true
+    inside = true,
+    via?: string,
+    vessel?: string
   ) => {
     for (const p of splitPeopleNames(cleanWalkerNames(names))) {
       const at = tok(p)
@@ -490,6 +553,8 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         rowId,
         inside,
         ...(at ? { at } : {}),
+        ...(via ? { via } : {}),
+        ...(vessel ? { vessel } : {}),
       };
       for (const t of tok(p)) placed.set(t, entry);
     }
@@ -558,9 +623,97 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   expandRowSegments(rows).forEach((row, idx) => {
     // Street types are read in full ("Robert St" = "Robert Street"), so a
     // place written both ways across rows is still one place.
-    const text = fullStreetTypes(row.observation ?? "");
+    let text = fullStreetTypes(row.observation ?? "");
     if (!text) return;
     const where = { sheetId: row.sheetId, rowId: row.id, orderIdx: idx };
+
+    // A vehicle arriving at an address with named people in it puts them there:
+    // it is where they were last logged (a later boarding, or a walk away from
+    // the vehicle, is "from" here). Without this the logger kept an older place
+    // ("Last seen at DRIVO Carpark") and the flag went to it.
+    const arrival = matchVehicleArrival(text);
+    if (arrival) {
+      const arrivedAt = extractArrivalAddress(text);
+      const arrivedPeople = splitPeopleNames(
+        extractOccupantNames(arrival.occupantDesc)
+      ).filter(p => !isUnseenOccupants(p));
+      if (arrivedAt && arrivedPeople.length > 0)
+        setAt(arrivedPeople.join(" and "), bracketLabelOrSelf(arrivedAt));
+    }
+
+    // A vehicle seen on the move that names who is in it ("Vehicle 1FAT001,
+    // HOGAN driver and sole occupant, travelled on Leach Highway, FREMANTLE
+    // and continued via:"): they are in that vehicle now, so no longer inside
+    // the place they were last logged at, and no longer walking anywhere.
+    const sighting = matchVehicleSighting(text);
+    if (sighting) {
+      const people = splitPeopleNames(
+        extractOccupantNames(sighting.occupantDesc)
+      ).filter(p => !isUnseenOccupants(p));
+      if (people.length > 0) {
+        const who = people.join(" and ");
+        placePeople(who, sighting.rego, row.id, true, sighting.route);
+        leaveAllPlaces(who);
+        clearHeadingFor(who);
+      }
+      return;
+    }
+
+    // A vehicle departure that names who is in it ("Vehicle 1FAT001, HOGAN
+    // driver, CORNELL front passenger, departed DRIVO Carpark and continued
+    // via:"): the later row wins, so they are in the vehicle now and no longer
+    // "inside" the place an earlier row put them. Unseen occupants say
+    // nothing about anyone, so those leave the walk-ins alone.
+    const departure = text.match(VEHICLE_DEPART_PATTERN);
+    if (departure) {
+      const people = splitPeopleNames(
+        extractOccupantNames(departure[2])
+      ).filter(p => !isUnseenOccupants(p) && !/\bunidentified\b/i.test(p));
+      if (people.length > 0) {
+        const who = people.join(" and ");
+        const leftFrom = extractDepartureAddress(text);
+        if (leftFrom) setAt(who, bracketLabelOrSelf(leftFrom));
+        placePeople(who, departure[1].toUpperCase(), row.id, true);
+        leaveAllPlaces(who);
+        clearHeadingFor(who);
+      }
+    }
+
+    // Getting onto a boat or vessel ("HOGAN boarded a vessel at the end of
+    // the jetty."): they are aboard now — not inside a place, not walking —
+    // until a later row puts them somewhere else. Getting off ("disembarked",
+    // "got off the boat") puts them back on foot; whatever else the sentence
+    // says ("... and walked along the jetty") is still read below.
+    const boarding = matchVesselBoarding(text);
+    if (boarding) {
+      const who = resolveWho(boarding.names);
+      if (who && !isVehicleSubject(who)) {
+        placePeople(
+          who,
+          "",
+          row.id,
+          true,
+          undefined,
+          vesselLabel(boarding.vessel)
+        );
+        leaveAllPlaces(who);
+        clearHeadingFor(who);
+        noteActors(boarding.names, text);
+        return;
+      }
+    }
+    const disembark = matchVesselDisembark(text);
+    if (disembark) {
+      const who = resolveWho(disembark.names);
+      if (who && !isVehicleSubject(who)) {
+        placePeople(who, "", row.id, true);
+        noteActors(disembark.names, text);
+        disembarkRows.set(row.id, disembark.vessel || "the vessel");
+        // Read what is left as ordinary walking, so the walker is "HOGAN",
+        // not "HOGAN disembarked from the boat and".
+        text = stripVesselLeave(text);
+      }
+    }
 
     const outMatch = text.match(WALK_OUT_PATTERN);
     if (outMatch) {
@@ -713,8 +866,17 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
           );
           const rego = reg?.[2] ?? reg?.[3];
           if (rego) {
-            // "walked towards Vehicle X" is not "got into Vehicle X".
-            noteJoined(walkers, rego, row.id, !!reg?.[1] || !!reg?.[3]);
+            // "walked towards Vehicle X" is not "got into Vehicle X" — unless
+            // the same sentence then says they got in ("… to Vehicle X, and
+            // entered via the driver's door").
+            noteJoined(
+              walkers,
+              rego,
+              row.id,
+              !!reg?.[1] ||
+                !!reg?.[3] ||
+                GOT_IN_AFTER_VEHICLE.test(walkMatch[2])
+            );
             leaveAllPlaces(walkers);
           }
         }
@@ -831,7 +993,11 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     .map(({ orderIdx: _o, ...rest }) => rest);
   const headingTo = Array.from(heading.values())
     .sort(byRecent)
-    .map(({ orderIdx: _o, ...rest }) => rest);
+    .map(({ orderIdx: _o, ...rest }) =>
+      disembarkRows.has(rest.rowId)
+        ? { ...rest, fromVessel: disembarkRows.get(rest.rowId)! }
+        : rest
+    );
   return {
     walkIns,
     headingTo,
@@ -1031,7 +1197,13 @@ export function occupantWording(
  */
 export function isReadAsMovement(text: string): boolean {
   if (!text) return false;
-  if (matchVehicleArrival(text) || VEHICLE_DEPART_PATTERN.test(text)) {
+  if (
+    matchVehicleArrival(text) ||
+    VEHICLE_DEPART_PATTERN.test(text) ||
+    matchVehicleSighting(text) ||
+    matchVesselBoarding(text) ||
+    matchVesselDisembark(text)
+  ) {
     return true;
   }
   if (

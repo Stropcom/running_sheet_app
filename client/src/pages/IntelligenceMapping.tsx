@@ -8,6 +8,12 @@ import {
 } from "react";
 import { orderRsChips } from "@shared/rsChips";
 import {
+  chooseFlagMarker,
+  markerFitsState,
+  markerKind,
+} from "@shared/flagMarker";
+import { findVehicleMarker } from "@shared/vehicleMarker";
+import {
   joinObservationPieces,
   justTypedSpaceAfterBracket,
   tidyObservation,
@@ -93,6 +99,15 @@ import { MissingLocationAlert } from "@/components/MissingLocationAlert";
 import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
 import { useLocation, useSearch } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { SplitViewFrame } from "@/components/SplitViewFrame";
+import { NearmapPip, createNearmapLayer } from "@/components/NearmapPip";
+import { NearmapAgeLabel } from "@/components/NearmapAgeLabel";
+import { nearmapSpot } from "@shared/nearmapAge";
+import {
+  parseSplitSettings,
+  splitViewAvailable,
+  type SplitBox,
+} from "@shared/splitView";
 import { useAddressSuggestField } from "@/components/useAddressSuggestField";
 import {
   occupantsToVehicle,
@@ -2227,6 +2242,26 @@ export default function IntelligenceMapping() {
   // than a map setting.
   const [nearmapActive, setNearmapActive] = useState(false);
   const nearmapLayerRef = useRef<google.maps.ImageMapType | null>(null);
+  // Adds or removes the Nearmap layer on the flat map (the NM button).
+  const setNearmapOverlay = (on: boolean) => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!on) {
+      if (nearmapLayerRef.current) {
+        const overlays = map.overlayMapTypes;
+        const idx = overlays.getArray().indexOf(nearmapLayerRef.current);
+        if (idx !== -1) overlays.removeAt(idx);
+        nearmapLayerRef.current = null;
+      }
+      setNearmapActive(false);
+      return;
+    }
+    if (nearmapLayerRef.current) return;
+    const layer = createNearmapLayer();
+    map.overlayMapTypes.push(layer);
+    nearmapLayerRef.current = layer;
+    setNearmapActive(true);
+  };
   // Operations dropdown open state
   const [opsDropdownOpen, setOpsDropdownOpen] = useState(false);
   // Operations picker mode: single-select (default, picking replaces the
@@ -2682,6 +2717,46 @@ export default function IntelligenceMapping() {
     lng: number;
     n: number;
   } | null>(null);
+  // FLY + NEARMAP split view — a small Nearmap window on top of Fly (the NM
+  // button in Fly's right-hand column), movable and resizable like the other
+  // picture-in-picture panels. Its Follow button (on by default, and back on
+  // whenever the window is reopened) keeps it looking where Fly looks. Whether
+  // it is on, and the window's position and size, are remembered per device in
+  // runlog_map_settings. The NM button exists only in Fly, never on a phone,
+  // and only when the server has a Nearmap key. See shared/splitView.ts.
+  const nearmapStatus = trpc.intelligence.nearmapAvailable.useQuery(undefined, {
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const readSplitSettings = () => {
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      return parseSplitSettings(s ? JSON.parse(s) : null);
+    } catch {
+      return parseSplitSettings(null);
+    }
+  };
+  const [splitOn, setSplitOn] = useState<boolean>(() => readSplitSettings().on);
+  const [splitBox, setSplitBox] = useState<SplitBox | null>(
+    () => readSplitSettings().box
+  );
+  const [splitFollow, setSplitFollow] = useState(true);
+  // Where the flat map is looking (to the nearest ~500 m), for the Nearmap
+  // photo-date label — kept only while the Nearmap layer is on.
+  const [nearmapCentre, setNearmapCentre] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const splitAvailable = splitViewAvailable({
+    flyOpen: !!flyView,
+    phone: narrowScreen,
+    nearmapConfigured: nearmapStatus.data?.configured === true,
+  });
+  const splitShown = splitAvailable && splitOn;
+  // A reopened window always starts following again.
+  useEffect(() => {
+    if (!splitShown) setSplitFollow(true);
+  }, [splitShown]);
   // Photos picture-in-picture panel, opened from a marker popup's Images
   // button (only shown when that address already has linked photos).
   const [imagesPip, setImagesPip] = useState<{ label: string } | null>(null);
@@ -3158,6 +3233,8 @@ export default function IntelligenceMapping() {
           heatOpChoice,
           heatTargetChoice,
           heatTransparency,
+          nmSplitOn: splitOn,
+          nmSplitBox: splitBox,
         })
       );
     } catch {
@@ -3183,6 +3260,8 @@ export default function IntelligenceMapping() {
     heatOpChoice,
     heatTargetChoice,
     heatTransparency,
+    splitOn,
+    splitBox,
   ]);
 
   // Save map center/zoom to localStorage whenever the map stops moving (idle event)
@@ -4478,6 +4557,22 @@ export default function IntelligenceMapping() {
   // While in Fly, pick up changes (new pins, moved team members, edited
   // shapes) every few seconds without restarting the camera.
   const flyOpen = !!flyView;
+  // Nearmap on: note where the flat map is looking, so the label can say when
+  // the photos there were taken (see NearmapAgeLabel).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!nearmapActive || !map || !mapReady) {
+      setNearmapCentre(null);
+      return;
+    }
+    const note = () => {
+      const c = map.getCenter();
+      if (c) setNearmapCentre(nearmapSpot(c.lat(), c.lng()));
+    };
+    note();
+    const listener = map.addListener("idle", note);
+    return () => listener.remove();
+  }, [nearmapActive, mapReady]);
   // The 3D camera's heading (to 10°), so team arrows point the right way on
   // screen however the view is turned.
   const flyHeadingRef = useRef(0);
@@ -5210,34 +5305,95 @@ export default function IntelligenceMapping() {
       return;
     }
     const place = pos.place ?? "the vehicle's marker";
+    // Said under the Target location switch when several markers matched the
+    // place and one had to be picked (see shared/flagMarker.ts).
+    let pickNote = "";
     const findPin = (): google.maps.LatLngLiteral | null => {
+      pickNote = "";
       // A vehicle with its own marker is where that marker is — whatever
       // address the rows give.
       if (pos.marker && pos.state === "vehicle") return pos.marker;
+      const markerData = customMarkersDataRef.current as any[];
+      // On foot from a vehicle that has its own marker: he left from THAT
+      // marker, not from some other marker that resolves to the same address
+      // (a boat and a car at 15 Riverside Road).
+      if (pos.rego && pos.state === "walking") {
+        const own = findVehicleMarker(
+          markerData,
+          pos.rego,
+          rsSelectedOpId ?? null
+        );
+        if (own) return { lat: own.lat, lng: own.lng };
+      }
+      // Every custom marker that carries the place — its own address, the
+      // address it is linked to, or a location merged into it. More than one
+      // can: the flag then goes on the most specific one for what the target
+      // is doing (his vehicle's marker, the boat he is on, a place marker
+      // when he is inside or on foot) instead of whichever came first.
+      const carrying = markerData.filter((cm: any) => {
+        if (cm?.lat == null || cm?.lng == null) return false;
+        const names: string[] = [
+          cm.address,
+          cm.linkedIntelLabel,
+          ...(mergedIntelRef.current.get(cm.id) ?? []).map((e: any) => e.label),
+        ].filter(Boolean);
+        return names.some(n => samePlace(String(n), place));
+      });
+      // A marker that can't be where he is (a boat marker when he is in a car,
+      // a car marker when he is on a boat) is never the flag's spot, even as
+      // the only marker carrying the place.
+      const unfit = new Set<number>(
+        markerData
+          .filter(
+            (cm: any) =>
+              !markerFitsState(
+                markerKind(cm.markerIcon ?? null, cm.label ?? null),
+                pos.state
+              )
+          )
+          .map((cm: any) => cm.id)
+      );
+      const fitting = carrying.filter((cm: any) => !unfit.has(cm.id));
+      if (fitting.length !== carrying.length) {
+        carrying.length = 0;
+        carrying.push(...fitting);
+      }
+      if (carrying.length > 1) {
+        const choice = chooseFlagMarker(
+          carrying.map((cm: any) => ({
+            id: cm.id,
+            lat: cm.lat,
+            lng: cm.lng,
+            label: cm.label ?? null,
+            address: cm.address ?? null,
+            icon: cm.markerIcon ?? null,
+            operationId: cm.operationId ?? null,
+          })),
+          {
+            state: pos.state,
+            rego: pos.rego,
+            operationId: rsSelectedOpId ?? null,
+          }
+        );
+        if (choice) {
+          if (choice.ambiguous)
+            pickNote = ` ${carrying.length} markers share this address, so the flag is on the newest ${markerKind(choice.marker.icon, choice.marker.label)} marker.`;
+          return { lat: choice.marker.lat, lng: choice.marker.lng };
+        }
+      }
       const pins: any[] = [
         ...markersRef.current,
-        ...Array.from(customMarkerMapRefs.current.values()),
+        ...Array.from(customMarkerMapRefs.current.entries())
+          .filter(([id]) => !unfit.has(id))
+          .map(([, overlay]) => overlay),
       ];
       for (const m of pins) {
         if (m?.title && m.position && samePlace(String(m.title), place)) {
           return m.position as google.maps.LatLngLiteral;
         }
       }
-      // A custom marker that has absorbed the place's own pin (a house marker
-      // within 40 m, or a manual / Quick Entry merge) carries it instead: the
-      // place is that marker's address, the address it is linked to, or one of
-      // the locations merged into it.
-      for (const cm of customMarkersDataRef.current as any[]) {
-        if (cm?.lat == null || cm?.lng == null) continue;
-        const names: string[] = [
-          cm.address,
-          cm.linkedIntelLabel,
-          ...(mergedIntelRef.current.get(cm.id) ?? []).map((e: any) => e.label),
-        ].filter(Boolean);
-        if (names.some(n => samePlace(String(n), place))) {
-          return { lat: cm.lat, lng: cm.lng };
-        }
-      }
+      if (carrying.length === 1)
+        return { lat: carrying[0].lat, lng: carrying[0].lng };
       return null;
     };
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -5253,7 +5409,9 @@ export default function IntelligenceMapping() {
           );
         return;
       }
-      setTargetFlagStatus(`Showing ${token} at "${place}" — ${pos.label}.`);
+      setTargetFlagStatus(
+        `Showing ${token} at "${place}" — ${pos.label}.${pickNote}`
+      );
       removeFlag();
       const flag = document.createElement("div");
       flag.style.cssText =
@@ -5316,6 +5474,7 @@ export default function IntelligenceMapping() {
     rsTargetPosition,
     rsTrackedTarget,
     rsSelectedSheetId,
+    rsSelectedOpId,
     locations,
     customMarkers,
     trackingSettings.location,
@@ -8647,31 +8806,7 @@ export default function IntelligenceMapping() {
               onClick={e => {
                 e.stopPropagation();
                 if (!mapRef.current) return;
-                if (nearmapActive) {
-                  if (nearmapLayerRef.current) {
-                    const overlays = mapRef.current.overlayMapTypes;
-                    const idx = overlays
-                      .getArray()
-                      .indexOf(nearmapLayerRef.current);
-                    if (idx !== -1) overlays.removeAt(idx);
-                    nearmapLayerRef.current = null;
-                  }
-                  setNearmapActive(false);
-                } else {
-                  const layer = new google.maps.ImageMapType({
-                    getTileUrl: (coord, zoom) => {
-                      if (coord.x < 0 || coord.y < 0) return null;
-                      return `/api/nearmap/tile?x=${coord.x}&y=${coord.y}&z=${zoom}`;
-                    },
-                    tileSize: new google.maps.Size(256, 256),
-                    name: "Nearmap",
-                    maxZoom: 21,
-                    minZoom: 0,
-                  });
-                  mapRef.current.overlayMapTypes.push(layer);
-                  nearmapLayerRef.current = layer;
-                  setNearmapActive(true);
-                }
+                setNearmapOverlay(!nearmapActive);
               }}
               className={`absolute z-20 pointer-events-auto flex items-center justify-center rounded-lg shadow-md border h-9 w-9 text-[9px] font-bold leading-tight transition-colors ${
                 nearmapActive
@@ -8957,6 +9092,27 @@ export default function IntelligenceMapping() {
                   flyCenterRef.current = c;
                 }}
               />
+              {/* Fly + Nearmap split view: the small movable, resizable
+                Nearmap window, with a Follow button and the photo date. */}
+              {splitShown && flyView && (
+                <SplitViewFrame
+                  box={splitBox}
+                  title="Nearmap"
+                  following={splitFollow}
+                  onFollowChange={setSplitFollow}
+                  onBoxChange={setSplitBox}
+                  onClose={() => setSplitOn(false)}
+                >
+                  <NearmapPip
+                    follow={splitFollow}
+                    initial={{
+                      lat: flyView.center.lat,
+                      lng: flyView.center.lng,
+                      range: flyView.range,
+                    }}
+                  />
+                </SplitViewFrame>
+              )}
               {/* North up and 0° tilt — under the Map | Sat | Fly toggle */}
               <div
                 className={`absolute z-40 pointer-events-auto flex flex-col gap-1 ${flyChromeHidden ? "hidden" : ""}`}
@@ -9001,6 +9157,32 @@ export default function IntelligenceMapping() {
                 >
                   0°
                 </button>
+                {splitAvailable && (
+                  <button
+                    title={
+                      splitOn
+                        ? "Hide the Nearmap window"
+                        : "Show the Nearmap window"
+                    }
+                    aria-label={
+                      splitOn
+                        ? "Hide the Nearmap window"
+                        : "Show the Nearmap window"
+                    }
+                    aria-pressed={splitOn}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setSplitOn(v => !v);
+                    }}
+                    className={`flex items-center justify-center rounded-lg shadow-md border h-9 w-9 text-[9px] font-bold leading-tight transition-colors ${
+                      splitOn
+                        ? "bg-sky-600 border-sky-600 text-white"
+                        : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    NM
+                  </button>
+                )}
               </div>
               {/* Centre on me / Follow me — same two buttons as the flat map */}
               <div
@@ -9298,6 +9480,20 @@ export default function IntelligenceMapping() {
               )}
               onClose={() => setImagesPip(null)}
             />
+          )}
+
+          {/* Nearmap photo date — bottom-left, only while Nearmap is on over the
+              flat map (in Fly the small window carries its own date strip).
+              Sits above Google's logo, and above the Heat Map key when that
+              is showing too. */}
+          {nearmapActive && !flyView && nearmapCentre && (
+            <div
+              className={`absolute left-3 z-20 max-w-[calc(100%-1.5rem)] pointer-events-none ${
+                heatOn && !isInvestigator ? "bottom-[8.5rem]" : "bottom-9"
+              }`}
+            >
+              <NearmapAgeLabel centre={nearmapCentre} variant="map" />
+            </div>
           )}
 
           {/* Heat Map key — bottom-left, only while the heat map is on. Sits
@@ -13253,9 +13449,15 @@ export default function IntelligenceMapping() {
                                     ? movingOcc.join(", ")
                                     : extractOccupantNames(d.occupantDesc) ||
                                       "Occupants not seen",
-                                  state: d.fromAddress
-                                    ? `From ${d.fromAddress}`
-                                    : "No arrival logged yet",
+                                  state: d.via
+                                    ? `Travelling on ${d.via}${
+                                        d.fromAddress
+                                          ? ` — from ${d.fromAddress}`
+                                          : ""
+                                      }`
+                                    : d.fromAddress
+                                      ? `From ${d.fromAddress}`
+                                      : "No arrival logged yet",
                                   holds: movingOcc.length
                                     ? movingOcc.flatMap(n => surnameTokens(n))
                                     : surnameTokens(d.occupantDesc),
@@ -13265,10 +13467,19 @@ export default function IntelligenceMapping() {
                                         extractOccupantNames(d.occupantDesc)
                                       ),
                                   locus: {
-                                    headline: `Departed in ${d.rego}`,
-                                    sub: d.fromAddress
-                                      ? `From ${d.fromAddress}`
-                                      : "No arrival logged yet",
+                                    headline:
+                                      d.via && movingOcc.length
+                                        ? `In ${d.rego}`
+                                        : `Departed in ${d.rego}`,
+                                    sub: d.via
+                                      ? `Travelling on ${d.via}${
+                                          d.fromAddress
+                                            ? ` — from ${d.fromAddress}`
+                                            : ""
+                                        }`
+                                      : d.fromAddress
+                                        ? `From ${d.fromAddress}`
+                                        : "No arrival logged yet",
                                   },
                                   actions: [
                                     {
@@ -13612,19 +13823,23 @@ export default function IntelligenceMapping() {
                                   cards.push({
                                     key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                                     title: h.names,
-                                    pill: "Departed on foot",
+                                    pill: h.fromVessel
+                                      ? "Disembarked"
+                                      : "Departed on foot",
                                     attn: true,
                                     who: h.destination.includes("[")
                                       ? "On foot"
                                       : `Walking to ${h.destination}`,
-                                    state: `Left ${h.from}`,
+                                    state: `Left ${h.fromVessel ?? h.from}`,
                                     holds: surnameTokens(h.names),
                                     people: splitPeopleNames(h.names),
                                     locus: {
                                       headline: h.destination.includes("[")
-                                        ? "Departed on foot"
-                                        : `Departed on foot to ${h.destination}`,
-                                      sub: `Left ${h.from}`,
+                                        ? h.fromVessel
+                                          ? "Disembarked, on foot"
+                                          : "Departed on foot"
+                                        : `${h.fromVessel ? "Disembarked, on foot" : "Departed on foot"} to ${h.destination}`,
+                                      sub: `Left ${h.fromVessel ?? h.from}`,
                                     },
                                     actions: [
                                       {
@@ -13665,6 +13880,56 @@ export default function IntelligenceMapping() {
                                     latestRowId: h.rowId,
                                   })
                                 );
+
+                              // People aboard a boat or vessel: shown
+                              // wherever the sheet is, until a row says they
+                              // got off.
+                              {
+                                const byVessel = new Map<
+                                  string,
+                                  NonNullable<typeof rsPendingPlacements>
+                                >();
+                                for (const p of rsPendingPlacements ?? []) {
+                                  if (!p.vessel) continue;
+                                  const k = p.vessel.toLowerCase();
+                                  byVessel.set(k, [
+                                    ...(byVessel.get(k) ?? []),
+                                    p,
+                                  ]);
+                                }
+                                byVessel.forEach((ps, vk) => {
+                                  const vessel = ps[0].vessel ?? vk;
+                                  const crew = ps.map(p => p.name);
+                                  const at = ps.find(p => p.at)?.at;
+                                  const where = at
+                                    ? `Last seen at ${at}`
+                                    : "Position not logged";
+                                  cards.push({
+                                    key: `vsl-${vk}`,
+                                    title: crew.join(" and "),
+                                    pill: "On a vessel",
+                                    attn: true,
+                                    who: `${crew.join(", ")} on ${vessel}`,
+                                    state: where,
+                                    holds: crew.flatMap(n => surnameTokens(n)),
+                                    people: crew,
+                                    locus: {
+                                      headline: `On ${vessel}`,
+                                      sub: where,
+                                    },
+                                    actions: [
+                                      {
+                                        key: `vsl-off-${vk}`,
+                                        label: "Disembarked",
+                                        text: `${names(crew.join(" and "))} disembarked from ${vessel} and walked [route] towards [location].`,
+                                      },
+                                    ],
+                                    latestRowId: Math.max(
+                                      ...ps.map(p => p.rowId)
+                                    ),
+                                  });
+                                });
+                              }
 
                               // The card holding the target leads, as its
                               // tracker (person or vehicle; same rule as the

@@ -78,6 +78,12 @@ import {
   mdlLabel,
 } from "@shared/targetStatus";
 import {
+  EntityPhotoUpload,
+  useEntityPhotoSaver,
+  useEntityPhotos,
+} from "@/components/EntityPhotoUpload";
+import type { SavedEntityLabels } from "@shared/entityPhotoSlots";
+import {
   AddTargetDialog,
   computePrimaryIdentity,
   readImageFile,
@@ -363,6 +369,27 @@ function TargetCard({
   const [dirty, setDirty] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // "Upload Image" in each entity's edit form (see EntityPhotoUpload): photos
+  // are picked while editing and uploaded + linked once Save succeeds, by the
+  // labels as saved (photoPlan, set in handleSave).
+  const entityPhotos = useEntityPhotos();
+  const photoOperationId = target.linkedOperations[0]?.operationId ?? null;
+  const saveEntityPhotos = useEntityPhotoSaver({
+    operationId: photoOperationId,
+    person: { category: "target", targetId: target.id },
+  });
+  const photoPlan = useRef<SavedEntityLabels | null>(null);
+  const photoDisabledReason = photoOperationId
+    ? undefined
+    : "Link this target to an operation to add photos here — or add them from its Images folder.";
+  const addEntityPhoto = (
+    slot: string,
+    img: { dataBase64: string; mimeType: string }
+  ) => {
+    entityPhotos.add(slot, img);
+    setDirty(true);
+  };
+
   // Home Address (HB), Vehicle 1 (V1), and every additional address/vehicle
   // entry are "locked" once a value exists — an officer must explicitly
   // choose "Edit current" (in-place correction, no history) or "Add new"
@@ -450,6 +477,7 @@ function TargetCard({
     setDirty(true);
   };
   const cancelNameEdit = () => {
+    entityPhotos.removeSlot("name");
     setNameMode("locked");
     setIdentity({
       firstNames: target.firstNames ?? "",
@@ -470,6 +498,7 @@ function TargetCard({
     setDirty(true);
   };
   const cancelAddressEdit = () => {
+    entityPhotos.removeSlot("address");
     setAddressMode(target.hbf || target.hb ? "locked" : "edit");
     setAddress({
       unitNo: target.addrUnitNo ?? "",
@@ -492,6 +521,7 @@ function TargetCard({
     setDirty(true);
   };
   const cancelVehicleEdit = () => {
+    entityPhotos.removeSlot("vehicle");
     setVehicleMode(target.v1f || target.v1 ? "locked" : "edit");
     setVehicle({
       registration: target.vehRegistration ?? "",
@@ -508,6 +538,7 @@ function TargetCard({
     setDirty(true);
   };
   const cancelExtraAddressEdit = (id: string) => {
+    entityPhotos.removeSlot(`xa:${id}`);
     const original = parseExtraAddresses(target.extraAddresses).find(
       ea => ea.id === id
     );
@@ -525,6 +556,7 @@ function TargetCard({
     setDirty(true);
   };
   const cancelExtraVehicleEdit = (id: string) => {
+    entityPhotos.removeSlot(`xv:${id}`);
     const original = parseExtraVehicles(target.extraVehicles).find(
       ev => ev.id === id
     );
@@ -547,6 +579,8 @@ function TargetCard({
     setDirty(true);
   };
   const removeAddress = (i: number) => {
+    const gone = extraAddresses[i];
+    if (gone) entityPhotos.removeSlot(`xa:${gone.id}`);
     setExtraAddresses(v => v.filter((_, idx) => idx !== i));
     setDirty(true);
   };
@@ -567,6 +601,8 @@ function TargetCard({
     setDirty(true);
   };
   const removeVehicle = (i: number) => {
+    const gone = extraVehicles[i];
+    if (gone) entityPhotos.removeSlot(`xv:${gone.id}`);
     setExtraVehicles(v => v.filter((_, idx) => idx !== i));
     setDirty(true);
   };
@@ -656,6 +692,13 @@ function TargetCard({
       );
       return;
     }
+    photoPlan.current = {
+      name,
+      hbf: hbf || null,
+      v1f: v1f || null,
+      extraAddresses: composedExtraAddresses,
+      extraVehicles: composedExtraVehicles,
+    };
     savedFieldPresence.current = {
       hasAddress: !!hbf,
       hasVehicle: !!v1f,
@@ -729,6 +772,10 @@ function TargetCard({
       setExtraAddressModes(savedFieldPresence.current.extraAddresses);
       setExtraVehicleModes(savedFieldPresence.current.extraVehicles);
       toast.success("Target saved");
+      if (photoPlan.current && entityPhotos.photos.length > 0) {
+        void saveEntityPhotos(entityPhotos.photos, photoPlan.current);
+        entityPhotos.clear();
+      }
     },
     onError: (e: { message: string }) => toast.error(e.message),
   });
@@ -853,6 +900,15 @@ function TargetCard({
                       onStatusChange={v => mark(() => setStatus(v))}
                       showMdlError={showMdlError}
                     />
+                    <EntityPhotoUpload
+                      slot={"name"}
+                      photos={entityPhotos.photos}
+                      onAdd={addEntityPhoto}
+                      onRemove={entityPhotos.remove}
+                      tone="person"
+                      ownerLabel={target.name || "This target"}
+                      disabledReason={photoDisabledReason}
+                    />
                     {target.name && (
                       <Button
                         size="sm"
@@ -913,6 +969,15 @@ function TargetCard({
                   <TargetAddressFields
                     value={address}
                     onChange={v => mark(() => setAddress(v))}
+                  />
+                  <EntityPhotoUpload
+                    slot={"address"}
+                    photos={entityPhotos.photos}
+                    onAdd={addEntityPhoto}
+                    onRemove={entityPhotos.remove}
+                    tone="address"
+                    ownerLabel={"Home address"}
+                    disabledReason={photoDisabledReason}
                   />
                   {(target.hbf || target.hb) && (
                     <Button
@@ -980,6 +1045,15 @@ function TargetCard({
                         label={ea.label}
                         onLabelChange={v => updateAddress(i, { label: v })}
                       />
+                      <EntityPhotoUpload
+                        slot={`xa:${ea.id}`}
+                        photos={entityPhotos.photos}
+                        onAdd={addEntityPhoto}
+                        onRemove={entityPhotos.remove}
+                        tone="address"
+                        ownerLabel={ea.label || `Address ${i + 2}`}
+                        disabledReason={photoDisabledReason}
+                      />
                       {ea.full && (
                         <Button
                           size="sm"
@@ -1041,6 +1115,15 @@ function TargetCard({
                     value={vehicle}
                     onChange={v => mark(() => setVehicle(v))}
                   />
+                  <EntityPhotoUpload
+                    slot={"vehicle"}
+                    photos={entityPhotos.photos}
+                    onAdd={addEntityPhoto}
+                    onRemove={entityPhotos.remove}
+                    tone="vehicle"
+                    ownerLabel={"Vehicle 1"}
+                    disabledReason={photoDisabledReason}
+                  />
                   {(target.v1f || target.v1) && (
                     <Button
                       size="sm"
@@ -1098,6 +1181,15 @@ function TargetCard({
                       <TargetVehicleFields
                         value={ev}
                         onChange={v => updateVehicle(i, v)}
+                      />
+                      <EntityPhotoUpload
+                        slot={`xv:${ev.id}`}
+                        photos={entityPhotos.photos}
+                        onAdd={addEntityPhoto}
+                        onRemove={entityPhotos.remove}
+                        tone="vehicle"
+                        ownerLabel={`Vehicle ${i + 2}`}
+                        disabledReason={photoDisabledReason}
                       />
                       {ev.full && (
                         <Button
@@ -1365,6 +1457,27 @@ function AssociateCard({
   const confirmEntityFaceMut = trpc.attachment.confirmEntityFace.useMutation();
   const linkToEntityMut = trpc.attachment.linkToEntity.useMutation();
 
+  // "Upload Image" in the Address / Vehicle edit forms (see
+  // EntityPhotoUpload): picked while editing, uploaded + linked once Save
+  // succeeds, by the labels as saved (photoPlan, set in buildPayload). The
+  // person's own Upload Image above is separate and unchanged.
+  const entityPhotos = useEntityPhotos();
+  const saveEntityPhotos = useEntityPhotoSaver({
+    operationId: operationId ?? null,
+    person: { category: "associate" },
+  });
+  const photoPlan = useRef<SavedEntityLabels | null>(null);
+  const photoDisabledReason = operationId
+    ? undefined
+    : "This target isn't linked to an operation yet — add photos from its Images folder.";
+  const addEntityPhoto = (
+    slot: string,
+    img: { dataBase64: string; mimeType: string }
+  ) => {
+    entityPhotos.add(slot, img);
+    setDirty(true);
+  };
+
   const uploadAndLinkPhoto = async (
     img: { dataBase64: string; mimeType: string },
     entityLabel: string
@@ -1406,9 +1519,20 @@ function AssociateCard({
   // createLinkedMut onSuccess below) — uploads and links every photo
   // staged while the officer was still filling in the form.
   const savePendingPhotos = async (entityLabel: string) => {
+    if (photoPlan.current && entityPhotos.photos.length > 0) {
+      const photos = entityPhotos.photos;
+      entityPhotos.clear();
+      await saveEntityPhotos(photos, {
+        ...photoPlan.current,
+        name: entityLabel,
+      });
+    }
     if (manualImages.length === 0) return;
+    const toUpload = manualImages;
+    // Cleared up front so a second Save never uploads them again.
+    setManualImages([]);
     let failed = 0;
-    for (const img of manualImages) {
+    for (const img of toUpload) {
       try {
         await uploadAndLinkPhoto(img, entityLabel);
       } catch {
@@ -1445,23 +1569,10 @@ function AssociateCard({
       toast.error("Could not read that image.");
       return;
     }
-    if (isNew) {
-      setManualImages(v => [...v, { key: makeExtraId(), ...img }]);
-      return;
-    }
-    setUploadingPhoto(true);
-    try {
-      await uploadAndLinkPhoto(img, associate!.name);
-      utils.attachment.byEntity.invalidate({
-        category: "associate",
-        entityLabel: associate!.name,
-      });
-      toast.success("Photo added and linked.");
-    } catch {
-      toast.error("Failed to upload that photo.");
-    } finally {
-      setUploadingPhoto(false);
-    }
+    // Staged either way — a photo is never uploaded on pick. It shows as a
+    // thumbnail and goes up with the card's own Save (savePendingPhotos).
+    setManualImages(v => [...v, { key: makeExtraId(), ...img }]);
+    if (!isNew) setDirty(true);
   };
 
   // Same locked/at-a-glance look as the Target's own panels, but simpler:
@@ -1546,6 +1657,8 @@ function AssociateCard({
     setDirty(true);
   };
   const removeAddress = (i: number) => {
+    const gone = extraAddresses[i];
+    if (gone) entityPhotos.removeSlot(`xa:${gone.id}`);
     setExtraAddresses(v => v.filter((_, idx) => idx !== i));
     setDirty(true);
   };
@@ -1565,6 +1678,8 @@ function AssociateCard({
     setDirty(true);
   };
   const removeVehicle = (i: number) => {
+    const gone = extraVehicles[i];
+    if (gone) entityPhotos.removeSlot(`xv:${gone.id}`);
     setExtraVehicles(v => v.filter((_, idx) => idx !== i));
     setDirty(true);
   };
@@ -1650,6 +1765,21 @@ function AssociateCard({
     const { name, tgt } = composeAssociateName(identity, address.businessName);
     const { full: hbf, short: hb } = composeAddress(address);
     const { full: v1f, short: v1 } = composeVehicle(vehicle);
+    // What a photo staged in an Address / Vehicle edit form links to once this
+    // is saved (see savePendingPhotos).
+    photoPlan.current = {
+      name: name || null,
+      hbf: hbf || null,
+      v1f: v1f || null,
+      extraAddresses: extraAddresses.map(ea => ({
+        id: ea.id,
+        full: composeAddress(ea).full,
+      })),
+      extraVehicles: extraVehicles.map(ev => ({
+        id: ev.id,
+        full: composeVehicle(ev).full,
+      })),
+    };
     return {
       name,
       tgt: tgt || null,
@@ -1858,7 +1988,12 @@ function AssociateCard({
         );
       updateMut.mutate(
         { id: associate.id, ...payload },
-        { onSuccess: () => setOfferMove(nowHome && !wasHome) }
+        {
+          onSuccess: () => {
+            setOfferMove(nowHome && !wasHome);
+            void savePendingPhotos(payload.name);
+          },
+        }
       );
       return;
     }
@@ -2053,6 +2188,15 @@ function AssociateCard({
                   value={address}
                   onChange={v => mark(() => setAddress(v))}
                 />
+                <EntityPhotoUpload
+                  slot={"address"}
+                  photos={entityPhotos.photos}
+                  onAdd={addEntityPhoto}
+                  onRemove={entityPhotos.remove}
+                  tone="address"
+                  ownerLabel={"Address"}
+                  disabledReason={photoDisabledReason}
+                />
                 {!isNew &&
                   (associate?.hbf ||
                     associate?.hb ||
@@ -2061,7 +2205,10 @@ function AssociateCard({
                       size="sm"
                       variant="ghost"
                       className="gap-1.5 text-xs self-start"
-                      onClick={() => setAddressMode("locked")}
+                      onClick={() => {
+                        entityPhotos.removeSlot("address");
+                        setAddressMode("locked");
+                      }}
                     >
                       Cancel
                     </Button>
@@ -2110,12 +2257,23 @@ function AssociateCard({
                     </div>
                   </div>
                 ) : (
-                  <TargetAddressFields
-                    value={ea}
-                    onChange={v => updateAddressEntry(i, v)}
-                    label={ea.label}
-                    onLabelChange={v => updateAddressEntry(i, { label: v })}
-                  />
+                  <div className="flex flex-col gap-2">
+                    <TargetAddressFields
+                      value={ea}
+                      onChange={v => updateAddressEntry(i, v)}
+                      label={ea.label}
+                      onLabelChange={v => updateAddressEntry(i, { label: v })}
+                    />
+                    <EntityPhotoUpload
+                      slot={`xa:${ea.id}`}
+                      photos={entityPhotos.photos}
+                      onAdd={addEntityPhoto}
+                      onRemove={entityPhotos.remove}
+                      tone="address"
+                      ownerLabel={ea.label || `Address ${i + 2}`}
+                      disabledReason={photoDisabledReason}
+                    />
+                  </div>
                 )}
               </div>
             );
@@ -2165,6 +2323,15 @@ function AssociateCard({
                   value={vehicle}
                   onChange={v => mark(() => setVehicle(v))}
                 />
+                <EntityPhotoUpload
+                  slot={"vehicle"}
+                  photos={entityPhotos.photos}
+                  onAdd={addEntityPhoto}
+                  onRemove={entityPhotos.remove}
+                  tone="vehicle"
+                  ownerLabel={"Vehicle 1"}
+                  disabledReason={photoDisabledReason}
+                />
                 {(associate?.v1f ||
                   associate?.v1 ||
                   composeVehicle(vehicle).full) && (
@@ -2172,7 +2339,10 @@ function AssociateCard({
                     size="sm"
                     variant="ghost"
                     className="gap-1.5 text-xs self-start"
-                    onClick={() => setVehicleMode("locked")}
+                    onClick={() => {
+                      entityPhotos.removeSlot("vehicle");
+                      setVehicleMode("locked");
+                    }}
                   >
                     Cancel
                   </Button>
@@ -2214,10 +2384,21 @@ function AssociateCard({
                     </div>
                   </div>
                 ) : (
-                  <TargetVehicleFields
-                    value={ev}
-                    onChange={v => updateVehicleEntry(i, v)}
-                  />
+                  <div className="flex flex-col gap-2">
+                    <TargetVehicleFields
+                      value={ev}
+                      onChange={v => updateVehicleEntry(i, v)}
+                    />
+                    <EntityPhotoUpload
+                      slot={`xv:${ev.id}`}
+                      photos={entityPhotos.photos}
+                      onAdd={addEntityPhoto}
+                      onRemove={entityPhotos.remove}
+                      tone="vehicle"
+                      ownerLabel={`Vehicle ${i + 2}`}
+                      disabledReason={photoDisabledReason}
+                    />
+                  </div>
                 )}
               </div>
             );

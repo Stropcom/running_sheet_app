@@ -27,7 +27,8 @@ import {
   IdCard,
   ImagePlus,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FORM_CONFIRM_BUTTON } from "@/lib/formKit";
 import { toast } from "sonner";
 import {
   TapSelectFace,
@@ -35,6 +36,7 @@ import {
 } from "@/components/TapSelectFace";
 import {
   PossibleMatchDialog,
+  type FaceMatchCandidate,
   type PendingMatch,
 } from "@/components/PossibleMatchDialog";
 import {
@@ -289,6 +291,7 @@ export function LinkAttachmentDialog({
   currentOperationId,
   defaultOperationId,
   rowCins,
+  stagedPhoto,
 }: {
   /** Omit to open in upload (staging) mode instead of linking an existing photo. */
   attachmentId?: number;
@@ -307,9 +310,34 @@ export function LinkAttachmentDialog({
    * automatically at upload instead, see
    * autoLinkAttachmentToRowMemberIfSingle in db.ts. */
   rowCins?: string[];
+  /** A photo already picked elsewhere (the running sheet row's camera button)
+   * and not uploaded yet. The dialog opens in upload mode with that photo
+   * ready, no Operation / sheet / row to choose (it belongs to `operationId`
+   * and `upload` puts it on the right row), and **Confirm upload** — at the
+   * bottom right — uploads it and links whatever was chosen. Closing
+   * discards it. */
+  stagedPhoto?: {
+    blob: Blob;
+    mimeType: string;
+    fileName: string;
+    operationId: number;
+    upload: (
+      blob: Blob,
+      mimeType: string,
+      fileName: string
+    ) => Promise<{ id: number; url: string }>;
+  };
 }) {
   const isUploadMode = attachmentId == null;
-
+  const isStaged = !!stagedPhoto;
+  // Staged mode closes only once any follow-up pop-up has been dealt with, so
+  // the main dialog is hidden (not closed) while that is showing.
+  const [hideMain, setHideMain] = useState(false);
+  // "Same person" / "Not the same person" answers given in the early match
+  // pop-up, per tapped face and matched link (key `${faceIndex}:${linkId}`).
+  const [faceAnswers, setFaceAnswers] = useState<
+    Record<string, "same" | "different">
+  >({});
   const [tab, setTab] = useState<Category>("target");
   const [search, setSearch] = useState("");
   const [selectedFaceIndex, setSelectedFaceIndex] = useState<number | null>(
@@ -342,7 +370,7 @@ export function LinkAttachmentDialog({
   const [uploadFaces, setUploadFaces] = useState<DetectedFaceBox[]>([]);
   const [uploadFacesLoading, setUploadFacesLoading] = useState(false);
   const [operationId, setOperationId] = useState<number | null>(
-    defaultOperationId ?? null
+    stagedPhoto?.operationId ?? defaultOperationId ?? null
   );
   const [sheetId, setSheetId] = useState<number | null>(null);
   const [rowId, setRowId] = useState<number | null>(null);
@@ -411,6 +439,9 @@ export function LinkAttachmentDialog({
     onError: e => toast.error(e.message),
   });
 
+  const confirmFaceMatchMut = trpc.attachment.confirmFaceMatch.useMutation();
+  const dismissFaceMatchMut = trpc.attachment.dismissFaceMatch.useMutation();
+
   const anyPending =
     uploadManual.isPending ||
     confirmEntity.isPending ||
@@ -422,16 +453,132 @@ export function LinkAttachmentDialog({
     setPreview(null);
     setUploadFaces([]);
     setUploadFacesLoading(false);
-    setOperationId(defaultOperationId ?? null);
+    setOperationId(stagedPhoto?.operationId ?? defaultOperationId ?? null);
     setSheetId(null);
     setRowId(null);
     setSelectedFaceIndex(null);
     setPendingEntity(null);
+    setFaceAnswers({});
   };
 
   const faces = isUploadMode ? uploadFaces : ((existingFaces ?? []) as any);
   const facesLoading = isUploadMode ? uploadFacesLoading : existingFacesLoading;
   const tapPhotoUrl = isUploadMode ? preview : photoUrl;
+
+  // Similar faces on file for the face the officer tapped — a look only, shown
+  // under the photo (see FaceMatchPreview). An existing photo asks by attachment;
+  // a photo still being staged for upload sends its bytes, once per tap.
+  const existingMatches = trpc.attachment.faceMatches.useQuery(
+    { attachmentId: attachmentId ?? 0, faceIndex: selectedFaceIndex ?? 0 },
+    {
+      enabled:
+        open &&
+        !isUploadMode &&
+        attachmentId != null &&
+        selectedFaceIndex != null,
+      retry: false,
+    }
+  );
+  const matchesFromBytes = trpc.attachment.faceMatchesFromBytes.useMutation();
+  const [stagedMatches, setStagedMatches] = useState<{
+    index: number;
+    rows: FaceMatchCandidate[];
+  } | null>(null);
+  const [stagedMatchesFailed, setStagedMatchesFailed] = useState(false);
+  useEffect(() => {
+    setStagedMatches(null);
+    setStagedMatchesFailed(false);
+    if (!isUploadMode || !file || selectedFaceIndex == null) return;
+    let cancelled = false;
+    const index = selectedFaceIndex;
+    (async () => {
+      try {
+        const dataBase64 = await blobToBase64(file.blob);
+        const res = await matchesFromBytes.mutateAsync({
+          dataBase64,
+          mimeType: file.mimeType,
+          faceIndex: index,
+        });
+        if (!cancelled) setStagedMatches({ index, rows: res.matches });
+      } catch {
+        if (!cancelled) setStagedMatchesFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isUploadMode, file, selectedFaceIndex]);
+  const matchProps = isUploadMode
+    ? {
+        matches:
+          stagedMatches && stagedMatches.index === selectedFaceIndex
+            ? stagedMatches.rows
+            : undefined,
+        matchesLoading:
+          selectedFaceIndex != null && !stagedMatches && !stagedMatchesFailed,
+        matchesError: stagedMatchesFailed,
+      }
+    : {
+        matches: existingMatches.data?.matches,
+        matchesLoading: existingMatches.isFetching && !existingMatches.data,
+        matchesError: existingMatches.isError,
+      };
+
+  // Answers the officer gave in the early match pop-up are applied here, once
+  // the link exists and there is a real link id to attach them to: "not the
+  // same person" is remembered (dismissed), "same person" merges the identities
+  // — but only when what was chosen really is that candidate. Whatever is left
+  // unanswered comes back as the usual Same person / Not a match pop-up.
+  const settleMatches = (
+    matches: PendingMatch[],
+    faceIndex: number | null,
+    chosen: PendingEntityPick | null
+  ): PendingMatch[] => {
+    const remaining: PendingMatch[] = [];
+    for (const m of matches) {
+      const answer =
+        faceIndex != null
+          ? faceAnswers[`${faceIndex}:${m.match.entityLinkId}`]
+          : undefined;
+      if (answer === "different") {
+        dismissFaceMatchMut.mutate({
+          newLinkId: m.newLinkId,
+          matchedLinkId: m.match.entityLinkId,
+        });
+        continue;
+      }
+      if (answer === "same" && chosen) {
+        const c = m.match;
+        const sameIdentity =
+          chosen.category === c.category &&
+          (c.category === "unidentified_person" ||
+            (chosen.entityLabel === c.entityLabel &&
+              (chosen.targetId ?? null) === (c.targetId ?? null)));
+        if (sameIdentity) {
+          // A person already filed as that target/associate needs no merge;
+          // a new Unidentified Person entry does.
+          if (c.category === "unidentified_person") {
+            confirmFaceMatchMut.mutate(
+              { newLinkId: m.newLinkId, matchedLinkId: c.entityLinkId },
+              {
+                onSuccess: result => {
+                  if (result.blockedRowLocked) {
+                    toast.warning(
+                      "Same person confirmed, but that row is certified/locked — the Author and Team Leader have been notified to review it manually."
+                    );
+                  }
+                },
+              }
+            );
+          }
+          continue;
+        }
+      }
+      remaining.push(m);
+    }
+    return remaining;
+  };
 
   // Resolves once a link (or upload+link) succeeds — invalidates the usual
   // views, and either shows a possible-match popup or, once that's clear,
@@ -439,56 +586,148 @@ export function LinkAttachmentDialog({
   // (if any) is dismissed, since this component is conditionally mounted by
   // its caller ({linking !== null && <LinkAttachmentDialog .../>}) and
   // closing would unmount it — and the popup with it — immediately.
-  const finishLink = (id: number, matches: PendingMatch[]) => {
+  const finishLink = (
+    id: number,
+    matches: PendingMatch[],
+    faceIndex: number | null,
+    chosen: PendingEntityPick | null
+  ) => {
     invalidateLinkViews(id);
     setSelectedFaceIndex(null);
-    if (matches.length > 0) setPendingMatches(matches);
+    setFaceAnswers({});
+    const left = settleMatches(matches, faceIndex, chosen);
+    if (left.length > 0) setPendingMatches(left);
     else onOpenChange(false);
   };
 
-  const pickCandidate = async (e: any) => {
-    if (isUploadMode) {
-      setPendingEntity(prev =>
-        prev &&
-        prev.category === tab &&
-        prev.targetId === e.targetId &&
-        prev.entityLabel === e.shortForm
-          ? null
-          : { category: tab, targetId: e.targetId, entityLabel: e.shortForm }
-      );
-      return;
+  // Picking only stages the choice (highlighted); nothing is linked until the
+  // green Save / Confirm upload at the bottom right is pressed.
+  const pickCandidate = (e: any) => {
+    setPendingEntity(prev =>
+      prev &&
+      prev.category === tab &&
+      prev.targetId === e.targetId &&
+      prev.entityLabel === e.shortForm
+        ? null
+        : { category: tab, targetId: e.targetId, entityLabel: e.shortForm }
+    );
+  };
+
+  const tagUnidentified = () => {
+    setPendingEntity(prev =>
+      prev && prev.category === "unidentified_person"
+        ? null
+        : { category: "unidentified_person" }
+    );
+  };
+
+  // "Yes — same person" in the early match pop-up selects that person (the
+  // candidate's own entity); "No" only remembers the answer.
+  const handleMatchAnswer = (
+    m: FaceMatchCandidate,
+    answer: "same" | "different"
+  ) => {
+    if (selectedFaceIndex == null) return;
+    setFaceAnswers(a => ({
+      ...a,
+      [`${selectedFaceIndex}:${m.entityLinkId}`]: answer,
+    }));
+    if (answer !== "same") return;
+    if (m.category === "target" || m.category === "associate") {
+      setTab(m.category);
+      setPendingEntity({
+        category: m.category,
+        targetId: m.targetId ?? undefined,
+        entityLabel: m.entityLabel,
+      });
+    } else {
+      setTab("unidentified_person");
+      setPendingEntity({ category: "unidentified_person" });
     }
-    if (submittingRef.current || attachmentId == null) return;
+  };
+  const answersForFace = useMemo(() => {
+    const out: Record<number, "same" | "different"> = {};
+    for (const [k, v] of Object.entries(faceAnswers)) {
+      const [face, link] = k.split(":");
+      if (selectedFaceIndex != null && Number(face) === selectedFaceIndex)
+        out[Number(link)] = v;
+    }
+    return out;
+  }, [faceAnswers, selectedFaceIndex]);
+
+  // Existing mode: link the staged choice to the already-saved photo.
+  const saveExisting = async () => {
+    const chosen = pendingEntity;
+    if (submittingRef.current || attachmentId == null || !chosen) return;
     submittingRef.current = true;
+    const faceIndex = selectedFaceIndex;
     try {
-      if (FACE_CATEGORIES.has(tab) && selectedFaceIndex != null) {
+      if (chosen.category === "unidentified_person") {
+        if (faceIndex != null) {
+          const data = await confirmUnidentified.mutateAsync({
+            attachmentId,
+            faceIndices: [faceIndex],
+          });
+          toast.success(
+            `Tagged ${data.results.length} Unidentified Person entr${data.results.length === 1 ? "y" : "ies"}`
+          );
+          setPendingEntity(null);
+          finishLink(
+            attachmentId,
+            data.results.flatMap(r =>
+              r.matches.map(match => ({
+                newLinkId: r.linkId,
+                newPhotoUrl: photoUrl!,
+                match,
+              }))
+            ),
+            faceIndex,
+            chosen
+          );
+        } else {
+          await linkToEntity.mutateAsync({
+            attachmentId,
+            category: "unidentified_person",
+            entityLabel: `Unidentified Person #${attachmentId}`,
+          });
+          toast.success("Tagged as Unidentified Person");
+          invalidateLinkViews(attachmentId);
+          setPendingEntity(null);
+          onOpenChange(false);
+        }
+      } else if (FACE_CATEGORIES.has(chosen.category) && faceIndex != null) {
         const data = await confirmEntity.mutateAsync({
           attachmentId,
-          faceIndex: selectedFaceIndex,
-          category: tab as "target" | "associate",
-          targetId: e.targetId,
-          entityLabel: e.shortForm,
+          faceIndex,
+          category: chosen.category as "target" | "associate",
+          targetId: chosen.targetId,
+          entityLabel: chosen.entityLabel!,
         });
         toast.success("Photo linked");
+        setPendingEntity(null);
         finishLink(
           attachmentId,
           data.matches.map(match => ({
             newLinkId: data.linkId,
             newPhotoUrl: photoUrl!,
             match,
-          }))
+          })),
+          faceIndex,
+          chosen
         );
       } else {
         await linkToEntity.mutateAsync({
           attachmentId,
-          category: tab,
-          targetId: e.targetId,
-          entityLabel: e.shortForm,
+          category: chosen.category,
+          targetId: chosen.targetId,
+          entityLabel: chosen.entityLabel!,
         });
         toast.success("Photo linked");
         invalidateLinkViews(attachmentId);
         setSelectedFaceIndex(null);
-        if (tab === "target" || tab === "associate") onOpenChange(false);
+        setPendingEntity(null);
+        if (chosen.category === "target" || chosen.category === "associate")
+          onOpenChange(false);
       }
     } catch (err: any) {
       toast.error(err?.message ?? "Something went wrong.");
@@ -497,50 +736,36 @@ export function LinkAttachmentDialog({
     }
   };
 
-  const tagUnidentified = async () => {
-    if (isUploadMode) {
-      setPendingEntity(prev =>
-        prev && prev.category === "unidentified_person"
-          ? null
-          : { category: "unidentified_person" }
-      );
+  // Puts a photo in the staging area: preview, then face detection on the raw
+  // bytes (nothing is saved).
+  const stageBlob = async (
+    blob: Blob,
+    mimeType: string,
+    fileName: string,
+    isHeic: boolean
+  ) => {
+    setFile({ blob, mimeType, fileName });
+    setSelectedFaceIndex(null);
+    setPendingEntity(null);
+    setFaceAnswers({});
+    if (isHeic) {
+      setPreview(null);
+      setUploadFaces([]);
       return;
     }
-    if (submittingRef.current || attachmentId == null) return;
-    submittingRef.current = true;
+    const reader = new FileReader();
+    reader.onload = () => setPreview(reader.result as string);
+    reader.readAsDataURL(blob);
+
+    setUploadFacesLoading(true);
     try {
-      if (selectedFaceIndex != null) {
-        const data = await confirmUnidentified.mutateAsync({
-          attachmentId,
-          faceIndices: [selectedFaceIndex],
-        });
-        toast.success(
-          `Tagged ${data.results.length} Unidentified Person entr${data.results.length === 1 ? "y" : "ies"}`
-        );
-        finishLink(
-          attachmentId,
-          data.results.flatMap(r =>
-            r.matches.map(match => ({
-              newLinkId: r.linkId,
-              newPhotoUrl: photoUrl!,
-              match,
-            }))
-          )
-        );
-      } else {
-        await linkToEntity.mutateAsync({
-          attachmentId,
-          category: "unidentified_person",
-          entityLabel: `Unidentified Person #${attachmentId}`,
-        });
-        toast.success("Tagged as Unidentified Person");
-        invalidateLinkViews(attachmentId);
-        onOpenChange(false);
-      }
-    } catch (err: any) {
-      toast.error(err?.message ?? "Something went wrong.");
+      const dataBase64 = await blobToBase64(blob);
+      const result = await detectBytes.mutateAsync({ dataBase64, mimeType });
+      setUploadFaces(result);
+    } catch {
+      setUploadFaces([]);
     } finally {
-      submittingRef.current = false;
+      setUploadFacesLoading(false);
     }
   };
 
@@ -557,31 +782,10 @@ export function LinkAttachmentDialog({
         toast.error("Photo must be under 25 MB.");
         return;
       }
-      setFile({ blob, mimeType, fileName });
-      setSelectedFaceIndex(null);
-      setPendingEntity(null);
       const isHeic =
         !compressed &&
         (/^image\/hei[cf]/i.test(f.type) || /\.hei[cf]$/i.test(f.name));
-      if (isHeic) {
-        setPreview(null);
-        setUploadFaces([]);
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => setPreview(reader.result as string);
-      reader.readAsDataURL(blob);
-
-      setUploadFacesLoading(true);
-      try {
-        const dataBase64 = await blobToBase64(blob);
-        const result = await detectBytes.mutateAsync({ dataBase64, mimeType });
-        setUploadFaces(result);
-      } catch {
-        setUploadFaces([]);
-      } finally {
-        setUploadFacesLoading(false);
-      }
+      await stageBlob(blob, mimeType, fileName, isHeic);
     } catch {
       toast.error(
         "Couldn't process that photo — try again, or use a different photo."
@@ -589,24 +793,48 @@ export function LinkAttachmentDialog({
     }
   };
 
+  // A photo handed in by the caller (stagedPhoto) is staged as soon as the
+  // dialog opens.
+  useEffect(() => {
+    if (!stagedPhoto || !open || file) return;
+    void stageBlob(
+      stagedPhoto.blob,
+      stagedPhoto.mimeType,
+      stagedPhoto.fileName,
+      /^image\/hei[cf]/i.test(stagedPhoto.mimeType)
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stagedPhoto, open]);
+
   const canConfirm = !!file && operationId != null && !anyPending;
 
   const handleConfirmUpload = async () => {
     if (!file || operationId == null || submittingRef.current) return;
     submittingRef.current = true;
+    // Staged mode closes once nothing is left to show (see hideMain).
+    let keepOpen = false;
+    let uploaded = false;
     try {
-      const dataBase64 = await blobToBase64(file.blob);
-      const result = await uploadManual.mutateAsync({
-        operationId,
-        rowId: rowId ?? undefined,
-        dataBase64,
-        mimeType: file.mimeType,
-        fileName: file.fileName,
-      });
-      utils.attachment.listByOperation.invalidate({ operationId });
-      if (sheetId != null) utils.attachment.listBySheet.invalidate({ sheetId });
-      if (rowId != null)
-        utils.row.list.invalidate({ sheetId: sheetId ?? undefined });
+      const result = stagedPhoto
+        ? await stagedPhoto.upload(file.blob, file.mimeType, file.fileName)
+        : await (async () => {
+            const dataBase64 = await blobToBase64(file.blob);
+            return uploadManual.mutateAsync({
+              operationId,
+              rowId: rowId ?? undefined,
+              dataBase64,
+              mimeType: file.mimeType,
+              fileName: file.fileName,
+            });
+          })();
+      if (!stagedPhoto) {
+        utils.attachment.listByOperation.invalidate({ operationId });
+        if (sheetId != null)
+          utils.attachment.listBySheet.invalidate({ sheetId });
+        if (rowId != null)
+          utils.row.list.invalidate({ sheetId: sheetId ?? undefined });
+      }
+      uploaded = true;
       toast.success("Photo uploaded");
 
       // Capture what was picked, then clear the picker/dialog immediately —
@@ -614,8 +842,21 @@ export function LinkAttachmentDialog({
       // nothing here needs to wait for a popup to survive.
       const chosenFaceIndex = selectedFaceIndex;
       const chosenEntity = pendingEntity;
+      const answers = faceAnswers;
       resetUpload();
-      onOpenChange(false);
+      if (stagedPhoto) setHideMain(true);
+      else onOpenChange(false);
+      // resetUpload cleared the answers state; settle with the captured copy.
+      const settle = (
+        matches: PendingMatch[],
+        faceIndex: number | null,
+        chosen: PendingEntityPick | null
+      ) => {
+        setFaceAnswers(answers);
+        const left = settleMatches(matches, faceIndex, chosen);
+        setFaceAnswers({});
+        return left;
+      };
 
       if (chosenEntity && FACE_CATEGORIES.has(chosenEntity.category)) {
         if (chosenFaceIndex != null) {
@@ -628,12 +869,19 @@ export function LinkAttachmentDialog({
           });
           toast.success("Photo linked");
           invalidateLinkViews(result.id);
-          const matches = data.matches.map(match => ({
-            newLinkId: data.linkId,
-            newPhotoUrl: result.url,
-            match,
-          }));
-          if (matches.length > 0) setPendingMatches(matches);
+          const matches = settle(
+            data.matches.map(match => ({
+              newLinkId: data.linkId,
+              newPhotoUrl: result.url,
+              match,
+            })),
+            chosenFaceIndex,
+            chosenEntity
+          );
+          if (matches.length > 0) {
+            setPendingMatches(matches);
+            keepOpen = true;
+          }
         } else {
           await linkToEntity.mutateAsync({
             attachmentId: result.id,
@@ -657,14 +905,21 @@ export function LinkAttachmentDialog({
             `Tagged ${data.results.length} Unidentified Person entr${data.results.length === 1 ? "y" : "ies"}`
           );
           invalidateLinkViews(result.id);
-          const matches = data.results.flatMap(r =>
-            r.matches.map(match => ({
-              newLinkId: r.linkId,
-              newPhotoUrl: result.url,
-              match,
-            }))
+          const matches = settle(
+            data.results.flatMap(r =>
+              r.matches.map(match => ({
+                newLinkId: r.linkId,
+                newPhotoUrl: result.url,
+                match,
+              }))
+            ),
+            chosenFaceIndex,
+            chosenEntity
           );
-          if (matches.length > 0) setPendingMatches(matches);
+          if (matches.length > 0) {
+            setPendingMatches(matches);
+            keepOpen = true;
+          }
         } else {
           await linkToEntity.mutateAsync({
             attachmentId: result.id,
@@ -696,10 +951,16 @@ export function LinkAttachmentDialog({
             url: result.url,
             match: facePreview.suggestion,
           });
+          keepOpen = true;
         }
       }
+      if (stagedPhoto && !keepOpen) onOpenChange(false);
     } catch (err: any) {
       toast.error(err?.message ?? "Upload failed.");
+      // Upload failed: stay open so it can be retried. Upload worked but the
+      // link failed: the photo is saved, so let the caller close.
+      if (stagedPhoto && uploaded) onOpenChange(false);
+      else setHideMain(false);
     } finally {
       submittingRef.current = false;
     }
@@ -747,7 +1008,7 @@ export function LinkAttachmentDialog({
   return (
     <>
       <Dialog
-        open={open}
+        open={open && !hideMain}
         onOpenChange={o => {
           if (!o && isUploadMode) resetUpload();
           onOpenChange(o);
@@ -756,7 +1017,9 @@ export function LinkAttachmentDialog({
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {isUploadMode ? "Upload photo" : "Link photo to entity"}
+              {isUploadMode && !isStaged
+                ? "Upload photo"
+                : "Link photo to entity"}
             </DialogTitle>
           </DialogHeader>
 
@@ -781,6 +1044,9 @@ export function LinkAttachmentDialog({
                       loading={uploadFacesLoading}
                       selectedIndex={selectedFaceIndex}
                       onSelect={setSelectedFaceIndex}
+                      {...matchProps}
+                      matchAnswers={answersForFace}
+                      onMatchAnswer={handleMatchAnswer}
                     />
                   ) : (
                     <div className="w-full h-56 rounded-lg border border-border bg-background flex items-center justify-center text-xs text-muted-foreground text-center px-2">
@@ -796,16 +1062,22 @@ export function LinkAttachmentDialog({
                         {formatFileSize(file.blob.size)}
                       </p>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => inputRef.current?.click()}
-                      className="shrink-0"
-                    >
-                      Change photo
-                    </Button>
+                    {!isStaged && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => inputRef.current?.click()}
+                        className="shrink-0"
+                      >
+                        Change photo
+                      </Button>
+                    )}
                   </div>
                 </div>
+              ) : isStaged ? (
+                <p className="text-sm text-muted-foreground py-6 text-center">
+                  Preparing photo…
+                </p>
               ) : (
                 <button
                   type="button"
@@ -828,11 +1100,14 @@ export function LinkAttachmentDialog({
                 loading={facesLoading}
                 selectedIndex={selectedFaceIndex}
                 onSelect={setSelectedFaceIndex}
+                {...matchProps}
+                matchAnswers={answersForFace}
+                onMatchAnswer={handleMatchAnswer}
               />
             )
           )}
 
-          {isUploadMode && (
+          {isUploadMode && !isStaged && (
             <div className="rounded-lg border border-l-4 border-sky-500/30 border-l-sky-500 bg-sky-500/5 p-3 flex flex-col gap-2">
               <p className="text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wide flex items-center gap-1.5">
                 Operation
@@ -868,7 +1143,7 @@ export function LinkAttachmentDialog({
             </div>
           )}
 
-          {isUploadMode && operationId != null && (
+          {isUploadMode && !isStaged && operationId != null && (
             <div className="rounded-lg border border-l-4 border-emerald-500/30 border-l-emerald-500 bg-emerald-500/5 p-3 flex flex-col gap-2">
               <p className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1.5">
                 Running sheet
@@ -1022,12 +1297,12 @@ export function LinkAttachmentDialog({
                   disabled={anyPending}
                   onClick={tagUnidentified}
                   className={`text-left px-3 py-2 rounded-lg text-sm border transition-colors ${
-                    isUploadMode && isPendingPick("unidentified_person")
+                    isPendingPick("unidentified_person")
                       ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-400"
                       : "border-border bg-background hover:bg-accent/50"
                   }`}
                 >
-                  {isUploadMode && isPendingPick("unidentified_person")
+                  {isPendingPick("unidentified_person")
                     ? "✓ Will tag as new Unidentified Person"
                     : "+ Tag as new Unidentified Person"}
                 </button>
@@ -1065,10 +1340,11 @@ export function LinkAttachmentDialog({
                               key={`cur-${e.shortForm}-${idx}`}
                               e={e}
                               disabled={anyPending}
-                              selected={
-                                isUploadMode &&
-                                isPendingPick(tab, e.targetId, e.shortForm)
-                              }
+                              selected={isPendingPick(
+                                tab,
+                                e.targetId,
+                                e.shortForm
+                              )}
                               onPick={() => pickCandidate(e)}
                             />
                           ))}
@@ -1082,10 +1358,7 @@ export function LinkAttachmentDialog({
                           key={`other-${e.shortForm}-${idx}`}
                           e={e}
                           disabled={anyPending}
-                          selected={
-                            isUploadMode &&
-                            isPendingPick(tab, e.targetId, e.shortForm)
-                          }
+                          selected={isPendingPick(tab, e.targetId, e.shortForm)}
                           onPick={() => pickCandidate(e)}
                         />
                       ))}
@@ -1143,22 +1416,47 @@ export function LinkAttachmentDialog({
             </div>
           )}
 
-          {isUploadMode && (
-            <DialogFooter>
+          {pendingEntity && (
+            <p className="text-xs text-muted-foreground">
+              Selected:{" "}
+              <strong className="text-foreground">
+                {pendingEntity.entityLabel ?? "a new Unidentified Person"}
+              </strong>
+              . Nothing is saved until you press{" "}
+              {isUploadMode ? "Confirm upload" : "Save"}.
+            </p>
+          )}
+
+          {/* Always at the bottom right, and it stays in view while the list
+              scrolls. */}
+          <DialogFooter className="sticky bottom-0 -mx-6 -mb-6 px-6 py-3 bg-background border-t">
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (isUploadMode) resetUpload();
+                onOpenChange(false);
+              }}
+            >
+              Close
+            </Button>
+            {isUploadMode ? (
               <Button
-                variant="outline"
-                onClick={() => {
-                  resetUpload();
-                  onOpenChange(false);
-                }}
+                className={FORM_CONFIRM_BUTTON}
+                disabled={!canConfirm}
+                onClick={handleConfirmUpload}
               >
-                Close
-              </Button>
-              <Button disabled={!canConfirm} onClick={handleConfirmUpload}>
                 {anyPending ? "Uploading…" : "Confirm upload"}
               </Button>
-            </DialogFooter>
-          )}
+            ) : (
+              <Button
+                className={FORM_CONFIRM_BUTTON}
+                disabled={!pendingEntity || anyPending}
+                onClick={saveExisting}
+              >
+                {anyPending ? "Saving…" : "Save"}
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1167,7 +1465,7 @@ export function LinkAttachmentDialog({
           matches={pendingMatches}
           onDone={() => {
             setPendingMatches(null);
-            if (!isUploadMode) onOpenChange(false);
+            if (!isUploadMode || isStaged) onOpenChange(false);
           }}
         />
       )}
@@ -1177,7 +1475,10 @@ export function LinkAttachmentDialog({
           attachmentId={uploadSuggestion.id}
           photoUrl={uploadSuggestion.url}
           suggestion={uploadSuggestion.match}
-          onDone={() => setUploadSuggestion(null)}
+          onDone={() => {
+            setUploadSuggestion(null);
+            if (isStaged) onOpenChange(false);
+          }}
         />
       )}
     </>

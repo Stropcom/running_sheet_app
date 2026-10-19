@@ -729,3 +729,50 @@ describe("scanWalkEvents — a sentence about the vehicle is not people on foot"
     }
   });
 });
+
+describe("a presence row's place stops where the description starts", () => {
+  const ENTERED =
+    "HOGAN and CORNELL exited Gino's and walked across the road and entered Flight Club Fremantle, 2 South Terrace, FREMANTLE WA (Flight Club Fremantle) and continued out of sight.";
+
+  it("keeps the place they entered when a row says what they are doing there", () => {
+    const sighting =
+      "HOGAN and CORNELL inside Flight Club Fremantle playing darts and drinking beers.";
+    expect(matchPresenceInside(sighting)).toEqual({
+      names: "HOGAN and CORNELL",
+      place: "Flight Club Fremantle",
+    });
+    const scan = scanWalkEvents(rows(ENTERED, sighting));
+    expect(scan.walkIns).toMatchObject([
+      { names: "HOGAN and CORNELL", location: "Flight Club Fremantle" },
+    ]);
+  });
+
+  it("cuts a lower-case description after the place, wherever it starts", () => {
+    expect(
+      matchPresenceInside("BAIG inside Gino's at the bar having a coffee.")
+        ?.place
+    ).toBe("Gino's");
+    expect(
+      matchPresenceInside("BAIG inside Bull Creek Tavern for lunch.")?.place
+    ).toBe("Bull Creek Tavern");
+  });
+
+  it("keeps a lower-case linking word that is part of the name", () => {
+    expect(
+      matchPresenceInside("BAIG inside Kinky Lizard Cafe on Mews drinking.")
+        ?.place
+    ).toBe("Kinky Lizard Cafe on Mews");
+  });
+
+  it("keeps a place's own lower-case connector words", () => {
+    expect(
+      matchPresenceInside("BAIG inside Melville Fish and Chips eating dinner.")
+        ?.place
+    ).toBe("Melville Fish and Chips");
+    expect(
+      matchPresenceInside(
+        "BAIG seated inside Hotel de Ville, 3 Smith Street, PERTH WA (Hotel de Ville) drinking."
+      )?.place
+    ).toBe("Hotel de Ville");
+  });
+});

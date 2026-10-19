@@ -74,6 +74,14 @@ export const users = mysqlTable("users", {
   // All-region admin: sees every Command, and can open restricted operations
   // from Region Search. Set by an admin on the user's profile.
   allRegions: boolean("allRegions").default(false).notNull(),
+  // Passkey login (see shared/passkeyRules.ts). All three are inert while the
+  // owner's "Require a passkey for all users" switch (passkey_settings) is off.
+  /** Password-only sign-ins used since the requirement was switched on. */
+  passkeyPasswordSignIns: int("passkeyPasswordSignIns").default(0).notNull(),
+  /** Locked until an admin issues a one-time code to register a device. */
+  passkeyLocked: boolean("passkeyLocked").default(false).notNull(),
+  /** Set by the owner: never forced to use a passkey (shared, map-only, old phones). */
+  passkeyExempt: boolean("passkeyExempt").default(false).notNull(),
   // Selectable accent colour palette — see shared/const.ts COLOR_PALETTES.
   // Null falls back to the default palette client-side.
   colorPalette: varchar("colorPalette", { length: 32 }),
@@ -247,6 +255,9 @@ export const teams = mysqlTable(
     /** True = members' location sharing is switched on automatically when
      * they log in and cannot be switched off (e.g. Investigators). */
     forceShare: boolean("forceShare").notNull().default(false),
+    /** False = the team's "Add team" button is left off the New Running Sheet
+     * dialog (e.g. PTT, Capability, Admin, Investigators). */
+    offerOnNewSheet: boolean("offerOnNewSheet").notNull().default(true),
     createdAt: bigint("createdAt", { mode: "number" }).notNull(),
   },
   t => ({
@@ -1074,6 +1085,14 @@ export const auditLogs = mysqlTable("audit_logs", {
     "uco_guide_deleted",
     "target_background_updated",
     "command_feature_changed",
+    "data_zeroed",
+    "passkey_registered",
+    "passkey_removed",
+    "passkey_login",
+    "passkey_code_issued",
+    "passkey_code_used",
+    "passkey_locked",
+    "passkey_settings_changed",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),
@@ -2363,3 +2382,61 @@ export const scanFindingDismissals = mysqlTable(
 export type ScanFindingDismissal = typeof scanFindingDismissals.$inferSelect;
 export type InsertScanFindingDismissal =
   typeof scanFindingDismissals.$inferInsert;
+
+
+// ─── Passkey login ───────────────────────────────────────────────────────────
+// Device-bound sign-in (WebAuthn). The server keeps only the public key of each
+// approved device — never a fingerprint, face or device identifier. OFF until
+// the owner switches "Require a passkey for all users" on (passkey_settings).
+export const passkeyCredentials = mysqlTable(
+  "passkey_credentials",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    /** WebAuthn credential id, base64url. */
+    credentialId: varchar("credentialId", { length: 512 }).notNull(),
+    /** COSE public key, base64url. */
+    publicKey: text("publicKey").notNull(),
+    counter: bigint("counter", { mode: "number" }).default(0).notNull(),
+    /** JSON array of transports ("internal", "usb", …), when the device said. */
+    transports: varchar("transports", { length: 255 }),
+    deviceName: varchar("deviceName", { length: 64 }).notNull(),
+    deviceKind: varchar("deviceKind", { length: 16 }).notNull(),
+    createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+    lastUsedAt: bigint("lastUsedAt", { mode: "number" }),
+  },
+  t => [
+    uniqueIndex("passkey_credentials_credential_idx").on(t.credentialId),
+    index("passkey_credentials_user_idx").on(t.userId),
+  ]
+);
+export type PasskeyCredentialRow = typeof passkeyCredentials.$inferSelect;
+
+// One-time codes that let a person register a device: issued by an admin in
+// their region (30 minutes) or by the person from one of their own devices
+// (5 minutes). Only a hash of the code is kept.
+export const passkeyCodes = mysqlTable(
+  "passkey_codes",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    codeHash: varchar("codeHash", { length: 64 }).notNull(),
+    type: mysqlEnum("type", ["admin", "self"]).notNull(),
+    issuedByCIN: varchar("issuedByCIN", { length: 64 }),
+    expiresAt: bigint("expiresAt", { mode: "number" }).notNull(),
+    usedAt: bigint("usedAt", { mode: "number" }),
+    createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+  },
+  t => [index("passkey_codes_user_idx").on(t.userId)]
+);
+export type PasskeyCodeRow = typeof passkeyCodes.$inferSelect;
+
+// The owner's switch and the allowance. A single row (id 1); no row = off.
+export const passkeySettings = mysqlTable("passkey_settings", {
+  id: int("id").primaryKey(),
+  requireAll: boolean("requireAll").default(false).notNull(),
+  maxPasswordSignIns: int("maxPasswordSignIns").default(3).notNull(),
+  updatedByCIN: varchar("updatedByCIN", { length: 64 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type PasskeySettingsRow = typeof passkeySettings.$inferSelect;

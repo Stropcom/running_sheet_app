@@ -28,6 +28,7 @@ import { Link } from "wouter";
 import { useTheme } from "@/contexts/ThemeContext";
 import { COLOR_PALETTES, DEFAULT_COLOR_PALETTE } from "@shared/const";
 import { CommandChip } from "@/components/admin/CommandChip";
+import { PasskeyDevicesCard } from "@/components/PasskeyDevicesCard";
 import { LevelPill } from "@/components/admin/LevelPill";
 import {
   COMMAND_LABELS,
@@ -739,6 +740,12 @@ export default function MyProfilePage() {
             </div>
           </div>
         )}
+
+        {/* Passkey devices: only there when the owner's requirement is on, or this
+            person already has one (empty:hidden keeps the gap away otherwise) */}
+        <div className="mb-6 empty:hidden">
+          <PasskeyDevicesCard />
+        </div>
 
         {/* Change Password Card */}
         <div className="overflow-hidden rounded-xl border border-border bg-card p-6 shadow-sm">

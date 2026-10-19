@@ -57,6 +57,122 @@ describe("full stop between two whole sentences", () => {
   });
 });
 
+describe('"and" after "entered <place>"', () => {
+  const SANTOS =
+    "SANTOS exited the vehicle and walked through the car park, entered";
+  it('adds "and" before lower-case "continued out of sight"', () => {
+    expect(
+      j(
+        `${SANTOS} Crooked Spire Coffee & Art House Midland continued out of sight.`
+      )
+    ).toBe(
+      `${SANTOS} Crooked Spire Coffee & Art House Midland and continued out of sight.`
+    );
+    expect(j("Entered 20 Balanus Way continued out of sight")).toBe(
+      "Entered 20 Balanus Way and continued out of sight"
+    );
+    expect(
+      j("entered 20 Balanus Way (20 Balanus Way) continued out of sight")
+    ).toBe(
+      "entered 20 Balanus Way (20 Balanus Way) and continued out of sight"
+    );
+    expect(j("entered the Bank of Perth continued out of sight")).toBe(
+      "entered the Bank of Perth and continued out of sight"
+    );
+  });
+  it('adds a full stop before a capitalised "Continued out of sight"', () => {
+    expect(j("entered 20 Balanus Way Continued out of sight")).toBe(
+      "entered 20 Balanus Way. Continued out of sight"
+    );
+  });
+  it("leaves it alone when it is already joined or is not plainly a place", () => {
+    for (const t of [
+      "entered 20 Balanus Way and continued out of sight",
+      "entered 20 Balanus Way, continued out of sight",
+      "entered 20 Balanus Way. Continued out of sight",
+      "entered 20 Balanus Way\ncontinued out of sight",
+      "SANTOS continued out of sight",
+      "Miguel Andres SANTOS (SANTOS) continued out of sight",
+      "entered the car park continued out of sight",
+      "entered the continued out of sight",
+      "walked to 20 Balanus Way continued out of sight",
+      "continued out of sight",
+      "(entered 20 Balanus Way continued out of sight)",
+    ])
+      expect(j(t)).toBe(t);
+  });
+  it('only looks back to the last "entered" in the same sentence', () => {
+    expect(j("entered 1 Smith Street. SANTOS continued out of sight")).toBe(
+      "entered 1 Smith Street. SANTOS continued out of sight"
+    );
+  });
+  it("runs as part of the tidy-up", () => {
+    expect(
+      tidyObservation(
+        "SANTOS entered Crooked Spire Coffee & Art House Midland continued out of sight"
+      )
+    ).toBe(
+      "SANTOS entered Crooked Spire Coffee & Art House Midland and continued out of sight"
+    );
+  });
+});
+
+describe('"A" before a full vehicle that opens a sentence', () => {
+  const V =
+    "white Lexus NX350h station sedan, bearing WA registration 1TDM414 (Vehicle 1TDM414)";
+  it("adds a capital A to a single full vehicle at the start", () => {
+    expect(j(`${V}, parked and unattended at 1 Cromer Road.`)).toBe(
+      `A ${V}, parked and unattended at 1 Cromer Road.`
+    );
+    expect(j(`Surveillance ceased. ${V}, parked.`)).toBe(
+      `Surveillance ceased. A ${V}, parked.`
+    );
+    expect(j(`Seen\n${V}.`)).toBe(`Seen\nA ${V}.`);
+  });
+  it("lower-cases a capitalised colour and picks A or An", () => {
+    expect(
+      j(`White Lexus NX350h, bearing WA registration 1TDM414 (Vehicle 1TDM414)`)
+    ).toBe(
+      "A white Lexus NX350h, bearing WA registration 1TDM414 (Vehicle 1TDM414)"
+    );
+    expect(
+      j(`orange Audi Q5, bearing WA registration 1ABC123 (Vehicle 1ABC123)`)
+    ).toBe(
+      "An orange Audi Q5, bearing WA registration 1ABC123 (Vehicle 1ABC123)"
+    );
+  });
+  it("leaves it alone when there is already an article, narrative before it, or no full description", () => {
+    for (const t of [
+      `A ${V}, parked.`,
+      `a ${V}, parked.`,
+      `The ${V}, parked.`,
+      `Seen leaving in ${V}.`,
+      `Observed ${V}.`,
+      "Vehicle 1TDM414 departed",
+      "(Vehicle 1TDM414) parked",
+      "Lexus NX350h, bearing WA registration 1TDM414 (Vehicle 1TDM414)",
+    ])
+      expect(j(t)).toBe(t);
+  });
+  it("does not double up with the vehicle-list rule", () => {
+    const list = `${V}, a white Toyota Kluger, bearing WA registration 1TMD414 (Vehicle 1TMD414)`;
+    expect(tidyObservation(list)).toBe(
+      `A ${V}, a white Toyota Kluger, bearing WA registration 1TMD414 (Vehicle 1TMD414)`
+    );
+    // already right: left exactly as written
+    expect(j(`A ${list}`)).toBe(`A ${list}`);
+  });
+  it("runs in the tidy-up and leaves entity extraction alone", () => {
+    const text = `${V}, parked and unattended at 1 Cromer Road`;
+    const ids = (t: string) =>
+      extractEntitiesFromText(t)
+        .map(e => `${e.type}:${e.shortForm}`)
+        .sort();
+    expect(tidyObservation(text)).toBe(`A ${text}`);
+    expect(ids(tidyObservation(text))).toEqual(ids(text));
+  });
+});
+
 describe("wholeSentenceChips", () => {
   it("keeps plain capitalised phrases and drops fragments, entities and blanks", () => {
     expect(

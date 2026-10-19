@@ -1,3 +1,4 @@
+import { FORM_CONFIRM_BUTTON } from "@/lib/formKit";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
 import {
@@ -41,6 +42,58 @@ export interface PendingMatch {
   newLinkId: number;
   newPhotoUrl: string;
   match: FaceMatchCandidate;
+  /** The face the officer tapped, in photo pixels — when present the "new"
+   * side shows just that face (a crop), not the whole photo. */
+  newFace?: { bbox: [number, number, number, number] };
+}
+
+/**
+ * The tapped face, cropped out of its photo with some margin, shown square.
+ * The box is in the photo's own pixels, so the photo's natural size is read
+ * first; until then (and if it can't be read) the whole photo shows.
+ */
+function FaceCrop({
+  photoUrl,
+  bbox,
+  className,
+}: {
+  photoUrl: string;
+  bbox: [number, number, number, number];
+  className: string;
+}) {
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const [x0, y0, x1, y1] = bbox;
+  const cx = (x0 + x1) / 2;
+  const cy = (y0 + y1) / 2;
+  const side = Math.max(x1 - x0, y1 - y0, 1) * 1.9;
+  return (
+    <div
+      className={`relative w-full aspect-square overflow-hidden bg-muted ${className}`}
+    >
+      <img
+        src={photoUrl}
+        alt="Selected face"
+        onLoad={e =>
+          setSize({
+            w: e.currentTarget.naturalWidth,
+            h: e.currentTarget.naturalHeight,
+          })
+        }
+        className={
+          size ? "absolute max-w-none" : "w-full h-full object-contain"
+        }
+        style={
+          size
+            ? {
+                width: `${(size.w / side) * 100}%`,
+                left: `${-((cx - side / 2) / side) * 100}%`,
+                top: `${-((cy - side / 2) / side) * 100}%`,
+              }
+            : undefined
+        }
+      />
+    </div>
+  );
 }
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -128,13 +181,26 @@ export const MAX_ZOOM_INDEX = ZOOM_STEPS.length - 1;
 // Steps through every possible-match candidate surfaced after confirming
 // face(s) — one candidate at a time, always requiring an explicit human
 // Confirm or Not a match tap. Never applies a match automatically.
+//
+// `onPreviewAnswer` opens the same dialog EARLY — the moment the officer taps a
+// face, before anything is linked — so there is no newLinkId yet and nothing is
+// saved here: it asks the same question ("Is it the same person?"), the answer
+// goes to the caller, and the dialog moves on to the next match. "Same person"
+// ends the run (the caller selects that person); "Not the same person" steps
+// to the next candidate and closes after the last.
 export function PossibleMatchDialog({
   matches,
   onDone,
+  onPreviewAnswer,
 }: {
   matches: PendingMatch[];
   onDone: () => void;
+  onPreviewAnswer?: (
+    match: FaceMatchCandidate,
+    answer: "same" | "different"
+  ) => void;
 }) {
+  const preview = !!onPreviewAnswer;
   const [index, setIndex] = useState(0);
   const [zoomIndex, setZoomIndex] = useState(0);
   const [, setLocation] = useLocation();
@@ -231,12 +297,22 @@ export function PossibleMatchDialog({
           <div
             className={`flex flex-col items-center gap-1.5 shrink-0 ${zoom.colClass}`}
           >
-            <img
-              src={current.newPhotoUrl}
-              alt="New photo"
-              className={`w-full aspect-square rounded-lg border border-border transition-all ${zoom.imgFit}`}
-            />
-            <span className="text-xs text-muted-foreground">New photo</span>
+            {current.newFace ? (
+              <FaceCrop
+                photoUrl={current.newPhotoUrl}
+                bbox={current.newFace.bbox}
+                className="rounded-lg border border-border"
+              />
+            ) : (
+              <img
+                src={current.newPhotoUrl}
+                alt="New photo"
+                className={`w-full aspect-square rounded-lg border border-border transition-all ${zoom.imgFit}`}
+              />
+            )}
+            <span className="text-xs text-muted-foreground">
+              {current.newFace ? "Selected face" : "New photo"}
+            </span>
           </div>
           <div className="text-muted-foreground text-lg shrink-0 self-center">
             ≈
@@ -287,35 +363,61 @@ export function PossibleMatchDialog({
           {Math.round(current.match.similarity * 100)}% similar
         </div>
 
-        <div className="flex justify-center gap-2 pt-2">
-          <Button
-            variant="outline"
-            disabled={pending}
-            onClick={() =>
-              dismissMatch.mutate({
-                newLinkId: current.newLinkId,
-                matchedLinkId: current.match.entityLinkId,
-              })
-            }
-            className="gap-1.5"
-          >
-            <X className="h-3.5 w-3.5" />
-            Not a match
-          </Button>
-          <Button
-            disabled={pending}
-            onClick={() =>
-              confirmMatch.mutate({
-                newLinkId: current.newLinkId,
-                matchedLinkId: current.match.entityLinkId,
-              })
-            }
-            className="gap-1.5"
-          >
-            <Check className="h-3.5 w-3.5" />
-            Same person
-          </Button>
-        </div>
+        {preview ? (
+          <div className="flex justify-center gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                onPreviewAnswer!(current.match, "different");
+                advance();
+              }}
+              className="gap-1.5"
+            >
+              <X className="h-3.5 w-3.5" />
+              No — different person
+            </Button>
+            <Button
+              onClick={() => {
+                onPreviewAnswer!(current.match, "same");
+                onDone();
+              }}
+              className={`gap-1.5 ${FORM_CONFIRM_BUTTON}`}
+            >
+              <Check className="h-3.5 w-3.5" />
+              Yes — same person
+            </Button>
+          </div>
+        ) : (
+          <div className="flex justify-center gap-2 pt-2">
+            <Button
+              variant="outline"
+              disabled={pending}
+              onClick={() =>
+                dismissMatch.mutate({
+                  newLinkId: current.newLinkId,
+                  matchedLinkId: current.match.entityLinkId,
+                })
+              }
+              className="gap-1.5"
+            >
+              <X className="h-3.5 w-3.5" />
+              Not a match
+            </Button>
+            <Button
+              disabled={pending}
+              onClick={() =>
+                confirmMatch.mutate({
+                  newLinkId: current.newLinkId,
+                  matchedLinkId: current.match.entityLinkId,
+                })
+              }
+              className="gap-1.5"
+            >
+              <Check className="h-3.5 w-3.5" />
+              Same person
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

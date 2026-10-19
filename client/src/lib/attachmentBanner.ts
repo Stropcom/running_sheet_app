@@ -45,14 +45,17 @@ export function toAbsolutePhotoUrl(url: string): string {
 // Fixed pixel `sizePx` keeps thumbnails consistently small regardless of
 // page width or how many photos are in the grid (a % grid column would
 // stay large when there's only one or two photos).
-export function buildPhotoGridHtml(photos: Array<RowAttachmentLike & { id: number; url: string }>, sizePx = 90): string {
+/** Tile width in the profile PDF exports (Target, Operation, Vehicle, Associate, Location) — one size everywhere. */
+export const PROFILE_EXPORT_PHOTO_PX = 180;
+
+export function buildPhotoGridHtml(photos: Array<RowAttachmentLike & { id: number; url: string }>, sizePx = PROFILE_EXPORT_PHOTO_PX): string {
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return `<div style="display:flex;flex-wrap:wrap;gap:6px">
     ${photos
       .map(
         (p) => `<div style="width:${sizePx}px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;break-inside:avoid">
       <img src="${esc(toAbsolutePhotoUrl(p.url))}" style="width:100%;aspect-ratio:1;object-fit:cover;display:block" />
-      <div style="background:#000;color:#fff;font-size:7px;padding:2px 4px">${esc(formatAttachmentBanner(p))}</div>
+      <div style="background:#000;color:#fff;font-size:9px;padding:3px 5px">${esc(formatAttachmentBanner(p))}</div>
     </div>`
       )
       .join("")}
@@ -102,7 +105,7 @@ export function buildChipHtml(label: string, type: string, count: number, isPrev
 }
 
 // One chip + its own photo thumbnails directly beneath it.
-export function buildEntityWithPhotosHtml(item: EntityChipLike, photoPx = 70): string {
+export function buildEntityWithPhotosHtml(item: EntityChipLike, photoPx = 140): string {
   const chip = buildChipHtml(item.label, item.type, item.rowCount, item.isPrevious);
   const photos = item.photos ?? [];
   if (!photos.length) {
@@ -110,7 +113,7 @@ export function buildEntityWithPhotosHtml(item: EntityChipLike, photoPx = 70): s
   }
   const photoCells = photos.map(p => `<div style="width:${photoPx}px;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden">
       <img src="${escHtml(toAbsolutePhotoUrl(p.url))}" style="width:100%;aspect-ratio:1;object-fit:cover;display:block" />
-      <div style="background:#000;color:#fff;font-size:6px;padding:2px 3px">${escHtml(formatAttachmentBanner(p))}</div>
+      <div style="background:#000;color:#fff;font-size:8px;padding:2px 4px">${escHtml(formatAttachmentBanner(p))}</div>
     </div>`).join("");
   return `<div style="margin-bottom:8px">
     <div style="margin-bottom:4px">${chip}</div>

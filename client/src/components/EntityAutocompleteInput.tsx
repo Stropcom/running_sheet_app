@@ -12,7 +12,10 @@
 import { useRef, useState, type FocusEvent } from "react";
 import { User, Car } from "lucide-react";
 import { trpc } from "@/lib/trpc";
-import { formatIntelVehicle, expandIntelVehicleToFullForm } from "@/lib/addressFormat";
+import {
+  formatIntelVehicle,
+  expandIntelVehicleToFullForm,
+} from "@/lib/addressFormat";
 
 interface Props {
   value: string;
@@ -24,6 +27,13 @@ interface Props {
   inputClassName?: string;
   autoFocus?: boolean;
   disabled?: boolean;
+  /**
+   * What a picked suggestion writes into the field. "full" (the default) is the
+   * running-sheet observation wording for a vehicle ("red Holden Monaro coupe,
+   * bearing WA registration 1FAT001 (Vehicle 1FAT001)"); "intel" is the short
+   * wording the Intelligence folder shows ("1FAT001 red Holden Monaro coupe").
+   */
+  fillStyle?: "full" | "intel";
 }
 
 function displayLabel(entityType: "person" | "vehicle", label: string): string {
@@ -36,8 +46,15 @@ function displayLabel(entityType: "person" | "vehicle", label: string): string {
 // shown in the dropdown — so it reads the way an officer would type it, and
 // so the bracket lets the onBlur extractShortVehicle handler auto-fill the
 // short Vehicle (V1) field, same as if it had been typed by hand.
-function fillValue(entityType: "person" | "vehicle", label: string): string {
-  return entityType === "vehicle" ? expandIntelVehicleToFullForm(label) : label;
+function fillValue(
+  entityType: "person" | "vehicle",
+  label: string,
+  fillStyle: "full" | "intel"
+): string {
+  if (entityType !== "vehicle") return label;
+  return fillStyle === "intel"
+    ? formatIntelVehicle(label)
+    : expandIntelVehicleToFullForm(label);
 }
 
 export function EntityAutocompleteInput({
@@ -50,6 +67,7 @@ export function EntityAutocompleteInput({
   inputClassName = "",
   autoFocus,
   disabled,
+  fillStyle = "full",
 }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -96,7 +114,9 @@ export function EntityAutocompleteInput({
         value={value}
         onChange={handleChange}
         onBlur={onBlur}
-        onFocus={() => { if (query.trim()) setOpen(true); }}
+        onFocus={() => {
+          if (query.trim()) setOpen(true);
+        }}
         onKeyDown={e => {
           if (e.key === "Escape") setOpen(false);
         }}
@@ -123,7 +143,7 @@ export function EntityAutocompleteInput({
               onMouseDown={e => {
                 // Use mousedown so it fires before the input's blur
                 e.preventDefault();
-                onChange(fillValue(entityType, s.label));
+                onChange(fillValue(entityType, s.label, fillStyle));
                 setOpen(false);
               }}
             >

@@ -485,6 +485,38 @@ export async function fetchFirstPhotoUrl(
   }
 }
 
+/**
+ * Layout for every profile PDF export, appended after each export's own CSS:
+ * the section bands run the full width of the page, the same as the header
+ * banner above them (the content area has no side padding; what sits under a
+ * band is inset 10px to line up with the band's text).
+ *
+ * Page breaks: only a section that is always short (one holding a
+ * ".detail-grid" or ".ops-list" — Registered Details, Status, Operations) is
+ * kept whole, moving to the next page rather than splitting. Anything that can
+ * be long (Background, associations, sheets, photoboards, imported documents)
+ * is allowed to run across pages — keeping one whole would push it to a fresh
+ * page and leave a big blank gap, or a blank first page when it is taller than
+ * the space left. What never splits is a single row or tile inside them, and a
+ * title or label is never left alone at the bottom of a page.
+ */
+export const PDF_SECTION_LAYOUT_CSS =
+  ".content { padding:20px 0; } " +
+  "div:has(> .section-title):has(> .detail-grid), div:has(> .section-title):has(> .ops-list) { break-inside:avoid; page-break-inside:avoid; } " +
+  "div:has(> .section-title) > :not(.section-title) { margin-left:10px; margin-right:10px; } " +
+  ".section-title, .sub-title, .pb-label { break-after:avoid; page-break-after:avoid; } " +
+  ".sheet-item, .pr, .pb-tile, div[style*='flex-direction:column;gap:2px'] > div { break-inside:avoid; page-break-inside:avoid; }";
+
+/**
+ * A thin border drawn around the printable area of every page of a profile
+ * PDF (print only, so the on-screen preview is untouched). It is a fixed
+ * pseudo-element, which the browser repeats on each printed page — a border on
+ * the content block itself would only be drawn at the top of page 1 and the
+ * bottom of the last page.
+ */
+export const pdfPageFrameCss = (colour: string) =>
+  `@media print { body::before { content:""; position:fixed; top:0; right:0; bottom:0; left:0; border:2px solid ${colour}; pointer-events:none; z-index:1000; } }`;
+
 /** Styles for pdfPersonRowHtml. */
 export const PDF_PERSON_ROW_CSS =
   ".pr { display:flex; gap:10px; align-items:center; border:1px solid #e2e8f0; border-radius:6px; padding:6px 8px; margin-bottom:6px; break-inside:avoid; } .pr .pp { width:44px; height:56px; border-radius:4px; overflow:hidden; border:2px solid #cbd5e1; background:#f1f5f9; flex-shrink:0; } .pr.target .pp { border-color:#e11d48; } .pr.resident .pp { border-color:#0284c7; } .pr .pp img { width:100%; height:100%; object-fit:cover; object-position:top; display:block; } .pr .pn { flex:1; font-size:11px; font-weight:700; } .pr .pn small { display:block; font-size:9px; font-weight:400; color:#64748b; } .pr .pt { font-size:9px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; border:1px solid #cbd5e1; border-radius:4px; padding:1px 6px; } .pr.target .pt { border-color:#e11d48; background:#ffe4ea !important; color:#9f1239; } .pr.resident .pt { border-color:#0284c7; background:#e0f2fe !important; color:#075985; }";

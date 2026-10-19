@@ -28,6 +28,7 @@
  * a browser permission or the OS clipboard, not a DOM read, so neither
  * is subject to that restriction.
  */
+import { FORM_CONFIRM_BUTTON } from "@/lib/formKit";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -582,7 +583,11 @@ export function MapSnapshotDialog({
               >
                 Cancel
               </Button>
-              <Button disabled={busy} onClick={useThisArea}>
+              <Button
+                className={FORM_CONFIRM_BUTTON}
+                disabled={busy}
+                onClick={useThisArea}
+              >
                 {busy && (
                   <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                 )}

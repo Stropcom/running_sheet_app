@@ -101,6 +101,7 @@ import React, {
   CSSProperties,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useCallback,
@@ -1790,30 +1791,68 @@ function DashboardLayoutContent({
   }, []);
   const [activeRsId, setActiveRsId] = useState<number | null>(readActiveRsId);
 
+  // Operation(s) chosen in the Map Settings pane — shown beside Active RS.
+  const readMapOpIds = useCallback((): number[] => {
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      const ids = s ? JSON.parse(s).selectedOpIds : null;
+      if (Array.isArray(ids)) {
+        return ids.filter((n: unknown): n is number => typeof n === "number");
+      }
+    } catch {
+      /* ignore */
+    }
+    return [];
+  }, []);
+  const [mapOpIds, setMapOpIds] = useState<number[]>(readMapOpIds);
+  const { data: mapOperations } = trpc.operation.listForMap.useQuery(
+    undefined,
+    { staleTime: 60_000, enabled: !!user }
+  );
+  const mapOperationLabel = useMemo(() => {
+    if (mapOpIds.length === 0 || !mapOperations) return null;
+    const all = mapOperations as { id: number; name: string }[];
+    const chosen = all.filter(op => mapOpIds.includes(op.id));
+    if (chosen.length === 0) return null;
+    if (chosen.length === 1) return chosen[0].name.toUpperCase();
+    if (chosen.length === all.length) return "ALL OPERATIONS";
+    return `${chosen.length} OPERATIONS`;
+  }, [mapOpIds, mapOperations]);
+
   // Sync when the map page writes to localStorage
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === LS_MAP_SETTINGS_KEY) setActiveRsId(readActiveRsId());
+      if (e.key === LS_MAP_SETTINGS_KEY) {
+        setActiveRsId(readActiveRsId());
+        setMapOpIds(readMapOpIds());
+      }
     };
     window.addEventListener("storage", onStorage);
     // "storage" never fires in the tab that wrote the value, so the Map page
     // announces its own saves (picking a running sheet lights Active RS now).
-    const onSameTab = () => setActiveRsId(readActiveRsId());
+    const onSameTab = () => {
+      setActiveRsId(readActiveRsId());
+      setMapOpIds(readMapOpIds());
+    };
     window.addEventListener("runlog-map-settings-changed", onSameTab);
     // Also poll on focus in case same-tab writes don't fire storage events
-    const onFocus = () => setActiveRsId(readActiveRsId());
+    const onFocus = () => {
+      setActiveRsId(readActiveRsId());
+      setMapOpIds(readMapOpIds());
+    };
     window.addEventListener("focus", onFocus);
     return () => {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("runlog-map-settings-changed", onSameTab);
       window.removeEventListener("focus", onFocus);
     };
-  }, [readActiveRsId]);
+  }, [readActiveRsId, readMapOpIds]);
 
   // Re-read when navigating back to any page (location change)
   useEffect(() => {
     setActiveRsId(readActiveRsId());
-  }, [location, readActiveRsId]);
+    setMapOpIds(readMapOpIds());
+  }, [location, readActiveRsId, readMapOpIds]);
 
   const dashboardUtils = trpc.useUtils();
 
@@ -2010,6 +2049,14 @@ function DashboardLayoutContent({
               link, just consolidated into the one place every other page
               already has it. */}
           <div className="flex items-center gap-2">
+            {mapOperationLabel && (
+              <div
+                className="hidden xl:flex items-center justify-center max-w-[220px] px-3 py-2 rounded-xl border border-sidebar-border/60 bg-transparent text-sm font-semibold shadow-sm text-sidebar-foreground"
+                title={`Map operation: ${mapOperationLabel}`}
+              >
+                <span className="truncate">{mapOperationLabel}</span>
+              </div>
+            )}
             <button
               onClick={() => {
                 if (activeRsId) setLocation(`/sheet/${activeRsId}`);

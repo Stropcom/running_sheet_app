@@ -15,7 +15,8 @@
  *    `repairEdits`, run first so the rules below see the corrected text;
  *  - a capital letter at the start of the observation and after each full
  *    stop, "!" or "?" (and at the start of each new line);
- *  - (final pass only) a full stop at the end.
+ *  - (final pass only) a full stop at the end — never straight after a word
+ *    the sentence can't finish on ("entered", "and", "the"…).
  *
  * Deliberately cautious — it never rewrites wording, never lower-cases
  * anything, and leaves alone anything it isn't sure of: a sentence that opens
@@ -84,6 +85,16 @@ const GLUED_STREET_TYPE = new RegExp(
 const CANNOT_END_SENTENCE = new RegExp(
   "\\b(entered|and|the|of|to|at|with|for|from|or|but|into|towards|via|onto)\\.(?=[ \\t]+\\S)",
   "g"
+);
+
+/** Words an observation can't finish on: "HOGAN entered" is waiting for a
+ * place, "… and" for what comes next, so no closing full stop goes after them
+ * (the rest of the sentence, or a chip, is still to be added). */
+const UNFINISHED_ENDINGS = new Set(
+  (
+    "entered and the a an of to at with for from or but into towards via " +
+    "onto then while who"
+  ).split(" ")
 );
 
 /**
@@ -212,9 +223,11 @@ export function tidyEdits(text: string, final: boolean): VehicleEdit[] {
     const trimmed = text.replace(/\s+$/, "");
     const words = trimmed.split(/\s+/).filter(Boolean);
     const last = trimmed[trimmed.length - 1];
+    const lastWord = (words[words.length - 1] ?? "").toLowerCase();
     if (
       words.length >= 2 &&
       /[A-Za-z0-9)]/.test(last) &&
+      !UNFINISHED_ENDINGS.has(lastWord) &&
       !(words.length === 1 && trimmed.toLowerCase() === "tv")
     )
       edits.push({

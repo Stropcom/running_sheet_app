@@ -40,6 +40,12 @@ import {
   stripVesselLeave,
   vesselLabel,
 } from "./vesselPatterns";
+import {
+  matchTransitAlighting,
+  matchTransitBoarding,
+  stripTransitAlighting,
+  transitLabelText,
+} from "./transitPatterns";
 import { expandRowSegments } from "./rowSegments";
 import { fullStreetTypes } from "./streetTypes";
 
@@ -453,6 +459,9 @@ export interface ScannedHeadingTo {
   from: string;
   /** They got off a boat or vessel ("the boat") and are now on foot. */
   fromVessel?: string;
+  /** They got off a bus or train ("the bus", "the 998 train") and are now on
+   * foot. */
+  fromTransit?: string;
   sheetId: number;
   rowId: number;
 }
@@ -485,6 +494,10 @@ export interface ScannedPlacement {
    * it. Set with `rego` "" — they are aboard, not in a vehicle — and with
    * `at` as where they were last logged (where it is taken to be). */
   vessel?: string;
+  /** On a bus, train or tram ("a bus", "the 998 train"), as the row wrote it.
+   * Set with `rego` "" — they are aboard, not in a car — and with `at` as
+   * where they boarded (the stop or station), when a row says. */
+  transit?: string;
 }
 
 export function scanWalkEvents(rows: WalkScanRow[]): {
@@ -527,6 +540,8 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   // Rows where someone got off a boat, and from what — a walk read from the
   // same row is "disembarked, on foot" (fromVessel on the heading).
   const disembarkRows = new Map<number, string>();
+  // The same for getting off a bus or train: what they got off, and where.
+  const alightRows = new Map<number, { transit: string; place: string }>();
   const placed = new Map<string, ScannedPlacement>();
   // The last place each person was logged at (a surname token → the place).
   const lastAt = new Map<string, string>();
@@ -541,7 +556,8 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     rowId: number,
     inside = true,
     via?: string,
-    vessel?: string
+    vessel?: string,
+    transit?: string
   ) => {
     for (const p of splitPeopleNames(cleanWalkerNames(names))) {
       const at = tok(p)
@@ -555,6 +571,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         ...(at ? { at } : {}),
         ...(via ? { via } : {}),
         ...(vessel ? { vessel } : {}),
+        ...(transit ? { transit } : {}),
       };
       for (const t of tok(p)) placed.set(t, entry);
     }
@@ -676,6 +693,66 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         placePeople(who, departure[1].toUpperCase(), row.id, true);
         leaveAllPlaces(who);
         clearHeadingFor(who);
+      }
+    }
+
+    // Getting onto a bus or train ("HOGAN boarded a bus at Bus Stop Stirling
+    // Highway After Eric Street ..."): aboard until a later row puts them
+    // somewhere else. Where they boarded is where they were last logged.
+    const tBoarding = matchTransitBoarding(text);
+    if (tBoarding) {
+      const who = resolveWho(tBoarding.names);
+      if (who && !isVehicleSubject(who)) {
+        if (tBoarding.place) setAt(who, bracketLabelOrSelf(tBoarding.place));
+        placePeople(
+          who,
+          "",
+          row.id,
+          true,
+          undefined,
+          undefined,
+          transitLabelText(tBoarding.transit)
+        );
+        leaveAllPlaces(who);
+        clearHeadingFor(who);
+        noteActors(tBoarding.names, text);
+        return;
+      }
+    }
+    // Getting off ("alighted from the bus at Bus Stop …", "got off the
+    // train"): on foot from where they got off. The word alone ("alighted and
+    // walked …") counts only for someone already on a bus or train.
+    const tAlighting = matchTransitAlighting(text, names =>
+      tok(cleanWalkerNames(names)).some(t => !!placed.get(t)?.transit)
+    );
+    if (tAlighting) {
+      const who = resolveWho(tAlighting.names);
+      if (who && !isVehicleSubject(who)) {
+        const was =
+          tAlighting.transit ||
+          tok(who)
+            .map(t => placed.get(t)?.transit)
+            .find(Boolean) ||
+          "the bus";
+        const place = tAlighting.place
+          ? bracketLabelOrSelf(tAlighting.place)
+          : (tok(who)
+              .map(t => lastAt.get(t))
+              .find(Boolean) ?? "");
+        if (place) setAt(who, place);
+        placePeople(who, "", row.id, true);
+        noteActors(tAlighting.names, text);
+        alightRows.set(row.id, { transit: was, place });
+        clearHeadingFor(who);
+        // On foot from the stop, nowhere named yet — a walk written in the
+        // same row replaces this and keeps the place it left.
+        heading.set(headingKey("[location]", who), {
+          names: who,
+          destination: "[location]",
+          from: place,
+          ...where,
+        });
+        text = stripTransitAlighting(text);
       }
     }
 
@@ -883,7 +960,10 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         const previous = Array.from(heading.values()).find(h =>
           tok(h.names).some(t => tok(walkers).includes(t))
         );
-        clearHeadingFor(walkers);
+        // Getting off a bus or train and walking on with no place written
+        // keeps the "on foot from the stop" entry made above.
+        if (!(alightRows.has(row.id) && !dest && !toVehicle))
+          clearHeadingFor(walkers);
         rowDest = dest;
         rowWalkers = walkers;
         if (dest) {
@@ -993,11 +1073,18 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     .map(({ orderIdx: _o, ...rest }) => rest);
   const headingTo = Array.from(heading.values())
     .sort(byRecent)
-    .map(({ orderIdx: _o, ...rest }) =>
-      disembarkRows.has(rest.rowId)
+    .map(({ orderIdx: _o, ...rest }) => {
+      const alight = alightRows.get(rest.rowId);
+      if (alight)
+        return {
+          ...rest,
+          from: rest.from || alight.place,
+          fromTransit: alight.transit,
+        };
+      return disembarkRows.has(rest.rowId)
         ? { ...rest, fromVessel: disembarkRows.get(rest.rowId)! }
-        : rest
-    );
+        : rest;
+    });
   return {
     walkIns,
     headingTo,
@@ -1202,7 +1289,9 @@ export function isReadAsMovement(text: string): boolean {
     VEHICLE_DEPART_PATTERN.test(text) ||
     matchVehicleSighting(text) ||
     matchVesselBoarding(text) ||
-    matchVesselDisembark(text)
+    matchVesselDisembark(text) ||
+    matchTransitBoarding(text) ||
+    matchTransitAlighting(text)
   ) {
     return true;
   }

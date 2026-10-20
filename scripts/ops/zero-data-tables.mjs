@@ -15,6 +15,8 @@ export const KEEP_TABLES = [
   "passkey_credentials",
   "passkey_codes",
   "passkey_settings",
+  // Owner-set switches (e.g. the Import Target document AI), like the other settings.
+  "app_settings",
   "shortcuts",
   "style_guides",
   "style_rules",

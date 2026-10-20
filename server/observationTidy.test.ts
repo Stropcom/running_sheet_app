@@ -96,6 +96,18 @@ describe("tidyObservation — the closing full stop", () => {
     expect(t("What next?")).toBe("What next?");
   });
 
+  it("is not added straight after a word the sentence can't finish on", () => {
+    expect(t("HOGAN entered")).toBe("HOGAN entered");
+    expect(t("HOGAN walked to the")).toBe("HOGAN walked to the");
+    expect(t("HOGAN and CORNELL met and")).toBe("HOGAN and CORNELL met and");
+    expect(t("Then he went into")).toBe("Then he went into");
+    // a finished sentence still gets its stop, and so does one ending on a place
+    expect(t("HOGAN exited")).toBe("HOGAN exited.");
+    expect(t("HOGAN entered Flight Club Fremantle")).toBe(
+      "HOGAN entered Flight Club Fremantle."
+    );
+  });
+
   it("is not added to a single word, or the special 'tv' trigger", () => {
     expect(t("tv")).toBe("tv");
     expect(t("TV")).toBe("TV");

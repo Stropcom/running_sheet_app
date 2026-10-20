@@ -42,6 +42,19 @@ import {
   movedEnough,
 } from "@shared/nearbyLocations";
 import { detectUnidentifiedRepeat } from "@shared/unidentified";
+import {
+  alightedWording,
+  onTransitCards,
+  transitBoardActions,
+} from "@/lib/transitCards";
+import {
+  transitFullAddress,
+  transitKindOfPlace,
+  transitPlaceFromGoogle,
+  type TransitPlace,
+} from "@shared/transitPlace";
+import { enterNearbyOffers } from "@shared/enterNearby";
+import { endedContinuityCard } from "@/lib/surveillanceCard";
 import { entryMentionsAddress, popupShortAddress } from "@shared/markerLink";
 import { fullStreetTypes } from "@shared/streetTypes";
 import {
@@ -52,7 +65,7 @@ import {
   locateTargetFromPending,
   samePlace,
   shortUnidentified,
-  TARGET_EMOJI,
+  targetEmoji,
   vehiclesPeopleCanReach,
 } from "@shared/targetPosition";
 import {
@@ -337,6 +350,21 @@ function useVisualViewportInset(): {
 // expandStreetType canonicalises both sides to the same full form before
 // comparing, same as any other "same real place, different spelling"
 // address comparison in this file.
+/** The Quick Entry / marker address for a tapped place: a bus stop or train
+ * station is "<label>, SUBURB WA (<label>)" (it has no street number);
+ * anything else is the usual business wording. */
+function poiAddressOf(poi: {
+  name: string;
+  address: string;
+  transit?: TransitPlace;
+}): string {
+  if (poi.transit) {
+    const full = transitFullAddress(poi.name, poi.address);
+    if (full) return full;
+  }
+  return buildPoiAddress(poi.name, poi.address);
+}
+
 function addressesMatch(a: string, b: string): boolean {
   return (
     expandStreetType(a.trim()).toLowerCase() ===
@@ -2658,6 +2686,9 @@ export default function IntelligenceMapping() {
     lng: number;
     name: string;
     address: string;
+    /** Set when the place is a bus stop or train station: name is then the
+     * one wording ("Bus Stop …" / "… Train Station"). */
+    transit?: TransitPlace;
   } | null>(null);
   // Action chooser: shown on tap-and-hold / right-click before user picks RS Quick Entry or Marker/Intel
   // intelLoc is set when the tap is on an intelligence-derived marker (target address / observation)
@@ -2785,8 +2816,18 @@ export default function IntelligenceMapping() {
   // Entry button), so the entry can stay on that marker (see
   // linkEntryToMarker). Cleared whenever the entry sheet closes.
   const mapQeMarkerIdRef = useRef<number | null>(null);
+  // Where on the map the place the entry was opened from is — kept so the
+  // cards can offer "Entered here" to someone logged inside a place close by
+  // (shared/enterNearby.ts). Null when the opener has no position.
+  const [mapQeLatLng, setMapQeLatLng] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   useEffect(() => {
-    if (!mapQeOpen) mapQeMarkerIdRef.current = null;
+    if (!mapQeOpen) {
+      mapQeMarkerIdRef.current = null;
+      setMapQeLatLng(null);
+    }
   }, [mapQeOpen]);
   // QE chips use the same order as the main RS: the Shortcuts page order, with
   // the target's own chips fixed after SC (see shared/rsChips.ts). Nothing to
@@ -3237,6 +3278,9 @@ export default function IntelligenceMapping() {
           nmSplitBox: splitBox,
         })
       );
+      // The browser's "storage" event only reaches OTHER tabs, so tell this
+      // tab's header (the Active RS button) that the settings changed.
+      window.dispatchEvent(new Event("runlog-map-settings-changed"));
     } catch {
       /* ignore */
     }
@@ -3711,6 +3755,16 @@ export default function IntelligenceMapping() {
   // doesn't have to retype the route back to the vehicle. See
   // getPendingWalkIns.
   const { data: rsPendingWalkInsBase } = trpc.row.pendingWalkIns.useQuery(
+    { sheetId: rsSelectedSheetId ?? 0 },
+    {
+      enabled: rsTrackingActive && !!rsSelectedSheetId,
+      refetchInterval: trackingSettings.location ? 15000 : false,
+    }
+  );
+  // Has the surveillance ended — every team member ceased, nobody commenced
+  // since (shared/surveillanceState.ts). Ends the Target Logger and greys the
+  // target flag.
+  const { data: rsSurveillance } = trpc.row.surveillanceState.useQuery(
     { sheetId: rsSelectedSheetId ?? 0 },
     {
       enabled: rsTrackingActive && !!rsSelectedSheetId,
@@ -4650,15 +4704,17 @@ export default function IntelligenceMapping() {
     if (!mapRef.current) return;
     setFlyPick(null);
     new google.maps.places.PlacesService(mapRef.current).getDetails(
-      { placeId, fields: ["name", "formatted_address"] },
+      { placeId, fields: ["name", "formatted_address", "types"] },
       (place, status) => {
         if (status === google.maps.places.PlacesServiceStatus.OK && place) {
+          const transit = transitPlaceFromGoogle(place.name ?? "", place.types);
           setPoiTap({
             lat,
             lng,
-            name: place.name ?? "",
+            name: transit?.label ?? place.name ?? "",
             address:
               place.formatted_address ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+            ...(transit ? { transit } : {}),
           });
         }
       }
@@ -5418,28 +5474,33 @@ export default function IntelligenceMapping() {
         "position:absolute;left:0;top:0;transform:translate(-50%,calc(-100% - 26px));" +
         "pointer-events:none;display:flex;flex-direction:column;align-items:center;";
       const pill = document.createElement("div");
-      const unsure = pos.state === "oos";
+      const ended = !!rsSurveillance?.ended;
+      const unsure = pos.state === "oos" || ended;
       pill.style.cssText =
         "display:flex;align-items:center;gap:6px;white-space:nowrap;" +
         "background:#fff;color:#14181d;border:2px " +
         (unsure ? "dashed" : "solid") +
-        " #e11d48;border-radius:999px;padding:3px 10px 3px 7px;" +
+        (ended ? " #6b7280" : " #e11d48") +
+        ";border-radius:999px;padding:3px 10px 3px 7px;" +
         "font:600 11px/1.2 system-ui,sans-serif;box-shadow:0 2px 6px rgba(0,0,0,.3);";
       const em = document.createElement("span");
-      em.textContent = TARGET_EMOJI[pos.state];
+      em.textContent = ended ? "⏹" : targetEmoji(pos.state, pos.transitMode);
       em.style.cssText = "font-size:15px;";
       const label = document.createElement("span");
       const who = (token ?? "Target").toUpperCase();
       // Everyone with him (the vehicle's occupants, or those inside /
       // walking with him), the target first — as on the tracker card.
       label.textContent = shortUnidentified(
-        `${pos.people.length ? pos.people.join(", ") : who} · ${pos.label}`
+        `${pos.people.length ? pos.people.join(", ") : who} · ${
+          ended
+            ? `ceased${rsSurveillance?.endedAtTime ? ` at ${rsSurveillance.endedAtTime}` : ""}`
+            : pos.label
+        }`
       );
       pill.appendChild(em);
       pill.appendChild(label);
       const stem = document.createElement("div");
-      stem.style.cssText =
-        "width:2px;height:8px;background:#e11d48;border-radius:1px;";
+      stem.style.cssText = `width:2px;height:8px;background:${ended ? "#6b7280" : "#e11d48"};border-radius:1px;`;
       flag.appendChild(pill);
       flag.appendChild(stem);
       targetFlagRef.current = new DivIconOverlay({
@@ -5456,7 +5517,7 @@ export default function IntelligenceMapping() {
       targetFlagFlyRef.current = {
         lat,
         lng,
-        emoji: TARGET_EMOJI[pos.state],
+        emoji: ended ? "⏹" : targetEmoji(pos.state, pos.transitMode),
         text: label.textContent ?? "",
         unsure,
       };
@@ -5472,6 +5533,8 @@ export default function IntelligenceMapping() {
   }, [
     mapReady,
     rsTargetPosition,
+    rsSurveillance?.ended,
+    rsSurveillance?.endedAtTime,
     rsTrackedTarget,
     rsSelectedSheetId,
     rsSelectedOpId,
@@ -5968,19 +6031,27 @@ export default function IntelligenceMapping() {
           // Look up the business details via Places API
           const service = new google.maps.places.PlacesService(map);
           service.getDetails(
-            { placeId: e.placeId, fields: ["name", "formatted_address"] },
+            {
+              placeId: e.placeId,
+              fields: ["name", "formatted_address", "types"],
+            },
             (place, status) => {
               if (
                 status === google.maps.places.PlacesServiceStatus.OK &&
                 place
               ) {
+                const transit = transitPlaceFromGoogle(
+                  place.name ?? "",
+                  place.types
+                );
                 setPoiTap({
                   lat: tapLat,
                   lng: tapLng,
-                  name: place.name ?? "",
+                  name: transit?.label ?? place.name ?? "",
                   address:
                     place.formatted_address ??
                     `${tapLat.toFixed(5)}, ${tapLng.toFixed(5)}`,
+                  ...(transit ? { transit } : {}),
                 });
               }
             }
@@ -7101,6 +7172,9 @@ export default function IntelligenceMapping() {
       const address = cm.address || cm.label || "";
       setMapQeAddress(convertGoogleAddresses(address));
       mapQeMarkerIdRef.current = id;
+      setMapQeLatLng(
+        cm.lat != null && cm.lng != null ? { lat: cm.lat, lng: cm.lng } : null
+      );
       setMapQeOpen(true);
     };
     return () => {
@@ -7321,6 +7395,37 @@ export default function IntelligenceMapping() {
     };
   }, [customMarkers]);
 
+  // Where a named place is on the map: a pin or marker whose title is that
+  // place, else the position the geocoder already found for it. Null when
+  // neither knows it (nothing is guessed). Kept in a ref so the window-level
+  // popup handlers always call the latest one.
+  const placePosition = (
+    place: string
+  ): { lat: number; lng: number } | null => {
+    const pins: any[] = [
+      ...markersRef.current,
+      ...Array.from(customMarkerMapRefs.current.values()),
+    ];
+    for (const m of pins) {
+      if (!m?.title || !m.position || !samePlace(String(m.title), place))
+        continue;
+      const lat =
+        typeof m.position.lat === "function"
+          ? m.position.lat()
+          : m.position.lat;
+      const lng =
+        typeof m.position.lng === "function"
+          ? m.position.lng()
+          : m.position.lng;
+      if (typeof lat === "number" && typeof lng === "number")
+        return { lat, lng };
+    }
+    const cached = geocodeCacheRef.current.get(geocodeQueryForLabel(place));
+    return cached ? { lat: cached.lat, lng: cached.lng } : null;
+  };
+  const placePositionRef = useRef(placePosition);
+  placePositionRef.current = placePosition;
+
   // ── Intel pin global handlers ─────────────────────────────────────────────────
 
   // RS Quick Entry from intel pin popup
@@ -7331,6 +7436,7 @@ export default function IntelligenceMapping() {
       // in RS format (suburb UPPERCASE, no postcode) but may lack the bracket code.
       setMapQeAddress(ensureBracketCode(label));
       mapQeMarkerIdRef.current = null;
+      setMapQeLatLng(placePositionRef.current(label));
       setMapQeOpen(true);
     };
     return () => {
@@ -8279,6 +8385,9 @@ export default function IntelligenceMapping() {
               sheetId: rsSelectedSheetId,
             });
             void utils.row.pendingPlacements.invalidate({
+              sheetId: rsSelectedSheetId,
+            });
+            void utils.row.surveillanceState.invalidate({
               sheetId: rsSelectedSheetId,
             });
           }
@@ -10870,7 +10979,11 @@ export default function IntelligenceMapping() {
               <div className="flex items-start justify-between mb-4">
                 <div className="flex-1 min-w-0">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
-                    Business / Place
+                    {poiTap.transit?.kind === "bus"
+                      ? "Bus Stop"
+                      : poiTap.transit?.kind === "train"
+                        ? "Train Station"
+                        : "Business / Place"}
                   </p>
                   <p className="text-sm font-bold text-foreground leading-snug">
                     {poiTap.name}
@@ -10890,9 +11003,8 @@ export default function IntelligenceMapping() {
                 {/* RS Quick Entry */}
                 <button
                   onClick={() => {
-                    setMapQeAddress(
-                      buildPoiAddress(poiTap.name, poiTap.address)
-                    );
+                    setMapQeAddress(poiAddressOf(poiTap));
+                    setMapQeLatLng({ lat: poiTap.lat, lng: poiTap.lng });
                     setMapQeOpen(true);
                     setPoiTap(null);
                   }}
@@ -10909,10 +11021,7 @@ export default function IntelligenceMapping() {
                 {/* Add Marker Here */}
                 <button
                   onClick={() => {
-                    const rsAddress = buildPoiAddress(
-                      poiTap.name,
-                      poiTap.address
-                    );
+                    const rsAddress = poiAddressOf(poiTap);
                     setCmLabel(poiTap.name);
                     setCmAddress(rsAddress);
                     setCmNote("");
@@ -11002,6 +11111,10 @@ export default function IntelligenceMapping() {
                 <button
                   onClick={() => {
                     setMapQeAddress(actionChooser.address);
+                    setMapQeLatLng({
+                      lat: actionChooser.lat,
+                      lng: actionChooser.lng,
+                    });
                     setMapQeOpen(true);
                     setActionChooser(null);
                   }}
@@ -13370,6 +13483,11 @@ export default function IntelligenceMapping() {
                                   n,
                                   rsUsedBracketCodesWithDraft
                                 );
+                              // The entry was opened from a bus stop or a
+                              // train station: people on foot board there
+                              // rather than "enter" it.
+                              const clickedTransit =
+                                transitKindOfPlace(shortAddr);
                               const cards: ContinuityCardData[] = [];
 
                               // Vehicles that left somewhere and have no
@@ -13773,6 +13891,53 @@ export default function IntelligenceMapping() {
                                 });
                               });
 
+                              // Someone logged inside a place close to the one
+                              // clicked (a shop in the centre they are in): this
+                              // pin is where they may have gone ("Entered here").
+                              // Only ever from a map click — nothing is added to
+                              // the cards otherwise (shared/enterNearby.ts).
+                              {
+                                const homes = [
+                                  (assignedTarget as any)?.hbf,
+                                  (assignedTarget as any)?.hb,
+                                ].filter(Boolean) as string[];
+                                enterNearbyOffers({
+                                  walkIns: (rsPendingWalkIns ?? []).map(w => ({
+                                    names: w.names,
+                                    location: w.location,
+                                    rowId: w.rowId,
+                                  })),
+                                  clicked: mapQeLatLng,
+                                  clickedAddress: shortAddr,
+                                  same: cardAddressMatch,
+                                  positionOf: placePosition,
+                                  exclude: place =>
+                                    homes.some(h => cardAddressMatch(h, place)),
+                                }).forEach(o =>
+                                  cards.push({
+                                    key: `enter-${o.names}-${o.inside}-${shortAddr}`,
+                                    title: o.names,
+                                    pill: "Inside",
+                                    who: `Inside ${o.inside}`,
+                                    state: "On foot",
+                                    holds: surnameTokens(o.names),
+                                    people: splitPeopleNames(o.names),
+                                    locus: {
+                                      headline: `Inside ${o.inside}`,
+                                      sub: "On foot",
+                                    },
+                                    actions: [
+                                      {
+                                        key: `ent-${o.inside}-${shortAddr}`,
+                                        label: "Entered here",
+                                        text: `${names(o.names)} entered ${arriveAddr} and continued out of sight.`,
+                                      },
+                                    ],
+                                    latestRowId: o.rowId,
+                                  })
+                                );
+                              }
+
                               // People on foot inside this address with no
                               // vehicle here.
                               if (!insideOnVehicleCard) {
@@ -13795,6 +13960,12 @@ export default function IntelligenceMapping() {
                                         label: "Left address",
                                         text: leftAddressText(w),
                                       },
+                                      // At a bus stop or train station.
+                                      ...transitBoardActions({
+                                        keyBase: w.location,
+                                        names: names(w.names),
+                                        place: w.location,
+                                      }),
                                       // Back to a parked vehicle from here.
                                       ...reachableVehicles(
                                         w.names,
@@ -13823,52 +13994,88 @@ export default function IntelligenceMapping() {
                                   cards.push({
                                     key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                                     title: h.names,
-                                    pill: h.fromVessel
-                                      ? "Disembarked"
-                                      : "Departed on foot",
+                                    pill: h.fromTransit
+                                      ? "Alighted"
+                                      : h.fromVessel
+                                        ? "Disembarked"
+                                        : "Departed on foot",
                                     attn: true,
                                     who: h.destination.includes("[")
                                       ? "On foot"
                                       : `Walking to ${h.destination}`,
-                                    state: `Left ${h.fromVessel ?? h.from}`,
+                                    state:
+                                      alightedWording(h)?.left ??
+                                      `Left ${h.fromVessel ?? h.from}`,
                                     holds: surnameTokens(h.names),
                                     people: splitPeopleNames(h.names),
                                     locus: {
-                                      headline: h.destination.includes("[")
-                                        ? h.fromVessel
-                                          ? "Disembarked, on foot"
-                                          : "Departed on foot"
-                                        : `${h.fromVessel ? "Disembarked, on foot" : "Departed on foot"} to ${h.destination}`,
-                                      sub: `Left ${h.fromVessel ?? h.from}`,
+                                      headline: (() => {
+                                        const how = h.fromTransit
+                                          ? "Alighted, on foot"
+                                          : h.fromVessel
+                                            ? "Disembarked, on foot"
+                                            : "Departed on foot";
+                                        return h.destination.includes("[")
+                                          ? how
+                                          : `${how} to ${h.destination}`;
+                                      })(),
+                                      sub:
+                                        alightedWording(h)?.left ??
+                                        `Left ${h.fromVessel ?? h.from}`,
                                     },
                                     actions: [
-                                      {
-                                        key: `en-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
-                                        label: h.destination.includes("[")
-                                          ? "Entered here"
-                                          : "Entered",
-                                        text: `${names(h.names)} entered ${
-                                          h.destination.includes("[")
-                                            ? arriveAddr
-                                            : h.destination
-                                        } and continued out of sight.`,
-                                      },
-                                      {
-                                        key: `in-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
-                                        label: h.destination.includes("[")
-                                          ? "Inside here"
-                                          : "Inside",
-                                        text: `${names(h.names)} inside ${
-                                          h.destination.includes("[")
-                                            ? arriveAddr
-                                            : h.destination
-                                        } [observation].`,
-                                      },
+                                      ...(clickedTransit &&
+                                      h.destination.includes("[")
+                                        ? transitBoardActions({
+                                            keyBase: `here-${h.names}-${shortAddr}`,
+                                            names: names(h.names),
+                                            place: arriveAddr,
+                                          })
+                                        : []),
+                                      ...(clickedTransit &&
+                                      h.destination.includes("[")
+                                        ? []
+                                        : [
+                                            {
+                                              key: `en-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
+                                              label: h.destination.includes("[")
+                                                ? "Entered here"
+                                                : "Entered",
+                                              text: `${names(h.names)} entered ${
+                                                h.destination.includes("[")
+                                                  ? arriveAddr
+                                                  : h.destination
+                                              } and continued out of sight.`,
+                                            },
+                                            {
+                                              key: `in-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
+                                              label: h.destination.includes("[")
+                                                ? "Inside here"
+                                                : "Inside",
+                                              text: `${names(h.names)} inside ${
+                                                h.destination.includes("[")
+                                                  ? arriveAddr
+                                                  : h.destination
+                                              } [observation].`,
+                                            },
+                                          ]),
                                       {
                                         key: `wk-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                                         label: "Walked to another location",
                                         text: `${names(h.names)} walked [route] towards [location].`,
                                       },
+                                      // Just got off at a bus stop or train
+                                      // station, or heading for one.
+                                      ...(clickedTransit &&
+                                      h.destination.includes("[")
+                                        ? []
+                                        : transitBoardActions({
+                                            keyBase: `h-${h.destination}-${h.names}`,
+                                            names: names(h.names),
+                                            place: h.destination.includes("[")
+                                              ? h.from
+                                              : h.destination,
+                                          })),
                                       ...reachableVehicles(h.names, h.from).map(
                                         a => ({
                                           key: `wv-${a.rego}`,
@@ -13931,6 +14138,19 @@ export default function IntelligenceMapping() {
                                 });
                               }
 
+                              // People aboard a bus, train or tram: shown
+                              // wherever the sheet is, until a row says they
+                              // got off.
+                              cards.push(
+                                ...onTransitCards({
+                                  placements: rsPendingPlacements ?? [],
+                                  shorten: names,
+                                  hereAddress: clickedTransit
+                                    ? arriveAddr
+                                    : undefined,
+                                })
+                              );
+
                               // The card holding the target leads, as its
                               // tracker (person or vehicle; same rule as the
                               // sheet and the flag).
@@ -13946,9 +14166,30 @@ export default function IntelligenceMapping() {
                                     held.people ?? [],
                                     rsTrackedTarget
                                   ).join(", ");
+                                  // Took over from another sheet: say where
+                                  // the picture came from.
+                                  if (rsSurveillance?.handover && held.locus)
+                                    held.locus = {
+                                      ...held.locus,
+                                      sub: `${held.locus.sub} · Handed over from ${rsSurveillance.handover.title}`,
+                                    };
                                 }
                               }
 
+                              // Every member of the team has ceased: one grey
+                              // card replaces the live ones.
+                              if (rsSurveillance?.ended) {
+                                cards.length = 0;
+                                cards.push(
+                                  endedContinuityCard({
+                                    who:
+                                      trackedTargetCode(rsTrackedTarget) ??
+                                      "Team",
+                                    time: rsSurveillance.endedAtTime,
+                                    position: rsTargetPosition,
+                                  })
+                                );
+                              }
                               if (
                                 cards.length === 0 ||
                                 !trackingSettings.tracking

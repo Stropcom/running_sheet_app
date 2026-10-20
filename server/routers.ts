@@ -214,6 +214,7 @@ import {
   getPendingVehicleDepartures,
   getPendingVehicleArrivals,
   getPendingWalkIns,
+  getSurveillanceState,
   getPendingHeadingTo,
   getPendingPlacements,
   getPendingContinuityWithDraft,
@@ -475,6 +476,17 @@ import {
   suggestExtractedValue,
   suggestVerifiedCorrection,
 } from "./documentImport/localDocumentAI";
+import { AI_TIME_BUDGET_MS, withinBudget } from "./documentImport/aiBudget";
+import {
+  getAiStats,
+  recordAiImport,
+  resetAiStats,
+} from "./documentImport/aiStats";
+import {
+  DOCUMENT_AI_SETTING,
+  getBoolSetting,
+  setBoolSetting,
+} from "./appSettings";
 import {
   verifyAISuggestion,
   composeParsedValue,
@@ -2351,6 +2363,14 @@ export const appRouter = router({
       .input(z.object({ sheetId: z.number() }))
       .query(async ({ input }) => {
         return getPendingWalkIns(input.sheetId);
+      }),
+
+    // Has the surveillance ended — every team member ceased, nobody
+    // commenced since. See shared/surveillanceState.ts.
+    surveillanceState: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        return getSurveillanceState(input.sheetId);
       }),
 
     // People who left a location saying where they were going and haven't
@@ -5427,6 +5447,7 @@ export const appRouter = router({
           })
         )
         .mutation(async ({ input }) => {
+          const startedAt = Date.now();
           const buffer = Buffer.from(input.dataBase64, "base64");
           const isPdf = /\.pdf$/i.test(input.fileName);
           const read = isPdf
@@ -5440,6 +5461,7 @@ export const appRouter = router({
                 : "Couldn't read this file as a Word document (.docx).",
             });
           }
+          const readMs = Date.now() - startedAt;
           const mapped = mapDocumentToTargetProfile(read);
 
           // Local AI Roadmap Step 3 — additive only, never replaces what
@@ -5472,7 +5494,11 @@ export const appRouter = router({
           //      pass alone can come back "confirmed" (AI independently
           //      agrees with the rules).
           const MAX_AI_CALLS = 8;
-          const aiModelStatus = await getDocumentAIModelStatus();
+          // The owner's switch (Access Management → Document AI): off skips the
+          // whole AI step, so imports use only the rules' own reading.
+          const aiSwitchedOn = await getBoolSetting(DOCUMENT_AI_SETTING, true);
+          const aiModelStatus: "ready" | "missing" | "incomplete" | "off" =
+            aiSwitchedOn ? await getDocumentAIModelStatus() : "off";
           let aiCallsUsed = 0;
 
           const aiSuggestions: Array<{
@@ -5488,14 +5514,29 @@ export const appRouter = router({
           const addressAiOutcomes: AIAssistOutcome[] = [];
           const vehicleAiOutcomes: AIAssistOutcome[] = [];
 
+          // The AI pass has a total time limit (see documentImport/aiBudget.ts):
+          // past it, or while an earlier document's model call is still
+          // running, the remaining checks are simply not made ("declined"),
+          // and the rules' own reading is returned as it always is.
+          const aiDeadline = Date.now() + AI_TIME_BUDGET_MS;
+          const aiStartedAt = Date.now();
+          let aiSkipped: "budget" | "busy" | "error" | null = null;
+          const askModel = async (
+            call: () => Promise<string | null>
+          ): Promise<string | null> => {
+            if (aiSkipped === "budget" || aiSkipped === "busy") return null;
+            const r = await withinBudget(aiDeadline, call);
+            if (r.ok) return r.value;
+            aiSkipped = r.reason;
+            return null;
+          };
+
           if (aiModelStatus === "ready") {
             for (const item of mapped.needsReview) {
               if (aiCallsUsed >= MAX_AI_CALLS) break;
               aiCallsUsed++;
-              const raw = await suggestExtractedValue(
-                item.kind,
-                item.label,
-                item.raw
+              const raw = await askModel(() =>
+                suggestExtractedValue(item.kind, item.label, item.raw)
               );
               const outcome: AIAssistOutcome = raw
                 ? verifyAISuggestion(item.kind, raw, null)
@@ -5514,11 +5555,13 @@ export const appRouter = router({
               }
               aiCallsUsed++;
               const currentValue = composeParsedValue("address", a);
-              const raw = await suggestVerifiedCorrection(
-                "address",
-                a.label,
-                a.raw,
-                currentValue
+              const raw = await askModel(() =>
+                suggestVerifiedCorrection(
+                  "address",
+                  a.label,
+                  a.raw,
+                  currentValue
+                )
               );
               addressAiOutcomes.push(
                 raw
@@ -5533,11 +5576,8 @@ export const appRouter = router({
               }
               aiCallsUsed++;
               const currentValue = composeParsedValue("vehicle", v);
-              const raw = await suggestVerifiedCorrection(
-                "vehicle",
-                "",
-                v.raw,
-                currentValue
+              const raw = await askModel(() =>
+                suggestVerifiedCorrection("vehicle", "", v.raw, currentValue)
               );
               vehicleAiOutcomes.push(
                 raw
@@ -5553,6 +5593,37 @@ export const appRouter = router({
               vehicleAiOutcomes.push({ status: "declined" })
             );
           }
+
+          const countOutcomes = (o: AIAssistOutcome[]) => ({
+            confirmed: o.filter(x => x.status === "confirmed").length,
+            suggested: o.filter(x => x.status === "suggested").length,
+          });
+          const oc = [
+            countOutcomes(aiSuggestions.map(x => x.outcome)),
+            countOutcomes(addressAiOutcomes),
+            countOutcomes(vehicleAiOutcomes),
+          ];
+          recordAiImport({
+            mode:
+              aiModelStatus === "off"
+                ? "off"
+                : aiModelStatus === "ready"
+                  ? "ran"
+                  : "unavailable",
+            calls: aiCallsUsed,
+            confirmed: oc.reduce((n, x) => n + x.confirmed, 0),
+            suggested: oc.reduce((n, x) => n + x.suggested, 0),
+            stoppedEarly: aiSkipped === "budget" || aiSkipped === "busy",
+            aiMs: Date.now() - aiStartedAt,
+            totalMs: Date.now() - startedAt,
+          });
+
+          console.log(
+            `[ImportTarget] ${input.fileName} (${Math.round(buffer.length / 1024)} KB): ` +
+              `read ${readMs} ms, AI model ${aiModelStatus}, ${aiCallsUsed} AI check(s) ` +
+              `in ${Date.now() - aiStartedAt} ms${aiSkipped ? ` (stopped early: ${aiSkipped})` : ""}, ` +
+              `total ${Date.now() - startedAt} ms`
+          );
 
           return {
             ...mapped,
@@ -8477,6 +8548,56 @@ export const appRouter = router({
   // ─── Zero data ─────────────────────────────────────────────────────────────
   // Empties the operational data (server/zeroData.ts). Owner only, with the
   // typed word and the owner's password again.
+  // ─── Document AI switch (owner only) ────────────────────────────────────────
+  // Turns Import Target's on-device AI check on or off, and shows what it has
+  // done since the server started, so the owner can judge whether it helps.
+  documentAi: router({
+    status: protectedProcedure.query(async ({ ctx }) => {
+      if (!isFeatureOwner(ctx.user)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Not available." });
+      }
+      return {
+        enabled: await getBoolSetting(DOCUMENT_AI_SETTING, true),
+        modelStatus: await getDocumentAIModelStatus(),
+        budgetSeconds: Math.round(AI_TIME_BUDGET_MS / 1000),
+        stats: getAiStats(),
+      };
+    }),
+
+    set: protectedProcedure
+      .input(z.object({ enabled: z.boolean() }))
+      .mutation(async ({ input, ctx }) => {
+        if (!isFeatureOwner(ctx.user)) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Not available." });
+        }
+        const before = await getBoolSetting(DOCUMENT_AI_SETTING, true);
+        await setBoolSetting(
+          DOCUMENT_AI_SETTING,
+          input.enabled,
+          ctx.user.cin ?? null
+        );
+        await createAuditLog({
+          sheetId: 0,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin,
+          action: "document_ai_changed",
+          details: `Owner CIN ${ctx.user.cin ?? "Unknown"}: Import Target document AI ${before ? "on" : "off"} → ${input.enabled ? "on" : "off"}`,
+          createdAt: Date.now(),
+        });
+        return { enabled: input.enabled };
+      }),
+
+    /** Start the counts again from zero (to compare on against off). */
+    resetStats: protectedProcedure.mutation(async ({ ctx }) => {
+      if (!isFeatureOwner(ctx.user)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Not available." });
+      }
+      resetAiStats();
+      return getAiStats();
+    }),
+  }),
+
   zeroData: router({
     preview: protectedProcedure.query(async ({ ctx }) => {
       if (!isFeatureOwner(ctx.user)) {

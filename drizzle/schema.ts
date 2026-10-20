@@ -1093,6 +1093,7 @@ export const auditLogs = mysqlTable("audit_logs", {
     "passkey_code_used",
     "passkey_locked",
     "passkey_settings_changed",
+    "document_ai_changed",
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),
@@ -2440,3 +2441,13 @@ export const passkeySettings = mysqlTable("passkey_settings", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type PasskeySettingsRow = typeof passkeySettings.$inferSelect;
+
+// Small owner-set switches that aren't about one Command (see server/appSettings.ts):
+// one row per setting, "true" / "false". No row = the setting's own default.
+export const appSettings = mysqlTable("app_settings", {
+  settingKey: varchar("settingKey", { length: 64 }).primaryKey(),
+  settingValue: varchar("settingValue", { length: 255 }).notNull(),
+  updatedByCIN: varchar("updatedByCIN", { length: 64 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AppSettingRow = typeof appSettings.$inferSelect;

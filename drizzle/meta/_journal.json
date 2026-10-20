@@ -890,6 +890,13 @@
       "when": 1792404333654,
       "tag": "0126_left_goblin_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "5",
+      "when": 1792420921194,
+      "tag": "0127_steep_obadiah_stane",
+      "breakpoints": true
     }
   ]
 }

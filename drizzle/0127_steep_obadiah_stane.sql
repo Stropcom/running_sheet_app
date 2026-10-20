@@ -1,0 +1,9 @@
+CREATE TABLE `app_settings` (
+	`settingKey` varchar(64) NOT NULL,
+	`settingValue` varchar(255) NOT NULL,
+	`updatedByCIN` varchar(64),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `app_settings_settingKey` PRIMARY KEY(`settingKey`)
+);
+--> statement-breakpoint
+ALTER TABLE `audit_logs` MODIFY COLUMN `action` enum('row_created','row_updated','row_deleted','member_added','member_removed','certified','uncertified','sheet_created','sheet_updated','sheet_deleted','sheet_closed','sheet_reopened','sheet_moved','sheet_copied','user_login','user_logout','user_created','user_updated','user_deleted','user_archived','user_restored','operation_status_changed','operation_updated','operation_shared','operation_share_revoked','password_changed','attachment_added','attachment_deleted','summary_completed','summary_reopened','smeac_briefing_posted','smeac_briefing_deleted','uco_guide_posted','uco_guide_deleted','target_background_updated','command_feature_changed','data_zeroed','passkey_registered','passkey_removed','passkey_login','passkey_code_issued','passkey_code_used','passkey_locked','passkey_settings_changed','document_ai_changed') NOT NULL;

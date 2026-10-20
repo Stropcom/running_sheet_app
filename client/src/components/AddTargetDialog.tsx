@@ -1019,43 +1019,67 @@ export function AddTargetDialog({
       address,
       vehicle
     );
-    // Safety net for the same byte-identical-photo case the dupMatch-gated
-    // effect above already tries to catch pre-emptively in the Photos
-    // review UI — that effect only fires once a fuzzy name/DOB match names
-    // a candidate target, and gets cancelled the moment the officer
-    // actually confirms a merge into that target (handleMergeInstead
-    // clears dupMatch as soon as the merge dialog opens, well before its
-    // own fetch-existing-photos-and-hash round trip can finish), so
-    // `imageChoices` can still be at its default "keep" for a genuine
-    // duplicate by the time this runs. Re-checked here, synchronously,
-    // against the REAL confirmed targetId every save path already has in
-    // hand — not a guess, so this can't race with anything. Only covers
-    // photos landing on the target itself (every call site's common,
-    // reported case), not ones linked to an associate.
-    let targetPhotoHashes: Set<string> | null = null;
-    const targetPhotoHashesReady = (async () => {
-      if (targetPhotoHashes) return targetPhotoHashes;
-      try {
-        const existingPhotos = await utils.attachment.byEntity.fetch({
-          category: "target",
-          targetId,
-        });
-        const hashes = await Promise.all(
-          (existingPhotos ?? []).map(async (p: any) => {
-            try {
-              const buf = await (await fetch(p.url)).arrayBuffer();
-              return await sha256Hex(buf);
-            } catch {
-              return null;
-            }
-          })
-        );
-        targetPhotoHashes = new Set(hashes.filter((h): h is string => !!h));
-      } catch {
-        targetPhotoHashes = new Set();
+    // A photo that is byte-for-byte one the entity already has is not saved
+    // again. This is the safety net behind the Photos review UI (which only
+    // catches a target's duplicates once a fuzzy name/DOB match has named a
+    // candidate), and it covers every place a photo can land: the target, an
+    // associate (linked by name), and a vehicle / address photo. Importing the
+    // same document twice, or the same photo appearing twice in a batch, no
+    // longer leaves several identical copies on the same person. Checked
+    // against the REAL saved entity each save path already has in hand.
+    const photoHashCache = new Map<string, Promise<Set<string>>>();
+    const existingHashes = (
+      cat: "target" | "associate" | "vehicle" | "location",
+      tId: number | undefined,
+      label: string | undefined
+    ): Promise<Set<string>> => {
+      const k = `${cat}|${tId ?? ""}|${label ?? ""}`;
+      let p = photoHashCache.get(k);
+      if (!p) {
+        p = (async () => {
+          try {
+            const existing = await utils.attachment.byEntity.fetch({
+              category: cat,
+              ...(tId !== undefined ? { targetId: tId } : {}),
+              // A target is found by id; the other kinds by their name / label.
+              ...(label && cat !== "target" ? { entityLabel: label } : {}),
+            });
+            const hashes = await Promise.all(
+              (existing ?? []).map(async (e: any) => {
+                try {
+                  const buf = await (await fetch(e.url)).arrayBuffer();
+                  return await sha256Hex(buf);
+                } catch {
+                  return null;
+                }
+              })
+            );
+            return new Set(hashes.filter((h): h is string => !!h));
+          } catch {
+            return new Set<string>();
+          }
+        })();
+        photoHashCache.set(k, p);
       }
-      return targetPhotoHashes;
-    })();
+      return p;
+    };
+    /** True when this entity already has this exact photo; otherwise
+     * remembers it, so a repeat later in the same batch is caught too. */
+    const alreadyHas = async (
+      cat: "target" | "associate" | "vehicle" | "location",
+      tId: number | undefined,
+      label: string | undefined,
+      img: { dataBase64: string }
+    ): Promise<boolean> => {
+      const own = await sha256Hex(base64ToArrayBuffer(img.dataBase64)).catch(
+        () => null
+      );
+      if (!own) return false;
+      const hashes = await existingHashes(cat, tId, label);
+      if (hashes.has(own)) return true;
+      hashes.add(own);
+      return false;
+    };
     let failed = 0;
     for (const img of toSave) {
       try {
@@ -1073,6 +1097,11 @@ export function AddTargetDialog({
         // composed into a full label, so the photo isn't lost.
         if (linkTo.type === "item") {
           const itemLabel = resolveItemLabel(linkTo);
+          if (
+            itemLabel &&
+            (await alreadyHas(linkTo.category, undefined, itemLabel, img))
+          )
+            continue;
           const uploadedItem = await uploadImageMut.mutateAsync({
             operationId: opId,
             dataBase64: img.dataBase64,
@@ -1119,17 +1148,16 @@ export function AddTargetDialog({
           linkedTargetId = undefined;
           entityLabel = linkTo.entityLabel;
         }
-        // Skip the officer's own explicit override: if the pre-emptive
-        // check above already flagged this photo as a duplicate and they
-        // re-ticked it anyway, that's a deliberate choice to keep a second
-        // copy, not a gap to close.
-        if (category === "target" && !duplicateImageKeys.has(img.key)) {
-          const hashes = await targetPhotoHashesReady;
-          const ownHash = await sha256Hex(
-            base64ToArrayBuffer(img.dataBase64)
-          ).catch(() => null);
-          if (ownHash && hashes.has(ownHash)) continue;
-        }
+        // The officer's own explicit override stands: if the pre-emptive check
+        // flagged this photo as a duplicate of the target's and they re-ticked
+        // it anyway, that is a deliberate second copy, not a gap to close.
+        const deliberateCopy =
+          category === "target" && duplicateImageKeys.has(img.key);
+        if (
+          !deliberateCopy &&
+          (await alreadyHas(category, linkedTargetId, entityLabel, img))
+        )
+          continue;
         const uploaded = await uploadImageMut.mutateAsync({
           operationId: opId,
           dataBase64: img.dataBase64,

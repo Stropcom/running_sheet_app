@@ -4,6 +4,7 @@
 // marker and the tracker never disagree. Deterministic: no lookups.
 import { shortAddressLabel } from "./markerLink";
 import type { TrackedTarget } from "./trackedTarget";
+import { transitMode, type TransitMode } from "./transitPatterns";
 import {
   nameWords,
   occupantsToVehicle,
@@ -18,7 +19,8 @@ export type TargetState =
   | "walking"
   | "moving"
   | "oos"
-  | "vessel";
+  | "vessel"
+  | "transit";
 
 export interface TargetPosition {
   /** The place as the sheet wrote it, or null when it can't be told (a
@@ -41,6 +43,8 @@ export interface TargetPosition {
   /** The place is a best guess (where he was last logged), because nothing
    * logged says where the vehicle is. */
   placeIsEstimate?: boolean;
+  /** For state "transit": a bus, a train or a tram — picks the flag's emoji. */
+  transitMode?: TransitMode;
 }
 
 export interface TargetPositionInput {
@@ -67,6 +71,8 @@ export interface TargetPositionInput {
     from: string;
     /** Got off a boat or vessel ("the boat") and is now on foot. */
     fromVessel?: string;
+    /** Got off a bus or train ("the bus") and is now on foot. */
+    fromTransit?: string;
     rowId: number;
   }[];
   placements: {
@@ -78,6 +84,8 @@ export interface TargetPositionInput {
     at?: string;
     /** On a boat or vessel, as the row wrote it ("a vessel"). */
     vessel?: string;
+    /** On a bus, train or tram, as the row wrote it ("a bus"). */
+    transit?: string;
     /** The vehicle's own marker on the map, when it has one. */
     vehicleMarker?: {
       lat: number;
@@ -94,7 +102,15 @@ export const TARGET_EMOJI: Record<TargetState, string> = {
   moving: "🚗",
   oos: "❔",
   vessel: "🛥️",
+  transit: "🚌",
 };
+
+/** The flag emoji for a state — a train and a tram get their own. */
+export function targetEmoji(state: TargetState, mode?: TransitMode): string {
+  if (state === "transit")
+    return mode === "train" ? "🚆" : mode === "tram" ? "🚋" : "🚌";
+  return TARGET_EMOJI[state];
+}
 
 const targetFirst = (people: string[], token: string) => [
   ...people.filter(p => has(p, token)),
@@ -152,7 +168,11 @@ export function locateTarget(
     found.push({
       place: fromVehicle ?? null,
       state: "walking",
-      label: h.fromVessel ? "disembarked, on foot" : "departed on foot",
+      label: h.fromTransit
+        ? "alighted, on foot"
+        : h.fromVessel
+          ? "disembarked, on foot"
+          : "departed on foot",
       people: targetFirst(splitPeopleNames(h.names), t),
       rowId: h.rowId,
       ...(fromArrival ? { rego: fromArrival.rego } : {}),
@@ -265,6 +285,34 @@ export function locateTarget(
         t
       ),
       rowId: mine.rowId,
+    });
+  }
+
+  // On a bus, train or tram ("boarded a bus at Bus Stop …"): the stop or
+  // station he boarded at is the last place logged, and said to be a guess —
+  // the vehicle has moved on since.
+  for (const mine of input.placements.filter(
+    p => p.transit && has(p.name, t)
+  )) {
+    const aboard = input.placements.filter(
+      p => p.transit && p.transit.toLowerCase() === mine.transit!.toLowerCase()
+    );
+    found.push({
+      place:
+        mine.at ??
+        [...input.arrivals]
+          .filter(a => has(a.names, t))
+          .sort((a, b) => b.rowId - a.rowId)[0]?.address ??
+        null,
+      placeIsEstimate: true,
+      state: "transit",
+      label: `on ${mine.transit}`,
+      people: targetFirst(
+        aboard.map(p => p.name),
+        t
+      ),
+      rowId: mine.rowId,
+      transitMode: transitMode(mine.transit!),
     });
   }
 

@@ -1796,11 +1796,16 @@ function DashboardLayoutContent({
       if (e.key === LS_MAP_SETTINGS_KEY) setActiveRsId(readActiveRsId());
     };
     window.addEventListener("storage", onStorage);
+    // "storage" never fires in the tab that wrote the value, so the Map page
+    // announces its own saves (picking a running sheet lights Active RS now).
+    const onSameTab = () => setActiveRsId(readActiveRsId());
+    window.addEventListener("runlog-map-settings-changed", onSameTab);
     // Also poll on focus in case same-tab writes don't fire storage events
     const onFocus = () => setActiveRsId(readActiveRsId());
     window.addEventListener("focus", onFocus);
     return () => {
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("runlog-map-settings-changed", onSameTab);
       window.removeEventListener("focus", onFocus);
     };
   }, [readActiveRsId]);

@@ -3237,6 +3237,9 @@ export default function IntelligenceMapping() {
           nmSplitBox: splitBox,
         })
       );
+      // The browser's "storage" event only reaches OTHER tabs, so tell this
+      // tab's header (the Active RS button) that the settings changed.
+      window.dispatchEvent(new Event("runlog-map-settings-changed"));
     } catch {
       /* ignore */
     }

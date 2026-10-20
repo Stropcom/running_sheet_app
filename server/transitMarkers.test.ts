@@ -8,7 +8,9 @@ import {
 } from "@/lib/markerSvgs";
 import { markerKind } from "@shared/flagMarker";
 
-const NEW_ICONS: MarkerIcon[] = ["bus", "train", "taxi", "rideshare"];
+const SIGNS: MarkerIcon[] = ["bus_stop", "train_station"];
+const VEHICLES: MarkerIcon[] = ["bus", "train", "taxi", "rideshare"];
+const NEW_ICONS: MarkerIcon[] = [...SIGNS, ...VEHICLES];
 
 describe("public transport and hire markers (Surveillance set)", () => {
   it("are offered in the picker, in one group", () => {
@@ -23,6 +25,8 @@ describe("public transport and hire markers (Surveillance set)", () => {
     expect(MARKER_ICON_LABELS.train).toBe("Train");
     expect(MARKER_ICON_LABELS.taxi).toBe("Taxi");
     expect(MARKER_ICON_LABELS.rideshare).toBe("Rideshare (Uber)");
+    expect(MARKER_ICON_LABELS.bus_stop).toBe("Bus Stop Sign");
+    expect(MARKER_ICON_LABELS.train_station).toBe("Train Station Sign");
   });
 
   it("draw in every swatch colour, and the colour is used", () => {
@@ -43,6 +47,10 @@ describe("public transport and hire markers (Surveillance set)", () => {
   });
 
   it("count as vehicle markers for the target flag", () => {
-    for (const icon of NEW_ICONS) expect(markerKind(icon)).toBe("vehicle");
+    for (const icon of VEHICLES) expect(markerKind(icon)).toBe("vehicle");
+  });
+
+  it("the signs count as place markers, so the flag goes on the stop", () => {
+    for (const icon of SIGNS) expect(markerKind(icon)).toBe("place");
   });
 });

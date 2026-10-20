@@ -46,6 +46,10 @@ export type MarkerIcon =
   | "train"
   | "taxi"
   | "rideshare"
+  // The signs for where they get on and off: a bus stop sign and a train
+  // station sign, on a pole.
+  | "bus_stop"
+  | "train_station"
   // Colour-changeable versions of shapes from the AFP iSurv "Surveillance"
   // marker set (see session notes) — same silhouettes as several fixed
   // Tactical icons (tacticalMarkers.ts), traced from the same source
@@ -125,6 +129,8 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
   train: "Train",
   taxi: "Taxi",
   rideshare: "Rideshare (Uber)",
+  bus_stop: "Bus Stop Sign",
+  train_station: "Train Station Sign",
   circle_x: "Circled X",
   ring_1: "Circle 1",
   ring_2: "Circle 2",
@@ -158,7 +164,7 @@ export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
   },
   {
     label: "Public Transport & Hire",
-    icons: ["bus", "train", "taxi", "rideshare"],
+    icons: ["bus_stop", "train_station", "bus", "train", "taxi", "rideshare"],
   },
   { label: "Arrow", icons: ["arrow_up", "arrow_right", "arrow_thin"] },
   { label: "Cameras", icons: ["camera_photo"] },
@@ -287,6 +293,34 @@ export function getMarkerSvg(icon: MarkerIcon, colour: MarkerColour): string {
         <rect x="17" y="28" width="14" height="14" rx="2" fill="${dark}" opacity="0.5"/>
         <rect x="20" y="32" width="8" height="6" rx="1" fill="none" stroke="${light}" stroke-width="1.2"/>
         <rect x="16" y="43" width="16" height="2" rx="1" fill="#ef4444" opacity="0.85"/>
+      </svg>`;
+
+    case "bus_stop":
+      // A bus stop sign on its pole: a square sign with the front of a bus.
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        <rect x="22" y="27" width="4" height="19" rx="1" fill="#555"/>
+        <ellipse cx="24" cy="46" rx="6" ry="1.6" fill="#222" opacity="0.35"/>
+        <rect x="6" y="2" width="36" height="27" rx="6" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
+        <rect x="14" y="7" width="20" height="16" rx="3.5" fill="#fff"/>
+        <rect x="16.5" y="9.5" width="15" height="6.5" rx="1.5" fill="${c}"/>
+        <circle cx="18.5" cy="19.4" r="1.7" fill="${c}"/>
+        <circle cx="29.5" cy="19.4" r="1.7" fill="${c}"/>
+        <rect x="15.5" y="22" width="4" height="3.5" rx="1" fill="#fff"/>
+        <rect x="28.5" y="22" width="4" height="3.5" rx="1" fill="#fff"/>
+      </svg>`;
+
+    case "train_station":
+      // A station sign on its pole: a round sign with the front of a train
+      // and a pair of rails.
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        <rect x="22" y="28" width="4" height="18" rx="1" fill="#555"/>
+        <ellipse cx="24" cy="46" rx="6" ry="1.6" fill="#222" opacity="0.35"/>
+        <circle cx="24" cy="16" r="15" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
+        <rect x="16.5" y="6" width="15" height="15" rx="5" fill="#fff"/>
+        <rect x="18.5" y="8.5" width="11" height="6" rx="2" fill="${c}"/>
+        <circle cx="20.5" cy="18" r="1.4" fill="${c}"/>
+        <circle cx="27.5" cy="18" r="1.4" fill="${c}"/>
+        <path d="M17.5 24.5 L14.5 28 M30.5 24.5 L33.5 28 M16 26.2 H32" stroke="#fff" stroke-width="1.6" stroke-linecap="round" fill="none"/>
       </svg>`;
 
     case "taxi":

@@ -12,6 +12,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { surveillanceState } from "@shared/surveillanceState";
 import { drizzle } from "drizzle-orm/mysql2";
 import { initialShortcutOrder } from "../shared/rsChips";
 import { findVehicleChains, joinVehicleLists } from "../shared/vehicleList";
@@ -6525,6 +6526,44 @@ export async function getPendingWalkIns(
 ): Promise<PendingWalkIn[]> {
   const rows = await getRowsBySheetId(sheetId);
   return scanWalkEvents(rows).walkIns;
+}
+
+// Whether the surveillance on a sheet has ended — every member of the team has
+// ceased and nobody has commenced since (shared/surveillanceState.ts). Read
+// from the saved rows only; the Target Logger and the target flag both follow it.
+export async function getSurveillanceState(sheetId: number) {
+  const rows = await getRowsBySheetId(sheetId);
+  const db = await getDb();
+  const ids = rows.map(r => r.id);
+  const members =
+    db && ids.length
+      ? await db
+          .select({ rowId: rowMembers.rowId, cin: rowMembers.memberName })
+          .from(rowMembers)
+          .where(inArray(rowMembers.rowId, ids))
+      : [];
+  const byRow = new Map<number, string[]>();
+  for (const m of members)
+    byRow.set(m.rowId, [...(byRow.get(m.rowId) ?? []), m.cin]);
+  const sheet = await getRunningSheetById(sheetId);
+  let roster: string[] = [];
+  try {
+    const raw = sheet?.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+    roster = Array.isArray(raw)
+      ? raw.map((e: any) => String(e?.cin ?? "")).filter(Boolean)
+      : [];
+  } catch {
+    roster = [];
+  }
+  return surveillanceState(
+    rows.map(r => ({
+      id: r.id,
+      observation: r.observation,
+      time: r.time,
+      members: byRow.get(r.id) ?? [],
+    })),
+    roster
+  );
 }
 
 export interface PendingHeadingTo {

@@ -50,6 +50,8 @@ export interface ContinuityCardData {
   pill: string;
   /** Amber styling for something that still needs logging. */
   attn?: boolean;
+  /** The surveillance has ended: muted grey instead of live green. */
+  ended?: boolean;
   /** Who/what, e.g. "BAIG, JORDAN in the car". */
   who: string;
   /** Where/since, e.g. "193b Stock Road · since 12:04". */
@@ -229,7 +231,11 @@ export function ContinuityCards({
         <div className="flex items-start gap-1.5 px-3 py-2 pl-[2.125rem] text-[11.5px] leading-snug">
           <span
             className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
-              needsAttention ? "bg-amber-500" : "bg-emerald-500"
+              needsAttention
+                ? "bg-amber-500"
+                : lead?.ended
+                  ? "bg-muted-foreground"
+                  : "bg-emerald-500"
             }`}
           />
           <span className="min-w-0 break-words font-mono">{summary}</span>
@@ -271,7 +277,9 @@ export function ContinuityCards({
                         className={`whitespace-nowrap rounded-full px-2 text-xs font-bold ${
                           c.attn
                             ? "border border-amber-500/40 bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                            : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                            : c.ended
+                              ? "bg-muted text-muted-foreground"
+                              : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
                         }`}
                       >
                         {c.pill}

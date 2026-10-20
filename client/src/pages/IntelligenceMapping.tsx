@@ -43,6 +43,7 @@ import {
 } from "@shared/nearbyLocations";
 import { detectUnidentifiedRepeat } from "@shared/unidentified";
 import { enterNearbyOffers } from "@shared/enterNearby";
+import { endedContinuityCard } from "@/lib/surveillanceCard";
 import { entryMentionsAddress, popupShortAddress } from "@shared/markerLink";
 import { fullStreetTypes } from "@shared/streetTypes";
 import {
@@ -3731,6 +3732,16 @@ export default function IntelligenceMapping() {
       refetchInterval: trackingSettings.location ? 15000 : false,
     }
   );
+  // Has the surveillance ended — every team member ceased, nobody commenced
+  // since (shared/surveillanceState.ts). Ends the Target Logger and greys the
+  // target flag.
+  const { data: rsSurveillance } = trpc.row.surveillanceState.useQuery(
+    { sheetId: rsSelectedSheetId ?? 0 },
+    {
+      enabled: rsTrackingActive && !!rsSelectedSheetId,
+      refetchInterval: trackingSettings.location ? 15000 : false,
+    }
+  );
   // People who left a location saying where they were going and haven't
   // been logged entering it — the "Entered" card's source (see
   // getPendingHeadingTo).
@@ -5432,28 +5443,33 @@ export default function IntelligenceMapping() {
         "position:absolute;left:0;top:0;transform:translate(-50%,calc(-100% - 26px));" +
         "pointer-events:none;display:flex;flex-direction:column;align-items:center;";
       const pill = document.createElement("div");
-      const unsure = pos.state === "oos";
+      const ended = !!rsSurveillance?.ended;
+      const unsure = pos.state === "oos" || ended;
       pill.style.cssText =
         "display:flex;align-items:center;gap:6px;white-space:nowrap;" +
         "background:#fff;color:#14181d;border:2px " +
         (unsure ? "dashed" : "solid") +
-        " #e11d48;border-radius:999px;padding:3px 10px 3px 7px;" +
+        (ended ? " #6b7280" : " #e11d48") +
+        ";border-radius:999px;padding:3px 10px 3px 7px;" +
         "font:600 11px/1.2 system-ui,sans-serif;box-shadow:0 2px 6px rgba(0,0,0,.3);";
       const em = document.createElement("span");
-      em.textContent = TARGET_EMOJI[pos.state];
+      em.textContent = ended ? "⏹" : TARGET_EMOJI[pos.state];
       em.style.cssText = "font-size:15px;";
       const label = document.createElement("span");
       const who = (token ?? "Target").toUpperCase();
       // Everyone with him (the vehicle's occupants, or those inside /
       // walking with him), the target first — as on the tracker card.
       label.textContent = shortUnidentified(
-        `${pos.people.length ? pos.people.join(", ") : who} · ${pos.label}`
+        `${pos.people.length ? pos.people.join(", ") : who} · ${
+          ended
+            ? `last seen${rsSurveillance?.endedAtTime ? ` ${rsSurveillance.endedAtTime}` : ""}`
+            : pos.label
+        }`
       );
       pill.appendChild(em);
       pill.appendChild(label);
       const stem = document.createElement("div");
-      stem.style.cssText =
-        "width:2px;height:8px;background:#e11d48;border-radius:1px;";
+      stem.style.cssText = `width:2px;height:8px;background:${ended ? "#6b7280" : "#e11d48"};border-radius:1px;`;
       flag.appendChild(pill);
       flag.appendChild(stem);
       targetFlagRef.current = new DivIconOverlay({
@@ -5470,7 +5486,7 @@ export default function IntelligenceMapping() {
       targetFlagFlyRef.current = {
         lat,
         lng,
-        emoji: TARGET_EMOJI[pos.state],
+        emoji: ended ? "⏹" : TARGET_EMOJI[pos.state],
         text: label.textContent ?? "",
         unsure,
       };
@@ -5486,6 +5502,8 @@ export default function IntelligenceMapping() {
   }, [
     mapReady,
     rsTargetPosition,
+    rsSurveillance?.ended,
+    rsSurveillance?.endedAtTime,
     rsTrackedTarget,
     rsSelectedSheetId,
     rsSelectedOpId,
@@ -8328,6 +8346,9 @@ export default function IntelligenceMapping() {
               sheetId: rsSelectedSheetId,
             });
             void utils.row.pendingPlacements.invalidate({
+              sheetId: rsSelectedSheetId,
+            });
+            void utils.row.surveillanceState.invalidate({
               sheetId: rsSelectedSheetId,
             });
           }
@@ -14050,6 +14071,20 @@ export default function IntelligenceMapping() {
                                 }
                               }
 
+                              // Every member of the team has ceased: one grey
+                              // card replaces the live ones.
+                              if (rsSurveillance?.ended) {
+                                cards.length = 0;
+                                cards.push(
+                                  endedContinuityCard({
+                                    who:
+                                      trackedTargetCode(rsTrackedTarget) ??
+                                      "Team",
+                                    time: rsSurveillance.endedAtTime,
+                                    position: rsTargetPosition,
+                                  })
+                                );
+                              }
                               if (
                                 cards.length === 0 ||
                                 !trackingSettings.tracking

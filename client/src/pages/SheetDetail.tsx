@@ -37,6 +37,7 @@ import CinInput from "@/components/CinInput";
 import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { ResizablePhoto } from "@/components/ResizablePhoto";
+import { endedContinuityCard } from "@/lib/surveillanceCard";
 import {
   locateTargetFromPending,
   samePlace,
@@ -3038,6 +3039,16 @@ export default function SheetDetail({
     }
   );
 
+  // Has the surveillance ended — every team member ceased and nobody has
+  // commenced since (shared/surveillanceState.ts). Ends the Target Logger.
+  const { data: surveillance } = trpc.row.surveillanceState.useQuery(
+    { sheetId },
+    {
+      enabled: isAuthenticated && !!sheetId && isOnline,
+      refetchInterval: isOnline ? 10000 : false,
+    }
+  );
+
   const { data: pendingHeadingToBase } = trpc.row.pendingHeadingTo.useQuery(
     { sheetId },
     {
@@ -3171,6 +3182,7 @@ export default function SheetDetail({
     utils.row.pendingWalkIns.invalidate({ sheetId });
     utils.row.pendingHeadingTo.invalidate({ sheetId });
     utils.row.pendingPlacements.invalidate({ sheetId });
+    utils.row.surveillanceState.invalidate({ sheetId });
   }, [utils, sheetId]);
 
   // Cache sheet data to IndexedDB whenever we have fresh data online
@@ -5905,6 +5917,18 @@ export default function SheetDetail({
                   },
                 });
               }
+            }
+            // Every member of the team has ceased: the live cards give way to
+            // one grey card saying so, with the last place he was seen.
+            if (surveillance?.ended) {
+              continuityCards.length = 0;
+              continuityCards.push(
+                endedContinuityCard({
+                  who: targetCode ?? "Team",
+                  time: surveillance.endedAtTime,
+                  position: targetPosition,
+                })
+              );
             }
             // Tapping a card action adds the sentence as its own row, stamped
             // with the current (Perth) time — so the time of the event is

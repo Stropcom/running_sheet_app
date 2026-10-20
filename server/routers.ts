@@ -214,6 +214,7 @@ import {
   getPendingVehicleDepartures,
   getPendingVehicleArrivals,
   getPendingWalkIns,
+  getSurveillanceState,
   getPendingHeadingTo,
   getPendingPlacements,
   getPendingContinuityWithDraft,
@@ -2362,6 +2363,14 @@ export const appRouter = router({
       .input(z.object({ sheetId: z.number() }))
       .query(async ({ input }) => {
         return getPendingWalkIns(input.sheetId);
+      }),
+
+    // Has the surveillance ended — every team member ceased, nobody
+    // commenced since. See shared/surveillanceState.ts.
+    surveillanceState: protectedProcedure
+      .input(z.object({ sheetId: z.number() }))
+      .query(async ({ input }) => {
+        return getSurveillanceState(input.sheetId);
       }),
 
     // People who left a location saying where they were going and haven't

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import {
   TARGET_BACKGROUND_MAX,
   normaliseTargetBackground,
+  reflowWrappedLines,
 } from "@shared/targetBackground";
 
 /**
@@ -130,6 +131,15 @@ export function RegistryBackgroundPanel({
           >
             {save.isPending ? "Saving…" : "Save background"}
           </Button>
+          {reflowWrappedLines(draft) !== draft && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setDraft(reflowWrappedLines(draft))}
+            >
+              Join broken lines
+            </Button>
+          )}
           {dirty && (
             <Button
               size="sm"

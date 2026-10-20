@@ -80,7 +80,22 @@ describe("stop and station wording", () => {
     expect(
       transitPlaceFromGoogle("Hay St Stand 5", ["transit_station"])?.kind
     ).toBe("bus");
-    expect(transitPlaceFromGoogle("Somewhere", ["transit_station"])).toBeNull();
+    // A bare transit_station with no rail word is a bus stop.
+    expect(transitPlaceFromGoogle("Somewhere", ["transit_station"])?.kind).toBe(
+      "bus"
+    );
+    // No types at all, but an agency stop name.
+    expect(
+      transitPlaceFromGoogle("Grange Dr After Gascoyne Wy", [
+        "point_of_interest",
+      ])
+    ).toEqual({
+      kind: "bus",
+      label: "Bus Stop Grange Drive After Gascoyne Way",
+    });
+    expect(
+      transitPlaceFromGoogle("Opposite Page Books", ["book_store"])
+    ).toBeNull();
     expect(
       transitPlaceFromGoogle("Bicton Tavern", ["bar", "point_of_interest"])
     ).toBeNull();
@@ -395,5 +410,85 @@ describe("the flag on a stop's marker", () => {
       { state: "transit" }
     );
     expect(choice?.marker.id).toBe(2);
+  });
+});
+
+describe("no postcode and no 'Australia' in a numberless place's address", () => {
+  it("is '<name>, SUBURB WA (<name>)' for any numberless place", () => {
+    expect(
+      transitFullAddress(
+        "Bus Stop Grange Drive After Gascoyne Way",
+        "Cooloongup WA 6168, Australia"
+      )
+    ).toBe(
+      "Bus Stop Grange Drive After Gascoyne Way, COOLOONGUP WA (Bus Stop Grange Drive After Gascoyne Way)"
+    );
+    expect(
+      transitFullAddress(
+        "Bibra Lake Reserve",
+        "Progress Dr, Bibra Lake WA 6163, Australia"
+      )
+    ).toBe("Bibra Lake Reserve, BIBRA LAKE WA (Bibra Lake Reserve)");
+  });
+
+  it("leaves numbered addresses and intersections to the usual wording", () => {
+    expect(
+      transitFullAddress(
+        "Bicton Tavern",
+        "1 Point Walter Rd, Bicton WA 6157, Australia"
+      )
+    ).toBeNull();
+    expect(
+      transitFullAddress(
+        "Canning River Cafe",
+        "Kent St &, Queens Park Rd, Wilson WA 6107, Australia"
+      )
+    ).toBeNull();
+  });
+});
+
+describe("expandStopName: Way", () => {
+  it("writes Wy in full", () => {
+    expect(expandStopName("Grange Dr After Gascoyne Wy")).toBe(
+      "Grange Drive After Gascoyne Way"
+    );
+  });
+});
+
+describe("arrived on foot", () => {
+  const STOP2 = "Bus Stop Grange Drive After Gascoyne Way";
+  const FULL2 = `${STOP2}, COOLOONGUP WA (${STOP2})`;
+
+  it("puts a walker at the place, like a walk-in", () => {
+    const { walkIns, headingTo } = scanWalkEvents(
+      rows(
+        "ROCHA exited 7 Mariner Place and walked along Marina Place towards Mataitai Loop.",
+        `ROCHA arrived on foot at ${FULL2}.`
+      )
+    );
+    expect(walkIns).toHaveLength(1);
+    expect(walkIns[0]).toMatchObject({ names: "ROCHA", location: STOP2 });
+    expect(headingTo).toHaveLength(0);
+  });
+
+  it("then boarding a bus takes him off the stop", () => {
+    const { walkIns, placements } = scanWalkEvents(
+      rows(
+        `ROCHA arrived on foot at ${FULL2}.`,
+        `ROCHA boarded a bus at ${STOP2}.`
+      )
+    );
+    expect(walkIns).toHaveLength(0);
+    expect(placements.find(p => p.name === "ROCHA")?.transit).toBe("a bus");
+  });
+
+  it("needs 'on foot': a vehicle's arrival is not a person walking", () => {
+    const { walkIns } = scanWalkEvents(
+      rows(
+        "Vehicle 1ROC85, ROCHA driver, arrived at 7 Mariner Place, MINDARIE WA (7 Mariner Place) and parked."
+      )
+    );
+    expect(walkIns).toHaveLength(0);
+    expect(isReadAsMovement(`ROCHA arrived on foot at ${FULL2}.`)).toBe(true);
   });
 });

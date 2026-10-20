@@ -39,6 +39,9 @@ const STREET_ABBREVIATIONS: Record<string, string> = {
   gr: "Grove",
   esp: "Esplanade",
   pwy: "Parkway",
+  wy: "Way",
+  pkwy: "Parkway",
+  bvd: "Boulevard",
 };
 const POSITION_WORDS = new Set([
   "after",
@@ -78,6 +81,10 @@ export function expandStopName(name: string): string {
     .join(" ");
 }
 
+// A street word, then a position word: how an agency names a stop.
+const AGENCY_STOP_NAME =
+  /^[A-Za-z' -]+\b(?:St|Street|Rd|Road|Ave|Avenue|Dr|Drive|Hwy|Highway|Wy|Way|Pl|Place|Ct|Court|Cres|Crescent|Ln|Lane|Tce|Terrace|Pde|Parade|Blvd|Boulevard|Cl|Close|Cct|Circuit|Fwy|Freeway)\s+(?:After|Before|Opp|Opposite|Near|Stand\s+\d+|Stop\s+\d+)\b/i;
+
 export interface TransitPlace {
   kind: TransitKind;
   /** The one wording used everywhere: "Bus Stop …" / "… Train Station". */
@@ -101,11 +108,15 @@ export function transitPlaceFromGoogle(
   if (has(TRAIN_TYPES)) kind = "train";
   else if (has(BUS_TYPES)) kind = "bus";
   else if (t.has("transit_station")) {
-    // Only the generic type: the name says which.
-    if (/\b(?:railway|rail|train|station)\b/i.test(clean)) kind = "train";
-    else if (/\b(?:bus|stop|stand|bay|busport|interchange)\b/i.test(clean))
-      kind = "bus";
+    // Only the generic type: a rail word says train; anything else — a stop
+    // named for a street and a position ("Grange Dr After Gascoyne Wy") — is
+    // a bus stop, which is what nearly every such place is.
+    if (/\b(?:railway|rail|train|station|stn)\b/i.test(clean)) kind = "train";
+    else kind = "bus";
   }
+  // No transit type at all, but the name is how an agency writes a stop — a
+  // street and where along it: "Grange Dr After Gascoyne Wy", "Hay St Stand 5".
+  if (!kind && AGENCY_STOP_NAME.test(clean)) kind = "bus";
   if (!kind) return null;
   return { kind, label: transitLabel(kind, clean) };
 }
@@ -155,9 +166,10 @@ const STATES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
  * The full address for a tapped bus stop or train station, written the way
  * every first mention of a place is — "<label>, SUBURB WA (<label>)" — from
  * Google's formatted address ("Stirling Hwy, Nedlands WA 6009, Australia").
- * A stop has no street number, so the label itself carries the street. Null
- * when the address is number-led (a station with a street number): the usual
- * business-address wording already handles that, so the caller uses it.
+ * A stop (or a park, a reserve, a street corner) has no street number, so the
+ * label itself carries the place; no postcode and no "Australia". Null when
+ * the address has a street number: the usual business-address wording already
+ * handles that, so the caller uses it.
  */
 export function transitFullAddress(
   label: string,
@@ -167,11 +179,18 @@ export function transitFullAddress(
     .split(",")
     .map(p => p.trim())
     .filter(p => p && !/^australia$/i.test(p));
-  if (parts.length === 0) return null;
-  if (/^\d/.test(parts[0])) return null;
-  const suburbState = parts
-    .map(p => p.match(new RegExp(`^(.+?)\\s+(${STATES})(?:\\s+\\d{4})?$`)))
-    .find(Boolean);
-  if (!suburbState) return null;
+  if (parts.length === 0 || !label.trim()) return null;
+  const suburbIdx = parts.findIndex(p =>
+    new RegExp(`^.+?\\s+(?:${STATES})(?:\\s+\\d{4})?$`).test(p)
+  );
+  if (suburbIdx < 0) return null;
+  // Any street number (or unit number) in front of the suburb: not a
+  // numberless place, so the usual business-address wording is used.
+  if (parts.slice(0, suburbIdx).some(p => /\d/.test(p))) return null;
+  // An intersection ("Kent St &, Queens Park Rd, …") keeps its streets.
+  if (parts.slice(0, suburbIdx).some(p => /&|\bcnr\b|\//i.test(p))) return null;
+  const suburbState = parts[suburbIdx].match(
+    new RegExp(`^(.+?)\\s+(${STATES})(?:\\s+\\d{4})?$`)
+  )!;
   return `${label}, ${suburbState[1].toUpperCase()} ${suburbState[2]} (${label})`;
 }

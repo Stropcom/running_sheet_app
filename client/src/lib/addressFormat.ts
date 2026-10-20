@@ -24,6 +24,7 @@
  *     short-form, do not double-convert.
  */
 
+import { transitFullAddress } from "@shared/transitPlace";
 import {
   parse as parseDate,
   isValid as isValidDate,
@@ -355,6 +356,10 @@ export function convertGoogleAddresses(text: string): string {
  *   → "Bicton Tavern, 1 Point Walter Road, BICTON WA (Bicton Tavern)"
  */
 export function buildPoiAddress(name: string, address: string): string {
+  // A place with no street number (a bus stop, a park, a street corner) is
+  // "<name>, SUBURB WA (<name>)" — no postcode, no "Australia".
+  const numberless = transitFullAddress(name, address);
+  if (numberless) return numberless;
   const converted = convertGoogleAddresses(address);
   if (!name) return converted;
 

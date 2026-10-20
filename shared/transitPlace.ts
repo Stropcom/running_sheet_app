@@ -194,3 +194,18 @@ export function transitFullAddress(
   )!;
   return `${label}, ${suburbState[1].toUpperCase()} ${suburbState[2]} (${label})`;
 }
+
+export type TransitSignIcon = "bus_stop" | "train_station";
+
+/** The marker for a written place that is a bus stop or a train station — the
+ * sign for it — or null for any other place. Used as the default icon of a map
+ * pin made from an observation, so a stop or station is a stop or station sign
+ * whether it was tapped on the map, picked from the suggestions, or typed. */
+export function transitSignIconOf(place: string): TransitSignIcon | null {
+  const kind = transitKindOfPlace(place);
+  return kind === "bus"
+    ? "bus_stop"
+    : kind === "train"
+      ? "train_station"
+      : null;
+}

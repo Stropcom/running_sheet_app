@@ -50,6 +50,7 @@ import {
 import {
   transitFullAddress,
   transitKindOfPlace,
+  transitSignIconOf,
   transitPlaceFromGoogle,
   type TransitPlace,
 } from "@shared/transitPlace";
@@ -1573,7 +1574,8 @@ function buildInfoWindowContent(
 
   // Persisted appearance for this intel pin (server-saved override — see
   // intelPinOverrides — takes priority over the type-based default).
-  const intelIcon: string = override?.markerIcon ?? "house_filled";
+  const intelIcon: string =
+    override?.markerIcon ?? transitSignIconOf(loc.label) ?? "house_filled";
   const intelColour: string =
     override?.markerColour ?? (isTarget ? "red" : "purple");
   const intelRotation: number = override?.rotation ?? 0;
@@ -4381,7 +4383,7 @@ export default function IntelligenceMapping() {
         `intel:${label}`,
         entry.position.lat,
         entry.position.lng,
-        override?.markerIcon ?? "house_filled",
+        override?.markerIcon ?? transitSignIconOf(label) ?? "house_filled",
         override?.markerColour ?? (isTarget ? "red" : "purple"),
         override?.rotation ?? 0,
         showMarkerEntityCountRef.current
@@ -4777,7 +4779,8 @@ export default function IntelligenceMapping() {
     // etc.) AND shows up for every officer on every device, not just the
     // one that set it.
     const override = pinOverridesRef.current.get(loc.label);
-    const icon: string = override?.markerIcon ?? "house_filled";
+    const icon: string =
+      override?.markerIcon ?? transitSignIconOf(loc.label) ?? "house_filled";
     const colour: MarkerColour =
       (override?.markerColour as MarkerColour) ?? (isTarget ? "red" : "purple");
     const rotation = override?.rotation ?? 0;
@@ -9466,7 +9469,9 @@ export default function IntelligenceMapping() {
                           ? pinOverridesRef.current.get(entry.loc.label)
                           : null;
                         const iconName = entry
-                          ? (override?.markerIcon ?? "house_filled")
+                          ? (override?.markerIcon ??
+                            transitSignIconOf(entry.loc.label) ??
+                            "house_filled")
                           : (cm.markerIcon ?? "pin");
                         const colourName = entry
                           ? (override?.markerColour ?? "purple")
@@ -11054,6 +11059,13 @@ export default function IntelligenceMapping() {
                   onClick={() => {
                     const rsAddress = poiAddressOf(poiTap);
                     setCmLabel(poiTap.name);
+                    // A tapped bus stop or train station is its own sign.
+                    if (poiTap.transit)
+                      setCmIcon(
+                        poiTap.transit.kind === "bus"
+                          ? "bus_stop"
+                          : "train_station"
+                      );
                     setCmAddress(rsAddress);
                     setCmNote("");
                     setCmPersons([]);

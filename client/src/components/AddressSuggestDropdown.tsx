@@ -15,6 +15,7 @@ import { MapPin, Globe, WifiOff } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { loadGoogleMaps } from "@/lib/googleMaps";
 import { buildPoiAddress, convertGoogleAddresses } from "@/lib/addressFormat";
+import { transitPlaceFromGoogle } from "@shared/transitPlace";
 import { addressBiasCentre, watchDevicePosition } from "@/lib/devicePosition";
 import { BIAS_RADIUS_M } from "@shared/addressBias";
 import {
@@ -38,6 +39,9 @@ export type AddressSuggestItem =
       description: string;
       /** A business/landmark rather than a street address. */
       isPlace: boolean;
+      /** The one wording for a bus stop or train station ("Bus Stop …" /
+       * "… Train Station"), when Google says that is what it is. */
+      transitLabel?: string;
     };
 
 /** The text to write into the observation for a picked suggestion — always
@@ -49,10 +53,8 @@ export async function addressSuggestInsertText(
 ): Promise<string> {
   if (item.kind === "known") return buildSheetAddressText(item.parts);
   if (!item.isPlace) return convertGoogleAddresses(item.description);
-  const fallback = buildPoiAddress(
-    item.main,
-    item.secondary || item.description
-  );
+  const name = item.transitLabel ?? item.main;
+  const fallback = buildPoiAddress(name, item.secondary || item.description);
   try {
     await loadGoogleMaps();
     const formatted = await new Promise<string | null>(resolve => {
@@ -60,7 +62,7 @@ export async function addressSuggestInsertText(
         resolve(status === "OK" && r?.[0] ? r[0].formatted_address : null)
       );
     });
-    return formatted ? buildPoiAddress(item.main, formatted) : fallback;
+    return formatted ? buildPoiAddress(name, formatted) : fallback;
   } catch {
     return fallback;
   }
@@ -171,14 +173,21 @@ export function useAddressSuggestions(
           ) {
             setGoogleQuery(query);
             setGoogleItems(
-              predictions.slice(0, 5).map(p => ({
-                kind: "google" as const,
-                key: p.place_id,
-                main: p.structured_formatting?.main_text ?? p.description,
-                secondary: p.structured_formatting?.secondary_text ?? "",
-                description: p.description,
-                isPlace: p.types?.includes("establishment") ?? false,
-              }))
+              predictions.slice(0, 5).map(p => {
+                const main =
+                  p.structured_formatting?.main_text ?? p.description;
+                const transit = transitPlaceFromGoogle(main, p.types);
+                return {
+                  kind: "google" as const,
+                  key: p.place_id,
+                  main,
+                  secondary: p.structured_formatting?.secondary_text ?? "",
+                  description: p.description,
+                  isPlace:
+                    !!transit || (p.types?.includes("establishment") ?? false),
+                  ...(transit ? { transitLabel: transit.label } : {}),
+                };
+              })
             );
           } else {
             setGoogleItems([]);

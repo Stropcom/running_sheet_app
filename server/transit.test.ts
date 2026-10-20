@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  transitSignIconOf,
   expandStopName,
   transitFullAddress,
   transitKindOfPlace,
@@ -490,5 +491,21 @@ describe("arrived on foot", () => {
     );
     expect(walkIns).toHaveLength(0);
     expect(isReadAsMovement(`ROCHA arrived on foot at ${FULL2}.`)).toBe(true);
+  });
+});
+
+describe("the sign marker for a stop or station", () => {
+  it("is the bus stop sign or the train station sign", () => {
+    expect(transitSignIconOf("Bus Stop Grange Drive After Gascoyne Way")).toBe(
+      "bus_stop"
+    );
+    expect(transitSignIconOf("Fremantle Train Station")).toBe("train_station");
+    expect(transitSignIconOf("Perth Busport")).toBe("bus_stop");
+  });
+
+  it("is nothing for any other place", () => {
+    expect(transitSignIconOf("27 Olding Way")).toBeNull();
+    expect(transitSignIconOf("Fremantle Police Station")).toBeNull();
+    expect(transitSignIconOf("")).toBeNull();
   });
 });

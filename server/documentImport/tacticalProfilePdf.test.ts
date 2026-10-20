@@ -104,12 +104,27 @@ const PARAGRAPHS = [
   "Fictional clerk.",
   "SOCIAL MEDIA",
   "social.example/bram",
+  "Teagan Rose McLEOD",
+  "9 Gamma Street, THREETOWN WA 6004.",
+  "Years",
+  "Associate of Target",
+  "Rhea Marie CALLOWAY",
+  "Warnings (Relevant) Nil Alerts Nil Linked Ops HARBOUR – Associate 3 WA MDL: Active – 333 Registered Vehicles 1TRM77 (WA) 2023 grey Ford Ranger utility. Linked Vehicles 1RMC11 (WA) 2022 red Mazda CX-5 wagon.",
+  "TELCO",
+  "0400 999 000 PD - PD-H-7 LBS - LBS-H-7 EBM - EBM-H-7",
+  "OTHER INFO",
+  "Fictional contact.",
+  "SOCIAL MEDIA",
+  "social.example/teagan",
   "AOI 1: 10 Example Street, TESTVILLE WA 6000.",
   "Linked target: Rhea Marie CALLOWAY",
 ];
 // The DOB the text layer lists apart from the card, for the associate whose name
 // line carries none.
-const PDF_TABLES = [{ rows: [["DOB", "15/05/1991 | 35 Years"]] }];
+const PDF_TABLES = [
+  { rows: [["DOB", "15/05/1991 | 35 Years"]] },
+  { rows: [["DOB", "20/08/1997 | 29 Years"]] },
+];
 
 describe("a Tactical Profile PDF is read card by card", () => {
   const tables = tacticalTablesFromPdf(PARAGRAPHS, PDF_TABLES)!;
@@ -126,6 +141,8 @@ describe("a Tactical Profile PDF is read card by card", () => {
       "target:Jean-Pierre Luc VASSEUR",
       "associate:Odette June MARLOWE of Rhea Marie CALLOWAY",
       "associate:Bram Anton QUILL of Jean-Pierre Luc VASSEUR",
+      // A surname with a lower-case prefix (Mc / Mac) is a surname too.
+      "associate:Teagan Rose McLEOD of Rhea Marie CALLOWAY",
     ]);
   });
 
@@ -187,6 +204,13 @@ describe("a Tactical Profile PDF is read card by card", () => {
         "1BQ66",
         "12/12/1990",
       ],
+      [
+        "Teagan Rose McLEOD",
+        "Rhea Marie CALLOWAY",
+        "9",
+        "1TRM77",
+        "20/08/1997",
+      ],
     ]);
     // No pile of look-alike "people" for the review screen.
     expect(m.candidateEntities.filter(c => c.type === "person")).toEqual([]);
@@ -215,7 +239,7 @@ describe("a Tactical Profile PDF is read card by card", () => {
   });
 });
 
-describe("names with a hyphenated given name", () => {
+describe("names with a hyphenated given name or a Mc / Mac surname", () => {
   it("are read as people", () => {
     for (const n of [
       "Amadou Jean-Baptiste TRAORE",
@@ -223,9 +247,16 @@ describe("names with a hyphenated given name", () => {
       "Mary-Anne COOPER",
       "Anne-marie SMITH",
       "Hye Jin PARK",
+      "Teagan Rose McLEOD",
+      "Fiona MacDONALD",
+      "Liam O'BRIEN",
     ]) {
       expect(matchWholeLinePersonName(n), n).not.toBeNull();
     }
+    expect(matchWholeLinePersonName("Teagan Rose McLEOD")).toEqual({
+      firstNames: "Teagan Rose",
+      surname: "McLEOD",
+    });
     expect(matchWholeLinePersonName("Amadou Jean-Baptiste TRAORE")).toEqual({
       firstNames: "Amadou Jean-Baptiste",
       surname: "TRAORE",

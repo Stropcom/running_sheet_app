@@ -325,7 +325,7 @@ function splitPersonName(full: string): {
   const words = trimmed.split(/\s+/).filter(Boolean);
   if (words.length < 2) return { firstNames: trimmed, surname: "" };
   const last = words[words.length - 1];
-  if (last.length >= 2 && /^[A-Z][A-Z'-]*$/.test(last)) {
+  if (last.length >= 2 && /^(?:Mc|Mac)?[A-Z][A-Z'-]*$/.test(last)) {
     return { firstNames: words.slice(0, -1).join(" "), surname: last };
   }
   return { firstNames: trimmed, surname: "" };
@@ -750,7 +750,7 @@ function extractAddressAndVehicleFromSentences(
 // actual training document already uses a spaced dash, so this loses
 // nothing legitimate.
 const DASH_ASSOCIATE_RE =
-  /^([A-Z][a-z'-]+(?:-[A-Z][a-z'-]+)*(?:\s+[A-Z][a-z'-]+(?:-[A-Z][a-z'-]+)*){0,2}\s+[A-Z]{2,}(?:-[A-Z]{2,})?)\s+[-–]\s+(.+)$/;
+  /^([A-Z][a-z'-]+(?:-[A-Z][a-z'-]+)*(?:\s+[A-Z][a-z'-]+(?:-[A-Z][a-z'-]+)*){0,2}\s+(?:[A-Z]'|Mc|Mac)?[A-Z]{2,}(?:-[A-Z]{2,})?)\s+[-–]\s+(.+)$/;
 
 /** A second "associate block" shape, alongside findAssociateBlocks' vertical
  * one (name on its own line, then address/vehicle each on their own line
@@ -809,7 +809,7 @@ function findDashSeparatedAssociates(text: string): FreeTextAssociate[] {
 // find them at all; they fell all the way through to a bare, low-
 // confidence candidateEntity mention with no address or vehicle attached.
 const LEADING_NAME_RE =
-  /^(?:Associates?:\s*)?([A-Z][a-z'-]+(?:-[A-Z][a-z'-]+)*(?:\s+[A-Z][a-z'-]+(?:-[A-Z][a-z'-]+)*){0,2}\s+[A-Z]{2,}(?:-[A-Z]{2,})?)\s+(.+)$/;
+  /^(?:Associates?:\s*)?([A-Z][a-z'-]+(?:-[A-Z][a-z'-]+)*(?:\s+[A-Z][a-z'-]+(?:-[A-Z][a-z'-]+)*){0,2}\s+(?:[A-Z]'|Mc|Mac)?[A-Z]{2,}(?:-[A-Z]{2,})?)\s+(.+)$/;
 
 /** A third "associate block" shape: see LEADING_NAME_RE. Deliberately tried
  * only on a per-line basis, matching at the START of that line only (never

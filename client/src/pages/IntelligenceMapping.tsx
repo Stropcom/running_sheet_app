@@ -42,6 +42,7 @@ import {
   movedEnough,
 } from "@shared/nearbyLocations";
 import { detectUnidentifiedRepeat } from "@shared/unidentified";
+import { enterNearbyOffers } from "@shared/enterNearby";
 import { entryMentionsAddress, popupShortAddress } from "@shared/markerLink";
 import { fullStreetTypes } from "@shared/streetTypes";
 import {
@@ -2785,8 +2786,18 @@ export default function IntelligenceMapping() {
   // Entry button), so the entry can stay on that marker (see
   // linkEntryToMarker). Cleared whenever the entry sheet closes.
   const mapQeMarkerIdRef = useRef<number | null>(null);
+  // Where on the map the place the entry was opened from is — kept so the
+  // cards can offer "Entered here" to someone logged inside a place close by
+  // (shared/enterNearby.ts). Null when the opener has no position.
+  const [mapQeLatLng, setMapQeLatLng] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   useEffect(() => {
-    if (!mapQeOpen) mapQeMarkerIdRef.current = null;
+    if (!mapQeOpen) {
+      mapQeMarkerIdRef.current = null;
+      setMapQeLatLng(null);
+    }
   }, [mapQeOpen]);
   // QE chips use the same order as the main RS: the Shortcuts page order, with
   // the target's own chips fixed after SC (see shared/rsChips.ts). Nothing to
@@ -7104,6 +7115,9 @@ export default function IntelligenceMapping() {
       const address = cm.address || cm.label || "";
       setMapQeAddress(convertGoogleAddresses(address));
       mapQeMarkerIdRef.current = id;
+      setMapQeLatLng(
+        cm.lat != null && cm.lng != null ? { lat: cm.lat, lng: cm.lng } : null
+      );
       setMapQeOpen(true);
     };
     return () => {
@@ -7324,6 +7338,37 @@ export default function IntelligenceMapping() {
     };
   }, [customMarkers]);
 
+  // Where a named place is on the map: a pin or marker whose title is that
+  // place, else the position the geocoder already found for it. Null when
+  // neither knows it (nothing is guessed). Kept in a ref so the window-level
+  // popup handlers always call the latest one.
+  const placePosition = (
+    place: string
+  ): { lat: number; lng: number } | null => {
+    const pins: any[] = [
+      ...markersRef.current,
+      ...Array.from(customMarkerMapRefs.current.values()),
+    ];
+    for (const m of pins) {
+      if (!m?.title || !m.position || !samePlace(String(m.title), place))
+        continue;
+      const lat =
+        typeof m.position.lat === "function"
+          ? m.position.lat()
+          : m.position.lat;
+      const lng =
+        typeof m.position.lng === "function"
+          ? m.position.lng()
+          : m.position.lng;
+      if (typeof lat === "number" && typeof lng === "number")
+        return { lat, lng };
+    }
+    const cached = geocodeCacheRef.current.get(geocodeQueryForLabel(place));
+    return cached ? { lat: cached.lat, lng: cached.lng } : null;
+  };
+  const placePositionRef = useRef(placePosition);
+  placePositionRef.current = placePosition;
+
   // ── Intel pin global handlers ─────────────────────────────────────────────────
 
   // RS Quick Entry from intel pin popup
@@ -7334,6 +7379,7 @@ export default function IntelligenceMapping() {
       // in RS format (suburb UPPERCASE, no postcode) but may lack the bracket code.
       setMapQeAddress(ensureBracketCode(label));
       mapQeMarkerIdRef.current = null;
+      setMapQeLatLng(placePositionRef.current(label));
       setMapQeOpen(true);
     };
     return () => {
@@ -10896,6 +10942,7 @@ export default function IntelligenceMapping() {
                     setMapQeAddress(
                       buildPoiAddress(poiTap.name, poiTap.address)
                     );
+                    setMapQeLatLng({ lat: poiTap.lat, lng: poiTap.lng });
                     setMapQeOpen(true);
                     setPoiTap(null);
                   }}
@@ -11005,6 +11052,10 @@ export default function IntelligenceMapping() {
                 <button
                   onClick={() => {
                     setMapQeAddress(actionChooser.address);
+                    setMapQeLatLng({
+                      lat: actionChooser.lat,
+                      lng: actionChooser.lng,
+                    });
                     setMapQeOpen(true);
                     setActionChooser(null);
                   }}
@@ -13775,6 +13826,53 @@ export default function IntelligenceMapping() {
                                         },
                                 });
                               });
+
+                              // Someone logged inside a place close to the one
+                              // clicked (a shop in the centre they are in): this
+                              // pin is where they may have gone ("Entered here").
+                              // Only ever from a map click — nothing is added to
+                              // the cards otherwise (shared/enterNearby.ts).
+                              {
+                                const homes = [
+                                  (assignedTarget as any)?.hbf,
+                                  (assignedTarget as any)?.hb,
+                                ].filter(Boolean) as string[];
+                                enterNearbyOffers({
+                                  walkIns: (rsPendingWalkIns ?? []).map(w => ({
+                                    names: w.names,
+                                    location: w.location,
+                                    rowId: w.rowId,
+                                  })),
+                                  clicked: mapQeLatLng,
+                                  clickedAddress: shortAddr,
+                                  same: cardAddressMatch,
+                                  positionOf: placePosition,
+                                  exclude: place =>
+                                    homes.some(h => cardAddressMatch(h, place)),
+                                }).forEach(o =>
+                                  cards.push({
+                                    key: `enter-${o.names}-${o.parent}-${shortAddr}`,
+                                    title: o.names,
+                                    pill: "Inside",
+                                    who: `Inside ${o.parent}`,
+                                    state: "On foot",
+                                    holds: surnameTokens(o.names),
+                                    people: splitPeopleNames(o.names),
+                                    locus: {
+                                      headline: `Inside ${o.parent}`,
+                                      sub: "On foot",
+                                    },
+                                    actions: [
+                                      {
+                                        key: `ent-${o.parent}-${shortAddr}`,
+                                        label: "Entered here",
+                                        text: `${names(o.names)} entered ${o.clickedLabel} and continued out of sight.`,
+                                      },
+                                    ],
+                                    latestRowId: o.rowId,
+                                  })
+                                );
+                              }
 
                               // People on foot inside this address with no
                               // vehicle here.

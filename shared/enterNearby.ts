@@ -3,16 +3,15 @@
  * parts — a shopping centre, a market, a hospital — often goes from there into
  * one shop. When the officer clicks a place on the map for an RS Quick Entry,
  * and someone is logged inside somewhere close to it that is NOT the place
- * clicked, the entry offers "<names> entered <clicked place>, <where they
- * are> and continued out of sight." The click is the trigger: nothing is
- * offered on the cards otherwise, so a target inside a house never gets an
- * extra button.
+ * clicked, the entry offers "<names> entered <clicked place> and continued out
+ * of sight." The click is the trigger: nothing is offered on the cards
+ * otherwise, so a target inside a house never gets an extra button.
  *
- * Naming the place they are already inside in the sentence keeps them there
- * for the logger ("Rockingham Centre" is contained in "Woolworths Rockingham,
- * Rockingham Centre"), so Walked to Vehicle and Left address carry on working,
- * and the target flag moves to the shop (or stays on the centre's pin when the
- * shop has none).
+ * The sentence is written like any other first mention of a place — the full
+ * address with its bracket short form the first time (which is what puts a pin
+ * and the target flag on the shop), the short form after that. The centre he
+ * was logged entering stays logged: nobody exited it, so Walked to Vehicle and
+ * Left address on the centre's own cards keep working.
  */
 import { distanceMetres } from "./nearbyLocations";
 
@@ -29,14 +28,12 @@ export interface InsideEntry {
 export interface EnterOffer {
   /** The person (or people) inside. */
   names: string;
-  /** The place they are logged inside — the outermost one of theirs. */
-  parent: string;
+  /** The place they were last logged entering — shown on the card. */
+  inside: string;
   /** The row that put them there. */
   rowId: number;
   /** How far the clicked place is from where they are, in metres. */
   metres: number;
-  /** The sentence: "<names> entered <clicked>, <parent> and continued out of sight." */
-  clickedLabel: string;
 }
 
 const wordCount = (s: string): number =>
@@ -64,43 +61,31 @@ export function enterNearbyOffers(input: {
   const { walkIns, clicked, clickedAddress, same, positionOf } = input;
   if (!clicked || !clickedAddress.trim()) return [];
   const key = (s: string) => s.trim().toLowerCase();
-  const seen = new Set<string>();
   const out: EnterOffer[] = [];
+  const done = new Set<string>();
   for (const w of walkIns) {
-    // The outermost place of theirs that contains this one: inside the shop
-    // and the centre, the centre is where they entered from.
-    const group = walkIns.filter(
-      g => key(g.names) === key(w.names) && same(g.location, w.location)
-    );
-    const outer = group.reduce((a, b) =>
-      wordCount(b.location) < wordCount(a.location) ? b : a
-    );
-    const id = `${key(w.names)}|${key(outer.location)}`;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    if (input.exclude?.(outer.location)) continue;
+    if (done.has(key(w.names))) continue;
+    done.add(key(w.names));
+    const mine = walkIns.filter(g => key(g.names) === key(w.names));
     // Already inside the place clicked (or something that holds it).
-    const insideClicked = walkIns.some(
+    const insideClicked = mine.some(
       g =>
-        key(g.names) === key(w.names) &&
         same(g.location, clickedAddress) &&
         wordCount(clickedAddress) <= wordCount(g.location)
     );
     if (insideClicked) continue;
-    const at = positionOf(outer.location);
+    // Where they were last logged going in — the newest row.
+    const latest = mine.reduce((a, b) => (b.rowId > a.rowId ? b : a));
+    if (input.exclude?.(latest.location)) continue;
+    const at = positionOf(latest.location);
     if (!at) continue;
     const metres = distanceMetres(at.lat, at.lng, clicked.lat, clicked.lng);
     if (metres > ENTER_NEARBY_METRES) continue;
-    // Name the place they are in only when the clicked label doesn't already.
-    const names = same(outer.location, clickedAddress)
-      ? clickedAddress
-      : `${clickedAddress}, ${outer.location}`;
     out.push({
       names: w.names,
-      parent: outer.location,
-      rowId: outer.rowId,
+      inside: latest.location,
+      rowId: latest.rowId,
       metres,
-      clickedLabel: names,
     });
   }
   return out;

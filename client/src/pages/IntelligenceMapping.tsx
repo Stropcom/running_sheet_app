@@ -13851,22 +13851,22 @@ export default function IntelligenceMapping() {
                                     homes.some(h => cardAddressMatch(h, place)),
                                 }).forEach(o =>
                                   cards.push({
-                                    key: `enter-${o.names}-${o.parent}-${shortAddr}`,
+                                    key: `enter-${o.names}-${o.inside}-${shortAddr}`,
                                     title: o.names,
                                     pill: "Inside",
-                                    who: `Inside ${o.parent}`,
+                                    who: `Inside ${o.inside}`,
                                     state: "On foot",
                                     holds: surnameTokens(o.names),
                                     people: splitPeopleNames(o.names),
                                     locus: {
-                                      headline: `Inside ${o.parent}`,
+                                      headline: `Inside ${o.inside}`,
                                       sub: "On foot",
                                     },
                                     actions: [
                                       {
-                                        key: `ent-${o.parent}-${shortAddr}`,
+                                        key: `ent-${o.inside}-${shortAddr}`,
                                         label: "Entered here",
-                                        text: `${names(o.names)} entered ${o.clickedLabel} and continued out of sight.`,
+                                        text: `${names(o.names)} entered ${arriveAddr} and continued out of sight.`,
                                       },
                                     ],
                                     latestRowId: o.rowId,

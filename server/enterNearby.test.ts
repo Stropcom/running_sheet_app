@@ -22,7 +22,7 @@ describe("enterNearbyOffers", () => {
     const o = enterNearbyOffers(base);
     expect(o).toHaveLength(1);
     expect(o[0].names).toBe("ROCHA");
-    expect(o[0].clickedLabel).toBe("Woolworths Rockingham, Rockingham Centre");
+    expect(o[0].inside).toBe("Rockingham Centre");
     expect(o[0].metres).toBeLessThan(400);
   });
 
@@ -50,21 +50,19 @@ describe("enterNearbyOffers", () => {
     ).toEqual([]);
   });
 
-  it("goes from the centre, not the shop he is already in", () => {
+  it("makes one offer per person, from the place he last went into", () => {
     const o = enterNearbyOffers({
       ...base,
       walkIns: [
         { names: "ROCHA", location: "Rockingham Centre", rowId: 2 },
-        {
-          names: "ROCHA",
-          location: "Woolworths Rockingham, Rockingham Centre",
-          rowId: 3,
-        },
+        { names: "ROCHA", location: "JB Hi-Fi Rockingham City", rowId: 3 },
       ],
+      positionOf: p =>
+        samePlace(p, "JB Hi-Fi Rockingham City") ? CENTRE : null,
       clickedAddress: "Kmart Rockingham",
     });
     expect(o).toHaveLength(1);
-    expect(o[0].clickedLabel).toBe("Kmart Rockingham, Rockingham Centre");
+    expect(o[0].inside).toBe("JB Hi-Fi Rockingham City");
   });
 
   it("offers nothing for the shop he is already inside", () => {
@@ -73,27 +71,19 @@ describe("enterNearbyOffers", () => {
         ...base,
         walkIns: [
           { names: "ROCHA", location: "Rockingham Centre", rowId: 2 },
-          {
-            names: "ROCHA",
-            location: "Woolworths Rockingham, Rockingham Centre",
-            rowId: 3,
-          },
+          { names: "ROCHA", location: "Woolworths Rockingham", rowId: 3 },
         ],
+        clickedAddress: "Woolworths Rockingham",
       })
     ).toEqual([]);
-  });
-
-  it("does not repeat the centre when the clicked label already names it", () => {
-    const o = enterNearbyOffers({
-      ...base,
-      clickedAddress: "Woolworths Rockingham Centre",
-    });
-    expect(o[0].clickedLabel).toBe("Woolworths Rockingham Centre");
   });
 });
 
 describe("the sentence it writes, read back by the logger", () => {
-  it("keeps him inside the centre as well as the shop, with the shop newest", () => {
+  const FULL =
+    "ROCHA entered JB Hi-Fi Rockingham City, 1 Council Avenue, ROCKINGHAM WA (JB Hi-Fi Rockingham City) and continued out of sight.";
+
+  it("puts him in the shop and leaves him logged inside the centre", () => {
     const r = scanWalkEvents([
       {
         id: 1,
@@ -101,25 +91,15 @@ describe("the sentence it writes, read back by the logger", () => {
         observation:
           "ROCHA exited the vehicle, entered Rockingham Centre and continued out of sight.",
       },
-      {
-        id: 2,
-        sheetId: 1,
-        observation:
-          "ROCHA entered Woolworths Rockingham, Rockingham Centre and continued out of sight.",
-      },
+      { id: 2, sheetId: 1, observation: FULL },
     ]);
-    expect(r.walkIns.map(w => w.location)).toContain("Rockingham Centre");
+    expect(r.walkIns.map(w => w.location)).toEqual(
+      expect.arrayContaining(["JB Hi-Fi Rockingham City", "Rockingham Centre"])
+    );
     expect(r.placements[0]).toMatchObject({
       name: "ROCHA",
       inside: true,
-      at: "Woolworths Rockingham, Rockingham Centre",
+      at: "JB Hi-Fi Rockingham City",
     });
-    // the centre's own cards still find him there
-    expect(
-      samePlace(
-        "Rockingham Centre",
-        r.walkIns.find(w => w.rowId === 2)!.location
-      )
-    ).toBe(true);
   });
 });

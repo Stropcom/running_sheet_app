@@ -39,7 +39,7 @@ describe("getPdfObject", () => {
 });
 
 describe("readPdfText with an image repeated on every page", () => {
-  it("returns instead of hanging, and does not read the shared copy again on every page", async () => {
+  it("returns instead of hanging, and offers a photograph repeated on every page once", async () => {
     // Noise reads as a photograph to the entropy check.
     const w = 300;
     const h = 400;
@@ -60,8 +60,8 @@ describe("readPdfText with an image repeated on every page", () => {
       page.drawImage(img, { x: 40, y: 400, width: 150, height: 200 });
     }
     const read = await readPdfText(Buffer.from(await doc.save()));
-    // Page 1 holds it under its own id; pdf.js shares it document-wide from
-    // page 2, where it is read once, not once per page.
-    expect(read.images.length).toBe(2);
+    // Page 1 holds it under its own id and pdf.js shares it document-wide from
+    // page 2; it is the same photograph, so the import offers it once.
+    expect(read.images.length).toBe(1);
   }, 20_000);
 });

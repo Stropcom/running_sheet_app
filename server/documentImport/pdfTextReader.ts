@@ -38,6 +38,7 @@ import {
   stripPhotoCaptionLabel,
 } from "./freeTextEntityScan";
 import { isLikelyPhoto, isPhotoShapedSize } from "./imagePhotoFilter";
+import { dropRepeatedPhotos } from "./imageDedupe";
 import { isHeadingLine } from "@shared/textSections";
 import type {
   DocumentReadResult,
@@ -2056,7 +2057,7 @@ export async function readPdfText(buffer: Buffer): Promise<DocumentReadResult> {
     return {
       tables: tableRows.length > 0 ? [{ rows: tableRows }] : [],
       paragraphs,
-      images,
+      images: await dropRepeatedPhotos(images),
     };
   } catch {
     return { tables: [], paragraphs: [], images: [] };

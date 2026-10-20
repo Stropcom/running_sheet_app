@@ -35,6 +35,7 @@ import {
   mapBail,
   type TacticalPersonCard,
 } from "./tacticalProfileCards";
+import { tacticalTablesFromPdf } from "./tacticalProfilePdf";
 import {
   isHeadingLine,
   VEHICLES_HEADING_RE,
@@ -749,7 +750,7 @@ function extractAddressAndVehicleFromSentences(
 // actual training document already uses a spaced dash, so this loses
 // nothing legitimate.
 const DASH_ASSOCIATE_RE =
-  /^([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){0,2}\s+[A-Z]{2,}(?:-[A-Z]{2,})?)\s+[-–]\s+(.+)$/;
+  /^([A-Z][a-z'-]+(?:-[A-Z][a-z'-]+)*(?:\s+[A-Z][a-z'-]+(?:-[A-Z][a-z'-]+)*){0,2}\s+[A-Z]{2,}(?:-[A-Z]{2,})?)\s+[-–]\s+(.+)$/;
 
 /** A second "associate block" shape, alongside findAssociateBlocks' vertical
  * one (name on its own line, then address/vehicle each on their own line
@@ -808,7 +809,7 @@ function findDashSeparatedAssociates(text: string): FreeTextAssociate[] {
 // find them at all; they fell all the way through to a bare, low-
 // confidence candidateEntity mention with no address or vehicle attached.
 const LEADING_NAME_RE =
-  /^(?:Associates?:\s*)?([A-Z][a-z'-]+(?:\s+[A-Z][a-z'-]+){0,2}\s+[A-Z]{2,}(?:-[A-Z]{2,})?)\s+(.+)$/;
+  /^(?:Associates?:\s*)?([A-Z][a-z'-]+(?:-[A-Z][a-z'-]+)*(?:\s+[A-Z][a-z'-]+(?:-[A-Z][a-z'-]+)*){0,2}\s+[A-Z]{2,}(?:-[A-Z]{2,})?)\s+(.+)$/;
 
 /** A third "associate block" shape: see LEADING_NAME_RE. Deliberately tried
  * only on a per-line basis, matching at the START of that line only (never
@@ -1440,7 +1441,12 @@ export function mapDocumentToTargetProfile(
 ): TargetProfileImportResult {
   // A recognised Tactical Profile (repeated person cards) has its own
   // layout — see tacticalProfileCards.ts — and is mapped separately.
-  const tacticalProfile = readTacticalProfile(result.tables);
+  // The same template as a PDF arrives as flat paragraphs, not tables:
+  // tacticalTablesFromPdf rebuilds the cards so one reader handles both.
+  const pdfCardTables = tacticalTablesFromPdf(result.paragraphs, result.tables);
+  const tacticalProfile =
+    readTacticalProfile(result.tables) ??
+    (pdfCardTables ? readTacticalProfile(pdfCardTables) : null);
   if (tacticalProfile) {
     const mapped = mapTacticalProfile(result, tacticalProfile);
     if (mapped) return mapped;

@@ -41,9 +41,14 @@ import { endedContinuityCard } from "@/lib/surveillanceCard";
 import {
   locateTargetFromPending,
   samePlace,
-  TARGET_EMOJI,
+  targetEmoji,
   vehiclesPeopleCanReach,
 } from "@shared/targetPosition";
+import {
+  alightedWording,
+  onTransitCards,
+  transitBoardActions,
+} from "@/lib/transitCards";
 import { shortAddressLabel } from "@shared/markerLink";
 import { useTargetTrackingSettings } from "@/lib/targetTrackingSettings";
 import { detectUnidentifiedRepeat } from "@shared/unidentified";
@@ -5681,6 +5686,15 @@ export default function SheetDetail({
                   state: `On foot${sinceText(w.rowId)}`,
                   actions: [
                     ...cardAction(chip, "Left address"),
+                    // Logged at a bus stop or train station: boarding.
+                    ...transitBoardActions({
+                      keyBase: w.location,
+                      names: shortenAlreadyMentionedNames(
+                        w.names,
+                        usedBracketCodes
+                      ),
+                      place: w.location,
+                    }),
                     // Back to a parked vehicle from here.
                     ...reachableVehicles(w.names, w.location).map(a => ({
                       key: `wov-${w.location}-${a.rego}`,
@@ -5715,10 +5729,14 @@ export default function SheetDetail({
               continuityCards.push({
                 key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
                 title: h.names,
-                pill: h.fromVessel ? "Disembarked" : "Departed on foot",
+                pill: h.fromTransit
+                  ? "Alighted"
+                  : h.fromVessel
+                    ? "Disembarked"
+                    : "Departed on foot",
                 attn: true,
                 who: destKnown ? `Walking to ${h.destination}` : "On foot",
-                state: `Left ${h.fromVessel ?? h.from}${sinceText(h.rowId)}`,
+                state: `${alightedWording(h)?.left ?? `Left ${h.fromVessel ?? h.from}`}${sinceText(h.rowId)}`,
                 actions: [
                   ...cardAction(
                     chip,
@@ -5734,6 +5752,13 @@ export default function SheetDetail({
                     label: "Walked to another location",
                     text: `${walkers} walked [route] towards [location].`,
                   },
+                  // Heading for, or just got off at, a bus stop or train
+                  // station: boarding.
+                  ...transitBoardActions({
+                    keyBase: `h-${h.destination}-${h.names}`,
+                    names: walkers,
+                    place: destKnown ? h.destination : h.from,
+                  }),
                   ...reachableVehicles(h.names, h.from).map(a => ({
                     key: `wv-${a.rego}`,
                     label: `Walked to ${a.rego}`,
@@ -5744,12 +5769,15 @@ export default function SheetDetail({
                 holds: surnameTokens(h.names),
                 people: splitPeopleNames(h.names),
                 locus: {
-                  headline: destKnown
-                    ? `${h.fromVessel ? "Disembarked, on foot" : "Departed on foot"} to ${h.destination}`
-                    : h.fromVessel
-                      ? "Disembarked, on foot"
-                      : "Departed on foot",
-                  sub: `Left ${h.fromVessel ?? h.from}${sinceText(h.rowId)}`,
+                  headline: (() => {
+                    const how = h.fromTransit
+                      ? "Alighted, on foot"
+                      : h.fromVessel
+                        ? "Disembarked, on foot"
+                        : "Departed on foot";
+                    return destKnown ? `${how} to ${h.destination}` : how;
+                  })(),
+                  sub: `${alightedWording(h)?.left ?? `Left ${h.fromVessel ?? h.from}`}${sinceText(h.rowId)}`,
                 },
               });
             });
@@ -5849,6 +5877,15 @@ export default function SheetDetail({
                 });
               });
             }
+            // People aboard a bus, train or tram ("boarded a bus at Bus Stop
+            // …"): until a row says they got off.
+            continuityCards.push(
+              ...onTransitCards({
+                placements: pendingPlacements ?? [],
+                sinceText,
+                shorten: n => shortenAlreadyMentionedNames(n, usedBracketCodes),
+              })
+            );
             // The card holding the TARGET leads the band as its tracker: a
             // person's by surname, a vehicle's by its plate (shared rule:
             // trackedTarget). A location target has nothing that moves.
@@ -6320,7 +6357,10 @@ export default function SheetDetail({
                                             className="mr-1 text-xs"
                                             title={`Target ${targetPosition.label}`}
                                           >
-                                            {TARGET_EMOJI[targetPosition.state]}
+                                            {targetEmoji(
+                                              targetPosition.state,
+                                              targetPosition.transitMode
+                                            )}
                                           </span>
                                         )}
                                       <span className="text-xs font-mono font-bold max-w-[140px] truncate">

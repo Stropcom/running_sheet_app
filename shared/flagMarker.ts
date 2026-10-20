@@ -53,7 +53,7 @@ export function markerKind(
 }
 
 export interface FlagWant {
-  /** The target state: "inside", "walking", "vehicle", "moving", "oos", "vessel". */
+  /** The target state: "inside", "walking", "vehicle", "moving", "oos", "vessel", "transit". */
   state: string;
   /** The vehicle he is in, or just got out of. */
   rego?: string;
@@ -112,5 +112,7 @@ export function chooseFlagMarker(
  * the place. */
 export function markerFitsState(kind: MarkerKind, state: string): boolean {
   if (state === "vessel") return kind !== "vehicle";
+  // On a bus or train: the stop or station (a place), or the bus itself (a
+  // vehicle marker) — never a boat.
   return kind !== "boat";
 }

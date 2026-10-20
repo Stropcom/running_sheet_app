@@ -39,6 +39,13 @@ export type MarkerIcon =
   | "toilet"
   | "rv"
   | "boat_cruiser"
+  // Public transport and hire cars — for where someone gets on or off a bus,
+  // a train, a taxi or a rideshare (Uber and the like). Hand-drawn top-down
+  // shapes like the sedan, colour-changeable.
+  | "bus"
+  | "train"
+  | "taxi"
+  | "rideshare"
   // Colour-changeable versions of shapes from the AFP iSurv "Surveillance"
   // marker set (see session notes) — same silhouettes as several fixed
   // Tactical icons (tacticalMarkers.ts), traced from the same source
@@ -114,6 +121,10 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
   toilet: "Toilet",
   rv: "Rendezvous",
   boat_cruiser: "Boat (cruiser)",
+  bus: "Bus",
+  train: "Train",
+  taxi: "Taxi",
+  rideshare: "Rideshare (Uber)",
   circle_x: "Circled X",
   ring_1: "Circle 1",
   ring_2: "Circle 2",
@@ -144,6 +155,10 @@ export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
   {
     label: "Vehicles",
     icons: ["sedan", "police_car_top", "motorbike", "boat"],
+  },
+  {
+    label: "Public Transport & Hire",
+    icons: ["bus", "train", "taxi", "rideshare"],
   },
   { label: "Arrow", icons: ["arrow_up", "arrow_right", "arrow_thin"] },
   { label: "Cameras", icons: ["camera_photo"] },
@@ -178,6 +193,23 @@ export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
   { label: "Indicators", icons: ["dashed_line", "drone"] },
   { label: "People", icons: ["person_foot", "person_standing"] },
 ];
+
+/** The top-down sedan body (no outer <svg>), shared by the taxi and the
+ * rideshare so they match the Sedan marker exactly. */
+function topDownCar(c: string, dark: string, light: string): string {
+  return `<rect x="10" y="5" width="28" height="38" rx="8" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
+        <rect x="13" y="14" width="22" height="20" rx="4" fill="${dark}" opacity="0.55"/>
+        <rect x="13" y="8" width="22" height="8" rx="3" fill="${light}" opacity="0.75"/>
+        <rect x="13" y="32" width="22" height="8" rx="3" fill="${light}" opacity="0.55"/>
+        <rect x="5" y="8" width="7" height="10" rx="3" fill="#222"/>
+        <rect x="36" y="8" width="7" height="10" rx="3" fill="#222"/>
+        <rect x="5" y="30" width="7" height="10" rx="3" fill="#222"/>
+        <rect x="36" y="30" width="7" height="10" rx="3" fill="#222"/>
+        <rect x="14" y="5" width="7" height="3" rx="1" fill="#FFF9C4" opacity="0.9"/>
+        <rect x="27" y="5" width="7" height="3" rx="1" fill="#FFF9C4" opacity="0.9"/>
+        <rect x="14" y="40" width="7" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
+        <rect x="27" y="40" width="7" height="3" rx="1" fill="#ef4444" opacity="0.85"/>`;
+}
 
 /** Generate an SVG string for a given icon + colour */
 export function getMarkerSvg(icon: MarkerIcon, colour: MarkerColour): string {
@@ -223,6 +255,56 @@ export function getMarkerSvg(icon: MarkerIcon, colour: MarkerColour): string {
         <!-- Tail lights (rear) -->
         <rect x="14" y="40" width="7" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
         <rect x="27" y="40" width="7" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
+      </svg>`;
+
+    case "bus":
+      // Top-down bus: long body, roof panel with two vents, windscreens at
+      // both ends, four wheels.
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        <rect x="14" y="2" width="20" height="44" rx="5" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
+        <rect x="16" y="11" width="16" height="26" rx="2" fill="${dark}" opacity="0.5"/>
+        <rect x="19" y="16" width="10" height="5" rx="1" fill="${light}" opacity="0.7"/>
+        <rect x="19" y="27" width="10" height="5" rx="1" fill="${light}" opacity="0.7"/>
+        <rect x="16" y="4" width="16" height="6" rx="2.5" fill="${light}" opacity="0.8"/>
+        <rect x="16" y="38" width="16" height="5" rx="2" fill="${light}" opacity="0.55"/>
+        <rect x="10" y="9" width="5" height="9" rx="2" fill="#222"/>
+        <rect x="33" y="9" width="5" height="9" rx="2" fill="#222"/>
+        <rect x="10" y="31" width="5" height="9" rx="2" fill="#222"/>
+        <rect x="33" y="31" width="5" height="9" rx="2" fill="#222"/>
+      </svg>`;
+
+    case "train":
+      // Top-down train on its rails: two carriages with a coupling, a cab
+      // windscreen at the front and a pantograph on the second.
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        <line x1="10" y1="0" x2="10" y2="48" stroke="#222" stroke-width="1.5" opacity="0.55"/>
+        <line x1="38" y1="0" x2="38" y2="48" stroke="#222" stroke-width="1.5" opacity="0.55"/>
+        <rect x="14" y="2" width="20" height="21" rx="7" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
+        <rect x="14" y="25" width="20" height="21" rx="4" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
+        <rect x="22" y="23" width="4" height="2" fill="${dark}"/>
+        <rect x="16" y="4" width="16" height="6" rx="3" fill="${light}" opacity="0.8"/>
+        <rect x="17" y="12" width="14" height="8" rx="2" fill="${dark}" opacity="0.5"/>
+        <rect x="17" y="28" width="14" height="14" rx="2" fill="${dark}" opacity="0.5"/>
+        <rect x="20" y="32" width="8" height="6" rx="1" fill="none" stroke="${light}" stroke-width="1.2"/>
+        <rect x="16" y="43" width="16" height="2" rx="1" fill="#ef4444" opacity="0.85"/>
+      </svg>`;
+
+    case "taxi":
+      // The sedan with a roof sign.
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        ${topDownCar(c, dark, light)}
+        <rect x="18" y="20" width="12" height="6" rx="1.5" fill="#FFD600" stroke="#222" stroke-width="0.9"/>
+        <text x="24" y="24.6" text-anchor="middle" font-family="Arial, sans-serif" font-size="4.2" font-weight="700" fill="#222">TAXI</text>
+      </svg>`;
+
+    case "rideshare":
+      // The sedan with a pick-up pin on the roof (Uber and similar — no
+      // brand mark).
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        ${topDownCar(c, dark, light)}
+        <circle cx="24" cy="24" r="6.5" fill="#fff" stroke="${dark}" stroke-width="1.2"/>
+        <path d="M24 19.4a3.6 3.6 0 0 1 3.6 3.6c0 2.6-3.6 6-3.6 6s-3.6-3.4-3.6-6a3.6 3.6 0 0 1 3.6-3.6z" fill="${c}"/>
+        <circle cx="24" cy="23" r="1.3" fill="#fff"/>
       </svg>`;
 
     case "suv":

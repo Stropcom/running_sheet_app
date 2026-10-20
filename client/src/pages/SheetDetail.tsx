@@ -5897,6 +5897,12 @@ export default function SheetDetail({
                   held.people ?? [],
                   trackedTarget
                 ).join(", ");
+                // Took over from another sheet: say where the picture came from.
+                if (surveillance?.handover && held.locus)
+                  held.locus = {
+                    ...held.locus,
+                    sub: `${held.locus.sub} · Handed over from ${surveillance.handover.title}`,
+                  };
               } else {
                 // Cards exist but none names him: say so rather than leave
                 // the band looking as if it were about someone else.

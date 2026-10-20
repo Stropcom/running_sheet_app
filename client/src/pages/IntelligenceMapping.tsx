@@ -14068,6 +14068,13 @@ export default function IntelligenceMapping() {
                                     held.people ?? [],
                                     rsTrackedTarget
                                   ).join(", ");
+                                  // Took over from another sheet: say where
+                                  // the picture came from.
+                                  if (rsSurveillance?.handover && held.locus)
+                                    held.locus = {
+                                      ...held.locus,
+                                      sub: `${held.locus.sub} · Handed over from ${rsSurveillance.handover.title}`,
+                                    };
                                 }
                               }
 

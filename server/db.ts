@@ -12,7 +12,6 @@ import {
   or,
   sql,
 } from "drizzle-orm";
-import { surveillanceState } from "@shared/surveillanceState";
 import { drizzle } from "drizzle-orm/mysql2";
 import { initialShortcutOrder } from "../shared/rsChips";
 import { findVehicleChains, joinVehicleLists } from "../shared/vehicleList";
@@ -82,6 +81,14 @@ import {
   splitPeopleNames,
 } from "@shared/walkEventPatterns";
 import { extractOccupantNames } from "@shared/occupantNames";
+import { isHandover, surveillancePlace } from "@shared/surveillanceHandover";
+import {
+  surveillanceSignal,
+  surveillanceState,
+} from "@shared/surveillanceState";
+import { resolveTrackedTarget, trackedTargetCode } from "@shared/trackedTarget";
+import { locateTargetFromPending, samePlace } from "@shared/targetPosition";
+import { shortAddressLabel } from "@shared/markerLink";
 import { expandRowSegments } from "@shared/rowSegments";
 import { VEHICLE_REGO_PATTERN } from "@shared/vehicleRego";
 import {
@@ -1287,8 +1294,20 @@ export async function copyRunningSheet(
 // ─── Sheet Rows ───────────────────────────────────────────────────────────────
 
 export async function getRowsBySheetId(sheetId: number) {
+  return (await getRowsWithDays(sheetId)).rows;
+}
+
+// The sheet's rows in time order, with the day each one falls on (relative to
+// the sheet's first row date) so a row's real time can be worked out — used to
+// tell whether two sheets' surveillance times line up (findHandoverSource).
+export async function getRowsWithDays(sheetId: number) {
   const db = await getDb();
-  if (!db) return [];
+  if (!db)
+    return {
+      rows: [] as (typeof sheetRows.$inferSelect)[],
+      dayOffsetMap: new Map<number, number>(),
+      minRowDate: null as string | null,
+    };
   // Fetch all rows ordered by rowNumber (insertion order) first so we can
   // detect midnight rollovers from the time sequence itself.
   const raw = await db
@@ -1359,7 +1378,11 @@ export async function getRowsBySheetId(sheetId: number) {
     (a, b) => a.rowNumber - b.rowNumber
   );
 
-  return [...sortedTimed, ...sortedNoTime];
+  return {
+    rows: [...sortedTimed, ...sortedNoTime],
+    dayOffsetMap,
+    minRowDate,
+  };
 }
 
 export async function getRowById(id: number) {
@@ -6340,7 +6363,7 @@ export interface PendingVehicleDeparture {
 export async function getPendingVehicleDepartures(
   sheetId: number
 ): Promise<PendingVehicleDeparture[]> {
-  return computePendingVehicleDepartures(await getRowsBySheetId(sheetId));
+  return computePendingVehicleDepartures(await getRowsForLogger(sheetId));
 }
 
 /** The pure part of getPendingVehicleDepartures — over any list of rows, so a
@@ -6434,7 +6457,7 @@ export interface PendingVehicleArrival {
 export async function getPendingVehicleArrivals(
   sheetId: number
 ): Promise<PendingVehicleArrival[]> {
-  return computePendingVehicleArrivals(await getRowsBySheetId(sheetId));
+  return computePendingVehicleArrivals(await getRowsForLogger(sheetId));
 }
 
 /** The pure part of getPendingVehicleArrivals — see
@@ -6524,15 +6547,37 @@ export interface PendingWalkIn {
 export async function getPendingWalkIns(
   sheetId: number
 ): Promise<PendingWalkIn[]> {
-  const rows = await getRowsBySheetId(sheetId);
+  const rows = await getRowsForLogger(sheetId);
   return scanWalkEvents(rows).walkIns;
 }
 
-// Whether the surveillance on a sheet has ended — every member of the team has
-// ceased and nobody has commenced since (shared/surveillanceState.ts). Read
-// from the saved rows only; the Target Logger and the target flag both follow it.
-export async function getSurveillanceState(sheetId: number) {
-  const rows = await getRowsBySheetId(sheetId);
+// A row's real time in minutes (Perth), from the sheet's date and the day the
+// row falls on. Null when the row has no time.
+function rowAbsoluteMinutes(
+  sheet: { sheetDate: string | null; createdAt: Date },
+  day: { dayOffsetMap: Map<number, number>; minRowDate: string | null },
+  row: { id: number; timeMinutes: number | null }
+): number | null {
+  if (row.timeMinutes == null) return null;
+  const dateStr =
+    day.minRowDate ??
+    sheet.sheetDate ??
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Australia/Perth",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(sheet.createdAt);
+  const base = Date.parse(`${dateStr}T00:00:00+08:00`) / 60000;
+  if (Number.isNaN(base)) return null;
+  return base + (day.dayOffsetMap.get(row.id) ?? 0) * 1440 + row.timeMinutes;
+}
+
+// The surveillance state of one sheet, from its own saved rows and team.
+async function surveillanceStateOfSheet(
+  sheet: { id: number; sheetCins: string | null },
+  rows: { id: number; observation: string | null; time: string | null }[]
+) {
   const db = await getDb();
   const ids = rows.map(r => r.id);
   const members =
@@ -6545,10 +6590,9 @@ export async function getSurveillanceState(sheetId: number) {
   const byRow = new Map<number, string[]>();
   for (const m of members)
     byRow.set(m.rowId, [...(byRow.get(m.rowId) ?? []), m.cin]);
-  const sheet = await getRunningSheetById(sheetId);
   let roster: string[] = [];
   try {
-    const raw = sheet?.sheetCins ? JSON.parse(sheet.sheetCins) : [];
+    const raw = sheet.sheetCins ? JSON.parse(sheet.sheetCins) : [];
     roster = Array.isArray(raw)
       ? raw.map((e: any) => String(e?.cin ?? "")).filter(Boolean)
       : [];
@@ -6564,6 +6608,176 @@ export async function getSurveillanceState(sheetId: number) {
     })),
     roster
   );
+}
+
+// What a sheet tracks, as one comparable key: a person's surname, a vehicle's
+// rego, or a location by its target record. Null when nothing can be said.
+async function targetKeyOfSheet(sheet: {
+  title: string;
+  targetId: number | null;
+}): Promise<string | null> {
+  const target = sheet.targetId
+    ? await getTargetById(sheet.targetId)
+    : undefined;
+  const tracked = resolveTrackedTarget({ title: sheet.title, target });
+  if (!tracked) return null;
+  if (tracked.kind === "location")
+    return sheet.targetId ? `location:${sheet.targetId}` : null;
+  const code = trackedTargetCode(tracked);
+  return code ? `${tracked.kind}:${code}` : null;
+}
+
+export interface HandoverSource {
+  sheetId: number;
+  title: string;
+  /** The time written on the row that ended the first sheet. */
+  endedAtTime: string | null;
+}
+
+const handoverCache = new Map<
+  string,
+  { at: number; value: HandoverSource | null }
+>();
+const HANDOVER_CACHE_MS = 5000;
+
+/**
+ * The sheet this one took over from, if any. One team ceases and the next
+ * team commences on a separate sheet; the second sheet's Target Logger then
+ * continues from the first (shared/surveillanceHandover.ts). ALL must match:
+ * the same operation, the same target, the same place (where the second sheet
+ * commences is where the first ceased, or where the target was last logged),
+ * and the same time (the commencement is at the minute the first ended or one
+ * minute either side). The first sheet must have ended (every member ceased).
+ * Sheets already followed in this chain (`exclude`) are skipped so two sheets
+ * can't hand over to each other.
+ */
+export async function findHandoverSource(
+  sheetId: number,
+  exclude: Set<number> = new Set()
+): Promise<HandoverSource | null> {
+  const cacheKey = `${sheetId}|${Array.from(exclude).sort().join(",")}`;
+  const hit = handoverCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < HANDOVER_CACHE_MS) return hit.value;
+  const value = await computeHandoverSource(sheetId, exclude);
+  handoverCache.set(cacheKey, { at: Date.now(), value });
+  if (handoverCache.size > 200) handoverCache.clear();
+  return value;
+}
+
+async function computeHandoverSource(
+  sheetId: number,
+  exclude: Set<number>
+): Promise<HandoverSource | null> {
+  const sheet = await getRunningSheetById(sheetId);
+  if (!sheet || sheet.deletedAt) return null;
+  const own = await getRowsWithDays(sheetId);
+  // Its first "Surveillance commenced" row, with the place it names.
+  const commenced = own.rows.find(
+    r => surveillanceSignal(r.observation) === "commenced"
+  );
+  const commencedPlace = commenced
+    ? surveillancePlace(commenced.observation, "commenced")
+    : null;
+  if (!commenced || !commencedPlace) return null;
+  const commencedAt = rowAbsoluteMinutes(sheet, own, commenced);
+  if (commencedAt == null) return null;
+  const myKey = await targetKeyOfSheet(sheet);
+  if (!myKey) return null;
+
+  const placesMatch = (a: string, b: string) =>
+    samePlace(a, b) || samePlace(shortAddressLabel(a), shortAddressLabel(b));
+  const others = (await getRunningSheetsByOperation(sheet.operationId)).filter(
+    o => o.id !== sheetId && !exclude.has(o.id)
+  );
+  let best: { src: HandoverSource; gap: number } | null = null;
+  for (const o of others) {
+    if ((await targetKeyOfSheet(o)) !== myKey) continue;
+    const day = await getRowsWithDays(o.id);
+    const state = await surveillanceStateOfSheet(o, day.rows);
+    if (!state.ended || state.endedByRowId == null) continue;
+    const endedRow = day.rows.find(r => r.id === state.endedByRowId);
+    if (!endedRow) continue;
+    const endedAt = rowAbsoluteMinutes(o, day, endedRow);
+    if (endedAt == null || Math.abs(endedAt - commencedAt) > 1) continue;
+    // Where it ended: the ceased rows' places, and where he was last logged.
+    const places: string[] = day.rows
+      .filter(r => surveillanceSignal(r.observation) === "ceased")
+      .map(r => surveillancePlace(r.observation, "ceased") ?? "");
+    // His last-known place on that sheet, from its own rows only.
+    const walk = scanWalkEvents(day.rows);
+    const cont = {
+      arrivals: computePendingVehicleArrivals(day.rows),
+      departures: computePendingVehicleDepartures(day.rows),
+      walkIns: walk.walkIns,
+      headingTo: walk.headingTo,
+      placements: walk.placements,
+    };
+    const pos = locateTargetFromPending({
+      subject: resolveTrackedTarget({
+        title: o.title,
+        target: o.targetId ? await getTargetById(o.targetId) : undefined,
+      }),
+      arrivals: cont.arrivals,
+      departures: cont.departures,
+      walkIns: cont.walkIns,
+      headingTo: cont.headingTo,
+      placements: cont.placements,
+      extractNames: extractOccupantNames,
+    });
+    if (pos?.place) places.push(pos.place);
+    if (
+      !isHandover(
+        {
+          endedAtMinutes: endedAt,
+          endedPlaces: places,
+          commencedAtMinutes: commencedAt,
+          commencedPlace,
+        },
+        placesMatch
+      )
+    )
+      continue;
+    const gap = Math.abs(endedAt - commencedAt);
+    if (!best || gap < best.gap)
+      best = {
+        src: { sheetId: o.id, title: o.title, endedAtTime: endedRow.time },
+        gap,
+      };
+  }
+  return best?.src ?? null;
+}
+
+// The rows the Target Logger reads for a sheet: its own, preceded by the rows
+// of the sheet it took over from (and that sheet's own predecessors). The
+// carried rows get ids below every real row id so they always sort — and
+// compare — as older than this sheet's own rows.
+export async function getRowsForLogger(
+  sheetId: number,
+  exclude: Set<number> = new Set()
+): Promise<Awaited<ReturnType<typeof getRowsBySheetId>>> {
+  const own = await getRowsBySheetId(sheetId);
+  if (exclude.size >= 5) return own;
+  const seen = new Set(exclude).add(sheetId);
+  const src = await findHandoverSource(sheetId, seen);
+  if (!src) return own;
+  const carried = await getRowsForLogger(src.sheetId, seen);
+  const base = -(carried.length + 1);
+  return [...carried.map((r, i) => ({ ...r, id: base + i, sheetId })), ...own];
+}
+
+// Whether the surveillance on a sheet has ended — every member of the team has
+// ceased and nobody has commenced since (shared/surveillanceState.ts) — and, if
+// it took over from another sheet, which one. Read from the saved rows only;
+// the Target Logger and the target flag both follow it.
+export async function getSurveillanceState(sheetId: number) {
+  const rows = await getRowsBySheetId(sheetId);
+  const sheet = await getRunningSheetById(sheetId);
+  const state = await surveillanceStateOfSheet(
+    { id: sheetId, sheetCins: sheet?.sheetCins ?? null },
+    rows
+  );
+  const handover = sheet ? await findHandoverSource(sheetId) : null;
+  return { ...state, handover };
 }
 
 export interface PendingHeadingTo {
@@ -6582,7 +6796,7 @@ export interface PendingHeadingTo {
 export async function getPendingHeadingTo(
   sheetId: number
 ): Promise<PendingHeadingTo[]> {
-  const rows = await getRowsBySheetId(sheetId);
+  const rows = await getRowsForLogger(sheetId);
   return scanWalkEvents(rows).headingTo;
 }
 
@@ -6601,7 +6815,7 @@ async function withVehicleMarkers<P extends { rego: string }>(
 // The latest place each person was put by a row (in a vehicle, inside a
 // place, on foot) — see scanWalkEvents.
 export async function getPendingPlacements(sheetId: number) {
-  const rows = await getRowsBySheetId(sheetId);
+  const rows = await getRowsForLogger(sheetId);
   return withVehicleMarkers(sheetId, scanWalkEvents(rows).placements);
 }
 
@@ -6619,7 +6833,7 @@ export async function getPendingContinuityWithDraft(
   draft: string,
   excludeRowId?: number | null
 ) {
-  const saved = (await getRowsBySheetId(sheetId)).filter(
+  const saved = (await getRowsForLogger(sheetId)).filter(
     r => excludeRowId == null || r.id !== excludeRowId
   );
   const rows = draft.trim()

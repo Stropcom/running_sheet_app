@@ -5462,7 +5462,7 @@ export default function IntelligenceMapping() {
       label.textContent = shortUnidentified(
         `${pos.people.length ? pos.people.join(", ") : who} · ${
           ended
-            ? `last seen${rsSurveillance?.endedAtTime ? ` ${rsSurveillance.endedAtTime}` : ""}`
+            ? `ceased${rsSurveillance?.endedAtTime ? ` at ${rsSurveillance.endedAtTime}` : ""}`
             : pos.label
         }`
       );

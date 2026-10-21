@@ -45,3 +45,29 @@ describe("the key a tapped place's pin is saved under", () => {
     ).toBeNull();
   });
 });
+
+describe("a place picked from the suggestions is filed under its map label", () => {
+  it("the label read from the inserted text is the label the map shows", async () => {
+    const { extractEntitiesFromText } = await import("./db");
+    for (const [text, label] of [
+      [
+        "La Lune, 73 George Street, EAST FREMANTLE WA (La Lune)",
+        "La Lune, 73 George Street, EAST FREMANTLE",
+      ],
+      [
+        "Chop Chop BBQ, 46 Hulme Court, MYAREE WA (Chop Chop BBQ)",
+        "Chop Chop BBQ, 46 Hulme Court, MYAREE",
+      ],
+    ]) {
+      const place = extractEntitiesFromText(text).find(
+        e => e.type === "address"
+      );
+      expect(place?.shortForm).toBe(label);
+      // …and the same label when that text sits inside a longer sentence.
+      const inSentence = extractEntitiesFromText(
+        `HOGAN entered ${text} and continued out of sight.`
+      ).find(e => e.type === "address");
+      expect(inSentence?.shortForm).toBe(label);
+    }
+  });
+});

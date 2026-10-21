@@ -1,4 +1,5 @@
 import { VEHICLE_MAKES_PATTERN } from "@shared/vehicleModel";
+import { signIconOf } from "@shared/placeSigns";
 import { flattenNestedBrackets } from "@shared/nestedBrackets";
 import {
   composeRegistryVehicle,
@@ -17134,6 +17135,37 @@ export async function saveIntelPinOverride(
   } else {
     await db.insert(intelPinOverrides).values({ label: data.label, ...update });
   }
+}
+
+/**
+ * A place picked from the address suggestions carries Google's type (cafe,
+ * restaurant, gym …); the observation only gets the written address. Reads the
+ * place's own map label from that address text — with the same extraction the
+ * map uses — and saves the place's sign as that pin's icon, unless the pin
+ * already has an icon (an officer's own choice wins) or the written name
+ * already gives that sign by itself. Returns whether anything was saved.
+ */
+export async function savePlaceSignForText(
+  addressText: string,
+  markerIcon: string,
+  cin: string | undefined
+): Promise<boolean> {
+  const place = extractEntitiesFromText(addressText).find(
+    e => e.type === "address"
+  );
+  const label = place?.shortForm?.trim();
+  if (!label) return false;
+  if (signIconOf(label) === markerIcon) return false;
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const existing = await db
+    .select({ markerIcon: intelPinOverrides.markerIcon })
+    .from(intelPinOverrides)
+    .where(eq(intelPinOverrides.label, label))
+    .limit(1);
+  if (existing[0]?.markerIcon) return false;
+  await saveIntelPinOverride({ label, markerIcon }, cin);
+  return true;
 }
 
 // ─── Google Address Backfill ──────────────────────────────────────────────────

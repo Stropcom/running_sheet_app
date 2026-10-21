@@ -12,10 +12,11 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { MapPin, Globe, WifiOff } from "lucide-react";
-import { trpc } from "@/lib/trpc";
+import { trpc, trpcClient } from "@/lib/trpc";
 import { loadGoogleMaps } from "@/lib/googleMaps";
 import { buildPoiAddress, convertGoogleAddresses } from "@/lib/addressFormat";
 import { transitPlaceFromGoogle } from "@shared/transitPlace";
+import { placeSignFromTypes, type PlaceSignIcon } from "@shared/placeSigns";
 import { addressBiasCentre, watchDevicePosition } from "@/lib/devicePosition";
 import { BIAS_RADIUS_M } from "@shared/addressBias";
 import {
@@ -42,6 +43,8 @@ export type AddressSuggestItem =
       /** The one wording for a bus stop or train station ("Bus Stop …" /
        * "… Train Station"), when Google says that is what it is. */
       transitLabel?: string;
+      /** Google says it is a bank, cafe, gym, restaurant … : its sign. */
+      placeSign?: PlaceSignIcon;
     };
 
 /** The text to write into the observation for a picked suggestion — always
@@ -62,10 +65,25 @@ export async function addressSuggestInsertText(
         resolve(status === "OK" && r?.[0] ? r[0].formatted_address : null)
       );
     });
-    return formatted ? buildPoiAddress(name, formatted) : fallback;
+    const text = formatted ? buildPoiAddress(name, formatted) : fallback;
+    rememberPlaceSign(item, text);
+    return text;
   } catch {
+    rememberPlaceSign(item, fallback);
     return fallback;
   }
+}
+
+/** Google's type isn't written into the observation, so save it now as the
+ * pin's sign (the server finds the place's own map label from the text and
+ * never replaces an icon someone chose). Fire-and-forget: a failure — offline,
+ * an Observer — only means the place keeps the house unless its name says what
+ * it is. */
+function rememberPlaceSign(item: AddressSuggestItem, text: string) {
+  if (item.kind !== "google" || !item.placeSign) return;
+  void trpcClient.intelligence.savePlaceSign
+    .mutate({ addressText: text, markerIcon: item.placeSign })
+    .catch(() => {});
 }
 
 export type AddressSuggestMode = "address" | "place";
@@ -186,6 +204,9 @@ export function useAddressSuggestions(
                   isPlace:
                     !!transit || (p.types?.includes("establishment") ?? false),
                   ...(transit ? { transitLabel: transit.label } : {}),
+                  ...(!transit && placeSignFromTypes(p.types, main)
+                    ? { placeSign: placeSignFromTypes(p.types, main)! }
+                    : {}),
                 };
               })
             );

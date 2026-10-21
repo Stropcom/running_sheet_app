@@ -1,4 +1,5 @@
 import { VEHICLE_MAKES_PATTERN } from "@shared/vehicleModel";
+import { flattenNestedBrackets } from "@shared/nestedBrackets";
 import {
   composeRegistryVehicle,
   describeVehicleInText,
@@ -5108,6 +5109,13 @@ export async function deepSearchOperations(
 // duplicating it.
 export { VEHICLE_MAKES_PATTERN };
 
+// What may sit between a business's name and its street address: a shop /
+// unit / level number, or the centre the premises are in. One or two such
+// comma-separated segments.
+const PREMISES_SEGMENT_RE_SRC =
+  ",\\s*(?:(?:shop|unit|suite|level|kiosk|tenancy|store|lot|stall|booth|office)\\b[^,]{0,40}|[^,]{0,40}\\b(?:centre|center|plaza|mall|arcade|square|market|markets|complex|building|tower|village|precinct)\\b)";
+const PREMISES_GAP_RE = new RegExp(`^(?:${PREMISES_SEGMENT_RE_SRC}){1,2}$`, "i");
+
 /**
  * Extract bracketed entities from a single observation string.
  * Pattern: any text followed by (ShortForm) — the short form is the entity identifier.
@@ -5128,6 +5136,9 @@ export function extractEntitiesFromText(text: string): Array<{
     confidence: "high" | "medium" | "low";
   }> = [];
 
+  // A place name with a bracket of its own ("… Expert Centre (Tellerless)")
+  // is read as plain words first (shared/nestedBrackets.ts).
+  text = flattenNestedBrackets(text);
   // Match: some preceding text (fullDescription) immediately followed by (ShortForm)
   const pattern = /([^()]{3,120}?)\s*\(([^()]{1,80})\)/g;
   let match: RegExpExecArray | null;
@@ -5563,8 +5574,25 @@ export function extractEntitiesFromText(text: string): Array<{
         const beforeAddr = fullDescription
           .slice(0, addrStartIdx)
           .replace(/,\s*$/, "");
-        if (beforeAddr.toLowerCase().endsWith(shortForm.toLowerCase())) {
-          const nameStart = beforeAddr.length - shortForm.length;
+        const lowerBefore = beforeAddr.toLowerCase();
+        const lowerName = shortForm.toLowerCase();
+        // The name usually sits straight in front of the address; a shop
+        // number or the centre it is in may come between them ("Commonwealth
+        // Bank East Victoria Park Branch, Shop 19 The Park Centre, 789
+        // Albany Highway, …"). Those segments stay in the label, so it reads
+        // the way the officer's text does and the map finds it by name.
+        let nameStart = -1;
+        if (lowerBefore.endsWith(lowerName)) {
+          nameStart = beforeAddr.length - shortForm.length;
+        } else {
+          const at = lowerBefore.lastIndexOf(lowerName);
+          if (
+            at >= 0 &&
+            PREMISES_GAP_RE.test(beforeAddr.slice(at + shortForm.length))
+          )
+            nameStart = at;
+        }
+        if (nameStart >= 0) {
           const boundaryOk =
             nameStart === 0 || /\s/.test(beforeAddr[nameStart - 1]);
           if (boundaryOk) {

@@ -49,6 +49,7 @@ vi.mock("./db", () => ({
   createRunningSheet: vi.fn().mockResolvedValue(1),
   updateRunningSheet: vi.fn().mockResolvedValue(undefined),
   deleteRunningSheet: vi.fn().mockResolvedValue(undefined),
+  softDeleteSheet: vi.fn().mockResolvedValue(undefined),
   getRowsBySheetId: vi.fn().mockResolvedValue([]),
   getRowById: vi.fn().mockResolvedValue({
     id: 1,
@@ -150,6 +151,19 @@ function makeCtx(role: "observer" | "member" | "admin"): TrpcContext {
   };
 }
 
+// A signed-in member with a CIN — members may only certify / unlock rows that
+// carry their own CIN.
+function makeCtxWithCin(
+  role: "observer" | "member" | "admin",
+  cin: string
+): TrpcContext {
+  const ctx = makeCtx(role);
+  return {
+    ...ctx,
+    user: { ...ctx.user!, cin } as NonNullable<TrpcContext["user"]>,
+  };
+}
+
 // ─── Auth tests ───────────────────────────────────────────────────────────────
 
 describe("auth.me", () => {
@@ -193,8 +207,25 @@ describe("sheet.list", () => {
 });
 
 describe("sheet.create", () => {
-  it("allows observers to create sheets", async () => {
+  it("refuses observers: they have view and export access only", async () => {
     const caller = appRouter.createCaller(makeCtx("observer"));
+    await expect(
+      caller.sheet.create({ operationId: 1, sheetDate: "2026-08-07" })
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("allows members to create sheets", async () => {
+    const { getOperationById } = await import("./db");
+    vi.mocked(getOperationById).mockResolvedValueOnce({
+      id: 1,
+      name: "Test Op",
+      description: null,
+      status: "active",
+      createdBy: 1,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as never);
+    const caller = appRouter.createCaller(makeCtx("member"));
     const result = await caller.sheet.create({
       operationId: 1,
       sheetDate: "2026-08-07",
@@ -247,6 +278,7 @@ describe("row.update", () => {
   });
 
   it("allows update when row is unlocked", async () => {
+    await mockActiveSheetAndOperation();
     const caller = appRouter.createCaller(makeCtx("member"));
     const result = await caller.row.update({ id: 1, observation: "updated" });
     expect(result.success).toBe(true);
@@ -372,7 +404,11 @@ describe("row.create/row.update — travelled-via auto-insertion", () => {
 
 describe("certification.certify", () => {
   it("allows certifier to certify a member", async () => {
-    const caller = appRouter.createCaller(makeCtx("member"));
+    const { getMembersByRowIds } = await import("./db");
+    vi.mocked(getMembersByRowIds).mockResolvedValueOnce([
+      { id: 1, rowId: 1, memberName: "484" },
+    ] as never);
+    const caller = appRouter.createCaller(makeCtxWithCin("member", "484"));
     const result = await caller.certification.certify({
       rowId: 1,
       memberId: 1,
@@ -398,7 +434,11 @@ describe("certification.certify", () => {
       certifiedAt: Date.now(),
       isActive: true,
     });
-    const caller = appRouter.createCaller(makeCtx("member"));
+    const { getMembersByRowIds } = await import("./db");
+    vi.mocked(getMembersByRowIds).mockResolvedValueOnce([
+      { id: 1, rowId: 1, memberName: "484" },
+    ] as never);
+    const caller = appRouter.createCaller(makeCtxWithCin("member", "484"));
     await expect(
       caller.certification.certify({ rowId: 1, memberId: 1 })
     ).rejects.toMatchObject({ code: "CONFLICT" });
@@ -407,7 +447,11 @@ describe("certification.certify", () => {
 
 describe("certification.uncertify", () => {
   it("allows certifier to uncertify", async () => {
-    const caller = appRouter.createCaller(makeCtx("member"));
+    const { getMembersByRowIds } = await import("./db");
+    vi.mocked(getMembersByRowIds).mockResolvedValueOnce([
+      { id: 1, rowId: 1, memberName: "484" },
+    ] as never);
+    const caller = appRouter.createCaller(makeCtxWithCin("member", "484"));
     const result = await caller.certification.uncertify({
       rowId: 1,
       memberId: 1,

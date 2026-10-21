@@ -59,6 +59,10 @@ export type MarkerIcon =
   | "place_hotel"
   | "place_gym"
   | "place_shopping_centre"
+  | "place_cafe"
+  | "place_restaurant"
+  | "place_fast_food"
+  | "place_airport"
   // Colour-changeable versions of shapes from the AFP iSurv "Surveillance"
   // marker set (see session notes) — same silhouettes as several fixed
   // Tactical icons (tacticalMarkers.ts), traced from the same source
@@ -146,6 +150,10 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
   place_hotel: "Hotel Sign",
   place_gym: "Gym Sign",
   place_shopping_centre: "Shopping Centre Sign",
+  place_cafe: "Cafe Sign",
+  place_restaurant: "Restaurant Sign",
+  place_fast_food: "Fast Food Sign",
+  place_airport: "Airport Sign",
   circle_x: "Circled X",
   ring_1: "Circle 1",
   ring_2: "Circle 2",
@@ -190,6 +198,10 @@ export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
       "place_hotel",
       "place_gym",
       "place_shopping_centre",
+      "place_cafe",
+      "place_restaurant",
+      "place_fast_food",
+      "place_airport",
     ],
   },
   { label: "Arrow", icons: ["arrow_up", "arrow_right", "arrow_thin"] },
@@ -273,6 +285,22 @@ const PLACE_SIGN_PICTOGRAMS: Record<string, (c: string) => string> = {
     `<path d="M5 8.4 H19 L20.2 21.6 H3.8 Z" fill="#fff"/>
      <path d="M8.8 8.6 V6.6 a3.2 3.2 0 0 1 6.4 0 V8.6" fill="none" stroke="#fff" stroke-width="2"/>
      <path d="M8.8 12.6 V13.4 M15.2 12.6 V13.4" stroke="${c}" stroke-width="2" stroke-linecap="round"/>`,
+  place_cafe: c =>
+    `<path d="M5 8 H19 L17.6 22 H6.4 Z" fill="#fff"/>
+     <rect x="4" y="5" width="16" height="3.2" rx="1.2" fill="#fff"/>
+     <rect x="5.8" y="12" width="12.4" height="5" fill="${c}" opacity=".55"/>
+     <rect x="9.4" y="2" width="5.2" height="3" rx="1" fill="#fff"/>`,
+  place_restaurant: () =>
+    `<path d="M6 2.4 V9 a2.6 2.6 0 0 0 5.2 0 V2.4 M8.6 2.4 V9.2 M8.6 11 V22" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+     <path d="M17.4 22 V2.6 C14.6 4.2 13.4 8 13.8 12.6 H17.4" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>`,
+  place_fast_food: c =>
+    `<path d="M3.4 10 a8.6 7 0 0 1 17.2 0 Z" fill="#fff"/>
+     <ellipse cx="9" cy="6.6" rx="1" ry="0.7" fill="${c}"/><ellipse cx="13" cy="5.4" rx="1" ry="0.7" fill="${c}"/><ellipse cx="16.2" cy="7.2" rx="1" ry="0.7" fill="${c}"/>
+     <path d="M2.6 12.4 q1.6 -1.6 3.2 0 q1.6 1.6 3.2 0 q1.6 -1.6 3.2 0 q1.6 1.6 3.2 0 q1.6 -1.6 3.2 0 q1.6 1.6 3.2 0" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>
+     <rect x="3" y="14.2" width="18" height="3" rx="1.5" fill="#fff"/>
+     <path d="M3.4 18.8 H20.6 V19.4 a2.6 2.6 0 0 1 -2.6 2.6 H6 a2.6 2.6 0 0 1 -2.6 -2.6 Z" fill="#fff"/>`,
+  place_airport: () =>
+    `<path d="M21.6 14.4 v-2.4 L13.2 7 V3.4 a1.6 1.6 0 0 0 -3.2 0 V7 L1.6 12 v2.4 l8.4 -2.4 v4.6 l-2.4 1.8 V21 l4 -1.2 4 1.2 v-2.2 l-2.4 -1.8 V12 Z" fill="#fff" transform="translate(0.4 0.4)"/>`,
 };
 
 /** A square sign on a pole with a pictogram — the shared shape of the place
@@ -399,6 +427,10 @@ export function getMarkerSvg(icon: MarkerIcon, colour: MarkerColour): string {
     case "place_hotel":
     case "place_gym":
     case "place_shopping_centre":
+    case "place_cafe":
+    case "place_restaurant":
+    case "place_fast_food":
+    case "place_airport":
       return placeSign(icon, c, dark);
 
     case "taxi":

@@ -1,12 +1,14 @@
-// Signs for banks, post offices, pubs, hotels (accommodation), gyms and
-// shopping centres — the same idea as the bus stop and train station signs
+// Square signs for banks, post offices, pubs, hotels (accommodation), gyms,
+// shopping centres, cafes, restaurants, fast food / takeaway and airports —
+// the same idea as the bus stop and train station signs
 // (shared/transitPlace.ts): the default map pin of a place that is one of
 // these is its sign instead of the house, however the place got into the
 // sheet (tapped on the map, picked from the suggestions, or typed).
 //
 // Two ways to tell, both deterministic:
 //   1. Google's place types, when we have them (a tapped place, a suggestion):
-//      bank / atm, post_office, bar, lodging, gym, shopping_mall.
+//      bank / atm, post_office, bar, lodging, gym, shopping_mall, cafe,
+//      restaurant, fast food / takeaway, airport.
 //   2. The way the place is written — its NAME, the first part of the label
 //      ("Commonwealth Bank East Victoria Park Branch, Shop 19 The Park Centre,
 //      789 Albany Highway, …"), never the street part, so "Bank Street" or
@@ -26,7 +28,11 @@ export type PlaceSignIcon =
   | "place_pub"
   | "place_hotel"
   | "place_gym"
-  | "place_shopping_centre";
+  | "place_shopping_centre"
+  | "place_cafe"
+  | "place_restaurant"
+  | "place_fast_food"
+  | "place_airport";
 
 export const PLACE_SIGN_ICONS: PlaceSignIcon[] = [
   "place_bank",
@@ -35,6 +41,10 @@ export const PLACE_SIGN_ICONS: PlaceSignIcon[] = [
   "place_hotel",
   "place_gym",
   "place_shopping_centre",
+  "place_cafe",
+  "place_restaurant",
+  "place_fast_food",
+  "place_airport",
 ];
 
 const STREET_END_RE =
@@ -62,10 +72,28 @@ const GYM_RE =
 const CENTRE_RE =
   /\bshopping\s+(?:centre|center|mall|plaza|village|square|arcade|complex|precinct)\b|\btown\s+centre\b|\bwestfield\b|\bgalleria\b/i;
 
-/** The first part of a location label — the place's own name. */
+const CAFE_RE =
+  /\b(?:cafes?|coffee|espresso|roasters?|roastery|barista|starbucks|gloria\s+jean'?s|zarraffa'?s)\b/i;
+const FAST_FOOD_RE =
+  /\b(?:burgers?|takeaway|take-?away|fast\s+food|fish\s+(?:and|&)\s+chips|fish\s*n\s*chips|kebabs?|mcdonald'?s|macca'?s|hungry\s+jack'?s|kfc|subway(?!\s+station)|red\s+rooster|domino'?s|pizza\s+hut|nando'?s|grill'?d|oporto|chicken\s+treat|zambrero|guzman|taco\s+bell|krispy\s+kreme)\b/i;
+const RESTAURANT_RE =
+  /\b(?:restaurant|bistro|brasserie|trattoria|osteria|ristorante|pizzeria|diner|grill|eatery|steakhouse|cantina|izakaya|kitchen)\b/i;
+const AIRPORT_RE =
+  /\b(?:airport|airfield|aerodrome|airstrip)\b|\b(?:domestic|international|regional)\s+terminal\b/i;
+// An airport's car park, station, hotel… is not the airport.
+const NOT_AN_AIRPORT_RE =
+  /\b(?:station|parking|car\s*park|taxi|shuttle|police|fire|freight|cargo|storage|motel|hotel|inn|lodge|apartments?)\b/i;
+
+/** The first part of a location label — the place's own name, with accents
+ * and curly apostrophes made plain ("Café" → "Cafe"). */
 function nameOf(label: string): string {
   const first = (label ?? "").split(",")[0] ?? "";
-  return first.replace(/\s+/g, " ").trim();
+  return first
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** The sign for a place judged by its written name, or null. */
@@ -91,6 +119,12 @@ export function placeSignOfName(label: string): PlaceSignIcon | null {
     return "place_bank";
   if (GYM_RE.test(name)) return "place_gym";
   if (CENTRE_RE.test(name)) return "place_shopping_centre";
+  // "Hungry Jack's Airport" is a burger place; the airport comes last.
+  if (CAFE_RE.test(name)) return "place_cafe";
+  if (FAST_FOOD_RE.test(name)) return "place_fast_food";
+  if (RESTAURANT_RE.test(name)) return "place_restaurant";
+  if (AIRPORT_RE.test(name) && !NOT_AN_AIRPORT_RE.test(name))
+    return "place_airport";
   return null;
 }
 
@@ -106,6 +140,8 @@ export function placeSignFromTypes(
   if (t.has("bank") || t.has("atm")) return "place_bank";
   if (t.has("gym") || t.has("fitness_center")) return "place_gym";
   if (t.has("shopping_mall")) return "place_shopping_centre";
+  if (t.has("airport") || t.has("international_airport"))
+    return "place_airport";
   const lodging = t.has("lodging");
   const bar = t.has("bar");
   if (lodging && bar)
@@ -114,6 +150,17 @@ export function placeSignFromTypes(
       : "place_pub";
   if (lodging) return "place_hotel";
   if (bar) return "place_pub";
+  // Food: a pub or hotel with a restaurant was settled above. A place that is
+  // both a cafe and a restaurant is a cafe only when its name says so.
+  const cafe = t.has("cafe") || t.has("coffee_shop");
+  const restaurant = t.has("restaurant");
+  if (t.has("fast_food_restaurant") || t.has("hamburger_restaurant"))
+    return "place_fast_food";
+  if (cafe && restaurant)
+    return CAFE_RE.test(nameOf(name)) ? "place_cafe" : "place_restaurant";
+  if (cafe) return "place_cafe";
+  if (restaurant) return "place_restaurant";
+  if (t.has("meal_takeaway")) return "place_fast_food";
   return null;
 }
 

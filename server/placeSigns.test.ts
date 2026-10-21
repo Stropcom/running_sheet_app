@@ -71,6 +71,83 @@ describe("place signs by how the place is written", () => {
   });
 });
 
+describe("cafe, restaurant, fast food and airport signs", () => {
+  it("by wording", () => {
+    expect(placeSignOfName("Highway Cafe, 12 Hay Street, PERTH")).toBe(
+      "place_cafe"
+    );
+    expect(placeSignOfName("Caf\u00e9 Rosso, 3 Beaufort Street")).toBe(
+      "place_cafe"
+    );
+    expect(placeSignOfName("Crooked Spire Coffee & Art House, Midland")).toBe(
+      "place_cafe"
+    );
+    expect(placeSignOfName("Mama's Italian Restaurant, 4 High Street")).toBe(
+      "place_restaurant"
+    );
+    expect(placeSignOfName("The Boatshed Grill")).toBe("place_restaurant");
+    expect(placeSignOfName("McDonald's Fremantle, 1 High Street")).toBe(
+      "place_fast_food"
+    );
+    expect(placeSignOfName("Hungry Jack\u2019s Cannington")).toBe(
+      "place_fast_food"
+    );
+    expect(placeSignOfName("Fish & Chips on the Beach")).toBe(
+      "place_fast_food"
+    );
+    expect(placeSignOfName("Perth Airport, Airport Drive")).toBe(
+      "place_airport"
+    );
+    expect(placeSignOfName("Perth International Terminal")).toBe(
+      "place_airport"
+    );
+  });
+
+  it("an airport's hotel, car park or station is not the airport", () => {
+    expect(placeSignOfName("Perth Airport Hotel")).toBeNull();
+    expect(placeSignOfName("Airport Car Park, Perth")).toBeNull();
+    expect(placeSignOfName("Perth Airport Central Station")).toBeNull();
+    expect(placeSignOfName("Airport Motel")).toBe("place_hotel");
+    expect(placeSignOfName("Airport Road, REDCLIFFE")).toBeNull();
+    expect(placeSignOfName("Airport Cafe, Perth")).toBe("place_cafe");
+  });
+
+  it("a pub with a grill stays a pub; a street stays a street", () => {
+    expect(placeSignOfName("Bicton Tavern & Grill")).toBe("place_pub");
+    expect(placeSignOfName("Burger Street, PERTH")).toBeNull();
+    expect(placeSignOfName("Subway Station")).toBeNull();
+  });
+
+  it("by Google's type", () => {
+    expect(placeSignFromTypes(["airport", "point_of_interest"])).toBe(
+      "place_airport"
+    );
+    expect(placeSignFromTypes(["cafe", "food"])).toBe("place_cafe");
+    expect(placeSignFromTypes(["restaurant", "food"])).toBe("place_restaurant");
+    expect(placeSignFromTypes(["fast_food_restaurant", "restaurant"])).toBe(
+      "place_fast_food"
+    );
+    expect(placeSignFromTypes(["meal_takeaway", "food"])).toBe(
+      "place_fast_food"
+    );
+    // A pub with a restaurant, a hotel with one, stay what they are.
+    expect(placeSignFromTypes(["bar", "restaurant"])).toBe("place_pub");
+    expect(placeSignFromTypes(["lodging", "restaurant"])).toBe("place_hotel");
+  });
+
+  it("both cafe and restaurant: a cafe only when the name says so", () => {
+    expect(placeSignFromTypes(["cafe", "restaurant"], "Lucky Bay Cafe")).toBe(
+      "place_cafe"
+    );
+    expect(placeSignFromTypes(["cafe", "restaurant"], "Lucky Bay")).toBe(
+      "place_restaurant"
+    );
+    expect(
+      placeSignFromTypes(["restaurant", "cafe"], "Roasted Coffee House")
+    ).toBe("place_cafe");
+  });
+});
+
 describe("place signs by Google's type", () => {
   it("maps the six types", () => {
     expect(placeSignFromTypes(["bank", "finance"])).toBe("place_bank");

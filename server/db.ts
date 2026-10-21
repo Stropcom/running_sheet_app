@@ -1,3 +1,4 @@
+import { VEHICLE_MAKES_PATTERN } from "@shared/vehicleModel";
 import {
   and,
   asc,
@@ -5076,8 +5077,7 @@ export async function deepSearchOperations(
 // Hoisted out of extractEntitiesFromText so other detection logic (see the
 // vague-vehicle matching below) can reuse the same make list rather than
 // duplicating it.
-export const VEHICLE_MAKES_PATTERN =
-  /\b(toyota|ford|holden|honda|mazda|nissan|mitsubishi|subaru|hyundai|kia|volkswagen|vw|bmw|mercedes|audi|lexus|volvo|jeep|dodge|chevrolet|chevy|ram|gmc|chrysler|fiat|alfa|peugeot|renault|citroen|skoda|seat|suzuki|isuzu|daihatsu|ssangyong|great wall|gwm|haval|mg|byd|tesla|rivian|land rover|range rover|defender|discovery|jaguar|porsche|ferrari|lamborghini|maserati|bentley|rolls royce|aston martin|mclaren|lotus|mini|smart|dacia|lancia|opel|vauxhall|saab|pontiac|buick|cadillac|lincoln|infiniti|acura|genesis|lucid|polestar|scout|rivian)\b/i;
+export { VEHICLE_MAKES_PATTERN };
 
 /**
  * Extract bracketed entities from a single observation string.

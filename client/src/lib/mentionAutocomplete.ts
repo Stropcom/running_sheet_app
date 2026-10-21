@@ -6,6 +6,7 @@
  * and the map's RS Quick Entry popup (IntelligenceMapping.tsx), so the
  * trigger/suppression behaviour is identical on both surfaces.
  */
+import { followsVehicleMake } from "@shared/vehicleModel";
 import {
   shortenRepeatedUnidentified,
   usedUnidentifiedCodes,
@@ -159,6 +160,9 @@ export function detectVehicleMentionTrigger(
   if (NON_VEHICLE_PLACEHOLDER_CODE_RE.test(word)) return null;
   const wordStart = cursorPos - word.length;
   if (usedVehicleRegos.has(word.toUpperCase())) return null;
+  // A model or trim written straight after its make ("Mercedes Benz C200",
+  // "Toyota Hilux SR5") is the same shape as a plate but is not one.
+  if (followsVehicleMake(text.slice(0, wordStart))) return null;
   return { word, wordStart };
 }
 

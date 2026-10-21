@@ -5124,6 +5124,26 @@ const PREMISES_GAP_RE = new RegExp(
   "i"
 );
 
+/** Whether the text between a business's name and its street address is only
+ * premises detail: a shop / unit / centre (PREMISES_GAP_RE), or one or two
+ * short comma-separated segments written like a name or a code — "T5004",
+ * "Westfield", "Level 2" — never narrative (lower-case words). */
+function isPremisesGap(gap: string): boolean {
+  if (PREMISES_GAP_RE.test(gap)) return true;
+  const parts = gap.split(",");
+  if (parts[0].trim() !== "") return false;
+  const segments = parts.slice(1).map(p => p.trim());
+  if (segments.length < 1 || segments.length > 2) return false;
+  return segments.every(seg => {
+    if (!seg) return false;
+    const words = seg.split(/\s+/);
+    return (
+      words.length <= 5 &&
+      words.every(w => /^[A-Z0-9]/.test(w) || /^(?:of|the|and|&)$/i.test(w))
+    );
+  });
+}
+
 /**
  * Extract bracketed entities from a single observation string.
  * Pattern: any text followed by (ShortForm) — the short form is the entity identifier.
@@ -5594,10 +5614,7 @@ export function extractEntitiesFromText(text: string): Array<{
           nameStart = beforeAddr.length - shortForm.length;
         } else {
           const at = lowerBefore.lastIndexOf(lowerName);
-          if (
-            at >= 0 &&
-            PREMISES_GAP_RE.test(beforeAddr.slice(at + shortForm.length))
-          )
+          if (at >= 0 && isPremisesGap(beforeAddr.slice(at + shortForm.length)))
             nameStart = at;
         }
         if (nameStart >= 0) {

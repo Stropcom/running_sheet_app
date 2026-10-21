@@ -71,3 +71,30 @@ describe("a place picked from the suggestions is filed under its map label", () 
     }
   });
 });
+
+describe("a business name with a tenancy code and a centre name before the street", () => {
+  it("keeps the business name in the location label, so its sign and pin follow", async () => {
+    const { extractEntitiesFromText } = await import("./db");
+    const { signIconOf } = await import("../shared/placeSigns");
+    for (const text of [
+      "Vehicle 1DOY78, DOYLE driver, PARK front passenger, arrived at Westpac Branch Booragoon, T5004, Westfield, 125 Riseley Street, BOORAGOON WA (Westpac Branch Booragoon) parked in the car park.",
+      "PARK entered Westpac Branch Booragoon, T5004, Westfield, 125 Riseley Street, BOORAGOON WA (Westpac Branch Booragoon) and continued out of sight.",
+    ]) {
+      const place = extractEntitiesFromText(text).find(
+        e => e.type === "address"
+      );
+      expect(place?.shortForm).toBe(
+        "Westpac Branch Booragoon, T5004, Westfield, 125 Riseley Street, BOORAGOON"
+      );
+      expect(signIconOf(place!.shortForm)).toBe("place_bank");
+    }
+  });
+
+  it("narrative between the name and the street is still not swallowed", async () => {
+    const { extractEntitiesFromText } = await import("./db");
+    const place = extractEntitiesFromText(
+      "HOGAN left Westpac Branch Booragoon (Westpac Branch Booragoon) and then walked to 125 Riseley Street, BOORAGOON WA (125 Riseley Street)."
+    ).find(e => e.shortForm.includes("125 Riseley Street"));
+    expect(place?.shortForm.startsWith("Westpac")).toBeFalsy();
+  });
+});

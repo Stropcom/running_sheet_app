@@ -40,8 +40,9 @@ export function markerKind(
 ): MarkerKind {
   const i = icon ?? "";
   if (BOAT_RE.test(i)) return "boat";
-  // A bus stop or station sign marks a place, not a vehicle.
-  if (/stop|station/i.test(i)) return "place";
+  // A bus stop or station sign, or a bank / pub / hotel / … sign, marks a
+  // place, not a vehicle.
+  if (/stop|station|^place_/i.test(i)) return "place";
   if (VEHICLE_RE.test(i)) return "vehicle";
   // No telling icon: a label that is only a rego is a vehicle marker.
   if (

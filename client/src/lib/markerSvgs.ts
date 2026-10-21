@@ -50,6 +50,15 @@ export type MarkerIcon =
   // station sign, on a pole.
   | "bus_stop"
   | "train_station"
+  // Round signs on a pole for a bank, post office, pub, hotel (accommodation),
+  // gym and shopping centre — the default pin of such a place
+  // (shared/placeSigns.ts).
+  | "place_bank"
+  | "place_post_office"
+  | "place_pub"
+  | "place_hotel"
+  | "place_gym"
+  | "place_shopping_centre"
   // Colour-changeable versions of shapes from the AFP iSurv "Surveillance"
   // marker set (see session notes) — same silhouettes as several fixed
   // Tactical icons (tacticalMarkers.ts), traced from the same source
@@ -131,6 +140,12 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
   rideshare: "Rideshare (Uber)",
   bus_stop: "Bus Stop Sign",
   train_station: "Train Station Sign",
+  place_bank: "Bank Sign",
+  place_post_office: "Post Office Sign",
+  place_pub: "Pub Sign",
+  place_hotel: "Hotel Sign",
+  place_gym: "Gym Sign",
+  place_shopping_centre: "Shopping Centre Sign",
   circle_x: "Circled X",
   ring_1: "Circle 1",
   ring_2: "Circle 2",
@@ -165,6 +180,17 @@ export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
   {
     label: "Public Transport & Hire",
     icons: ["bus_stop", "train_station", "bus", "train", "taxi", "rideshare"],
+  },
+  {
+    label: "Places",
+    icons: [
+      "place_bank",
+      "place_post_office",
+      "place_pub",
+      "place_hotel",
+      "place_gym",
+      "place_shopping_centre",
+    ],
   },
   { label: "Arrow", icons: ["arrow_up", "arrow_right", "arrow_thin"] },
   { label: "Cameras", icons: ["camera_photo"] },
@@ -215,6 +241,50 @@ function topDownCar(c: string, dark: string, light: string): string {
         <rect x="27" y="5" width="7" height="3" rx="1" fill="#FFF9C4" opacity="0.9"/>
         <rect x="14" y="40" width="7" height="3" rx="1" fill="#ef4444" opacity="0.85"/>
         <rect x="27" y="40" width="7" height="3" rx="1" fill="#ef4444" opacity="0.85"/>`;
+}
+
+/** The pictograms of the place signs, drawn in a 24×24 box — white on the
+ * sign colour `c` (which also cuts out the details). */
+const PLACE_SIGN_PICTOGRAMS: Record<string, (c: string) => string> = {
+  place_bank: () =>
+    `<circle cx="12" cy="12" r="10" fill="none" stroke="#fff" stroke-width="2"/>
+     <text x="12" y="17.2" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#fff">$</text>`,
+  place_post_office: c =>
+    `<path d="M5 22 V10 a7 7 0 0 1 14 0 V22 Z" fill="#fff"/>
+     <rect x="7.6" y="9.4" width="8.8" height="2.2" rx="1" fill="${c}"/>
+     <rect x="9" y="15" width="6" height="4.5" rx="0.8" fill="none" stroke="${c}" stroke-width="1.4"/>
+     <rect x="3" y="21.5" width="18" height="1.6" rx="0.8" fill="#fff"/>`,
+  place_pub: c =>
+    `<rect x="3.5" y="7.5" width="12" height="14" rx="2" fill="#fff"/>
+     <circle cx="6.4" cy="6.4" r="2.8" fill="#fff"/><circle cx="10" cy="5" r="3" fill="#fff"/><circle cx="13.4" cy="6.4" r="2.6" fill="#fff"/>
+     <path d="M15.5 10 h2.6 a2.4 2.4 0 0 1 2.4 2.4 v3.2 a2.4 2.4 0 0 1 -2.4 2.4 h-2.6" fill="none" stroke="#fff" stroke-width="2"/>
+     <path d="M7 11 V19 M10 11 V19 M13 11 V19" stroke="${c}" stroke-width="1.2" opacity=".55"/>`,
+  place_hotel: () =>
+    `<rect x="2" y="17" width="20" height="3" rx="1" fill="#fff"/>
+     <rect x="2" y="7" width="2.6" height="14" rx="1" fill="#fff"/>
+     <rect x="5.6" y="10.6" width="6.2" height="4.2" rx="2" fill="#fff"/>
+     <path d="M13 15 V11.4 H19.2 a2.8 2.8 0 0 1 2.8 2.8 V15 Z" fill="#fff"/>
+     <rect x="19.4" y="20" width="2.6" height="2.4" fill="#fff"/>`,
+  place_gym: () =>
+    `<rect x="6" y="10.9" width="12" height="2.2" fill="#fff"/>
+     <rect x="1.6" y="9" width="2.6" height="6" rx="1" fill="#fff"/><rect x="4.2" y="6" width="3" height="12" rx="1.2" fill="#fff"/>
+     <rect x="19.8" y="9" width="2.6" height="6" rx="1" fill="#fff"/><rect x="16.8" y="6" width="3" height="12" rx="1.2" fill="#fff"/>`,
+  place_shopping_centre: c =>
+    `<path d="M5 8.4 H19 L20.2 21.6 H3.8 Z" fill="#fff"/>
+     <path d="M8.8 8.6 V6.6 a3.2 3.2 0 0 1 6.4 0 V8.6" fill="none" stroke="#fff" stroke-width="2"/>
+     <path d="M8.8 12.6 V13.4 M15.2 12.6 V13.4" stroke="${c}" stroke-width="2" stroke-linecap="round"/>`,
+};
+
+/** A round sign on a pole with a pictogram — the shared shape of the place
+ * signs (the same shape as the train station sign). */
+function placeSign(icon: string, c: string, dark: string): string {
+  const pic = PLACE_SIGN_PICTOGRAMS[icon](c);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+        <rect x="22" y="28" width="4" height="18" rx="1" fill="#555"/>
+        <ellipse cx="24" cy="46" rx="6" ry="1.6" fill="#222" opacity="0.35"/>
+        <circle cx="24" cy="16" r="15" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
+        <g transform="translate(12.6 4.6) scale(0.95)">${pic}</g>
+      </svg>`;
 }
 
 /** Generate an SVG string for a given icon + colour */
@@ -322,6 +392,14 @@ export function getMarkerSvg(icon: MarkerIcon, colour: MarkerColour): string {
         <circle cx="27.5" cy="18" r="1.4" fill="${c}"/>
         <path d="M17.5 24.5 L14.5 28 M30.5 24.5 L33.5 28 M16 26.2 H32" stroke="#fff" stroke-width="1.6" stroke-linecap="round" fill="none"/>
       </svg>`;
+
+    case "place_bank":
+    case "place_post_office":
+    case "place_pub":
+    case "place_hotel":
+    case "place_gym":
+    case "place_shopping_centre":
+      return placeSign(icon, c, dark);
 
     case "taxi":
       // The sedan with a roof sign.

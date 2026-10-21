@@ -50,10 +50,14 @@ import {
 import {
   transitFullAddress,
   transitKindOfPlace,
-  transitSignIconOf,
   transitPlaceFromGoogle,
   type TransitPlace,
 } from "@shared/transitPlace";
+import {
+  signIconOf,
+  placeSignFor,
+  type PlaceSignIcon,
+} from "@shared/placeSigns";
 import { enterNearbyOffers } from "@shared/enterNearby";
 import { endedContinuityCard } from "@/lib/surveillanceCard";
 import { entryMentionsAddress, popupShortAddress } from "@shared/markerLink";
@@ -1575,7 +1579,7 @@ function buildInfoWindowContent(
   // Persisted appearance for this intel pin (server-saved override — see
   // intelPinOverrides — takes priority over the type-based default).
   const intelIcon: string =
-    override?.markerIcon ?? transitSignIconOf(loc.label) ?? "house_filled";
+    override?.markerIcon ?? signIconOf(loc.label) ?? "house_filled";
   const intelColour: string =
     override?.markerColour ?? (isTarget ? "red" : "purple");
   const intelRotation: number = override?.rotation ?? 0;
@@ -2691,6 +2695,9 @@ export default function IntelligenceMapping() {
     /** Set when the place is a bus stop or train station: name is then the
      * one wording ("Bus Stop …" / "… Train Station"). */
     transit?: TransitPlace;
+    /** Set when the place is a bank, post office, pub, hotel, gym or shopping
+     * centre (Google's type, else how it is written): its sign. */
+    placeSign?: PlaceSignIcon;
   } | null>(null);
   // Action chooser: shown on tap-and-hold / right-click before user picks RS Quick Entry or Marker/Intel
   // intelLoc is set when the tap is on an intelligence-derived marker (target address / observation)
@@ -2829,10 +2836,13 @@ export default function IntelligenceMapping() {
   // stop, a station): that tap is where the place's pin goes — see
   // pinAtTappedPlace — rather than wherever its name geocodes to.
   const mapQePoiPosRef = useRef<{ lat: number; lng: number } | null>(null);
+  // The sign of that tapped place (a bank, a pub, …), saved with its position.
+  const mapQePoiSignRef = useRef<PlaceSignIcon | null>(null);
   useEffect(() => {
     if (!mapQeOpen) {
       mapQeMarkerIdRef.current = null;
       mapQePoiPosRef.current = null;
+      mapQePoiSignRef.current = null;
       setMapQeLatLng(null);
     }
   }, [mapQeOpen]);
@@ -4383,7 +4393,7 @@ export default function IntelligenceMapping() {
         `intel:${label}`,
         entry.position.lat,
         entry.position.lng,
-        override?.markerIcon ?? transitSignIconOf(label) ?? "house_filled",
+        override?.markerIcon ?? signIconOf(label) ?? "house_filled",
         override?.markerColour ?? (isTarget ? "red" : "purple"),
         override?.rotation ?? 0,
         showMarkerEntityCountRef.current
@@ -4715,6 +4725,9 @@ export default function IntelligenceMapping() {
       (place, status) => {
         if (status === google.maps.places.PlacesServiceStatus.OK && place) {
           const transit = transitPlaceFromGoogle(place.name ?? "", place.types);
+          const placeSign = transit
+            ? null
+            : placeSignFor(place.name ?? "", place.types);
           setPoiTap({
             lat,
             lng,
@@ -4722,6 +4735,7 @@ export default function IntelligenceMapping() {
             address:
               place.formatted_address ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
             ...(transit ? { transit } : {}),
+            ...(placeSign ? { placeSign } : {}),
           });
         }
       }
@@ -4780,7 +4794,7 @@ export default function IntelligenceMapping() {
     // one that set it.
     const override = pinOverridesRef.current.get(loc.label);
     const icon: string =
-      override?.markerIcon ?? transitSignIconOf(loc.label) ?? "house_filled";
+      override?.markerIcon ?? signIconOf(loc.label) ?? "house_filled";
     const colour: MarkerColour =
       (override?.markerColour as MarkerColour) ?? (isTarget ? "red" : "purple");
     const rotation = override?.rotation ?? 0;
@@ -6052,6 +6066,9 @@ export default function IntelligenceMapping() {
                   place.name ?? "",
                   place.types
                 );
+                const placeSign = transit
+                  ? null
+                  : placeSignFor(place.name ?? "", place.types);
                 setPoiTap({
                   lat: tapLat,
                   lng: tapLng,
@@ -6060,6 +6077,7 @@ export default function IntelligenceMapping() {
                     place.formatted_address ??
                     `${tapLat.toFixed(5)}, ${tapLng.toFixed(5)}`,
                   ...(transit ? { transit } : {}),
+                  ...(placeSign ? { placeSign } : {}),
                 });
               }
             }
@@ -8267,15 +8285,26 @@ export default function IntelligenceMapping() {
   const pinAtTappedPlace = (
     pos: { lat: number; lng: number } | null,
     address: string,
-    observation: string
+    observation: string,
+    sign?: PlaceSignIcon | null
   ) => {
     if (!pos || !address) return;
     const label = popupShortAddress(address);
     if (!label) return;
     if (!observation.toLowerCase().includes(label.toLowerCase())) return;
     const existing = pinOverridesRef.current.get(label);
-    if (existing?.lat != null && existing?.lng != null) return;
-    savePinOverrideMut.mutate({ label, lat: pos.lat, lng: pos.lng });
+    const hasPos = existing?.lat != null && existing?.lng != null;
+    // Google said it is a bank / pub / …, but the wording alone would not
+    // have made it one: keep the sign with the pin (never over an icon the
+    // officer chose).
+    const wantSign =
+      !!sign && !existing?.markerIcon && signIconOf(label) !== sign;
+    if (hasPos && !wantSign) return;
+    savePinOverrideMut.mutate({
+      label,
+      ...(hasPos ? {} : { lat: pos.lat, lng: pos.lng }),
+      ...(wantSign ? { markerIcon: sign } : {}),
+    });
   };
 
   const linkEntryToMarker = async (
@@ -8358,6 +8387,7 @@ export default function IntelligenceMapping() {
     const linkMarkerId = mapQeMarkerIdRef.current;
     const linkAddress = mapQeAddress;
     const tappedPos = mapQePoiPosRef.current;
+    const tappedSign = mapQePoiSignRef.current;
     rsCreateRow.mutate(
       {
         sheetId: rsSelectedSheetId,
@@ -8393,7 +8423,7 @@ export default function IntelligenceMapping() {
           // Keep the entry on the custom marker it was made from.
           void linkEntryToMarker(linkMarkerId, linkAddress, observation);
           // A place tapped on the map goes exactly where it was tapped.
-          pinAtTappedPlace(tappedPos, linkAddress, observation);
+          pinAtTappedPlace(tappedPos, linkAddress, observation, tappedSign);
           // Refetch entity chips so a newly-mentioned entity shows up as a chip immediately
           if (rsSelectedSheetId) {
             void utils.row.entityChips.invalidate({
@@ -9470,7 +9500,7 @@ export default function IntelligenceMapping() {
                           : null;
                         const iconName = entry
                           ? (override?.markerIcon ??
-                            transitSignIconOf(entry.loc.label) ??
+                            signIconOf(entry.loc.label) ??
                             "house_filled")
                           : (cm.markerIcon ?? "pin");
                         const colourName = entry
@@ -11041,6 +11071,7 @@ export default function IntelligenceMapping() {
                       lat: poiTap.lat,
                       lng: poiTap.lng,
                     };
+                    mapQePoiSignRef.current = poiTap.placeSign ?? null;
                     setMapQeOpen(true);
                     setPoiTap(null);
                   }}
@@ -11066,6 +11097,7 @@ export default function IntelligenceMapping() {
                           ? "bus_stop"
                           : "train_station"
                       );
+                    else if (poiTap.placeSign) setCmIcon(poiTap.placeSign);
                     setCmAddress(rsAddress);
                     setCmNote("");
                     setCmPersons([]);

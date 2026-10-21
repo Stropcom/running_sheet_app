@@ -70,6 +70,7 @@ import {
   type VehicleEdit,
 } from "@shared/vehicleList";
 import { slipEdits } from "@shared/observationTidy";
+import { followsVehicleMake } from "@shared/vehicleModel";
 import { sentenceJoinEdits } from "@shared/sentenceJoin";
 
 export type SheetCheckCategory =
@@ -1226,6 +1227,58 @@ export function checkVehicleLists(
   return findings;
 }
 
+// ── A model name bracketed as if it were a registration ───────────────────
+
+// "A blue Mercedes Benz C200 (Vehicle C200), sedan, bearing WA registration
+// 1FAB007 (Vehicle 1FAB007)": a model like C200 has the shape of a plate, so
+// older rows (and the live bracketing before v2.15.1) put a "(Vehicle …)"
+// bracket after it, which then shows up as a second vehicle. Flags a bracket
+// whose word comes straight after a make AND which is followed, in the same
+// sentence, by the vehicle's real "registration … (Vehicle …)" bracket. One-tap
+// fix removes the stray bracket. Needing both keeps a genuine plate typed
+// after a make ("Toyota 1ABC234 (Vehicle 1ABC234)") from being flagged.
+export function checkModelBrackets(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
+  const findings: SheetCheckFinding[] = [];
+  for (const row of rows) {
+    const text = row.observation;
+    const re = /(\S+)(\s+)\(Vehicle\s+([A-Za-z0-9-]+)\)/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const word = m[1];
+      if (word.toUpperCase() !== m[3].toUpperCase()) continue;
+      const wordStart = m.index;
+      if (!followsVehicleMake(text.slice(0, wordStart))) continue;
+      const after = text.slice(m.index + m[0].length);
+      const sentenceEnd = after.search(/[.\n]/);
+      const rest = sentenceEnd === -1 ? after : after.slice(0, sentenceEnd);
+      const next = /\bregist[a-z]*\b[^()]*\(Vehicle\s+([A-Za-z0-9-]+)\)/i.exec(
+        rest
+      );
+      if (!next || next[1].toUpperCase() === word.toUpperCase()) continue;
+      const bracketStart = wordStart + word.length;
+      const bracketEnd = m.index + m[0].length;
+      const from = contextStart(text, wordStartBefore(text, wordStart), bracketEnd, 0);
+      const wrong = text.slice(from, bracketEnd);
+      findings.push({
+        ruleId: "model-bracketed-as-rego",
+        category: "formatting",
+        reason: `"${word}" is the model, not a registration — the registration is ${next[1].toUpperCase()}. The "(Vehicle ${m[3]})" bracket makes it a second vehicle.`,
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        snippet: wordSnippet(text, wordStart, bracketEnd),
+        suggestedFix: {
+          wrong,
+          correct: wrong.slice(0, bracketStart - from),
+        },
+        findingKey: `ROW_${row.rowId}::MODEL_BRACKET::${wordStart}`,
+      });
+    }
+  }
+  return findings;
+}
+
 // ── Typing slips and missing joining words ────────────────────────────────
 
 // The live tidy-up repairs these as an officer types (shared/observationTidy.ts
@@ -1816,6 +1869,7 @@ export async function checkRunningSheet(
   const doubleSpaces = checkDoubleSpaces(rows);
   const abbreviatedStreets = checkAbbreviatedStreetTypes(rows);
   const vehicleLists = checkVehicleLists(rows);
+  const modelBrackets = checkModelBrackets(rows);
   const typingSlips = checkTypingSlips(rows);
   const joiningWords = checkJoiningWords(rows);
   const bareVehicleEntities = findSheetBareVehicleEntities(
@@ -1846,6 +1900,7 @@ export async function checkRunningSheet(
     ...doubleSpaces,
     ...abbreviatedStreets,
     ...vehicleLists,
+    ...modelBrackets,
     ...typingSlips,
     ...joiningWords,
     ...consistency,

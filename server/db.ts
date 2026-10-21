@@ -77,6 +77,7 @@ import {
 } from "@shared/knownAddress";
 import {
   VEHICLE_DEPART_PATTERN,
+  occupantsWhoEntered,
   VEHICLE_ARRIVE_PATTERN,
   matchVehicleArrival,
   matchVehicleSighting,
@@ -88,7 +89,7 @@ import {
   isUnseenOccupants,
   splitPeopleNames,
 } from "@shared/walkEventPatterns";
-import { extractOccupantNames } from "@shared/occupantNames";
+import { cleanOccupantDesc, extractOccupantNames } from "@shared/occupantNames";
 import { isHandover, surveillancePlace } from "@shared/surveillanceHandover";
 import {
   surveillanceSignal,
@@ -1416,7 +1417,10 @@ export async function createSheetRow(data: InsertSheetRow) {
       : data;
   const [result] = await db.insert(sheetRows).values(normalized);
   if (typeof normalized.observation === "string" && normalized.sheetId) {
-    await autoRegisterDriverVehicles(normalized.sheetId, normalized.observation);
+    await autoRegisterDriverVehicles(
+      normalized.sheetId,
+      normalized.observation
+    );
   }
   return result.insertId as number;
 }
@@ -5114,7 +5118,10 @@ export { VEHICLE_MAKES_PATTERN };
 // comma-separated segments.
 const PREMISES_SEGMENT_RE_SRC =
   ",\\s*(?:(?:shop|unit|suite|level|kiosk|tenancy|store|lot|stall|booth|office)\\b[^,]{0,40}|[^,]{0,40}\\b(?:centre|center|plaza|mall|arcade|square|market|markets|complex|building|tower|village|precinct)\\b)";
-const PREMISES_GAP_RE = new RegExp(`^(?:${PREMISES_SEGMENT_RE_SRC}){1,2}$`, "i");
+const PREMISES_GAP_RE = new RegExp(
+  `^(?:${PREMISES_SEGMENT_RE_SRC}){1,2}$`,
+  "i"
+);
 
 /**
  * Extract bracketed entities from a single observation string.
@@ -6451,7 +6458,9 @@ export function computePendingVehicleDepartures(
     if (departMatch) {
       const rego = departMatch[1].toUpperCase();
       lastDepartByRego.set(rego, {
-        occupantDesc: departMatch[2].trim(),
+        occupantDesc:
+          cleanOccupantDesc(departMatch[2]) ||
+          occupantsWhoEntered(row.observation),
         sheetId: row.sheetId,
         rowId: row.id,
         fromAddress: extractDepartureAddress(row.observation),
@@ -13535,7 +13544,9 @@ export async function autoRegisterDriverVehicles(
     const seenBefore = new Set(
       driverVehiclesInText(previousText).map(d => `${d.rego}|${d.driverName}`)
     );
-    const fresh = drivers.filter(d => !seenBefore.has(`${d.rego}|${d.driverName}`));
+    const fresh = drivers.filter(
+      d => !seenBefore.has(`${d.rego}|${d.driverName}`)
+    );
     if (fresh.length === 0) return;
 
     const db = await getDb();

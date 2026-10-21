@@ -1,4 +1,5 @@
 import { fullStreetTypes } from "./streetTypes";
+import { cleanOccupantDesc, extractOccupantNames } from "./occupantNames";
 // Canonical "Vehicle <rego> ..." narrative patterns used to mine
 // depart/arrive continuity — see server/db.ts's "Vehicle Depart → Arrive
 // Continuity" section, the authoritative user of these for building chips.
@@ -128,6 +129,21 @@ export interface VehicleArrivalMatch {
 // miss "parked, unattended, in the driveway" and similar minor rewordings.
 const UNATTENDED_RE = /\bunattended\b/i;
 
+/** Who got into the vehicle, from the front of the sentence, for a row that
+ * names them there and nothing between the vehicle and the verb: "TRAORE and
+ * NGUYEN entered a white Toyota Camry sedan, bearing TAXI2345 (Vehicle
+ * TAXI2345), departed Hawaiian's Park Centre …" → "TRAORE and NGUYEN". Empty
+ * when the sentence doesn't open that way. */
+export function occupantsWhoEntered(text: string): string {
+  const m = (text ?? "").match(
+    /^\s*([^.;:]{2,100}?)\s+(?:entered|boarded|got\s+(?:in|into)|climbed\s+(?:in|into)|jumped\s+(?:in|into))\b/i
+  );
+  if (!m) return "";
+  const names = extractOccupantNames(m[1]);
+  // Names are written in capitals (a surname) — not a bit of narrative.
+  return /[A-Z]{2,}/.test(names) ? names : "";
+}
+
 // Tries every recognised arrival narrative shape and returns the
 // rego/occupants from whichever one matches — the single place that knows
 // all the ways an arrival can be written, reused by both
@@ -157,12 +173,16 @@ export function matchVehicleArrival(text: string): VehicleArrivalMatch | null {
   if (viaCarPark) {
     return {
       rego: viaCarPark[1].toUpperCase(),
-      occupantDesc: viaCarPark[2].trim(),
+      occupantDesc:
+        cleanOccupantDesc(viaCarPark[2]) || occupantsWhoEntered(text),
     };
   }
   const direct = text.match(VEHICLE_ARRIVE_WITH_OCCUPANTS_PATTERN);
   if (direct) {
-    return { rego: direct[1].toUpperCase(), occupantDesc: direct[2].trim() };
+    return {
+      rego: direct[1].toUpperCase(),
+      occupantDesc: cleanOccupantDesc(direct[2]) || occupantsWhoEntered(text),
+    };
   }
   return null;
 }

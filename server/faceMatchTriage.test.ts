@@ -61,7 +61,7 @@ describe("once the photo is confirmed as DOYLE", () => {
   });
 
   it("a very close match under another name is still asked about", () => {
-    const close = c(5, "associate", null, "Noah Benjamin PIKE", 0.74);
+    const close = c(5, "associate", null, "Noah Benjamin PIKE", 0.54);
     const r = triageMatches(
       [DOYLE_A, close],
       { 1: "same" },
@@ -71,12 +71,12 @@ describe("once the photo is confirmed as DOYLE", () => {
       }
     );
     expect(r.ask).toEqual([close]);
-    expect(HIGH_CONFLICT_SIMILARITY).toBe(0.7);
+    expect(HIGH_CONFLICT_SIMILARITY).toBe(0.5);
     expect(
-      autoDecision(c(6, "associate", null, "X", 0.7), { "target:7": "same" })
+      autoDecision(c(6, "associate", null, "X", 0.5), { "target:7": "same" })
     ).toBeNull();
     expect(
-      autoDecision(c(6, "associate", null, "X", 0.69), { "target:7": "same" })
+      autoDecision(c(6, "associate", null, "X", 0.49), { "target:7": "same" })
     ).toBe("different");
   });
 

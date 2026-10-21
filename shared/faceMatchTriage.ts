@@ -20,7 +20,7 @@
 
 /** A match under another name must score at least this to be asked about once
  * the photo is confirmed as a named person. */
-export const HIGH_CONFLICT_SIMILARITY = 0.7;
+export const HIGH_CONFLICT_SIMILARITY = 0.5;
 
 export type MatchDecision = "same" | "different";
 

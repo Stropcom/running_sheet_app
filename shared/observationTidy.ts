@@ -150,6 +150,23 @@ export function repairObservation(text: string): string {
   return repairObservationAtCaret(text, 0).text;
 }
 
+/**
+ * Every typing-slip edit for `text` in one list, positions in the original
+ * text (a glued street type plus `repairEdits`), for Check Sheet to flag on
+ * rows written before the live repair existed.
+ */
+export function slipEdits(text: string): VehicleEdit[] {
+  const edits: VehicleEdit[] = [];
+  const g = new RegExp(GLUED_STREET_TYPE.source, "g");
+  let m: RegExpExecArray | null;
+  while ((m = g.exec(text)) !== null) {
+    if (insideBracket(text, m.index)) continue;
+    const pos = m.index + m[1].length;
+    edits.push({ start: pos, end: pos, insert: " " });
+  }
+  return [...edits, ...repairEdits(text)].sort((a, b) => a.start - b.start);
+}
+
 /** Same, for a field being typed in: the caret keeps its place in the text. */
 export function repairObservationAtCaret(
   text: string,

@@ -45,7 +45,10 @@
 // check it, and doing it with the same small on-device model already used
 // for Step 3 of the Local AI Roadmap would bury a low-confidence guess
 // under the same "checked" badge as the fully deterministic categories
-// here, which is worse than not offering it.
+// here, which is worse than not offering it. (Since v2.14.0 a few fixed,
+// deterministic grammar-style rules ARE checked — doubled words, doubled
+// commas, a stray full stop, missing joining words — see "Typing slips" below;
+// they are plain pattern rules, not a general grammar check.)
 import {
   extractEntitiesFromText,
   getAllIntelligenceEntities,
@@ -61,7 +64,13 @@ import { findFuzzyMatches, DEFAULT_FUZZY_THRESHOLD } from "./fuzzyMatch";
 import { aliasMentionCompatible } from "./personAliasMatch";
 import { findUnidentifiedMentions } from "@shared/unidentified";
 import { findAbbreviatedStreetTypes } from "@shared/streetTypes";
-import { vehicleListFixes } from "@shared/vehicleList";
+import {
+  applyEdits,
+  vehicleListFixes,
+  type VehicleEdit,
+} from "@shared/vehicleList";
+import { slipEdits } from "@shared/observationTidy";
+import { sentenceJoinEdits } from "@shared/sentenceJoin";
 
 export type SheetCheckCategory =
   | "formatting"
@@ -1217,6 +1226,103 @@ export function checkVehicleLists(
   return findings;
 }
 
+// ── Typing slips and missing joining words ────────────────────────────────
+
+// The live tidy-up repairs these as an officer types (shared/observationTidy.ts
+// `slipEdits`, shared/sentenceJoin.ts `sentenceJoinEdits`); this flags rows
+// written before that, or edited by hand afterwards, each with a one-tap fix.
+// Only the "safe" rules are used — each one removes an obvious slip or fills a
+// gap between two pieces; nothing re-cases or rewrites a word, and the capitals
+// and closing full stop (which need to know the text was typed) are not here.
+// The fix replaces the first occurrence of `wrong`, so it is widened with the
+// text in front of it until it is unique within the row.
+function editFindings(
+  rows: ObservationTextForSheet[],
+  editsOf: (text: string) => VehicleEdit[],
+  ruleId: string,
+  keyName: string,
+  reasonOf: (original: string, edit: VehicleEdit) => string
+): SheetCheckFinding[] {
+  const findings: SheetCheckFinding[] = [];
+  for (const row of rows) {
+    const text = row.observation;
+    for (const edit of editsOf(text)) {
+      let to = edit.end;
+      while (to < text.length && /\s/.test(text[to])) to++;
+      to = snapToWordEnd(text, to);
+      const from = contextStart(
+        text,
+        wordStartBefore(text, edit.start),
+        to,
+        0
+      );
+      const wrong = text.slice(from, to);
+      const correct = applyEdits(wrong, [
+        {
+          start: edit.start - from,
+          end: edit.end - from,
+          insert: edit.insert,
+        },
+      ]);
+      if (correct === wrong) continue;
+      findings.push({
+        ruleId,
+        category: "formatting",
+        reason: reasonOf(text.slice(edit.start, edit.end), edit),
+        rowId: row.rowId,
+        timeMinutes: row.timeMinutes,
+        snippet: wordSnippet(text, edit.start, edit.end),
+        suggestedFix: { wrong, correct },
+        findingKey: `ROW_${row.rowId}::${keyName}::${edit.start}`,
+      });
+    }
+  }
+  return findings;
+}
+
+export function checkTypingSlips(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
+  return editFindings(
+    rows,
+    slipEdits,
+    "typing-slip",
+    "TYPING_SLIP",
+    (removed, edit) => {
+      if (edit.start === edit.end)
+        return 'A space is missing here — the street type ran into the next word ("Streetand").';
+      if (/,/.test(removed)) return "Two commas in a row — one is enough.";
+      if (removed === ".")
+        return "A full stop in the middle of a sentence — it looks like a slip.";
+      return `"${removed.trim()}" is written twice in a row — one is enough.`;
+    }
+  );
+}
+
+export function checkJoiningWords(
+  rows: ObservationTextForSheet[]
+): SheetCheckFinding[] {
+  return editFindings(
+    rows,
+    text => sentenceJoinEdits(text),
+    "joining-word-missing",
+    "JOINING_WORD",
+    (_removed, edit) => {
+      const ins = edit.insert.trim();
+      const article = /^(an?)\s+\S/i.exec(ins);
+      if (article)
+        return `A vehicle that opens the sentence needs "${article[1]}" in front of it.`;
+      if (ins.startsWith("."))
+        return "Two whole sentences run together — a full stop goes between them.";
+      if (/^at$/i.test(ins))
+        return 'A street address after "Surveillance commenced / ceased" needs "at" in front of it.';
+      if (/\band\b/i.test(ins) || ins.startsWith(","))
+        return 'These need joining — "and" (or commas) between them.';
+      return "A joining word is missing between these two parts.";
+    }
+  );
+}
+
 // ── Double spaces between words ───────────────────────────────────────────
 
 // Two or more spaces in a row in the middle of a line ("entered  Kinky Lizard")
@@ -1710,6 +1816,8 @@ export async function checkRunningSheet(
   const doubleSpaces = checkDoubleSpaces(rows);
   const abbreviatedStreets = checkAbbreviatedStreetTypes(rows);
   const vehicleLists = checkVehicleLists(rows);
+  const typingSlips = checkTypingSlips(rows);
+  const joiningWords = checkJoiningWords(rows);
   const bareVehicleEntities = findSheetBareVehicleEntities(
     sheetId,
     rows,
@@ -1738,6 +1846,8 @@ export async function checkRunningSheet(
     ...doubleSpaces,
     ...abbreviatedStreets,
     ...vehicleLists,
+    ...typingSlips,
+    ...joiningWords,
     ...consistency,
     ...bareAddressConsistency,
     ...spelling,

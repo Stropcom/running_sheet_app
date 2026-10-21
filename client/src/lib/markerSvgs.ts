@@ -50,7 +50,7 @@ export type MarkerIcon =
   // station sign, on a pole.
   | "bus_stop"
   | "train_station"
-  // Square signs on a pole for a bank, post office, pub, hotel (accommodation),
+  // Square markers (no pole) for a bank, post office, pub, hotel (accommodation),
   // gym and shopping centre — the default pin of such a place
   // (shared/placeSigns.ts).
   | "place_bank"
@@ -303,15 +303,14 @@ const PLACE_SIGN_PICTOGRAMS: Record<string, (c: string) => string> = {
     `<path d="M21.6 14.4 v-2.4 L13.2 7 V3.4 a1.6 1.6 0 0 0 -3.2 0 V7 L1.6 12 v2.4 l8.4 -2.4 v4.6 l-2.4 1.8 V21 l4 -1.2 4 1.2 v-2.2 l-2.4 -1.8 V12 Z" fill="#fff" transform="translate(0.4 0.4)"/>`,
 };
 
-/** A square sign on a pole with a pictogram — the shared shape of the place
- * signs (the same shape as the bus stop sign). */
+/** A rounded square with a pictogram — the shared shape of the place signs
+ * (the look of the bus stop sign, without its pole, filling the icon box like
+ * every other marker). */
 function placeSign(icon: string, c: string, dark: string): string {
   const pic = PLACE_SIGN_PICTOGRAMS[icon](c);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
-        <rect x="22" y="27" width="4" height="19" rx="1" fill="#555"/>
-        <ellipse cx="24" cy="46" rx="6" ry="1.6" fill="#222" opacity="0.35"/>
-        <rect x="6" y="2" width="36" height="27" rx="6" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
-        <g transform="translate(13.2 4.7) scale(0.9)">${pic}</g>
+        <rect x="4" y="4" width="40" height="40" rx="9" fill="${c}" stroke="${dark}" stroke-width="1.5"/>
+        <g transform="translate(8.4 8.4) scale(1.3)">${pic}</g>
       </svg>`;
 }
 

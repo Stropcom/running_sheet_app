@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Check } from "lucide-react";
 import { FaceMatchPreview } from "@/components/FaceMatchPreview";
+import type { TriageChosen } from "@shared/faceMatchTriage";
 import type { FaceMatchCandidate } from "@/components/PossibleMatchDialog";
 
 export interface DetectedFaceBox {
@@ -54,6 +55,7 @@ export function TapSelectFace({
   matchesLoading,
   matchesError,
   matchAnswers,
+  matchChosen,
   onMatchAnswer,
 }: {
   photoUrl: string;
@@ -68,6 +70,8 @@ export function TapSelectFace({
   matchesError?: boolean;
   /** Answers given so far for the selected face's matches, and where new ones go. */
   matchAnswers?: Record<number, "same" | "different">;
+  /** Who the photo is being linked to, when picked (see faceMatchTriage). */
+  matchChosen?: TriageChosen | null;
   onMatchAnswer?: (
     match: FaceMatchCandidate,
     answer: "same" | "different"
@@ -180,6 +184,7 @@ export function TapSelectFace({
             loading={matchesLoading}
             error={matchesError}
             answers={matchAnswers ?? {}}
+            chosen={matchChosen ?? null}
             onAnswer={onMatchAnswer ?? (() => {})}
           />
         )}

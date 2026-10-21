@@ -9,6 +9,11 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import {
+  autoDecision,
+  identityKey,
+  type MatchDecision,
+} from "@shared/faceMatchTriage";
 import { toast } from "sonner";
 import {
   Check,
@@ -212,6 +217,14 @@ export function PossibleMatchDialog({
     utils.attachment.listByOperation.invalidate();
   };
 
+  // Who the officer has decided so far in this run (identity → answer), so
+  // the rest of the run skips what it already settles: other photos of a
+  // person answered "different" (or already confirmed), and lower-scoring
+  // matches under another name once someone is confirmed. See
+  // shared/faceMatchTriage.ts.
+  const [decided, setDecided] = useState<Record<string, MatchDecision>>({});
+  const autoDismiss = trpc.attachment.dismissFaceMatch.useMutation();
+
   const confirmMatch = trpc.attachment.confirmFaceMatch.useMutation({
     onSuccess: result => {
       if (result.blockedRowLocked) {
@@ -222,22 +235,43 @@ export function PossibleMatchDialog({
         toast.success("Linked as the same person");
       }
       invalidate();
-      advance();
     },
     onError: e => toast.error(e.message),
   });
 
   const dismissMatch = trpc.attachment.dismissFaceMatch.useMutation({
-    onSuccess: () => advance(),
     onError: e => toast.error(e.message),
   });
 
-  const advance = () => {
+  // Moves on to the next match that still needs asking, settling the ones the
+  // answers so far already decide (recorded as "not a match" where they are a
+  // different person; nothing to record for another photo of the same person).
+  const goNext = (from: number, d: Record<string, MatchDecision>) => {
     setZoomIndex(0);
-    if (index + 1 >= matches.length) onDone();
-    else setIndex(index + 1);
+    let i = from;
+    while (i < matches.length) {
+      const c = matches[i].match;
+      const auto = autoDecision(c, d);
+      if (!auto) break;
+      if (auto === "different") {
+        if (preview) onPreviewAnswer!(c, "different");
+        else
+          autoDismiss.mutate({
+            newLinkId: matches[i].newLinkId,
+            matchedLinkId: c.entityLinkId,
+          });
+      }
+      i++;
+    }
+    if (i >= matches.length) onDone();
+    else setIndex(i);
   };
-
+  const decide = (answer: MatchDecision) => {
+    const c = matches[index].match;
+    const d = { ...decided, [identityKey(c, c.entityLinkId)]: answer };
+    setDecided(d);
+    return d;
+  };
   if (matches.length === 0) return null;
   const current = matches[index];
   const pending = confirmMatch.isPending || dismissMatch.isPending;
@@ -368,8 +402,9 @@ export function PossibleMatchDialog({
             <Button
               variant="outline"
               onClick={() => {
+                const d = decide("different");
                 onPreviewAnswer!(current.match, "different");
-                advance();
+                goNext(index + 1, d);
               }}
               className="gap-1.5"
             >
@@ -392,12 +427,16 @@ export function PossibleMatchDialog({
             <Button
               variant="outline"
               disabled={pending}
-              onClick={() =>
-                dismissMatch.mutate({
-                  newLinkId: current.newLinkId,
-                  matchedLinkId: current.match.entityLinkId,
-                })
-              }
+              onClick={() => {
+                const d = decide("different");
+                dismissMatch.mutate(
+                  {
+                    newLinkId: current.newLinkId,
+                    matchedLinkId: current.match.entityLinkId,
+                  },
+                  { onSuccess: () => goNext(index + 1, d) }
+                );
+              }}
               className="gap-1.5"
             >
               <X className="h-3.5 w-3.5" />
@@ -405,12 +444,16 @@ export function PossibleMatchDialog({
             </Button>
             <Button
               disabled={pending}
-              onClick={() =>
-                confirmMatch.mutate({
-                  newLinkId: current.newLinkId,
-                  matchedLinkId: current.match.entityLinkId,
-                })
-              }
+              onClick={() => {
+                const d = decide("same");
+                confirmMatch.mutate(
+                  {
+                    newLinkId: current.newLinkId,
+                    matchedLinkId: current.match.entityLinkId,
+                  },
+                  { onSuccess: () => goNext(index + 1, d) }
+                );
+              }}
               className="gap-1.5"
             >
               <Check className="h-3.5 w-3.5" />

@@ -5,6 +5,7 @@ import {
   PossibleMatchDialog,
   type FaceMatchCandidate,
 } from "@/components/PossibleMatchDialog";
+import { triageMatches, type TriageChosen } from "@shared/faceMatchTriage";
 
 /**
  * The moment the officer taps a face, look for similar faces already on file
@@ -23,6 +24,7 @@ export function FaceMatchPreview({
   loading,
   error,
   answers,
+  chosen,
   onAnswer,
 }: {
   photoUrl: string;
@@ -35,6 +37,8 @@ export function FaceMatchPreview({
   error?: boolean;
   /** What the officer has already answered for this face, by matched link. */
   answers: Record<number, "same" | "different">;
+  /** Who the photo is being linked to, when picked. */
+  chosen?: TriageChosen | null;
   /** Called for each "Same person" / "Not the same person" answer. */
   onAnswer: (match: FaceMatchCandidate, answer: "same" | "different") => void;
 }) {
@@ -43,8 +47,15 @@ export function FaceMatchPreview({
   // as it goes shrink `remaining`, which must not shift the pop-up under it.
   const [shown, setShown] = useState<FaceMatchCandidate[]>([]);
   const [openedFor, setOpenedFor] = useState<number | null>(null);
-  // Only matches the officer hasn't answered yet are asked about.
-  const remaining = (matches ?? []).filter(m => !answers[m.entityLinkId]);
+  // Only matches still worth asking are asked about: not ones already
+  // answered, not other photos of a person already confirmed or turned down,
+  // and not a lower-scoring match under another name once the photo is
+  // confirmed as someone (shared/faceMatchTriage.ts).
+  const remaining = triageMatches(
+    matches ?? [],
+    answers,
+    chosen ?? null
+  ).ask.filter(m => !answers[m.entityLinkId]);
   const count = remaining.length;
   const answered = (matches?.length ?? 0) - count;
 

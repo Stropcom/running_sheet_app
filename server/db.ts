@@ -1,5 +1,11 @@
 import { VEHICLE_MAKES_PATTERN } from "@shared/vehicleModel";
 import {
+  composeRegistryVehicle,
+  describeVehicleInText,
+  driverIsTarget,
+  driverVehiclesInText,
+} from "./vehicleAutoAdd";
+import {
   and,
   asc,
   desc,
@@ -1408,6 +1414,9 @@ export async function createSheetRow(data: InsertSheetRow) {
         }
       : data;
   const [result] = await db.insert(sheetRows).values(normalized);
+  if (typeof normalized.observation === "string" && normalized.sheetId) {
+    await autoRegisterDriverVehicles(normalized.sheetId, normalized.observation);
+  }
   return result.insertId as number;
 }
 
@@ -1424,7 +1433,27 @@ export async function updateSheetRow(
           observation: normalizeObservationPunctuation(data.observation),
         }
       : data;
+  const before =
+    typeof normalized.observation === "string"
+      ? (
+          await db
+            .select({
+              sheetId: sheetRows.sheetId,
+              observation: sheetRows.observation,
+            })
+            .from(sheetRows)
+            .where(eq(sheetRows.id, id))
+            .limit(1)
+        )[0]
+      : undefined;
   await db.update(sheetRows).set(normalized).where(eq(sheetRows.id, id));
+  if (before && typeof normalized.observation === "string") {
+    await autoRegisterDriverVehicles(
+      before.sheetId,
+      normalized.observation,
+      before.observation ?? ""
+    );
+  }
 }
 
 export async function deleteSheetRow(id: number) {
@@ -13454,6 +13483,112 @@ export async function getObservationTextForSheet(
     (r): r is ObservationTextForSheet =>
       !!r.observation && r.observation.trim().length > 0
   );
+}
+
+/**
+ * A registered target seen DRIVING a vehicle that isn't on his registry is
+ * filed there automatically, as his next vehicle (V1 when he has none), filled
+ * in with whatever the row says about it — colour, make, model, body type.
+ * Runs after a row is saved (`createSheetRow` / `updateSheetRow`); never
+ * throws, because a failure here must not lose the officer's row. The rules
+ * (driver only, the sheet's own target, capitals surname, nothing guessed) are
+ * in server/vehicleAutoAdd.ts. On an edit only a driver that the old text did
+ * not already name is considered, so a vehicle an officer removed from the
+ * registry doesn't come back every time the row is touched again.
+ */
+export async function autoRegisterDriverVehicles(
+  sheetId: number,
+  text: string,
+  previousText = ""
+): Promise<void> {
+  try {
+    const drivers = driverVehiclesInText(text);
+    if (drivers.length === 0) return;
+    const seenBefore = new Set(
+      driverVehiclesInText(previousText).map(d => `${d.rego}|${d.driverName}`)
+    );
+    const fresh = drivers.filter(d => !seenBefore.has(`${d.rego}|${d.driverName}`));
+    if (fresh.length === 0) return;
+
+    const db = await getDb();
+    if (!db) return;
+    const [sheet] = await db
+      .select({ targetId: runningSheets.targetId })
+      .from(runningSheets)
+      .where(eq(runningSheets.id, sheetId))
+      .limit(1);
+    if (!sheet?.targetId) return;
+    const [target] = await db
+      .select()
+      .from(targets)
+      .where(and(eq(targets.id, sheet.targetId), isNull(targets.deletedAt)))
+      .limit(1);
+    if (!target || target.targetType !== "person") return;
+
+    const others = (
+      await db
+        .select({ name: associates.name })
+        .from(associates)
+        .where(eq(associates.targetId, target.id))
+    ).map(a => a.name);
+
+    const known = targetVehicleRegos(target);
+    let extras: unknown[] = [];
+    try {
+      extras = JSON.parse(target.extraVehicles ?? "[]");
+    } catch {
+      extras = [];
+    }
+    let v1Empty = !(
+      (target.v1f ?? "").trim() ||
+      (target.v1 ?? "").trim() ||
+      (target.vehRegistration ?? "").trim()
+    );
+    let sheetRows_: ObservationTextForSheet[] | null = null;
+    const patch: Record<string, string | null> = {};
+    let extrasChanged = false;
+
+    for (const d of fresh) {
+      if (known.has(d.rego)) continue;
+      if (!driverIsTarget(d.driverName, target, others)) continue;
+      // What the row says about the vehicle; failing that, the sheet's other
+      // rows (a vehicle is often described once and named bare afterwards).
+      let seen = describeVehicleInText(text, d.rego);
+      if (!seen) {
+        sheetRows_ ??= await getObservationTextForSheet(sheetId);
+        for (const r of sheetRows_) {
+          seen = describeVehicleInText(r.observation, d.rego);
+          if (seen) break;
+        }
+      }
+      const entry = composeRegistryVehicle(
+        d.rego,
+        seen,
+        `x${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+      );
+      known.add(d.rego);
+      if (v1Empty && extras.length === 0) {
+        v1Empty = false;
+        patch.v1f = entry.full;
+        patch.v1 = entry.short;
+        patch.vehRegistration = entry.registration;
+        patch.vehState = entry.state;
+        patch.vehColour = entry.colour || null;
+        patch.vehMake = entry.make || null;
+        patch.vehModel = entry.model || null;
+        patch.vehType = entry.vehicleType || null;
+      } else {
+        extras.push(entry);
+        extrasChanged = true;
+      }
+    }
+    if (extrasChanged) patch.extraVehicles = JSON.stringify(extras);
+    if (Object.keys(patch).length === 0) return;
+    await updateTarget(target.id, patch as Parameters<typeof updateTarget>[1]);
+    invalidateIntelligenceCache();
+  } catch (err) {
+    console.error("[autoRegisterDriverVehicles]", err);
+  }
 }
 
 /** The assigned target's registry surname for a sheet, if any — backs

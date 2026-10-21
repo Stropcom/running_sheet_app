@@ -45,7 +45,7 @@ const AU_STATES = new Set([
   "ACT",
 ]);
 
-const COLOURS = new Set([
+export const COLOURS = new Set([
   "white",
   "black",
   "silver",
@@ -88,7 +88,7 @@ const COLOURS = new Set([
 // field as one lump — recognising the pair at all was the fix; dropping
 // the modifier rather than keeping it is the refinement on top. Checked
 // as a two-word pair before the single-word case below.
-const COLOUR_MODIFIERS = new Set([
+export const COLOUR_MODIFIERS = new Set([
   "dark",
   "light",
   "metallic",
@@ -171,7 +171,7 @@ const BARE_REGO_ANCHOR = /(?:^|\n)\s*(\d[A-Za-z]{2,3}\d{3})\b/g;
 const NO_PLATE_ANCHOR =
   /\bno\s+(?:number\s+)?plate\s*(?:observed|sighted|seen)?\b|\bno\s+(?:rego|registration)\s*(?:observed|sighted|seen)?\b|\b(?:plate|rego|registration)\s+unknown\b|\bunknown\s+plate\b/gi;
 
-function stripVehicleType(words: string[]): {
+export function stripVehicleType(words: string[]): {
   rest: string[];
   vehicleType: string;
 } {

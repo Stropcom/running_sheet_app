@@ -60,7 +60,11 @@ import {
 } from "@shared/placeSigns";
 import { enterNearbyOffers } from "@shared/enterNearby";
 import { endedContinuityCard } from "@/lib/surveillanceCard";
-import { entryMentionsAddress, popupShortAddress } from "@shared/markerLink";
+import {
+  entryMentionsAddress,
+  pinKeyForTappedPlace,
+  popupShortAddress,
+} from "@shared/markerLink";
 import { fullStreetTypes } from "@shared/streetTypes";
 import {
   broadcastSharing,
@@ -8282,16 +8286,31 @@ export default function IntelligenceMapping() {
   // named "Grange Dr After Gascoyne Wy" can be anywhere. Saved as the place's
   // position (the same record as dragging its pin), only when this entry
   // actually mentions the place and it has no position of its own yet.
-  const pinAtTappedPlace = (
+  const pinAtTappedPlace = async (
     pos: { lat: number; lng: number } | null,
     address: string,
     observation: string,
     sign?: PlaceSignIcon | null
   ) => {
     if (!pos || !address) return;
-    const label = popupShortAddress(address);
-    if (!label) return;
-    if (!observation.toLowerCase().includes(label.toLowerCase())) return;
+    const shortLabel = popupShortAddress(address);
+    if (!shortLabel) return;
+    if (!observation.toLowerCase().includes(shortLabel.toLowerCase())) return;
+    // The map looks a pin's saved position / icon up by the location's own
+    // label ("La Lune, 73 George Street, EAST FREMANTLE"), not by the short
+    // bracket name, so find that label among the locations the new row made.
+    let label = shortLabel;
+    try {
+      const fresh = await refetchLocations();
+      const locs = (fresh.data ?? []) as IntelMapLocation[];
+      label =
+        pinKeyForTappedPlace(
+          locs.map(l => l.label),
+          address
+        ) ?? shortLabel;
+    } catch {
+      // Keep the short name, as before.
+    }
     const existing = pinOverridesRef.current.get(label);
     const hasPos = existing?.lat != null && existing?.lng != null;
     // Google said it is a bank / pub / …, but the wording alone would not
@@ -8423,7 +8442,12 @@ export default function IntelligenceMapping() {
           // Keep the entry on the custom marker it was made from.
           void linkEntryToMarker(linkMarkerId, linkAddress, observation);
           // A place tapped on the map goes exactly where it was tapped.
-          pinAtTappedPlace(tappedPos, linkAddress, observation, tappedSign);
+          void pinAtTappedPlace(
+            tappedPos,
+            linkAddress,
+            observation,
+            tappedSign
+          );
           // Refetch entity chips so a newly-mentioned entity shows up as a chip immediately
           if (rsSelectedSheetId) {
             void utils.row.entityChips.invalidate({

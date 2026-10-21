@@ -1,10 +1,14 @@
+import { triageMatches } from "@shared/faceMatchTriage";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { useMemo, useRef, useState } from "react";
 import type { MouseEventHandler } from "react";
 import { toast } from "sonner";
 import { Check, User } from "lucide-react";
-import { PossibleMatchDialog, type PendingMatch } from "@/components/PossibleMatchDialog";
+import {
+  PossibleMatchDialog,
+  type PendingMatch,
+} from "@/components/PossibleMatchDialog";
 import { visibleFaces, type DetectedFaceBox } from "@/components/TapSelectFace";
 
 type FaceSelectPickerProps =
@@ -55,7 +59,9 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
     w: number;
     h: number;
   } | null>(null);
-  const [pendingMatches, setPendingMatches] = useState<PendingMatch[] | null>(null);
+  const [pendingMatches, setPendingMatches] = useState<PendingMatch[] | null>(
+    null
+  );
   const imgRef = useRef<HTMLImageElement>(null);
   const utils = trpc.useUtils();
   // confirmPending only flips true once React commits the mutation's isPending
@@ -78,27 +84,61 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
     else onDone();
   };
 
-  const confirmUnidentified = trpc.attachment.confirmUnidentifiedPersonFaces.useMutation({
-    onSuccess: data => {
-      toast.success(
-        `Tagged ${data.results.length} Unidentified Person entr${data.results.length === 1 ? "y" : "ies"}`
-      );
-      finishWithMatches(
-        data.results.flatMap(r =>
-          r.matches.map(match => ({ newLinkId: r.linkId, newPhotoUrl: photoUrl, match }))
-        )
-      );
-    },
-    onError: e => {
-      submittingRef.current = false;
-      toast.error(e.message);
-    },
-  });
+  const confirmUnidentified =
+    trpc.attachment.confirmUnidentifiedPersonFaces.useMutation({
+      onSuccess: data => {
+        toast.success(
+          `Tagged ${data.results.length} Unidentified Person entr${data.results.length === 1 ? "y" : "ies"}`
+        );
+        finishWithMatches(
+          data.results.flatMap(r =>
+            r.matches.map(match => ({
+              newLinkId: r.linkId,
+              newPhotoUrl: photoUrl,
+              match,
+            }))
+          )
+        );
+      },
+      onError: e => {
+        submittingRef.current = false;
+        toast.error(e.message);
+      },
+    });
+
+  const dismissSettled = trpc.attachment.dismissFaceMatch.useMutation();
 
   const confirmEntity = trpc.attachment.confirmEntityFace.useMutation({
     onSuccess: data => {
       toast.success("Photo linked");
-      finishWithMatches(data.matches.map(match => ({ newLinkId: data.linkId, newPhotoUrl: photoUrl, match })));
+      // The photo is confirmed as this person: their other photos, and
+      // lower-scoring matches under another name, need no question
+      // (shared/faceMatchTriage.ts).
+      const chosen =
+        props.mode === "entity"
+          ? {
+              category: props.category,
+              targetId: props.targetId,
+              entityLabel: props.entityLabel,
+            }
+          : null;
+      const triage = triageMatches(data.matches, {}, chosen);
+      for (const c of triage.dismiss) {
+        dismissSettled.mutate({
+          newLinkId: data.linkId,
+          matchedLinkId: c.entityLinkId,
+        });
+      }
+      const ask = new Set(triage.ask.map(c => c.entityLinkId));
+      finishWithMatches(
+        data.matches
+          .filter(m => ask.has(m.entityLinkId))
+          .map(match => ({
+            newLinkId: data.linkId,
+            newPhotoUrl: photoUrl,
+            match,
+          }))
+      );
     },
     onError: e => {
       submittingRef.current = false;
@@ -108,7 +148,9 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
 
   const fallbackMutation = trpc.attachment.linkToEntity.useMutation({
     onSuccess: () => {
-      toast.success(isEntityMode ? "Photo linked" : "Tagged as Unidentified Person");
+      toast.success(
+        isEntityMode ? "Photo linked" : "Tagged as Unidentified Person"
+      );
       invalidateLinkViews();
       onDone();
     },
@@ -118,11 +160,13 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
     },
   });
 
-  const guardedSubmit = (fn: () => void): MouseEventHandler => () => {
-    if (submittingRef.current) return;
-    submittingRef.current = true;
-    fn();
-  };
+  const guardedSubmit =
+    (fn: () => void): MouseEventHandler =>
+    () => {
+      if (submittingRef.current) return;
+      submittingRef.current = true;
+      fn();
+    };
 
   const toggle = (index: number) => {
     setFocusIndex(selected.has(index) ? null : index);
@@ -155,7 +199,8 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
   }, [faces, naturalSize, showAll, selected]);
 
   const noFacesDetected = isError || (faces && faces.length === 0);
-  const confirmPending = confirmUnidentified.isPending || confirmEntity.isPending;
+  const confirmPending =
+    confirmUnidentified.isPending || confirmEntity.isPending;
 
   if (pendingMatches) {
     return <PossibleMatchDialog matches={pendingMatches} onDone={onDone} />;
@@ -236,7 +281,6 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
         </button>
       )}
 
-
       <div className="flex justify-end gap-2">
         <Button
           variant="outline"
@@ -265,7 +309,9 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
             className="gap-1.5"
           >
             <User className="h-3.5 w-3.5" />
-            {isEntityMode ? "Link without a face" : "Tag as Unidentified Person"}
+            {isEntityMode
+              ? "Link without a face"
+              : "Tag as Unidentified Person"}
           </Button>
         ) : (
           <Button
@@ -285,7 +331,11 @@ export function FaceSelectPicker(props: FaceSelectPickerProps) {
                   })
             )}
           >
-            {confirmPending ? "Linking…" : isEntityMode ? "Confirm" : `Confirm (${selected.size})`}
+            {confirmPending
+              ? "Linking…"
+              : isEntityMode
+                ? "Confirm"
+                : `Confirm (${selected.size})`}
           </Button>
         )}
       </div>

@@ -51,6 +51,13 @@ describe("place signs by how the place is written", () => {
     expect(placeSignOfName("Post Office Hotel, High Street")).toBeNull();
   });
 
+  it("a name that starts with a number is still a name", () => {
+    expect(
+      placeSignOfName("8 Knots Tavern, 110 Riverside Road, EAST FREMANTLE")
+    ).toBe("place_pub");
+    expect(placeSignOfName("12 Bank St, PERTH")).toBeNull();
+  });
+
   it("never tags a street address or a street named after a place", () => {
     expect(placeSignOfName("27 Olding Way, FREMANTLE")).toBeNull();
     expect(placeSignOfName("Bank Street, PERTH")).toBeNull();

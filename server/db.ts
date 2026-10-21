@@ -1,4 +1,5 @@
 import { VEHICLE_MAKES_PATTERN } from "@shared/vehicleModel";
+import { signIconOf } from "@shared/placeSigns";
 import { flattenNestedBrackets } from "@shared/nestedBrackets";
 import {
   composeRegistryVehicle,
@@ -5123,6 +5124,26 @@ const PREMISES_GAP_RE = new RegExp(
   "i"
 );
 
+/** Whether the text between a business's name and its street address is only
+ * premises detail: a shop / unit / centre (PREMISES_GAP_RE), or one or two
+ * short comma-separated segments written like a name or a code — "T5004",
+ * "Westfield", "Level 2" — never narrative (lower-case words). */
+function isPremisesGap(gap: string): boolean {
+  if (PREMISES_GAP_RE.test(gap)) return true;
+  const parts = gap.split(",");
+  if (parts[0].trim() !== "") return false;
+  const segments = parts.slice(1).map(p => p.trim());
+  if (segments.length < 1 || segments.length > 2) return false;
+  return segments.every(seg => {
+    if (!seg) return false;
+    const words = seg.split(/\s+/);
+    return (
+      words.length <= 5 &&
+      words.every(w => /^[A-Z0-9]/.test(w) || /^(?:of|the|and|&)$/i.test(w))
+    );
+  });
+}
+
 /**
  * Extract bracketed entities from a single observation string.
  * Pattern: any text followed by (ShortForm) — the short form is the entity identifier.
@@ -5593,10 +5614,7 @@ export function extractEntitiesFromText(text: string): Array<{
           nameStart = beforeAddr.length - shortForm.length;
         } else {
           const at = lowerBefore.lastIndexOf(lowerName);
-          if (
-            at >= 0 &&
-            PREMISES_GAP_RE.test(beforeAddr.slice(at + shortForm.length))
-          )
+          if (at >= 0 && isPremisesGap(beforeAddr.slice(at + shortForm.length)))
             nameStart = at;
         }
         if (nameStart >= 0) {
@@ -17134,6 +17152,37 @@ export async function saveIntelPinOverride(
   } else {
     await db.insert(intelPinOverrides).values({ label: data.label, ...update });
   }
+}
+
+/**
+ * A place picked from the address suggestions carries Google's type (cafe,
+ * restaurant, gym …); the observation only gets the written address. Reads the
+ * place's own map label from that address text — with the same extraction the
+ * map uses — and saves the place's sign as that pin's icon, unless the pin
+ * already has an icon (an officer's own choice wins) or the written name
+ * already gives that sign by itself. Returns whether anything was saved.
+ */
+export async function savePlaceSignForText(
+  addressText: string,
+  markerIcon: string,
+  cin: string | undefined
+): Promise<boolean> {
+  const place = extractEntitiesFromText(addressText).find(
+    e => e.type === "address"
+  );
+  const label = place?.shortForm?.trim();
+  if (!label) return false;
+  if (signIconOf(label) === markerIcon) return false;
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const existing = await db
+    .select({ markerIcon: intelPinOverrides.markerIcon })
+    .from(intelPinOverrides)
+    .where(eq(intelPinOverrides.label, label))
+    .limit(1);
+  if (existing[0]?.markerIcon) return false;
+  await saveIntelPinOverride({ label, markerIcon }, cin);
+  return true;
 }
 
 // ─── Google Address Backfill ──────────────────────────────────────────────────

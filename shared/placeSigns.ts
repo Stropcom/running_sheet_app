@@ -48,7 +48,7 @@ export const PLACE_SIGN_ICONS: PlaceSignIcon[] = [
 ];
 
 const STREET_END_RE =
-  /\b(?:street|road|avenue|drive|highway|way|court|place|crescent|boulevard|terrace|parade|lane|close|circuit|freeway|grove|esplanade|parkway|loop|rise|walk|promenade|mews)$/i;
+  /\b(?:street|road|avenue|drive|highway|way|court|place|crescent|boulevard|terrace|parade|lane|close|circuit|freeway|grove|esplanade|parkway|loop|rise|walk|promenade|mews|st|rd|ave|av|dr|hwy|ct|pl|cres|blvd|tce|pde|ln|cl|cct|fwy|gr|esp|pwy)$/i;
 const STREET_MALL_RE = /\b(?:street|road|avenue|drive|way|lane)\s+mall$/i;
 
 const ACCOMMODATION_RE =
@@ -100,8 +100,8 @@ function nameOf(label: string): string {
 export function placeSignOfName(label: string): PlaceSignIcon | null {
   const name = nameOf(label);
   if (!name) return null;
-  // A street address, or a street / mall named after one of these words.
-  if (/^\d/.test(name)) return null;
+  // A street (or a street address) ends in a street type; a number at the
+  // front is not enough to say so — "8 Knots Tavern" is a pub.
   if (STREET_END_RE.test(name) || STREET_MALL_RE.test(name)) return null;
 
   if (ACCOMMODATION_RE.test(name)) return "place_hotel";

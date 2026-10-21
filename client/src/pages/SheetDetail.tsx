@@ -61,6 +61,7 @@ import {
   surnameTokens,
   isReadAsMovement,
 } from "@shared/walkEventPatterns";
+import { knownSurnamesOf } from "@shared/companions";
 import {
   pickSubjectCardKey,
   resolveTrackedTarget,
@@ -5901,6 +5902,9 @@ export default function SheetDetail({
             const targetRe = targetCode
               ? new RegExp(`\\b${targetCode}\\b`, "i")
               : null;
+            const knownSurnames = knownSurnamesOf(
+              (rows ?? []).map(r => r.observation)
+            );
             const latestMove =
               targetRe && rows
                 ? rows
@@ -5908,7 +5912,7 @@ export default function SheetDetail({
                       r =>
                         !!r.observation &&
                         targetRe.test(r.observation) &&
-                        !isReadAsMovement(r.observation) &&
+                        !isReadAsMovement(r.observation, knownSurnames) &&
                         /\b(entered|exited|walked|left|arrived|departed|drove|travelled|stopped|parked|inside|seated|sitting|standing|seen|sighted|remains|remained)\b/i.test(
                           r.observation
                         )

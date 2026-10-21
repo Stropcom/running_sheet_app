@@ -27,6 +27,7 @@ import {
   IdCard,
   ImagePlus,
 } from "lucide-react";
+import { triageMatches } from "@shared/faceMatchTriage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FORM_CONFIRM_BUTTON } from "@/lib/formKit";
 import { toast } from "sonner";
@@ -535,49 +536,54 @@ export function LinkAttachmentDialog({
     faceIndex: number | null,
     chosen: PendingEntityPick | null
   ): PendingMatch[] => {
-    const remaining: PendingMatch[] = [];
-    for (const m of matches) {
-      const answer =
-        faceIndex != null
-          ? faceAnswers[`${faceIndex}:${m.match.entityLinkId}`]
-          : undefined;
-      if (answer === "different") {
-        dismissFaceMatchMut.mutate({
-          newLinkId: m.newLinkId,
-          matchedLinkId: m.match.entityLinkId,
-        });
-        continue;
+    const answers: Record<number, "same" | "different"> = {};
+    if (faceIndex != null) {
+      for (const m of matches) {
+        const a = faceAnswers[`${faceIndex}:${m.match.entityLinkId}`];
+        if (a) answers[m.match.entityLinkId] = a;
       }
-      if (answer === "same" && chosen) {
-        const c = m.match;
-        const sameIdentity =
-          chosen.category === c.category &&
-          (c.category === "unidentified_person" ||
-            (chosen.entityLabel === c.entityLabel &&
-              (chosen.targetId ?? null) === (c.targetId ?? null)));
-        if (sameIdentity) {
-          // A person already filed as that target/associate needs no merge;
-          // a new Unidentified Person entry does.
-          if (c.category === "unidentified_person") {
-            confirmFaceMatchMut.mutate(
-              { newLinkId: m.newLinkId, matchedLinkId: c.entityLinkId },
-              {
-                onSuccess: result => {
-                  if (result.blockedRowLocked) {
-                    toast.warning(
-                      "Same person confirmed, but that row is certified/locked — the Author and Team Leader have been notified to review it manually."
-                    );
-                  }
-                },
-              }
-            );
-          }
-          continue;
-        }
-      }
-      remaining.push(m);
     }
-    return remaining;
+    // One rule (shared/faceMatchTriage.ts) decides what is still worth asking:
+    // once the photo is confirmed as a named person, their other photos and
+    // lower-scoring matches under another name are settled without asking, and
+    // a person answered "different" is not offered again.
+    const result = triageMatches(
+      matches.map((m, i) => ({ ...m.match, i })),
+      answers,
+      chosen
+    );
+    for (const c of result.dismiss) {
+      dismissFaceMatchMut.mutate({
+        newLinkId: matches[c.i].newLinkId,
+        matchedLinkId: c.entityLinkId,
+      });
+    }
+    for (const c of result.same) {
+      // A person already filed as that target/associate needs no merge; a
+      // new Unidentified Person entry the officer said is the same does.
+      if (
+        answers[c.entityLinkId] === "same" &&
+        c.category === "unidentified_person"
+      ) {
+        confirmFaceMatchMut.mutate(
+          {
+            newLinkId: matches[c.i].newLinkId,
+            matchedLinkId: c.entityLinkId,
+          },
+          {
+            onSuccess: res => {
+              if (res.blockedRowLocked) {
+                toast.warning(
+                  "Same person confirmed, but that row is certified/locked — the Author and Team Leader have been notified to review it manually."
+                );
+              }
+            },
+          }
+        );
+      }
+    }
+    const asked = new Set(result.ask.map(c => c.i));
+    return matches.filter((_, i) => asked.has(i));
   };
 
   // Resolves once a link (or upload+link) succeeds — invalidates the usual
@@ -1046,6 +1052,7 @@ export function LinkAttachmentDialog({
                       onSelect={setSelectedFaceIndex}
                       {...matchProps}
                       matchAnswers={answersForFace}
+                      matchChosen={pendingEntity}
                       onMatchAnswer={handleMatchAnswer}
                     />
                   ) : (
@@ -1102,6 +1109,7 @@ export function LinkAttachmentDialog({
                 onSelect={setSelectedFaceIndex}
                 {...matchProps}
                 matchAnswers={answersForFace}
+                matchChosen={pendingEntity}
                 onMatchAnswer={handleMatchAnswer}
               />
             )

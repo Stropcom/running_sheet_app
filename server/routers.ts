@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { format } from "date-fns";
+import { PLACE_SIGN_ICONS } from "@shared/placeSigns";
 import { storageGetBytes, storagePut } from "./storage";
 import { convertDocxToPdf } from "./documentImport/docxToPdf";
 import {
@@ -273,6 +274,7 @@ import {
   mergeEntities,
   getIntelPinOverrides,
   saveIntelPinOverride,
+  savePlaceSignForText,
   unmergeEntity,
   listEntityMerges,
   getKnownPersonNameCorrection,
@@ -6419,6 +6421,24 @@ export const appRouter = router({
       .mutation(async ({ input, ctx }) => {
         await saveIntelPinOverride(input, ctx.user.cin ?? undefined);
         return { ok: true };
+      }),
+
+    /** A place picked from the address suggestions: save Google's type for it
+     * as its pin's sign (see savePlaceSignForText). */
+    savePlaceSign: protectedProcedure
+      .input(
+        z.object({
+          addressText: z.string().min(1).max(600),
+          markerIcon: z.enum(PLACE_SIGN_ICONS as [string, ...string[]]),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const saved = await savePlaceSignForText(
+          input.addressText,
+          input.markerIcon,
+          ctx.user.cin ?? undefined
+        );
+        return { saved };
       }),
 
     /** Reverses a previous merge. */

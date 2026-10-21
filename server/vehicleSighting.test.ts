@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { matchVehicleSighting } from "@shared/vehicleEventPatterns";
+import {
+  matchVehicleArrival,
+  matchVehicleSighting,
+} from "@shared/vehicleEventPatterns";
+import { cleanOccupantDesc, extractOccupantNames } from "@shared/occupantNames";
 import { isReadAsMovement, scanWalkEvents } from "@shared/walkEventPatterns";
 import { computePendingVehicleDepartures } from "./db";
 
@@ -148,5 +152,41 @@ describe("scanWalkEvents — a departure that names its occupants", () => {
     );
     expect(scan.walkIns).toMatchObject([{ location: "Flight Club Fremantle" }]);
     expect(scan.placements.every(p => p.rego === "")).toBe(true);
+  });
+});
+
+describe("people who entered the vehicle, nothing between the bracket and the verb", () => {
+  const ENTERED_CAR =
+    "TRAORE and NGUYEN entered a white Toyota Camry sedan, bearing TAXI2345 (Vehicle TAXI2345), departed Hawaiian's Park Centre and continued via:";
+  const WALKED =
+    "TRAORE and NGUYEN exited Louder Louder - Vic Park and walked towards Vehicle TAXI2345.";
+
+  it("the departure's occupants are the people named, never a stray bracket", () => {
+    const pending = computePendingVehicleDepartures(rows(WALKED, ENTERED_CAR));
+    expect(pending).toHaveLength(1);
+    expect(pending[0].occupantDesc).toBe("TRAORE and NGUYEN");
+    expect(pending[0].occupantDesc).not.toMatch(/[),]/);
+  });
+
+  it("an arrival written the same way is read the same", () => {
+    const arrival = matchVehicleArrival(
+      "TRAORE and NGUYEN entered a white Toyota Camry sedan, bearing TAXI2345 (Vehicle TAXI2345), arrived at 5 Smith Street, PERTH WA (5 Smith Street)."
+    );
+    expect(arrival?.occupantDesc).toBe("TRAORE and NGUYEN");
+  });
+
+  it("occupants written after the bracket are unchanged", () => {
+    const pending = computePendingVehicleDepartures(
+      rows(
+        "A white Toyota Camry, bearing TAXI2345 (Vehicle TAXI2345), HOGAN driver, departed 27 Olding Way and continued via:"
+      )
+    );
+    expect(pending[0].occupantDesc).toBe("HOGAN driver");
+  });
+
+  it("a stray bracket or comma is not a person", () => {
+    expect(extractOccupantNames("), TRAORE, NGUYEN")).toBe("TRAORE and NGUYEN");
+    expect(extractOccupantNames(")")).toBe("");
+    expect(cleanOccupantDesc(")")).toBe("");
   });
 });

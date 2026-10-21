@@ -342,6 +342,25 @@ function presenceCompanions(raw: string, already: string): string[] {
   return out;
 }
 
+/** Who else went in with them, from the rest of an "entered <Place> …"
+ * sentence: "… and sat at a table with Lucas Minh NGUYEN (NGUYEN)", "… and met
+ * with EVANS", "… and had lunch with …". Needs a sitting / meeting / eating
+ * verb (or "accompanied by") in front of "with", so a bare "with" never adds
+ * anyone; the people named are inside that place too, so the card and the flag
+ * list them with the person who walked in. */
+function enteredCompanions(raw: string, already: string): string[] {
+  const m = raw.match(
+    /\b(?:sat|sitting|seated|met|meeting|joined|dined|dining|ate|eating|drank|drinking|spoke|talked|conversed|had\s+(?:a\s+)?(?:meal|drink|coffee|lunch|dinner|breakfast))\b[^.;\n]*?\b(?:with|alongside)\s+([^.;\n]*)|\b(?:accompanied\s+by|together\s+with)\s+([^.;\n]*)|\b(?:met|joined)\s+(?!with\b)([^.;\n]*)/i
+  );
+  if (!m) return [];
+  const have = new Set(surnameTokens(already));
+  const out: string[] = [];
+  for (const t of surnameTokens(m[1] ?? m[2] ?? m[3] ?? "")) {
+    if (!have.has(t) && !out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
 const withCompanions = (names: string, more: string[]) =>
   more.length > 0 ? `${names} and ${more.join(" and ")}` : names;
 
@@ -1005,8 +1024,9 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
 
     const directMatch = text.match(PERSON_ENTER_PATTERN);
     if (directMatch && !isVehicleSubject(directMatch[1])) {
+      const walkers = cleanWalkerNames(directMatch[1]);
       record(
-        cleanWalkerNames(directMatch[1]),
+        withCompanions(walkers, enteredCompanions(directMatch[2], walkers)),
         bracketLabelOrSelf(directMatch[2]),
         ""
       );
@@ -1025,7 +1045,12 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
           leaveAllPlaces(cleanWalkerNames(anyEnter[1]));
         }
       } else {
-        record(cleanWalkerNames(anyEnter[1]), placeName(anyEnter[2]), "");
+        const walkers = cleanWalkerNames(anyEnter[1]);
+        record(
+          withCompanions(walkers, enteredCompanions(anyEnter[2], walkers)),
+          placeName(anyEnter[2]),
+          ""
+        );
         return;
       }
     }

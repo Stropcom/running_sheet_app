@@ -892,7 +892,37 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     const record = (names: string, location: string, route: string) => {
       setAt(names, location);
       const k = key(location);
-      lastWalkIn.set(k, { names, location, route, ...where });
+      // Someone else already inside this place is still there when another
+      // person walks in (PARK enters the bank, then DOYLE leaves the car and
+      // enters it too): the place now holds both. Only people still logged as
+      // on foot at this very place carry over — anyone since put in a vehicle,
+      // on a vessel or elsewhere, or who walked out, does not.
+      const earlier = lastWalkIn.get(k);
+      let inside = names;
+      if (earlier && !walkedOut.has(k)) {
+        const arriving = new Set(tok(names));
+        const stillHere = splitPeopleNames(earlier.names).filter(p => {
+          const ts = tok(p);
+          return (
+            ts.length > 0 &&
+            !ts.some(t => arriving.has(t)) &&
+            ts.every(t => {
+              const pl = placed.get(t);
+              const at = lastAt.get(t);
+              return (
+                !!pl &&
+                pl.rego === "" &&
+                !pl.vessel &&
+                !pl.transit &&
+                !!at &&
+                key(at) === k
+              );
+            })
+          );
+        });
+        if (stillHere.length > 0) inside = [...stillHere, names].join(" and ");
+      }
+      lastWalkIn.set(k, { names: inside, location, route, ...where });
       walkedOut.delete(k);
       heading.delete(k);
       clearHeadingFor(names);

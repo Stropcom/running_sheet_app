@@ -28,6 +28,12 @@
 // 193b Stock Road and continued out of sight." Group 2 (the route) is then
 // undefined, and the "Walked out" chip simply omits its route.
 import {
+  canonicalNames,
+  companionNames,
+  personTokensKnown,
+  withCompanionNames as withCompanions,
+} from "./companions";
+import {
   extractArrivalAddress,
   VEHICLE_DEPART_PATTERN,
   matchVehicleArrival,
@@ -326,44 +332,6 @@ const PRESENCE_VERB_RE =
 const INSIDE_PLACE_RE =
   /\b(?:inside|within)\s+(?:the\s+)?([A-Z0-9][^.;\n]*)|\bin\s+the\s+[a-z][a-z ]{1,40}?\s+(?:of|at)\s+(?:the\s+)?([A-Z0-9][^.;\n]*)/;
 
-/** Who else is there, from the text after "inside <Place>": "... with John
- * EVANS (EVANS)" or "... with an unidentified male (UM1)" adds EVANS / UM1 to
- * the people inside, so the card and flag list them with the target. */
-function presenceCompanions(raw: string, already: string): string[] {
-  const m = raw.match(
-    /\s+(?:with|accompanied\s+by|together\s+with)\s+([^.;\n]*)/i
-  );
-  if (!m) return [];
-  const have = new Set(surnameTokens(already));
-  const out: string[] = [];
-  for (const t of surnameTokens(m[1])) {
-    if (!have.has(t) && !out.includes(t)) out.push(t);
-  }
-  return out;
-}
-
-/** Who else went in with them, from the rest of an "entered <Place> …"
- * sentence: "… and sat at a table with Lucas Minh NGUYEN (NGUYEN)", "… and met
- * with EVANS", "… and had lunch with …". Needs a sitting / meeting / eating
- * verb (or "accompanied by") in front of "with", so a bare "with" never adds
- * anyone; the people named are inside that place too, so the card and the flag
- * list them with the person who walked in. */
-function enteredCompanions(raw: string, already: string): string[] {
-  const m = raw.match(
-    /\b(?:sat|sitting|seated|met|meeting|joined|dined|dining|ate|eating|drank|drinking|spoke|talked|conversed|had\s+(?:a\s+)?(?:meal|drink|coffee|lunch|dinner|breakfast))\b[^.;\n]*?\b(?:with|alongside)\s+([^.;\n]*)|\b(?:accompanied\s+by|together\s+with)\s+([^.;\n]*)|\b(?:met|joined)\s+(?!with\b)([^.;\n]*)/i
-  );
-  if (!m) return [];
-  const have = new Set(surnameTokens(already));
-  const out: string[] = [];
-  for (const t of surnameTokens(m[1] ?? m[2] ?? m[3] ?? "")) {
-    if (!have.has(t) && !out.includes(t)) out.push(t);
-  }
-  return out;
-}
-
-const withCompanions = (names: string, more: string[]) =>
-  more.length > 0 ? `${names} and ${more.join(" and ")}` : names;
-
 /** The place from the text after "inside": anything that follows the place
  * itself ("... with Jason JOHNSON (JOHNSON)", "... while ...", "... and
  * spoke to ...") is cut off FIRST — otherwise a person's bracket
@@ -412,16 +380,21 @@ function cutAtDescription(text: string): string {
 
 /** Who is where, from a presence sentence; null when it isn't one. */
 export function matchPresenceInside(
-  text: string
+  text: string,
+  known?: ReadonlySet<string>
 ): { names: string; place: string } | null {
-  const bare = matchBareInside(text);
+  const bare = matchBareInside(text, known);
   if (bare) return bare;
   const verb = text.match(PRESENCE_VERB_RE);
   if (!verb || verb.index === undefined) return null;
-  const names = cleanWalkerNames(text.slice(0, verb.index).trim());
-  // Needs someone named by a capitalised surname (BAIG), and not a
-  // negation ("BAIG not observed ...").
-  if (!names || surnameTokens(names).length === 0) return null;
+  const names = canonicalNames(
+    cleanWalkerNames(text.slice(0, verb.index).trim()),
+    known
+  );
+  // Needs someone named by a capitalised surname (BAIG) — or a surname typed
+  // in mixed case ("Doyle") that is written in capitals elsewhere on the
+  // sheet (`known`) — and not a negation ("BAIG not observed ...").
+  if (!names || personTokensKnown(names, known).length === 0) return null;
   if (/\b(?:not|never|nil|unable)\s*$/i.test(names)) return null;
   const rest = text.slice(verb.index + verb[0].length);
   const m = rest.match(INSIDE_PLACE_RE);
@@ -429,8 +402,16 @@ export function matchPresenceInside(
   const raw = (m[1] ?? m[2] ?? "").trim();
   if (!raw || /^\(?Vehicle\b/i.test(raw)) return null;
   const place = presencePlace(raw);
+  // Everyone the sentence says is with them — before the place ("seated with
+  // PARK inside …") or after it ("… inside … with PARK at a table").
   return place
-    ? { names: withCompanions(names, presenceCompanions(raw, names)), place }
+    ? {
+        names: withCompanions(
+          names,
+          companionNames(rest, names, { bareWith: true, known })
+        ),
+        place,
+      }
     : null;
 }
 
@@ -438,7 +419,8 @@ export function matchPresenceInside(
  * all, the form the "Inside" chip writes. Only when the words before "inside"
  * are just names (no movement or vehicle words), and the place is written. */
 function matchBareInside(
-  text: string
+  text: string,
+  known?: ReadonlySet<string>
 ): { names: string; place: string } | null {
   const m = text.match(
     /^\s*([^.\n]*?)\s+(?:inside|within)\s+(?:the\s+)?([A-Z0-9][^.;\n]*)/
@@ -458,7 +440,10 @@ function matchBareInside(
   const place = presencePlace(m[2].trim());
   if (!place || place.startsWith("[")) return null;
   return {
-    names: withCompanions(names, presenceCompanions(m[2].trim(), names)),
+    names: withCompanions(
+      names,
+      companionNames(text, names, { bareWith: true, known })
+    ),
     place,
   };
 }
@@ -1026,7 +1011,10 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     if (directMatch && !isVehicleSubject(directMatch[1])) {
       const walkers = cleanWalkerNames(directMatch[1]);
       record(
-        withCompanions(walkers, enteredCompanions(directMatch[2], walkers)),
+        withCompanions(
+          walkers,
+          companionNames(directMatch[2], walkers, { known: knownSurnames })
+        ),
         bracketLabelOrSelf(directMatch[2]),
         ""
       );
@@ -1047,7 +1035,10 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       } else {
         const walkers = cleanWalkerNames(anyEnter[1]);
         record(
-          withCompanions(walkers, enteredCompanions(anyEnter[2], walkers)),
+          withCompanions(
+            walkers,
+            companionNames(anyEnter[2], walkers, { known: knownSurnames })
+          ),
           placeName(anyEnter[2]),
           ""
         );
@@ -1057,7 +1048,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
 
     // A sighting: "BAIG seated ... inside <Place>." — inside that place now,
     // and so no longer wherever they were last logged.
-    const presence = matchPresenceInside(text);
+    const presence = matchPresenceInside(text, knownSurnames);
     if (presence && !isVehicleSubject(presence.names)) {
       const who = new Set(tok(presence.names));
       for (const [k, v] of Array.from(lastWalkIn.entries())) {
@@ -1325,7 +1316,10 @@ export function occupantWording(
  * alongside a movement word but matched none of the known phrasings (so the
  * position may be stale).
  */
-export function isReadAsMovement(text: string): boolean {
+export function isReadAsMovement(
+  text: string,
+  known?: ReadonlySet<string>
+): boolean {
   if (!text) return false;
   if (
     matchVehicleArrival(text) ||
@@ -1356,6 +1350,6 @@ export function isReadAsMovement(text: string): boolean {
   if (enter && !/^\(?Vehicle\b/i.test(enter[2])) return true;
   const exit = text.match(PERSON_EXIT_ANY_PATTERN);
   if (exit && !/^\(?Vehicle\b/i.test(exit[2])) return true;
-  if (matchPresenceInside(text)) return true;
+  if (matchPresenceInside(text, known)) return true;
   return false;
 }

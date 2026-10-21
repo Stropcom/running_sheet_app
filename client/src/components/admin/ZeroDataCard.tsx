@@ -23,7 +23,7 @@ import { useIsFeatureOwner } from "@/lib/commandFeatures";
 import { clearAllOfflineData } from "@/lib/offlineStore";
 import { rememberDataEpoch } from "@/lib/dataEpoch";
 import { FORM_LABEL } from "@/lib/formKit";
-import { SECTION_BAND, SECTION_CARD, SECTION_TITLE } from "@/lib/pageKit";
+import { CollapsibleSection } from "@/components/admin/CollapsibleSection";
 import {
   ZERO_CONFIRM_WORD,
   ZERO_KEPT,
@@ -68,15 +68,17 @@ export function ZeroDataCard() {
     word.trim() === ZERO_CONFIRM_WORD && password.length > 0 && !run.isPending;
 
   return (
-    <section className={SECTION_CARD} aria-labelledby="zero-data-title">
-      <div className={`${SECTION_BAND} flex-wrap justify-between`}>
-        <h2 id="zero-data-title" className={SECTION_TITLE}>
-          Zero data
-        </h2>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/50 bg-amber-100 px-2.5 py-0.5 text-xs font-extrabold text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
-          <Lock className="h-3 w-3" aria-hidden /> Only you can see this
+    <CollapsibleSection
+      id="zero-data"
+      title="Zero data"
+      status={
+        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-amber-500/50 bg-amber-100 px-2.5 py-0.5 text-xs font-extrabold text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
+          <Lock className="h-3 w-3" aria-hidden />
+          <span className="sm:hidden">Only you</span>
+          <span className="hidden sm:inline">Only you can see this</span>
         </span>
-      </div>
+      }
+    >
       <p className="mb-3 max-w-[70ch] text-sm text-muted-foreground">
         Empties the working data so every Command starts at zero. People, teams
         and settings stay, and so does the whole CTO Roster.{" "}
@@ -246,6 +248,6 @@ export function ZeroDataCard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </section>
+    </CollapsibleSection>
   );
 }

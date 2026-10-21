@@ -10,7 +10,8 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useIsFeatureOwner } from "@/lib/commandFeatures";
-import { SECTION_BAND, SECTION_CARD, SECTION_TITLE } from "@/lib/pageKit";
+import { SECTION_CARD } from "@/lib/pageKit";
+import { CollapsibleSection } from "@/components/admin/CollapsibleSection";
 import {
   COMMAND_CODES,
   COMMAND_SHORT,
@@ -91,15 +92,17 @@ export function CommandFeaturesCard() {
     `${c.name} ${c.enabled ? "on" : "off"} for ${COMMAND_SHORT[c.command]}`;
 
   return (
-    <section className={SECTION_CARD} aria-labelledby="command-features-title">
-      <div className={`${SECTION_BAND} flex-wrap justify-between`}>
-        <h2 id="command-features-title" className={SECTION_TITLE}>
-          Command features
-        </h2>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/50 bg-amber-100 px-2.5 py-0.5 text-xs font-extrabold text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
-          <Lock className="h-3 w-3" aria-hidden /> Only you can see this
+    <CollapsibleSection
+      id="command-features"
+      title="Command features"
+      status={
+        <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-amber-500/50 bg-amber-100 px-2.5 py-0.5 text-xs font-extrabold text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
+          <Lock className="h-3 w-3" aria-hidden />
+          <span className="sm:hidden">Only you</span>
+          <span className="hidden sm:inline">Only you can see this</span>
         </span>
-      </div>
+      }
+    >
       <p className="mb-3 max-w-[70ch] text-sm text-muted-foreground">
         Choose which features each Command can use. Everything starts on.
         Switching a feature off hides it from that Command's menu and stops it
@@ -230,7 +233,7 @@ export function CommandFeaturesCard() {
           off here.
         </Note>
       </div>
-    </section>
+    </CollapsibleSection>
   );
 }
 

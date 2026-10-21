@@ -4,19 +4,14 @@
  * can try it on and off and see whether it ever adds anything. Owner only (the
  * server refuses anyone else too); renders nothing for everyone else.
  */
+import { CollapsibleSection } from "@/components/admin/CollapsibleSection";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useIsFeatureOwner } from "@/lib/commandFeatures";
-import {
-  FIELD_LABEL,
-  FIELD_VALUE,
-  SECTION_BAND,
-  SECTION_CARD,
-  SECTION_TITLE,
-} from "@/lib/pageKit";
+import { FIELD_LABEL, FIELD_VALUE, SECTION_CARD } from "@/lib/pageKit";
 
 const seconds = (ms: number, n: number) =>
   n > 0 ? `${(ms / n / 1000).toFixed(1)} s` : "–";
@@ -60,11 +55,21 @@ export function DocumentAiCard() {
   const installed = modelStatus === "ready";
 
   return (
-    <div className={SECTION_CARD}>
-      <div className={SECTION_BAND}>
-        <span className={SECTION_TITLE}>Document AI — Import Target</span>
-      </div>
-
+    <CollapsibleSection
+      id="document-ai"
+      title="Document AI — Import Target"
+      status={
+        <span
+          className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+            enabled
+              ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300"
+              : "border-border bg-muted text-muted-foreground"
+          }`}
+        >
+          {enabled ? "On" : "Off"}
+        </span>
+      }
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-sm font-medium">
@@ -129,7 +134,7 @@ export function DocumentAiCard() {
           Start counts again
         </Button>
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }
 

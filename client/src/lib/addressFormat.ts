@@ -24,6 +24,7 @@
  *     short-form, do not double-convert.
  */
 
+import { placeNameWithoutBrackets } from "@shared/nestedBrackets";
 import { transitFullAddress } from "@shared/transitPlace";
 import {
   parse as parseDate,
@@ -355,7 +356,10 @@ export function convertGoogleAddresses(text: string): string {
  * e.g. name="Bicton Tavern", address="1 Point Walter Road, Bicton WA 6157, Australia"
  *   → "Bicton Tavern, 1 Point Walter Road, BICTON WA (Bicton Tavern)"
  */
-export function buildPoiAddress(name: string, address: string): string {
+export function buildPoiAddress(rawName: string, address: string): string {
+  // A bracket inside the place's own name ("Expert Centre (Tellerless)")
+  // can't sit inside the bracket short form, so its words are written plainly.
+  const name = placeNameWithoutBrackets(rawName);
   // A place with no street number (a bus stop, a park, a street corner) is
   // "<name>, SUBURB WA (<name>)" — no postcode, no "Australia".
   const numberless = transitFullAddress(name, address);

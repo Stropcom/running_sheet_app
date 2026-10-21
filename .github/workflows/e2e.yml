@@ -1,0 +1,92 @@
+name: E2E smoke tests
+
+# Drives the real app in a real browser (Playwright) against a throwaway MySQL
+# database: sign in, create an operation and a running sheet, add and certify a
+# row, and open the main pages. The unit tests in ci.yml never load a page, so
+# this is what catches a screen that no longer opens. Nothing here calls out to
+# an external AI or any other outside service.
+
+on:
+  push:
+    branches: [main, runlogtest, develop]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: runlog_e2e
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      DATABASE_URL: mysql://root@127.0.0.1:3306/runlog_e2e
+      VITE_APP_ID: e2e-app
+      JWT_SECRET: e2e-only-secret-not-used-anywhere-else
+      PORT: "3000"
+      E2E_USERNAME: e2e
+      E2E_PASSWORD: E2e-Passw0rd!
+      E2E_CIN: E2E1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install the test browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Create the database tables
+        run: pnpm exec drizzle-kit migrate
+
+      - name: Create the test officer
+        run: pnpm tsx scripts/dev/create-admin-user.ts "$E2E_USERNAME" "$E2E_PASSWORD" "E2E Officer" "$E2E_CIN"
+
+      - name: Copy the browser engine files (what `pnpm dev` does first)
+        run: pnpm tsx scripts/dev/copy-onnx-wasm.ts
+
+      - name: Start the app
+        run: |
+          NODE_ENV=development nohup pnpm exec tsx server/_core/index.ts > app.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3000/ > /dev/null; then echo "app is up"; exit 0; fi
+            sleep 2
+          done
+          echo "app did not start"; cat app.log; exit 1
+
+      - name: Run the smoke tests
+        run: pnpm test:e2e
+
+      - name: Keep the failure details
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure
+          path: |
+            test-results/
+            app.log
+          retention-days: 7

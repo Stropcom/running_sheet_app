@@ -142,6 +142,8 @@ server/externalIntel/models/eng.traineddata
 /test-results/
 /playwright-report/
 /playwright/.cache/
+# The saved test sign-in (a live session cookie) — never commit it
+/e2e/.auth/
 
 # Zero-data script output (scripts/ops/zero-data.mjs)
 backups/

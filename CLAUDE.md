@@ -26,13 +26,14 @@ pnpm start            # run the production build (dist/index.js)
 pnpm check            # tsc --noEmit — run before considering backend/shared changes done
 pnpm format           # prettier --write .
 pnpm test             # vitest run (server-only tests, see below)
+pnpm test:e2e         # Playwright smoke tests against a running instance (see e2e/README.md)
 pnpm db:push          # drizzle-kit generate && drizzle-kit migrate — generates a migration file AND applies it
 ```
 
 Run a single test file: `pnpm vitest run server/running_sheet.test.ts`
 Run tests matching a name: `pnpm vitest run -t "certif"`
 
-Tests live under `server/*.test.ts` (vitest, `environment: "node"`, see `vitest.config.ts`). There is no client-side test suite — client changes should be verified by running `pnpm dev` and exercising the UI in a browser.
+Tests live under `server/*.test.ts` (vitest, `environment: "node"`, see `vitest.config.ts`). There are no client unit tests; `e2e/` holds Playwright **smoke tests** (sign in → operation → sheet → row → certify → locked, plus every main page opening without the error screen; they need a running instance and a throwaway database, see `e2e/README.md`, and CI runs them in `.github/workflows/e2e.yml`). Anything beyond that — a client change — should still be checked by running `pnpm dev` and exercising the UI in a browser.
 
 Package manager is **pnpm** (see `packageManager` field in `package.json`); don't use npm/yarn. `wouter` is patched via `patches/wouter@3.7.1.patch` (pnpm applies it automatically on install).
 
@@ -117,7 +118,7 @@ This file holds only the standing rules. The per-feature detail — what each ve
 
 **Code shape**
 - Rules that decide what text or data means are **pure functions in `shared/`** with a test in `server/*.test.ts` — change the rule there, not in JSX or a route. To add a phrasing or a case, add it to the rule *and* a test. Examples: `shared/companions.ts` ("who is with them" — one place), `shared/placeSigns.ts`, `shared/walkEventPatterns.ts`, `shared/sentenceJoin.ts`, `shared/observationTidy.ts`, `shared/operationAccess.ts`.
-- `pnpm check` and `pnpm test` must both pass (CI runs them on every push/PR and `main` requires the check). **If CI goes red, fix the test or the code — never leave a known failure in the suite.** Merge to `main` through a pull request once the check is green.
+- `pnpm check` and `pnpm test` must both pass (CI runs them on every push/PR and `main` requires the check). The e2e smoke tests run in their own workflow; if a change moves a button or label the smoke test uses (`e2e/smoke.spec.ts`), update the test with it. **If CI goes red, fix the test or the code — never leave a known failure in the suite.** Merge to `main` through a pull request once the check is green.
 - A new DB table must be classified in `scripts/ops/zero-data-tables.mjs` (`KEEP_TABLES` or `CLEAR_TABLES`; a table from an unmerged branch goes in the `OTHER_BRANCH_*` lists) — `server/zeroDataTables.test.ts` fails otherwise.
 - If `getAllIntelligenceEntities` starts reading another table, add it to `INTEL_SOURCE_TABLES` (`server/intelCache.ts`); call `invalidateIntelligenceCache()` after any in-place update the fingerprint can't see.
 - Anything that writes `runlog_map_settings` and wants the header to follow dispatches `runlog-map-settings-changed` on `window`.

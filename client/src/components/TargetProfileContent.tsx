@@ -1,8 +1,9 @@
 import {
   formatBail,
-  formatSpecialProjects,
   mdlLabel,
+  specialProjectsOrNone,
 } from "@shared/targetStatus";
+import { groupDetailEntries } from "@/lib/registeredDetails";
 import { useLocation } from "wouter";
 import {
   sharedLinkChipText,
@@ -306,66 +307,44 @@ ${pdfPageFrameCss(BLUE_MID)}
       .join("")}</div>
   </div>
 
-  ${
-    profile.hbf ||
-    profile.v1f ||
-    profile.v2f ||
-    profile.extraVehicles ||
-    profile.extraAddresses
-      ? `
+  ${(() => {
+    const groups = groupDetailEntries(targetDetailEntries(profile));
+    if (!groups.length) return "";
+    const sub = (t: string) =>
+      `<span style="grid-column:1/-1;font-size:9px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;padding-bottom:3px;margin:6px 0 2px">${esc(t)}</span>`;
+    return `
   <div class="section">
     <div class="section-title">Registered Details</div>
     <div class="detail-grid">
-      ${profile.hbf ? `<span class="detail-label">Home Address</span><span class="detail-value">${esc(formatIntelAddress(profile.hbf))}</span>` : ""}
-      ${prevHtml("hbf") ? `<span style="grid-column:1/-1">${prevHtml("hbf")}</span>` : ""}
-      ${parseExtraAddresses(profile.extraAddresses)
-        .map((ea, i) =>
-          ea.value
-            ? `<span class="detail-label">${esc(extraAddressHeading(ea.label, i + 2))}</span><span class="detail-value">${esc(formatIntelAddress(ea.value))}</span>`
-            : ""
+      ${groups
+        .map(
+          g =>
+            sub(g.title) +
+            g.items
+              .map(
+                e =>
+                  `<span class="detail-label">${esc(e.label)}</span><span class="detail-value">${esc(e.value)}</span>` +
+                  (e.id === "hbf" || e.id === "v1f"
+                    ? prevHtml(e.id)
+                      ? `<span style="grid-column:1/-1">${prevHtml(e.id)}</span>`
+                      : ""
+                    : "")
+              )
+              .join("")
         )
         .join("")}
-      ${profile.v1f ? `<span class="detail-label">Vehicle 1</span><span class="detail-value">${esc(formatIntelVehicle(profile.v1f))}</span>` : ""}
-      ${prevHtml("v1f") ? `<span style="grid-column:1/-1">${prevHtml("v1f")}</span>` : ""}
-      ${profile.v2f ? `<span class="detail-label">Vehicle 2</span><span class="detail-value">${esc(formatIntelVehicle(profile.v2f))}</span>` : ""}
-      ${
-        profile.extraVehicles
-          ? (() => {
-              try {
-                const evs: Array<{ full?: string; short?: string }> =
-                  JSON.parse(profile.extraVehicles!);
-                return evs
-                  .map((ev, i) => {
-                    const val = ev.full?.trim() || ev.short?.trim() || "";
-                    return val
-                      ? `<span class="detail-label">Vehicle ${i + 2}</span><span class="detail-value">${esc(formatIntelVehicle(val))}</span>`
-                      : "";
-                  })
-                  .join("");
-              } catch {
-                return "";
-              }
-            })()
-          : ""
-      }
     </div>
-  </div>`
-      : ""
-  }
+  </div>`;
+  })()}
 
-  ${
-    profile.mdlStatus || profile.bailStatus || profile.specialProjects
-      ? `
   <div class="section">
     <div class="section-title">Status</div>
     <div class="detail-grid">
       ${profile.mdlStatus ? `<span class="detail-label">MDL</span><span class="detail-value">${esc(mdlLabel(profile.mdlStatus))}</span>` : ""}
       ${profile.bailStatus ? `<span class="detail-label">Bail</span><span class="detail-value">${esc(formatBail(profile))}</span>` : ""}
-      ${formatSpecialProjects(profile.specialProjects) ? `<span class="detail-label">Special Projects</span><span class="detail-value">${esc(formatSpecialProjects(profile.specialProjects))}</span>` : ""}
+      <span class="detail-label">Special Projects</span><span class="detail-value">${esc(specialProjectsOrNone(profile.specialProjects))}</span>
     </div>
-  </div>`
-      : ""
-  }
+  </div>
 
   ${
     profile.registryBackground?.trim()
@@ -861,56 +840,41 @@ export function TargetProfileContent({
               );
             })()}
 
-            {/* Status — MDL, bail and special projects, in their own section
-              below Registered Details. */}
-            {(profile.mdlStatus ||
-              profile.bailStatus ||
-              profile.specialProjects) && (
-              <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
-                <SectionHeading
-                  label="Status"
-                  count={
-                    [
-                      profile.mdlStatus,
-                      profile.bailStatus,
-                      formatSpecialProjects(profile.specialProjects),
-                    ].filter(Boolean).length
-                  }
-                />
-                <div className="grid grid-cols-1 gap-2 text-sm">
-                  {profile.mdlStatus && (
-                    <div className="flex gap-3 items-start">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0 pt-0.5">
-                        MDL
-                      </span>
-                      <span className="text-sm text-foreground">
-                        {mdlLabel(profile.mdlStatus)}
-                      </span>
-                    </div>
-                  )}
-                  {profile.bailStatus && (
-                    <div className="flex gap-3 items-start">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0 pt-0.5">
-                        Bail
-                      </span>
-                      <span className="text-sm text-foreground">
-                        {formatBail(profile)}
-                      </span>
-                    </div>
-                  )}
-                  {formatSpecialProjects(profile.specialProjects) && (
-                    <div className="flex gap-3 items-start">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-28 shrink-0 pt-0.5">
-                        Special Projects
-                      </span>
-                      <span className="text-sm text-foreground">
-                        {formatSpecialProjects(profile.specialProjects)}
-                      </span>
-                    </div>
-                  )}
+            {/* Status — MDL, bail and special projects ("None" when there
+              are none), in their own section below Registered Details. */}
+            <div className="overflow-hidden rounded-xl border border-border bg-card p-4 shadow-sm mb-4">
+              <SectionHeading label="Status" />
+              <div className="grid grid-cols-1 gap-2 text-sm">
+                {profile.mdlStatus && (
+                  <div className="flex gap-3 items-start">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-36 shrink-0 pt-0.5">
+                      MDL
+                    </span>
+                    <span className="text-sm text-foreground">
+                      {mdlLabel(profile.mdlStatus)}
+                    </span>
+                  </div>
+                )}
+                {profile.bailStatus && (
+                  <div className="flex gap-3 items-start">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-36 shrink-0 pt-0.5">
+                      Bail
+                    </span>
+                    <span className="text-sm text-foreground">
+                      {formatBail(profile)}
+                    </span>
+                  </div>
+                )}
+                <div className="flex gap-3 items-start">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-foreground/70 w-36 shrink-0 pt-0.5">
+                    Special Projects
+                  </span>
+                  <span className="text-sm text-foreground">
+                    {specialProjectsOrNone(profile.specialProjects)}
+                  </span>
                 </div>
               </div>
-            )}
+            </div>
 
             <BackgroundCard
               id="background"

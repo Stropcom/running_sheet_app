@@ -1,78 +1,19 @@
 import type { ReactNode } from "react";
-import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
+import { ROW_ITEM } from "@/lib/pageKit";
+import { SectionHeading } from "@/components/ProfileSectionHeading";
 import {
-  extraAddressHeading,
-  parseExtraAddresses,
-} from "@shared/extraAddresses";
+  groupDetailEntries,
+  type RegisteredDetailEntry,
+} from "@/lib/registeredDetails";
 
-/** One registered address or vehicle, ready to show in its own panel. */
-export interface RegisteredDetailEntry {
-  /** "hbf" / "v1f" for the two registry fields that keep a change history. */
-  id: string;
-  label: string;
-  value: string;
-}
-
-const parseExtras = (json: string | null | undefined): string[] => {
-  if (!json) return [];
-  try {
-    const list: Array<{ full?: string; short?: string }> = JSON.parse(json);
-    return list.map(x => x.full?.trim() || x.short?.trim() || "");
-  } catch {
-    return [];
-  }
-};
-
-/** Every address and vehicle on a target's registry record, in the order it
- * is shown: Home Address, Address 2…, Vehicle 1, Vehicle 2, then further
- * vehicles. */
-export function targetDetailEntries(t: {
-  hbf?: string | null;
-  v1f?: string | null;
-  v2f?: string | null;
-  extraAddresses?: string | null;
-  extraVehicles?: string | null;
-}): RegisteredDetailEntry[] {
-  const out: RegisteredDetailEntry[] = [];
-  if (t.hbf)
-    out.push({
-      id: "hbf",
-      label: "Home Address",
-      value: formatIntelAddress(t.hbf),
-    });
-  parseExtraAddresses(t.extraAddresses).forEach((a, i) => {
-    if (a.value)
-      out.push({
-        id: `addr${i}`,
-        label: extraAddressHeading(a.label, i + 2),
-        value: formatIntelAddress(a.value),
-      });
-  });
-  if (t.v1f)
-    out.push({
-      id: "v1f",
-      label: "Vehicle 1",
-      value: formatIntelVehicle(t.v1f),
-    });
-  if (t.v2f)
-    out.push({
-      id: "v2f",
-      label: "Vehicle 2",
-      value: formatIntelVehicle(t.v2f),
-    });
-  parseExtras(t.extraVehicles).forEach((v, i) => {
-    if (v)
-      out.push({
-        id: `veh${i}`,
-        label: `Vehicle ${i + 2}`,
-        value: formatIntelVehicle(v),
-      });
-  });
-  return out;
-}
+export {
+  targetDetailEntries,
+  type RegisteredDetailEntry,
+} from "@/lib/registeredDetails";
 
 /** The Registered Details rows as individual panels — a small capitalised
- * label above the value — the same look as an associate's profile. */
+ * label above the value — under their own sub-headings, Addresses and
+ * Vehicles. */
 export function RegisteredDetailPanels({
   entries,
   after,
@@ -82,17 +23,21 @@ export function RegisteredDetailPanels({
   after?: (entry: RegisteredDetailEntry) => ReactNode;
 }) {
   return (
-    <div className="space-y-2">
-      {entries.map(e => (
-        <div
-          key={e.id}
-          className="px-3 py-2 rounded-lg border border-border/60 bg-muted/20"
-        >
-          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">
-            {e.label}
-          </p>
-          <p className="text-sm text-foreground break-words">{e.value}</p>
-          {after?.(e)}
+    <div className="space-y-4">
+      {groupDetailEntries(entries).map(g => (
+        <div key={g.kind}>
+          <SectionHeading sub label={g.title} count={g.items.length} />
+          <div className="space-y-2">
+            {g.items.map(e => (
+              <div key={e.id} className={`${ROW_ITEM} px-3 py-2`}>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">
+                  {e.label}
+                </p>
+                <p className="text-sm text-foreground break-words">{e.value}</p>
+                {after?.(e)}
+              </div>
+            ))}
+          </div>
         </div>
       ))}
     </div>

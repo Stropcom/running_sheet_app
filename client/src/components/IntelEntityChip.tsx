@@ -69,7 +69,7 @@ export function IntelEntityChip({
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-opacity hover:opacity-80 ${cls}`}
+      className={`flex w-full items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-opacity hover:opacity-80 ${cls}`}
     >
       {icon}
       {label}

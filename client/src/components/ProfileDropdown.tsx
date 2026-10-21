@@ -167,7 +167,7 @@ export function IntelEntityDropdown({ item }: { item: IntelAssocEntity }) {
     <ProfileDropdownRow
       kind={kind}
       refId={refId}
-      headerClassName={`flex w-full items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-opacity hover:opacity-80 ${cls}`}
+      headerClassName={`flex w-full items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-opacity hover:opacity-80 ${cls}`}
       belowHeader={
         (item.photos ?? []).length > 0 ? (
           <div className="pl-1">

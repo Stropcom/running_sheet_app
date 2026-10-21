@@ -22,6 +22,7 @@ import { DeletePhotoButton } from "@/components/DeletePhotoButton";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { CompareFacesDialog } from "@/components/CompareFacesDialog";
 import { formatAttachmentBanner } from "@/lib/attachmentBanner";
+import { orderPhotosLikeProfile } from "@shared/photoOrder";
 import { cn } from "@/lib/utils";
 
 /** Photo tile: a photo linked to a registered target gets the target colour
@@ -235,6 +236,12 @@ export function SheetFolderList({
   const { data: operation } = trpc.operation.get.useQuery({ id: operationId });
   const { data: attachments, isLoading } =
     trpc.attachment.listByOperation.useQuery({ operationId });
+  // The Operation profile's people, in its Photoboard order, to order the
+  // manually uploaded photos the same way (see shared/photoOrder.ts).
+  const { data: opProfile } = trpc.intelligence.operationProfile.useQuery(
+    { operationId },
+    { enabled: operationId > 0 }
+  );
 
   const deleteAttachment = trpc.attachment.delete.useMutation({
     onSuccess: () => {
@@ -296,8 +303,21 @@ export function SheetFolderList({
       }
       group.photos.push(a);
     }
+    // Manually uploaded photos follow the Operation profile's Photoboard:
+    // each target, then their associates — whatever can be tied to someone;
+    // the rest stay where they were. Sheet groups keep newest-first.
+    const manual = bySheet.get(MANUAL_GROUP_KEY);
+    if (manual) {
+      manual.photos = orderPhotosLikeProfile(
+        manual.photos,
+        (opProfile?.targets ?? []).map((t: any) => ({
+          targetId: t.targetId,
+          associates: t.registryAssociates ?? [],
+        }))
+      );
+    }
     return Array.from(bySheet.values());
-  }, [attachments]);
+  }, [attachments, opProfile]);
 
   return (
     <div className="px-4 py-8">

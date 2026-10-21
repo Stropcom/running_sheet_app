@@ -101,7 +101,7 @@ export function buildChipHtml(label: string, type: string, count: number, isPrev
   const previousBadge = isPrevious
     ? `<span style="margin-left:auto;padding:1px 6px;border-radius:3px;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;background:rgba(0,0,0,0.1)">Previous</span>`
     : "";
-  return `<div style="display:flex;align-items:center;gap:4px;width:100%;box-sizing:border-box;padding:4px 12px;border-radius:9999px;font-size:10px;font-weight:600;${style};margin:2px 0">${escHtml(displayLabel)} <span style="opacity:0.6">×${count}</span>${previousBadge}</div>`;
+  return `<div style="display:flex;align-items:center;gap:4px;width:100%;box-sizing:border-box;padding:4px 12px;border-radius:8px;font-size:10px;font-weight:600;${style};margin:2px 0">${escHtml(displayLabel)} <span style="opacity:0.6">×${count}</span>${previousBadge}</div>`;
 }
 
 // One chip + its own photo thumbnails directly beneath it.

@@ -130,7 +130,7 @@ export function PasskeyAdminCard() {
           open
             ? SECTION_BAND
             : SECTION_BAND.replace("mb-3", "-mb-4").replace("border-b ", "")
-        } w-full cursor-pointer text-left hover:bg-muted`}
+        } w-[calc(100%+2rem)] cursor-pointer text-left hover:bg-muted`}
       >
         <ChevronRight
           className={`h-3.5 w-3.5 text-foreground/70 transition-transform ${open ? "rotate-90" : ""}`}

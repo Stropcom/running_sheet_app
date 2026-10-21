@@ -9,7 +9,7 @@ import {
 } from "@/components/RegisteredDetailPanels";
 import {
   formatBail,
-  formatSpecialProjects,
+  specialProjectsOrNone,
   mdlLabel,
 } from "@shared/targetStatus";
 import {
@@ -342,10 +342,6 @@ function TargetBlock({
     target.assocVehicles.length +
     target.assocLocations.length;
   const entries = targetDetailEntries(target);
-  const hasStatus =
-    target.mdlStatus ||
-    target.bailStatus ||
-    formatSpecialProjects(target.specialProjects);
   const bodyId = `tb-${target.targetId}`;
   const personRow = (
     a: OperationTarget["registryAssociates"][number],
@@ -415,36 +411,32 @@ function TargetBlock({
           {entries.length === 0 && (
             <div id={`p-t${target.targetId}`} className="scroll-mt-20" />
           )}
-          {hasStatus && (
-            <ProfileCard label="Status">
-              <div className="grid grid-cols-1 gap-2 text-sm">
-                {target.mdlStatus && (
-                  <div className="flex items-start gap-3">
-                    <span className="w-28 shrink-0 pt-0.5 text-xs font-semibold uppercase tracking-wide text-foreground/70">
-                      MDL
-                    </span>
-                    <span>{mdlLabel(target.mdlStatus)}</span>
-                  </div>
-                )}
-                {target.bailStatus && (
-                  <div className="flex items-start gap-3">
-                    <span className="w-28 shrink-0 pt-0.5 text-xs font-semibold uppercase tracking-wide text-foreground/70">
-                      Bail
-                    </span>
-                    <span>{formatBail(target)}</span>
-                  </div>
-                )}
-                {formatSpecialProjects(target.specialProjects) && (
-                  <div className="flex items-start gap-3">
-                    <span className="w-28 shrink-0 pt-0.5 text-xs font-semibold uppercase tracking-wide text-foreground/70">
-                      Special Projects
-                    </span>
-                    <span>{formatSpecialProjects(target.specialProjects)}</span>
-                  </div>
-                )}
+          <ProfileCard label="Status">
+            <div className="grid grid-cols-1 gap-2 text-sm">
+              {target.mdlStatus && (
+                <div className="flex items-start gap-3">
+                  <span className="w-36 shrink-0 pt-0.5 text-xs font-semibold uppercase tracking-wide text-foreground/70">
+                    MDL
+                  </span>
+                  <span>{mdlLabel(target.mdlStatus)}</span>
+                </div>
+              )}
+              {target.bailStatus && (
+                <div className="flex items-start gap-3">
+                  <span className="w-36 shrink-0 pt-0.5 text-xs font-semibold uppercase tracking-wide text-foreground/70">
+                    Bail
+                  </span>
+                  <span>{formatBail(target)}</span>
+                </div>
+              )}
+              <div className="flex items-start gap-3">
+                <span className="w-36 shrink-0 pt-0.5 text-xs font-semibold uppercase tracking-wide text-foreground/70">
+                  Special Projects
+                </span>
+                <span>{specialProjectsOrNone(target.specialProjects)}</span>
               </div>
-            </ProfileCard>
-          )}
+            </div>
+          </ProfileCard>
           <BackgroundCard
             id={`bg-${target.targetId}`}
             text={target.registryBackground}

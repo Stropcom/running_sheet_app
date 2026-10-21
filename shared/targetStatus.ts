@@ -108,6 +108,11 @@ export function formatSpecialProjects(raw: string | null | undefined): string {
     .join(", ");
 }
 
+/** The projects as shown in a profile's Status: the list, or "None". */
+export function specialProjectsOrNone(raw: string | null | undefined): string {
+  return formatSpecialProjects(raw) || "None";
+}
+
 /** Adds the target's projects to a summary's own list without disturbing it:
  * a project the summary already has keeps its entry (its detail is only
  * filled in when it was blank); one it lacks is appended. Returns JSON, or

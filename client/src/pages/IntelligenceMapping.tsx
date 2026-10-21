@@ -50,6 +50,7 @@ import {
 import {
   transitFullAddress,
   transitKindOfPlace,
+  transitSignIconOf,
   transitPlaceFromGoogle,
   type TransitPlace,
 } from "@shared/transitPlace";
@@ -1573,7 +1574,8 @@ function buildInfoWindowContent(
 
   // Persisted appearance for this intel pin (server-saved override — see
   // intelPinOverrides — takes priority over the type-based default).
-  const intelIcon: string = override?.markerIcon ?? "house_filled";
+  const intelIcon: string =
+    override?.markerIcon ?? transitSignIconOf(loc.label) ?? "house_filled";
   const intelColour: string =
     override?.markerColour ?? (isTarget ? "red" : "purple");
   const intelRotation: number = override?.rotation ?? 0;
@@ -2823,9 +2825,14 @@ export default function IntelligenceMapping() {
     lat: number;
     lng: number;
   } | null>(null);
+  // Set only when the entry was opened from a tapped place (a business, a bus
+  // stop, a station): that tap is where the place's pin goes — see
+  // pinAtTappedPlace — rather than wherever its name geocodes to.
+  const mapQePoiPosRef = useRef<{ lat: number; lng: number } | null>(null);
   useEffect(() => {
     if (!mapQeOpen) {
       mapQeMarkerIdRef.current = null;
+      mapQePoiPosRef.current = null;
       setMapQeLatLng(null);
     }
   }, [mapQeOpen]);
@@ -4376,7 +4383,7 @@ export default function IntelligenceMapping() {
         `intel:${label}`,
         entry.position.lat,
         entry.position.lng,
-        override?.markerIcon ?? "house_filled",
+        override?.markerIcon ?? transitSignIconOf(label) ?? "house_filled",
         override?.markerColour ?? (isTarget ? "red" : "purple"),
         override?.rotation ?? 0,
         showMarkerEntityCountRef.current
@@ -4772,7 +4779,8 @@ export default function IntelligenceMapping() {
     // etc.) AND shows up for every officer on every device, not just the
     // one that set it.
     const override = pinOverridesRef.current.get(loc.label);
-    const icon: string = override?.markerIcon ?? "house_filled";
+    const icon: string =
+      override?.markerIcon ?? transitSignIconOf(loc.label) ?? "house_filled";
     const colour: MarkerColour =
       (override?.markerColour as MarkerColour) ?? (isTarget ? "red" : "purple");
     const rotation = override?.rotation ?? 0;
@@ -8251,6 +8259,25 @@ export default function IntelligenceMapping() {
   // automatic pin for that address is not drawn alongside it. Only when the
   // entry actually mentions the marker's address, the marker has no link yet,
   // and it is not a house marker (those already absorb a pin within 40 m).
+  // A place tapped on the map (a business, a bus stop, a station) is pinned
+  // where it was tapped — not where its name geocodes to, which for a stop
+  // named "Grange Dr After Gascoyne Wy" can be anywhere. Saved as the place's
+  // position (the same record as dragging its pin), only when this entry
+  // actually mentions the place and it has no position of its own yet.
+  const pinAtTappedPlace = (
+    pos: { lat: number; lng: number } | null,
+    address: string,
+    observation: string
+  ) => {
+    if (!pos || !address) return;
+    const label = popupShortAddress(address);
+    if (!label) return;
+    if (!observation.toLowerCase().includes(label.toLowerCase())) return;
+    const existing = pinOverridesRef.current.get(label);
+    if (existing?.lat != null && existing?.lng != null) return;
+    savePinOverrideMut.mutate({ label, lat: pos.lat, lng: pos.lng });
+  };
+
   const linkEntryToMarker = async (
     markerId: number | null,
     address: string,
@@ -8330,6 +8357,7 @@ export default function IntelligenceMapping() {
     // closing clears the ref before the save completes.
     const linkMarkerId = mapQeMarkerIdRef.current;
     const linkAddress = mapQeAddress;
+    const tappedPos = mapQePoiPosRef.current;
     rsCreateRow.mutate(
       {
         sheetId: rsSelectedSheetId,
@@ -8364,6 +8392,8 @@ export default function IntelligenceMapping() {
           void refetchLocations();
           // Keep the entry on the custom marker it was made from.
           void linkEntryToMarker(linkMarkerId, linkAddress, observation);
+          // A place tapped on the map goes exactly where it was tapped.
+          pinAtTappedPlace(tappedPos, linkAddress, observation);
           // Refetch entity chips so a newly-mentioned entity shows up as a chip immediately
           if (rsSelectedSheetId) {
             void utils.row.entityChips.invalidate({
@@ -9439,7 +9469,9 @@ export default function IntelligenceMapping() {
                           ? pinOverridesRef.current.get(entry.loc.label)
                           : null;
                         const iconName = entry
-                          ? (override?.markerIcon ?? "house_filled")
+                          ? (override?.markerIcon ??
+                            transitSignIconOf(entry.loc.label) ??
+                            "house_filled")
                           : (cm.markerIcon ?? "pin");
                         const colourName = entry
                           ? (override?.markerColour ?? "purple")
@@ -11005,6 +11037,10 @@ export default function IntelligenceMapping() {
                   onClick={() => {
                     setMapQeAddress(poiAddressOf(poiTap));
                     setMapQeLatLng({ lat: poiTap.lat, lng: poiTap.lng });
+                    mapQePoiPosRef.current = {
+                      lat: poiTap.lat,
+                      lng: poiTap.lng,
+                    };
                     setMapQeOpen(true);
                     setPoiTap(null);
                   }}
@@ -11023,6 +11059,13 @@ export default function IntelligenceMapping() {
                   onClick={() => {
                     const rsAddress = poiAddressOf(poiTap);
                     setCmLabel(poiTap.name);
+                    // A tapped bus stop or train station is its own sign.
+                    if (poiTap.transit)
+                      setCmIcon(
+                        poiTap.transit.kind === "bus"
+                          ? "bus_stop"
+                          : "train_station"
+                      );
                     setCmAddress(rsAddress);
                     setCmNote("");
                     setCmPersons([]);
@@ -13981,112 +14024,121 @@ export default function IntelligenceMapping() {
                                 );
                               }
 
-                              // People walking whose destination is this
-                              // address, or not yet written — for those, this
-                              // pin is where they may have gone ("Entered here").
-                              (rsPendingHeadingTo ?? [])
-                                .filter(
-                                  h =>
-                                    h.destination.includes("[") ||
-                                    cardAddressMatch(h.destination, shortAddr)
-                                )
-                                .forEach(h =>
-                                  cards.push({
-                                    key: `head-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
-                                    title: h.names,
-                                    pill: h.fromTransit
-                                      ? "Alighted"
-                                      : h.fromVessel
-                                        ? "Disembarked"
-                                        : "Departed on foot",
-                                    attn: true,
-                                    who: h.destination.includes("[")
-                                      ? "On foot"
-                                      : `Walking to ${h.destination}`,
-                                    state:
-                                      alightedWording(h)?.left ??
-                                      `Left ${h.fromVessel ?? h.from}`,
-                                    holds: surnameTokens(h.names),
-                                    people: splitPeopleNames(h.names),
-                                    locus: {
-                                      headline: (() => {
-                                        const how = h.fromTransit
-                                          ? "Alighted, on foot"
-                                          : h.fromVessel
-                                            ? "Disembarked, on foot"
-                                            : "Departed on foot";
-                                        return h.destination.includes("[")
-                                          ? how
-                                          : `${how} to ${h.destination}`;
-                                      })(),
-                                      sub:
-                                        alightedWording(h)?.left ??
-                                        `Left ${h.fromVessel ?? h.from}`,
-                                    },
-                                    actions: [
-                                      ...(clickedTransit &&
-                                      h.destination.includes("[")
-                                        ? transitBoardActions({
-                                            keyBase: `here-${h.names}-${shortAddr}`,
-                                            names: names(h.names),
-                                            place: arriveAddr,
-                                          })
-                                        : []),
-                                      ...(clickedTransit &&
-                                      h.destination.includes("[")
-                                        ? []
-                                        : [
-                                            {
-                                              key: `en-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
-                                              label: h.destination.includes("[")
-                                                ? "Entered here"
-                                                : "Entered",
-                                              text: `${names(h.names)} entered ${
-                                                h.destination.includes("[")
-                                                  ? arriveAddr
-                                                  : h.destination
-                                              } and continued out of sight.`,
-                                            },
-                                            {
-                                              key: `in-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
-                                              label: h.destination.includes("[")
-                                                ? "Inside here"
-                                                : "Inside",
-                                              text: `${names(h.names)} inside ${
-                                                h.destination.includes("[")
-                                                  ? arriveAddr
-                                                  : h.destination
-                                              } [observation].`,
-                                            },
-                                          ]),
-                                      {
-                                        key: `wk-${h.destination}${h.destination.includes("[") ? `-${h.names}` : ""}`,
-                                        label: "Walked to another location",
-                                        text: `${names(h.names)} walked [route] towards [location].`,
-                                      },
-                                      // Just got off at a bus stop or train
-                                      // station, or heading for one.
-                                      ...(clickedTransit &&
-                                      h.destination.includes("[")
-                                        ? []
-                                        : transitBoardActions({
-                                            keyBase: `h-${h.destination}-${h.names}`,
-                                            names: names(h.names),
-                                            place: h.destination.includes("[")
-                                              ? h.from
-                                              : h.destination,
-                                          })),
-                                      ...reachableVehicles(h.names, h.from).map(
-                                        a => ({
-                                          key: `wv-${a.rego}`,
-                                          label: `Walked to ${a.rego}`,
-                                          text: `${names(h.names)} walked towards Vehicle ${a.rego}.`,
+                              // People on foot: this pin is where they may
+                              // have got to, whatever they said they were
+                              // heading for — the same as a vehicle that left
+                              // somewhere, which can arrive at any pin. Their
+                              // own destination, when it is this place, keeps
+                              // its "Entered" / "Inside" wording.
+                              (rsPendingHeadingTo ?? []).forEach(h => {
+                                const unwritten = h.destination.includes("[");
+                                const isDest =
+                                  !unwritten &&
+                                  cardAddressMatch(h.destination, shortAddr);
+                                // This pin, rather than where they said.
+                                const here = !isDest;
+                                const keyTail = unwritten ? `-${h.names}` : "";
+                                const how = h.fromTransit
+                                  ? "Alighted, on foot"
+                                  : h.fromVessel
+                                    ? "Disembarked, on foot"
+                                    : "Departed on foot";
+                                const left =
+                                  alightedWording(h)?.left ??
+                                  `Left ${h.fromVessel ?? h.from}`;
+                                const nm = names(h.names);
+                                cards.push({
+                                  key: `head-${h.destination}${keyTail}`,
+                                  title: h.names,
+                                  pill: h.fromTransit
+                                    ? "Alighted"
+                                    : h.fromVessel
+                                      ? "Disembarked"
+                                      : "Departed on foot",
+                                  attn: true,
+                                  who: unwritten
+                                    ? "On foot"
+                                    : `Walking to ${h.destination}`,
+                                  state: left,
+                                  holds: surnameTokens(h.names),
+                                  people: splitPeopleNames(h.names),
+                                  locus: {
+                                    headline: unwritten
+                                      ? how
+                                      : `${how} to ${h.destination}`,
+                                    sub: left,
+                                  },
+                                  actions: [
+                                    // Got to this place on foot: any place —
+                                    // a street corner, a bus stop, a station.
+                                    ...(here
+                                      ? [
+                                          {
+                                            key: `arr-${h.names}-${shortAddr}`,
+                                            label: "Arrived here",
+                                            text: `${nm} arrived on foot at ${arriveAddr}.`,
+                                          },
+                                        ]
+                                      : []),
+                                    // A bus stop or train station: boarding.
+                                    ...(clickedTransit && here
+                                      ? transitBoardActions({
+                                          keyBase: `here-${h.names}-${shortAddr}`,
+                                          names: nm,
+                                          place: arriveAddr,
                                         })
-                                      ),
-                                    ],
-                                    latestRowId: h.rowId,
-                                  })
-                                );
+                                      : []),
+                                    // Going into it ("Entered"), or into a
+                                    // place that is not a stop or station.
+                                    ...(clickedTransit && here
+                                      ? []
+                                      : [
+                                          {
+                                            key: `en-${h.destination}${keyTail}`,
+                                            label: here
+                                              ? "Entered here"
+                                              : "Entered",
+                                            text: `${nm} entered ${
+                                              here ? arriveAddr : h.destination
+                                            } and continued out of sight.`,
+                                          },
+                                          {
+                                            key: `in-${h.destination}${keyTail}`,
+                                            label: here
+                                              ? "Inside here"
+                                              : "Inside",
+                                            text: `${nm} inside ${
+                                              here ? arriveAddr : h.destination
+                                            } [observation].`,
+                                          },
+                                        ]),
+                                    {
+                                      key: `wk-${h.destination}${keyTail}`,
+                                      label: "Walked to another location",
+                                      text: `${nm} walked [route] towards [location].`,
+                                    },
+                                    // Heading for a stop or station they said,
+                                    // or just got off at one.
+                                    ...(clickedTransit && here
+                                      ? []
+                                      : transitBoardActions({
+                                          keyBase: `h-${h.destination}-${h.names}`,
+                                          names: nm,
+                                          place: unwritten
+                                            ? h.from
+                                            : h.destination,
+                                        })),
+                                    ...reachableVehicles(h.names, h.from).map(
+                                      a => ({
+                                        key: `wv-${a.rego}`,
+                                        label: `Walked to ${a.rego}`,
+                                        text: `${nm} walked towards Vehicle ${a.rego}.`,
+                                      })
+                                    ),
+                                  ],
+                                  latestRowId: h.rowId,
+                                });
+                              });
 
                               // People aboard a boat or vessel: shown
                               // wherever the sheet is, until a row says they

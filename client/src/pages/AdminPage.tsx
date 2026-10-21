@@ -31,6 +31,7 @@ import {
   type AdminUserRow,
 } from "@/components/admin/UserAccessGroups";
 import { VisitingSection } from "@/components/admin/VisitingSection";
+import { CollapsibleSection } from "@/components/admin/CollapsibleSection";
 import { TeamDialog } from "@/components/admin/TeamDialog";
 import { useTeams, type TeamRow } from "@/lib/teams";
 import {
@@ -554,9 +555,12 @@ export default function AdminPage() {
               </Select>
             </div>
           )}
-          <div className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-base font-semibold">Teams</h2>
+          <CollapsibleSection
+            id="teams"
+            title="Teams"
+            count={`${homeCount} ${homeCount === 1 ? "person" : "people"}`}
+            defaultOpen
+            actions={
               <Button
                 size="sm"
                 variant="outline"
@@ -568,45 +572,48 @@ export default function AdminPage() {
                 <Plus className="mr-1 h-3.5 w-3.5" />
                 Team
               </Button>
+            }
+          >
+            <div className="space-y-3">
+              <UserAccessGroups
+                users={(users ?? []) as AdminUserRow[]}
+                viewCommand={viewCommand}
+                teams={commandTeams}
+                onEditTeam={team => {
+                  setEditingTeam(team);
+                  setTeamDialogOpen(true);
+                }}
+                shares={shares ?? []}
+                visitorTeams={visitorTeams}
+                operations={(allOperations ?? [])
+                  .filter(o => !o.deletedAt && o.command === viewCommand)
+                  .map(o => ({ id: o.id, name: o.name }))}
+                currentUserId={currentUser?.id}
+                isLoading={isLoading}
+                onOpen={id => navigate(`/admin/users/${id}`)}
+                roleBadge={u =>
+                  u.archivedAt ? (
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${NONE_BADGE_CLASS}`}
+                    >
+                      None
+                    </span>
+                  ) : (
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${ROLE_COLORS[u.role as Role]}`}
+                    >
+                      {ROLE_ICONS[u.role as Role]}
+                      {ROLE_LABELS[u.role as Role]}
+                    </span>
+                  )
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Click a name to open their profile — Edit and Archive both live
+                there.
+              </p>
             </div>
-            <UserAccessGroups
-              users={(users ?? []) as AdminUserRow[]}
-              viewCommand={viewCommand}
-              teams={commandTeams}
-              onEditTeam={team => {
-                setEditingTeam(team);
-                setTeamDialogOpen(true);
-              }}
-              shares={shares ?? []}
-              visitorTeams={visitorTeams}
-              operations={(allOperations ?? [])
-                .filter(o => !o.deletedAt && o.command === viewCommand)
-                .map(o => ({ id: o.id, name: o.name }))}
-              currentUserId={currentUser?.id}
-              isLoading={isLoading}
-              onOpen={id => navigate(`/admin/users/${id}`)}
-              roleBadge={u =>
-                u.archivedAt ? (
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${NONE_BADGE_CLASS}`}
-                  >
-                    None
-                  </span>
-                ) : (
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border ${ROLE_COLORS[u.role as Role]}`}
-                  >
-                    {ROLE_ICONS[u.role as Role]}
-                    {ROLE_LABELS[u.role as Role]}
-                  </span>
-                )
-              }
-            />
-            <p className="text-xs text-muted-foreground">
-              Click a name to open their profile — Edit and Archive both live
-              there.
-            </p>
-          </div>
+          </CollapsibleSection>
           <VisitingSection
             viewCommand={viewCommand}
             users={(users ?? []) as AdminUserRow[]}

@@ -164,6 +164,13 @@ export const WALK_OUT_PATTERN =
 export const PERSON_ENTER_PATTERN =
   /([A-Za-z][^.\n]*?)\s*\bentered\s+(?!the\s+vehicle\b)(.+?)\s+and continued out of sight/i;
 
+// "ROCHA arrived on foot at Bus Stop Grange Drive After Gascoyne Way, COOLOONGUP
+// WA (Bus Stop Grange Drive After Gascoyne Way)." — a walker getting to a
+// place, the same way a vehicle "arrived at" one. "on foot" is required, so a
+// vehicle's own arrival sentence is never read as a person walking.
+export const PERSON_ARRIVE_ON_FOOT_PATTERN =
+  /([A-Za-z][^.\n]*?)\s*\barrived\s+on\s+foot\s+at\s+([A-Z0-9][^.\n]*?)\s*(?:\s+and\s+(?:continued|then|waited)\b|(?=\.)|$)/;
+
 export const PERSON_EXIT_PATTERN =
   /([A-Za-z][^.\n]*?)\s*\bexited\s+(?!the\s+vehicle\b|\(?Vehicle\s+[A-Za-z0-9]{5,8}\b)(.+?)\s*,?\s*(?:and\s+)?walked\b([^.\n]*)/i;
 
@@ -985,6 +992,17 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       return;
     }
 
+    // "ROCHA arrived on foot at <place>.": at that place now, on foot.
+    const arrivedOnFoot = text.match(PERSON_ARRIVE_ON_FOOT_PATTERN);
+    if (arrivedOnFoot && !isVehicleSubject(arrivedOnFoot[1])) {
+      record(
+        cleanWalkerNames(arrivedOnFoot[1]),
+        bracketLabelOrSelf(arrivedOnFoot[2]),
+        ""
+      );
+      return;
+    }
+
     const directMatch = text.match(PERSON_ENTER_PATTERN);
     if (directMatch && !isVehicleSubject(directMatch[1])) {
       record(
@@ -1300,6 +1318,7 @@ export function isReadAsMovement(text: string): boolean {
     WALK_IN_PATTERN.test(text) ||
     WALK_IN_TOWARDS_PATTERN.test(text) ||
     PERSON_ENTER_PATTERN.test(text) ||
+    PERSON_ARRIVE_ON_FOOT_PATTERN.test(text) ||
     PERSON_EXIT_PATTERN.test(text) ||
     (PERSON_EXIT_ONWARD_PATTERN.test(text) &&
       !/\bVehicle\b/i.test(text.split(/\b(?:exited|departed|left)\b/i)[0])) ||

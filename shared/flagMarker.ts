@@ -31,7 +31,7 @@ export type MarkerKind = "vehicle" | "boat" | "place";
 const BOAT_RE =
   /boat|vessel|vessell|yacht|ship|ferry|dinghy|catamaran|jet.?ski|kayak|canoe/i;
 const VEHICLE_RE =
-  /sedan|car|police|motorbike|motorcycle|bike|truck|van|ute|suv|4wd|wagon|vehicle|bus/i;
+  /sedan|car|police|motorbike|motorcycle|bike|truck|van|ute|suv|4wd|wagon|vehicle|bus|train|tram|taxi|cab|rideshare/i;
 
 /** What a marker stands for, from its icon (and label as a backup). */
 export function markerKind(
@@ -40,6 +40,8 @@ export function markerKind(
 ): MarkerKind {
   const i = icon ?? "";
   if (BOAT_RE.test(i)) return "boat";
+  // A bus stop or station sign marks a place, not a vehicle.
+  if (/stop|station/i.test(i)) return "place";
   if (VEHICLE_RE.test(i)) return "vehicle";
   // No telling icon: a label that is only a rego is a vehicle marker.
   if (

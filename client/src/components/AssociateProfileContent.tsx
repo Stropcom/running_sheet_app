@@ -1,3 +1,5 @@
+import { RegisteredDetailPanels } from "@/components/RegisteredDetailPanels";
+import { groupDetailEntries } from "@/lib/registeredDetails";
 import {
   PDF_SECTION_LAYOUT_CSS,
   pdfPageFrameCss,
@@ -114,10 +116,14 @@ function registeredDetailRows(p: IntelAssociateProfile) {
   // same as on a target's profile — not the long registry description.
   return [
     ...addresses.map((a, i) => ({
+      id: `addr${i}`,
+      kind: "address" as const,
       label: i === 0 ? "Home Address" : extraAddressHeading(a.label, i + 1),
       value: formatIntelAddress(a.value),
     })),
     ...vehicles.map((v, i) => ({
+      id: `veh${i}`,
+      kind: "vehicle" as const,
       label: vehicles.length > 1 ? `Vehicle ${i + 1}` : "Vehicle",
       value: formatIntelVehicle(v),
     })),
@@ -180,10 +186,16 @@ ${pdfPageFrameCss(BLUE_MID)}
   ${
     profile.registryAssociateId && registeredDetailRows(profile).length
       ? `<div style="margin-bottom:16px"><div class="section-title">Registered Details</div>
-    ${registeredDetailRows(profile)
+    ${groupDetailEntries(registeredDetailRows(profile))
       .map(
-        r =>
-          `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(r.label)}</strong> — ${esc(r.value)}</p>`
+        g =>
+          `<div class="sub-title">${esc(g.title)}</div>` +
+          g.items
+            .map(
+              r =>
+                `<p style="font-size:10px;padding:3px 0;border-bottom:1px solid ${GREY_BORDER}"><strong>${esc(r.label)}</strong> — ${esc(r.value)}</p>`
+            )
+            .join("")
       )
       .join("")}
   </div>`
@@ -376,19 +388,9 @@ export function AssociateProfileContent({
                     label="Registered Details"
                     count={registeredDetailRows(profile).length}
                   />
-                  <div className="space-y-2">
-                    {registeredDetailRows(profile).map(r => (
-                      <div
-                        key={r.label}
-                        className="px-3 py-2 rounded-lg border border-border bg-background"
-                      >
-                        <p className="text-xs text-muted-foreground uppercase tracking-wide mb-0.5">
-                          {r.label}
-                        </p>
-                        <p className="text-sm text-foreground">{r.value}</p>
-                      </div>
-                    ))}
-                  </div>
+                  <RegisteredDetailPanels
+                    entries={registeredDetailRows(profile)}
+                  />
                 </div>
               )}
 

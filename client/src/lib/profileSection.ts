@@ -8,6 +8,10 @@
 
 import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
 import {
+  groupDetailEntries,
+  targetDetailEntries,
+} from "@/lib/registeredDetails";
+import {
   extraAddressHeading,
   parseExtraAddresses,
   withAddressLabel,
@@ -19,7 +23,7 @@ import {
 } from "@/lib/attachmentBanner";
 import {
   formatBail,
-  formatSpecialProjects,
+  specialProjectsOrNone,
   mdlLabel,
 } from "@shared/targetStatus";
 
@@ -127,26 +131,12 @@ export function buildProfileTargetBlockHtml(t: ProfileTargetBlock): string {
   // next page — leaving a large blank gap under whatever fit above it. Left
   // to flow naturally instead; only the header bar is kept from being
   // orphaned alone at the bottom of a page via break-after:avoid.
-  const details: Array<[string, string]> = [];
-  if (t.hbf) details.push(["Home Address", formatIntelAddress(t.hbf)]);
-  parseExtraAddresses(t.extraAddresses).forEach((a, i) => {
-    if (a.value)
-      details.push([
-        extraAddressHeading(a.label, i + 2),
-        formatIntelAddress(a.value),
-      ]);
-  });
-  if (t.v1f) details.push(["Vehicle 1", formatIntelVehicle(t.v1f)]);
-  if (t.v2f) details.push(["Vehicle 2", formatIntelVehicle(t.v2f)]);
-  parseExtras(t.extraVehicles).forEach((v, i) => {
-    if (v) details.push([`Vehicle ${i + 2}`, formatIntelVehicle(v)]);
-  });
+  const detailGroups = groupDetailEntries(targetDetailEntries(t));
 
   const status: Array<[string, string]> = [];
   if (t.mdlStatus) status.push(["MDL", mdlLabel(t.mdlStatus)]);
   if (t.bailStatus) status.push(["Bail", formatBail(t)]);
-  const projects = formatSpecialProjects(t.specialProjects ?? null);
-  if (projects) status.push(["Special Projects", projects]);
+  status.push(["Special Projects", specialProjectsOrNone(t.specialProjects)]);
 
   const residents = (t.registryAssociates ?? []).filter(
     a => a.relationship === "resident"
@@ -166,8 +156,8 @@ export function buildProfileTargetBlockHtml(t: ProfileTargetBlock): string {
       </div>
       <div style="padding:2px 14px 10px">
         ${t.photos.length ? `${sectionTitle(`Photos (${t.photos.length})`)}${buildPhotoGridHtml(t.photos)}` : ""}
-        ${details.length ? `${sectionTitle("Registered Details")}${detailGrid(details)}` : ""}
-        ${status.length ? `${sectionTitle("Status")}${detailGrid(status)}` : ""}
+        ${detailGroups.length ? `${sectionTitle("Registered Details")}${detailGroups.map(g => `${subTitle(g.title)}${detailGrid(g.items.map(e => [e.label, e.value] as [string, string]))}`).join("")}` : ""}
+        ${sectionTitle("Status")}${detailGrid(status)}
         ${t.registryBackground?.trim() ? `${sectionTitle("Background")}<div style="white-space:pre-wrap;font-size:10.5px;line-height:1.6;overflow-wrap:anywhere;padding:2px 4px">${esc(t.registryBackground)}</div>` : ""}
         ${residents.length ? `${sectionTitle("Other Home Address Residents")}${registryList(residents)}` : ""}
         ${associates.length ? `${sectionTitle("Registered Associates")}${registryList(associates)}` : ""}

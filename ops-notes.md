@@ -46,6 +46,11 @@ happen before."
   copy of `WIPC_VAULT_KEY` kept away from the droplet, and a log warning if the newest dump is
   more than about a day old.
 
+## Monitoring — uptime and error alerts (reported 2026-10-22)
+
+- **The owner has uptime and error alerts set up on DigitalOcean** (reported by the owner, not seen by Claude, so what exactly they watch is not recorded here). Worth confirming once, and writing the answers here: (1) the alert checks the **app's address** (a page that only loads when the app is up), not only that the droplet is running; (2) there is an alert for **disk space** (photos use about 5–7 GB a year on a 35 GB disk) and for sustained **high CPU / memory**; (3) who receives the alerts, and that it reaches more than one person.
+- The app has no alerting of its own. A health check runs at the end of `deploy.sh`; the Intelligence slow-rebuild warning is a log line only (`pm2 logs runlog | grep "\[Intelligence\]"`).
+
 ## Standing check — Intelligence rebuild speed (added 2026-10-22)
 
 The server logs one line after each rebuild of the Intelligence entity list:

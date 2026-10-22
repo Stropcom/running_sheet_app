@@ -104,6 +104,7 @@ It is a legal and evidentiary system, so one rule sits above all others: **no ru
 
 - **Deploy:** `cd /opt/runlog && git checkout runlogtest && git pull --ff-only && nohup ./deploy.sh > ~/deploy.log 2>&1 &` (backup, pull, `pnpm install --frozen-lockfile`, build, migrate, pm2 restart, health check). Migrations run automatically.
 - **Versioning:** every merge to `main` bumps `package.json` and `shared/const.ts` together (patch default, minor for a new capability, major for a breaking change).
+- **Monitoring:** uptime and error alerts are set up on DigitalOcean (reported by the owner). The app has no alerting of its own beyond the deploy health check and the Intelligence log warning.
 - **Incidents:** `ops-notes.md` is the running log; check it first for a recurrence.
 - **Yearly:** re-run the scale test each October and record the results; check the Intelligence log line before any release.
 

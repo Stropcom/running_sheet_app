@@ -2,9 +2,10 @@
 
 Running log of production incidents, droplet issues, and operational
 decisions for the RunLog droplet (`ubuntu-s-1vcpu-1gb-35gb-intel-syd1` —
-hostname is stale, actual spec as of 2026-09-26 is 2 vCPU / 4GB, resized at
-least twice from the original 1vCPU/1GB plan; DigitalOcean doesn't rename
-the hostname on resize).
+hostname is stale; the droplet is now `ubuntu-s-2vcpu-8gb-35gb-intel-syd1` —
+2 vCPU / 8GB RAM / 35GB disk, confirmed 2026-10-22 (it was 2 vCPU / 4GB on
+2026-09-26, resized at least three times from the original 1vCPU/1GB plan;
+DigitalOcean doesn't rename the hostname on resize).
 
 Newest entries at the top. Read this at the start of any session where the
 user mentions the droplet, an outage, high CPU/latency, or asks "did this

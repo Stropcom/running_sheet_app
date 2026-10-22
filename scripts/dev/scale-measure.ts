@@ -84,7 +84,10 @@ async function main() {
   console.log(`Data: ${JSON.stringify(counts)}\n`);
   console.log("call".padEnd(44), "cold".padStart(9), "warm".padStart(9), "warm".padStart(9), "size".padStart(10), " status");
   for (const c of calls) {
-    const a = await time(c), b = await time(c), d = await time(c);
+    // a call that already takes over 5 s is not repeated (it would only slow the run)
+    const a = await time(c);
+    const b = a.ms > 5000 ? a : await time(c);
+    const d = a.ms > 5000 ? a : await time(c);
     const fmt = (n: number) => (n >= 1000 ? (n / 1000).toFixed(2) + " s" : n.toFixed(0) + " ms").padStart(9);
     const size = a.bytes > 1e6 ? (a.bytes / 1e6).toFixed(1) + " MB" : (a.bytes / 1e3).toFixed(0) + " KB";
     console.log(c.name.padEnd(44), fmt(a.ms), fmt(b.ms), fmt(d.ms), size.padStart(10), " ", a.status);

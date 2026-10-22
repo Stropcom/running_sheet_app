@@ -26,6 +26,7 @@
 // (IntelligenceMapping.tsx), bypassing the need for a pre-existing
 // operation/sheet/map marker to click through to it.
 import { test, expect } from "@playwright/test";
+import { createOperationAndSheet } from "./helpers";
 
 const USERNAME = process.env.E2E_USERNAME;
 const PASSWORD = process.env.E2E_PASSWORD;
@@ -42,12 +43,17 @@ test("voice input on RS Quick Entry makes no external network calls while offlin
 }) => {
   const appOrigin = new URL(baseURL!).origin;
 
-  await page.goto("/login");
-  await page.getByLabel("Username").fill(USERNAME!);
-  await page.getByLabel("Password").fill(PASSWORD!);
-  await page.getByRole("button", { name: "Sign In" }).click();
-  await page.waitForURL(
-    url => url.pathname === "/" || url.pathname === "/change-password"
+  // Already signed in: the "setup" project saves the session (auth.setup.ts).
+  // RS Quick Entry only shows its form once the Map page has a running sheet
+  // selected, so make one and select it the way Map Settings remembers it.
+  const { opId, sheetId } = await createOperationAndSheet(page);
+  await page.evaluate(
+    ([op, sheet]) =>
+      localStorage.setItem(
+        "runlog_map_settings",
+        JSON.stringify({ rsSelectedOpId: op, rsSelectedSheetId: sheet })
+      ),
+    [opId, sheetId]
   );
 
   await page.goto("/intelligence/mapping");
@@ -75,21 +81,31 @@ test("voice input on RS Quick Entry makes no external network calls while offlin
     );
   });
 
-  const voiceButton = page.getByRole("button", { name: /voice/i });
-  await expect(voiceButton).toBeVisible();
+  // The quick entry form is up (this is where the Voice button sits).
+  await expect(page.getByText("RS Quick Entry")).toBeVisible();
+  await expect(page.getByText("Observation", { exact: true })).toBeVisible();
 
-  // The button legitimately renders disabled ("model not installed"/
-  // "incomplete") on any environment without the real weight files
-  // present — expected, and still exercises getVoiceModelStatus()'s
-  // same-origin HEAD requests either way. Only click if interactive,
-  // since a disabled button intentionally ignores taps.
-  if (await voiceButton.isEnabled()) {
-    await voiceButton.click();
-    // Give getUserMedia/recording a moment to attempt whatever it does —
-    // in a headless browser with no real mic this typically fails fast
-    // with a permission error, which is fine; only the absence of any
-    // external request is being asserted here.
-    await page.waitForTimeout(1000);
+  // Voice input is currently switched off in the app (VOICE_INPUT_DISABLED in
+  // VoiceInputButton.tsx), so there is normally no button. When the feature
+  // is turned back on, the rest of this test exercises it; until then the
+  // no-external-requests check below still covers opening Quick Entry.
+  const voiceButton = page.getByRole("button", { name: /voice/i });
+  if ((await voiceButton.count()) > 0) {
+    await expect(voiceButton).toBeVisible();
+
+    // The button legitimately renders disabled ("model not installed"/
+    // "incomplete") on any environment without the real weight files
+    // present — expected, and still exercises getVoiceModelStatus()'s
+    // same-origin HEAD requests either way. Only click if interactive,
+    // since a disabled button intentionally ignores taps.
+    if (await voiceButton.isEnabled()) {
+      await voiceButton.click();
+      // Give getUserMedia/recording a moment to attempt whatever it does —
+      // in a headless browser with no real mic this typically fails fast
+      // with a permission error, which is fine; only the absence of any
+      // external request is being asserted here.
+      await page.waitForTimeout(1000);
+    }
   }
 
   expect(externalRequests).toEqual([]);

@@ -4,7 +4,7 @@ Written 2026-10-22 for version 2.19.0 (branch `runlogtest`; `main` is behind by 
 
 ## 1. What the app is
 
-RunLog is a "running sheet" logging system for a police surveillance / HUMINT team. Officers, identified by a CIN (a unique officer number, not a login name), log timestamped observations on **running sheets** inside **operations**. Each row must be **certified** by every CIN listed on it before it locks. Around that core sit a Target Registry, an Intelligence module (people, vehicles, addresses and an association map mined from the observation text), Governance (compliance and to-do tracking), an Operation Manager (weekly tasking), a Court section (Word statements, witness lists and WIPC requests), a map, photos and offline draft mode.
+RunLog is a "running sheet" logging system for a police surveillance team. Officers, identified by a CIN (a unique officer number, not a login name), log timestamped observations on **running sheets** inside **operations**. Each row must be **certified** by every CIN listed on it before it locks. Around that core sit a Target Registry, an Intelligence module (people, vehicles, addresses and an association map mined from the observation text), Governance (compliance and to-do tracking), an Operation Manager (weekly tasking), a Court section (Word statements, witness lists and WIPC requests), a map, photos and offline draft mode.
 
 It is a legal and evidentiary system, so one rule sits above all others: **no runtime AI or LLM calls, ever.** Everything that reads or analyses text is deterministic code that runs offline and gives the same answer every time. AI is used only by the developer, at development time. This is enforced by tooling, not just policy (section 5).
 

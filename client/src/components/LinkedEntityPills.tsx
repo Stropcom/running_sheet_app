@@ -6,8 +6,14 @@ import {
   HelpCircle,
   IdCard,
   FolderSearch,
+  Package,
 } from "lucide-react";
 import { Link } from "wouter";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 const CATEGORY_ICON: Record<string, typeof Target> = {
   target: Target,
@@ -16,6 +22,7 @@ const CATEGORY_ICON: Record<string, typeof Target> = {
   location: MapPin,
   unidentified_person: HelpCircle,
   member: IdCard,
+  item: Package,
 };
 
 // Same three categories PERSON_LINK_CATEGORIES (shared/attachmentLinking.ts)
@@ -109,6 +116,46 @@ function ProfilePillRow({
       <FolderSearch className="h-2.5 w-2.5 shrink-0" />
       <span className="truncate">Profile {surname}</span>
     </Link>
+  );
+}
+
+// A photo of an item (a bag, a phone…) is linked by a short description, which
+// can be far longer than a pill is wide. The pill just says "Item"; tapping or
+// clicking it opens the description in a small popover. It stops the click
+// reaching the pill area behind it, so reading a description never opens the
+// link editor. (A popover's content is rendered elsewhere in the page but
+// React still bubbles its clicks to the pill area, so it stops them too.)
+function ItemPill({
+  description,
+  number,
+  of,
+}: {
+  description: string;
+  number: number;
+  of: number;
+}) {
+  const label = of > 1 ? `Item ${number}` : "Item";
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={e => e.stopPropagation()}
+          title="Tap to read the item description"
+          aria-label={`${label} — show description`}
+          className="flex items-center gap-1 w-full px-2 py-0.5 rounded-full text-white text-[9px] font-medium bg-slate-600/90 hover:bg-slate-600 transition-colors text-left"
+        >
+          <Package className="h-2.5 w-2.5 shrink-0" />
+          <span className="truncate">{label}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-3" onClick={e => e.stopPropagation()}>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-foreground/70">
+          {label}
+        </p>
+        <p className="text-sm whitespace-pre-wrap break-words">{description}</p>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -224,6 +271,8 @@ export function LinkedEntityPills({
   const sorted = [...list].sort(
     (a, b) => categoryRank(a.category) - categoryRank(b.category)
   );
+  const itemCount = sorted.filter(e => e.category === "item").length;
+  let itemNumber = 0;
 
   return (
     <div
@@ -236,14 +285,23 @@ export function LinkedEntityPills({
       {needsPerson && (
         <PillRow Icon={HelpCircle} label="Needs person link" tone="needed" />
       )}
-      {sorted.map((e, idx) => (
-        <PillRow
-          key={`${e.category}-${e.label}-${idx}`}
-          Icon={CATEGORY_ICON[e.category] ?? HelpCircle}
-          label={displayLabel(e.category, e.label)}
-          tone="linked"
-        />
-      ))}
+      {sorted.map((e, idx) =>
+        e.category === "item" ? (
+          <ItemPill
+            key={`item-${idx}`}
+            description={e.label}
+            number={++itemNumber}
+            of={itemCount}
+          />
+        ) : (
+          <PillRow
+            key={`${e.category}-${e.label}-${idx}`}
+            Icon={CATEGORY_ICON[e.category] ?? HelpCircle}
+            label={displayLabel(e.category, e.label)}
+            tone="linked"
+          />
+        )
+      )}
       {needsMember && (
         <PillRow Icon={IdCard} label="Needs CIN link" tone="needed" />
       )}

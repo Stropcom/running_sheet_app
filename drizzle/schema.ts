@@ -495,6 +495,9 @@ export const attachmentEntityLinks = mysqlTable(
       "location",
       "unidentified_person",
       "member",
+      // A photo of an item (a short free-text description) — never an
+      // Intelligence entity; see shared/attachmentLinking.ts.
+      "item",
     ]).notNull(),
     targetId: int("targetId"), // set when category = "target"
     entityKey: varchar("entityKey", { length: 512 }), // normalized label, set when category != "target"

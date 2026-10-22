@@ -26,8 +26,14 @@ import {
   X,
   IdCard,
   ImagePlus,
+  Package,
 } from "lucide-react";
 import { triageMatches } from "@shared/faceMatchTriage";
+import {
+  ITEM_DESCRIPTION_MAX,
+  itemDescriptionProblem,
+  normalizeItemDescription,
+} from "@shared/attachmentLinking";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FORM_CONFIRM_BUTTON } from "@/lib/formKit";
 import { toast } from "sonner";
@@ -50,7 +56,8 @@ type Category =
   | "vehicle"
   | "associate"
   | "location"
-  | "unidentified_person";
+  | "unidentified_person"
+  | "item";
 
 const CATEGORY_TABS: { key: Category; label: string; icon: typeof Users }[] = [
   { key: "target", label: "Targets", icon: Users },
@@ -62,6 +69,9 @@ const CATEGORY_TABS: { key: Category; label: string; icon: typeof Users }[] = [
     label: "Unidentified Person",
     icon: HelpCircle,
   },
+  // A photo of a thing (a bag, a phone…), described in a few words — not an
+  // Intelligence entity (shared/attachmentLinking.ts).
+  { key: "item", label: "Item", icon: Package },
 ];
 
 // A face is only meaningful for the two "this is a real/possible person"
@@ -80,6 +90,7 @@ const CATEGORY_ICON: Record<string, typeof Users> = {
   location: MapPin,
   unidentified_person: HelpCircle,
   member: IdCard,
+  item: Package,
 };
 
 // Full literal class strings, not string-interpolated colour names, since
@@ -117,6 +128,13 @@ const CATEGORY_STYLES: Record<
     activeBorder: "border-blue-900 dark:border-blue-300",
     activeBg: "bg-blue-900/10 dark:bg-blue-400/10",
     activeText: "text-blue-900 dark:text-blue-300",
+  },
+  // "Other" is slate in the colour key (docs/features/ui-conventions.md).
+  item: {
+    icon: "text-slate-500 dark:text-slate-400",
+    activeBorder: "border-slate-500",
+    activeBg: "bg-slate-500/10",
+    activeText: "text-slate-700 dark:text-slate-300",
   },
 };
 
@@ -181,7 +199,8 @@ function OtherLinkedPhotos({
   entityLabel,
   excludeAttachmentId,
 }: {
-  category: Category;
+  // Never an item: an item is not an entity, so no other photo "belongs" to it.
+  category: Exclude<Category, "item">;
   targetId?: number | null;
   entityLabel: string;
   excludeAttachmentId: number;
@@ -353,6 +372,9 @@ export function LinkAttachmentDialog({
   const [pendingEntity, setPendingEntity] = useState<PendingEntityPick | null>(
     null
   );
+  // What the officer has typed on the Item tab (staged as the pick by the
+  // button under it; nothing is saved until Save / Confirm upload).
+  const [itemText, setItemText] = useState("");
   const [uploadSuggestion, setUploadSuggestion] = useState<{
     id: number;
     url: string;
@@ -459,6 +481,7 @@ export function LinkAttachmentDialog({
     setRowId(null);
     setSelectedFaceIndex(null);
     setPendingEntity(null);
+    setItemText("");
     setFaceAnswers({});
   };
 
@@ -619,6 +642,20 @@ export function LinkAttachmentDialog({
     );
   };
 
+  // Item tab: stage the typed description as the pick (press again to unstage).
+  const itemProblem = itemDescriptionProblem(itemText);
+  const itemStaged =
+    pendingEntity?.category === "item" &&
+    pendingEntity.entityLabel === normalizeItemDescription(itemText);
+  const stageItem = () => {
+    if (itemProblem) return;
+    setPendingEntity(prev =>
+      prev?.category === "item"
+        ? null
+        : { category: "item", entityLabel: normalizeItemDescription(itemText) }
+    );
+  };
+
   const tagUnidentified = () => {
     setPendingEntity(prev =>
       prev && prev.category === "unidentified_person"
@@ -728,10 +765,13 @@ export function LinkAttachmentDialog({
           targetId: chosen.targetId,
           entityLabel: chosen.entityLabel!,
         });
-        toast.success("Photo linked");
+        toast.success(
+          chosen.category === "item" ? "Item described" : "Photo linked"
+        );
         invalidateLinkViews(attachmentId);
         setSelectedFaceIndex(null);
         setPendingEntity(null);
+        if (chosen.category === "item") setItemText("");
         if (chosen.category === "target" || chosen.category === "associate")
           onOpenChange(false);
       }
@@ -1225,7 +1265,7 @@ export function LinkAttachmentDialog({
                           className="truncate max-w-[260px]"
                           title={link.entityLabel}
                         >
-                          {link.entityLabel}
+                          {link.category === "item" ? "Item" : link.entityLabel}
                         </span>
                         <button
                           onClick={() =>
@@ -1247,9 +1287,14 @@ export function LinkAttachmentDialog({
                           {linkedOps.join(", ")}
                         </p>
                       )}
+                      {link.category === "item" && (
+                        <p className="text-xs text-muted-foreground pl-2 whitespace-pre-wrap break-words">
+                          {link.entityLabel}
+                        </p>
+                      )}
                       {link.category === "unidentified_person" && (
                         <OtherLinkedPhotos
-                          category={link.category as Category}
+                          category={link.category as Exclude<Category, "item">}
                           targetId={link.targetId}
                           entityLabel={link.entityLabel}
                           excludeAttachmentId={attachmentId!}
@@ -1271,7 +1316,7 @@ export function LinkAttachmentDialog({
                   : "Link to"}
             </p>
 
-            <div className="grid grid-cols-5 max-[420px]:grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-6 max-[420px]:grid-cols-3 gap-1.5">
               {CATEGORY_TABS.map(t => {
                 const styles = CATEGORY_STYLES[t.key];
                 const active = tab === t.key;
@@ -1294,7 +1339,55 @@ export function LinkAttachmentDialog({
               })}
             </div>
 
-            {tab === "unidentified_person" ? (
+            {tab === "item" ? (
+              <div className="flex flex-col gap-2 py-2">
+                <p className="text-sm text-muted-foreground">
+                  Describe the item in this photo, for example “black backpack”.
+                  It isn’t added to Intelligence: the description sits behind an
+                  “Item” pill on the photo, on the running sheet and in the
+                  Images folder.
+                </p>
+                <Input
+                  value={itemText}
+                  onChange={e => {
+                    setItemText(e.target.value);
+                    // Keep a staged description in step with what is typed.
+                    if (pendingEntity?.category === "item")
+                      setPendingEntity(
+                        itemDescriptionProblem(e.target.value)
+                          ? null
+                          : {
+                              category: "item",
+                              entityLabel: normalizeItemDescription(
+                                e.target.value
+                              ),
+                            }
+                      );
+                  }}
+                  maxLength={ITEM_DESCRIPTION_MAX}
+                  placeholder="Short description of the item…"
+                  aria-label="Item description"
+                  className="h-9 text-sm bg-background"
+                />
+                <p className="text-[11px] text-muted-foreground text-right">
+                  {normalizeItemDescription(itemText).length}/
+                  {ITEM_DESCRIPTION_MAX}
+                </p>
+                <button
+                  disabled={anyPending || !!itemProblem}
+                  onClick={stageItem}
+                  className={`text-left px-3 py-2 rounded-lg text-sm border transition-colors disabled:opacity-50 ${
+                    itemStaged
+                      ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-700 dark:text-emerald-400"
+                      : "border-border bg-background hover:bg-accent/50"
+                  }`}
+                >
+                  {itemStaged
+                    ? "✓ Will link as this item"
+                    : "+ Use this description"}
+                </button>
+              </div>
+            ) : tab === "unidentified_person" ? (
               <div className="flex flex-col gap-2 py-2">
                 <p className="text-sm text-muted-foreground">
                   {selectedFaceIndex != null

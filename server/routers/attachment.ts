@@ -6,6 +6,11 @@ import {
 } from "../faceRecognition";
 import { rankFaces } from "@shared/faceRank";
 import { TRPCError } from "@trpc/server";
+import {
+  ITEM_LINK_CATEGORY,
+  itemDescriptionProblem,
+  normalizeItemDescription,
+} from "@shared/attachmentLinking";
 import { z } from "zod";
 import {
   filterByIntelligenceScope,
@@ -201,14 +206,26 @@ export const attachmentRouter = router({
           "location",
           "unidentified_person",
           "member",
+          "item",
         ]),
         targetId: z.number().optional(),
-        entityLabel: z.string().min(1),
+        entityLabel: z.string().min(1).max(512),
         // Set by the Target Registry screens only (see shared/profilePhoto.ts).
         fromRegistry: z.boolean().optional(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input: rawInput }) => {
+      // An item is described in a few words; tidy it and check its length.
+      let input = rawInput;
+      if (input.category === ITEM_LINK_CATEGORY) {
+        const problem = itemDescriptionProblem(input.entityLabel);
+        if (problem)
+          throw new TRPCError({ code: "BAD_REQUEST", message: problem });
+        input = {
+          ...input,
+          entityLabel: normalizeItemDescription(input.entityLabel),
+        };
+      }
       if (input.category === "target" && !input.targetId) {
         throw new TRPCError({
           code: "BAD_REQUEST",

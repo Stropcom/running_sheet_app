@@ -315,7 +315,8 @@ export async function linkAttachmentToEntity(data: {
     | "associate"
     | "location"
     | "unidentified_person"
-    | "member";
+    | "member"
+    | "item";
   targetId?: number;
   entityLabel: string;
   /** Added through the Target Registry — wins the profile photo. */

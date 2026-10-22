@@ -1,5 +1,6 @@
 import { useMyTeams } from "@/lib/teams";
 import { IMAGERY_PHRASE_PATTERN, cinsWithImagery } from "@shared/rowImagery";
+import { seatedOccupantWording, seatsOf } from "@shared/vehicleSeats";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import {
@@ -5432,6 +5433,16 @@ export default function SheetDetail({
                 pendingPlacements ?? []
               );
               const inNames = occupants.filter(o => !toNames.includes(o));
+              // Where each sits, when the rows say — "MENON (driver)".
+              const seatMap = seatsOf({
+                desc: a.occupantDesc,
+                descRowId: a.rowId,
+                rego,
+                occupants,
+                placements: pendingPlacements ?? [],
+              });
+              const withSeat = (n: string) =>
+                seatMap.has(n) ? `${n} (${seatMap.get(n)})` : n;
               // People inside this address take over the card only when
               // nobody is left in the vehicle; when some got out and others
               // stayed, the vehicle keeps its own card for those still in it
@@ -5487,7 +5498,18 @@ export default function SheetDetail({
                 text: `Vehicle ${rego}, ${
                   inCar && !outOfSight
                     ? shortenAlreadyMentionedNames(
-                        occupantWording(a.occupantDesc, occupants) ?? carNames,
+                        occupantWording(a.occupantDesc, occupants) ??
+                          // Someone joined after the arrival: say where each
+                          // sits when the rows say (driver, front passenger,
+                          // rear passenger), else just the names.
+                          seatedOccupantWording({
+                            desc: a.occupantDesc,
+                            descRowId: a.rowId,
+                            rego,
+                            occupants,
+                            placements: pendingPlacements ?? [],
+                          }) ??
+                          carNames,
                         usedBracketCodes
                       )
                     : "unseen occupant/s"
@@ -5577,7 +5599,7 @@ export default function SheetDetail({
                     : inCar
                       ? [
                           inNames.length
-                            ? `${inNames.join(", ")} in the vehicle`
+                            ? `${inNames.map(withSeat).join(", ")} in the vehicle`
                             : "",
                           toNames.length
                             ? `${toNames.join(", ")} to vehicle`
@@ -5823,13 +5845,32 @@ export default function SheetDetail({
                   title: rego,
                   pill: "In vehicle",
                   attn: true,
-                  who: `${names.join(", ")} in the vehicle`,
+                  who: `${(() => {
+                    const seats = seatsOf({
+                      desc: "",
+                      descRowId: 0,
+                      rego,
+                      occupants: names,
+                      placements: ps,
+                    });
+                    return names
+                      .map(n => (seats.has(n) ? `${n} (${seats.get(n)})` : n))
+                      .join(", ");
+                  })()} in the vehicle`,
                   state: `${at ? `${atMarker ? "At" : "Last seen at"} ${at}` : "Position not logged"}${sinceText(rowId)}`,
                   actions: [
                     {
                       key: `vnl-dep-${rego}`,
                       label: "Vehicle departing",
-                      text: `Vehicle ${rego}, ${names.join(", ")}, departed ${at ?? "[location]"} and continued via:`,
+                      text: `Vehicle ${rego}, ${
+                        seatedOccupantWording({
+                          desc: "",
+                          descRowId: 0,
+                          rego,
+                          occupants: names,
+                          placements: ps,
+                        }) ?? names.join(", ")
+                      }, departed ${at ?? "[location]"} and continued via:`,
                     },
                   ],
                   latestRowId: rowId,

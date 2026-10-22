@@ -54,6 +54,7 @@ import {
 } from "./transitPatterns";
 import { expandRowSegments } from "./rowSegments";
 import { fullStreetTypes } from "./streetTypes";
+import { entrySeat, seatsInWording, type Seat } from "./vehicleSeats";
 
 // A vehicle as the officer refers to it when someone gets out: "the vehicle",
 // or by rego — "Vehicle 1EXP123", "Vehicle 1EXP123 (Vehicle 1EXP123)".
@@ -505,6 +506,11 @@ export interface ScannedPlacement {
    * it. Set with `rego` "" — they are aboard, not in a vehicle — and with
    * `at` as where they were last logged (where it is taken to be). */
   vessel?: string;
+  /** Where they sit in that vehicle — driver, front passenger or rear
+   * passenger — when a row says (the door they got in by, or how an
+   * occupant list was worded). It stays with them while they remain in the
+   * same vehicle, until a later row says otherwise. Never guessed. */
+  seat?: Seat;
   /** On a bus, train or tram ("a bus", "the 998 train"), as the row wrote it.
    * Set with `rego` "" — they are aboard, not in a car — and with `at` as
    * where they boarded (the stop or station), when a row says. */
@@ -568,12 +574,23 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     inside = true,
     via?: string,
     vessel?: string,
-    transit?: string
+    transit?: string,
+    seatFor?: (person: string) => Seat | undefined
   ) => {
     for (const p of splitPeopleNames(cleanWalkerNames(names))) {
       const at = tok(p)
         .map(t => lastAt.get(t))
         .find(Boolean);
+      // A seat stands until a later row changes it: someone placed in the
+      // same vehicle again with no seat said keeps the one they had.
+      const previous = tok(p)
+        .map(t => placed.get(t))
+        .find(Boolean);
+      const seat =
+        seatFor?.(p) ??
+        (rego && previous?.rego === rego.toUpperCase()
+          ? previous.seat
+          : undefined);
       const entry: ScannedPlacement = {
         name: p,
         rego: rego.toUpperCase(),
@@ -583,6 +600,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         ...(via ? { via } : {}),
         ...(vessel ? { vessel } : {}),
         ...(transit ? { transit } : {}),
+        ...(seat ? { seat } : {}),
       };
       for (const t of tok(p)) placed.set(t, entry);
     }
@@ -604,12 +622,34 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     );
     lastActors = [base, ...extra].join(" and ");
   };
+  // The sentence being read, so getting into a vehicle can take its seat from
+  // the door it says ("... entered Vehicle X via the front passenger door").
+  let currentText = "";
   const noteJoined = (
     names: string,
     rego: string,
     rowId: number,
     inside = true
-  ) => placePeople(names, rego, rowId, inside);
+  ) => {
+    // One person getting in: the seat is theirs. With several, the sentence
+    // cannot say who took which seat, so none is given.
+    // (Only parts that name someone count — "place a suitcase in the
+    // boot" in front of "then entered" is not a second person.)
+    const one =
+      splitPeopleNames(cleanWalkerNames(names)).filter(p => tok(p).length > 0)
+        .length === 1;
+    const seat = inside && one ? entrySeat(currentText) : null;
+    placePeople(
+      names,
+      rego,
+      rowId,
+      inside,
+      undefined,
+      undefined,
+      undefined,
+      seat ? () => seat : undefined
+    );
+  };
   // They are on their way to / back in a vehicle, so no longer inside the
   // place they were last logged in, whether or not the row says they left it.
   const leaveAllPlaces = (names: string) => {
@@ -653,6 +693,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     // place written both ways across rows is still one place.
     let text = fullStreetTypes(row.observation ?? "");
     if (!text) return;
+    currentText = text;
     const where = { sheetId: row.sheetId, rowId: row.id, orderIdx: idx };
 
     // A vehicle arriving at an address with named people in it puts them there:
@@ -680,7 +721,17 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       ).filter(p => !isUnseenOccupants(p));
       if (people.length > 0) {
         const who = people.join(" and ");
-        placePeople(who, sighting.rego, row.id, true, sighting.route);
+        const said = seatsInWording(sighting.occupantDesc);
+        placePeople(
+          who,
+          sighting.rego,
+          row.id,
+          true,
+          sighting.route,
+          undefined,
+          undefined,
+          p => said.find(x => tok(x.name).some(t => tok(p).includes(t)))?.seat
+        );
         leaveAllPlaces(who);
         clearHeadingFor(who);
       }
@@ -701,7 +752,17 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
         const who = people.join(" and ");
         const leftFrom = extractDepartureAddress(text);
         if (leftFrom) setAt(who, bracketLabelOrSelf(leftFrom));
-        placePeople(who, departure[1].toUpperCase(), row.id, true);
+        const said = seatsInWording(departure[2]);
+        placePeople(
+          who,
+          departure[1].toUpperCase(),
+          row.id,
+          true,
+          undefined,
+          undefined,
+          undefined,
+          p => said.find(x => tok(x.name).some(t => tok(p).includes(t)))?.seat
+        );
         leaveAllPlaces(who);
         clearHeadingFor(who);
       }

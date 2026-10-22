@@ -53,6 +53,7 @@ import {
   transitPlaceFromGoogle,
   type TransitPlace,
 } from "@shared/transitPlace";
+import { seatedOccupantWording, seatsOf } from "@shared/vehicleSeats";
 import {
   signIconOf,
   placeSignFor,
@@ -13790,6 +13791,18 @@ export default function IntelligenceMapping() {
                                 const inNames = occupants.filter(
                                   o => !toNames.includes(o)
                                 );
+                                // Where each sits, when the rows say.
+                                const seatMap = seatsOf({
+                                  desc: v.occupantDesc,
+                                  descRowId: v.rowId,
+                                  rego: v.rego,
+                                  occupants,
+                                  placements: rsPendingPlacements ?? [],
+                                });
+                                const withSeat = (n: string) =>
+                                  seatMap.has(n)
+                                    ? `${n} (${seatMap.get(n)})`
+                                    : n;
                                 // People inside take over the card only when
                                 // nobody is left in the vehicle; when some got
                                 // out and others stayed, the vehicle keeps a
@@ -13837,7 +13850,16 @@ export default function IntelligenceMapping() {
                                             occupantWording(
                                               v.occupantDesc,
                                               occupants
-                                            ) ?? occNames
+                                            ) ??
+                                              seatedOccupantWording({
+                                                desc: v.occupantDesc,
+                                                descRowId: v.rowId,
+                                                rego: v.rego,
+                                                occupants,
+                                                placements:
+                                                  rsPendingPlacements ?? [],
+                                              }) ??
+                                              occNames
                                           )
                                         : "unseen occupant/s"
                                     }, departed ${shortAddr} and continued via:`,
@@ -13945,7 +13967,7 @@ export default function IntelligenceMapping() {
                                       : inCar
                                         ? [
                                             inNames.length
-                                              ? `${inNames.join(", ")} in the vehicle`
+                                              ? `${inNames.map(withSeat).join(", ")} in the vehicle`
                                               : "",
                                             toNames.length
                                               ? `${toNames.join(", ")} to vehicle`

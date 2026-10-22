@@ -10,7 +10,7 @@ It is a legal and evidentiary system, so one rule sits above all others: **no ru
 
 ## 2. How it is built
 
-**One codebase, one process.** A TypeScript monorepo, about 211,000 lines: `server/` (~75,000), `client/src/` (~127,000), `shared/` (~9,000). In production a single Node process serves both the API and the built web app.
+**One codebase, one process.** A TypeScript monorepo, about 211,000 lines: `server/` (about 75,000), `client/src/` (about 127,000), `shared/` (about 9,000). In production a single Node process serves both the API and the built web app.
 
 | Layer | Technology |
 | --- | --- |
@@ -79,7 +79,7 @@ It is a legal and evidentiary system, so one rule sits above all others: **no ru
 | Missing indexes | Opening a sheet 1.7 s → 0.05 s; Governance summary 35 s → 0.4 s; Pattern of life 42 s → 1.8 s | **Fixed** (0129) |
 | Incomplete Sheets report read all history | 1 year 32 s → 0.6 s; 3 years: crashed → about 2 s; 5 years: crashed → about 3.5 s | **Fixed** (2.18.1); still grows with rows, next step recorded |
 | Check Sheet slow (9 s at 1 year, 42 s at 5) | Depends on the global Intelligence rebuild | **Off by default** until Intelligence Stage C |
-| Global Intelligence rebuild, about 0.1 s per 1,000 rows | About 1 s at 10,000 rows, 9–10 s at one year, ~40 s at five. Runs on the single thread, so everyone waits: random stalls of 26–50 s were seen at 3–5 years | **Plan written, early-warning light live**, build deferred on purpose |
+| Global Intelligence rebuild, about 0.1 s per 1,000 rows | About 1 s at 10,000 rows, 9–10 s at one year, about 40 s at five. Runs on the single thread, so everyone waits: random stalls of 26–50 s were seen at 3–5 years | **Plan written, early-warning light live**, build deferred on purpose |
 | Intelligence Folder sends everything | 36 MB at 1 year, 106 MB at 3, 175 MB at 5, too large for a phone | In the plan (Stage C pages it) |
 | Association graph | 4 MB / 10 MB / 16 MB payload; 1 s / 1.8 s / 3.7 s | Acceptable; watch |
 

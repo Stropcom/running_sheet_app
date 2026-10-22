@@ -1,5 +1,5 @@
 // Square signs for banks, post offices, pubs, hotels (accommodation), gyms,
-// shopping centres, supermarkets, cafes, restaurants, fast food / takeaway and
+// shopping centres, supermarkets, hardware stores, cafes, restaurants, fast food / takeaway and
 // airports —
 // the same idea as the bus stop and train station signs
 // (shared/transitPlace.ts): the default map pin of a place that is one of
@@ -9,7 +9,7 @@
 // Two ways to tell, both deterministic:
 //   1. Google's place types, when we have them (a tapped place, a suggestion):
 //      bank / atm, post_office, bar, lodging, gym, shopping_mall, supermarket /
-//      grocery, cafe, restaurant, fast food / takeaway, airport.
+//      grocery, hardware / home improvement, cafe, restaurant, fast food / takeaway, airport.
 //   2. The way the place is written — its NAME, the first part of the label
 //      ("Commonwealth Bank East Victoria Park Branch, Shop 19 The Park Centre,
 //      789 Albany Highway, …"), never the street part, so "Bank Street" or
@@ -31,6 +31,7 @@ export type PlaceSignIcon =
   | "place_gym"
   | "place_shopping_centre"
   | "place_supermarket"
+  | "place_hardware"
   | "place_cafe"
   | "place_restaurant"
   | "place_fast_food"
@@ -44,6 +45,7 @@ export const PLACE_SIGN_ICONS: PlaceSignIcon[] = [
   "place_gym",
   "place_shopping_centre",
   "place_supermarket",
+  "place_hardware",
   "place_cafe",
   "place_restaurant",
   "place_fast_food",
@@ -82,6 +84,14 @@ const SUPERMARKET_RE =
   /\bsupermarkets?\b|\b(?:woolworths|aldi|iga|foodland|foodworks|spudshed|harris\s+farm)\b|\bcoles\b(?!\s+(?:bay|point|beach|creek|park|island)\b)/i;
 const NOT_A_SUPERMARKET_RE =
   /\b(?:express|petrol|fuel|servo|liquor|bws|dan\s+murphy'?s?|pharmacy|chemist|car\s*park|parking|distribution|depot|warehouse|head\s+office|support\s+office)\b/i;
+
+// A hardware store by its name: the big chains, or the word. "Computer
+// hardware" is an IT shop; a chain's cafe, sausage sizzle, car park or
+// distribution centre is not the store ("Bunnings Warehouse" IS the store).
+const HARDWARE_RE =
+  /\b(?:bunnings|mitre\s*10|home\s+hardware|total\s+tools|hardware)\b/i;
+const NOT_A_HARDWARE_RE =
+  /\b(?:computer|it|tech|software)\s+hardware\b|\b(?:cafe|coffee|sausage|bbq|car\s*park|parking|distribution|depot|head\s+office|support\s+office)\b/i;
 
 const CAFE_RE =
   /\b(?:cafes?|coffee|espresso|roasters?|roastery|barista|starbucks|gloria\s+jean'?s|zarraffa'?s)\b/i;
@@ -143,6 +153,8 @@ export function placeSignOfName(label: string): PlaceSignIcon | null {
   if (CENTRE_RE.test(name)) return "place_shopping_centre";
   if (SUPERMARKET_RE.test(name) && !NOT_A_SUPERMARKET_RE.test(name))
     return "place_supermarket";
+  if (HARDWARE_RE.test(name) && !NOT_A_HARDWARE_RE.test(name))
+    return "place_hardware";
   // "Hungry Jack's Airport" is a burger place; the airport comes last.
   if (CAFE_RE.test(name)) return "place_cafe";
   if (FAST_FOOD_RE.test(name)) return "place_fast_food";
@@ -189,6 +201,12 @@ export function placeSignFromTypes(
     !NOT_A_SUPERMARKET_RE.test(name)
   )
     return "place_supermarket";
+  // Google's hardware / home-improvement types (Bunnings, Mitre 10).
+  if (
+    (t.has("hardware_store") || t.has("home_improvement_store")) &&
+    !NOT_A_HARDWARE_RE.test(name)
+  )
+    return "place_hardware";
   const lodging = t.has("lodging");
   const bar = t.has("bar");
   if (lodging && bar)

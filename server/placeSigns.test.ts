@@ -192,6 +192,42 @@ describe("cafe, restaurant, fast food and airport signs", () => {
     );
   });
 
+  it("hardware stores: by name and by Google's type", () => {
+    for (const label of [
+      "Bunnings Warehouse Cannington, 1 Albany Hwy",
+      "Bunnings Joondalup",
+      "Mitre 10 Fremantle",
+      "Mitre10 Rockingham",
+      "Home Hardware Margaret River",
+      "Total Tools Welshpool",
+      "Cottesloe Hardware, Napoleon Street",
+    ])
+      expect(placeSignOfName(label), label).toBe("place_hardware");
+    expect(placeSignFromTypes(["hardware_store", "store"])).toBe(
+      "place_hardware"
+    );
+    expect(placeSignFromTypes(["home_improvement_store", "store"])).toBe(
+      "place_hardware"
+    );
+  });
+
+  it("a chain's cafe, car park or depot, computer hardware, and a street are not a hardware store", () => {
+    for (const label of [
+      "Bunnings Cafe Cannington",
+      "Bunnings Sausage Sizzle",
+      "Bunnings Car Park, Cannington",
+      "Bunnings Distribution Centre, Kewdale",
+      "Computer Hardware Warehouse, Perth",
+      "Bunnings Road, BELMONT",
+    ])
+      expect(placeSignOfName(label), label).not.toBe("place_hardware");
+    // a mall that holds one stays the mall; the supermarket order is unchanged
+    expect(placeSignFromTypes(["shopping_mall", "hardware_store"])).toBe(
+      "place_shopping_centre"
+    );
+    expect(placeSignOfName("Woolworths Karrinyup")).toBe("place_supermarket");
+  });
+
   it("a pub with a grill stays a pub; a street stays a street", () => {
     expect(placeSignOfName("Bicton Tavern & Grill")).toBe("place_pub");
     expect(placeSignOfName("Burger Street, PERTH")).toBeNull();

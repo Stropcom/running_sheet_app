@@ -60,6 +60,7 @@ export type MarkerIcon =
   | "place_gym"
   | "place_shopping_centre"
   | "place_supermarket"
+  | "place_hardware"
   | "place_cafe"
   | "place_restaurant"
   | "place_fast_food"
@@ -152,6 +153,7 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
   place_gym: "Gym Sign",
   place_shopping_centre: "Shopping Centre Sign",
   place_supermarket: "Supermarket Sign",
+  place_hardware: "Hardware Store Sign",
   place_cafe: "Cafe Sign",
   place_restaurant: "Restaurant Sign",
   place_fast_food: "Fast Food Sign",
@@ -201,6 +203,7 @@ export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
       "place_gym",
       "place_shopping_centre",
       "place_supermarket",
+      "place_hardware",
       "place_cafe",
       "place_restaurant",
       "place_fast_food",
@@ -295,6 +298,13 @@ const PLACE_SIGN_PICTOGRAMS: Record<string, (c: string) => string> = {
      <path d="M6.4 6.2 H21.8 L19.8 13.2 H8.4 Z" fill="#fff"/>
      <path d="M10.2 6.2 V13.2 M14.2 6.2 V13.2 M18 6.2 V13.2" stroke="${c}" stroke-width="1" opacity=".55"/>
      <circle cx="9.8" cy="19.6" r="1.9" fill="#fff"/><circle cx="18.2" cy="19.6" r="1.9" fill="#fff"/>`,
+  // A claw hammer, tilted: handle, the head with its striking face on one
+  // side and a curved claw on the other.
+  place_hardware: () =>
+    `<g transform="rotate(40 12 12)">
+       <rect x="10.4" y="7.6" width="3.2" height="15" rx="1.4" fill="#fff"/>
+       <path d="M7.6 2.6 H20 a1.2 1.2 0 0 1 1.2 1.2 V8 a1.2 1.2 0 0 1 -1.2 1.2 H9.6 C8.2 7.4 6.2 6.8 2.4 7.8 C3.6 5 5.2 3.2 7.6 2.6 Z" fill="#fff"/>
+     </g>`,
   place_cafe: c =>
     `<path d="M5 8 H19 L17.6 22 H6.4 Z" fill="#fff"/>
      <rect x="4" y="5" width="16" height="3.2" rx="1.2" fill="#fff"/>
@@ -437,6 +447,7 @@ export function getMarkerSvg(icon: MarkerIcon, colour: MarkerColour): string {
     case "place_gym":
     case "place_shopping_centre":
     case "place_supermarket":
+    case "place_hardware":
     case "place_cafe":
     case "place_restaurant":
     case "place_fast_food":

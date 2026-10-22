@@ -75,6 +75,7 @@ import {
 } from "../../drizzle/schema";
 
 import { attributedRowIds, collapseToVisits } from "../entityAttribution";
+import { recordIntelBuild } from "../intelBuildWatch";
 
 import { getDb } from "./core";
 import { attachLinkedCounts, normalizeEntityLabel } from "./attachments";
@@ -1545,7 +1546,14 @@ async function loadAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
   } catch {
     fp = null; // the check failed: build fresh, remember nothing
   }
-  return intelEntityCache.get(fp, buildAllIntelligenceEntities);
+  return intelEntityCache.get(fp, async () => {
+    // Time each real rebuild (not a cache hit) so the log warns when it is
+    // time to start the Intelligence redesign (server/intelBuildWatch.ts).
+    const started = Date.now();
+    const built = await buildAllIntelligenceEntities();
+    recordIntelBuild(Date.now() - started, fp ? fp.rows : null, built.length);
+    return built;
+  });
 }
 
 export async function getAllIntelligenceEntities(opts?: {

@@ -43,6 +43,8 @@ export function fingerprintSql(): string {
 export interface Fingerprint {
   /** Changes whenever any source table changes. */
   key: string;
+  /** Running sheet rows at the time (for the build-time watch). */
+  rows: number;
   /** Seconds since the newest change (large when there is no data). */
   ageSeconds: number;
 }
@@ -54,6 +56,7 @@ export function fingerprintFromRow(
   if (!row) return null;
   const nums: number[] = [];
   let newest = 0;
+  let rows = 0;
   for (let i = 0; i < INTEL_SOURCE_TABLES.length; i++) {
     const c = Number(row[`c${i}`]);
     const m = Number(row[`m${i}`]);
@@ -61,10 +64,15 @@ export function fingerprintFromRow(
     if (![c, m, u].every(Number.isFinite)) return null;
     nums.push(c, m, u);
     newest = Math.max(newest, u);
+    if (INTEL_SOURCE_TABLES[i].table === "sheet_rows") rows = c;
   }
   const now = Number(row.now_s);
   if (!Number.isFinite(now)) return null;
-  return { key: nums.join("|"), ageSeconds: newest === 0 ? 1e9 : now - newest };
+  return {
+    key: nums.join("|"),
+    rows,
+    ageSeconds: newest === 0 ? 1e9 : now - newest,
+  };
 }
 
 interface Master<T> {

@@ -13,6 +13,15 @@ happen before."
 
 ---
 
+## Standing check — Intelligence rebuild speed (added 2026-10-22)
+
+The server logs one line after each rebuild of the Intelligence entity list:
+`pm2 logs runlog --nostream | grep "\[Intelligence\]"`. A line ending in
+**WARNING** means a rebuild now takes 3 s or more, or there are 20,000 or more
+running sheet rows — time to start the planned redesign. The plan, the stages
+and the yearly re-test are in `docs/features/dev-and-ops.md` ("Intelligence
+redesign plan"). Expected: the warning at roughly month 3 of normal growth.
+
 ## 2026-09-26 — Switched droplet from `LocalAI` to `runlogtest`; deploy console dropped near the end but deploy had actually finished
 
 Before switching, `runlogtest` was 73 commits behind `LocalAI` (it had

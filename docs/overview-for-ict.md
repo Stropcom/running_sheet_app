@@ -1,6 +1,6 @@
 # RunLog — technical overview for ICT and the owner
 
-Written 2026-10-22 for version 2.19.0 (branch `runlogtest`; `main` is behind by a few releases and is updated only when the owner says so). It covers how the code is built, where it stands today, what has been put in place so it keeps working as it grows, and the scale assessments just done. Numbers marked *measured* come from tests run on a development machine (faster than the live droplet); numbers marked *estimate* are reasoned, not measured.
+Written 2026-10-22 for version 2.19.1 (branch `runlogtest`; `main` is behind by a few releases and is updated only when the owner says so). It covers how the code is built, where it stands today, what has been put in place so it keeps working as it grows, and the scale assessments just done. Numbers marked *measured* come from tests run on a development machine (faster than the live droplet); numbers marked *estimate* are reasoned, not measured.
 
 ## 1. What the app is
 
@@ -35,14 +35,14 @@ It is a legal and evidentiary system, so one rule sits above all others: **no ru
 ## 3. Where it is now
 
 - **Version 2.19.0**, 464 commits. All work lands on `runlogtest` first and is deployed there; `main` is merged to only on the owner's instruction, through a pull request with both required checks green.
-- **Tests:** 121 test files, 1,617 unit tests (offline, run in about 40 seconds), plus Playwright browser smoke tests (sign in → operation → sheet → row → certify → locked, and every main page opening without the error screen).
+- **Tests:** 121 test files, 1,617 unit tests (offline, run in about 40 seconds), plus 13 Playwright browser tests (sign in → operation → sheet → row → certify → locked; rows saving and editing; phone and tablet fit; Item photos; Intelligence; duplicate-person question; Governance; Add Target; every main page opening without the error screen).
 - **Latest release (2.19.0):** *Item photos* — a photo of a thing (a bag, a weapon, a document) can be linked by a short description; it shows as an "Item" pill on the sheet and in the Images folder, counts as linked for Governance, and never appears in Intelligence or the PDF export. Database step: migration 0130 (a guarded, safe enum change).
 - **Recent releases:** 2.18.x fixed the Incomplete Sheets report, added the missing database indexes, switched Check Sheet off by default and added the Intelligence early-warning tools.
 - **Feature notes:** one file per area in `docs/features/`, plus `ops-notes.md` (incident log, deploy and backup procedure). `CLAUDE.md` holds only the standing rules.
 
 ### Known weak spots (honest list)
 
-- **Very large client files.** `IntelligenceMapping.tsx` is 15,000 lines and `SheetDetail.tsx` 7,600, plus several of about 3,000. They work, but they are hard to change safely. Splitting them is deferred.
+- **Very large client files.** `IntelligenceMapping.tsx` is 15,000 lines and `SheetDetail.tsx` 7,600, plus several of about 3,000. They work, but they are hard to change safely. The plan is to split them gradually, never in one go: first a browser safety net (**done in 2.19.1**: 13 browser tests covering sheets, photos, Intelligence, Governance and more), then easy pieces, then whole sections, one release each. A standing rule means any change that touches one of these files moves the piece it changes into its own file.
 - **Loose typing.** About 400 uses of `any`; there is no ESLint (the type check is the only static gate).
 - **Dead template code.** The platform template's LLM, image-generation and voice scaffolding (`server/_core/llm.ts` and friends) and an OAuth path are still in the tree. None is wired to a live route and CI blocks any use, but they should eventually be deleted.
 - **One thread.** Node runs on one thread, so any long computation makes every user wait (see the Intelligence rebuild below).
@@ -114,5 +114,5 @@ It is a legal and evidentiary system, so one rule sits above all others: **no ru
 3. Replace the growth assumptions with real figures (sheets a day, rows a sheet, photos) after the first few months.
 4. Plan photo storage growth before year 2.
 5. Delete the dead LLM / image / voice / OAuth scaffolding from `_core`.
-6. When convenient, split the largest client files and add ESLint, with no behaviour change, using the same comparison approach as the server split.
+6. Split the largest client files gradually (safety net in place; the plan is in `docs/features/dev-and-ops.md`), and add ESLint, with no behaviour change.
 7. Open owner decisions: a cross-Command staff-names list, and a "possible duplicate" check.

@@ -13,6 +13,7 @@ Detailed per-feature notes moved out of `CLAUDE.md` (text unchanged, original or
 - Missing database indexes added; Check Sheet switched off by default (v2.18.0)
 - Incomplete Sheets report rewritten (v2.18.1)
 - Intelligence redesign plan (not started) and its early-warning tools (v2.18.2)
+- Splitting the big client files: the plan, and the browser safety net (stage 1, v2.19.1)
 
 ---
 
@@ -98,3 +99,10 @@ Detailed per-feature notes moved out of `CLAUDE.md` (text unchanged, original or
 **Also decided.** Check Sheet stays off until Stage C (or until Stage A makes it quick). Open questions for the owner before Stage C: the Folder paging screen design; whether Region Search may be slightly slower.
 
 **Yearly scale re-test (every October, or when the warning appears).** On a throwaway `*_scale` database: `pnpm exec drizzle-kit migrate`; `pnpm tsx scripts/dev/seed-scale-data.ts --years=1 --wipe` (then 3, 5); start the app on that database (`VITE_APP_ID=x JWT_SECRET=x PORT=3100 pnpm tsx server/_core/index.ts`); `pnpm tsx scripts/dev/scale-measure.ts` (`SCALE_ONLY="Sheet Check"` limits it); compare with the tables above; update the growth figures (sheets a day, rows per sheet, photos) from real numbers if known; record the results here. Real data volumes should replace the assumptions (10 sheets a day, 5 days a week, ~30 rows a sheet, 3 photos a sheet; 10 profiles a week with 5 photos each).
+
+**Splitting the big client files: the plan, and the browser safety net (stage 1 done, v2.19.1).** `client/src/pages/IntelligenceMapping.tsx` (15,000 lines), `SheetDetail.tsx` (7,600) and several ~3,000-line pages work but are hard to change safely, and the client has no unit tests. *Decision (2026-10-22): do not split them in one go.* The order, so that nothing an officer relies on can break unnoticed:
+1. **Safety net (done, v2.19.1).** Browser tests for the key screens — `e2e/sheet-and-photos.spec.ts` and `e2e/screens.spec.ts` (what each covers is in `e2e/README.md`), on top of `smoke.spec.ts`. They run in CI on every push (`e2e.yml`) and repeatedly pass against a database that already holds earlier runs (each run adds its own operation and a random surname). 13 tests, about 1.5 minutes. Not covered: the Map pages (Google Maps is unreachable from CI), the Target Logger, Import Target and exports — add a test for any of these *before* moving code that they depend on.
+2. **Easy pieces out.** Pure helper functions and self-contained dialogs first (no screen state to get wrong). Each move is a patch release that changes no behaviour; `pnpm check` catches a missing import or name.
+3. **The screens themselves, one section per release,** each checked by the tests above plus a look at laptop, tablet and phone width.
+4. **Keep them small.** A CI note when a file passes about 2,000 lines; ESLint and fewer `any` at the same time.
+*Standing rule, in `CLAUDE.md`:* when a feature has to change a very large file, move the piece being changed into its own file as part of that change (same code, new file) instead of adding to the big one — the files shrink over time without a risky big-bang split.

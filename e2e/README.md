@@ -60,6 +60,21 @@ rejected and sign-in appears to do nothing.
   that needs the deployment-only ONNX model files
   (`scripts/dev/voice-model-setup.md`).
 
+- `sheet-and-photos.spec.ts` — the running sheet screen and its photo paths
+  (the safety net for splitting `SheetDetail.tsx`): two rows saved, one edited
+  in place, both still there after a reload; the sheet fits a phone (390 px)
+  and a tablet (820 px) with no sideways scroll; a photo is picked, linked as
+  an **Item** with a description, uploaded only on Confirm, shows its Item pill
+  and the description pop-over, and is found again in the Images folder.
+- `screens.spec.ts` — the other big screens (the safety net for splitting
+  `IntelligenceMapping.tsx`): a row can be deleted (the browser's own
+  "Delete this row?" question); a person typed on a sheet reaches the
+  Intelligence folder and the operation's Intelligence page; the same person on
+  a second sheet raises "Possible duplicate entity"; the operation page opens
+  each tab; Governance lists the sheet; Add Target opens with its four steps.
+  A random surname per run keeps these independent of earlier runs on the same
+  database.
+
 Pages that load Google Maps (Mapping, RS Mapping) aren't in the page-load
 list: Google isn't reachable from CI or the dev sandbox.
 

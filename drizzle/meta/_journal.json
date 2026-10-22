@@ -897,6 +897,20 @@
       "when": 1792420921194,
       "tag": "0127_steep_obadiah_stane",
       "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "5",
+      "when": 1792636903788,
+      "tag": "0128_add_missing_schema_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "5",
+      "when": 1792642064589,
+      "tag": "0129_add_missing_indexes",
+      "breakpoints": true
     }
   ]
 }

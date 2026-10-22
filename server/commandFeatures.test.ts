@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   COMMAND_FEATURES_OWNER_CIN,
+  DEFAULT_OFF_FEATURES,
   FEATURE_KEYS,
   buildFeatureMatrix,
   featureForPath,
@@ -10,11 +11,21 @@ import {
 import { appRouter } from "./routers";
 
 describe("buildFeatureMatrix", () => {
-  it("starts with everything on for every Command", () => {
+  it("starts with everything on for every Command, except default-off features", () => {
     const m = buildFeatureMatrix([]);
     for (const c of Object.keys(m))
       for (const f of FEATURE_KEYS)
-        expect(m[c as keyof typeof m][f]).toBe(true);
+        expect(m[c as keyof typeof m][f]).toBe(
+          !(DEFAULT_OFF_FEATURES as readonly string[]).includes(f)
+        );
+  });
+  it("starts Check Sheet off, and a saved setting can turn it on", () => {
+    expect(buildFeatureMatrix([]).WESTERN.sheetCheck).toBe(false);
+    const on = buildFeatureMatrix([
+      { command: "WESTERN", feature: "sheetCheck", enabled: true },
+    ]);
+    expect(on.WESTERN.sheetCheck).toBe(true);
+    expect(on.EASTERN.sheetCheck).toBe(false);
   });
   it("applies only the saved switches", () => {
     const m = buildFeatureMatrix([
@@ -40,8 +51,22 @@ describe("featuresFor", () => {
       featuresFor({ command: "EASTERN", allRegions: true }, m).roster
     ).toBe(true);
   });
-  it("leaves everything on for an unknown Command", () => {
-    expect(featuresFor({ command: "NOWHERE" }, m).roster).toBe(true);
+  it("leaves everything on for an unknown Command, except default-off features", () => {
+    const f = featuresFor({ command: "NOWHERE" }, m);
+    expect(f.roster).toBe(true);
+    expect(f.sheetCheck).toBe(false);
+  });
+  it("keeps Check Sheet off for an all-region admin too, unless their Command turns it on", () => {
+    expect(
+      featuresFor({ command: "WESTERN", allRegions: true }, m).sheetCheck
+    ).toBe(false);
+    const on = buildFeatureMatrix([
+      { command: "WESTERN", feature: "sheetCheck", enabled: true },
+    ]);
+    expect(
+      featuresFor({ command: "WESTERN", allRegions: true }, on).sheetCheck
+    ).toBe(true);
+    expect(featuresFor({ command: "WESTERN" }, on).sheetCheck).toBe(true);
   });
 });
 
@@ -77,6 +102,12 @@ describe("featureForPath", () => {
   it("names real procedures for the import feature", () => {
     expect(procedures).toContain("target.registry.parseDocument");
     expect(featureForPath("target.registry.parseDocument")).toBe("import");
+  });
+  it("puts Check Sheet and its dismissals under sheetCheck, using real procedure names", () => {
+    expect(procedures).toContain("sheet.check");
+    expect(procedures).toContain("sheet.dismissCheckFinding");
+    expect(featureForPath("sheet.check")).toBe("sheetCheck");
+    expect(featureForPath("sheet.dismissCheckFinding")).toBe("sheetCheck");
   });
   it("leaves everything else alone", () => {
     expect(featureForPath("sheet.list")).toBeNull();

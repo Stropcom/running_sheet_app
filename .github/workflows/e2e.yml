@@ -63,6 +63,9 @@ jobs:
       - name: Create the database tables
         run: pnpm exec drizzle-kit migrate
 
+      - name: Check the migrations build the same database as schema.ts
+        run: pnpm tsx scripts/dev/check-schema-drift.ts
+
       - name: Create the test officer
         run: pnpm tsx scripts/dev/create-admin-user.ts "$E2E_USERNAME" "$E2E_PASSWORD" "E2E Officer" "$E2E_CIN"
 

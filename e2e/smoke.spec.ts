@@ -107,3 +107,13 @@ test("main pages open without an error screen", async ({ page }) => {
   }
   expect(scriptErrors).toEqual([]);
 });
+
+// The address the uptime monitor points at. It must answer without signing in
+// and must not be the app's own page (which would always look "up").
+test("the health address answers ok, with no sign-in", async ({ browser }) => {
+  const context = await browser.newContext(); // no saved session
+  const res = await context.request.get("/healthz");
+  expect(res.status()).toBe(200);
+  expect(await res.json()).toEqual({ ok: true });
+  await context.close();
+});

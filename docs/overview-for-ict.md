@@ -1,6 +1,6 @@
 # RunLog — technical overview for ICT and the owner
 
-Written 2026-10-22 for version 2.19.1 (branch `runlogtest`; `main` is behind by a few releases and is updated only when the owner says so). It covers how the code is built, where it stands today, what has been put in place so it keeps working as it grows, and the scale assessments just done. Numbers marked *measured* come from tests run on a development machine (faster than the live droplet); numbers marked *estimate* are reasoned, not measured.
+Written 2026-10-22 for version 2.19.2 (branch `runlogtest`; `main` is behind by a few releases and is updated only when the owner says so). It covers how the code is built, where it stands today, what has been put in place so it keeps working as it grows, and the scale assessments just done. Numbers marked *measured* come from tests run on a development machine (faster than the live droplet); numbers marked *estimate* are reasoned, not measured.
 
 ## 1. What the app is
 
@@ -35,14 +35,14 @@ It is a legal and evidentiary system, so one rule sits above all others: **no ru
 ## 3. Where it is now
 
 - **Version 2.19.0**, 464 commits. All work lands on `runlogtest` first and is deployed there; `main` is merged to only on the owner's instruction, through a pull request with both required checks green.
-- **Tests:** 121 test files, 1,617 unit tests (offline, run in about 40 seconds), plus 13 Playwright browser tests (sign in → operation → sheet → row → certify → locked; rows saving and editing; phone and tablet fit; Item photos; Intelligence; duplicate-person question; Governance; Add Target; every main page opening without the error screen).
+- **Tests:** 121 test files, 1,617 unit tests (offline, run in about 40 seconds), plus 14 Playwright browser tests (sign in → operation → sheet → row → certify → locked; rows saving and editing; phone and tablet fit; Item photos; Intelligence; duplicate-person question; Governance; Add Target; every main page opening without the error screen).
 - **Latest release (2.19.0):** *Item photos* — a photo of a thing (a bag, a weapon, a document) can be linked by a short description; it shows as an "Item" pill on the sheet and in the Images folder, counts as linked for Governance, and never appears in Intelligence or the PDF export. Database step: migration 0130 (a guarded, safe enum change).
 - **Recent releases:** 2.18.x fixed the Incomplete Sheets report, added the missing database indexes, switched Check Sheet off by default and added the Intelligence early-warning tools.
 - **Feature notes:** one file per area in `docs/features/`, plus `ops-notes.md` (incident log, deploy and backup procedure). `CLAUDE.md` holds only the standing rules.
 
 ### Known weak spots (honest list)
 
-- **Very large client files.** `IntelligenceMapping.tsx` is 15,000 lines and `SheetDetail.tsx` 7,600, plus several of about 3,000. They work, but they are hard to change safely. The plan is to split them gradually, never in one go: first a browser safety net (**done in 2.19.1**: 13 browser tests covering sheets, photos, Intelligence, Governance and more), then easy pieces, then whole sections, one release each. A standing rule means any change that touches one of these files moves the piece it changes into its own file.
+- **Very large client files.** `IntelligenceMapping.tsx` is 15,000 lines and `SheetDetail.tsx` 7,600, plus several of about 3,000. They work, but they are hard to change safely. The plan is to split them gradually, never in one go: first a browser safety net (**done in 2.19.1**: browser tests covering sheets, photos, Intelligence, Governance and more), then easy pieces, then whole sections, one release each. A standing rule means any change that touches one of these files moves the piece it changes into its own file.
 - **Loose typing.** About 400 uses of `any`; there is no ESLint (the type check is the only static gate).
 - **Dead template code.** The platform template's LLM, image-generation and voice scaffolding (`server/_core/llm.ts` and friends) and an OAuth path are still in the tree. None is wired to a live route and CI blocks any use, but they should eventually be deleted.
 - **One thread.** Node runs on one thread, so any long computation makes every user wait (see the Intelligence rebuild below).
@@ -104,7 +104,7 @@ It is a legal and evidentiary system, so one rule sits above all others: **no ru
 
 - **Deploy:** `cd /opt/runlog && git checkout runlogtest && git pull --ff-only && nohup ./deploy.sh > ~/deploy.log 2>&1 &` (backup, pull, `pnpm install --frozen-lockfile`, build, migrate, pm2 restart, health check). Migrations run automatically.
 - **Versioning:** every merge to `main` bumps `package.json` and `shared/const.ts` together (patch default, minor for a new capability, major for a breaking change).
-- **Monitoring:** uptime and error alerts are set up on DigitalOcean (reported by the owner). The app has no alerting of its own beyond the deploy health check and the Intelligence log warning.
+- **Monitoring:** DigitalOcean uptime checks (HTTPS on the site address, every 60 s from four regions; alerts for downtime, slow response and certificate expiry). From 2.19.2 the app also has `/healthz`, an open address that answers 200 when the database is up and 503 when it is down or slow, so a second check can watch the database, not just the page. The app has no alerting of its own beyond that, the deploy health check and the Intelligence log warning.
 - **Incidents:** `ops-notes.md` is the running log; check it first for a recurrence.
 - **Yearly:** re-run the scale test each October and record the results; check the Intelligence log line before any release.
 

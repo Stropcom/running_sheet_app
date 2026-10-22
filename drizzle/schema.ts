@@ -362,7 +362,11 @@ export const runningSheets = mysqlTable("running_sheets", {
   // sheet, with the newest relevant row id at the time. Display-only: it
   // never touches row text, and a card returns if a newer row is logged.
   continuityDismissed: text("continuityDismissed"),
-});
+}, t => [
+  index("running_sheets_operation_idx").on(t.operationId, t.deletedAt),
+  index("running_sheets_target_idx").on(t.targetId),
+  index("running_sheets_date_idx").on(t.sheetDate),
+]);
 
 export type RunningSheet = typeof runningSheets.$inferSelect;
 export type InsertRunningSheet = typeof runningSheets.$inferInsert;
@@ -381,7 +385,9 @@ export const sheetRows = mysqlTable("sheet_rows", {
   isLocked: boolean("isLocked").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, t => [
+  index("sheet_rows_sheet_row_idx").on(t.sheetId, t.rowNumber),
+]);
 
 export type SheetRow = typeof sheetRows.$inferSelect;
 export type InsertSheetRow = typeof sheetRows.$inferInsert;
@@ -395,7 +401,10 @@ export const rowMembers = mysqlTable("row_members", {
   memberName: varchar("memberName", { length: 255 }).notNull(), // stores CIN
   sortOrder: int("sortOrder").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, t => [
+  index("row_members_row_idx").on(t.rowId),
+  index("row_members_member_idx").on(t.memberName),
+]);
 
 export type RowMember = typeof rowMembers.$inferSelect;
 export type InsertRowMember = typeof rowMembers.$inferInsert;
@@ -411,7 +420,9 @@ export const certifications = mysqlTable("certifications", {
   certifiedByCIN: varchar("certifiedByCIN", { length: 64 }).notNull(),
   certifiedAt: bigint("certifiedAt", { mode: "number" }).notNull(),
   isActive: boolean("isActive").default(true).notNull(),
-});
+}, t => [
+  index("certifications_row_member_idx").on(t.rowId, t.memberId),
+]);
 
 export type Certification = typeof certifications.$inferSelect;
 export type InsertCertification = typeof certifications.$inferInsert;
@@ -455,7 +466,10 @@ export const rowAttachments = mysqlTable("row_attachments", {
   // it means "unknown", and the governance check falls back to its old
   // any-link behaviour rather than blocking on an absent value.
   faceCount: int("faceCount"),
-});
+}, t => [
+  index("row_attachments_row_idx").on(t.rowId),
+  index("row_attachments_operation_idx").on(t.operationId, t.deletedAt),
+]);
 
 export type RowAttachment = typeof rowAttachments.$inferSelect;
 export type InsertRowAttachment = typeof rowAttachments.$inferInsert;
@@ -501,6 +515,14 @@ export const attachmentEntityLinks = mysqlTable(
       table.category,
       table.entityKey
     ),
+    categoryTargetIdx: index("attachment_entity_links_category_target_idx").on(
+      table.category,
+      table.targetId
+    ),
+    categoryKeyIdx: index("attachment_entity_links_category_key_idx").on(
+      table.category,
+      table.entityKey
+    ),
   })
 );
 
@@ -531,7 +553,9 @@ export const personDetections = mysqlTable("person_detections", {
   embedding: text("embedding").notNull(), // JSON: number[256]
   detectionConfidence: double("detectionConfidence").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, t => [
+  index("person_detections_attachment_idx").on(t.attachmentId),
+]);
 
 export type PersonDetection = typeof personDetections.$inferSelect;
 export type InsertPersonDetection = typeof personDetections.$inferInsert;
@@ -862,7 +886,9 @@ export const associates = mysqlTable("associates", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   deletedAt: bigint("deletedAt", { mode: "number" }),
   deletedByCIN: varchar("deletedByCIN", { length: 64 }),
-});
+}, t => [
+  index("associates_target_idx").on(t.targetId, t.deletedAt),
+]);
 
 export type Associate = typeof associates.$inferSelect;
 export type InsertAssociate = typeof associates.$inferInsert;
@@ -881,7 +907,9 @@ export const targetFieldHistory = mysqlTable("target_field_history", {
   previousValue: text("previousValue").notNull(),
   supersededAt: bigint("supersededAt", { mode: "number" }).notNull(),
   supersededByCIN: varchar("supersededByCIN", { length: 64 }),
-});
+}, t => [
+  index("target_field_history_target_idx").on(t.targetId),
+]);
 
 export type TargetFieldHistory = typeof targetFieldHistory.$inferSelect;
 export type InsertTargetFieldHistory = typeof targetFieldHistory.$inferInsert;
@@ -901,7 +929,10 @@ export const operationTargetLinks = mysqlTable("operation_target_links", {
   // Target profile as "{Operation name} background". Null for a manually
   // added target, or an import with no narrative text.
   background: text("background"),
-});
+}, t => [
+  index("operation_target_links_target_idx").on(t.targetId),
+  index("operation_target_links_operation_idx").on(t.operationId),
+]);
 
 export type OperationTargetLink = typeof operationTargetLinks.$inferSelect;
 export type InsertOperationTargetLink =
@@ -1097,7 +1128,10 @@ export const auditLogs = mysqlTable("audit_logs", {
   ]).notNull(),
   details: text("details"),
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),
-});
+}, t => [
+  index("audit_logs_sheet_idx").on(t.sheetId),
+  index("audit_logs_created_idx").on(t.createdAt),
+]);
 
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = typeof auditLogs.$inferInsert;
@@ -1242,7 +1276,10 @@ export const sheetSummaryEntries = mysqlTable(
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },
-  table => [uniqueIndex("sheet_summary_entries_row_idx").on(table.rowId)]
+  table => [
+    uniqueIndex("sheet_summary_entries_row_idx").on(table.rowId),
+    index("sheet_summary_entries_sheet_idx").on(table.sheetId),
+  ]
 );
 
 export type SheetSummaryEntry = typeof sheetSummaryEntries.$inferSelect;

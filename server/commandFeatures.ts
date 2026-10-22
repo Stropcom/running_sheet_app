@@ -69,7 +69,8 @@ export async function enforceFeatureAccess(
 ): Promise<void> {
   const feature = featureForPath(path);
   if (!feature) return;
-  if (user.allRegions) return;
+  // (An all-region admin keeps every feature except a default-off one;
+  // featuresFor decides that.)
   const matrix = await loadFeatureMatrix();
   if (!featuresFor(user, matrix)[feature]) {
     throw new TRPCError({

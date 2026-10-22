@@ -82,6 +82,7 @@ import {
   type TargetMatchCandidate,
 } from "@/components/TargetMatchDialog";
 import { CheckRunningSheetDialog } from "@/components/CheckRunningSheetDialog";
+import { useCommandFeature } from "@/lib/commandFeatures";
 import { CrossOperationEntityAlert } from "@/components/CrossOperationEntityAlert";
 import { MissingLocationAlert } from "@/components/MissingLocationAlert";
 import { VagueVehicleMatchAlert } from "@/components/VagueVehicleMatchAlert";
@@ -3534,6 +3535,9 @@ export default function SheetDetail({
   const [dupeIndex, setDupeIndex] = useState(0);
   const [dupeDialogOpen, setDupeDialogOpen] = useState(false);
   const [showCheckSheetDialog, setShowCheckSheetDialog] = useState(false);
+  // Check Sheet is off by default (shared/commandFeatures.ts): it reads the
+  // whole Intelligence list and is far too slow on a large archive.
+  const sheetCheckOn = useCommandFeature("sheetCheck");
   // A ref, not state: only ever read/written synchronously within the
   // dedupe-resolution handlers below, never rendered — a ref avoids the
   // stale-closure trap of reading state that was just set in the same tick
@@ -5003,16 +5007,18 @@ export default function SheetDetail({
                         </TooltipContent>
                       </Tooltip>
                     ))}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-2"
-                    onClick={() => setShowCheckSheetDialog(true)}
-                  >
-                    <ClipboardCheck className="w-4 h-4" />
-                    Check
-                    <span className="hidden lg:inline"> Sheet</span>
-                  </Button>
+                  {sheetCheckOn && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => setShowCheckSheetDialog(true)}
+                    >
+                      <ClipboardCheck className="w-4 h-4" />
+                      Check
+                      <span className="hidden lg:inline"> Sheet</span>
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"
@@ -7605,7 +7611,7 @@ export default function SheetDetail({
         );
       })()}
       {sheetId && <FaceMatchAckDialog sheetId={sheetId} />}
-      {sheetId && (
+      {sheetId && sheetCheckOn && (
         <CheckRunningSheetDialog
           open={showCheckSheetDialog}
           onClose={() => setShowCheckSheetDialog(false)}

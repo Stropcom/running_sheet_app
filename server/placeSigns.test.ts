@@ -142,6 +142,52 @@ describe("cafe, restaurant, fast food and airport signs", () => {
     ).toBeNull();
   });
 
+  it("supermarkets: by name and by Google's type", () => {
+    for (const label of [
+      "Woolworths Karrinyup, Karrinyup Shopping Centre Dr",
+      "Coles Victoria Park, 1 Albany Hwy",
+      "ALDI Cannington",
+      "IGA Fremantle",
+      "Foodland Rockingham",
+      "Harris Farm Markets Cottesloe",
+      "Spudshed Joondalup",
+      "Mt Lawley Supermarket, Beaufort Street",
+    ])
+      expect(placeSignOfName(label), label).toBe("place_supermarket");
+    expect(placeSignFromTypes(["supermarket", "grocery_store", "food"])).toBe(
+      "place_supermarket"
+    );
+    expect(placeSignFromTypes(["grocery_store", "food"])).toBe(
+      "place_supermarket"
+    );
+  });
+
+  it("a chain's petrol station, liquor store or head office is not a supermarket; a town or street is not a shop", () => {
+    for (const label of [
+      "Coles Express, 5 Albany Hwy",
+      "Woolworths Petrol Cannington",
+      "BWS Cannington",
+      "Dan Murphy's Belmont",
+      "Woolworths Distribution Centre, Perth Airport",
+      "Coles Bay",
+      "Coles Road, BELMONT",
+      "Woolworths Pharmacy Karrinyup",
+    ])
+      expect(placeSignOfName(label), label).not.toBe("place_supermarket");
+    // a supermarket the officer reaches through a mall tap stays the mall
+    expect(placeSignFromTypes(["shopping_mall", "supermarket"])).toBe(
+      "place_shopping_centre"
+    );
+    // a petrol station that Google also calls a grocery store
+    expect(
+      placeSignFromTypes(["gas_station", "grocery_store"], "Coles Express")
+    ).toBeNull();
+    // Karrinyup Shopping Centre is the centre, not the supermarket in it
+    expect(placeSignOfName("Karrinyup Shopping Centre, Karrinyup")).toBe(
+      "place_shopping_centre"
+    );
+  });
+
   it("a pub with a grill stays a pub; a street stays a street", () => {
     expect(placeSignOfName("Bicton Tavern & Grill")).toBe("place_pub");
     expect(placeSignOfName("Burger Street, PERTH")).toBeNull();

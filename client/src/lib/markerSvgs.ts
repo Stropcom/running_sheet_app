@@ -59,6 +59,7 @@ export type MarkerIcon =
   | "place_hotel"
   | "place_gym"
   | "place_shopping_centre"
+  | "place_supermarket"
   | "place_cafe"
   | "place_restaurant"
   | "place_fast_food"
@@ -150,6 +151,7 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
   place_hotel: "Hotel Sign",
   place_gym: "Gym Sign",
   place_shopping_centre: "Shopping Centre Sign",
+  place_supermarket: "Supermarket Sign",
   place_cafe: "Cafe Sign",
   place_restaurant: "Restaurant Sign",
   place_fast_food: "Fast Food Sign",
@@ -198,6 +200,7 @@ export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
       "place_hotel",
       "place_gym",
       "place_shopping_centre",
+      "place_supermarket",
       "place_cafe",
       "place_restaurant",
       "place_fast_food",
@@ -285,6 +288,13 @@ const PLACE_SIGN_PICTOGRAMS: Record<string, (c: string) => string> = {
     `<path d="M5 8.4 H19 L20.2 21.6 H3.8 Z" fill="#fff"/>
      <path d="M8.8 8.6 V6.6 a3.2 3.2 0 0 1 6.4 0 V8.6" fill="none" stroke="#fff" stroke-width="2"/>
      <path d="M8.8 12.6 V13.4 M15.2 12.6 V13.4" stroke="${c}" stroke-width="2" stroke-linecap="round"/>`,
+  // A shopping trolley (the centre's sign is a bag): handle, basket with its
+  // wires cut out in the sign colour, two wheels.
+  place_supermarket: c =>
+    `<path d="M1.8 3.6 H5 L8.6 15.4 H19.6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+     <path d="M6.4 6.2 H21.8 L19.8 13.2 H8.4 Z" fill="#fff"/>
+     <path d="M10.2 6.2 V13.2 M14.2 6.2 V13.2 M18 6.2 V13.2" stroke="${c}" stroke-width="1" opacity=".55"/>
+     <circle cx="9.8" cy="19.6" r="1.9" fill="#fff"/><circle cx="18.2" cy="19.6" r="1.9" fill="#fff"/>`,
   place_cafe: c =>
     `<path d="M5 8 H19 L17.6 22 H6.4 Z" fill="#fff"/>
      <rect x="4" y="5" width="16" height="3.2" rx="1.2" fill="#fff"/>
@@ -426,6 +436,7 @@ export function getMarkerSvg(icon: MarkerIcon, colour: MarkerColour): string {
     case "place_hotel":
     case "place_gym":
     case "place_shopping_centre":
+    case "place_supermarket":
     case "place_cafe":
     case "place_restaurant":
     case "place_fast_food":

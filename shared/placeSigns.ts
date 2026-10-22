@@ -1,5 +1,6 @@
 // Square signs for banks, post offices, pubs, hotels (accommodation), gyms,
-// shopping centres, cafes, restaurants, fast food / takeaway and airports —
+// shopping centres, supermarkets, cafes, restaurants, fast food / takeaway and
+// airports —
 // the same idea as the bus stop and train station signs
 // (shared/transitPlace.ts): the default map pin of a place that is one of
 // these is its sign instead of the house, however the place got into the
@@ -7,8 +8,8 @@
 //
 // Two ways to tell, both deterministic:
 //   1. Google's place types, when we have them (a tapped place, a suggestion):
-//      bank / atm, post_office, bar, lodging, gym, shopping_mall, cafe,
-//      restaurant, fast food / takeaway, airport.
+//      bank / atm, post_office, bar, lodging, gym, shopping_mall, supermarket /
+//      grocery, cafe, restaurant, fast food / takeaway, airport.
 //   2. The way the place is written — its NAME, the first part of the label
 //      ("Commonwealth Bank East Victoria Park Branch, Shop 19 The Park Centre,
 //      789 Albany Highway, …"), never the street part, so "Bank Street" or
@@ -29,6 +30,7 @@ export type PlaceSignIcon =
   | "place_hotel"
   | "place_gym"
   | "place_shopping_centre"
+  | "place_supermarket"
   | "place_cafe"
   | "place_restaurant"
   | "place_fast_food"
@@ -41,6 +43,7 @@ export const PLACE_SIGN_ICONS: PlaceSignIcon[] = [
   "place_hotel",
   "place_gym",
   "place_shopping_centre",
+  "place_supermarket",
   "place_cafe",
   "place_restaurant",
   "place_fast_food",
@@ -71,6 +74,14 @@ const GYM_RE =
   /\b(?:gym|gymnasium|fitness|crossfit|pilates|f45|orangetheory|health\s+club|jetts|fitstop)\b/i;
 const CENTRE_RE =
   /\bshopping\s+(?:centre|center|mall|plaza|village|square|arcade|complex|precinct)\b|\btown\s+centre\b|\bwestfield\b|\bgalleria\b/i;
+
+// A supermarket by its name: the word, or one of the big grocery chains.
+// "Coles Bay" is a town, not a shop; a chain's petrol station, liquor store,
+// pharmacy or head office is not the supermarket.
+const SUPERMARKET_RE =
+  /\bsupermarkets?\b|\b(?:woolworths|aldi|iga|foodland|foodworks|spudshed|harris\s+farm)\b|\bcoles\b(?!\s+(?:bay|point|beach|creek|park|island)\b)/i;
+const NOT_A_SUPERMARKET_RE =
+  /\b(?:express|petrol|fuel|servo|liquor|bws|dan\s+murphy'?s?|pharmacy|chemist|car\s*park|parking|distribution|depot|warehouse|head\s+office|support\s+office)\b/i;
 
 const CAFE_RE =
   /\b(?:cafes?|coffee|espresso|roasters?|roastery|barista|starbucks|gloria\s+jean'?s|zarraffa'?s)\b/i;
@@ -130,6 +141,8 @@ export function placeSignOfName(label: string): PlaceSignIcon | null {
     return "place_bank";
   if (GYM_RE.test(name)) return "place_gym";
   if (CENTRE_RE.test(name)) return "place_shopping_centre";
+  if (SUPERMARKET_RE.test(name) && !NOT_A_SUPERMARKET_RE.test(name))
+    return "place_supermarket";
   // "Hungry Jack's Airport" is a burger place; the airport comes last.
   if (CAFE_RE.test(name)) return "place_cafe";
   if (FAST_FOOD_RE.test(name)) return "place_fast_food";
@@ -160,6 +173,16 @@ export function placeSignFromTypes(
   if (t.has("shopping_mall")) return "place_shopping_centre";
   if (t.has("airport") || t.has("international_airport"))
     return "place_airport";
+  // Google's supermarket / grocery types (a mall that holds one is still the
+  // mall, settled above). A chain's petrol station or liquor store carries
+  // other types and is not this.
+  if (
+    (t.has("supermarket") ||
+      t.has("grocery_store") ||
+      t.has("grocery_or_supermarket")) &&
+    !NOT_A_SUPERMARKET_RE.test(name)
+  )
+    return "place_supermarket";
   const lodging = t.has("lodging");
   const bar = t.has("bar");
   if (lodging && bar)

@@ -13,6 +13,35 @@ happen before."
 
 ---
 
+## Backups — what exists (confirmed 2026-10-22)
+
+- **DigitalOcean automated droplet backups are ON** (seen in the control panel,
+  Backups tab): one whole-droplet backup **daily, taken between 4:00 PM and
+  8:00 PM UTC (midnight to 4:00 AM Perth)**, **kept 7 days** (seven backups
+  listed, newest 13 hours old at the time). They cover the whole disk — the
+  database files **and** the photo files in `uploads/` — and live off the
+  droplet's own disk.
+- **`deploy.sh` also takes a `mysqldump`** into `~/backups` before every deploy
+  (a consistent logical copy of the database only; see the deploy section below
+  for restoring it). It is a deploy-time safety copy, not a schedule, and it
+  sits on the droplet's own disk.
+- **Limits to remember:** (1) a droplet backup of a running database is
+  "crash-consistent" (taken while the database is running): it normally
+  recovers cleanly but is not a guaranteed-clean copy — the nightly dump below
+  is the clean one; (2) **7 days is short** for an evidentiary system — a
+  problem noticed later than a week ago cannot be recovered from these; (3)
+  restoring a droplet backup rolls the **whole server** back to that moment
+  (all newer data is lost) — to recover one thing, create a *new* droplet from
+  the backup and copy the data across; (4) DigitalOcean deletes a droplet's
+  backups when the droplet itself is destroyed (take a manual snapshot first);
+  (5) the encrypted WIPC data needs `WIPC_VAULT_KEY` — keep a copy of the key
+  somewhere safe that is **not** only on the droplet; (6) a backup that has
+  never been restored is untested — do one test restore.
+- **Suggested next steps (not done):** a nightly `mysqldump` kept 14–30 days
+  (and ideally a copy off the droplet), longer retention for legal needs, one
+  tested restore onto a spare droplet, and a log warning if the newest dump is
+  more than about a day old.
+
 ## Standing check — Intelligence rebuild speed (added 2026-10-22)
 
 The server logs one line after each rebuild of the Intelligence entity list:

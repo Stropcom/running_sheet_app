@@ -119,6 +119,29 @@ describe("cafe, restaurant, fast food and airport signs", () => {
     expect(placeSignOfName("Airport Cafe, Perth")).toBe("place_cafe");
   });
 
+  it("a numbered terminal is an airport terminal only when its locality says airport", () => {
+    for (const n of ["1", "2", "3", "4"])
+      expect(
+        placeSignOfName(`Terminal ${n}, Perth Airport WA 6105, Australia`),
+        n
+      ).toBe("place_airport");
+    expect(placeSignOfName("Terminal 3 Domestic, Perth Airport WA 6105")).toBe(
+      "place_airport"
+    );
+    expect(placeSignOfName("Terminal 2, Brisbane Airport QLD 4008")).toBe(
+      "place_airport"
+    );
+    // never guessed
+    expect(placeSignOfName("Terminal 1")).toBeNull();
+    expect(placeSignOfName("Terminal 1, Fremantle Port WA 6160")).toBeNull();
+    expect(placeSignOfName("Terminal 2, Perth Bus Station WA 6000")).toBeNull();
+    // a street named for the airport is not the airport
+    expect(placeSignOfName("Terminal 4, Airport Drive, Redcliffe")).toBeNull();
+    expect(
+      placeSignOfName("Terminal 4 Car Park, Perth Airport WA 6105")
+    ).toBeNull();
+  });
+
   it("a pub with a grill stays a pub; a street stays a street", () => {
     expect(placeSignOfName("Bicton Tavern & Grill")).toBe("place_pub");
     expect(placeSignOfName("Burger Street, PERTH")).toBeNull();

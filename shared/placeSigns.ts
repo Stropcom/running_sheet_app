@@ -84,6 +84,17 @@ const AIRPORT_RE =
 const NOT_AN_AIRPORT_RE =
   /\b(?:station|parking|car\s*park|taxi|shuttle|police|fire|freight|cargo|storage|motel|hotel|inn|lodge|apartments?)\b/i;
 
+// A numbered terminal ("Terminal 4") is only read as an airport terminal when
+// the rest of its label says the place is at an airport — the locality part,
+// as Google writes it: "Terminal 4, Perth Airport WA 6105, Australia". A bare
+// "Terminal 1" could be a port or a bus terminal, so it is never guessed, and
+// a street called "Airport Drive" does not count (the part must END in the
+// airport's name, with at most a state and postcode after it).
+const NUMBERED_TERMINAL_RE =
+  /^terminal\s+\d+[a-z]?(?:\s+(?:domestic|international|regional))?$/i;
+const AIRPORT_LOCALITY_RE =
+  /\b(?:airport|airfield|aerodrome)(?:\s+(?:wa|nsw|vic|qld|sa|tas|nt|act))?(?:\s+\d{4})?$/i;
+
 /** The first part of a location label — the place's own name, with accents
  * and curly apostrophes made plain ("Café" → "Cafe"). */
 function nameOf(label: string): string {
@@ -125,6 +136,13 @@ export function placeSignOfName(label: string): PlaceSignIcon | null {
   if (RESTAURANT_RE.test(name)) return "place_restaurant";
   if (AIRPORT_RE.test(name) && !NOT_AN_AIRPORT_RE.test(name))
     return "place_airport";
+  // "Terminal 4, Perth Airport WA 6105, Australia": a numbered terminal whose
+  // locality is an airport. Each terminal is its own place; the sign is the same.
+  if (NUMBERED_TERMINAL_RE.test(name)) {
+    const rest = (label ?? "").split(",").slice(1);
+    if (rest.some(part => AIRPORT_LOCALITY_RE.test(part.trim())))
+      return "place_airport";
+  }
   return null;
 }
 

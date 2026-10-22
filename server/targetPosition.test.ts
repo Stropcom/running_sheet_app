@@ -165,6 +165,23 @@ describe("samePlace", () => {
     expect(samePlace(full, "dome Dôme Café - Deep Water Point")).toBe(true);
     expect(samePlace(full, "Bull Creek Tavern")).toBe(false);
   });
+
+  it("numbered terminals are places of their own, not 'the airport'", () => {
+    const t4 = "Terminal 4, Perth Airport WA 6105, Australia (Terminal 4)";
+    // the same terminal, short against full
+    expect(samePlace("Terminal 4", t4)).toBe(true);
+    expect(samePlace("terminal 4", "Terminal 4, Perth Airport WA 6105")).toBe(
+      true
+    );
+    // a different terminal
+    expect(samePlace("Terminal 3, Perth Airport WA 6105", t4)).toBe(false);
+    expect(samePlace("Terminal 3", "Terminal 4")).toBe(false);
+    // the airport as a whole is not a terminal, either way round
+    expect(samePlace("Perth Airport", t4)).toBe(false);
+    expect(samePlace(t4, "Perth Airport WA 6105")).toBe(false);
+    // two writings of the airport itself still match
+    expect(samePlace("Perth Airport", "Perth Airport WA 6105")).toBe(true);
+  });
 });
 
 describe("vehiclesPeopleCanReach", () => {

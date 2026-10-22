@@ -45,11 +45,15 @@ async function main() {
     for (const col of Object.values(getTableColumns(v))) {
       names.add(col.name);
       if (!cols.has(col.name))
-        problems.push(`column in schema.ts but not in the database: ${table}.${col.name}`);
+        problems.push(
+          `column in schema.ts but not in the database: ${table}.${col.name}`
+        );
     }
     for (const c of cols)
       if (!names.has(c))
-        problems.push(`column in the database but not in schema.ts: ${table}.${c}`);
+        problems.push(
+          `column in the database but not in schema.ts: ${table}.${c}`
+        );
   }
   for (const t of inDb.keys())
     if (!inSchema.has(t) && t !== "__drizzle_migrations")

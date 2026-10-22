@@ -21,6 +21,10 @@
  *   --profiles-per-week=10   new targets a week
  *   --photos-per-profile=5
  *   --days-per-operation=40  how long one operation keeps running
+ *   --open-days=10       only sheets from the newest N working days are still
+ *                        open (not closed, some rows unlocked); everything
+ *                        older is closed with every row certified and locked,
+ *                        as it is in real use
  *   --wipe               empty the data tables first
  *
  * Refuses to run unless the database name ends in "_scale".
@@ -42,6 +46,7 @@ const PHOTOS_PER_SHEET = opt("photos-per-sheet", 3);
 const PROFILES_PER_WEEK = opt("profiles-per-week", 10);
 const PHOTOS_PER_PROFILE = opt("photos-per-profile", 5);
 const DAYS_PER_OP = opt("days-per-operation", 40);
+const OPEN_DAYS = opt("open-days", 10); // only the newest N working days are still open
 const WIPE = process.argv.includes("--wipe");
 
 // ── deterministic random numbers ─────────────────────────────────────────────
@@ -57,13 +62,65 @@ const pick = <T>(a: readonly T[]): T => a[Math.floor(rnd() * a.length)];
 const int = (lo: number, hi: number) => lo + Math.floor(rnd() * (hi - lo + 1));
 
 // ── word pools ───────────────────────────────────────────────────────────────
-const GIVEN = "James Mary John Patricia Robert Jennifer Michael Linda William Elizabeth David Barbara Richard Susan Joseph Jessica Thomas Sarah Daniel Karen Matthew Nancy Anthony Lisa Mark Betty Paul Dorothy Steven Sandra Andrew Ashley Kenneth Kimberly Joshua Donna Kevin Emily Brian Michelle George Carol Timothy Amanda Ronald Melissa Jason Deborah Edward Stephanie Jeffrey Rebecca Ryan Laura Jacob Sharon Gary Cynthia Nicholas Kathleen Eric Amy Jonathan Shirley Stephen Angela Larry Helen Justin Anna Scott Brenda Brandon Pamela Benjamin Nicole Samuel Samantha Frank Katherine Gregory Christine Raymond Debra Alexander Rachel Patrick Carolyn Jack Janet Dennis Maria Jerry Heather".split(" ");
-const SURNAME = "SMITH JONES WILLIAMS BROWN TAYLOR DAVIES WILSON EVANS THOMAS ROBERTS JOHNSON LEWIS WALKER ROBINSON WOOD THOMPSON WHITE WATSON JACKSON WRIGHT GREEN HARRIS COOPER KING LEE MARTIN CLARKE JAMES MORGAN HUGHES EDWARDS HILL MOORE CLARK HARRISON SCOTT YOUNG MORRIS HALL WARD TURNER CARTER PHILLIPS MITCHELL PATEL ADAMS CAMPBELL ANDERSON ALLEN COOK BAILEY PARKER MILLER DAVIS MURPHY PRICE BELL BAKER GRIFFITHS KELLY SIMPSON MARSHALL COLLINS BENNETT FOX GRAY SHAW".split(" ");
-const STREET = "George Hay Murray Wellington Adelaide Albany Canning Stirling Beaufort Oxford Scarborough Fitzgerald Roe Lord Newcastle Harborne Wanneroo Marmion Rockingham Cockburn Hampton Leach Mitchell Kwinana Karrinyup Walcott Lemnos Nicholson Cleaver Kooyong Brisbane Victoria Francis Charles Bagot Pier Marine Preston Forrest Cambridge Bourke Elder Hobart Kent Ord Seaview Salvado Waterloo Mends Hulme Olding Sewell Riverside Howe Leeds".split(" ");
-const STYPE = ["Street", "Road", "Avenue", "Drive", "Way", "Court", "Terrace", "Parade", "Lane", "Highway"];
-const SUBURB = "PERTH NORTHBRIDGE FREMANTLE JOONDALUP MIDLAND ARMADALE ROCKINGHAM MANDURAH CANNINGTON BELMONT VICTORIA PARK SUBIACO CLAREMONT STIRLING OSBORNE PARK BALCATTA WANNEROO MORLEY BASSENDEAN CLARKSON KWINANA COOGEE SPEARWOOD BIBRA LAKE MYAREE BOOKAROO LEEDERVILLE WEMBLEY INNALOO SCARBOROUGH DIANELLA MAYLANDS BAYSWATER EAST FREMANTLE ASHFIELD BULL CREEK SOUTH PERTH".split(" ");
-const PLACE = ["Hungry Jack's", "Bunnings", "Woolworths", "Coles", "Westpac Branch", "Caltex", "BP Service Station", "Dome Cafe", "Royal Hotel", "Anytime Fitness", "Kmart", "Officeworks", "Subway", "McDonald's", "Tavern", "Post Office", "Medical Centre", "Car Park", "Shopping Centre"];
-const COLOUR = ["white", "black", "silver", "grey", "blue", "red", "green", "gold"];
+const GIVEN =
+  "James Mary John Patricia Robert Jennifer Michael Linda William Elizabeth David Barbara Richard Susan Joseph Jessica Thomas Sarah Daniel Karen Matthew Nancy Anthony Lisa Mark Betty Paul Dorothy Steven Sandra Andrew Ashley Kenneth Kimberly Joshua Donna Kevin Emily Brian Michelle George Carol Timothy Amanda Ronald Melissa Jason Deborah Edward Stephanie Jeffrey Rebecca Ryan Laura Jacob Sharon Gary Cynthia Nicholas Kathleen Eric Amy Jonathan Shirley Stephen Angela Larry Helen Justin Anna Scott Brenda Brandon Pamela Benjamin Nicole Samuel Samantha Frank Katherine Gregory Christine Raymond Debra Alexander Rachel Patrick Carolyn Jack Janet Dennis Maria Jerry Heather".split(
+    " "
+  );
+const SURNAME =
+  "SMITH JONES WILLIAMS BROWN TAYLOR DAVIES WILSON EVANS THOMAS ROBERTS JOHNSON LEWIS WALKER ROBINSON WOOD THOMPSON WHITE WATSON JACKSON WRIGHT GREEN HARRIS COOPER KING LEE MARTIN CLARKE JAMES MORGAN HUGHES EDWARDS HILL MOORE CLARK HARRISON SCOTT YOUNG MORRIS HALL WARD TURNER CARTER PHILLIPS MITCHELL PATEL ADAMS CAMPBELL ANDERSON ALLEN COOK BAILEY PARKER MILLER DAVIS MURPHY PRICE BELL BAKER GRIFFITHS KELLY SIMPSON MARSHALL COLLINS BENNETT FOX GRAY SHAW".split(
+    " "
+  );
+const STREET =
+  "George Hay Murray Wellington Adelaide Albany Canning Stirling Beaufort Oxford Scarborough Fitzgerald Roe Lord Newcastle Harborne Wanneroo Marmion Rockingham Cockburn Hampton Leach Mitchell Kwinana Karrinyup Walcott Lemnos Nicholson Cleaver Kooyong Brisbane Victoria Francis Charles Bagot Pier Marine Preston Forrest Cambridge Bourke Elder Hobart Kent Ord Seaview Salvado Waterloo Mends Hulme Olding Sewell Riverside Howe Leeds".split(
+    " "
+  );
+const STYPE = [
+  "Street",
+  "Road",
+  "Avenue",
+  "Drive",
+  "Way",
+  "Court",
+  "Terrace",
+  "Parade",
+  "Lane",
+  "Highway",
+];
+const SUBURB =
+  "PERTH NORTHBRIDGE FREMANTLE JOONDALUP MIDLAND ARMADALE ROCKINGHAM MANDURAH CANNINGTON BELMONT VICTORIA PARK SUBIACO CLAREMONT STIRLING OSBORNE PARK BALCATTA WANNEROO MORLEY BASSENDEAN CLARKSON KWINANA COOGEE SPEARWOOD BIBRA LAKE MYAREE BOOKAROO LEEDERVILLE WEMBLEY INNALOO SCARBOROUGH DIANELLA MAYLANDS BAYSWATER EAST FREMANTLE ASHFIELD BULL CREEK SOUTH PERTH".split(
+    " "
+  );
+const PLACE = [
+  "Hungry Jack's",
+  "Bunnings",
+  "Woolworths",
+  "Coles",
+  "Westpac Branch",
+  "Caltex",
+  "BP Service Station",
+  "Dome Cafe",
+  "Royal Hotel",
+  "Anytime Fitness",
+  "Kmart",
+  "Officeworks",
+  "Subway",
+  "McDonald's",
+  "Tavern",
+  "Post Office",
+  "Medical Centre",
+  "Car Park",
+  "Shopping Centre",
+];
+const COLOUR = [
+  "white",
+  "black",
+  "silver",
+  "grey",
+  "blue",
+  "red",
+  "green",
+  "gold",
+];
 const MAKE: [string, string[], string][] = [
   ["Toyota", ["Camry", "Corolla", "Hilux", "RAV4"], "sedan"],
   ["Holden", ["Commodore", "Cruze", "Colorado"], "sedan"],
@@ -98,7 +155,8 @@ for (let i = 0; i < 6000; i++) {
     suburb,
   });
 }
-const addrFull = (a: { full: string; short: string }) => `${a.full} (${a.short})`;
+const addrFull = (a: { full: string; short: string }) =>
+  `${a.full} (${a.short})`;
 
 // ── bulk insert ──────────────────────────────────────────────────────────────
 let conn: mysql.Connection;
@@ -130,10 +188,19 @@ async function main() {
   await conn.query("SET unique_checks=0; SET foreign_key_checks=0;");
   if (WIPE) {
     for (const t of [
-      "certifications", "row_members", "attachment_entity_links", "row_attachments",
-      "sheet_rows", "running_sheets", "operation_target_links", "associates",
-      "targets", "operations", "users",
-    ]) await conn.query(`TRUNCATE TABLE \`${t}\``);
+      "certifications",
+      "row_members",
+      "attachment_entity_links",
+      "row_attachments",
+      "sheet_rows",
+      "running_sheets",
+      "operation_target_links",
+      "associates",
+      "targets",
+      "operations",
+      "users",
+    ])
+      await conn.query(`TRUNCATE TABLE \`${t}\``);
   }
   const started = Date.now();
 
@@ -146,8 +213,24 @@ async function main() {
   }));
   await bulk(
     "users",
-    ["id", "name", "username", "passwordHash", "cin", "role", "mustChangePassword"],
-    officers.map(o => [o.id, o.name, `officer${o.id}`, hash, o.cin, o.id === 1 ? "admin" : "member", 0])
+    [
+      "id",
+      "name",
+      "username",
+      "passwordHash",
+      "cin",
+      "role",
+      "mustChangePassword",
+    ],
+    officers.map(o => [
+      o.id,
+      o.name,
+      `officer${o.id}`,
+      hash,
+      o.cin,
+      o.id === 1 ? "admin" : "member",
+      0,
+    ])
   );
 
   // calendar: working days, starting YEARS ago
@@ -167,64 +250,255 @@ async function main() {
     1,
     Math.round((PROFILES_PER_WEEK * (DAYS_PER_OP / 5)) / slots)
   );
-  type Tgt = { id: number; given: string; surname: string; home: (typeof ADDR_POOL)[number]; regos: { rego: string; text: string }[]; cars: string[] };
+  type Tgt = {
+    id: number;
+    given: string;
+    surname: string;
+    home: (typeof ADDR_POOL)[number];
+    regos: { rego: string; text: string }[];
+    cars: string[];
+  };
   const opRows: unknown[][] = [];
   const tgtRows: unknown[][] = [];
   const assocRows: unknown[][] = [];
   const linkRows: unknown[][] = [];
-  const ops: { id: number; targets: Tgt[]; people: { given: string; surname: string }[]; startDay: number }[] = [];
-  let opId = 0, tgtId = 0, asId = 0, linkId = 0;
+  const ops: {
+    id: number;
+    targets: Tgt[];
+    people: { given: string; surname: string }[];
+    startDay: number;
+  }[] = [];
+  let opId = 0,
+    tgtId = 0,
+    asId = 0,
+    linkId = 0;
   for (let w = 0; w < opsPerSlot; w++) {
     for (let k = 0; k < slots; k++) {
       opId++;
       const startDay = w * DAYS_PER_OP;
-      opRows.push([opId, `Operation ${opId}`, 1, "active", sqlTime(dayDate(startDay)), sqlTime(dayDate(startDay))]);
+      opRows.push([
+        opId,
+        `Operation ${opId}`,
+        1,
+        "active",
+        sqlTime(dayDate(startDay)),
+        sqlTime(dayDate(startDay)),
+      ]);
       const targets: Tgt[] = [];
       for (let t = 0; t < targetsPerOp; t++) {
         tgtId++;
-        const given = pick(GIVEN), surname = pick(SURNAME);
+        const given = pick(GIVEN),
+          surname = pick(SURNAME);
         const home = pick(ADDR_POOL);
         const cars = [0, 1].map(() => {
           const [make, models, body] = pick(MAKE);
           const r = rego();
           const c = pick(COLOUR);
-          return { rego: r, text: `a ${c} ${make} ${pick(models)} ${body}, bearing WA registration ${r} (Vehicle ${r})` };
+          return {
+            rego: r,
+            text: `a ${c} ${make} ${pick(models)} ${body}, bearing WA registration ${r} (Vehicle ${r})`,
+          };
         });
-        targets.push({ id: tgtId, given, surname, home, regos: cars, cars: [] });
+        targets.push({
+          id: tgtId,
+          given,
+          surname,
+          home,
+          regos: cars,
+          cars: [],
+        });
         const name = `${given} ${surname}`;
-        tgtRows.push([tgtId, name, 1, given, surname, `${home.full} (${home.short})`, home.short, sqlTime(dayDate(startDay)), sqlTime(dayDate(startDay))]);
+        tgtRows.push([
+          tgtId,
+          name,
+          1,
+          given,
+          surname,
+          `${home.full} (${home.short})`,
+          home.short,
+          sqlTime(dayDate(startDay)),
+          sqlTime(dayDate(startDay)),
+        ]);
         linkRows.push([++linkId, opId, tgtId]);
         for (let a = 0; a < 2; a++) {
           asId++;
-          const ag = pick(GIVEN), as = pick(SURNAME);
-          assocRows.push([asId, tgtId, ag, as, `${ag} ${as}`, 1, a === 0 ? "associate" : "resident", sqlTime(dayDate(startDay)), sqlTime(dayDate(startDay))]);
+          const ag = pick(GIVEN),
+            as = pick(SURNAME);
+          assocRows.push([
+            asId,
+            tgtId,
+            ag,
+            as,
+            `${ag} ${as}`,
+            1,
+            a === 0 ? "associate" : "resident",
+            sqlTime(dayDate(startDay)),
+            sqlTime(dayDate(startDay)),
+          ]);
         }
       }
-      const people = Array.from({ length: 30 }, () => ({ given: pick(GIVEN), surname: pick(SURNAME) }));
+      const people = Array.from({ length: 30 }, () => ({
+        given: pick(GIVEN),
+        surname: pick(SURNAME),
+      }));
       ops.push({ id: opId, targets, people, startDay });
     }
   }
-  await bulk("operations", ["id", "name", "createdBy", "status", "createdAt", "updatedAt"], opRows);
-  await bulk("targets", ["id", "name", "createdBy", "firstNames", "surname", "hbf", "hb", "createdAt", "updatedAt"], tgtRows);
-  await bulk("associates", ["id", "targetId", "firstNames", "surname", "name", "createdBy", "relationship", "createdAt", "updatedAt"], assocRows);
-  await bulk("operation_target_links", ["id", "operationId", "targetId"], linkRows);
+  await bulk(
+    "operations",
+    ["id", "name", "createdBy", "status", "createdAt", "updatedAt"],
+    opRows
+  );
+  await bulk(
+    "targets",
+    [
+      "id",
+      "name",
+      "createdBy",
+      "firstNames",
+      "surname",
+      "hbf",
+      "hb",
+      "createdAt",
+      "updatedAt",
+    ],
+    tgtRows
+  );
+  await bulk(
+    "associates",
+    [
+      "id",
+      "targetId",
+      "firstNames",
+      "surname",
+      "name",
+      "createdBy",
+      "relationship",
+      "createdAt",
+      "updatedAt",
+    ],
+    assocRows
+  );
+  await bulk(
+    "operation_target_links",
+    ["id", "operationId", "targetId"],
+    linkRows
+  );
   console.log(`operations ${opId}, targets ${tgtId}, associates ${asId}`);
 
   // sheets, rows, members, certifications, attachments, links
-  let sheetId = 0, rowId = 0, memId = 0, certId = 0, attId = 0, elId = 0;
-  let sheetRows: unknown[][] = [], rowRows: unknown[][] = [], memRows: unknown[][] = [],
-    certRows: unknown[][] = [], attRows: unknown[][] = [], elRows: unknown[][] = [];
+  let sheetId = 0,
+    rowId = 0,
+    memId = 0,
+    certId = 0,
+    attId = 0,
+    elId = 0;
+  let sheetRows: unknown[][] = [],
+    rowRows: unknown[][] = [],
+    memRows: unknown[][] = [],
+    certRows: unknown[][] = [],
+    attRows: unknown[][] = [],
+    elRows: unknown[][] = [];
   const flush = async () => {
-    await bulk("running_sheets", ["id", "operationId", "title", "sheetDate", "targetName", "targetId", "sheetCins", "createdBy", "createdAt", "updatedAt"], sheetRows);
-    await bulk("sheet_rows", ["id", "sheetId", "rowNumber", "time", "timeMinutes", "rowDate", "observation", "isLocked", "createdAt", "updatedAt"], rowRows);
-    await bulk("row_members", ["id", "rowId", "memberName", "sortOrder"], memRows);
-    await bulk("certifications", ["id", "rowId", "memberId", "certifiedByUserId", "certifiedByName", "certifiedByCIN", "certifiedAt", "isActive"], certRows);
-    await bulk("row_attachments", ["id", "rowId", "operationId", "isManualUpload", "key", "url", "mimeType", "uploadedBy", "uploadedByCIN", "faceCount", "createdAt"], attRows);
-    await bulk("attachment_entity_links", ["id", "attachmentId", "category", "targetId", "entityKey", "entityLabel", "fromRegistry"], elRows);
-    sheetRows = []; rowRows = []; memRows = []; certRows = []; attRows = []; elRows = [];
+    await bulk(
+      "running_sheets",
+      [
+        "id",
+        "operationId",
+        "title",
+        "sheetDate",
+        "targetName",
+        "targetId",
+        "sheetCins",
+        "createdBy",
+        "createdAt",
+        "updatedAt",
+        "closedAt",
+        "closedByCIN",
+      ],
+      sheetRows
+    );
+    await bulk(
+      "sheet_rows",
+      [
+        "id",
+        "sheetId",
+        "rowNumber",
+        "time",
+        "timeMinutes",
+        "rowDate",
+        "observation",
+        "isLocked",
+        "createdAt",
+        "updatedAt",
+      ],
+      rowRows
+    );
+    await bulk(
+      "row_members",
+      ["id", "rowId", "memberName", "sortOrder"],
+      memRows
+    );
+    await bulk(
+      "certifications",
+      [
+        "id",
+        "rowId",
+        "memberId",
+        "certifiedByUserId",
+        "certifiedByName",
+        "certifiedByCIN",
+        "certifiedAt",
+        "isActive",
+      ],
+      certRows
+    );
+    await bulk(
+      "row_attachments",
+      [
+        "id",
+        "rowId",
+        "operationId",
+        "isManualUpload",
+        "key",
+        "url",
+        "mimeType",
+        "uploadedBy",
+        "uploadedByCIN",
+        "faceCount",
+        "createdAt",
+      ],
+      attRows
+    );
+    await bulk(
+      "attachment_entity_links",
+      [
+        "id",
+        "attachmentId",
+        "category",
+        "targetId",
+        "entityKey",
+        "entityLabel",
+        "fromRegistry",
+      ],
+      elRows
+    );
+    sheetRows = [];
+    rowRows = [];
+    memRows = [];
+    certRows = [];
+    attRows = [];
+    elRows = [];
   };
-  const photoRowIdx = new Set(Array.from({ length: PHOTOS_PER_SHEET }, (_, i) => Math.floor(((i + 1) * ROWS_PER_SHEET) / (PHOTOS_PER_SHEET + 1))));
-  const hex = () => Math.floor(rnd() * 0xffffffff).toString(16).padStart(8, "0");
+  const photoRowIdx = new Set(
+    Array.from({ length: PHOTOS_PER_SHEET }, (_, i) =>
+      Math.floor(((i + 1) * ROWS_PER_SHEET) / (PHOTOS_PER_SHEET + 1))
+    )
+  );
+  const hex = () =>
+    Math.floor(rnd() * 0xffffffff)
+      .toString(16)
+      .padStart(8, "0");
 
   for (let d = 0; d < totalDays; d++) {
     const date = dayDate(d);
@@ -233,10 +507,29 @@ async function main() {
       const op = ops[opWave * slots + k];
       const tgt = op.targets[(d + k) % op.targets.length];
       sheetId++;
+      const isOpen = totalDays - d <= OPEN_DAYS;
       const team = Array.from({ length: 4 }, () => pick(officers));
       const title = `${ymd(date).replace(/-/g, "")} - ${tgt.surname}`;
-      sheetRows.push([sheetId, op.id, title, ymd(date), `${tgt.given} ${tgt.surname}`, tgt.id,
-        JSON.stringify(team.map((o, i) => ({ cin: o.cin, hasImages: i === 0, isAuthor: i === 0 }))), team[0].id, sqlTime(date), sqlTime(date)]);
+      sheetRows.push([
+        sheetId,
+        op.id,
+        title,
+        ymd(date),
+        `${tgt.given} ${tgt.surname}`,
+        tgt.id,
+        JSON.stringify(
+          team.map((o, i) => ({
+            cin: o.cin,
+            hasImages: i === 0,
+            isAuthor: i === 0,
+          }))
+        ),
+        team[0].id,
+        sqlTime(date),
+        sqlTime(date),
+        isOpen ? null : date.getTime() + 10 * 3600_000,
+        isOpen ? null : team[0].cin,
+      ]);
       let minutes = 6 * 60 + int(0, 90);
       let vehicle = tgt.regos[0];
       for (let r = 0; r < ROWS_PER_SHEET; r++) {
@@ -249,36 +542,108 @@ async function main() {
         else if (r === ROWS_PER_SHEET - 1) obs = "Surveillance ceased.";
         else {
           const t = rnd();
-          if (t < 0.18) { vehicle = pick(tgt.regos); obs = `${tgt.surname} entered ${vehicle.text}, and departed ${addrFull(tgt.home)} and continued via:`; }
-          else if (t < 0.38) obs = `Vehicle ${vehicle.rego}, ${tgt.surname} driver, arrived at ${place}, ${addrFull(incidental)}.`;
-          else if (t < 0.55) obs = `${tgt.surname} met with ${who.given} ${who.surname} (${who.surname}) outside ${incidental.short}.`;
-          else if (t < 0.7) obs = `${tgt.surname} exited ${incidental.short} and walked to ${pick(ADDR_POOL).short}.`;
-          else if (t < 0.85) obs = `${tgt.surname} entered ${place}, ${addrFull(incidental)}, and continued out of sight.`;
-          else obs = `Vehicle ${vehicle.rego}, unseen occupant/s, departed ${incidental.short} and continued via:`;
+          if (t < 0.18) {
+            vehicle = pick(tgt.regos);
+            obs = `${tgt.surname} entered ${vehicle.text}, and departed ${addrFull(tgt.home)} and continued via:`;
+          } else if (t < 0.38)
+            obs = `Vehicle ${vehicle.rego}, ${tgt.surname} driver, arrived at ${place}, ${addrFull(incidental)}.`;
+          else if (t < 0.55)
+            obs = `${tgt.surname} met with ${who.given} ${who.surname} (${who.surname}) outside ${incidental.short}.`;
+          else if (t < 0.7)
+            obs = `${tgt.surname} exited ${incidental.short} and walked to ${pick(ADDR_POOL).short}.`;
+          else if (t < 0.85)
+            obs = `${tgt.surname} entered ${place}, ${addrFull(incidental)}, and continued out of sight.`;
+          else
+            obs = `Vehicle ${vehicle.rego}, unseen occupant/s, departed ${incidental.short} and continued via:`;
         }
         minutes += int(8, 35);
-        const hh = pad(Math.floor(minutes / 60) % 24), mm = pad(minutes % 60);
-        const locked = rnd() < 0.95 ? 1 : 0;
-        rowRows.push([rowId, sheetId, r + 1, `${hh}:${mm}`, minutes % (24 * 60), ymd(date), obs, locked, sqlTime(date), sqlTime(date)]);
-        const members = Array.from(new Set(Array.from({ length: int(1, 3) }, () => pick(team))));
+        const hh = pad(Math.floor(minutes / 60) % 24),
+          mm = pad(minutes % 60);
+        const locked = isOpen ? (rnd() < 0.7 ? 1 : 0) : 1;
+        rowRows.push([
+          rowId,
+          sheetId,
+          r + 1,
+          `${hh}:${mm}`,
+          minutes % (24 * 60),
+          ymd(date),
+          obs,
+          locked,
+          sqlTime(date),
+          sqlTime(date),
+        ]);
+        const members = Array.from(
+          new Set(Array.from({ length: int(1, 3) }, () => pick(team)))
+        );
         members.forEach((o, mi) => {
           memId++;
           memRows.push([memId, rowId, o.cin, mi]);
-          if (locked) certRows.push([++certId, rowId, memId, o.id, o.name, o.cin, date.getTime() + 3600_000, 1]);
+          if (locked)
+            certRows.push([
+              ++certId,
+              rowId,
+              memId,
+              o.id,
+              o.name,
+              o.cin,
+              date.getTime() + 3600_000,
+              1,
+            ]);
         });
         if (photoRowIdx.has(r)) {
           attId++;
           const face = rnd() < 0.3 ? 1 : 0;
           const key = `row-attachments/sheet-${sheetId}/row-${rowId}/${date.getTime()}_${hex()}.jpeg`;
-          attRows.push([attId, rowId, op.id, 0, key, `/local-uploads/${key}`, "image/jpeg", members[0].id, members[0].cin, face, sqlTime(date)]);
-          elRows.push([++elId, attId, "member", null, members[0].cin.toLowerCase(), members[0].cin, 0]);
-          if (rnd() < 0.6) elRows.push([++elId, attId, "location", null, incidental.short.toLowerCase(), incidental.short, 0]);
-          if (face) elRows.push([++elId, attId, "target", tgt.id, null, `${tgt.given} ${tgt.surname}`, 0]);
+          attRows.push([
+            attId,
+            rowId,
+            op.id,
+            0,
+            key,
+            `/local-uploads/${key}`,
+            "image/jpeg",
+            members[0].id,
+            members[0].cin,
+            face,
+            sqlTime(date),
+          ]);
+          elRows.push([
+            ++elId,
+            attId,
+            "member",
+            null,
+            members[0].cin.toLowerCase(),
+            members[0].cin,
+            0,
+          ]);
+          if (rnd() < 0.6)
+            elRows.push([
+              ++elId,
+              attId,
+              "location",
+              null,
+              incidental.short.toLowerCase(),
+              incidental.short,
+              0,
+            ]);
+          if (face)
+            elRows.push([
+              ++elId,
+              attId,
+              "target",
+              tgt.id,
+              null,
+              `${tgt.given} ${tgt.surname}`,
+              0,
+            ]);
         }
       }
       if (sheetRows.length >= 150) await flush();
     }
-    if (d % 20 === 0) process.stdout.write(`\rday ${d}/${totalDays}  sheets ${sheetId}  rows ${rowId}   `);
+    if (d % 20 === 0)
+      process.stdout.write(
+        `\rday ${d}/${totalDays}  sheets ${sheetId}  rows ${rowId}   `
+      );
   }
   await flush();
 
@@ -288,14 +653,36 @@ async function main() {
       for (let p = 0; p < PHOTOS_PER_PROFILE; p++) {
         attId++;
         const key = `manual-uploads/target-${t.id}/${hex()}.jpeg`;
-        attRows.push([attId, null, op.id, 1, key, `/local-uploads/${key}`, "image/jpeg", 1, "S001", 1, sqlTime(dayDate(op.startDay))]);
-        elRows.push([++elId, attId, "target", t.id, null, `${t.given} ${t.surname}`, p === 0 ? 1 : 0]);
+        attRows.push([
+          attId,
+          null,
+          op.id,
+          1,
+          key,
+          `/local-uploads/${key}`,
+          "image/jpeg",
+          1,
+          "S001",
+          1,
+          sqlTime(dayDate(op.startDay)),
+        ]);
+        elRows.push([
+          ++elId,
+          attId,
+          "target",
+          t.id,
+          null,
+          `${t.given} ${t.surname}`,
+          p === 0 ? 1 : 0,
+        ]);
       }
     }
     if (attRows.length > 3000) await flush();
   }
   await flush();
-  console.log(`\nDone in ${((Date.now() - started) / 1000).toFixed(0)}s — sheets ${sheetId}, rows ${rowId}, members ${memId}, photos ${attId}, links ${elId}`);
+  console.log(
+    `\nDone in ${((Date.now() - started) / 1000).toFixed(0)}s — sheets ${sheetId}, rows ${rowId}, members ${memId}, photos ${attId}, links ${elId}`
+  );
   await conn.end();
 }
 main().catch(e => {

@@ -115,4 +115,4 @@ It is a legal and evidentiary system, so one rule sits above all others: **no ru
 4. Plan photo storage growth before year 2.
 5. Delete the dead LLM / image / voice / OAuth scaffolding from `_core`.
 6. Split the largest client files gradually (safety net in place; the plan is in `docs/features/dev-and-ops.md`), and add ESLint, with no behaviour change.
-7. Open owner decisions: a cross-Command staff-names list, and a "possible duplicate" check.
+7. Parked by the owner (not being done at the moment): a cross-Command staff-names list, and a "possible duplicate" check.

@@ -188,6 +188,7 @@ async function main() {
   await conn.query("SET unique_checks=0; SET foreign_key_checks=0;");
   if (WIPE) {
     for (const t of [
+      "governance_records",
       "certifications",
       "row_members",
       "attachment_entity_links",
@@ -397,6 +398,7 @@ async function main() {
     rowRows: unknown[][] = [],
     memRows: unknown[][] = [],
     certRows: unknown[][] = [],
+    govRows: unknown[][] = [],
     attRows: unknown[][] = [],
     elRows: unknown[][] = [];
   const flush = async () => {
@@ -483,6 +485,20 @@ async function main() {
       ],
       elRows
     );
+    await bulk(
+      "governance_records",
+      [
+        "id",
+        "sheetId",
+        "isurv",
+        "sentToIO",
+        "savedInOpFolder",
+        "savedInInvestigatorTransferDrive",
+        "imageryEntries",
+      ],
+      govRows
+    );
+    govRows = [];
     sheetRows = [];
     rowRows = [];
     memRows = [];
@@ -530,6 +546,8 @@ async function main() {
         isOpen ? null : date.getTime() + 10 * 3600_000,
         isOpen ? null : team[0].cin,
       ]);
+      // Old sheets have their governance tick-list completed, like real use.
+      if (!isOpen) govRows.push([sheetId, sheetId, 1, 1, 1, 1, "[]"]);
       let minutes = 6 * 60 + int(0, 90);
       let vehicle = tgt.regos[0];
       for (let r = 0; r < ROWS_PER_SHEET; r++) {

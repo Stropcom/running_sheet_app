@@ -228,6 +228,12 @@ export const PERSON_ENTER_VEHICLE_PATTERN = new RegExp(
     "\\b[^.\\n]*?\\(?Vehicle\\s+([A-Za-z0-9]{5,8})\\)?",
   "i"
 );
+/** Getting into a seat with no vehicle named — "Peter James LANGLEY (LANGLEY)
+ * entered the front passenger seat." The vehicle is the one just parked (see
+ * the scan); only a stated seat or door counts, so "entered the car park" and
+ * "entered the shop" never do. */
+export const PERSON_ENTER_SEAT_PATTERN =
+  /([A-Za-z][^.\n]*?)\s*\b(?:entered|got\s+(?:in|into)|climbed\s+(?:in|into)|jumped\s+(?:in|into))\s+(?:the\s+)?(?:(?:front|rear|back)\s+(?:passenger|left|right|seat|door)|driver'?s?\s+(?:seat|door|side)|passenger\s+seat)\b/i;
 const ENTER_VEHICLE_REGO_RE = new RegExp(
   "\\b" +
     ENTER_VEHICLE_VERB +
@@ -560,6 +566,11 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
   // The same for getting off a bus or train: what they got off, and where.
   const alightRows = new Map<number, { transit: string; place: string }>();
   const placed = new Map<string, ScannedPlacement>();
+  // Vehicles that have arrived and not since departed, and the vehicle the
+  // last vehicle row was about — so "X entered the front passenger seat" with
+  // no vehicle named can be put in the one that is parked.
+  const parked = new Map<string, number>();
+  let lastVehicle: { rego: string; rowId: number } | null = null;
   // The last place each person was logged at (a surname token → the place).
   const lastAt = new Map<string, string>();
   const setAt = (names: string, place: string) => {
@@ -702,6 +713,8 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     // ("Last seen at DRIVO Carpark") and the flag went to it.
     const arrival = matchVehicleArrival(text);
     if (arrival) {
+      parked.set(arrival.rego.toUpperCase(), row.id);
+      lastVehicle = { rego: arrival.rego.toUpperCase(), rowId: row.id };
       const arrivedAt = extractArrivalAddress(text);
       const arrivedPeople = splitPeopleNames(
         extractOccupantNames(arrival.occupantDesc)
@@ -716,6 +729,8 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     // the place they were last logged at, and no longer walking anywhere.
     const sighting = matchVehicleSighting(text);
     if (sighting) {
+      parked.delete(sighting.rego.toUpperCase());
+      lastVehicle = { rego: sighting.rego.toUpperCase(), rowId: row.id };
       const people = splitPeopleNames(
         extractOccupantNames(sighting.occupantDesc)
       ).filter(p => !isUnseenOccupants(p));
@@ -745,6 +760,8 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     // nothing about anyone, so those leave the walk-ins alone.
     const departure = text.match(VEHICLE_DEPART_PATTERN);
     if (departure) {
+      parked.delete(departure[1].toUpperCase());
+      lastVehicle = { rego: departure[1].toUpperCase(), rowId: row.id };
       const people = splitPeopleNames(
         extractOccupantNames(departure[2])
       ).filter(p => !isUnseenOccupants(p) && !/\bunidentified\b/i.test(p));
@@ -946,6 +963,33 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
           noteJoined(who, ev[2], row.id);
           leaveAllPlaces(who);
           clearHeadingFor(who);
+        }
+      }
+    }
+
+    // "Peter James LANGLEY (LANGLEY) entered the front passenger seat." — no
+    // vehicle named. It is the vehicle that has just parked: the only one
+    // parked, or, with several, the one the row has just been about. A stated
+    // seat or door is required, and with no parked vehicle to put them in
+    // nothing is read.
+    if (!exitMatch && !/\bVehicle\b/i.test(text) && entrySeat(text)) {
+      const seatEntry = text.match(PERSON_ENTER_SEAT_PATTERN);
+      if (seatEntry) {
+        const who = resolveWho(seatEntry[1]);
+        const open = Array.from(parked.keys());
+        const rego =
+          open.length === 1
+            ? open[0]
+            : lastVehicle &&
+                lastVehicle.rowId === row.id &&
+                parked.has(lastVehicle.rego)
+              ? lastVehicle.rego
+              : "";
+        if (who && rego && !isVehicleSubject(who)) {
+          noteJoined(who, rego, row.id);
+          leaveAllPlaces(who);
+          clearHeadingFor(who);
+          noteActors(seatEntry[1], text);
         }
       }
     }

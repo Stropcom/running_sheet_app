@@ -263,3 +263,84 @@ describe("seatsOf: a seat holds one person, the newer row wins", () => {
     expect(seats.size).toBe(0);
   });
 });
+
+describe("getting into a seat with no vehicle named", () => {
+  const FORUM =
+    "Vehicle 1MEN83, MENON driver and sole occupant, arrived at Belmont Forum, 227 Belmont Avenue, CLOVERDALE WA (Belmont Forum) parked in the car park.";
+  const ENTER_SEAT =
+    "Peter James LANGLEY (LANGLEY) entered the front passenger seat.";
+
+  it("the parked vehicle: the arrival and the entry in one row", () => {
+    const { scan, wording, occupants } = wordingAfter([
+      FORUM + "\n\n" + ENTER_SEAT,
+    ]);
+    expect(scan.placements).toEqual([
+      expect.objectContaining({
+        name: "Peter James LANGLEY (LANGLEY)",
+        rego: "1MEN83",
+        seat: "front passenger",
+      }),
+    ]);
+    expect(occupants).toEqual(["MENON", "Peter James LANGLEY (LANGLEY)"]);
+    expect(wording).toBe(
+      "MENON driver and Peter James LANGLEY (LANGLEY) front passenger"
+    );
+  });
+
+  it("the entry in a later row, while the vehicle is still the one parked", () => {
+    const { wording } = wordingAfter([FORUM, ENTER_SEAT]);
+    expect(wording).toBe(
+      "MENON driver and Peter James LANGLEY (LANGLEY) front passenger"
+    );
+  });
+
+  it("works for the rear passenger and the driver's seat too", () => {
+    expect(
+      wordingAfter([FORUM, "LANGLEY got into the rear passenger seat."]).wording
+    ).toBe("MENON driver and LANGLEY rear passenger");
+  });
+
+  it("is not read when the vehicle has already left", () => {
+    const { scan } = wordingAfter([
+      FORUM,
+      "Vehicle 1MEN83, MENON driver and sole occupant, departed Belmont Forum and continued via:",
+      ENTER_SEAT,
+    ]);
+    // (the departure row itself still puts MENON in the vehicle; LANGLEY is not)
+    expect(scan.placements.some(p => /LANGLEY/.test(p.name))).toBe(false);
+  });
+
+  it("is not read when no seat or door is stated, or no vehicle is parked", () => {
+    expect(
+      wordingAfter([FORUM, "LANGLEY entered the car park."]).scan.placements
+    ).toEqual([]);
+    expect(
+      wordingAfter([FORUM, "LANGLEY entered the front seat."]).scan.placements
+    ).toEqual([]);
+    expect(
+      scanWalkEvents([{ id: 1, sheetId: 1, observation: ENTER_SEAT }])
+        .placements
+    ).toEqual([]);
+  });
+
+  it("with two vehicles parked, only the one the row was just about", () => {
+    const two = scanWalkEvents(
+      [
+        "Vehicle 1AAA11, SMITH driver and sole occupant, arrived at 1 Smith Street, PERTH WA (1 Smith Street).",
+        FORUM + "\n\n" + ENTER_SEAT,
+      ].map((observation, i) => ({ id: i + 1, sheetId: 1, observation }))
+    );
+    expect(two.placements).toEqual([
+      expect.objectContaining({ rego: "1MEN83", seat: "front passenger" }),
+    ]);
+    // a later row, with both parked and neither just mentioned: nothing guessed
+    const later = scanWalkEvents(
+      [
+        "Vehicle 1AAA11, SMITH driver and sole occupant, arrived at 1 Smith Street, PERTH WA (1 Smith Street).",
+        FORUM,
+        ENTER_SEAT,
+      ].map((observation, i) => ({ id: i + 1, sheetId: 1, observation }))
+    );
+    expect(later.placements).toEqual([]);
+  });
+});

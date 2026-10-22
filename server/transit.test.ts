@@ -432,6 +432,36 @@ describe("no postcode and no 'Australia' in a numberless place's address", () =>
     ).toBe("Bibra Lake Reserve, BIBRA LAKE WA (Bibra Lake Reserve)");
   });
 
+  it("a numbered terminal: no postcode, no 'Australia', suburb in capitals", () => {
+    for (const n of ["1", "2", "3", "4"])
+      expect(
+        transitFullAddress(
+          `Terminal ${n}`,
+          `Terminal ${n}, Perth Airport WA 6105, Australia`
+        )
+      ).toBe(`Terminal ${n}, PERTH AIRPORT WA (Terminal ${n})`);
+    expect(
+      transitFullAddress(
+        "Terminal 3 Domestic",
+        "Terminal 3 Domestic, Perth Airport WA 6105, Australia"
+      )
+    ).toBe("Terminal 3 Domestic, PERTH AIRPORT WA (Terminal 3 Domestic)");
+    // only the place's own name may carry the number — a street number still
+    // sends it to the usual business wording
+    expect(
+      transitFullAddress(
+        "Terminal 4",
+        "Terminal 4, 12 Airport Dr, Perth Airport WA 6105, Australia"
+      )
+    ).toBeNull();
+    expect(
+      transitFullAddress(
+        "Qantas Lounge",
+        "Terminal 4, Perth Airport WA 6105, Australia"
+      )
+    ).toBeNull();
+  });
+
   it("leaves numbered addresses and intersections to the usual wording", () => {
     expect(
       transitFullAddress(

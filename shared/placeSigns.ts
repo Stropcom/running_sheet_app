@@ -152,8 +152,14 @@ export function placeSignOfName(label: string): PlaceSignIcon | null {
   // "Terminal 4, Perth Airport WA 6105, Australia": a numbered terminal whose
   // locality is an airport. Each terminal is its own place; the sign is the same.
   if (NUMBERED_TERMINAL_RE.test(name)) {
+    // The address may end in its own bracket short form —
+    // "Terminal 4, PERTH AIRPORT WA (Terminal 4)" — which is not part of it.
     const rest = (label ?? "").split(",").slice(1);
-    if (rest.some(part => AIRPORT_LOCALITY_RE.test(part.trim())))
+    if (
+      rest.some(part =>
+        AIRPORT_LOCALITY_RE.test(part.replace(/\s*\([^)]*\)\s*$/, "").trim())
+      )
+    )
       return "place_airport";
   }
   return null;

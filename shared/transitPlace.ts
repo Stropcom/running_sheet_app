@@ -162,6 +162,10 @@ export function transitKindOfPlace(place: string): TransitKind | null {
 
 const STATES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
 
+/** "Terminal 4", "Terminal 3 Domestic" — a numbered terminal's own name. */
+const NUMBERED_TERMINAL_NAME_RE =
+  /^terminal\s+\d+[a-z]?(?:\s+(?:domestic|international|regional))?$/i;
+
 /**
  * The full address for a tapped bus stop or train station, written the way
  * every first mention of a place is — "<label>, SUBURB WA (<label>)" — from
@@ -185,8 +189,18 @@ export function transitFullAddress(
   );
   if (suburbIdx < 0) return null;
   // Any street number (or unit number) in front of the suburb: not a
-  // numberless place, so the usual business-address wording is used.
-  if (parts.slice(0, suburbIdx).some(p => /\d/.test(p))) return null;
+  // numberless place, so the usual business-address wording is used. The
+  // place's own name is not a street number: "Terminal 4" at Perth Airport has
+  // the number 4 in its NAME, and is "Terminal 4, PERTH AIRPORT WA (Terminal 4)".
+  const isNumberedTerminalName = (p: string) =>
+    NUMBERED_TERMINAL_NAME_RE.test(p.trim()) &&
+    p.trim().toLowerCase() === label.trim().toLowerCase();
+  if (
+    parts
+      .slice(0, suburbIdx)
+      .some(p => /\d/.test(p) && !isNumberedTerminalName(p))
+  )
+    return null;
   // An intersection ("Kent St &, Queens Park Rd, …") keeps its streets.
   if (parts.slice(0, suburbIdx).some(p => /&|\bcnr\b|\//i.test(p))) return null;
   const suburbState = parts[suburbIdx].match(

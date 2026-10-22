@@ -131,6 +131,10 @@ describe("cafe, restaurant, fast food and airport signs", () => {
     expect(placeSignOfName("Terminal 2, Brisbane Airport QLD 4008")).toBe(
       "place_airport"
     );
+    // the finished wording, with its own bracket short form
+    expect(placeSignOfName("Terminal 4, PERTH AIRPORT WA (Terminal 4)")).toBe(
+      "place_airport"
+    );
     // never guessed
     expect(placeSignOfName("Terminal 1")).toBeNull();
     expect(placeSignOfName("Terminal 1, Fremantle Port WA 6160")).toBeNull();

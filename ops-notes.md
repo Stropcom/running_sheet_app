@@ -46,10 +46,11 @@ happen before."
   copy of `WIPC_VAULT_KEY` kept away from the droplet, and a log warning if the newest dump is
   more than about a day old.
 
-## Monitoring — uptime and error alerts (reported 2026-10-22)
+## Monitoring — uptime and error alerts (screenshot seen 2026-10-22)
 
-- **The owner has uptime and error alerts set up on DigitalOcean** (reported by the owner, not seen by Claude, so what exactly they watch is not recorded here). Worth confirming once, and writing the answers here: (1) the alert checks the **app's address** (a page that only loads when the app is up), not only that the droplet is running; (2) there is an alert for **disk space** (photos use about 5–7 GB a year on a 35 GB disk) and for sustained **high CPU / memory**; (3) who receives the alerts, and that it reaches more than one person.
-- The app has no alerting of its own. A health check runs at the end of `deploy.sh`; the Intelligence slow-rebuild warning is a log line only (`pm2 logs runlog | grep "\[Intelligence\]"`).
+- **DigitalOcean Uptime check "RunLog Uptime Check"** (seen in a screenshot from the owner): HTTPS check of `https://runlog.com.au`, every 60 s, 10 s timeout, from four regions (USA West, USA East, Europe, Asia East — none in Australia). Alerts: **Site Speed down** (over 1000 ms for 2 min), **Downtime** (2 min wait), **SSL certificate expiry** (30 days). On the day: 30-day uptime 99.84 %, certificate expires 20 Dec 2026 (59 days), last outage 8 days earlier for 1 minute.
+- **Observations.** (1) The Site Speed alert was already **Triggered**: the overseas regions measure 1.2–2.5 s against the 1000 ms threshold, so it is on all the time and will be ignored when it matters — raise it (for example to about 3–4 s) or base it on the Asia East region only. (2) The check fetches the page's HTML, so it **cannot see the database being down or a browser-side blank screen** (the 2026-09-06 incident was exactly that); a health address that touches the database would close the first gap (not built — `system.health` in `server/_core/systemRouter.ts` only returns `ok: true`), and the e2e "main pages open" test guards the second before deploy. (3) 99.84 % over 30 days is about 70 minutes of downtime in total, more than the one-minute "last outage" shown — worth looking at the incident list on the Uptime page. (4) The certificate alert is only useful if the certificate renews itself; confirm renewal is automatic. (5) **Not seen:** a Droplet **disk-space** alert (photos add 5–7 GB a year to a 35 GB disk) and CPU / memory alerts (DigitalOcean → Monitoring → Alerts), and who receives the alerts.
+- The app has no alerting of its own. A health check runs at the end of `deploy.sh` (`curl localhost:3000`); the Intelligence slow-rebuild warning is a log line only (`pm2 logs runlog | grep "\[Intelligence\]"`).
 
 ## Standing check — Intelligence rebuild speed (added 2026-10-22)
 

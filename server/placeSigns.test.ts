@@ -74,7 +74,8 @@ describe("place signs by how the place is written", () => {
     expect(placeSignOfName("Salad Bar")).toBeNull();
     expect(placeSignOfName("Masonic Lodge")).toBeNull();
     expect(placeSignOfName("Medical Centre")).toBeNull();
-    expect(placeSignOfName("Riverbank Park")).toBeNull();
+    // "Riverbank" is not a bank — it is a park (the park sign, v2.23.0)
+    expect(placeSignOfName("Riverbank Park")).toBe("place_park");
   });
 });
 
@@ -226,6 +227,57 @@ describe("cafe, restaurant, fast food and airport signs", () => {
       "place_shopping_centre"
     );
     expect(placeSignOfName("Woolworths Karrinyup")).toBe("place_supermarket");
+  });
+
+  it("parks, reserves and gardens: by name and by Google's type", () => {
+    for (const label of [
+      "Hyde Park, Glendower Street, NORTH PERTH WA (Hyde Park)",
+      "Kings Park and Botanic Garden, Fraser Avenue, WEST PERTH WA",
+      "Kings Park",
+      "Bibra Lake Reserve, Progress Drive, BIBRA LAKE WA",
+      "Wellington Square Gardens, East Perth",
+      "Burswood Park, Great Eastern Highway",
+      "Matilda Bay Playground, Hackett Drive",
+      "Herdsman Lake Wetlands",
+      "Yellagonga Bushland, Joondalup",
+    ])
+      expect(placeSignOfName(label), label).toBe("place_park");
+    for (const t of ["park", "playground", "national_park", "dog_park"])
+      expect(placeSignFromTypes([t, "point_of_interest"]), t).toBe(
+        "place_park"
+      );
+  });
+
+  it("a car park, caravan park, centre, hotel, street, cemetery or a suburb called Park is not a park", () => {
+    for (const label of [
+      "Karrinyup Car Park",
+      "Perth Airport Car Park, Perth Airport WA",
+      "Aspley Caravan Park, Aspley",
+      "Rockingham Holiday Park",
+      "The Park Centre, 789 Albany Highway, VICTORIA PARK WA",
+      "Park Street, SUBIACO",
+      "Park Lane Dental, 12 Hay Street",
+      "Pinnaroo Memorial Park, Padbury",
+      "Reserve Bank of Australia, Perth",
+      "Victoria Park, Victoria Park WA 6100, Australia",
+      "Queens Park Medical Centre, Queens Park",
+    ])
+      expect(placeSignOfName(label), label).not.toBe("place_park");
+    // a cafe, pub or hotel with park in its name keeps its own sign
+    expect(placeSignOfName("Kings Park Cafe, Fraser Avenue")).toBe(
+      "place_cafe"
+    );
+    expect(placeSignOfName("Hyde Park Hotel, Beaufort Street")).not.toBe(
+      "place_park"
+    );
+    // Google also calls these a park, but they are lodging / a cemetery
+    expect(placeSignFromTypes(["park", "lodging"])).not.toBe("place_park");
+    expect(placeSignFromTypes(["park", "rv_park"])).not.toBe("place_park");
+    expect(placeSignFromTypes(["park", "cemetery"])).not.toBe("place_park");
+    // a mall that holds a park-like name stays the mall; types order unchanged
+    expect(placeSignFromTypes(["shopping_mall", "park"])).toBe(
+      "place_shopping_centre"
+    );
   });
 
   it("a pub with a grill stays a pub; a street stays a street", () => {

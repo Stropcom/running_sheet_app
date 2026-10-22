@@ -1,5 +1,5 @@
 // Square signs for banks, post offices, pubs, hotels (accommodation), gyms,
-// shopping centres, supermarkets, hardware stores, cafes, restaurants, fast food / takeaway and
+// shopping centres, supermarkets, hardware stores, parks, cafes, restaurants, fast food / takeaway and
 // airports —
 // the same idea as the bus stop and train station signs
 // (shared/transitPlace.ts): the default map pin of a place that is one of
@@ -32,6 +32,7 @@ export type PlaceSignIcon =
   | "place_shopping_centre"
   | "place_supermarket"
   | "place_hardware"
+  | "place_park"
   | "place_cafe"
   | "place_restaurant"
   | "place_fast_food"
@@ -46,6 +47,7 @@ export const PLACE_SIGN_ICONS: PlaceSignIcon[] = [
   "place_shopping_centre",
   "place_supermarket",
   "place_hardware",
+  "place_park",
   "place_cafe",
   "place_restaurant",
   "place_fast_food",
@@ -92,6 +94,19 @@ const HARDWARE_RE =
   /\b(?:bunnings|mitre\s*10|home\s+hardware|total\s+tools|hardware)\b/i;
 const NOT_A_HARDWARE_RE =
   /\b(?:computer|it|tech|software)\s+hardware\b|\b(?:cafe|coffee|sausage|bbq|car\s*park|parking|distribution|depot|head\s+office|support\s+office)\b/i;
+
+// A park, reserve or gardens by its name. "Park" counts only as the END of the
+// name ("Hyde Park", "Kings Park" — not "Park Lane Dental"); reserve, gardens,
+// playground, bushland and wetlands count anywhere in it. Not a car park, a
+// caravan or holiday park, a retirement village, a cemetery ("Memorial Park"),
+// the Reserve Bank, or a medical centre, school, church… named for a park. And
+// not a suburb that is called "… Park" ("Victoria Park, Victoria Park WA"):
+// the label's later parts then start with the same name.
+const PARK_END_RE = /\bpark$/i;
+const PARK_WORD_RE =
+  /\b(?:reserve|gardens|botanic(?:al)?\s+gardens?|playground|bushland|wetlands?)\b/i;
+const NOT_A_PARK_RE =
+  /\b(?:car\s*park|carpark|parking|caravan|holiday|tourist|trailer|mobile\s+home|retirement|aged\s+care|nursing|village|estate|medical|dental|clinic|school|college|childcare|child\s+care|church|hospital|funeral|cemetery|crematorium|memorial\s+park|reserve\s+bank)\b/i;
 
 const CAFE_RE =
   /\b(?:cafes?|coffee|espresso|roasters?|roastery|barista|starbucks|gloria\s+jean'?s|zarraffa'?s)\b/i;
@@ -174,6 +189,21 @@ export function placeSignOfName(label: string): PlaceSignIcon | null {
     )
       return "place_airport";
   }
+  // A park, reserve or gardens — last, so a cafe, pub, hotel or centre with a
+  // park in its name keeps its own sign.
+  if (
+    (PARK_END_RE.test(name) || PARK_WORD_RE.test(name)) &&
+    !NOT_A_PARK_RE.test(name)
+  ) {
+    const later = (label ?? "")
+      .split(",")
+      .slice(1)
+      .map(part => part.trim().toLowerCase());
+    // The place's own address follows its name; a suburb that is itself called
+    // "… Park" repeats its name in the next part.
+    if (!later.some(part => part.startsWith(name.toLowerCase())))
+      return "place_park";
+  }
   return null;
 }
 
@@ -207,6 +237,22 @@ export function placeSignFromTypes(
     !NOT_A_HARDWARE_RE.test(name)
   )
     return "place_hardware";
+  // Google's park types — but not a caravan park, campground or lodging, or a
+  // cemetery that Google also calls a park.
+  if (
+    [
+      "park",
+      "national_park",
+      "state_park",
+      "city_park",
+      "dog_park",
+      "playground",
+      "botanical_garden",
+    ].some(x => t.has(x)) &&
+    !["lodging", "rv_park", "campground", "cemetery"].some(x => t.has(x)) &&
+    !NOT_A_PARK_RE.test(name)
+  )
+    return "place_park";
   const lodging = t.has("lodging");
   const bar = t.has("bar");
   if (lodging && bar)

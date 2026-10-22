@@ -61,6 +61,7 @@ export type MarkerIcon =
   | "place_shopping_centre"
   | "place_supermarket"
   | "place_hardware"
+  | "place_park"
   | "place_cafe"
   | "place_restaurant"
   | "place_fast_food"
@@ -154,6 +155,7 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
   place_shopping_centre: "Shopping Centre Sign",
   place_supermarket: "Supermarket Sign",
   place_hardware: "Hardware Store Sign",
+  place_park: "Park Sign",
   place_cafe: "Cafe Sign",
   place_restaurant: "Restaurant Sign",
   place_fast_food: "Fast Food Sign",
@@ -204,6 +206,7 @@ export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
       "place_shopping_centre",
       "place_supermarket",
       "place_hardware",
+      "place_park",
       "place_cafe",
       "place_restaurant",
       "place_fast_food",
@@ -305,6 +308,10 @@ const PLACE_SIGN_PICTOGRAMS: Record<string, (c: string) => string> = {
        <rect x="10.4" y="7.6" width="3.2" height="15" rx="1.4" fill="#fff"/>
        <path d="M7.6 2.6 H20 a1.2 1.2 0 0 1 1.2 1.2 V8 a1.2 1.2 0 0 1 -1.2 1.2 H9.6 C8.2 7.4 6.2 6.8 2.4 7.8 C3.6 5 5.2 3.2 7.6 2.6 Z" fill="#fff"/>
      </g>`,
+  // A tree standing on a strip of ground: a three-lobed canopy, trunk, ground.
+  place_park: () =>
+    `<circle cx="12" cy="6.6" r="5" fill="#fff"/><circle cx="7.4" cy="9.6" r="3.8" fill="#fff"/><circle cx="16.6" cy="9.6" r="3.8" fill="#fff"/>
+     <rect x="10.8" y="11" width="2.4" height="8.4" rx="1" fill="#fff"/><rect x="2" y="18.6" width="20" height="3.4" rx="1.7" fill="#fff"/>`,
   place_cafe: c =>
     `<path d="M5 8 H19 L17.6 22 H6.4 Z" fill="#fff"/>
      <rect x="4" y="5" width="16" height="3.2" rx="1.2" fill="#fff"/>
@@ -448,6 +455,7 @@ export function getMarkerSvg(icon: MarkerIcon, colour: MarkerColour): string {
     case "place_shopping_centre":
     case "place_supermarket":
     case "place_hardware":
+    case "place_park":
     case "place_cafe":
     case "place_restaurant":
     case "place_fast_food":

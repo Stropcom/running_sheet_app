@@ -37,6 +37,28 @@ describe("liveRingRadii (the on-screen Ego Network)", () => {
     expect(phone.ring2).toBeGreaterThanOrEqual(RING2_RADIUS_MIN);
   });
 
+  it("on a phone or iPad it is a true circle that fits the smaller side", () => {
+    const phone = liveRingRadii({
+      width: 340,
+      height: 340,
+      hasRing2: true,
+      compact: true,
+    });
+    expect(phone.xStretch).toBe(1);
+    // Room each side is half the width less space for a (small) name.
+    expect(phone.ring2).toBeLessThanOrEqual(340 / 2);
+    expect(phone.ring2).toBeGreaterThanOrEqual(RING2_RADIUS_MIN - 1);
+    const tall = liveRingRadii({
+      width: 340,
+      height: 700,
+      hasRing2: false,
+      compact: true,
+    });
+    expect(tall.xStretch).toBe(1);
+    // Limited by the narrow side, not the tall one.
+    expect(tall.ring1).toBeLessThan(340 / 2);
+  });
+
   it("with only one ring in use, ring 1 takes nearly all the room", () => {
     const one = liveRingRadii({ width: 900, height: 760, hasRing2: false });
     const two = liveRingRadii({ width: 900, height: 760, hasRing2: true });

@@ -68,10 +68,16 @@ export const RING2_RADIUS_MIN = 120;
 // wide and two lines tall. The PDF export does not use any of this.
 export const LIVE_MARGIN_X = 84;
 export const LIVE_MARGIN_Y = 60;
+/** On a phone or iPad the names are set smaller (and can be pinched larger),
+ * so they need less room, and the rings stay a true circle. */
+export const LIVE_COMPACT_MARGIN_X = 54;
+export const LIVE_COMPACT_MARGIN_Y = 44;
 /** Past this, more room only makes the lines longer, not the picture clearer. */
 export const LIVE_RING2_CAP = 560;
 /** Ring 1's share of ring 2 when both are shown (it was 165 / 290 = 0.57). */
 export const LIVE_RING1_SHARE = 0.62;
+/** On the small circle of a phone the inner ring gets more of it. */
+export const LIVE_COMPACT_RING1_SHARE = 0.72;
 /** How far the rings may be stretched sideways (or squeezed on a tall phone). */
 export const LIVE_STRETCH_MIN = 0.6;
 export const LIVE_STRETCH_MAX = 1.9;
@@ -112,17 +118,33 @@ export function liveRingRadii(params: {
   width: number;
   height: number;
   hasRing2: boolean;
+  /** Phone / iPad layout: a circle that fits the smaller side. */
+  compact?: boolean;
 }) {
-  const availY = Math.max(0, params.height / 2 - LIVE_MARGIN_Y);
-  const availX = Math.max(0, params.width / 2 - LIVE_MARGIN_X);
-  const reach = Math.min(LIVE_RING2_CAP, availY);
-  const xStretch =
-    availY > 0
+  const compact = params.compact === true;
+  const availY = Math.max(
+    0,
+    params.height / 2 - (compact ? LIVE_COMPACT_MARGIN_Y : LIVE_MARGIN_Y)
+  );
+  const availX = Math.max(
+    0,
+    params.width / 2 - (compact ? LIVE_COMPACT_MARGIN_X : LIVE_MARGIN_X)
+  );
+  const reach = Math.min(
+    LIVE_RING2_CAP,
+    compact ? Math.min(availX, availY) : availY
+  );
+  const xStretch = compact
+    ? 1
+    : availY > 0
       ? Math.min(LIVE_STRETCH_MAX, Math.max(LIVE_STRETCH_MIN, availX / reach))
       : 1;
   if (params.hasRing2) {
     return {
-      ring1: Math.max(RING1_RADIUS_MIN, reach * LIVE_RING1_SHARE),
+      ring1: Math.max(
+        RING1_RADIUS_MIN,
+        reach * (compact ? LIVE_COMPACT_RING1_SHARE : LIVE_RING1_SHARE)
+      ),
       ring2: Math.max(RING2_RADIUS_MIN, reach),
       xStretch,
     };

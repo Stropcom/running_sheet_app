@@ -30,7 +30,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ChevronRight, RefreshCw, FileDown, Radar } from "lucide-react";
+import {
+  ChevronRight,
+  RefreshCw,
+  FileDown,
+  Radar,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+} from "lucide-react";
 import {
   ROW_ITEM,
   SECTION_BAND,
@@ -204,6 +212,9 @@ ${buildExportPreviewCloseBar()}
  * alone (224px + 256px) already exceed a phone's viewport, so the map ends
  * up with zero space and never renders. Covers phone and iPad portrait;
  * iPad landscape and up keep the normal three-column view. */
+/** Furthest the picture can be pinched or zoomed in on a phone / iPad. */
+const MAX_ZOOM = 4;
+
 const COMPACT_BREAKPOINT = 1024;
 
 function useCompactLayout() {
@@ -348,9 +359,141 @@ export default function EgoNetworkMap({
   // device (see liveRingRadii): tall and wide screens spread the network out,
   // a phone keeps it on the screen.
   const ringRadii = useMemo(
-    () => liveRingRadii({ width: size.w, height: size.h, hasRing2 }),
-    [size.w, size.h, hasRing2]
+    () =>
+      liveRingRadii({
+        width: size.w,
+        height: size.h,
+        hasRing2,
+        compact: isCompact,
+      }),
+    [size.w, size.h, hasRing2, isCompact]
   );
+
+  // ── Pinch to zoom (phone / iPad) ────────────────────────────────────────
+  // The picture is set to fit the screen, with small names; two fingers zoom
+  // into it and one finger drags it once zoomed (before that one finger still
+  // scrolls the page). The +/−/fit buttons do the same without a touch screen.
+  const [view, setView] = useState({ s: 1, x: 0, y: 0 });
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const clampView = useCallback(
+    (v: { s: number; x: number; y: number }) => {
+      const s = Math.min(MAX_ZOOM, Math.max(1, v.s));
+      return {
+        s,
+        x: Math.min(0, Math.max(size.w - size.w * s, v.x)),
+        y: Math.min(0, Math.max(size.h - size.h * s, v.y)),
+      };
+    },
+    [size.w, size.h]
+  );
+  const zoomBy = useCallback(
+    (factor: number) => {
+      const v = viewRef.current;
+      const s = Math.min(MAX_ZOOM, Math.max(1, v.s * factor));
+      // About the middle of the canvas.
+      const px = (size.w / 2 - v.x) / v.s;
+      const py = (size.h / 2 - v.y) / v.s;
+      setView(clampView({ s, x: size.w / 2 - px * s, y: size.h / 2 - py * s }));
+    },
+    [size.w, size.h, clampView]
+  );
+  // A new focus or reach starts from the whole picture again.
+  useEffect(() => {
+    setView({ s: 1, x: 0, y: 0 });
+  }, [focusId, hops, expandRing1]);
+
+  const movedRef = useRef(false);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !isCompact) return;
+    let pinch: {
+      d: number;
+      mx: number;
+      my: number;
+      v: { s: number; x: number; y: number };
+    } | null = null;
+    let pan: { x: number; y: number; v: { x: number; y: number } } | null =
+      null;
+    const rect = () => el.getBoundingClientRect();
+    const mid = (t: TouchList) => {
+      const r = rect();
+      return {
+        x: (t[0].clientX + t[1].clientX) / 2 - r.left,
+        y: (t[0].clientY + t[1].clientY) / 2 - r.top,
+      };
+    };
+    const dist = (t: TouchList) =>
+      Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const onStart = (e: TouchEvent) => {
+      movedRef.current = false;
+      if (e.touches.length === 2) {
+        const m = mid(e.touches);
+        pinch = { d: dist(e.touches), mx: m.x, my: m.y, v: viewRef.current };
+        pan = null;
+      } else if (e.touches.length === 1 && viewRef.current.s > 1) {
+        pan = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY,
+          v: viewRef.current,
+        };
+      }
+    };
+    const onMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && pinch) {
+        e.preventDefault();
+        movedRef.current = true;
+        const m = mid(e.touches);
+        const s = Math.min(
+          MAX_ZOOM,
+          Math.max(1, (pinch.v.s * dist(e.touches)) / pinch.d)
+        );
+        // Keep the spot between the fingers under the fingers.
+        const px = (pinch.mx - pinch.v.x) / pinch.v.s;
+        const py = (pinch.my - pinch.v.y) / pinch.v.s;
+        setView(clampView({ s, x: m.x - px * s, y: m.y - py * s }));
+      } else if (e.touches.length === 1 && pan) {
+        const dx = e.touches[0].clientX - pan.x;
+        const dy = e.touches[0].clientY - pan.y;
+        if (Math.hypot(dx, dy) > 6) movedRef.current = true;
+        e.preventDefault();
+        setView(
+          clampView({
+            s: viewRef.current.s,
+            x: pan.v.x + dx,
+            y: pan.v.y + dy,
+          })
+        );
+      }
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) pinch = null;
+      if (e.touches.length === 0) {
+        pan = null;
+        if (viewRef.current.s < 1.02) setView({ s: 1, x: 0, y: 0 });
+        // The tap that ends a drag or pinch must not also pick a node.
+        window.setTimeout(() => (movedRef.current = false), 0);
+      }
+    };
+    const onClickCapture = (e: MouseEvent) => {
+      if (movedRef.current) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    el.addEventListener("click", onClickCapture, true);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+      el.removeEventListener("click", onClickCapture, true);
+    };
+  }, [isCompact, clampView, mobilePanel]);
 
   const { placed, ring1Ids, hiddenRing1Count, hiddenRing2Count, edges } =
     useMemo(
@@ -722,9 +865,10 @@ export default function EgoNetworkMap({
                 <div
                   ref={containerRef}
                   data-testid="ego-canvas"
+                  style={isCompact ? { touchAction: "pan-x pan-y" } : undefined}
                   className={
                     isCompact
-                      ? "relative h-[68vh] min-h-[420px] w-full overflow-hidden"
+                      ? "relative aspect-square max-h-[80vh] w-full overflow-hidden"
                       : "relative aspect-square max-h-[max(760px,calc(100dvh_-_10rem))] w-full overflow-hidden"
                   }
                 >
@@ -750,8 +894,46 @@ export default function EgoNetworkMap({
                     </div>
                   )}
 
+                  {!isLoading && focusNode && isCompact && (
+                    <div className="absolute right-2 top-2 z-20 flex flex-col gap-1">
+                      {[
+                        {
+                          label: "Zoom in",
+                          Icon: ZoomIn,
+                          run: () => zoomBy(1.5),
+                        },
+                        {
+                          label: "Zoom out",
+                          Icon: ZoomOut,
+                          run: () => zoomBy(1 / 1.5),
+                        },
+                        {
+                          label: "Fit to screen",
+                          Icon: Maximize2,
+                          run: () => setView({ s: 1, x: 0, y: 0 }),
+                        },
+                      ].map(({ label, Icon, run }) => (
+                        <button
+                          key={label}
+                          type="button"
+                          aria-label={label}
+                          onClick={run}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-sm hover:bg-muted"
+                        >
+                          <Icon className="h-4 w-4" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   {!isLoading && focusNode && (
-                    <>
+                    <div
+                      className="absolute inset-0"
+                      style={{
+                        transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})`,
+                        transformOrigin: "0 0",
+                      }}
+                    >
                       <svg
                         width={size.w}
                         height={size.h}
@@ -888,7 +1070,9 @@ export default function EgoNetworkMap({
                               NODE_COLORS.unknown,
                           }}
                         />
-                        <span className="absolute bottom-[calc(100%+6px)] left-1/2 line-clamp-2 w-max max-w-[170px] -translate-x-1/2 whitespace-normal break-words px-1 text-center text-xs font-bold leading-tight text-foreground [text-shadow:0_0_3px_var(--card),0_0_3px_var(--card),0_0_5px_var(--card)]">
+                        <span
+                          className={`absolute bottom-[calc(100%+6px)] left-1/2 line-clamp-2 w-max -translate-x-1/2 whitespace-normal break-words px-1 text-center font-bold ${isCompact ? "max-w-[120px] text-[10px]" : "max-w-[170px] text-xs"} leading-tight text-foreground [text-shadow:0_0_3px_var(--card),0_0_3px_var(--card),0_0_5px_var(--card)]`}
+                        >
                           {canvasName(focusNode.label)}
                         </span>
                       </div>
@@ -923,10 +1107,12 @@ export default function EgoNetworkMap({
                               per-parent slot bound is what stops a busy
                               branch's labels overlapping its neighbours'. */}
                           <span
-                            className={`line-clamp-2 whitespace-normal break-words px-1 text-center text-xs leading-tight [text-shadow:0_0_3px_var(--card),0_0_3px_var(--card),0_0_5px_var(--card)] ${
+                            className={`line-clamp-2 whitespace-normal break-words px-1 text-center leading-tight [text-shadow:0_0_3px_var(--card),0_0_3px_var(--card),0_0_5px_var(--card)] ${
+                              isCompact ? "text-[10px]" : "text-xs"
+                            } ${
                               p.hop === 1
-                                ? "max-w-[124px] font-semibold text-foreground"
-                                : "max-w-[104px] text-muted-foreground"
+                                ? `font-semibold text-foreground ${isCompact ? "max-w-[88px]" : "max-w-[124px]"}`
+                                : `text-muted-foreground ${isCompact ? "max-w-[76px]" : "max-w-[104px]"}`
                             }`}
                           >
                             {canvasName(p.node.label)}
@@ -948,7 +1134,7 @@ export default function EgoNetworkMap({
                           +{hiddenRing1Count} more direct
                         </button>
                       )}
-                    </>
+                    </div>
                   )}
                 </div>
               </div>

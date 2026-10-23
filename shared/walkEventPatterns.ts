@@ -54,7 +54,12 @@ import {
 } from "./transitPatterns";
 import { expandRowSegments } from "./rowSegments";
 import { fullStreetTypes } from "./streetTypes";
-import { entrySeat, seatsInWording, type Seat } from "./vehicleSeats";
+import {
+  entrySeat,
+  entrySeatsInOrder,
+  seatsInWording,
+  type Seat,
+} from "./vehicleSeats";
 
 // A vehicle as the officer refers to it when someone gets out: "the vehicle",
 // or by rego — "Vehicle 1EXP123", "Vehicle 1EXP123 (Vehicle 1EXP123)".
@@ -642,14 +647,22 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     rowId: number,
     inside = true
   ) => {
-    // One person getting in: the seat is theirs. With several, the sentence
-    // cannot say who took which seat, so none is given.
-    // (Only parts that name someone count — "place a suitcase in the
-    // boot" in front of "then entered" is not a second person.)
-    const one =
-      splitPeopleNames(cleanWalkerNames(names)).filter(p => tok(p).length > 0)
-        .length === 1;
-    const seat = inside && one ? entrySeat(currentText) : null;
+    // Who is getting in: only parts that name someone count — "place a
+    // suitcase in the boot" in front of "then entered" is not a second person.
+    const people = splitPeopleNames(cleanWalkerNames(names)).filter(
+      p => tok(p).length > 0
+    );
+    // One person getting in: the seat is theirs. Several: only when the
+    // sentence says which seat each took, in order ("via the driver's and front
+    // passenger doors respectively"); otherwise none is given.
+    let seatFor: ((person: string) => Seat | undefined) | undefined;
+    if (inside && people.length === 1) {
+      const seat = entrySeat(currentText);
+      if (seat) seatFor = () => seat;
+    } else if (inside && people.length > 1) {
+      const seats = entrySeatsInOrder(currentText, people.length);
+      if (seats) seatFor = p => seats[people.indexOf(p)];
+    }
     placePeople(
       names,
       rego,
@@ -658,7 +671,7 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       undefined,
       undefined,
       undefined,
-      seat ? () => seat : undefined
+      seatFor
     );
   };
   // They are on their way to / back in a vehicle, so no longer inside the

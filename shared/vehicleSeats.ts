@@ -59,6 +59,39 @@ export function entrySeat(sentence: string): Seat | null {
   return seatOfPhrase(clause);
 }
 
+/**
+ * "MENON and IBARRA walked to and entered Vehicle 1MEN83 via the driver's and
+ * front passenger doors respectively." — one seat for each person, in the order
+ * the people are named. Returns the seats in that order, or null unless the
+ * sentence says "respectively", has one "got in", and names exactly as many
+ * seats as `people` (each one readable) — so a count that does not match, or a
+ * seat that cannot be told, gives none rather than a guess.
+ */
+export function entrySeatsInOrder(
+  sentence: string,
+  people: number
+): Seat[] | null {
+  if (people < 2 || !/\brespectively\b/i.test(sentence ?? "")) return null;
+  const verbs = new RegExp(ENTRY_VERB_RE.source, "gi");
+  const hits: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = verbs.exec(sentence))) hits.push(m.index);
+  if (hits.length !== 1) return null;
+  const clause = sentence
+    .slice(hits[0])
+    .split(/\brespectively\b/i)[0]
+    .split(/[.\n]/)[0];
+  const parts = clause
+    .split(/\s*(?:,|\band\b)\s*/i)
+    .map(p => p.trim())
+    .filter(Boolean);
+  // the first part is "entered Vehicle X via the driver's": its seat is the
+  // wording after "via" / "through" / "by", and the rest are seats on their own
+  const seats = parts.map(part => seatOfPhrase(part));
+  if (seats.length !== people || seats.some(x => x === null)) return null;
+  return seats as Seat[];
+}
+
 const surnames = (name: string): string[] =>
   name.match(/\b[A-Z][A-Z'-]+\b|\bU[MFCP]\d+\b/g) ?? [];
 const sharesSurname = (a: string, b: string) => {

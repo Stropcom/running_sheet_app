@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   entrySeat,
+  entrySeatsInOrder,
   seatedOccupantWording,
   seatsInWording,
   seatsOf,
@@ -383,5 +384,134 @@ describe("walked to the vehicle and got into a seat (the Rowing Pavilion row)", 
         "IBARRA exited The Rowing Pavilion, walked to Vehicle 1MEN83 (Vehicle 1MEN83), and entered the rear passenger seat.",
       ]).wording
     ).toBe("MENON driver and IBARRA rear passenger");
+  });
+});
+
+describe("'respectively': the seats are given in the order the people are named", () => {
+  const A =
+    "MENON and IBARRA walked to and entered Vehicle 1MEN83 via the driver's and front passenger doors respectively.";
+  const B =
+    "MENON and IBARRA walked to and entered Vehicle 1MEN83 via the front passenger door and rear passenger door respectively.";
+
+  it("reads the seat list in order", () => {
+    expect(entrySeatsInOrder(A, 2)).toEqual(["driver", "front passenger"]);
+    expect(entrySeatsInOrder(B, 2)).toEqual([
+      "front passenger",
+      "rear passenger",
+    ]);
+    expect(
+      entrySeatsInOrder(
+        "A, B and C entered Vehicle 1MEN83 via the driver's door, the front passenger door and the rear passenger door respectively.",
+        3
+      )
+    ).toEqual(["driver", "front passenger", "rear passenger"]);
+    expect(
+      entrySeatsInOrder(
+        "MENON and IBARRA entered Vehicle 1MEN83 via the rear left and driver's doors respectively.",
+        2
+      )
+    ).toEqual(["rear passenger", "driver"]);
+  });
+
+  it("gives none unless the wording is clear", () => {
+    // no "respectively": two people, one door — nobody's seat is known
+    expect(
+      entrySeatsInOrder(
+        "MENON and IBARRA entered Vehicle 1MEN83 via the front passenger door.",
+        2
+      )
+    ).toBeNull();
+    // the number of seats does not match the number of people
+    expect(
+      entrySeatsInOrder(
+        "MENON and IBARRA entered Vehicle 1MEN83 via the driver's door respectively.",
+        2
+      )
+    ).toBeNull();
+    expect(
+      entrySeatsInOrder(
+        "MENON and IBARRA entered Vehicle 1MEN83 via the driver's and front passenger doors respectively.",
+        3
+      )
+    ).toBeNull();
+    // a seat that cannot be told
+    expect(
+      entrySeatsInOrder(
+        "MENON and IBARRA entered Vehicle 1MEN83 via the front seat and the boot respectively.",
+        2
+      )
+    ).toBeNull();
+  });
+
+  it("example 1: MENON is the driver and IBARRA the front passenger", () => {
+    const scan = scanWalkEvents([{ id: 1, sheetId: 1, observation: A }]);
+    expect(scan.placements).toEqual([
+      expect.objectContaining({
+        name: "MENON",
+        rego: "1MEN83",
+        inside: true,
+        seat: "driver",
+      }),
+      expect.objectContaining({
+        name: "IBARRA",
+        rego: "1MEN83",
+        inside: true,
+        seat: "front passenger",
+      }),
+    ]);
+    expect(
+      seatedOccupantWording({
+        desc: "",
+        descRowId: 0,
+        rego: "1MEN83",
+        occupants: ["MENON", "IBARRA"],
+        placements: scan.placements,
+      })
+    ).toBe("MENON driver and IBARRA front passenger");
+  });
+
+  it("example 2: the front passenger door and the rear passenger door", () => {
+    const scan = scanWalkEvents([{ id: 1, sheetId: 1, observation: B }]);
+    const seats = Object.fromEntries(
+      scan.placements.map(p => [p.name, p.seat])
+    );
+    expect(seats).toEqual({
+      MENON: "front passenger",
+      IBARRA: "rear passenger",
+    });
+  });
+
+  it("works after the vehicle's own arrival row, and the departure is pre-filled with the seats", () => {
+    const rows = [
+      "Vehicle 1MEN83, unseen occupant/s, arrived at 12 Smith Street, PERTH WA (12 Smith Street).",
+      A,
+    ];
+    const scan = scanWalkEvents(
+      rows.map((observation, i) => ({ id: i + 1, sheetId: 1, observation }))
+    );
+    const self = { rego: "1MEN83", rowId: 1, names: "" };
+    const occupants = vehicleOccupants(self, [], scan.placements, [self]);
+    expect(occupants).toEqual(["MENON", "IBARRA"]);
+    expect(
+      seatedOccupantWording({
+        desc: "unseen occupant/s",
+        descRowId: 1,
+        rego: "1MEN83",
+        occupants,
+        placements: scan.placements,
+      })
+    ).toBe("MENON driver and IBARRA front passenger");
+  });
+
+  it("two people with no 'respectively' get no seats", () => {
+    const scan = scanWalkEvents([
+      {
+        id: 1,
+        sheetId: 1,
+        observation:
+          "MENON and IBARRA walked to and entered Vehicle 1MEN83 via the front passenger door.",
+      },
+    ]);
+    expect(scan.placements.every(p => !p.seat)).toBe(true);
   });
 });

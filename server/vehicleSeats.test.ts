@@ -344,3 +344,44 @@ describe("getting into a seat with no vehicle named", () => {
     expect(later.placements).toEqual([]);
   });
 });
+
+describe("walked to the vehicle and got into a seat (the Rowing Pavilion row)", () => {
+  const ARRIVE =
+    "Vehicle 1MEN83, MENON driver and sole occupant, arrived at The Rowing Pavilion and stopped out the front.";
+  const WALK_IN =
+    "IBARRA exited The Rowing Pavilion, walked to Vehicle 1MEN83 (Vehicle 1MEN83), and entered the front passenger seat.";
+
+  it("puts IBARRA in the vehicle as the front passenger", () => {
+    const { scan, wording, occupants } = wordingAfter([ARRIVE, WALK_IN]);
+    expect(scan.placements).toEqual([
+      expect.objectContaining({
+        name: "IBARRA",
+        rego: "1MEN83",
+        inside: true,
+        seat: "front passenger",
+      }),
+    ]);
+    expect(occupants).toEqual(["MENON", "IBARRA"]);
+    expect(wording).toBe("MENON driver and IBARRA front passenger");
+  });
+
+  it("walking only towards the vehicle still gives no seat and is not 'inside'", () => {
+    const { scan } = wordingAfter([
+      ARRIVE,
+      "IBARRA exited The Rowing Pavilion and walked towards Vehicle 1MEN83.",
+    ]);
+    expect(scan.placements[0]).toEqual(
+      expect.objectContaining({ inside: false })
+    );
+    expect(scan.placements[0].seat).toBeUndefined();
+  });
+
+  it("driver's door and rear seat work the same way", () => {
+    expect(
+      wordingAfter([
+        ARRIVE,
+        "IBARRA exited The Rowing Pavilion, walked to Vehicle 1MEN83 (Vehicle 1MEN83), and entered the rear passenger seat.",
+      ]).wording
+    ).toBe("MENON driver and IBARRA rear passenger");
+  });
+});

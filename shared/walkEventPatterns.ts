@@ -925,12 +925,15 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       );
       const vehReg = enteredReg ?? towardsReg?.[2];
       if (vehReg) {
-        // Got in, versus only walking towards it.
+        // Got in, versus only walking towards it — "walked to Vehicle X
+        // (Vehicle X), and entered the front passenger seat" says they got in.
         noteJoined(
           rowWalkers,
           vehReg,
           row.id,
-          !!enteredReg || !!towardsReg?.[1]
+          !!enteredReg ||
+            !!towardsReg?.[1] ||
+            GOT_IN_AFTER_VEHICLE.test(exitMatch[3])
         );
         leaveAllPlaces(rowWalkers);
       } else if (dest) {

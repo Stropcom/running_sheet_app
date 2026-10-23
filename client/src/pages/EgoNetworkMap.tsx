@@ -7,11 +7,8 @@ import {
   ENTITY_TYPES,
   ENTITY_LABELS,
   RING1_MAX,
-  RING1_RADIUS_MAX,
-  RING2_RADIUS_MAX,
-  RING_LABEL_MARGIN,
-  RING1_RADIUS_MIN,
-  RING2_RADIUS_MIN,
+  liveRingRadii,
+  widestGapAngle,
   computeEgoLayout,
   egoNodeRadius,
   edgeEnds,
@@ -255,22 +252,6 @@ export default function EgoNetworkMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
 
-  // Rings are sized to whatever room the canvas actually has (min of its
-  // width/height, both of which are now always equal — see the canvas div
-  // below, which is a square: full width, height matching via aspect-square
-  // on desktop, or genuinely fills the compact panel). Full-size whenever
-  // that's at least RING2_RADIUS_MAX, scaled down together (keeping
-  // proportions) only when the canvas is smaller than that — e.g. a narrow
-  // phone — so the outermost nodes and their labels never run off the edge.
-  const ringRadii = useMemo(() => {
-    const avail = Math.min(size.w, size.h) / 2 - RING_LABEL_MARGIN;
-    const scale = Math.min(1, avail / RING2_RADIUS_MAX);
-    return {
-      ring1: Math.max(RING1_RADIUS_MIN, RING1_RADIUS_MAX * scale),
-      ring2: Math.max(RING2_RADIUS_MIN, RING2_RADIUS_MAX * scale),
-    };
-  }, [size.w, size.h]);
-
   const { data: operations } = trpc.operation.list.useQuery();
   const { data: sheetsInOperation } = trpc.sheet.listByOperation.useQuery(
     { operationId: operationId ?? -1 },
@@ -346,6 +327,31 @@ export default function EgoNetworkMap({
 
   const focusNode = focusId ? (nodesById.get(focusId) ?? null) : null;
 
+  // Whether anything sits a second step out doesn't depend on the radii, so
+  // it is read first and decides how the room is shared between the rings.
+  const hasRing2 = useMemo(
+    () =>
+      hops === 2 &&
+      computeEgoLayout({
+        focusNode,
+        adjacency,
+        nodesById,
+        hops,
+        expandRing1,
+        ring1Radius: 1,
+        ring2Radius: 1,
+      }).placed.some(p => p.hop === 2),
+    [focusNode, adjacency, nodesById, hops, expandRing1]
+  );
+
+  // The rings are sized to the room the canvas really has, whatever the
+  // device (see liveRingRadii): tall and wide screens spread the network out,
+  // a phone keeps it on the screen.
+  const ringRadii = useMemo(
+    () => liveRingRadii({ width: size.w, height: size.h, hasRing2 }),
+    [size.w, size.h, hasRing2]
+  );
+
   const { placed, ring1Ids, hiddenRing1Count, hiddenRing2Count, edges } =
     useMemo(
       () =>
@@ -357,6 +363,7 @@ export default function EgoNetworkMap({
           expandRing1,
           ring1Radius: ringRadii.ring1,
           ring2Radius: ringRadii.ring2,
+          xStretch: ringRadii.xStretch,
         }),
       [focusNode, adjacency, nodesById, hops, expandRing1, ringRadii]
     );
@@ -714,10 +721,11 @@ export default function EgoNetworkMap({
               <div className="bg-muted/40">
                 <div
                   ref={containerRef}
+                  data-testid="ego-canvas"
                   className={
                     isCompact
                       ? "relative h-[68vh] min-h-[420px] w-full overflow-hidden"
-                      : "relative aspect-square max-h-[760px] w-full overflow-hidden"
+                      : "relative aspect-square max-h-[max(760px,calc(100dvh_-_10rem))] w-full overflow-hidden"
                   }
                 >
                   {isLoading && (
@@ -750,20 +758,22 @@ export default function EgoNetworkMap({
                         className="absolute inset-0"
                       >
                         {/* Hop-distance guides */}
-                        <circle
+                        <ellipse
                           cx={cx}
                           cy={cy}
-                          r={ringRadii.ring1}
+                          rx={ringRadii.ring1 * ringRadii.xStretch}
+                          ry={ringRadii.ring1}
                           fill="none"
                           style={{ stroke: "var(--border)" }}
                           strokeWidth={1.5}
                           strokeDasharray="5 6"
                         />
-                        {hops === 2 && (
-                          <circle
+                        {hasRing2 && (
+                          <ellipse
                             cx={cx}
                             cy={cy}
-                            r={ringRadii.ring2}
+                            rx={ringRadii.ring2 * ringRadii.xStretch}
+                            ry={ringRadii.ring2}
                             fill="none"
                             style={{ stroke: "var(--border)" }}
                             strokeWidth={1.5}
@@ -816,29 +826,46 @@ export default function EgoNetworkMap({
                         />
                       </svg>
 
-                      {/* Ring names, set on their rings between two spokes */}
+                      {/* Ring names, set on their rings in the widest gap
+                          between that ring's nodes (never on a node) */}
                       {[
-                        { r: ringRadii.ring1, text: "1 hop", show: true },
-                        {
-                          r: ringRadii.ring2,
-                          text: "2 hops",
-                          show: hops === 2,
-                        },
+                        { hop: 1 as const, r: ringRadii.ring1, text: "1 hop" },
+                        ...(hasRing2
+                          ? [
+                              {
+                                hop: 2 as const,
+                                r: ringRadii.ring2,
+                                text: "2 hops",
+                              },
+                            ]
+                          : []),
                       ]
-                        .filter(l => l.show && !isCompact)
-                        .map(l => (
-                          <span
-                            key={l.text}
-                            className="pointer-events-none absolute whitespace-nowrap rounded-full border border-border bg-card px-2 py-0.5 text-xs font-bold text-muted-foreground"
-                            style={{
-                              left: cx + l.r * Math.cos(Math.PI / 8),
-                              top: cy + l.r * Math.sin(Math.PI / 8),
-                              transform: "translate(-50%, -50%)",
-                            }}
-                          >
-                            {l.text}
-                          </span>
-                        ))}
+                        .filter(() => !isCompact)
+                        .map(l => {
+                          const angle = widestGapAngle(
+                            placed
+                              .filter(p => p.hop === l.hop)
+                              .map(p =>
+                                Math.atan2(p.y, p.x / ringRadii.xStretch)
+                              ),
+                            Math.PI / 8
+                          );
+                          return (
+                            <span
+                              key={l.text}
+                              className="pointer-events-none absolute whitespace-nowrap rounded-full border border-border bg-card px-2 py-0.5 text-xs font-bold text-muted-foreground"
+                              style={{
+                                left:
+                                  cx +
+                                  l.r * ringRadii.xStretch * Math.cos(angle),
+                                top: cy + l.r * Math.sin(angle),
+                                transform: "translate(-50%, -50%)",
+                              }}
+                            >
+                              {l.text}
+                            </span>
+                          );
+                        })}
 
                       {/* Centre node: the circle sits exactly on the centre
                           (the edges run from it); the name sits above it, so

@@ -1,4 +1,14 @@
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { makeRequest, type GeocodingResult } from "../_core/map";
 
@@ -48,6 +58,7 @@ import {
 
 import {
   certifications,
+  governanceRecords,
   operations,
   rowMembers,
   rowAttachments,
@@ -64,6 +75,7 @@ import {
 } from "../../drizzle/schema";
 
 import { attributedRowIds, collapseToVisits } from "../entityAttribution";
+import { recordIntelBuild } from "../intelBuildWatch";
 
 import { getDb } from "./core";
 import { attachLinkedCounts, normalizeEntityLabel } from "./attachments";
@@ -1534,7 +1546,14 @@ async function loadAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
   } catch {
     fp = null; // the check failed: build fresh, remember nothing
   }
-  return intelEntityCache.get(fp, buildAllIntelligenceEntities);
+  return intelEntityCache.get(fp, async () => {
+    // Time each real rebuild (not a cache hit) so the log warns when it is
+    // time to start the Intelligence redesign (server/intelBuildWatch.ts).
+    const started = Date.now();
+    const built = await buildAllIntelligenceEntities();
+    recordIntelBuild(Date.now() - started, fp ? fp.rows : null, built.length);
+    return built;
+  });
 }
 
 export async function getAllIntelligenceEntities(opts?: {
@@ -2996,9 +3015,22 @@ export interface IncompleteSheetReport {
 }
 
 /**
- * Returns all non-deleted, non-closed running sheets with full status info
- * for the Reports page. Enriches each sheet with team membership data from
- * the users table so the "Team Blended" logic can be applied client-side.
+ * The sheets the Reports page lists as incomplete, each with full status info
+ * and team membership (from the users table, so the "Team Blended" logic can
+ * be applied client-side). A non-deleted sheet is incomplete when it is not
+ * closed, OR it has a row that is not signed off, OR its governance is under
+ * 100%.
+ *
+ * Done in the database, not in memory: the unsigned-row count per sheet comes
+ * from one aggregate query (indexed on row_members.rowId and
+ * certifications.rowId/memberId), so only the sheets, their governance records
+ * and a count per sheet are loaded — never every row, member and
+ * certification ever recorded. The original loaded all of those into memory
+ * and rescanned them for every sheet (30 s at one year of data, an error at
+ * three); the answer is unchanged — scripts/dev/compare-incomplete-sheets.ts
+ * proves it against a copy of the original. Row sign-off is the same rule as
+ * isRowSignedOff (governance.ts): at least one real (non-"__SPACE__") member,
+ * and every one of them has their OWN active certification.
  */
 export async function getIncompleteRunningSheets(
   viewerCommand?: CommandCode | null
@@ -3006,22 +3038,95 @@ export async function getIncompleteRunningSheets(
   const db = await getDb();
   if (!db) return [];
 
-  // All non-deleted sheets
   const sheets = await db
     .select()
     .from(runningSheets)
-    .where(isNull(runningSheets.deletedAt));
-
+    .where(isNull(runningSheets.deletedAt))
+    .orderBy(runningSheets.id);
   if (sheets.length === 0) return [];
 
-  const opIds = Array.from(new Set(sheets.map(s => s.operationId)));
-  const sheetIds = sheets.map(s => s.id);
+  // A row is NOT signed off when it has no real member, or any real member
+  // lacks an active certification of their own. (BINARY: the comparison with
+  // "__SPACE__" is exact, like the JavaScript rule, not case-insensitive.)
+  const realMember = and(
+    eq(rowMembers.rowId, sheetRows.id),
+    sql`BINARY ${rowMembers.memberName} <> '__SPACE__'`
+  );
+  const unsignedCounts = await db
+    .select({
+      sheetId: sheetRows.sheetId,
+      unsigned: sql<number>`COUNT(*)`,
+    })
+    .from(sheetRows)
+    .innerJoin(runningSheets, eq(runningSheets.id, sheetRows.sheetId))
+    .where(
+      and(
+        isNull(runningSheets.deletedAt),
+        or(
+          notExists(
+            db
+              .select({ one: sql`1` })
+              .from(rowMembers)
+              .where(realMember)
+          ),
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(rowMembers)
+              .where(
+                and(
+                  realMember,
+                  notExists(
+                    db
+                      .select({ one: sql`1` })
+                      .from(certifications)
+                      .where(
+                        and(
+                          eq(certifications.rowId, sheetRows.id),
+                          eq(certifications.memberId, rowMembers.id),
+                          eq(certifications.isActive, true)
+                        )
+                      )
+                  )
+                )
+              )
+          )
+        )
+      )
+    )
+    .groupBy(sheetRows.sheetId);
+  const unsignedBySheet = new Map<number, number>(
+    unsignedCounts.map(r => [r.sheetId, Number(r.unsigned)])
+  );
 
-  const [ops, govRecords, allUsers] = await Promise.all([
+  // Governance records of the live sheets (a join, not a giant IN list).
+  const govRows = await db
+    .select({ rec: governanceRecords })
+    .from(governanceRecords)
+    .innerJoin(runningSheets, eq(runningSheets.id, governanceRecords.sheetId))
+    .where(isNull(runningSheets.deletedAt));
+  const govBySheet = new Map(govRows.map(r => [r.rec.sheetId, r.rec]));
+
+  // Which sheets are incomplete — decided without parsing anything else.
+  const incompleteSheets = sheets.filter(sheet => {
+    const uncertifiedRowCount = unsignedBySheet.get(sheet.id) ?? 0;
+    const allSigned = uncertifiedRowCount === 0;
+    const govPercent = computeGovernancePercent(
+      govBySheet.get(sheet.id) ?? null,
+      allSigned
+    );
+    return !sheet.closedAt || uncertifiedRowCount > 0 || govPercent < 100;
+  });
+  if (incompleteSheets.length === 0) return [];
+
+  const opIds = Array.from(new Set(incompleteSheets.map(s => s.operationId)));
+  const [ops, allUsers] = await Promise.all([
     db.select().from(operations).where(inArray(operations.id, opIds)),
-    getGovernanceRecordsBySheetIds(sheetIds),
-    db.select().from(users),
+    db
+      .select({ id: users.id, cin: users.cin, teamId: users.teamId })
+      .from(users),
   ]);
+  const opById = new Map(ops.map(o => [o.id, o]));
 
   // Build CIN → team name map from users table
   const teamNames = await teamNameMap();
@@ -3034,51 +3139,9 @@ export async function getIncompleteRunningSheets(
     if (u.cin && name) cinTeamMap.set(u.cin, name);
   }
 
-  // Compute certification status per sheet
-  const allRowMembers =
-    sheetIds.length > 0
-      ? await db
-          .select()
-          .from(rowMembers)
-          .where(
-            inArray(
-              rowMembers.rowId,
-              (
-                await db
-                  .select({ id: sheetRows.id })
-                  .from(sheetRows)
-                  .where(inArray(sheetRows.sheetId, sheetIds))
-              ).map(r => r.id)
-            )
-          )
-      : [];
-
-  const allRows =
-    sheetIds.length > 0
-      ? await db
-          .select()
-          .from(sheetRows)
-          .where(inArray(sheetRows.sheetId, sheetIds))
-      : [];
-
-  const allRowIds = allRows.map(r => r.id);
-  const allCerts =
-    allRowIds.length > 0
-      ? await db
-          .select()
-          .from(certifications)
-          .where(
-            and(
-              inArray(certifications.rowId, allRowIds),
-              eq(certifications.isActive, true)
-            )
-          )
-      : [];
-
   const results: IncompleteSheetReport[] = [];
-
-  for (const sheet of sheets) {
-    const op = ops.find(o => o.id === sheet.operationId);
+  for (const sheet of incompleteSheets) {
+    const op = opById.get(sheet.operationId);
     if (!op) continue;
 
     // Parse sheetCins
@@ -3108,37 +3171,11 @@ export async function getIncompleteRunningSheets(
     );
     const isTeamBlended = teamsOnSheet.length > 1;
 
-    // Compute uncertified row count
-    const sheetRowObjs = allRows.filter(r => r.sheetId === sheet.id);
-    const sheetRowIds = sheetRowObjs.map(r => r.id);
-    const sheetMembers = allRowMembers.filter(m =>
-      sheetRowIds.includes(m.rowId)
+    const uncertifiedRowCount = unsignedBySheet.get(sheet.id) ?? 0;
+    const govPercent = computeGovernancePercent(
+      govBySheet.get(sheet.id) ?? null,
+      uncertifiedRowCount === 0
     );
-    const sheetCerts = allCerts.filter(c => sheetRowIds.includes(c.rowId));
-    const uncertifiedRowCount = sheetRowObjs.filter(
-      row => !isRowSignedOff(row, sheetMembers, sheetCerts)
-    ).length;
-
-    // Per row, not flattened across the whole sheet -- a row with no CIN
-    // contributed nothing to a flat "every member" check, so it was
-    // silently treated as fine instead of blocking (same bug as the
-    // sheet.close mutation and the client Governance page's own
-    // allSigned). See computeAllRowsSigned's own comment for the shared
-    // fix.
-    const allSigned =
-      sheetRowObjs.length === 0 ||
-      computeAllRowsSigned(sheetRowObjs, sheetMembers, sheetCerts);
-
-    // Governance percent
-    const govRec = govRecords.find(g => g.sheetId === sheet.id) ?? null;
-    const govPercent = computeGovernancePercent(govRec, allSigned);
-
-    const isClosed = !!sheet.closedAt;
-
-    // Only include sheets that are incomplete (not closed OR governance < 100 OR uncertified rows)
-    const isIncomplete =
-      !isClosed || uncertifiedRowCount > 0 || govPercent < 100;
-    if (!isIncomplete) continue;
 
     results.push({
       sheetId: sheet.id,
@@ -3154,7 +3191,7 @@ export async function getIncompleteRunningSheets(
       certifierCin,
       uncertifiedRowCount,
       govPercent,
-      isClosed,
+      isClosed: !!sheet.closedAt,
       createdAt: sheet.createdAt,
     });
   }

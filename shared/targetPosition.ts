@@ -367,6 +367,23 @@ export function samePlace(a: string, b: string): boolean {
   const x = words(a);
   const y = words(b);
   if (x.size === 0 || y.size === 0) return false;
+  // Numbered terminals are places of their own. "Terminal 3" and "Terminal 4"
+  // already differ by their number; and a numbered terminal is not "the
+  // airport" (or the port) it sits in, so a label that names no terminal never
+  // matches one that does — the shorter-inside-the-longer rule below must not
+  // fold every terminal into one vague "Perth Airport".
+  const terminalOf = (s: string) =>
+    /\bterminal\s+(\d+[a-z]?)\b/i.exec(
+      s
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Za-z0-9 ]+/g, " ")
+    )?.[1] ?? null;
+  const ta = terminalOf(a);
+  const tb = terminalOf(b);
+  if ((ta === null) !== (tb === null)) return false;
+  if (ta !== null && tb !== null && ta.toLowerCase() !== tb.toLowerCase())
+    return false;
   const within = (small: Set<string>, big: Set<string>) =>
     Array.from(small).every(w => big.has(w));
   return x.size <= y.size ? within(x, y) : within(y, x);

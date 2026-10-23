@@ -50,3 +50,30 @@ export function isAttachmentProperlyLinked(a: {
   if (a.rowId != null && !categories.includes(CIN_LINK_CATEGORY)) return false;
   return true;
 }
+
+// A photo of a THING — a bag, a phone, a weapon — that is not a person,
+// vehicle or place. It is linked by a short free-text description (the link's
+// label) rather than to an Intelligence entity, so it counts as "linked" for
+// Governance (any link does — see isAttachmentProperlyLinked, which needs no
+// change) but never appears in Intelligence: it shows only on the photo itself
+// (the "Item" pill on the running sheet and in the Images folder). A photo with
+// a face still needs a person link, and a photo on a row still needs its CIN
+// link, exactly as before.
+export const ITEM_LINK_CATEGORY = "item";
+
+/** A description is short by design (the pill opens to show it in full). */
+export const ITEM_DESCRIPTION_MAX = 300;
+
+/** Tidy a typed description: trimmed, runs of spaces/newlines made one space. */
+export function normalizeItemDescription(text: string): string {
+  return (text ?? "").replace(/\s+/g, " ").trim();
+}
+
+/** What is wrong with a description, or null when it is fine. */
+export function itemDescriptionProblem(text: string): string | null {
+  const d = normalizeItemDescription(text);
+  if (d.length === 0) return "Describe the item.";
+  if (d.length > ITEM_DESCRIPTION_MAX)
+    return `Keep the description to ${ITEM_DESCRIPTION_MAX} characters or fewer.`;
+  return null;
+}

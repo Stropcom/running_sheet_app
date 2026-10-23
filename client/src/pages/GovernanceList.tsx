@@ -1,36 +1,79 @@
 import { trpc } from "@/lib/trpc";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import DashboardLayout from "@/components/DashboardLayout";
+import {
+  TodoGroup,
+  TodoHeader,
+  TodoRow,
+  TodoTile,
+  TODO_TONES,
+} from "@/components/TodoKit";
 import {
   ClipboardCheck,
   ChevronRight,
-  FolderOpen,
-  ChevronDown,
-  ChevronUp,
+  FileText,
   AlertTriangle,
   CheckCircle2,
+  Calendar,
 } from "lucide-react";
 import { useViewMode } from "@/contexts/ViewModeContext";
-import { useState } from "react";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
 
-// ── Colour helpers ────────────────────────────────────────────────────────────
+// The Governance folder reads like the Certify page (components/TodoKit.tsx):
+// one white card per operation with a grey titled band, each running sheet its
+// own bordered row inside it, in the Governance folder's purple.
 
-function percentColor(pct: number) {
-  if (pct === 100) return "text-emerald-500";
-  if (pct >= 50) return "text-cyan-500";
-  return "text-rose-500";
+const TONE = "purple" as const;
+
+/** Completion pill: solid light fill, dark text, full border. */
+function PctPill({ percent }: { percent: number }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-bold ${
+        percent >= 100
+          ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300"
+          : percent >= 50
+            ? "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/15 dark:text-sky-300"
+            : "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/15 dark:text-rose-300"
+      }`}
+    >
+      {percent}%
+    </span>
+  );
 }
 
-function percentBg(pct: number) {
-  if (pct === 100) return "bg-emerald-500";
-  if (pct >= 50) return "bg-cyan-500";
-  return "bg-rose-500";
+/** "All complete" / "N to review" for one operation. */
+function StatusPill({
+  needsAttention,
+  anyOverdue,
+}: {
+  needsAttention: number;
+  anyOverdue: boolean;
+}) {
+  if (needsAttention === 0) {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-300">
+        <CheckCircle2 className="h-3 w-3" />
+        All complete
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${
+        anyOverdue
+          ? "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/15 dark:text-rose-300"
+          : TODO_TONES[TONE].pill
+      }`}
+    >
+      {anyOverdue && <AlertTriangle className="h-3 w-3" />}
+      {needsAttention} to review
+    </span>
+  );
 }
 
-// ── OperationGroup ────────────────────────────────────────────────────────────
+// ── Folder view: one card per operation ───────────────────────────────────────
 
 function OperationGroup({
   operationId,
@@ -41,8 +84,6 @@ function OperationGroup({
   operationName: string;
   onNavigate: (path: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
-
   const { data: summaries, isLoading } =
     trpc.governance.summaryByOperation.useQuery(
       { operationId },
@@ -54,144 +95,58 @@ function OperationGroup({
   }
   if (!summaries || summaries.length === 0) return null;
 
-  // Operation-level indicator: how many sheets need attention
   const needsAttention = summaries.filter(s => !s.isComplete).length;
-  const allDone = needsAttention === 0;
   const anyOverdue = summaries.some(s => s.isOverdue);
 
   return (
-    <div className="rounded-xl border border-border overflow-hidden bg-card shadow-sm">
-      {/* Operation header row */}
-      <button
-        onClick={() => setExpanded(v => !v)}
-        className="w-full flex items-center gap-2 px-4 py-3 bg-muted/70 border-b border-border hover:bg-muted transition-colors"
-      >
-        <div className="p-2.5 rounded-lg bg-purple-400/10 border border-purple-400/20 shrink-0">
-          <FolderOpen className="w-5 h-5 text-purple-400" />
-        </div>
-        <span className="text-sm font-semibold text-foreground flex-1 text-left">
-          {operationName}
-        </span>
-
-        {/* Operation-level status badge */}
-        {allDone ? (
-          <Badge className="text-xs px-1.5 py-0 bg-emerald-500/15 text-emerald-500 border-emerald-500/30 border">
-            <CheckCircle2 className="w-3 h-3 mr-1" />
-            All complete
-          </Badge>
-        ) : (
-          <Badge
-            variant="outline"
-            className={`text-xs px-1.5 py-0 ${
-              anyOverdue
-                ? "border-rose-500/40 text-rose-500"
-                : "border-cyan-500/40 text-cyan-500"
-            }`}
-          >
-            {anyOverdue && <AlertTriangle className="w-3 h-3 mr-1" />}
-            {needsAttention} sheet{needsAttention !== 1 ? "s" : ""} need
-            attention
-          </Badge>
-        )}
-
-        {expanded ? (
-          <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" />
-        ) : (
-          <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
-        )}
-      </button>
-
-      {/* Sheet rows */}
-      {expanded && (
-        <div className="divide-y divide-border/20">
-          {summaries.map(s => (
-            <button
-              key={s.sheetId}
-              onClick={() => onNavigate(`/governance/${s.sheetId}`)}
-              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors text-left"
-            >
-              {/* Mini progress bar */}
-              <div className="w-10 h-10 shrink-0 relative flex items-center justify-center">
-                <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
-                  <circle
-                    cx="18"
-                    cy="18"
-                    r="15"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    className="text-muted/30"
-                  />
-                  <circle
-                    cx="18"
-                    cy="18"
-                    r="15"
-                    fill="none"
-                    strokeWidth="3"
-                    strokeDasharray={`${(s.overallPercent / 100) * 94.25} 94.25`}
-                    strokeLinecap="round"
-                    className={percentColor(s.overallPercent)}
-                    stroke="currentColor"
-                  />
-                </svg>
-                <span
-                  className={`absolute text-xs font-bold ${percentColor(s.overallPercent)}`}
-                >
-                  {s.overallPercent}%
-                </span>
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">
-                  {s.sheetTitle}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {s.sheetCreatedAt
-                    ? format(new Date(s.sheetCreatedAt), "dd MMM yyyy")
-                    : ""}
-                  {s.isOverdue && (
-                    <span className="ml-2 text-rose-500 font-medium">
-                      OVERDUE
-                    </span>
-                  )}
-                </p>
-              </div>
-
-              {s.isComplete ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-              ) : (
-                <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
-              )}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Tile Grid ────────────────────────────────────────────────────────────────
-
-function GovernanceTileGrid({
-  operations,
-  onNavigate,
-}: {
-  operations: Array<{ id: number; name: string }>;
-  onNavigate: (path: string) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {operations.map(op => (
-        <GovernanceTileCard
-          key={op.id}
-          operationId={op.id}
-          operationName={op.name}
-          onNavigate={onNavigate}
-        />
+    <TodoGroup
+      tone={TONE}
+      name={operationName}
+      count={summaries.length}
+      badge={
+        <StatusPill needsAttention={needsAttention} anyOverdue={anyOverdue} />
+      }
+    >
+      {summaries.map(s => (
+        <TodoRow
+          key={s.sheetId}
+          tone={TONE}
+          onClick={() => onNavigate(`/governance/${s.sheetId}`)}
+          icon={<FileText className={`h-5 w-5 ${TODO_TONES[TONE].icon}`} />}
+          trailing={
+            s.isComplete ? (
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            ) : (
+              <ChevronRight
+                className={`h-4 w-4 transition-colors ${TODO_TONES[TONE].chevron}`}
+              />
+            )
+          }
+        >
+          <span className="block truncate text-sm font-semibold text-foreground">
+            {s.sheetTitle}
+          </span>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <PctPill percent={s.overallPercent} />
+            {s.sheetCreatedAt && (
+              <span className="flex items-center gap-1 text-xs text-foreground/70">
+                <Calendar className="h-3 w-3" />
+                {format(new Date(s.sheetCreatedAt), "d MMM yyyy")}
+              </span>
+            )}
+            {s.isOverdue && (
+              <span className="text-xs font-bold text-rose-700 dark:text-rose-400">
+                OVERDUE
+              </span>
+            )}
+          </div>
+        </TodoRow>
       ))}
-    </div>
+    </TodoGroup>
   );
 }
+
+// ── Tile view: one tile per operation ─────────────────────────────────────────
 
 function GovernanceTileCard({
   operationId,
@@ -212,105 +167,71 @@ function GovernanceTileCard({
   if (!summaries || summaries.length === 0) return null;
 
   const needsAttention = summaries.filter(s => !s.isComplete).length;
-  const allDone = needsAttention === 0;
   const anyOverdue = summaries.some(s => s.isOverdue);
-  const overallPct =
-    summaries.length > 0
-      ? Math.round(
-          summaries.reduce((sum, s) => sum + s.overallPercent, 0) /
-            summaries.length
-        )
-      : 0;
+  const overallPct = Math.round(
+    summaries.reduce((sum, s) => sum + s.overallPercent, 0) / summaries.length
+  );
+  const bar =
+    overallPct === 100
+      ? "bg-emerald-500"
+      : overallPct >= 50
+        ? "bg-sky-500"
+        : "bg-rose-500";
 
   return (
-    <div className="group flex flex-col gap-3 p-5 rounded-xl border border-border bg-card hover:bg-accent/20 hover:border-primary/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">
-      {/* Header */}
+    <TodoTile tone={TONE}>
       <div className="flex items-start justify-between gap-2">
-        <div className="p-2.5 rounded-lg bg-purple-400/10 border border-purple-400/20 shrink-0">
-          <ClipboardCheck className="w-5 h-5 text-purple-400" />
+        <div
+          className={`shrink-0 rounded-lg border p-2.5 ${TODO_TONES[TONE].iconBox}`}
+        >
+          <ClipboardCheck className={`h-5 w-5 ${TODO_TONES[TONE].icon}`} />
         </div>
-        {allDone ? (
-          <Badge className="text-xs px-1.5 py-0 bg-emerald-500/15 text-emerald-500 border-emerald-500/30 border shrink-0">
-            <CheckCircle2 className="w-3 h-3 mr-1" />
-            All complete
-          </Badge>
-        ) : (
-          <Badge
-            variant="outline"
-            className={`text-xs px-1.5 py-0 shrink-0 ${
-              anyOverdue
-                ? "border-rose-500/40 text-rose-500"
-                : "border-cyan-500/40 text-cyan-500"
-            }`}
-          >
-            {anyOverdue && <AlertTriangle className="w-3 h-3 mr-1" />}
-            {needsAttention} need attention
-          </Badge>
-        )}
+        <StatusPill needsAttention={needsAttention} anyOverdue={anyOverdue} />
       </div>
 
-      {/* Name */}
-      <p className="font-semibold text-foreground leading-tight line-clamp-2">
+      <p className="line-clamp-2 font-semibold leading-tight text-foreground">
         {operationName}
       </p>
 
-      {/* Progress bar */}
       <div className="mt-auto">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-muted-foreground">
+        <div className="mb-1 flex items-center justify-between">
+          <span className="text-xs text-foreground/70">
             {summaries.length} sheet{summaries.length !== 1 ? "s" : ""}
           </span>
-          <span
-            className={`text-xs font-semibold ${
-              overallPct === 100
-                ? "text-emerald-500"
-                : overallPct >= 50
-                  ? "text-cyan-500"
-                  : "text-rose-500"
-            }`}
-          >
-            {overallPct}%
-          </span>
+          <PctPill percent={overallPct} />
         </div>
-        <div className="w-full h-1.5 rounded-full bg-muted/40 overflow-hidden">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
           <div
-            className={`h-full rounded-full transition-all ${
-              overallPct === 100
-                ? "bg-emerald-500"
-                : overallPct >= 50
-                  ? "bg-cyan-500"
-                  : "bg-rose-500"
-            }`}
+            className={`h-full rounded-full transition-all ${bar}`}
             style={{ width: `${overallPct}%` }}
           />
         </div>
       </div>
 
-      {/* Sheet list (compact) */}
       <div className="flex flex-col gap-1 border-t border-border pt-2">
         {summaries.slice(0, 3).map(s => (
           <button
             key={s.sheetId}
             onClick={() => onNavigate(`/governance/${s.sheetId}`)}
-            className="flex items-center gap-2 text-left hover:bg-accent/30 rounded px-1 py-0.5 transition-colors"
+            className="flex items-center gap-2 rounded px-1 py-0.5 text-left transition-colors hover:bg-muted"
           >
             {s.isComplete ? (
-              <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+              <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
             ) : (
-              <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+              <ChevronRight className="h-3 w-3 shrink-0 text-foreground/60" />
             )}
-            <span className="text-xs text-foreground/80 truncate">
+            <span className="truncate text-xs text-foreground/80">
               {s.sheetTitle}
             </span>
           </button>
         ))}
         {summaries.length > 3 && (
-          <p className="text-xs text-muted-foreground pl-1">
+          <p className="pl-1 text-xs text-foreground/70">
             +{summaries.length - 3} more sheets
           </p>
         )}
       </div>
-    </div>
+    </TodoTile>
   );
 }
 
@@ -325,7 +246,7 @@ export default function GovernanceListPage() {
   if (isLoading) {
     return (
       <DashboardLayout>
-        <div className="p-6 space-y-3">
+        <div className="space-y-3 px-4 py-8">
           {[...Array(3)].map((_, i) => (
             <Skeleton key={i} className="h-20 w-full rounded-xl" />
           ))}
@@ -336,34 +257,38 @@ export default function GovernanceListPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6">
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2.5 rounded-lg bg-purple-400/10 border border-purple-400/20">
-            <ClipboardCheck className="w-5 h-5 text-purple-400" />
-          </div>
-          <div className="flex-1">
-            <h1 className="text-lg font-semibold text-foreground">
-              Governance
-            </h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Running sheet write-off checklist — select a sheet to review
-            </p>
-          </div>
-        </div>
+      <div className="px-4 py-8">
+        <TodoHeader
+          tone={TONE}
+          icon={
+            <ClipboardCheck className={`h-5 w-5 ${TODO_TONES[TONE].icon}`} />
+          }
+          title="Governance"
+          subtitle="Running sheet write-off checklist — select a sheet to review"
+          count={0}
+        />
 
         {!operations || operations.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground">
-            <ClipboardCheck className="w-10 h-10 mx-auto mb-3 opacity-30" />
+          <div className="py-16 text-center text-foreground/70">
+            <ClipboardCheck className="mx-auto mb-3 h-10 w-10 opacity-30" />
             <p className="text-sm">No operations found.</p>
-            <p className="text-xs mt-1">
+            <p className="mt-1 text-xs">
               Create an operation and running sheet first.
             </p>
           </div>
         ) : viewMode === "tile" ? (
-          <GovernanceTileGrid operations={operations} onNavigate={navigate} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {operations.map(op => (
+              <GovernanceTileCard
+                key={op.id}
+                operationId={op.id}
+                operationName={op.name}
+                onNavigate={navigate}
+              />
+            ))}
+          </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {operations.map(op => (
               <OperationGroup
                 key={op.id}

@@ -1,6 +1,12 @@
 import { rowHasImagery } from "@shared/rowImagery";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
+import {
+  GovernanceSection,
+  percentTextClass,
+} from "@/components/GovernanceSection";
+import { TodoHeader, TODO_TONES } from "@/components/TodoKit";
+import { SECTION_BAND, SECTION_CARD, SECTION_TITLE } from "@/lib/pageKit";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -98,12 +104,12 @@ function CheckRow({
       {checked && (cin || tickedByName) && (
         <div className="flex flex-col items-end gap-0.5 shrink-0">
           {cin && (
-            <span className="text-xs font-mono font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded">
+            <span className="text-xs font-mono font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded">
               {cin}
             </span>
           )}
           {tickedByName && (
-            <span className="text-xs text-emerald-400/70 font-medium">
+            <span className="text-xs text-emerald-700 dark:text-emerald-400/70 font-medium">
               {tickedByName}
             </span>
           )}
@@ -113,48 +119,6 @@ function CheckRow({
         <Lock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
       )}
     </div>
-  );
-}
-
-// ─── Section Header ───────────────────────────────────────────────────────────
-
-function SectionHeader({
-  title,
-  subtitle,
-  percent,
-  expanded,
-  onToggle,
-}: {
-  title: string;
-  subtitle?: string;
-  percent: number;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  const color =
-    percent === 100
-      ? "text-emerald-500"
-      : percent >= 50
-        ? "text-cyan-500"
-        : "text-rose-500";
-  return (
-    <button
-      onClick={onToggle}
-      className="w-full flex items-center gap-3 px-4 py-3 bg-card border border-border shadow-sm rounded-xl hover:bg-muted/40 transition-colors"
-    >
-      <div className="flex-1 text-left">
-        <p className="text-sm font-semibold text-foreground">{title}</p>
-        {subtitle && (
-          <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
-        )}
-      </div>
-      <span className={`text-xs font-bold ${color}`}>{percent}%</span>
-      {expanded ? (
-        <ChevronUp className="w-4 h-4 text-muted-foreground" />
-      ) : (
-        <ChevronDown className="w-4 h-4 text-muted-foreground" />
-      )}
-    </button>
   );
 }
 
@@ -634,116 +598,115 @@ export default function GovernancePage() {
           </button>
         </div>
 
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4 mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-              <ClipboardCheck className="w-5 h-5 text-primary" />
+        {/* Header — same look as the Certify page */}
+        <TodoHeader
+          tone="purple"
+          icon={
+            <ClipboardCheck className={`h-5 w-5 ${TODO_TONES.purple.icon}`} />
+          }
+          title="RS Governance"
+          subtitle={sheet?.title ?? "Loading…"}
+          count={0}
+          right={
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <div className="flex items-center gap-2">
+                {isOverdue && (
+                  <Badge
+                    variant="destructive"
+                    className="flex items-center gap-1 px-1.5 py-0.5 text-xs"
+                  >
+                    <AlertTriangle className="h-3 w-3" /> OVERDUE
+                  </Badge>
+                )}
+                <span
+                  className={`text-2xl font-bold ${percentTextClass(overallPercent)}`}
+                >
+                  {overallPercent}%
+                </span>
+              </div>
+              <p className="text-xs text-foreground/70">complete</p>
             </div>
-            <div>
-              <h1 className="text-lg font-semibold text-foreground">
-                RS Governance
-              </h1>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {sheet?.title ?? "Loading…"}
+          }
+        />
+
+        {/* Sheet details */}
+        <section className={`${SECTION_CARD} mb-3`}>
+          <div className={SECTION_BAND}>
+            <h2 className={SECTION_TITLE}>Sheet details</h2>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="rounded-lg border border-border bg-background px-3 py-2.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-0.5">
+                Operation
+              </p>
+              <p className="font-medium text-foreground">
+                {exportData?.operation?.name ?? "—"}
               </p>
             </div>
-          </div>
-          <div className="flex flex-col items-end gap-1.5">
-            <div className="flex items-center gap-2">
-              {isOverdue && (
-                <Badge
-                  variant="destructive"
-                  className="text-xs px-1.5 py-0.5 flex items-center gap-1"
-                >
-                  <AlertTriangle className="w-3 h-3" /> OVERDUE
-                </Badge>
-              )}
-              <span
-                className={`text-2xl font-bold ${
-                  overallPercent === 100
-                    ? "text-emerald-500"
-                    : overallPercent >= 50
-                      ? "text-cyan-500"
-                      : "text-rose-500"
-                }`}
-              >
-                {overallPercent}%
-              </span>
+            <div className="rounded-lg border border-border bg-background px-3 py-2.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-0.5">
+                Target
+              </p>
+              <p className="font-medium text-foreground">
+                {exportData?.targetFullName ?? sheet?.targetName ?? "—"}
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">complete</p>
+            <div className="rounded-lg border border-border bg-background px-3 py-2.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-0.5">
+                Team Leader
+              </p>
+              <p className="font-medium text-foreground">
+                {teamLeader?.cin ?? "—"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-background px-3 py-2.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-0.5">
+                RS Author
+              </p>
+              <p className="font-medium text-foreground">
+                {author?.cin ?? "—"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-background px-3 py-2.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-0.5">
+                Sheet Date
+              </p>
+              <p className="font-medium text-foreground">
+                {sheet?.sheetDate
+                  ? format(
+                      new Date(`${sheet.sheetDate}T00:00:00`),
+                      "dd MMM yyyy"
+                    )
+                  : sheet?.createdAt
+                    ? format(new Date(sheet.createdAt), "dd MMM yyyy")
+                    : "—"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-background px-3 py-2.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-1">
+                Due Date
+              </p>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={e => handleDueDateChange(e.target.value)}
+                disabled={isClosed}
+                className="w-full bg-transparent text-foreground font-medium text-xs outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+            </div>
           </div>
-        </div>
-
-        {/* Meta info row */}
-        <div className="grid grid-cols-2 gap-3 mb-5 text-xs">
-          <div className="rounded-lg border border-border bg-card shadow-sm px-3 py-2.5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-0.5">
-              Operation
-            </p>
-            <p className="font-medium text-foreground">
-              {exportData?.operation?.name ?? "—"}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-card shadow-sm px-3 py-2.5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-0.5">
-              Target
-            </p>
-            <p className="font-medium text-foreground">
-              {exportData?.targetFullName ?? sheet?.targetName ?? "—"}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-card shadow-sm px-3 py-2.5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-0.5">
-              Team Leader
-            </p>
-            <p className="font-medium text-foreground">
-              {teamLeader?.cin ?? "—"}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-card shadow-sm px-3 py-2.5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-0.5">
-              RS Author
-            </p>
-            <p className="font-medium text-foreground">{author?.cin ?? "—"}</p>
-          </div>
-          <div className="rounded-lg border border-border bg-card shadow-sm px-3 py-2.5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-0.5">
-              Sheet Date
-            </p>
-            <p className="font-medium text-foreground">
-              {sheet?.sheetDate
-                ? format(new Date(`${sheet.sheetDate}T00:00:00`), "dd MMM yyyy")
-                : sheet?.createdAt
-                  ? format(new Date(sheet.createdAt), "dd MMM yyyy")
-                  : "—"}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-card shadow-sm px-3 py-2.5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mb-1">
-              Due Date
-            </p>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={e => handleDueDateChange(e.target.value)}
-              disabled={isClosed}
-              className="w-full bg-transparent text-foreground font-medium text-xs outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-          </div>
-        </div>
+        </section>
 
         {/* ── Team Leader Section ── */}
-        <div className="mb-3">
-          <SectionHeader
-            title="Team Leader"
-            subtitle="Summary notification and IO sign-off"
-            percent={tlPercent}
-            expanded={tlExpanded}
-            onToggle={() => setTlExpanded(v => !v)}
-          />
-          {tlExpanded && gov && (
-            <div className="mt-2 space-y-2">
+        <GovernanceSection
+          title="Team Leader"
+          subtitle="Summary notification and IO sign-off"
+          percent={tlPercent}
+          open={tlExpanded && !!gov}
+          onToggle={() => setTlExpanded(v => !v)}
+        >
+          {gov && (
+            <>
               <CheckRow
                 label="Summary complete"
                 checked={
@@ -767,21 +730,20 @@ export default function GovernancePage() {
                   (gov as Record<string, unknown>).sentToIOName as string | null
                 }
               />
-            </div>
+            </>
           )}
-        </div>
+        </GovernanceSection>
 
         {/* ── Operative / RS Author Section ── */}
-        <div className="mb-3">
-          <SectionHeader
-            title="Operative — Running Sheet"
-            subtitle="Author tasks and document management"
-            percent={opPercent}
-            expanded={opExpanded}
-            onToggle={() => setOpExpanded(v => !v)}
-          />
-          {opExpanded && gov && (
-            <div className="mt-2 space-y-2">
+        <GovernanceSection
+          title="Operative — Running Sheet"
+          subtitle="Author tasks and document management"
+          percent={opPercent}
+          open={opExpanded && !!gov}
+          onToggle={() => setOpExpanded(v => !v)}
+        >
+          {gov && (
+            <>
               {/* Certification status — always shown, not toggleable */}
               <div
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${
@@ -797,7 +759,7 @@ export default function GovernancePage() {
                 )}
                 <div className="flex-1 min-w-0">
                   <p
-                    className={`text-sm font-medium ${allSigned ? "text-foreground" : "text-rose-400"}`}
+                    className={`text-sm font-medium ${allSigned ? "text-foreground" : "text-rose-700 dark:text-rose-400"}`}
                   >
                     Signed by all team members
                   </p>
@@ -850,21 +812,20 @@ export default function GovernancePage() {
                     .savedInInvestigatorTransferDriveName as string | null
                 }
               />
-            </div>
+            </>
           )}
-        </div>
+        </GovernanceSection>
 
         {/* ── Imagery Section ── */}
-        <div className="mb-3">
-          <SectionHeader
-            title="Operative — Imagery"
-            subtitle="Author - tasks - photos/video taken"
-            percent={imgPercent}
-            expanded={imgExpanded}
-            onToggle={() => setImgExpanded(v => !v)}
-          />
-          {imgExpanded && gov && (
-            <div className="mt-2 space-y-2">
+        <GovernanceSection
+          title="Operative — Imagery"
+          subtitle="Author - tasks - photos/video taken"
+          percent={imgPercent}
+          open={imgExpanded && !!gov}
+          onToggle={() => setImgExpanded(v => !v)}
+        >
+          {gov && (
+            <>
               {/* Imagery taken — colour reflects save + link status */}
               {(() => {
                 const allCompleteImg =
@@ -891,7 +852,7 @@ export default function GovernancePage() {
                   <AlertTriangle className="w-5 h-5 text-cyan-500 shrink-0" />
                 );
                 const titleColor = !hasAnyImagery
-                  ? "text-rose-400"
+                  ? "text-rose-700 dark:text-rose-400"
                   : allCompleteImg
                     ? "text-foreground"
                     : "text-cyan-500";
@@ -1021,15 +982,15 @@ export default function GovernancePage() {
                   automatically.
                 </p>
               )}
-            </div>
+            </>
           )}
-        </div>
+        </GovernanceSection>
 
         {/* Notes */}
-        <div className="mb-6">
-          <p className="text-xs font-medium text-muted-foreground mb-2">
-            Notes
-          </p>
+        <section className={`${SECTION_CARD} mb-3`}>
+          <div className={SECTION_BAND}>
+            <h2 className={SECTION_TITLE}>Notes</h2>
+          </div>
           <Textarea
             value={notes}
             onChange={e => handleNotesChange(e.target.value)}
@@ -1038,44 +999,36 @@ export default function GovernancePage() {
             disabled={isClosed}
             className="text-sm resize-none"
           />
-        </div>
+        </section>
 
         {/* Completion bar */}
-        <div className="rounded-xl border border-border bg-card shadow-sm px-4 py-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-medium text-foreground">
-              Overall completion
-            </p>
-            <p
-              className={`text-sm font-bold ${
-                overallPercent === 100
-                  ? "text-emerald-500"
-                  : overallPercent >= 50
-                    ? "text-cyan-500"
-                    : "text-rose-500"
-              }`}
+        <section className={SECTION_CARD}>
+          <div className={SECTION_BAND}>
+            <h2 className={SECTION_TITLE}>Overall completion</h2>
+            <span
+              className={`ml-auto text-sm font-bold ${percentTextClass(overallPercent)}`}
             >
               {overallPercent}%
-            </p>
+            </span>
           </div>
-          <div className="h-2 rounded-full bg-muted overflow-hidden">
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
             <div
               className={`h-full rounded-full transition-all duration-500 ${
                 overallPercent === 100
                   ? "bg-emerald-500"
                   : overallPercent >= 50
-                    ? "bg-cyan-500"
+                    ? "bg-sky-500"
                     : "bg-rose-500"
               }`}
               style={{ width: `${overallPercent}%` }}
             />
           </div>
           {overallPercent === 100 && (
-            <p className="text-xs text-emerald-500 mt-2 text-center font-medium">
+            <p className="mt-2 text-center text-xs font-medium text-emerald-700 dark:text-emerald-400">
               ✓ All governance checks complete — ready for write-off
             </p>
           )}
-        </div>
+        </section>
       </div>
     </DashboardLayout>
   );

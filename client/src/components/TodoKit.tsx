@@ -11,7 +11,7 @@ import { SECTION_COUNT } from "@/lib/pageKit";
  * dark `-700` shade on the light theme — the old `-400` shades washed out on
  * white.
  */
-export type TodoTone = "red" | "amber" | "blue";
+export type TodoTone = "red" | "amber" | "blue" | "purple";
 
 export const TODO_TONES: Record<
   TodoTone,
@@ -25,6 +25,17 @@ export const TODO_TONES: Record<
     opIcon: string;
   }
 > = {
+  purple: {
+    iconBox:
+      "border-purple-300 bg-purple-50 dark:border-purple-400/30 dark:bg-purple-400/10",
+    icon: "text-purple-600 dark:text-purple-400",
+    pill: "border-purple-300 bg-purple-50 text-purple-700 dark:border-purple-400/40 dark:bg-purple-400/10 dark:text-purple-300",
+    rowHover:
+      "hover:border-purple-400 hover:bg-purple-50/60 dark:hover:bg-purple-400/10",
+    tile: "border-purple-300 hover:border-purple-500",
+    chevron: "text-purple-500/70 group-hover:text-purple-600",
+    opIcon: "text-purple-600 dark:text-purple-400",
+  },
   red: {
     iconBox:
       "border-red-300 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10",
@@ -67,12 +78,15 @@ export function TodoHeader({
   title,
   subtitle,
   count,
+  right,
 }: {
   tone: TodoTone;
   icon: ReactNode;
   title: string;
   subtitle: string;
   count: number;
+  /** Shown at the right instead of the "N sheets" pill (e.g. a percentage). */
+  right?: ReactNode;
 }) {
   const t = TODO_TONES[tone];
   return (
@@ -82,7 +96,8 @@ export function TodoHeader({
         <h1 className="text-xl font-bold text-foreground">{title}</h1>
         <p className="text-sm text-foreground/70">{subtitle}</p>
       </div>
-      {count > 0 && (
+      {right}
+      {!right && count > 0 && (
         <span
           className={cn(
             "shrink-0 rounded-full border px-2.5 py-1 text-xs font-bold",
@@ -101,11 +116,14 @@ export function TodoGroup({
   tone,
   name,
   count,
+  badge,
   children,
 }: {
   tone: TodoTone;
   name: string;
   count: number;
+  /** Extra status at the right of the band (e.g. "All complete"). */
+  badge?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -117,6 +135,7 @@ export function TodoGroup({
         <span className="min-w-0 flex-1 truncate text-[13px] font-bold uppercase tracking-wide text-foreground">
           {name}
         </span>
+        {badge}
         <span className={SECTION_COUNT}>{count}</span>
       </div>
       <div className="flex flex-col gap-2 p-3">{children}</div>
@@ -163,14 +182,16 @@ export function TodoTile({
   children,
 }: {
   tone: TodoTone;
-  onClick: () => void;
+  /** Leave out when the tile holds its own links (it is then not clickable). */
+  onClick?: () => void;
   children: ReactNode;
 }) {
   return (
     <div
       onClick={onClick}
       className={cn(
-        "group flex cursor-pointer flex-col gap-3 rounded-xl border-2 bg-card p-5 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md",
+        "group flex flex-col gap-3 rounded-xl border-2 bg-card p-5 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md",
+        onClick && "cursor-pointer",
         TODO_TONES[tone].tile
       )}
     >

@@ -53,6 +53,7 @@ import {
   transitPlaceFromGoogle,
   type TransitPlace,
 } from "@shared/transitPlace";
+import { seatedOccupantWording, seatsOf } from "@shared/vehicleSeats";
 import {
   signIconOf,
   placeSignFor,
@@ -1529,21 +1530,23 @@ function entityBlocksHtml(
   return `<div style="${compact ? "max-height:170px;" : "max-height:240px;"}overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;">${html.join("")}</div>`;
 }
 
-/** Photo indicator across the bottom edge of a marker: one small pill, blue
- * half (portrait icon) for profile / baseball-card photos of the people at the
- * address, green half (photo icon) for running-sheet photos. Only one kind
- * present shows a single solid-colour pill. Returns null when neither. */
+/** Photo indicator across the bottom edge of a marker: one slim rounded
+ * rectangle (11px tall, small corners — the same family as the place signs),
+ * blue half (portrait icon) for profile / baseball-card photos of the people
+ * at the address, green half (photo icon) for running-sheet photos, both
+ * halves the same width. Only one kind present shows a single solid-colour
+ * half. Returns null when neither. */
 function createPhotoPill(
   runningSheet: boolean,
   profile: boolean
 ): HTMLDivElement | null {
   if (!runningSheet && !profile) return null;
   const photoIcon =
-    '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6" fill="#fff"/><path d="M4 18l5-5 4 4 3-3 4 4"/></svg>';
+    '<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6" fill="#fff"/><path d="M4 18l5-5 4 4 3-3 4 4"/></svg>';
   const portraitIcon =
-    '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="10" r="3.2" fill="#fff"/><path d="M6 19c1-3.4 3.2-5 6-5s5 1.6 6 5"/></svg>';
+    '<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="10" r="3.2" fill="#fff"/><path d="M6 19c1-3.4 3.2-5 6-5s5 1.6 6 5"/></svg>';
   const half = (bg: string, icon: string) =>
-    `<span style="display:inline-flex;align-items:center;justify-content:center;padding:0 4px;background:${bg};">${icon}</span>`;
+    `<span style="display:inline-flex;align-items:center;justify-content:center;width:16px;background:${bg};">${icon}</span>`;
   const pill = document.createElement("div");
   pill.title =
     runningSheet && profile
@@ -1553,8 +1556,8 @@ function createPhotoPill(
         : "Profile photos of people at this address";
   pill.style.cssText = `
     position:absolute;left:50%;top:100%;transform:translate(-50%,-9px);
-    display:inline-flex;align-items:stretch;height:15px;
-    border-radius:9px;overflow:hidden;
+    display:inline-flex;align-items:stretch;height:11px;
+    border-radius:2.5px;overflow:hidden;
     border:1.5px solid #fff;box-sizing:content-box;
     box-shadow:0 1px 3px rgba(0,0,0,0.35);
     pointer-events:none;
@@ -13790,6 +13793,18 @@ export default function IntelligenceMapping() {
                                 const inNames = occupants.filter(
                                   o => !toNames.includes(o)
                                 );
+                                // Where each sits, when the rows say.
+                                const seatMap = seatsOf({
+                                  desc: v.occupantDesc,
+                                  descRowId: v.rowId,
+                                  rego: v.rego,
+                                  occupants,
+                                  placements: rsPendingPlacements ?? [],
+                                });
+                                const withSeat = (n: string) =>
+                                  seatMap.has(n)
+                                    ? `${n} (${seatMap.get(n)})`
+                                    : n;
                                 // People inside take over the card only when
                                 // nobody is left in the vehicle; when some got
                                 // out and others stayed, the vehicle keeps a
@@ -13837,7 +13852,16 @@ export default function IntelligenceMapping() {
                                             occupantWording(
                                               v.occupantDesc,
                                               occupants
-                                            ) ?? occNames
+                                            ) ??
+                                              seatedOccupantWording({
+                                                desc: v.occupantDesc,
+                                                descRowId: v.rowId,
+                                                rego: v.rego,
+                                                occupants,
+                                                placements:
+                                                  rsPendingPlacements ?? [],
+                                              }) ??
+                                              occNames
                                           )
                                         : "unseen occupant/s"
                                     }, departed ${shortAddr} and continued via:`,
@@ -13945,7 +13969,7 @@ export default function IntelligenceMapping() {
                                       : inCar
                                         ? [
                                             inNames.length
-                                              ? `${inNames.join(", ")} in the vehicle`
+                                              ? `${inNames.map(withSeat).join(", ")} in the vehicle`
                                               : "",
                                             toNames.length
                                               ? `${toNames.join(", ")} to vehicle`

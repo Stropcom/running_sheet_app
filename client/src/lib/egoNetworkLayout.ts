@@ -58,15 +58,104 @@ export const RING1_MAX = 12;
  * truncates harder. */
 export const RING2_MAX = 18;
 
-// Upper bounds — the actual radii used are scaled down to fit the canvas
-// (see ringRadii below) so ring-1/ring-2 nodes and their labels never run
-// past the visible edge on a narrow phone screen.
-export const RING1_RADIUS_MAX = 165;
-export const RING2_RADIUS_MAX = 290;
-/** Reserved for label text extending past a node's centre, plus padding. */
-export const RING_LABEL_MARGIN = 110;
 export const RING1_RADIUS_MIN = 70;
 export const RING2_RADIUS_MIN = 120;
+
+// The live (on-screen) view sizes its rings to the room the canvas really
+// has, on every device — a big monitor spreads the network out, a phone
+// keeps it inside the screen. The room each way is half the canvas less the
+// space a label needs past a node: names sit under their node, up to ~124px
+// wide and two lines tall. The PDF export does not use any of this.
+export const LIVE_MARGIN_X = 84;
+export const LIVE_MARGIN_Y = 60;
+/** On a phone or iPad the names are set smaller (and can be pinched larger),
+ * so they need less room, and the rings stay a true circle. */
+export const LIVE_COMPACT_MARGIN_X = 54;
+export const LIVE_COMPACT_MARGIN_Y = 44;
+/** Past this, more room only makes the lines longer, not the picture clearer. */
+export const LIVE_RING2_CAP = 560;
+/** Ring 1's share of ring 2 when both are shown (it was 165 / 290 = 0.57). */
+export const LIVE_RING1_SHARE = 0.62;
+/** On the small circle of a phone the inner ring gets more of it. */
+export const LIVE_COMPACT_RING1_SHARE = 0.72;
+/** How far the rings may be stretched sideways (or squeezed on a tall phone). */
+export const LIVE_STRETCH_MIN = 0.6;
+export const LIVE_STRETCH_MAX = 1.9;
+
+/**
+ * Where to set a ring's name ("1 hop") so it never sits on a node: the middle
+ * of the widest empty stretch between the nodes on that ring. Angles are in
+ * radians; with no nodes it falls back to `fallback`.
+ */
+export function widestGapAngle(angles: number[], fallback: number): number {
+  if (angles.length === 0) return fallback;
+  const sorted = angles
+    .map(a => ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI))
+    .sort((a, b) => a - b);
+  let bestGap = -1;
+  let bestMid = fallback;
+  for (let i = 0; i < sorted.length; i++) {
+    const from = sorted[i];
+    const to = i + 1 < sorted.length ? sorted[i + 1] : sorted[0] + 2 * Math.PI;
+    if (to - from > bestGap) {
+      bestGap = to - from;
+      bestMid = from + (to - from) / 2;
+    }
+  }
+  return bestMid;
+}
+
+/**
+ * Ring sizes for the live view, from the canvas size. Pure, so it is tested
+ * without a browser.
+ *  - Up/down the rings use all the height there is (less label room).
+ *  - Side to side they are stretched (`xStretch`) to use the width there is,
+ *    so a wide canvas is not left empty at both sides.
+ *  - With only one ring in use (1 hop, or 2 hops but nothing a second step
+ *    away) ring 1 takes almost all the room instead of the inner 57%.
+ */
+export function liveRingRadii(params: {
+  width: number;
+  height: number;
+  hasRing2: boolean;
+  /** Phone / iPad layout: a circle that fits the smaller side. */
+  compact?: boolean;
+}) {
+  const compact = params.compact === true;
+  const availY = Math.max(
+    0,
+    params.height / 2 - (compact ? LIVE_COMPACT_MARGIN_Y : LIVE_MARGIN_Y)
+  );
+  const availX = Math.max(
+    0,
+    params.width / 2 - (compact ? LIVE_COMPACT_MARGIN_X : LIVE_MARGIN_X)
+  );
+  const reach = Math.min(
+    LIVE_RING2_CAP,
+    compact ? Math.min(availX, availY) : availY
+  );
+  const xStretch = compact
+    ? 1
+    : availY > 0
+      ? Math.min(LIVE_STRETCH_MAX, Math.max(LIVE_STRETCH_MIN, availX / reach))
+      : 1;
+  if (params.hasRing2) {
+    return {
+      ring1: Math.max(
+        RING1_RADIUS_MIN,
+        reach * (compact ? LIVE_COMPACT_RING1_SHARE : LIVE_RING1_SHARE)
+      ),
+      ring2: Math.max(RING2_RADIUS_MIN, reach),
+      xStretch,
+    };
+  }
+  const ring1 = Math.max(RING1_RADIUS_MIN, reach * 0.92);
+  return {
+    ring1,
+    ring2: Math.max(RING2_RADIUS_MIN, ring1),
+    xStretch,
+  };
+}
 
 export interface PlacedNode {
   node: EgoNode;
@@ -110,6 +199,9 @@ export function computeEgoLayout(params: {
   expandRing1: boolean;
   ring1Radius: number;
   ring2Radius: number;
+  /** Stretches every x position (the rings become ellipses) — the live view
+   * uses it to spread out over a wide canvas. The export leaves it at 1. */
+  xStretch?: number;
 }): EgoLayout {
   const {
     focusNode,
@@ -119,6 +211,7 @@ export function computeEgoLayout(params: {
     expandRing1,
     ring1Radius,
     ring2Radius,
+    xStretch = 1,
   } = params;
 
   if (!focusNode) {
@@ -219,7 +312,7 @@ export function computeEgoLayout(params: {
     if (!node) return;
     placedNodes.push({
       node,
-      x: Math.cos(angle) * ring1Radius,
+      x: Math.cos(angle) * ring1Radius * xStretch,
       y: Math.sin(angle) * ring1Radius,
       hop: 1,
       weight: entry.weight,
@@ -255,7 +348,7 @@ export function computeEgoLayout(params: {
         ring2Parent.set(kid.id, parentId);
         placedNodes.push({
           node,
-          x: Math.cos(angle) * ring2Radius,
+          x: Math.cos(angle) * ring2Radius * xStretch,
           y: Math.sin(angle) * ring2Radius,
           hop: 2,
           weight: kid.weight,

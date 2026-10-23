@@ -26,6 +26,7 @@ import {
 import { ENV } from "./env";
 import { sdk } from "./sdk";
 import { requireSignedIn } from "../uploadAccess";
+import { registerHealthRoute } from "../healthz";
 
 // Fail fast rather than silently signing every session with an empty key.
 if (!ENV.cookieSecret || ENV.cookieSecret.length < 32) {
@@ -107,6 +108,10 @@ async function startServer() {
       crossOriginEmbedderPolicy: false, // Allows Manus OAuth portal to embed resources
     })
   );
+
+  // Uptime monitor address — before the body parser, sign-in checks and the
+  // page-serving fallback so nothing can answer it with the app's own page.
+  registerHealthRoute(app);
 
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));

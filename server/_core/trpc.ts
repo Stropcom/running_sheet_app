@@ -84,6 +84,7 @@ const INVESTIGATOR_ALLOWED_PATHS = new Set([
   "passkey.selfCode",
   "profile.me",
   "profile.updateColorPalette",
+  "profile.updateChromeStyle",
   "profile.updatePassword",
   "operation.list",
   "operation.listForMap",

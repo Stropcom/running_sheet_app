@@ -74,7 +74,8 @@ describe("place signs by how the place is written", () => {
     expect(placeSignOfName("Salad Bar")).toBeNull();
     expect(placeSignOfName("Masonic Lodge")).toBeNull();
     expect(placeSignOfName("Medical Centre")).toBeNull();
-    expect(placeSignOfName("Riverbank Park")).toBeNull();
+    // "Riverbank" is not a bank — it is a park (the park sign, v2.23.0)
+    expect(placeSignOfName("Riverbank Park")).toBe("place_park");
   });
 });
 
@@ -117,6 +118,166 @@ describe("cafe, restaurant, fast food and airport signs", () => {
     expect(placeSignOfName("Airport Motel")).toBe("place_hotel");
     expect(placeSignOfName("Airport Road, REDCLIFFE")).toBeNull();
     expect(placeSignOfName("Airport Cafe, Perth")).toBe("place_cafe");
+  });
+
+  it("a numbered terminal is an airport terminal only when its locality says airport", () => {
+    for (const n of ["1", "2", "3", "4"])
+      expect(
+        placeSignOfName(`Terminal ${n}, Perth Airport WA 6105, Australia`),
+        n
+      ).toBe("place_airport");
+    expect(placeSignOfName("Terminal 3 Domestic, Perth Airport WA 6105")).toBe(
+      "place_airport"
+    );
+    expect(placeSignOfName("Terminal 2, Brisbane Airport QLD 4008")).toBe(
+      "place_airport"
+    );
+    // the finished wording, with its own bracket short form
+    expect(placeSignOfName("Terminal 4, PERTH AIRPORT WA (Terminal 4)")).toBe(
+      "place_airport"
+    );
+    // never guessed
+    expect(placeSignOfName("Terminal 1")).toBeNull();
+    expect(placeSignOfName("Terminal 1, Fremantle Port WA 6160")).toBeNull();
+    expect(placeSignOfName("Terminal 2, Perth Bus Station WA 6000")).toBeNull();
+    // a street named for the airport is not the airport
+    expect(placeSignOfName("Terminal 4, Airport Drive, Redcliffe")).toBeNull();
+    expect(
+      placeSignOfName("Terminal 4 Car Park, Perth Airport WA 6105")
+    ).toBeNull();
+  });
+
+  it("supermarkets: by name and by Google's type", () => {
+    for (const label of [
+      "Woolworths Karrinyup, Karrinyup Shopping Centre Dr",
+      "Coles Victoria Park, 1 Albany Hwy",
+      "ALDI Cannington",
+      "IGA Fremantle",
+      "Foodland Rockingham",
+      "Harris Farm Markets Cottesloe",
+      "Spudshed Joondalup",
+      "Mt Lawley Supermarket, Beaufort Street",
+    ])
+      expect(placeSignOfName(label), label).toBe("place_supermarket");
+    expect(placeSignFromTypes(["supermarket", "grocery_store", "food"])).toBe(
+      "place_supermarket"
+    );
+    expect(placeSignFromTypes(["grocery_store", "food"])).toBe(
+      "place_supermarket"
+    );
+  });
+
+  it("a chain's petrol station, liquor store or head office is not a supermarket; a town or street is not a shop", () => {
+    for (const label of [
+      "Coles Express, 5 Albany Hwy",
+      "Woolworths Petrol Cannington",
+      "BWS Cannington",
+      "Dan Murphy's Belmont",
+      "Woolworths Distribution Centre, Perth Airport",
+      "Coles Bay",
+      "Coles Road, BELMONT",
+      "Woolworths Pharmacy Karrinyup",
+    ])
+      expect(placeSignOfName(label), label).not.toBe("place_supermarket");
+    // a supermarket the officer reaches through a mall tap stays the mall
+    expect(placeSignFromTypes(["shopping_mall", "supermarket"])).toBe(
+      "place_shopping_centre"
+    );
+    // a petrol station that Google also calls a grocery store
+    expect(
+      placeSignFromTypes(["gas_station", "grocery_store"], "Coles Express")
+    ).toBeNull();
+    // Karrinyup Shopping Centre is the centre, not the supermarket in it
+    expect(placeSignOfName("Karrinyup Shopping Centre, Karrinyup")).toBe(
+      "place_shopping_centre"
+    );
+  });
+
+  it("hardware stores: by name and by Google's type", () => {
+    for (const label of [
+      "Bunnings Warehouse Cannington, 1 Albany Hwy",
+      "Bunnings Joondalup",
+      "Mitre 10 Fremantle",
+      "Mitre10 Rockingham",
+      "Home Hardware Margaret River",
+      "Total Tools Welshpool",
+      "Cottesloe Hardware, Napoleon Street",
+    ])
+      expect(placeSignOfName(label), label).toBe("place_hardware");
+    expect(placeSignFromTypes(["hardware_store", "store"])).toBe(
+      "place_hardware"
+    );
+    expect(placeSignFromTypes(["home_improvement_store", "store"])).toBe(
+      "place_hardware"
+    );
+  });
+
+  it("a chain's cafe, car park or depot, computer hardware, and a street are not a hardware store", () => {
+    for (const label of [
+      "Bunnings Cafe Cannington",
+      "Bunnings Sausage Sizzle",
+      "Bunnings Car Park, Cannington",
+      "Bunnings Distribution Centre, Kewdale",
+      "Computer Hardware Warehouse, Perth",
+      "Bunnings Road, BELMONT",
+    ])
+      expect(placeSignOfName(label), label).not.toBe("place_hardware");
+    // a mall that holds one stays the mall; the supermarket order is unchanged
+    expect(placeSignFromTypes(["shopping_mall", "hardware_store"])).toBe(
+      "place_shopping_centre"
+    );
+    expect(placeSignOfName("Woolworths Karrinyup")).toBe("place_supermarket");
+  });
+
+  it("parks, reserves and gardens: by name and by Google's type", () => {
+    for (const label of [
+      "Hyde Park, Glendower Street, NORTH PERTH WA (Hyde Park)",
+      "Kings Park and Botanic Garden, Fraser Avenue, WEST PERTH WA",
+      "Kings Park",
+      "Bibra Lake Reserve, Progress Drive, BIBRA LAKE WA",
+      "Wellington Square Gardens, East Perth",
+      "Burswood Park, Great Eastern Highway",
+      "Matilda Bay Playground, Hackett Drive",
+      "Herdsman Lake Wetlands",
+      "Yellagonga Bushland, Joondalup",
+    ])
+      expect(placeSignOfName(label), label).toBe("place_park");
+    for (const t of ["park", "playground", "national_park", "dog_park"])
+      expect(placeSignFromTypes([t, "point_of_interest"]), t).toBe(
+        "place_park"
+      );
+  });
+
+  it("a car park, caravan park, centre, hotel, street, cemetery or a suburb called Park is not a park", () => {
+    for (const label of [
+      "Karrinyup Car Park",
+      "Perth Airport Car Park, Perth Airport WA",
+      "Aspley Caravan Park, Aspley",
+      "Rockingham Holiday Park",
+      "The Park Centre, 789 Albany Highway, VICTORIA PARK WA",
+      "Park Street, SUBIACO",
+      "Park Lane Dental, 12 Hay Street",
+      "Pinnaroo Memorial Park, Padbury",
+      "Reserve Bank of Australia, Perth",
+      "Victoria Park, Victoria Park WA 6100, Australia",
+      "Queens Park Medical Centre, Queens Park",
+    ])
+      expect(placeSignOfName(label), label).not.toBe("place_park");
+    // a cafe, pub or hotel with park in its name keeps its own sign
+    expect(placeSignOfName("Kings Park Cafe, Fraser Avenue")).toBe(
+      "place_cafe"
+    );
+    expect(placeSignOfName("Hyde Park Hotel, Beaufort Street")).not.toBe(
+      "place_park"
+    );
+    // Google also calls these a park, but they are lodging / a cemetery
+    expect(placeSignFromTypes(["park", "lodging"])).not.toBe("place_park");
+    expect(placeSignFromTypes(["park", "rv_park"])).not.toBe("place_park");
+    expect(placeSignFromTypes(["park", "cemetery"])).not.toBe("place_park");
+    // a mall that holds a park-like name stays the mall; types order unchanged
+    expect(placeSignFromTypes(["shopping_mall", "park"])).toBe(
+      "place_shopping_centre"
+    );
   });
 
   it("a pub with a grill stays a pub; a street stays a street", () => {

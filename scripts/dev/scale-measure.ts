@@ -135,6 +135,11 @@ async function main() {
     },
   ];
 
+  // SCALE_ONLY="Incomplete" times only the calls whose name contains the text
+  const only = process.env.SCALE_ONLY?.toLowerCase();
+  const selected = only
+    ? calls.filter(c => c.name.toLowerCase().includes(only))
+    : calls;
   const results: any[] = [];
   const time = async (c: (typeof calls)[number]) => {
     const url =
@@ -160,7 +165,7 @@ async function main() {
     "size".padStart(10),
     " status"
   );
-  for (const c of calls) {
+  for (const c of selected) {
     // a call that already takes over 5 s is not repeated (it would only slow the run)
     const a = await time(c);
     const b = a.ms > 5000 ? a : await time(c);

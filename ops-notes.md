@@ -13,6 +13,55 @@ happen before."
 
 ---
 
+## Backups — what exists (confirmed 2026-10-22)
+
+- **DigitalOcean automated droplet backups are ON** (seen in the control panel,
+  Backups tab): one whole-droplet backup **daily, taken between 4:00 PM and
+  8:00 PM UTC (midnight to 4:00 AM Perth)**, **kept 7 days** (seven backups
+  listed, newest 13 hours old at the time). **Update 2026-10-22 (reported by
+  the owner, not seen by Claude): retention was changed from 7 to 30 days.**
+  They cover the whole disk — the
+  database files **and** the photo files in `uploads/` — and live off the
+  droplet's own disk.
+- **`deploy.sh` also takes a `mysqldump`** into `~/backups` before every deploy
+  (a consistent logical copy of the database only; see the deploy section below
+  for restoring it). It is a deploy-time safety copy, not a schedule, and it
+  sits on the droplet's own disk.
+- **Limits to remember:** (1) a droplet backup of a running database is
+  "crash-consistent" (taken while the database is running): it normally
+  recovers cleanly but is not a guaranteed-clean copy — the nightly dump below
+  is the clean one; (2) **7 days was short** for an evidentiary system (now 30 days, see
+  above) — a problem noticed after the retention period still cannot be
+  recovered from these, so keep long-term copies if records must be kept for
+  years; (3)
+  restoring a droplet backup rolls the **whole server** back to that moment
+  (all newer data is lost) — to recover one thing, create a *new* droplet from
+  the backup and copy the data across; (4) DigitalOcean deletes a droplet's
+  backups when the droplet itself is destroyed (take a manual snapshot first);
+  (5) the encrypted WIPC data needs `WIPC_VAULT_KEY` — keep a copy of the key
+  somewhere safe that is **not** only on the droplet; (6) a backup that has
+  never been restored is untested — do one test restore.
+- **Suggested next steps (not done):** a nightly `mysqldump` (a clean copy,
+  ideally also off the droplet), one tested restore onto a spare droplet, a
+  copy of `WIPC_VAULT_KEY` kept away from the droplet, and a log warning if the newest dump is
+  more than about a day old.
+
+## Monitoring — uptime and error alerts (screenshot seen 2026-10-22)
+
+- **DigitalOcean Uptime check "RunLog Uptime Check"** (seen in a screenshot from the owner): HTTPS check of `https://runlog.com.au`, every 60 s, 10 s timeout, from four regions (USA West, USA East, Europe, Asia East — none in Australia). Alerts: **Site Speed down** (over 1000 ms for 2 min), **Downtime** (2 min wait), **SSL certificate expiry** (30 days). On the day: 30-day uptime 99.84 %, certificate expires 20 Dec 2026 (59 days), last outage 8 days earlier for 1 minute.
+- **Observations.** (1) The Site Speed alert was already **Triggered**: the overseas regions measure 1.2–2.5 s against the 1000 ms threshold, so it is on all the time and will be ignored when it matters — raise it (for example to about 3–4 s) or base it on the Asia East region only. (2) The check fetches the page's HTML, so it **cannot see the database being down or a browser-side blank screen** (the 2026-09-06 incident was exactly that); a health address that touches the database would close the first gap (built in v2.19.2 — see below; `system.health` in `server/_core/systemRouter.ts` still only returns `ok: true` and is not used for this), and the e2e "main pages open" test guards the second before deploy. (3) 99.84 % over 30 days is about 70 minutes of downtime in total, more than the one-minute "last outage" shown — worth looking at the incident list on the Uptime page. (4) The certificate alert is only useful if the certificate renews itself; confirm renewal is automatic. (5) **Not seen:** a Droplet **disk-space** alert (photos add 5–7 GB a year to a 35 GB disk) and CPU / memory alerts (DigitalOcean → Monitoring → Alerts), and who receives the alerts.
+- **`/healthz` (v2.19.2)** — an open address (`server/healthz.ts`, registered first in `server/_core/index.ts`, ahead of sign-in and the page fallback) that asks the database one `SELECT 1` and waits at most 3 s: **200 `{"ok":true}`** when it answers, **503 `{"ok":false}`** when it is down or too slow. It says nothing else (no version, no error text), and the answer is kept 5 s so many callers cost one query. **To use it:** DigitalOcean → Monitoring → Uptime → create a **second** check, type HTTPS, `https://runlog.com.au/healthz`, 60 s, the same regions, and copy the Downtime alert to the same people; keep the existing check (it tells "the site loads", this one "the database works"). After deploying, `curl -i https://runlog.com.au/healthz` should show `200` and `{"ok":true}`. Checked locally: 200 with the database up, 503 after exactly 3 s with it stopped, and back to 200 on its own when it returned; tests in `server/healthz.test.ts` and the e2e smoke test.
+- The app has no alerting of its own. A health check runs at the end of `deploy.sh` (`curl localhost:3000`); the Intelligence slow-rebuild warning is a log line only (`pm2 logs runlog | grep "\[Intelligence\]"`).
+
+## Standing check — Intelligence rebuild speed (added 2026-10-22)
+
+The server logs one line after each rebuild of the Intelligence entity list:
+`pm2 logs runlog --nostream | grep "\[Intelligence\]"`. A line ending in
+**WARNING** means a rebuild now takes 3 s or more, or there are 20,000 or more
+running sheet rows — time to start the planned redesign. The plan, the stages
+and the yearly re-test are in `docs/features/dev-and-ops.md` ("Intelligence
+redesign plan"). Expected: the warning at roughly month 3 of normal growth.
+
 ## 2026-09-26 — Switched droplet from `LocalAI` to `runlogtest`; deploy console dropped near the end but deploy had actually finished
 
 Before switching, `runlogtest` was 73 commits behind `LocalAI` (it had

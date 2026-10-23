@@ -1,7 +1,7 @@
 // Displayed in the sidebar footer so a user can report which build they're
 // on. Keep in sync with package.json's "version" — bump both together on
 // each shippable change.
-export const APP_VERSION = "2.18.0";
+export const APP_VERSION = "2.25.1";
 
 export const COOKIE_NAME = "app_session_id";
 export const ONE_YEAR_MS = 1000 * 60 * 60 * 24 * 365; // kept for reference
@@ -19,11 +19,36 @@ export const NOT_ADMIN_ERR_MSG = "You do not have required permission (10002)";
 // rest are full alternate directions.
 export const COLOR_PALETTES = [
   { id: "steel-blue", label: "Steel Blue" },
-  { id: "federal-navy", label: "Federal Navy" },
-  { id: "graphite", label: "Graphite" },
+  { id: "harbour-teal", label: "Harbour Teal" },
+  { id: "monochrome", label: "Monochrome" },
   { id: "phosphor", label: "Phosphor" },
   { id: "amber-console", label: "Amber Console" },
   { id: "case-file", label: "Case File" },
 ] as const;
 export type ColorPalette = (typeof COLOR_PALETTES)[number]["id"];
 export const DEFAULT_COLOR_PALETTE: ColorPalette = "steel-blue";
+
+/** A saved palette id from before "Federal Navy" and "Graphite" were removed
+ * (or any unknown value) reads as the default, so nobody is left on a theme
+ * that no longer exists. */
+export function normalizeColorPalette(value: string | null | undefined) {
+  return COLOR_PALETTES.some(p => p.id === value)
+    ? (value as ColorPalette)
+    : DEFAULT_COLOR_PALETTE;
+}
+
+// How the header and left side panel look in Light mode (Appearance). "dark"
+// is the original look — a dark rail whatever the palette. "light" takes the
+// palette's own light colours, and the folder icon colours automatically use
+// a deeper shade so the pale ones stay readable on white (index.css,
+// data-chrome). Dark mode is always dark, so this choice only shows in Light.
+export const CHROME_STYLES = [
+  { id: "dark", label: "Dark (as now)" },
+  { id: "light", label: "Light (matches palette)" },
+] as const;
+export type ChromeStyle = (typeof CHROME_STYLES)[number]["id"];
+export const DEFAULT_CHROME_STYLE: ChromeStyle = "dark";
+
+export function normalizeChromeStyle(value: string | null | undefined) {
+  return value === "light" ? "light" : DEFAULT_CHROME_STYLE;
+}

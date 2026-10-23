@@ -25,6 +25,20 @@ async function main() {
     "SELECT TABLE_NAME t, COLUMN_NAME c FROM information_schema.columns WHERE TABLE_SCHEMA = ?",
     [dbName]
   );
+  // Enum columns: the values the database allows, by table.column.
+  const [enumRows] = await conn.query(
+    "SELECT TABLE_NAME t, COLUMN_NAME c, COLUMN_TYPE ct FROM information_schema.columns WHERE TABLE_SCHEMA = ? AND DATA_TYPE = 'enum'",
+    [dbName]
+  );
+  const enumsInDb = new Map<string, string[]>();
+  for (const r of enumRows as { t: string; c: string; ct: string }[]) {
+    enumsInDb.set(
+      `${r.t}.${r.c}`,
+      Array.from(r.ct.matchAll(/'((?:[^']|'')*)'/g)).map(m =>
+        m[1].replace(/''/g, "'")
+      )
+    );
+  }
   const [idxRows] = await conn.query(
     "SELECT DISTINCT TABLE_NAME t, INDEX_NAME i FROM information_schema.statistics WHERE TABLE_SCHEMA = ?",
     [dbName]
@@ -53,6 +67,16 @@ async function main() {
     const names = new Set<string>();
     for (const col of Object.values(getTableColumns(v))) {
       names.add(col.name);
+      const wanted = (col as { enumValues?: string[] }).enumValues;
+      const have = enumsInDb.get(`${table}.${col.name}`);
+      if (wanted && have) {
+        const missing = wanted.filter(x => !have.includes(x));
+        const extra = have.filter(x => !wanted.includes(x));
+        if (missing.length || extra.length)
+          problems.push(
+            `enum values differ: ${table}.${col.name} (schema has ${JSON.stringify(wanted)}, database has ${JSON.stringify(have)})`
+          );
+      }
       if (!cols.has(col.name))
         problems.push(
           `column in schema.ts but not in the database: ${table}.${col.name}`

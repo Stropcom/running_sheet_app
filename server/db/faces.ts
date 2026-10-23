@@ -3,6 +3,7 @@ import {
   desc,
   eq,
   inArray,
+  ne,
   isNotNull,
   isNull,
   or,
@@ -444,6 +445,9 @@ export async function getEntityLinkCounts(
     .where(
       and(
         isNull(rowAttachments.deletedAt),
+        // An item photo is not an Intelligence entity: it has no profile, so
+        // it never counts here (shared/attachmentLinking.ts).
+        ne(attachmentEntityLinks.category, "item"),
         allowedOperationIds
           ? inArray(rowAttachments.operationId, Array.from(allowedOperationIds))
           : undefined

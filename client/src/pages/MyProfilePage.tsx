@@ -26,8 +26,14 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { useTheme } from "@/contexts/ThemeContext";
-import { COLOR_PALETTES, DEFAULT_COLOR_PALETTE } from "@shared/const";
+import {
+  CHROME_STYLES,
+  COLOR_PALETTES,
+  normalizeChromeStyle,
+  normalizeColorPalette,
+} from "@shared/const";
 import { CommandChip } from "@/components/admin/CommandChip";
+import { ProfileSection } from "@/components/ProfileSection";
 import { PasskeyDevicesCard } from "@/components/PasskeyDevicesCard";
 import { LevelPill } from "@/components/admin/LevelPill";
 import {
@@ -91,13 +97,13 @@ const PALETTE_SWATCHES: Record<
     light: { bg: "oklch(0.97 0.0048 250)", accent: "oklch(0.5 0.16 220)" },
     dark: { bg: "oklch(0.12 0.01 250)", accent: "oklch(0.72 0.14 220)" },
   },
-  "federal-navy": {
-    light: { bg: "oklch(0.97 0.006 250)", accent: "oklch(0.47 0.13 250)" },
-    dark: { bg: "oklch(0.075 0.05 253)", accent: "oklch(0.74 0.11 224)" },
+  "harbour-teal": {
+    light: { bg: "oklch(0.97 0.0048 215)", accent: "oklch(0.5 0.152 192)" },
+    dark: { bg: "oklch(0.12 0.01 215)", accent: "oklch(0.72 0.133 192)" },
   },
-  graphite: {
-    light: { bg: "oklch(0.97 0.0024 60)", accent: "oklch(0.5 0.11 225)" },
-    dark: { bg: "oklch(0.11 0.003 50)", accent: "oklch(0.78 0.06 220)" },
+  monochrome: {
+    light: { bg: "oklch(0.97 0 0)", accent: "oklch(0.3 0 0)" },
+    dark: { bg: "oklch(0.12 0 0)", accent: "oklch(0.88 0 0)" },
   },
   phosphor: {
     light: { bg: "oklch(0.97 0.0036 150)", accent: "oklch(0.52 0.12 150)" },
@@ -144,13 +150,11 @@ function MySharedAccess({ command }: { command?: CommandCode }) {
   const { data: shares } = trpc.profile.mySharedAccess.useQuery();
   if (!shares || shares.length === 0) return null;
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-      <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
-        <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
-          <Shield className="w-4 h-4 text-primary" />
-          Shared with you
-        </h2>
-      </div>
+    <ProfileSection
+      id="shared"
+      icon={<Shield className="w-4 h-4 text-primary" />}
+      title="Shared with you"
+    >
       <p className="text-xs text-foreground/70 mb-4">
         Operations from other Commands you can open
         {command ? ` (you belong to ${COMMAND_LABELS[command]})` : ""}.
@@ -174,7 +178,7 @@ function MySharedAccess({ command }: { command?: CommandCode }) {
           </div>
         ))}
       </div>
-    </div>
+    </ProfileSection>
   );
 }
 
@@ -369,13 +373,21 @@ export default function MyProfilePage() {
 
   // ── Accent colour palette ────────────────────────────────────────────────
   const [colorPalette, setColorPalette] = useState<string>(
-    DEFAULT_COLOR_PALETTE
+    normalizeColorPalette(null)
+  );
+  const [chromeStyle, setChromeStyle] = useState<string>(
+    normalizeChromeStyle(null)
   );
 
   useEffect(() => {
     if (profile) {
       const p = profile as { colorPalette?: string | null };
-      setColorPalette(p.colorPalette ?? DEFAULT_COLOR_PALETTE);
+      setColorPalette(normalizeColorPalette(p.colorPalette));
+      setChromeStyle(
+        normalizeChromeStyle(
+          (profile as { chromeStyle?: string | null }).chromeStyle
+        )
+      );
     }
   }, [profile]);
 
@@ -383,6 +395,16 @@ export default function MyProfilePage() {
     trpc.profile.updateColorPalette.useMutation({
       onError: err => toast.error(err.message),
     });
+
+  const updateChromeStyleMutation = trpc.profile.updateChromeStyle.useMutation({
+    onError: err => toast.error(err.message),
+  });
+
+  const handleSelectChromeStyle = (id: string) => {
+    setChromeStyle(id);
+    document.documentElement.dataset.chrome = id;
+    updateChromeStyleMutation.mutate({ style: id });
+  };
 
   const handleSelectPalette = (id: string) => {
     setColorPalette(id);
@@ -494,13 +516,11 @@ export default function MyProfilePage() {
         </div>
 
         {/* Profile Information Card */}
-        <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-          <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
-            <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
-              <User className="w-4 h-4 text-primary" />
-              Profile Information
-            </h2>
-          </div>
+        <ProfileSection
+          id="info"
+          icon={<User className="w-4 h-4 text-primary" />}
+          title="Profile Information"
+        >
           <p className="text-xs text-foreground/70 mb-4">
             Your account details as set by an administrator.
           </p>
@@ -549,19 +569,17 @@ export default function MyProfilePage() {
               />
             </div>
           )}
-        </div>
+        </ProfileSection>
 
         <MySharedAccess command={profile?.command as CommandCode | undefined} />
 
         {/* Intelligence Entity Scan Card — admin-only */}
         {profile?.role === "admin" && (
-          <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-            <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
-              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
-                <ScanSearch className="w-4 h-4 text-primary" />
-                Intelligence Entity Scan
-              </h2>
-            </div>
+          <ProfileSection
+            id="entity-scan"
+            icon={<ScanSearch className="w-4 h-4 text-primary" />}
+            title="Intelligence Entity Scan"
+          >
             <p className="text-xs text-foreground/70 mb-4">
               A backup check over every entity mined into the Intelligence
               folder — flags shapes that suggest a parsing slip (a placeholder
@@ -593,21 +611,21 @@ export default function MyProfilePage() {
                 />
               </div>
             )}
-          </div>
+          </ProfileSection>
         )}
 
         {/* Missed-Entity Scan Card (Local AI Step 2, beta) — admin-only */}
         {profile?.role === "admin" && (
-          <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-            <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
-              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
-                <ScanSearch className="w-4 h-4 text-primary" />
-                Missed-Entity Scan
-                <span className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/40 rounded px-1.5 py-0.5">
-                  Beta
-                </span>
-              </h2>
-            </div>
+          <ProfileSection
+            id="missed-scan"
+            icon={<ScanSearch className="w-4 h-4 text-primary" />}
+            title="Missed-Entity Scan"
+            badge={
+              <span className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/40 rounded px-1.5 py-0.5">
+                Beta
+              </span>
+            }
+          >
             <p className="text-xs text-foreground/70 mb-4">
               Runs a small on-device model over every observation, looking for a
               person's name written in a way the usual rules didn't recognise —
@@ -657,22 +675,22 @@ export default function MyProfilePage() {
                 />
               </div>
             )}
-          </div>
+          </ProfileSection>
         )}
 
         {/* Appearance Card */}
         {toggleTheme && (
-          <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-            <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
-              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
-                {theme === "dark" ? (
-                  <Moon className="w-4 h-4 text-primary" />
-                ) : (
-                  <Sun className="w-4 h-4 text-primary" />
-                )}
-                Appearance
-              </h2>
-            </div>
+          <ProfileSection
+            id="appearance"
+            icon={
+              theme === "dark" ? (
+                <Moon className="w-4 h-4 text-primary" />
+              ) : (
+                <Sun className="w-4 h-4 text-primary" />
+              )
+            }
+            title="Appearance"
+          >
             <p className="text-xs text-foreground/70 mb-4">
               Choose your preferred colour theme.
             </p>
@@ -706,7 +724,7 @@ export default function MyProfilePage() {
               sidebar as well as the accent, previewed here in whichever of
               light/dark you've picked above.
             </p>
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
               {COLOR_PALETTES.map(p => {
                 const swatch =
                   PALETTE_SWATCHES[p.id][theme === "dark" ? "dark" : "light"];
@@ -738,7 +756,43 @@ export default function MyProfilePage() {
                 );
               })}
             </div>
-          </div>
+
+            <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mt-5 mb-2">
+              Header and left side panel
+            </p>
+            <div
+              className="grid grid-cols-2 gap-3"
+              role="group"
+              aria-label="Header and left side panel"
+            >
+              {CHROME_STYLES.map(c => {
+                const selected = chromeStyle === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    data-testid={`chrome-style-${c.id}`}
+                    aria-pressed={selected}
+                    onClick={() => handleSelectChromeStyle(c.id)}
+                    className={`flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium transition-all ${
+                      selected
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-foreground/70 hover:border-border hover:text-foreground"
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-foreground/70 mt-2">
+              {theme === "dark"
+                ? "In Dark mode the header and side panel are already dark, so this choice only shows in Light mode."
+                : chromeStyle === "light"
+                  ? "The header and side panel use the palette's own light colours. The folder icons keep their colours, one step deeper so they stay easy to see on white."
+                  : "A dark header and side panel, whatever the palette."}
+            </p>
+          </ProfileSection>
         )}
 
         {/* Passkey devices: only there when the owner's requirement is on, or this
@@ -748,13 +802,12 @@ export default function MyProfilePage() {
         </div>
 
         {/* Change Password Card */}
-        <div className="overflow-hidden rounded-xl border border-border bg-card p-6 shadow-sm">
-          <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
-            <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-primary" />
-              Change Password
-            </h2>
-          </div>
+        <ProfileSection
+          id="password"
+          icon={<KeyRound className="w-4 h-4 text-primary" />}
+          title="Change Password"
+          className="mb-0"
+        >
           <p className="text-xs text-foreground/70 mb-5">
             Enter your current password to set a new one.
           </p>
@@ -799,7 +852,7 @@ export default function MyProfilePage() {
                 : "Update Password"}
             </Button>
           </form>
-        </div>
+        </ProfileSection>
       </div>
     </DashboardLayout>
   );

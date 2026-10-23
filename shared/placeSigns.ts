@@ -1,5 +1,6 @@
 // Square signs for banks, post offices, pubs, hotels (accommodation), gyms,
-// shopping centres, cafes, restaurants, fast food / takeaway and airports —
+// shopping centres, supermarkets, hardware stores, parks, cafes, restaurants, fast food / takeaway and
+// airports —
 // the same idea as the bus stop and train station signs
 // (shared/transitPlace.ts): the default map pin of a place that is one of
 // these is its sign instead of the house, however the place got into the
@@ -7,8 +8,8 @@
 //
 // Two ways to tell, both deterministic:
 //   1. Google's place types, when we have them (a tapped place, a suggestion):
-//      bank / atm, post_office, bar, lodging, gym, shopping_mall, cafe,
-//      restaurant, fast food / takeaway, airport.
+//      bank / atm, post_office, bar, lodging, gym, shopping_mall, supermarket /
+//      grocery, hardware / home improvement, cafe, restaurant, fast food / takeaway, airport.
 //   2. The way the place is written — its NAME, the first part of the label
 //      ("Commonwealth Bank East Victoria Park Branch, Shop 19 The Park Centre,
 //      789 Albany Highway, …"), never the street part, so "Bank Street" or
@@ -29,6 +30,9 @@ export type PlaceSignIcon =
   | "place_hotel"
   | "place_gym"
   | "place_shopping_centre"
+  | "place_supermarket"
+  | "place_hardware"
+  | "place_park"
   | "place_cafe"
   | "place_restaurant"
   | "place_fast_food"
@@ -41,6 +45,9 @@ export const PLACE_SIGN_ICONS: PlaceSignIcon[] = [
   "place_hotel",
   "place_gym",
   "place_shopping_centre",
+  "place_supermarket",
+  "place_hardware",
+  "place_park",
   "place_cafe",
   "place_restaurant",
   "place_fast_food",
@@ -72,6 +79,35 @@ const GYM_RE =
 const CENTRE_RE =
   /\bshopping\s+(?:centre|center|mall|plaza|village|square|arcade|complex|precinct)\b|\btown\s+centre\b|\bwestfield\b|\bgalleria\b/i;
 
+// A supermarket by its name: the word, or one of the big grocery chains.
+// "Coles Bay" is a town, not a shop; a chain's petrol station, liquor store,
+// pharmacy or head office is not the supermarket.
+const SUPERMARKET_RE =
+  /\bsupermarkets?\b|\b(?:woolworths|aldi|iga|foodland|foodworks|spudshed|harris\s+farm)\b|\bcoles\b(?!\s+(?:bay|point|beach|creek|park|island)\b)/i;
+const NOT_A_SUPERMARKET_RE =
+  /\b(?:express|petrol|fuel|servo|liquor|bws|dan\s+murphy'?s?|pharmacy|chemist|car\s*park|parking|distribution|depot|warehouse|head\s+office|support\s+office)\b/i;
+
+// A hardware store by its name: the big chains, or the word. "Computer
+// hardware" is an IT shop; a chain's cafe, sausage sizzle, car park or
+// distribution centre is not the store ("Bunnings Warehouse" IS the store).
+const HARDWARE_RE =
+  /\b(?:bunnings|mitre\s*10|home\s+hardware|total\s+tools|hardware)\b/i;
+const NOT_A_HARDWARE_RE =
+  /\b(?:computer|it|tech|software)\s+hardware\b|\b(?:cafe|coffee|sausage|bbq|car\s*park|parking|distribution|depot|head\s+office|support\s+office)\b/i;
+
+// A park, reserve or gardens by its name. "Park" counts only as the END of the
+// name ("Hyde Park", "Kings Park" — not "Park Lane Dental"); reserve, gardens,
+// playground, bushland and wetlands count anywhere in it. Not a car park, a
+// caravan or holiday park, a retirement village, a cemetery ("Memorial Park"),
+// the Reserve Bank, or a medical centre, school, church… named for a park. And
+// not a suburb that is called "… Park" ("Victoria Park, Victoria Park WA"):
+// the label's later parts then start with the same name.
+const PARK_END_RE = /\bpark$/i;
+const PARK_WORD_RE =
+  /\b(?:reserve|gardens|botanic(?:al)?\s+gardens?|playground|bushland|wetlands?)\b/i;
+const NOT_A_PARK_RE =
+  /\b(?:car\s*park|carpark|parking|caravan|holiday|tourist|trailer|mobile\s+home|retirement|aged\s+care|nursing|village|estate|medical|dental|clinic|school|college|childcare|child\s+care|church|hospital|funeral|cemetery|crematorium|memorial\s+park|reserve\s+bank)\b/i;
+
 const CAFE_RE =
   /\b(?:cafes?|coffee|espresso|roasters?|roastery|barista|starbucks|gloria\s+jean'?s|zarraffa'?s)\b/i;
 const FAST_FOOD_RE =
@@ -83,6 +119,17 @@ const AIRPORT_RE =
 // An airport's car park, station, hotel… is not the airport.
 const NOT_AN_AIRPORT_RE =
   /\b(?:station|parking|car\s*park|taxi|shuttle|police|fire|freight|cargo|storage|motel|hotel|inn|lodge|apartments?)\b/i;
+
+// A numbered terminal ("Terminal 4") is only read as an airport terminal when
+// the rest of its label says the place is at an airport — the locality part,
+// as Google writes it: "Terminal 4, Perth Airport WA 6105, Australia". A bare
+// "Terminal 1" could be a port or a bus terminal, so it is never guessed, and
+// a street called "Airport Drive" does not count (the part must END in the
+// airport's name, with at most a state and postcode after it).
+const NUMBERED_TERMINAL_RE =
+  /^terminal\s+\d+[a-z]?(?:\s+(?:domestic|international|regional))?$/i;
+const AIRPORT_LOCALITY_RE =
+  /\b(?:airport|airfield|aerodrome)(?:\s+(?:wa|nsw|vic|qld|sa|tas|nt|act))?(?:\s+\d{4})?$/i;
 
 /** The first part of a location label — the place's own name, with accents
  * and curly apostrophes made plain ("Café" → "Cafe"). */
@@ -119,12 +166,44 @@ export function placeSignOfName(label: string): PlaceSignIcon | null {
     return "place_bank";
   if (GYM_RE.test(name)) return "place_gym";
   if (CENTRE_RE.test(name)) return "place_shopping_centre";
+  if (SUPERMARKET_RE.test(name) && !NOT_A_SUPERMARKET_RE.test(name))
+    return "place_supermarket";
+  if (HARDWARE_RE.test(name) && !NOT_A_HARDWARE_RE.test(name))
+    return "place_hardware";
   // "Hungry Jack's Airport" is a burger place; the airport comes last.
   if (CAFE_RE.test(name)) return "place_cafe";
   if (FAST_FOOD_RE.test(name)) return "place_fast_food";
   if (RESTAURANT_RE.test(name)) return "place_restaurant";
   if (AIRPORT_RE.test(name) && !NOT_AN_AIRPORT_RE.test(name))
     return "place_airport";
+  // "Terminal 4, Perth Airport WA 6105, Australia": a numbered terminal whose
+  // locality is an airport. Each terminal is its own place; the sign is the same.
+  if (NUMBERED_TERMINAL_RE.test(name)) {
+    // The address may end in its own bracket short form —
+    // "Terminal 4, PERTH AIRPORT WA (Terminal 4)" — which is not part of it.
+    const rest = (label ?? "").split(",").slice(1);
+    if (
+      rest.some(part =>
+        AIRPORT_LOCALITY_RE.test(part.replace(/\s*\([^)]*\)\s*$/, "").trim())
+      )
+    )
+      return "place_airport";
+  }
+  // A park, reserve or gardens — last, so a cafe, pub, hotel or centre with a
+  // park in its name keeps its own sign.
+  if (
+    (PARK_END_RE.test(name) || PARK_WORD_RE.test(name)) &&
+    !NOT_A_PARK_RE.test(name)
+  ) {
+    const later = (label ?? "")
+      .split(",")
+      .slice(1)
+      .map(part => part.trim().toLowerCase());
+    // The place's own address follows its name; a suburb that is itself called
+    // "… Park" repeats its name in the next part.
+    if (!later.some(part => part.startsWith(name.toLowerCase())))
+      return "place_park";
+  }
   return null;
 }
 
@@ -142,6 +221,38 @@ export function placeSignFromTypes(
   if (t.has("shopping_mall")) return "place_shopping_centre";
   if (t.has("airport") || t.has("international_airport"))
     return "place_airport";
+  // Google's supermarket / grocery types (a mall that holds one is still the
+  // mall, settled above). A chain's petrol station or liquor store carries
+  // other types and is not this.
+  if (
+    (t.has("supermarket") ||
+      t.has("grocery_store") ||
+      t.has("grocery_or_supermarket")) &&
+    !NOT_A_SUPERMARKET_RE.test(name)
+  )
+    return "place_supermarket";
+  // Google's hardware / home-improvement types (Bunnings, Mitre 10).
+  if (
+    (t.has("hardware_store") || t.has("home_improvement_store")) &&
+    !NOT_A_HARDWARE_RE.test(name)
+  )
+    return "place_hardware";
+  // Google's park types — but not a caravan park, campground or lodging, or a
+  // cemetery that Google also calls a park.
+  if (
+    [
+      "park",
+      "national_park",
+      "state_park",
+      "city_park",
+      "dog_park",
+      "playground",
+      "botanical_garden",
+    ].some(x => t.has(x)) &&
+    !["lodging", "rv_park", "campground", "cemetery"].some(x => t.has(x)) &&
+    !NOT_A_PARK_RE.test(name)
+  )
+    return "place_park";
   const lodging = t.has("lodging");
   const bar = t.has("bar");
   if (lodging && bar)

@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { COLOR_PALETTES } from "@shared/const";
+import { CHROME_STYLES, COLOR_PALETTES } from "@shared/const";
 import { protectedProcedure, router } from "../_core/trpc";
 import {
   createAuditLog,
@@ -86,6 +86,17 @@ export const profileRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       await updateUser(ctx.user.id, { colorPalette: input.palette });
+      return { success: true };
+    }),
+
+  updateChromeStyle: protectedProcedure
+    .input(
+      z.object({
+        style: z.enum(CHROME_STYLES.map(c => c.id) as [string, ...string[]]),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      await updateUser(ctx.user.id, { chromeStyle: input.style });
       return { success: true };
     }),
 });

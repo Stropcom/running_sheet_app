@@ -1,5 +1,5 @@
 import { Toaster } from "@/components/ui/sonner";
-import { DEFAULT_COLOR_PALETTE } from "@shared/const";
+import { normalizeChromeStyle, normalizeColorPalette } from "@shared/const";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
@@ -149,7 +149,7 @@ function useThemeColorMeta() {
     const observer = new MutationObserver(sync);
     observer.observe(root, {
       attributes: true,
-      attributeFilter: ["class", "data-palette", "style"],
+      attributeFilter: ["class", "data-palette", "data-chrome", "style"],
     });
     return () => observer.disconnect();
   }, []);
@@ -168,9 +168,16 @@ function AppearanceApplier() {
 
   useEffect(() => {
     if (!user) return;
-    const u = user as { colorPalette?: string | null };
-    document.documentElement.dataset.palette =
-      u.colorPalette ?? DEFAULT_COLOR_PALETTE;
+    const u = user as {
+      colorPalette?: string | null;
+      chromeStyle?: string | null;
+    };
+    document.documentElement.dataset.palette = normalizeColorPalette(
+      u.colorPalette
+    );
+    document.documentElement.dataset.chrome = normalizeChromeStyle(
+      u.chromeStyle
+    );
   }, [user]);
 
   // After the data has been zeroed (Access Management → Zero data) this

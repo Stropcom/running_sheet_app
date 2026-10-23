@@ -112,7 +112,7 @@ test("Governance lists the new sheet as needing attention", async ({
   await expect(
     page.getByText("Running sheet write-off checklist")
   ).toBeVisible();
-  await expect(page.getByText(/sheets? need attention/).first()).toBeVisible();
+  await expect(page.getByText(/\d+ to review/).first()).toBeVisible();
 });
 
 test("Add Target opens with its four steps", async ({ page }) => {

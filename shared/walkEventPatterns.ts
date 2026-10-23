@@ -902,8 +902,11 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       );
       // They walked back to this vehicle.
       const who = text.match(/([A-Za-z][^.\n]*?)\s*\bexited\b/);
-      // Walked towards it — not necessarily in it.
-      if (who) noteJoined(who[1], outMatch[3], row.id, false);
+      // Walked towards it — not necessarily in it — unless the same sentence
+      // then says they got in ("... to Vehicle X (Vehicle X), and entered via
+      // the driver's, front passenger and rear passenger doors respectively").
+      const gotIn = GOT_IN_AFTER_VEHICLE.test(text.slice(outMatch.index ?? 0));
+      if (who) noteJoined(who[1], outMatch[3], row.id, gotIn);
       return;
     }
 

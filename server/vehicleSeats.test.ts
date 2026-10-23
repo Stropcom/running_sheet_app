@@ -515,3 +515,56 @@ describe("'respectively': the seats are given in the order the people are named"
     expect(scan.placements.every(p => !p.seat)).toBe(true);
   });
 });
+
+describe("three people who walked a way to the vehicle and got in 'respectively' (the JOHNSON row)", () => {
+  const ARR =
+    "Vehicle 1MEN83, MENON driver and IBARRA front passenger, arrived at The Rowing Pavilion, 4 The Esplanade, MOUNT PLEASANT WA (The Rowing Pavilion) parked in the car park.";
+  const ROW =
+    "MENON, IBARRA and Don JOHNSON (JOHNSON) exited The Rowing Pavilion, walked along The Esplanade to Vehicle 1MEN83 (Vehicle 1MEN83), and entered via the driver's, front passenger and rear passenger door's respectively.";
+
+  it("puts all three in the vehicle with their seats, JOHNSON the rear passenger", () => {
+    const scan = scanWalkEvents(
+      [ARR, ROW].map((observation, i) => ({
+        id: i + 1,
+        sheetId: 1,
+        observation,
+      }))
+    );
+    const seats = Object.fromEntries(
+      scan.placements.map(p => [p.name, p.seat])
+    );
+    expect(seats).toEqual({
+      MENON: "driver",
+      IBARRA: "front passenger",
+      "Don JOHNSON (JOHNSON)": "rear passenger",
+    });
+    expect(scan.placements.every(p => p.inside)).toBe(true);
+    const self = { rego: "1MEN83", rowId: 1, names: "MENON and IBARRA" };
+    const occupants = vehicleOccupants(self, [], scan.placements, [self]);
+    expect(
+      seatedOccupantWording({
+        desc: "MENON driver and IBARRA front passenger",
+        descRowId: 1,
+        rego: "1MEN83",
+        occupants,
+        placements: scan.placements,
+      })
+    ).toBe(
+      "MENON driver, IBARRA front passenger and Don JOHNSON (JOHNSON) rear passenger"
+    );
+  });
+
+  it("walking a way towards the vehicle, with no 'entered', is still not inside", () => {
+    const scan = scanWalkEvents([
+      {
+        id: 1,
+        sheetId: 1,
+        observation:
+          "MENON and IBARRA exited The Rowing Pavilion, walked along The Esplanade to Vehicle 1MEN83 (Vehicle 1MEN83).",
+      },
+    ]);
+    expect(scan.placements.every(p => p.inside === false && !p.seat)).toBe(
+      true
+    );
+  });
+});

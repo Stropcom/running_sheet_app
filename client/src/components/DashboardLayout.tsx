@@ -1987,7 +1987,7 @@ function DashboardLayoutContent({
           Phones keep their own compact header inside SidebarInset instead —
           there's no room for this there. */}
       {!isMobile && (
-        <header className="relative z-30 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-sidebar-border bg-sidebar px-3 print:hidden">
+        <header className="app-chrome relative z-30 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-sidebar-border bg-sidebar px-3 print:hidden">
           {/* Left: folder menu, refresh, notifications */}
           <div className="flex items-center gap-2">
             <button

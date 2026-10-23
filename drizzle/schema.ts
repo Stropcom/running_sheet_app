@@ -85,6 +85,10 @@ export const users = mysqlTable("users", {
   // Selectable accent colour palette — see shared/const.ts COLOR_PALETTES.
   // Null falls back to the default palette client-side.
   colorPalette: varchar("colorPalette", { length: 32 }),
+  // Header and left side panel in Light mode: "dark" (the original look) or
+  // "light" (takes the palette's light colours) — see CHROME_STYLES. Null
+  // reads as "dark".
+  chromeStyle: varchar("chromeStyle", { length: 16 }),
   // Opt-out for CTO Roster shift-change notifications specifically (not a
   // global notification kill switch) — added while the roster is still
   // being actively tested/edited, so people aren't spammed by every change.

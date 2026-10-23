@@ -168,3 +168,23 @@ test("Add Row, sort and search stay at the top while the rows scroll", async ({
     ).toBeVisible();
   }
 });
+
+test("Appearance: the light header and side panel is saved, applied and kept across a reload", async ({
+  page,
+}) => {
+  await page.goto("/profile");
+  const html = page.locator("html");
+  await page.getByTestId("chrome-style-light").click();
+  await expect(html).toHaveAttribute("data-chrome", "light");
+  await page.reload();
+  await expect(html).toHaveAttribute("data-chrome", "light");
+  // The side panel really changed colour (light, not the dark rail).
+  const rail = page.locator('[data-sidebar="sidebar"]').first();
+  const railColour = () =>
+    rail.evaluate(el => getComputedStyle(el).backgroundColor);
+  const lightColour = await railColour();
+  // Put it back so the next test sees the default.
+  await page.getByTestId("chrome-style-dark").click();
+  await expect(html).toHaveAttribute("data-chrome", "dark");
+  expect(await railColour()).not.toBe(lightColour);
+});

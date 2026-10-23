@@ -26,7 +26,12 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Link } from "wouter";
 import { useTheme } from "@/contexts/ThemeContext";
-import { COLOR_PALETTES, DEFAULT_COLOR_PALETTE } from "@shared/const";
+import {
+  CHROME_STYLES,
+  COLOR_PALETTES,
+  normalizeChromeStyle,
+  normalizeColorPalette,
+} from "@shared/const";
 import { CommandChip } from "@/components/admin/CommandChip";
 import { PasskeyDevicesCard } from "@/components/PasskeyDevicesCard";
 import { LevelPill } from "@/components/admin/LevelPill";
@@ -91,13 +96,13 @@ const PALETTE_SWATCHES: Record<
     light: { bg: "oklch(0.97 0.0048 250)", accent: "oklch(0.5 0.16 220)" },
     dark: { bg: "oklch(0.12 0.01 250)", accent: "oklch(0.72 0.14 220)" },
   },
-  "federal-navy": {
-    light: { bg: "oklch(0.97 0.006 250)", accent: "oklch(0.47 0.13 250)" },
-    dark: { bg: "oklch(0.075 0.05 253)", accent: "oklch(0.74 0.11 224)" },
+  "harbour-teal": {
+    light: { bg: "oklch(0.97 0.0048 215)", accent: "oklch(0.5 0.152 192)" },
+    dark: { bg: "oklch(0.12 0.01 215)", accent: "oklch(0.72 0.133 192)" },
   },
-  graphite: {
-    light: { bg: "oklch(0.97 0.0024 60)", accent: "oklch(0.5 0.11 225)" },
-    dark: { bg: "oklch(0.11 0.003 50)", accent: "oklch(0.78 0.06 220)" },
+  monochrome: {
+    light: { bg: "oklch(0.97 0 0)", accent: "oklch(0.3 0 0)" },
+    dark: { bg: "oklch(0.12 0 0)", accent: "oklch(0.88 0 0)" },
   },
   phosphor: {
     light: { bg: "oklch(0.97 0.0036 150)", accent: "oklch(0.52 0.12 150)" },
@@ -369,13 +374,21 @@ export default function MyProfilePage() {
 
   // ── Accent colour palette ────────────────────────────────────────────────
   const [colorPalette, setColorPalette] = useState<string>(
-    DEFAULT_COLOR_PALETTE
+    normalizeColorPalette(null)
+  );
+  const [chromeStyle, setChromeStyle] = useState<string>(
+    normalizeChromeStyle(null)
   );
 
   useEffect(() => {
     if (profile) {
       const p = profile as { colorPalette?: string | null };
-      setColorPalette(p.colorPalette ?? DEFAULT_COLOR_PALETTE);
+      setColorPalette(normalizeColorPalette(p.colorPalette));
+      setChromeStyle(
+        normalizeChromeStyle(
+          (profile as { chromeStyle?: string | null }).chromeStyle
+        )
+      );
     }
   }, [profile]);
 
@@ -383,6 +396,16 @@ export default function MyProfilePage() {
     trpc.profile.updateColorPalette.useMutation({
       onError: err => toast.error(err.message),
     });
+
+  const updateChromeStyleMutation = trpc.profile.updateChromeStyle.useMutation({
+    onError: err => toast.error(err.message),
+  });
+
+  const handleSelectChromeStyle = (id: string) => {
+    setChromeStyle(id);
+    document.documentElement.dataset.chrome = id;
+    updateChromeStyleMutation.mutate({ style: id });
+  };
 
   const handleSelectPalette = (id: string) => {
     setColorPalette(id);
@@ -706,7 +729,7 @@ export default function MyProfilePage() {
               sidebar as well as the accent, previewed here in whichever of
               light/dark you've picked above.
             </p>
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
               {COLOR_PALETTES.map(p => {
                 const swatch =
                   PALETTE_SWATCHES[p.id][theme === "dark" ? "dark" : "light"];
@@ -738,6 +761,42 @@ export default function MyProfilePage() {
                 );
               })}
             </div>
+
+            <p className="text-xs font-semibold uppercase tracking-wide text-foreground/70 mt-5 mb-2">
+              Header and left side panel
+            </p>
+            <div
+              className="grid grid-cols-2 gap-3"
+              role="group"
+              aria-label="Header and left side panel"
+            >
+              {CHROME_STYLES.map(c => {
+                const selected = chromeStyle === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    data-testid={`chrome-style-${c.id}`}
+                    aria-pressed={selected}
+                    onClick={() => handleSelectChromeStyle(c.id)}
+                    className={`flex items-center justify-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium transition-all ${
+                      selected
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border text-foreground/70 hover:border-border hover:text-foreground"
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-foreground/70 mt-2">
+              {theme === "dark"
+                ? "In Dark mode the header and side panel are already dark, so this choice only shows in Light mode."
+                : chromeStyle === "light"
+                  ? "The header and side panel use the palette's own light colours. The folder icons keep their colours, one step deeper so they stay easy to see on white."
+                  : "A dark header and side panel, whatever the palette."}
+            </p>
           </div>
         )}
 

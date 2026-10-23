@@ -33,6 +33,7 @@ import {
   normalizeColorPalette,
 } from "@shared/const";
 import { CommandChip } from "@/components/admin/CommandChip";
+import { ProfileSection } from "@/components/ProfileSection";
 import { PasskeyDevicesCard } from "@/components/PasskeyDevicesCard";
 import { LevelPill } from "@/components/admin/LevelPill";
 import {
@@ -149,13 +150,11 @@ function MySharedAccess({ command }: { command?: CommandCode }) {
   const { data: shares } = trpc.profile.mySharedAccess.useQuery();
   if (!shares || shares.length === 0) return null;
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-      <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
-        <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
-          <Shield className="w-4 h-4 text-primary" />
-          Shared with you
-        </h2>
-      </div>
+    <ProfileSection
+      id="shared"
+      icon={<Shield className="w-4 h-4 text-primary" />}
+      title="Shared with you"
+    >
       <p className="text-xs text-foreground/70 mb-4">
         Operations from other Commands you can open
         {command ? ` (you belong to ${COMMAND_LABELS[command]})` : ""}.
@@ -179,7 +178,7 @@ function MySharedAccess({ command }: { command?: CommandCode }) {
           </div>
         ))}
       </div>
-    </div>
+    </ProfileSection>
   );
 }
 
@@ -517,13 +516,11 @@ export default function MyProfilePage() {
         </div>
 
         {/* Profile Information Card */}
-        <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-          <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
-            <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
-              <User className="w-4 h-4 text-primary" />
-              Profile Information
-            </h2>
-          </div>
+        <ProfileSection
+          id="info"
+          icon={<User className="w-4 h-4 text-primary" />}
+          title="Profile Information"
+        >
           <p className="text-xs text-foreground/70 mb-4">
             Your account details as set by an administrator.
           </p>
@@ -572,19 +569,17 @@ export default function MyProfilePage() {
               />
             </div>
           )}
-        </div>
+        </ProfileSection>
 
         <MySharedAccess command={profile?.command as CommandCode | undefined} />
 
         {/* Intelligence Entity Scan Card — admin-only */}
         {profile?.role === "admin" && (
-          <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-            <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
-              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
-                <ScanSearch className="w-4 h-4 text-primary" />
-                Intelligence Entity Scan
-              </h2>
-            </div>
+          <ProfileSection
+            id="entity-scan"
+            icon={<ScanSearch className="w-4 h-4 text-primary" />}
+            title="Intelligence Entity Scan"
+          >
             <p className="text-xs text-foreground/70 mb-4">
               A backup check over every entity mined into the Intelligence
               folder — flags shapes that suggest a parsing slip (a placeholder
@@ -616,21 +611,21 @@ export default function MyProfilePage() {
                 />
               </div>
             )}
-          </div>
+          </ProfileSection>
         )}
 
         {/* Missed-Entity Scan Card (Local AI Step 2, beta) — admin-only */}
         {profile?.role === "admin" && (
-          <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-            <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
-              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
-                <ScanSearch className="w-4 h-4 text-primary" />
-                Missed-Entity Scan
-                <span className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/40 rounded px-1.5 py-0.5">
-                  Beta
-                </span>
-              </h2>
-            </div>
+          <ProfileSection
+            id="missed-scan"
+            icon={<ScanSearch className="w-4 h-4 text-primary" />}
+            title="Missed-Entity Scan"
+            badge={
+              <span className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/40 rounded px-1.5 py-0.5">
+                Beta
+              </span>
+            }
+          >
             <p className="text-xs text-foreground/70 mb-4">
               Runs a small on-device model over every observation, looking for a
               person's name written in a way the usual rules didn't recognise —
@@ -680,22 +675,22 @@ export default function MyProfilePage() {
                 />
               </div>
             )}
-          </div>
+          </ProfileSection>
         )}
 
         {/* Appearance Card */}
         {toggleTheme && (
-          <div className="overflow-hidden rounded-xl border border-border bg-card p-6 mb-6 shadow-sm">
-            <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
-              <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
-                {theme === "dark" ? (
-                  <Moon className="w-4 h-4 text-primary" />
-                ) : (
-                  <Sun className="w-4 h-4 text-primary" />
-                )}
-                Appearance
-              </h2>
-            </div>
+          <ProfileSection
+            id="appearance"
+            icon={
+              theme === "dark" ? (
+                <Moon className="w-4 h-4 text-primary" />
+              ) : (
+                <Sun className="w-4 h-4 text-primary" />
+              )
+            }
+            title="Appearance"
+          >
             <p className="text-xs text-foreground/70 mb-4">
               Choose your preferred colour theme.
             </p>
@@ -797,7 +792,7 @@ export default function MyProfilePage() {
                   ? "The header and side panel use the palette's own light colours. The folder icons keep their colours, one step deeper so they stay easy to see on white."
                   : "A dark header and side panel, whatever the palette."}
             </p>
-          </div>
+          </ProfileSection>
         )}
 
         {/* Passkey devices: only there when the owner's requirement is on, or this
@@ -807,13 +802,12 @@ export default function MyProfilePage() {
         </div>
 
         {/* Change Password Card */}
-        <div className="overflow-hidden rounded-xl border border-border bg-card p-6 shadow-sm">
-          <div className="-mx-6 -mt-6 mb-4 border-b border-border bg-muted/70 px-6 py-2.5">
-            <h2 className="text-[13px] font-bold uppercase tracking-wide text-foreground flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-primary" />
-              Change Password
-            </h2>
-          </div>
+        <ProfileSection
+          id="password"
+          icon={<KeyRound className="w-4 h-4 text-primary" />}
+          title="Change Password"
+          className="mb-0"
+        >
           <p className="text-xs text-foreground/70 mb-5">
             Enter your current password to set a new one.
           </p>
@@ -858,7 +852,7 @@ export default function MyProfilePage() {
                 : "Update Password"}
             </Button>
           </form>
-        </div>
+        </ProfileSection>
       </div>
     </DashboardLayout>
   );

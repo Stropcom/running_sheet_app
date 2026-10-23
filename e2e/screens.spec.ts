@@ -174,6 +174,11 @@ test("Appearance: the light header and side panel is saved, applied and kept acr
 }) => {
   await page.goto("/profile");
   const html = page.locator("html");
+  // Profile sections start closed; open Appearance (kept open after reload).
+  await page
+    .getByTestId("profile-section-appearance")
+    .getByRole("button", { name: /Appearance/ })
+    .click();
   await page.getByTestId("chrome-style-light").click();
   await expect(html).toHaveAttribute("data-chrome", "light");
   await page.reload();
@@ -187,4 +192,36 @@ test("Appearance: the light header and side panel is saved, applied and kept acr
   await page.getByTestId("chrome-style-dark").click();
   await expect(html).toHaveAttribute("data-chrome", "dark");
   expect(await railColour()).not.toBe(lightColour);
+});
+
+test("My Profile sections start closed and stay the way they were left", async ({
+  page,
+}) => {
+  await page.goto("/profile");
+  const info = page.getByTestId("profile-section-info");
+  const button = info.getByRole("button", { name: /Profile Information/ });
+  await expect(button).toHaveAttribute("aria-expanded", "false");
+  // Every titled section on the page starts closed.
+  for (const b of await page
+    .locator('[data-testid^="profile-section-"] h2 button')
+    .all()) {
+    await expect(b).toHaveAttribute("aria-expanded", "false");
+  }
+  await button.click();
+  await expect(button).toHaveAttribute("aria-expanded", "true");
+  await expect(info.getByText("Your account details")).toBeVisible();
+  await page.reload();
+  await expect(
+    page
+      .getByTestId("profile-section-info")
+      .getByRole("button", { name: /Profile Information/ })
+  ).toHaveAttribute("aria-expanded", "true");
+  // Close it again so the next run starts from the default.
+  await page
+    .getByTestId("profile-section-info")
+    .getByRole("button", { name: /Profile Information/ })
+    .click();
+  await expect(
+    page.getByTestId("profile-section-info").getByText("Your account details")
+  ).toBeHidden();
 });

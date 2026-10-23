@@ -6453,8 +6453,14 @@ export default function SheetDetail({
             );
           })()}
 
-        {/* Search bar + sort toggle + add row */}
-        <div className="mb-4 flex items-center gap-2">
+        {/* Search bar + sort toggle + add row — stays at the top of the
+            screen while the rows scroll underneath (the page's one scroll
+            container is <main>, see DashboardLayout). A solid ground and a
+            thin line under it keep the rows from showing through. */}
+        <div
+          data-testid="sheet-toolbar"
+          className="sticky top-0 z-30 -mx-1 mb-3 flex items-center gap-2 border-b border-border bg-background px-1 py-2"
+        >
           {/* Add Row — moved here, left of sort toggle, hidden when sheet is closed or read-only */}
           {canEdit && (
             <Button

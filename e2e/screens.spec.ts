@@ -130,3 +130,41 @@ test("Add Target opens with its four steps", async ({ page }) => {
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
 });
+
+test("Add Row, sort and search stay at the top while the rows scroll", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await createOperationAndSheet(page);
+  for (let i = 0; i < 25; i++) {
+    await page.getByRole("button", { name: /^Add/ }).first().click();
+    await page.waitForTimeout(120);
+  }
+  await expect(page.locator("tbody tr")).toHaveCount(25, { timeout: 20_000 });
+
+  for (const [width, height] of [
+    [1280, 800],
+    [820, 1180],
+    [390, 844],
+  ]) {
+    await page.setViewportSize({ width, height });
+    const bar = page.getByTestId("sheet-toolbar");
+    const main = page.locator("main.app-canvas");
+    await main.evaluate(m => (m.scrollTop = 0));
+    await main.evaluate(m => (m.scrollTop = 1500));
+    // The page really scrolled, and the bar is still at the very top of the
+    // scrolling area, fully on screen, with its search box usable.
+    await expect
+      .poll(() => main.evaluate(m => m.scrollTop), { message: `${width}px` })
+      .toBeGreaterThan(500);
+    const barTop = (await bar.boundingBox())!.y;
+    const mainTop = (await main.boundingBox())!.y;
+    expect(
+      Math.abs(barTop - mainTop),
+      `bar position at ${width}px`
+    ).toBeLessThan(3);
+    await expect(
+      page.getByPlaceholder("Search by time, observation, or CIN…")
+    ).toBeVisible();
+  }
+});

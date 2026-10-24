@@ -54,7 +54,7 @@ export function buildPlacesReportHtml(params: {
     .map(
       p => `<div class="place">
   <div class="place-h">${esc(p.name)} <span class="muted">— ${esc(placeKindLabel(p.kind))}</span></div>
-  <table class="visits"><thead><tr><th>Date</th><th>Arrived</th><th>Left</th><th>Time there</th><th>Running sheet</th></tr></thead><tbody>
+  <table class="visits"><thead><tr><th>Date</th><th>Arrived</th><th>Left</th><th>Time there</th></tr></thead><tbody>
   ${p.visits
     .map(
       v =>
@@ -63,7 +63,7 @@ export function buildPlacesReportHtml(params: {
             ? formatClock(v.endMinutes) +
               (v.endDayOffset > 0 ? ` +${v.endDayOffset}` : "")
             : "no departure logged"
-        }</td><td>${v.dwellMinutes !== null ? esc(formatDwell(v.dwellMinutes)) : "—"}</td><td>${esc(v.sheetTitle)}</td></tr>`
+        }</td><td>${v.dwellMinutes !== null ? esc(formatDwell(v.dwellMinutes)) : "—"}</td></tr>`
     )
     .join("")}
   </tbody></table>

@@ -680,7 +680,13 @@ test("Map page: Where now still shows how far he could have got with no history,
               : name === "intelligence.getPredictorTrail"
                 ? []
                 : name === "intelligence.getRoadSpeed"
-                  ? { ok: true, kph: 100 }
+                  ? {
+                      ok: true,
+                      kph: 100,
+                      source: "posted",
+                      road: "Kwinana Fwy",
+                      dataDate: "2026-10-24",
+                    }
                   : undefined;
       if (data === undefined) return;
       delete entry.error;
@@ -717,8 +723,10 @@ test("Map page: Where now still shows how far he could have got with no history,
   await expect(banner).toContainText("no known locations of interest in reach");
   // The posted limit of the road he was on picks the area and the speed.
   await expect(banner).toContainText("at about 100 km/h (freeway)");
+  await expect(page.getByText(/the posted limit on Kwinana Fwy/)).toBeVisible();
+  // The data's licence asks for a credit.
   await expect(
-    page.getByText(/the posted limit of the nearest road/)
+    page.getByText(/Main Roads Western Australia, Legal Speed Limits \(CC BY/)
   ).toBeVisible();
   await expect(
     page.getByText("How far he could have got").first()

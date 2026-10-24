@@ -148,3 +148,6 @@ server/externalIntel/models/eng.traineddata
 # Zero-data script output (scripts/ops/zero-data.mjs)
 backups/
 uploads.pre-zero-*/
+
+# Local data files built on the server (e.g. the speed-zone lookup) — not source
+/data/

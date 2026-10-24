@@ -361,11 +361,27 @@ export function useTargetPredictor({
       refetchOnWindowFocus: false,
     }
   );
-  const limit: { kph: number } | null =
-    limitPoint && limitQuery.data?.ok ? { kph: limitQuery.data.kph } : null;
+  const limit: {
+    kph: number;
+    source: "posted" | "default" | "google";
+    road: string | null;
+    dataDate: string | null;
+  } | null =
+    limitPoint && limitQuery.data?.ok
+      ? {
+          kph: limitQuery.data.kph,
+          source: limitQuery.data.source,
+          road: limitQuery.data.road ?? null,
+          dataDate: limitQuery.data.dataDate ?? null,
+        }
+      : null;
   const limitDetail =
     limitQuery.data && !limitQuery.data.ok
       ? (limitQuery.data.detail ?? null)
+      : null;
+  const limitRoad =
+    limitQuery.data && !limitQuery.data.ok
+      ? (limitQuery.data.road ?? null)
       : null;
   const limitWhy:
     | "loading"
@@ -373,6 +389,8 @@ export function useTargetPredictor({
     | "no-limit"
     | "refused"
     | "unavailable"
+    | "no-data"
+    | "default-unknown"
     | null = !limitPoint
     ? null
     : limitQuery.isLoading
@@ -588,6 +606,7 @@ export function useTargetPredictor({
     limit,
     limitWhy,
     limitDetail,
+    limitRoad,
     showShade,
     setShowShade,
     showReach,
@@ -993,8 +1012,10 @@ function AreaControls({ p }: { p: TargetPredictorState }) {
         <span className="font-semibold text-foreground">
           {p.areaSource === "posted" && p.limit ? p.limit.kph : rule.kmh} km/h
         </span>{" "}
-        {p.areaSource === "posted"
-          ? "— the posted limit of the nearest road (Google Roads). Tap another area to override it."
+        {p.areaSource === "posted" && p.limit
+          ? p.limit.source === "default"
+            ? `— the legal default on ${p.limit.road ?? "the nearest road"} (no sign on record; 50 km/h in built-up areas). Tap another area to override it.`
+            : `— the posted limit on ${p.limit.road ?? "the nearest road"}${p.limit.source === "google" ? " (Google Roads)" : ""}. Tap another area to override it.`
           : p.areaSource === "chosen"
             ? "in this area. Chosen by you."
             : p.areaSource === "street"
@@ -1003,13 +1024,24 @@ function AreaControls({ p }: { p: TargetPredictorState }) {
       </p>
       {p.limitWhy && p.limitWhy !== "loading" && (
         <p className="text-[11px] leading-snug text-muted-foreground">
-          {p.limitWhy === "no-limit"
-            ? "Google has no posted limit on record for this road."
-            : p.limitWhy === "no-road"
-              ? "No road was found next to that point."
-              : p.limitWhy === "refused"
-                ? "Google refused the speed-limit lookup for this key, so the area is picked by hand."
-                : "The speed-limit lookup could not be reached, so the area is picked by hand."}
+          {p.limitWhy === "default-unknown"
+            ? `No sign on record for ${p.limitRoad ?? "that road"} — the legal default is 50 km/h in built-up areas or 110 km/h outside them, and the data can't say which. Pick the area.`
+            : p.limitWhy === "no-data"
+              ? "Speed-zone data isn't loaded on this server, so the area is picked by hand."
+              : p.limitWhy === "no-limit"
+                ? "No posted limit on record for this road."
+                : p.limitWhy === "no-road"
+                  ? "No road was found within 40 m of that point."
+                  : p.limitWhy === "refused"
+                    ? "Google refused the speed-limit lookup for this key, so the area is picked by hand."
+                    : "The speed-limit lookup could not be reached, so the area is picked by hand."}
+        </p>
+      )}
+      {p.limit && p.limit.source !== "google" && (
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          Speed limits: Main Roads Western Australia, Legal Speed Limits (CC BY
+          4.0)
+          {p.limit.dataDate ? `, copy made ${p.limit.dataDate}` : ""}.
         </p>
       )}
       {p.limitDetail &&

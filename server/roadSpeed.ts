@@ -1,22 +1,46 @@
-// The posted speed limit of the road nearest a point, from Google's Roads API
-// (nearestRoads → speedLimits). Used by the Map page's Target Predictor to pick
-// the kind of area a target was last seen in and how fast he can travel there —
-// a lookup of a map fact, not a prediction. Anything that goes wrong (no road,
-// no limit on record, the key not allowed to use Speed Limits, Google
-// unreachable) comes back as a reason and the predictor falls back to the
-// officer's own choice; nothing is ever guessed here.
+// The posted speed limit of the road nearest a point. Used by the Map page's
+// Target Predictor to pick the kind of area a target was last seen in and how
+// fast he can travel there — a lookup of a map fact, not a prediction.
 //
-// The Roads API lives on its own Google host (roads.googleapis.com), not
-// maps.googleapis.com, and Google restricts Speed Limits to accounts with the
-// Asset Tracking licence — hence the "refused" answer.
+// Source, in order:
+//   1. the app's own copy of Main Roads Western Australia's Legal Speed Limits
+//      (server/speedZoneData.ts) — no outside call, the same answer every time,
+//      nothing about where a target was seen leaves the server;
+//   2. only when that file is absent AND ROAD_SPEED_GOOGLE=on, Google's Roads
+//      API (nearestRoads → speedLimits). It is off by default: Google restricts
+//      Speed Limits to accounts with its Asset Tracking licence and refused the
+//      owner's project ("Speed limits are not available for this project").
+// Anything that goes wrong (no data, no road nearby, no sign on record, Google
+// refusing) comes back as a reason and the predictor falls back to the
+// officer's own choice; nothing is ever guessed here.
 import { ENV } from "./_core/env";
 import { makeRequest } from "./_core/map";
+import { getSpeedZones } from "./speedZoneData";
 
 export type RoadSpeed =
-  | { ok: true; kph: number }
+  | {
+      ok: true;
+      kph: number;
+      /** "posted" = a sign; "default" = no sign, the legal default for the
+       * built-up Metropolitan region; "google" = Google's Roads API. */
+      source: "posted" | "default" | "google";
+      /** The road the limit belongs to (the nearest one to the point). */
+      road?: string;
+      /** When the speed-zone data was built, YYYY-MM-DD. */
+      dataDate?: string;
+    }
   | {
       ok: false;
-      why: "no-road" | "no-limit" | "refused" | "unavailable";
+      why:
+        | "no-road"
+        | "no-limit"
+        | "refused"
+        | "unavailable"
+        | "no-data"
+        | "default-unknown";
+      /** The road found, when there is one (default-unknown). */
+      road?: string;
+      dataDate?: string;
       /** Google's own words for a refusal or failure, so the officer (or the
        * owner) can tell a licence problem from a key setting. Never contains
        * the key. */
@@ -66,6 +90,25 @@ export async function lookupRoadSpeed(
   lng: number,
   now: number = Date.now()
 ): Promise<RoadSpeed> {
+  const zones = getSpeedZones(now);
+  if (zones) {
+    const dataDate = zones.builtAt.toISOString().slice(0, 10);
+    const r = zones.nearest(lat, lng);
+    if (!r) return { ok: false, why: "no-road", dataDate };
+    if (r.kph === null)
+      // No sign, outside the Metropolitan region: 50 in a town, 110 in the
+      // bush, and the file cannot say which — so no number.
+      return { ok: false, why: "default-unknown", road: r.name, dataDate };
+    return {
+      ok: true,
+      kph: r.kph,
+      source: r.kind === "posted" ? "posted" : "default",
+      road: r.name,
+      dataDate,
+    };
+  }
+  if (process.env.ROAD_SPEED_GOOGLE !== "on")
+    return { ok: false, why: "no-data" };
   const key = keyOf(lat, lng);
   const hit = cache.get(key);
   if (hit && now - hit.at < (hit.value.ok ? CACHE_MS : ERROR_CACHE_MS))
@@ -107,6 +150,7 @@ async function lookup(lat: number, lng: number): Promise<RoadSpeed> {
       return { ok: false, why: "no-limit" };
     return {
       ok: true,
+      source: "google",
       kph:
         found.units === "MPH"
           ? Math.round(found.speedLimit * 1.609344)

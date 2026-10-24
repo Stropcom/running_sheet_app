@@ -145,9 +145,9 @@ export const WHY_NO_DIRECTION: Record<
   string
 > = {
   "no-trail":
-    "No shared location from the team in the 5 minutes before he was last seen, so no direction.",
+    "No shared location from the team in the 5 minutes before he was last seen, so no direction is used. The prediction carries on without it.",
   "too-short":
-    "The team barely moved in the 5 minutes before he was last seen, so no direction.",
+    "The team barely moved in the 5 minutes before he was last seen, so no direction is used. The prediction carries on without it.",
   disagree:
-    "Officers were heading different ways in the 5 minutes before he was last seen, so no direction.",
+    "Officers were heading different ways in the 5 minutes before he was last seen, so no direction is used. The prediction carries on without it.",
 };

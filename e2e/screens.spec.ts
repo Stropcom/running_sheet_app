@@ -572,6 +572,15 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   await expect(banner).toContainText("area-adjusted");
   await expect(banner).toContainText("favouring places ahead");
   await expect(page.getByText(/Team heading east/)).toBeVisible();
+  // The map can be tapped for where he was last seen: the line says so, and
+  // tapping the button again cancels it.
+  const tapBtn = page.getByRole("button", {
+    name: "Tap the map where he was last seen",
+  });
+  await tapBtn.click();
+  await expect(banner).toContainText("Tap the map where he was last seen");
+  await page.getByRole("button", { name: /Tap the map now/ }).click();
+  await expect(banner).toContainText(/last seen at Home/);
   const builtUp = page.getByRole("button", { name: "Built-up area" });
   await expect(builtUp).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Back street" }).click();

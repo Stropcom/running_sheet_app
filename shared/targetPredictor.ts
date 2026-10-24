@@ -26,7 +26,17 @@ export { haversineKm };
 
 // ── Tunable rules ────────────────────────────────────────────────────────────
 
-/** Fewest similar visits before any prediction is offered. */
+/**
+ * For now the predictor counts EVERY visit on record for the target on the
+ * operation, whatever the day of the week or the time of day (owner's decision:
+ * a target's route yesterday is evidence today, and histories are short). Set
+ * to false to go back to the careful search that starts with the same weekday
+ * and the same time of day and only widens when that finds fewer than
+ * MIN_SAMPLES similar visits (kept below, and tested).
+ */
+export const USE_ALL_HISTORY = true;
+
+/** Fewest similar visits for a prediction to count as more than very limited. */
 export const MIN_SAMPLES = 3;
 
 export type AreaClass = "freeway" | "main" | "built" | "back";
@@ -190,8 +200,10 @@ function located(
 
 // ── Prediction ───────────────────────────────────────────────────────────────
 
+export type Scope = "day" | "group" | "anyday" | "anytime";
+
 export type PredictorMode = "next" | "now";
-export type Tier = "none" | "low" | "mid" | "high";
+export type Tier = "none" | "thin" | "low" | "mid" | "high";
 
 export type PredictorFrom =
   /** At a place: Where next uses it as the place he is at; Where now as the
@@ -216,6 +228,10 @@ export interface PredictorInput {
    * minutes before the last sighting — places ahead of it are favoured over
    * places behind (shared/travelDirection.ts). Null = no direction. */
   heading?: number | null;
+  /** Count every visit on record whatever the day or time (default
+   * USE_ALL_HISTORY). false = the careful search that starts with the same
+   * weekday and time of day. */
+  allHistory?: boolean;
 }
 
 export type CandidateState = "next" | "at" | "route" | "near";
@@ -244,7 +260,11 @@ export interface Prediction {
   /** Similar visits the prediction rests on. */
   total: number;
   /** "day" = the same weekday; "group" = all weekdays / all weekend days. */
-  scope: "day" | "group";
+  /** How wide the search had to go to find similar visits: the same weekday,
+   * all weekdays / weekend days, any day (same time of day), or any day and
+   * time. The search only widens when the narrower one finds fewer than
+   * MIN_SAMPLES. */
+  scope: Scope;
   candidates: Candidate[];
   /** The most-used outcome in his history, ignoring the area adjustment. */
   topHistoryShare: number | null;
@@ -271,7 +291,9 @@ function median(values: number[]): number | null {
 }
 
 function tierOf(total: number, topShare: number | null): Tier {
-  if (total < MIN_SAMPLES || topShare === null) return "none";
+  if (total === 0 || topShare === null) return "none";
+  // One or two similar visits: still an answer, but a very thin one.
+  if (total < MIN_SAMPLES) return "thin";
   if (total < 6 || topShare < 0.5) return "low";
   if (total < 12 || topShare < 0.7) return "mid";
   return "high";
@@ -282,16 +304,34 @@ export const NEAR_KEY = "_near";
 /** Counts the target's own history. See the file header for the rules. */
 export function predict(input: PredictorInput): Prediction {
   const { mode, from } = input;
+  const allHistory = input.allHistory ?? USE_ALL_HISTORY;
   const placeByKey = new Map(input.places.map(p => [p.placeKey, p]));
   const known = input.stops.filter(
     s => placeByKey.has(s.placeKey) && effectiveStart(s) !== null
   );
-  const pool = (scope: "day" | "group") =>
+  const pool = (scope: Scope) =>
     known.filter(s =>
       scope === "day"
         ? s.weekday === input.nowWeekday
-        : dayGroup(s.weekday) === dayGroup(input.nowWeekday)
+        : scope === "group"
+          ? dayGroup(s.weekday) === dayGroup(input.nowWeekday)
+          : true
     );
+  /** The narrowest search that finds MIN_SAMPLES similar visits; when none
+   * does, the one that finds the most (the narrowest of those). */
+  const search = (
+    steps: { scope: Scope; timed: boolean }[],
+    matches: (s: PredictorStop, timed: boolean) => boolean
+  ): { scope: Scope; hits: PredictorStop[] } => {
+    let best: { scope: Scope; hits: PredictorStop[] } | null = null;
+    for (const st of steps) {
+      const hits = pool(st.scope).filter(s => matches(s, st.timed));
+      if (hits.length >= MIN_SAMPLES) return { scope: st.scope, hits };
+      if (!best || hits.length > best.hits.length)
+        best = { scope: st.scope, hits };
+    }
+    return best ?? { scope: "day", hits: [] };
+  };
 
   // The point he was last seen, for distance and reach.
   const seenPt =
@@ -309,7 +349,7 @@ export function predict(input: PredictorInput): Prediction {
   const kmh = AREAS[input.area].kmh;
   const reachKm = (kmh * elapsed) / 60;
 
-  let scope: "day" | "group" = "day";
+  let scope: Scope = "day";
   let hits: PredictorStop[] = [];
   let candidates: Candidate[] = [];
   let leaveMinutes: number | null = null;
@@ -324,8 +364,10 @@ export function predict(input: PredictorInput): Prediction {
     const from_ = from;
     const at =
       mode === "next" && !from_.leaving ? input.nowMinutes : from_.minutes;
-    const matches = (s: PredictorStop): boolean => {
+    const matches = (s: PredictorStop, timed: boolean): boolean => {
       if (s.placeKey !== from_.placeKey || !s.nextPlaceKey) return false;
+      // Any day, any time: he was at this place and went on from it.
+      if (!timed) return true;
       const start = effectiveStart(s) as number;
       const end = effectiveEnd(s);
       // He was seen leaving: visits that ended around then.
@@ -334,11 +376,19 @@ export function predict(input: PredictorInput): Prediction {
       // Otherwise: visits that were under way at that time of day.
       return at >= start - 30 && (end === null ? false : at <= end + 15);
     };
-    hits = pool("day").filter(matches);
-    if (hits.length < MIN_SAMPLES) {
-      scope = "group";
-      hits = pool("group").filter(matches);
-    }
+    const found = search(
+      allHistory
+        ? [{ scope: "anytime", timed: false }]
+        : [
+            { scope: "day", timed: true },
+            { scope: "group", timed: true },
+            { scope: "anyday", timed: true },
+            { scope: "anytime", timed: false },
+          ],
+      matches
+    );
+    scope = found.scope;
+    hits = found.hits;
     leaveMinutes = median(
       hits.map(effectiveEnd).filter((m): m is number => m !== null)
     );
@@ -383,11 +433,20 @@ export function predict(input: PredictorInput): Prediction {
         start <= input.nowMinutes && end !== null && input.nowMinutes <= end
       );
     };
-    hits = pool("day").filter(occupied);
-    if (hits.length < MIN_SAMPLES) {
-      scope = "group";
-      hits = pool("group").filter(occupied);
-    }
+    // Where is he at this time of day: the time still matters here, the day
+    // does not.
+    const found = search(
+      allHistory
+        ? [{ scope: "anyday", timed: true }]
+        : [
+            { scope: "day", timed: true },
+            { scope: "group", timed: true },
+            { scope: "anyday", timed: true },
+          ],
+      occupied
+    );
+    scope = found.scope;
+    hits = found.hits;
     const byPlace = new Map<string, PredictorStop[]>();
     for (const s of hits) {
       if (!byPlace.has(s.placeKey)) byPlace.set(s.placeKey, []);
@@ -499,7 +558,8 @@ export function predict(input: PredictorInput): Prediction {
 // ── Wording (shared by the banner and the tests) ─────────────────────────────
 
 export const TIER_LABEL: Record<Tier, string> = {
-  none: "Not enough history",
+  none: "No similar visits",
+  thin: "Very limited history",
   low: "Low confidence",
   mid: "Moderate confidence",
   high: "High confidence",
@@ -523,11 +583,31 @@ export function describePrediction(
   input: PredictorInput,
   nameOf: (placeKey: string) => string
 ): Headline {
+  const h = headlineCore(pr, input, nameOf);
+  if (pr.tier === "none" || !pr.candidates[0]) return h;
+  // Say plainly when the answer rests on very little, or on other days.
+  const notes: string[] = [];
+  if (pr.tier === "thin")
+    notes.push(
+      `only ${pr.total} similar visit${pr.total === 1 ? "" : "s"} — very limited history`
+    );
+  if (!(input.allHistory ?? USE_ALL_HISTORY)) {
+    if (pr.scope === "anyday") notes.push("from other days at this time");
+    if (pr.scope === "anytime") notes.push("from other days and times");
+  }
+  return notes.length ? { ...h, sub: `${h.sub} · ${notes.join(" · ")}` } : h;
+}
+
+function headlineCore(
+  pr: Prediction,
+  input: PredictorInput,
+  nameOf: (placeKey: string) => string
+): Headline {
   const top = pr.candidates[0];
   if (pr.tier === "none" || !top) {
     return {
       main: "No prediction yet",
-      sub: `Only ${pr.total} similar visit${pr.total === 1 ? "" : "s"} on record for this target on this operation — it needs ${MIN_SAMPLES}.`,
+      sub: "No similar visit on record for this target on this operation — nothing to count yet.",
     };
   }
   const pct = `${Math.round(top.p * 100)}%`;

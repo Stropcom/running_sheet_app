@@ -44,6 +44,7 @@ import {
   AREA_CLASSES,
   DEFAULT_AREA,
   MIN_SAMPLES,
+  USE_ALL_HISTORY,
   NEAR_KEY,
   TIER_LABEL,
   areaFromStreetName,
@@ -73,6 +74,7 @@ const ON_KEY = "runlog_target_predictor_on";
 const TIER_COLOUR: Record<Tier, string> = {
   high: "#0f7a55",
   mid: "#9a6200",
+  thin: "#8a3b12",
   low: "#8a3b12",
   none: "#566170",
 };
@@ -130,6 +132,8 @@ export function useTargetPredictor({
   const [showShade, setShowShade] = useState(true);
   const [showReach, setShowReach] = useState(true);
   const [directionOn, setDirectionOn] = useState(true);
+  // "Tap the map": the next tap on the map sets where he was last seen.
+  const [tapArmed, setTapArmed] = useState(false);
   // An edit that has not been saved yet.
   const [dirty, setDirty] = useState(false);
 
@@ -155,6 +159,7 @@ export function useTargetPredictor({
 
   // Another target or sheet means the by-hand choices no longer apply.
   useEffect(() => {
+    setTapArmed(false);
     setOverride(false);
     setPickPlaceKey(null);
     setSeen({ kind: "place", placeKey: null, point: null, minutes: null });
@@ -396,6 +401,23 @@ export function useTargetPredictor({
     setDirty(true);
   }, []);
 
+  /** A tap on the map: that is where he was last seen. */
+  const placeTap = useCallback(
+    (point: { lat: number; lng: number }) => {
+      setOverride(true);
+      setTapRoute(null);
+      setTapArmed(false);
+      setSeen(s => ({
+        ...s,
+        kind: "tap",
+        point,
+        minutes: s.minutes ?? sheetStart?.minutes ?? null,
+      }));
+      setDirty(true);
+    },
+    [sheetStart]
+  );
+
   /** "Change": take what the sheet says as the starting point and edit it. */
   const changeFromSheet = useCallback(() => {
     setOverride(true);
@@ -508,6 +530,9 @@ export function useTargetPredictor({
     setShowReach,
     directionOn,
     setDirectionOn,
+    tapArmed,
+    setTapArmed,
+    placeTap,
     direction,
     sheetStart,
     usingSheet,
@@ -524,7 +549,10 @@ export function useTargetPredictor({
     labelOf,
     placeByKey,
     /** "Where now" with the position left for the officer to tap on the map. */
-    tapping: on && mode === "now" && !usingSheet && seen.kind === "tap",
+    tapping:
+      on &&
+      mode === "now" &&
+      (tapArmed || (!usingSheet && seen.kind === "tap")),
   };
 }
 export type TargetPredictorState = ReturnType<typeof useTargetPredictor>;
@@ -648,6 +676,21 @@ export function TargetPredictorSection({
               )}
 
               {p.data && places.length > 0 && <PositionControls p={p} />}
+              {p.data && places.length > 0 && p.mode === "now" && (
+                <button
+                  onClick={() => p.setTapArmed(!p.tapArmed)}
+                  aria-pressed={p.tapArmed}
+                  className={`w-full ${SEG} ${
+                    p.tapArmed
+                      ? "border-violet-500/50 bg-violet-500/10 text-violet-500"
+                      : "border-border bg-card text-foreground hover:bg-accent/40"
+                  }`}
+                >
+                  {p.tapArmed
+                    ? "Tap the map now… (tap here to cancel)"
+                    : "Tap the map where he was last seen"}
+                </button>
+              )}
               {p.data &&
                 places.length > 0 &&
                 p.mode === "now" &&
@@ -921,8 +964,8 @@ function Candidates({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
   if (pr.tier === "none" || pr.candidates.length === 0)
     return (
       <p className="text-[11px] leading-snug text-muted-foreground">
-        Not enough similar visits to say yet. It improves as more is recorded
-        for this target on this operation.
+        No similar visit on record for this target on this operation, so there
+        is nothing to count yet. It improves as more is recorded.
       </p>
     );
   return (
@@ -965,19 +1008,27 @@ function Candidates({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
 function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
   const [open, setOpen] = useState(false);
   const inp = p.input!;
-  const scope =
-    pr.scope === "day"
-      ? `the same weekday`
-      : inp.nowWeekday <= 4
-        ? "all weekdays"
-        : "all weekend days";
+  const all = inp.allHistory ?? USE_ALL_HISTORY;
+  const scope = all
+    ? "any day"
+    : pr.scope === "day"
+      ? "the same weekday"
+      : pr.scope === "group"
+        ? inp.nowWeekday <= 4
+          ? "all weekdays"
+          : "all weekend days"
+        : pr.scope === "anyday"
+          ? "any day of the week"
+          : "any day and any time of day";
   const f = inp.from;
   const how =
     f.kind === "none" || f.kind === "point"
       ? `where he usually is at ${hhmm(inp.nowMinutes)}`
-      : p.mode === "next" && !f.leaving
-        ? `visits to ${p.nameOf(f.placeKey)} that were under way around ${hhmm(inp.nowMinutes)}, then where each went next`
-        : `visits to ${p.nameOf(f.placeKey)} that ended within an hour of ${hhmm(f.minutes)}, then where each went next`;
+      : pr.scope === "anytime"
+        ? `every visit to ${p.nameOf(f.placeKey)} that was followed by another place, then where each went next`
+        : p.mode === "next" && !f.leaving
+          ? `visits to ${p.nameOf(f.placeKey)} that were under way around ${hhmm(inp.nowMinutes)}, then where each went next`
+          : `visits to ${p.nameOf(f.placeKey)} that ended within an hour of ${hhmm(f.minutes)}, then where each went next`;
   return (
     <div className="rounded-xl border-2 border-border bg-card px-3 py-2">
       <button
@@ -1000,8 +1051,10 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
             <span className="font-semibold text-foreground">Confidence:</span>{" "}
             {TIER_LABEL[pr.tier]}
             {pr.tier === "none"
-              ? ` (fewer than ${MIN_SAMPLES} similar visits).`
-              : `. ${pr.total} similar visits${pr.topHistoryShare !== null ? `, and ${Math.round(pr.topHistoryShare * 100)}% of them went the same way` : ""}. High needs 12 or more, with 70% or more the same.`}
+              ? ". No similar visit on record."
+              : pr.tier === "thin"
+                ? `. Only ${pr.total} similar visit${pr.total === 1 ? "" : "s"} — treat this as a lead, not a pattern. ${MIN_SAMPLES} or more are needed before it counts as low confidence.`
+                : `. ${pr.total} similar visits${pr.topHistoryShare !== null ? `, and ${Math.round(pr.topHistoryShare * 100)}% of them went the same way` : ""}. High needs 12 or more, with 70% or more the same.`}
           </p>
           {p.mode === "now" && pr.adjusted && (
             <p>
@@ -1031,8 +1084,17 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
               the dashed ring, which grows every minute.
             </p>
           )}
-          {pr.scope === "group" && (
-            <p>Too few on that exact weekday, so {scope} were used.</p>
+          {all && (
+            <p>
+              For now every visit on record is counted, whatever the day of the
+              week or the time of day, because histories are short.
+            </p>
+          )}
+          {!all && pr.scope !== "day" && (
+            <p>
+              Fewer than {MIN_SAMPLES} similar visits on that exact weekday at
+              this time, so the search was widened to {scope}.
+            </p>
           )}
           <p>
             A pattern, not a certainty. This is not written to the running
@@ -1058,7 +1120,11 @@ export function TargetPredictorBanner({
   const colour = TIER_COLOUR[tier];
   let main = p.headline?.main;
   let sub = p.headline?.sub;
-  if (!p.prediction) {
+  if (p.tapArmed) {
+    main = "Tap the map where he was last seen";
+    sub =
+      "The predictor will work from that point. Tap Cancel in Map Settings to stop.";
+  } else if (!p.prediction) {
     if (p.blocked) {
       main = "Target predictor";
       sub = p.blocked;
@@ -1143,14 +1209,15 @@ export function TargetPredictorOverlay({
   const input = p.input;
 
   // Tap the map to say where he was last seen.
-  const { tapping, setSeenPoint, setTapRoute } = p;
+  const { tapping, placeTap, setTapRoute } = p;
   useEffect(() => {
     if (!map || !tapping || !window.google?.maps) return;
+    // A crosshair so it is clear the next tap is for the predictor.
+    map.setOptions({ draggableCursor: "crosshair" });
     const l = map.addListener("click", (e: google.maps.MapMouseEvent) => {
       const ll = e.latLng;
       if (!ll) return;
-      setSeenPoint({ lat: ll.lat(), lng: ll.lng() });
-      setTapRoute(null);
+      placeTap({ lat: ll.lat(), lng: ll.lng() });
       // The street name is how the kind of area is read (a freeway or highway
       // says so); if the lookup fails the officer just picks the area.
       try {
@@ -1168,8 +1235,11 @@ export function TargetPredictorOverlay({
         /* no lookup: the area stays as chosen or assumed */
       }
     });
-    return () => l.remove();
-  }, [map, tapping, setSeenPoint, setTapRoute]);
+    return () => {
+      l.remove();
+      map.setOptions({ draggableCursor: undefined });
+    };
+  }, [map, tapping, placeTap, setTapRoute]);
 
   const model = useMemo(() => {
     if (!p.on || !pr || !input || pr.tier === "none") return null;

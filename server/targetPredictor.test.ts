@@ -4,6 +4,7 @@ import {
   AREAS,
   MIN_SAMPLES,
   NEAR_KEY,
+  USE_ALL_HISTORY,
   areaFromStreetName,
   buildStops,
   describePrediction,
@@ -73,6 +74,9 @@ const base = (over: Partial<PredictorInput>): PredictorInput => ({
   nowWeekday: 2, // Wednesday
   nowMinutes: 400, // 06:40
   area: "built",
+  // These tests are about the careful search (same weekday and time of day
+  // first); "every visit on record" has its own tests below.
+  allHistory: false,
   ...over,
 });
 
@@ -152,11 +156,22 @@ describe("Where next", () => {
     expect(pr.total).toBe(7);
   });
 
-  it("offers nothing under the minimum number of similar visits", () => {
-    const pr = predict(base({ stops: history.slice(0, MIN_SAMPLES - 1) }));
+  it("under the minimum it still answers, but as very limited history", () => {
+    const input = base({ stops: history.slice(0, MIN_SAMPLES - 1) });
+    const pr = predict(input);
+    expect(pr.tier).toBe("thin");
+    expect(pr.candidates[0].placeKey).toBe("gym");
+    const line = describePrediction(pr, input, nameOf);
+    expect(line.sub).toContain("only 2 similar visits — very limited history");
+  });
+
+  it("says nothing only when there is no similar visit at all", () => {
+    const input = base({ stops: [] });
+    const pr = predict(input);
     expect(pr.tier).toBe("none");
-    const line = describePrediction(pr, base({}), nameOf);
-    expect(line.main).toBe("No prediction yet");
+    expect(describePrediction(pr, input, nameOf).main).toBe(
+      "No prediction yet"
+    );
   });
 
   it("ignores visits with nothing logged after them", () => {
@@ -172,10 +187,11 @@ describe("Where next", () => {
     expect(pr.total).toBe(5);
   });
 
-  it("does not count visits not under way at this time of day", () => {
+  it("widens to any time of day when nothing was under way at this time", () => {
     const pr = predict(base({ nowMinutes: 900, stops: history }));
-    expect(pr.total).toBe(0);
-    expect(pr.tier).toBe("none");
+    expect(pr.scope).toBe("anytime");
+    expect(pr.total).toBe(5);
+    expect(pr.candidates[0].placeKey).toBe("gym");
   });
 
   it("is high only with 12+ similar visits and 70%+ the same way", () => {
@@ -322,16 +338,108 @@ describe("Where now", () => {
     expect(line.main).toBe("Likely at Gym right now");
   });
 
-  it("matches visits that ended near the last-seen time when he was leaving", () => {
+  it("widens to any time when no visit ended near the last-seen time", () => {
     const pr = predict(
       lost({
         from: { kind: "place", placeKey: "gym", minutes: 800, leaving: true },
         nowMinutes: 810,
       })
     );
-    expect(pr.total).toBe(0);
+    expect(pr.scope).toBe("anytime");
+    expect(pr.total).toBe(12);
   });
 });
+
+describe("counting every visit on record (the current setting)", () => {
+  // Yesterday (a Friday) he went Terminal 4 -> Terminal 2 -> the supermarket.
+  // Today is a Saturday and he has just left Terminal 4 at 17:13.
+  const places: PredictorPlace[] = [
+    { placeKey: "t4", name: "Terminal 4", lat: -31.94, lng: 115.97 },
+    { placeKey: "t2", name: "Terminal 2", lat: -31.93, lng: 115.96 },
+    { placeKey: "super", name: "Woolworths", lat: -31.92, lng: 115.95 },
+  ];
+  const friday = 4;
+  const saturday = 5;
+  const stops: PredictorStop[] = [
+    {
+      placeKey: "t4",
+      weekday: friday,
+      dateISO: "2026-10-23",
+      startMinutes: 600,
+      endMinutes: 620,
+      departureLogged: true,
+      nextPlaceKey: "t2",
+      nextStartMinutes: 640,
+    },
+    {
+      placeKey: "t2",
+      weekday: friday,
+      dateISO: "2026-10-23",
+      startMinutes: 640,
+      endMinutes: 700,
+      departureLogged: true,
+      nextPlaceKey: "super",
+      nextStartMinutes: 715,
+    },
+  ];
+  const input = (over: Partial<PredictorInput> = {}): PredictorInput => ({
+    mode: "now",
+    stops,
+    places,
+    from: { kind: "place", placeKey: "t4", minutes: 1033, leaving: true },
+    nowWeekday: saturday,
+    nowMinutes: 1040,
+    area: "main",
+    ...over,
+  });
+
+  it("uses yesterday's route today, whatever the day or time", () => {
+    const pr = predict(input());
+    expect(pr.scope).toBe("anytime");
+    expect(pr.tier).toBe("thin");
+    expect(pr.total).toBe(1);
+    const next = pr.candidates.find(c => c.placeKey === "t2");
+    expect(next).toBeTruthy();
+    expect(next!.history).toBe(1);
+    const line = describePrediction(pr, input(), nameOf2(places));
+    expect(line.sub).toContain("very limited history");
+  });
+
+  it("the careful search ends on the same step for this case", () => {
+    // Different weekday and time of day: only the widest step finds it, and
+    // that step is the one the careful search ends on too.
+    const pr = predict(input({ allHistory: false }));
+    expect(pr.scope).toBe("anytime");
+  });
+
+  it("works from Where next too", () => {
+    const pr = predict(
+      input({
+        mode: "next",
+        from: { kind: "place", placeKey: "t4", minutes: 1040, leaving: false },
+      })
+    );
+    expect(pr.candidates[0].placeKey).toBe("t2");
+    expect(pr.tier).toBe("thin");
+  });
+
+  it("is on by default", () => {
+    expect(USE_ALL_HISTORY).toBe(true);
+    const { allHistory: _a, ...rest } = input();
+    expect(predict(rest as PredictorInput).scope).toBe("anytime");
+  });
+
+  it("not seen yet: where he usually is at this time, on any day", () => {
+    const pr = predict(
+      input({ from: { kind: "none" }, nowWeekday: saturday, nowMinutes: 650 })
+    );
+    expect(pr.scope).toBe("anyday");
+    expect(pr.candidates[0].placeKey).toBe("t2");
+  });
+});
+
+const nameOf2 = (ps: PredictorPlace[]) => (k: string) =>
+  ps.find(p => p.placeKey === k)?.name ?? k;
 
 describe("haversineKm", () => {
   it("measures roughly right", () => {

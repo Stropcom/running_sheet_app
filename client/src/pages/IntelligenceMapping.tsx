@@ -195,6 +195,12 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { MapHeatOverlay } from "@/components/MapHeatOverlay";
+import {
+  TargetPredictorBanner,
+  TargetPredictorOverlay,
+  TargetPredictorSection,
+  useTargetPredictor,
+} from "@/components/TargetPredictor";
 import { HEAT_RAMP } from "@/lib/heatMapSection";
 import {
   Popover,
@@ -3989,6 +3995,14 @@ export default function IntelligenceMapping() {
         t => t.id === heatDefaultTargetId
       )?.name
     : undefined;
+  // Target Predictor — the target, operation and running sheet picked at the
+  // top of the pane (see components/TargetPredictor.tsx).
+  const predictor = useTargetPredictor({
+    opId: isInvestigator ? null : rsSelectedOpId,
+    sheetId: isInvestigator ? null : rsSelectedSheetId,
+    targetId: isInvestigator ? null : (rsTargetData?.id ?? null),
+  });
+  const predictorTapping = predictor.tapping;
   // RS Actions pane — create row mutation
   const rsAddMember = trpc.member.add.useMutation();
   const rsCreateRow = trpc.row.create.useMutation();
@@ -4757,6 +4771,9 @@ export default function IntelligenceMapping() {
   };
 
   const handleMapAreaClick = useCallback(() => {
+    // Tapping the map to say where the target was last seen (Target
+    // Predictor) must not close the pane that is asking for it.
+    if (predictorTapping) return;
     if (
       rsActionsPaneOpen &&
       paneTargetProfileId === null &&
@@ -4767,6 +4784,7 @@ export default function IntelligenceMapping() {
       setRsActionsPaneOpen(false);
     }
   }, [
+    predictorTapping,
     rsActionsPaneOpen,
     paneTargetProfileId,
     paneOperationProfileId,
@@ -9715,6 +9733,11 @@ export default function IntelligenceMapping() {
             </div>
           )}
 
+          {/* Target Predictor — the answer, one line at the top of the map. */}
+          {!isInvestigator && !flySelectedId && (
+            <TargetPredictorBanner p={predictor} compact={narrowScreen} />
+          )}
+
           {showStreetHeadingBar && ownLiveEntry && (
             <StreetHeadingBar
               lat={ownLiveEntry.lat}
@@ -10952,11 +10975,37 @@ export default function IntelligenceMapping() {
                 </div>
               )}
               {/* end Heat Map */}
+
+              {/* ── TARGET PREDICTOR — one switch, off by default. On: a line
+                at the top of the map says where the selected sheet's target
+                is likely to go next, or may be now, with a confidence level,
+                and shades the likely places. Plain counting over his own
+                history on the operation. Not for map-only Investigator
+                accounts (the history isn't open to them). ── */}
+              {!isInvestigator && (
+                <TargetPredictorSection
+                  p={predictor}
+                  targetName={rsTargetData?.name ?? null}
+                  operationName={
+                    (
+                      (operations ?? []) as Array<{ id: number; name: string }>
+                    ).find(o => o.id === rsSelectedOpId)?.name ?? null
+                  }
+                  sheetTitle={rsSelectedSheetTitle ?? null}
+                />
+              )}
+              {/* end Target Predictor */}
             </div>
           )}
           {/* end Pane Body */}
         </div>
         {/* end RS Actions Right Pane */}
+
+        {/* Target Predictor shading — adds a layer to the map, draws nothing itself. */}
+        <TargetPredictorOverlay
+          p={predictor}
+          map={mapReady && !isInvestigator ? mapRef.current : null}
+        />
 
         {/* Heat Map overlay — draws nothing itself, it adds a layer to the map. */}
         <MapHeatOverlay

@@ -104,7 +104,7 @@ This file holds only the standing rules. The per-feature detail — what each ve
 | File | Covers |
 | --- | --- |
 | `sheet-and-observation.md` | Observation tidy-up, typing-slip repair, joining words, vehicle lists, shortcut chip order, address suggestions, Check Sheet rules, photo resize, Sheet Summary |
-| `target-logger-and-map.md` | Target Logger rules (walk-ins, vehicles, boats, buses/trains, hand-over, ceased), the target flag, place and transit sign markers, Nearby Location, Heat Map on the Map page, Fly + Nearmap |
+| `target-logger-and-map.md` | Target Logger rules (walk-ins, vehicles, boats, buses/trains, hand-over, ceased), the target flag, place and transit sign markers, Nearby Location, Heat Map on the Map page, Target Predictor, Fly + Nearmap |
 | `intelligence-and-profiles.md` | Profile pages (Target / Operation / Vehicle / Location / Associate), associations rule, Heat Map report, Places Report (where a target goes), entity-set cache, photo sizes |
 | `registry-import-and-photos.md` | Add Target to Registry, Import Target (document reading, Document AI switch), identity-linked photos, Face picker and match triage, photo upload flows |
 | `exports-and-printing.md` | Running sheet and profile PDF exports, fonts, photo captions and sizes |

@@ -279,6 +279,7 @@ export {
   geocodeAddressList,
   getIntelTargetPatternOfLife,
   getIntelTargetPlaces,
+  getIntelTargetPredictor,
   setTargetPlaceLabel,
   parseHHMMToMinutes,
   getWeeklyActivityReport,

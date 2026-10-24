@@ -1,0 +1,353 @@
+import { describe, expect, it } from "vitest";
+import type { PlaceVisit } from "../shared/placesReport";
+import {
+  AREAS,
+  MIN_SAMPLES,
+  NEAR_KEY,
+  areaFromStreetName,
+  buildStops,
+  describePrediction,
+  haversineKm,
+  perthClock,
+  predict,
+  type PredictorInput,
+  type PredictorPlace,
+  type PredictorStop,
+} from "../shared/targetPredictor";
+
+// Perth-ish coordinates, a few km apart.
+const PLACES: PredictorPlace[] = [
+  { placeKey: "home", name: "Home", lat: -31.99, lng: 115.76 },
+  { placeKey: "gym", name: "Gym", lat: -31.95, lng: 115.8 },
+  { placeKey: "cafe", name: "Cafe", lat: -31.951, lng: 115.805 },
+  { placeKey: "work", name: "Work", lat: -31.95, lng: 115.86 },
+  { placeKey: "mall", name: "Mall", lat: -31.93, lng: 116.0 },
+];
+const nameOf = (k: string) => PLACES.find(p => p.placeKey === k)?.name ?? k;
+
+function stop(
+  placeKey: string,
+  weekday: number,
+  start: number,
+  end: number | null,
+  next: string | null,
+  nextStart: number | null = null
+): PredictorStop {
+  return {
+    placeKey,
+    weekday,
+    dateISO: "2026-01-01",
+    startMinutes: start,
+    endMinutes: end,
+    departureLogged: end !== null,
+    nextPlaceKey: next,
+    nextStartMinutes: nextStart ?? (end !== null && next ? end + 15 : null),
+  };
+}
+
+function visit(
+  sheetId: number,
+  dateISO: string,
+  placeKey: string,
+  start: number | null,
+  end: number | null
+): PlaceVisit {
+  return {
+    placeKey,
+    sheetId,
+    sheetTitle: "S",
+    rowId: sheetId * 100 + (start ?? 0),
+    dateISO,
+    startMinutes: start,
+    endMinutes: end,
+    endDayOffset: 0,
+    dwellMinutes: start !== null && end !== null ? end - start : null,
+  };
+}
+
+const base = (over: Partial<PredictorInput>): PredictorInput => ({
+  mode: "next",
+  stops: [],
+  places: PLACES,
+  from: { kind: "place", placeKey: "home", minutes: 380, leaving: false },
+  nowWeekday: 2, // Wednesday
+  nowMinutes: 400, // 06:40
+  area: "built",
+  ...over,
+});
+
+describe("buildStops", () => {
+  it("attaches the next place on the same sheet, in time order", () => {
+    const stops = buildStops([
+      visit(1, "2026-03-02", "gym", 500, 560),
+      visit(1, "2026-03-02", "home", 0, 420),
+      visit(1, "2026-03-02", "work", 600, null),
+    ]);
+    const by = Object.fromEntries(stops.map(s => [s.placeKey, s]));
+    expect(by.home.nextPlaceKey).toBe("gym");
+    expect(by.home.nextStartMinutes).toBe(500);
+    expect(by.gym.nextPlaceKey).toBe("work");
+    expect(by.work.nextPlaceKey).toBeNull(); // nothing logged after it
+  });
+
+  it("does not link places across sheets or more than 12 hours apart", () => {
+    const stops = buildStops([
+      visit(1, "2026-03-02", "home", 0, 420),
+      visit(2, "2026-03-02", "gym", 480, 540),
+      visit(3, "2026-03-02", "home", 100, 200),
+      visit(3, "2026-03-02", "work", 1000, null),
+    ]);
+    expect(stops.every(s => s.nextPlaceKey === null)).toBe(true);
+  });
+
+  it("records the weekday and whether a departure was logged", () => {
+    const [s] = buildStops([visit(1, "2026-03-02", "home", 60, null)]);
+    expect(s.weekday).toBe(0); // Monday
+    expect(s.departureLogged).toBe(false);
+  });
+});
+
+describe("areaFromStreetName", () => {
+  it("reads only unmistakable names", () => {
+    expect(areaFromStreetName("Kwinana Freeway")).toBe("freeway");
+    expect(areaFromStreetName("Mitchell Fwy")).toBe("freeway");
+    expect(areaFromStreetName("Great Eastern Highway")).toBe("main");
+    expect(areaFromStreetName("Smith Street")).toBeNull();
+    expect(areaFromStreetName("Freeman Road")).toBeNull();
+    expect(areaFromStreetName(null)).toBeNull();
+  });
+});
+
+describe("Where next", () => {
+  const history = [
+    // Wednesdays: five left home ~06:50, four went to the gym, one to the cafe
+    ...[0, 1, 2, 3].map(i => stop("home", 2, 0, 410 + i, "gym")),
+    stop("home", 2, 0, 415, "cafe"),
+  ];
+
+  it("counts where similar visits went next", () => {
+    const pr = predict(base({ stops: history }));
+    expect(pr.total).toBe(5);
+    expect(pr.scope).toBe("day");
+    expect(pr.candidates[0].placeKey).toBe("gym");
+    expect(pr.candidates[0].p).toBeCloseTo(0.8);
+    expect(pr.candidates[1].placeKey).toBe("cafe");
+    expect(pr.tier).toBe("low"); // fewer than 6 similar visits
+    expect(pr.leaveMinutes).toBe(412);
+    expect(pr.candidates[0].arriveMinutes).toBe(427); // leaves ~412, 15 min gap
+  });
+
+  it("falls back to all weekdays when the weekday is thin", () => {
+    const pr = predict(
+      base({
+        nowWeekday: 3,
+        stops: [
+          ...history,
+          stop("home", 3, 0, 420, "gym"),
+          stop("home", 3, 0, 420, "gym"),
+        ],
+      })
+    );
+    expect(pr.scope).toBe("group");
+    expect(pr.total).toBe(7);
+  });
+
+  it("offers nothing under the minimum number of similar visits", () => {
+    const pr = predict(base({ stops: history.slice(0, MIN_SAMPLES - 1) }));
+    expect(pr.tier).toBe("none");
+    const line = describePrediction(pr, base({}), nameOf);
+    expect(line.main).toBe("No prediction yet");
+  });
+
+  it("ignores visits with nothing logged after them", () => {
+    const pr = predict(
+      base({
+        stops: [
+          ...history,
+          stop("home", 2, 0, 410, null),
+          stop("home", 2, 0, 410, null),
+        ],
+      })
+    );
+    expect(pr.total).toBe(5);
+  });
+
+  it("does not count visits not under way at this time of day", () => {
+    const pr = predict(base({ nowMinutes: 900, stops: history }));
+    expect(pr.total).toBe(0);
+    expect(pr.tier).toBe("none");
+  });
+
+  it("is high only with 12+ similar visits and 70%+ the same way", () => {
+    const many = Array.from({ length: 12 }, () =>
+      stop("home", 2, 0, 410, "gym")
+    );
+    expect(predict(base({ stops: many })).tier).toBe("high");
+    const split = [
+      ...Array.from({ length: 6 }, () => stop("home", 2, 0, 410, "gym")),
+      ...Array.from({ length: 6 }, () => stop("home", 2, 0, 410, "cafe")),
+    ];
+    expect(predict(base({ stops: split })).tier).toBe("mid");
+  });
+
+  it("says the same thing for the same history and clock", () => {
+    const a = predict(base({ stops: history }));
+    const b = predict(base({ stops: [...history].reverse() }));
+    expect(b).toEqual(a);
+  });
+
+  it("starts from the departure when the sheet says he already left", () => {
+    const pr = predict(
+      base({
+        stops: history,
+        from: { kind: "place", placeKey: "home", minutes: 411, leaving: true },
+        nowMinutes: 420,
+      })
+    );
+    expect(pr.total).toBeGreaterThan(0);
+    expect(pr.candidates[0].placeKey).toBe("gym");
+    expect(pr.candidates[0].arriveMinutes).toBe(426); // left 06:51, 15 min on
+  });
+
+  it("writes the headline", () => {
+    const input = base({ stops: history });
+    const line = describePrediction(predict(input), input, nameOf);
+    expect(line.main).toBe("Next: Gym, about 07:07");
+    expect(line.sub).toContain("80% of similar visits");
+    expect(line.sub).toContain("usually leaves Home about 06:52");
+  });
+});
+
+describe("Where now", () => {
+  // He leaves the gym ~08:25 and most days goes to the cafe next door (0.4 km)
+  // or work (5 km); twice he went to the mall (20 km).
+  const out = (to: string, n: number, gap = 10) =>
+    Array.from({ length: n }, () => stop("gym", 2, 450, 505, to, 505 + gap));
+  const history = [
+    ...out("cafe", 4),
+    ...out("work", 5, 20),
+    ...out("mall", 3, 35),
+  ];
+  const lost = (over: Partial<PredictorInput> = {}) =>
+    base({
+      mode: "now",
+      stops: history,
+      from: { kind: "place", placeKey: "gym", minutes: 505, leaving: true },
+      nowMinutes: 517,
+      ...over,
+    });
+
+  it("limits how far he could have got by area speed and time", () => {
+    const pr = predict(lost({ area: "back" }));
+    expect(pr.elapsedMinutes).toBe(12);
+    expect(pr.reachKm).toBeCloseTo((AREAS.back.kmh * 12) / 60);
+    const free = predict(lost({ area: "freeway" }));
+    expect(free.reachKm).toBeGreaterThan(pr.reachKm);
+  });
+
+  it("grows the ring as the clock moves on", () => {
+    const early = predict(lost({ nowMinutes: 510 }));
+    const later = predict(lost({ nowMinutes: 540 }));
+    expect(later.reachKm).toBeGreaterThan(early.reachKm);
+  });
+
+  it("favours nearby places on a back street more than on a freeway", () => {
+    const back = predict(lost({ area: "back" }));
+    const free = predict(lost({ area: "freeway" }));
+    const share = (pr: ReturnType<typeof predict>, k: string) =>
+      pr.candidates.find(c => c.placeKey === k)?.p ?? 0;
+    expect(share(back, "cafe") / (1 - AREAS.back.nearShare)).toBeGreaterThan(
+      share(free, "cafe") / (1 - AREAS.freeway.nearShare)
+    );
+    expect(back.adjusted).toBe(true);
+  });
+
+  it("adds a 'close by' share set by the area, summing with the rest to 100%", () => {
+    for (const area of ["freeway", "main", "built", "back"] as const) {
+      const pr = predict(lost({ area }));
+      const near = pr.candidates.find(c => c.placeKey === NEAR_KEY);
+      expect(near?.p).toBeCloseTo(AREAS[area].nearShare);
+      expect(pr.candidates.reduce((t, c) => t + c.p, 0)).toBeCloseTo(1);
+    }
+  });
+
+  it("calls it 'at' once enough time has passed to be there, else 'route'", () => {
+    const soon = predict(lost({ nowMinutes: 507 }));
+    expect(soon.candidates.find(c => c.placeKey === "work")?.state).toBe(
+      "route"
+    );
+    const later = predict(lost({ nowMinutes: 540, area: "main" }));
+    expect(later.candidates.find(c => c.placeKey === "work")?.state).toBe("at");
+  });
+
+  it("keeps the tier from his history, not from the 'close by' share", () => {
+    const pr = predict(lost({ area: "back" }));
+    expect(pr.tier).toBe("low"); // 12 similar visits, but the top outcome is only 42%
+  });
+
+  it("from a point on the map drops places he cannot have reached", () => {
+    const pr = predict(
+      lost({
+        from: { kind: "point", lat: -31.99, lng: 115.76, minutes: 515 },
+        nowMinutes: 517,
+        area: "back",
+      })
+    );
+    // 2 minutes at 50 km/h ≈ 1.7 km: nothing in the history is that close
+    // to a point 5 km+ from every stop except none; "close by" remains.
+    expect(
+      pr.candidates.every(
+        c => c.placeKey === NEAR_KEY || (c.km ?? 0) <= 1.7 * 1.25 + 0.6
+      )
+    ).toBe(true);
+  });
+
+  it("not seen yet: where he usually is at this time of day", () => {
+    const pr = predict(
+      base({
+        mode: "now",
+        stops: history,
+        from: { kind: "none" },
+        nowMinutes: 480,
+      })
+    );
+    expect(pr.total).toBe(12);
+    expect(pr.candidates[0].placeKey).toBe("gym");
+    expect(pr.candidates.every(c => c.placeKey !== NEAR_KEY)).toBe(true);
+    const line = describePrediction(
+      pr,
+      base({ mode: "now", from: { kind: "none" }, nowMinutes: 480 }),
+      nameOf
+    );
+    expect(line.main).toBe("Likely at Gym right now");
+  });
+
+  it("matches visits that ended near the last-seen time when he was leaving", () => {
+    const pr = predict(
+      lost({
+        from: { kind: "place", placeKey: "gym", minutes: 800, leaving: true },
+        nowMinutes: 810,
+      })
+    );
+    expect(pr.total).toBe(0);
+  });
+});
+
+describe("haversineKm", () => {
+  it("measures roughly right", () => {
+    expect(
+      haversineKm({ lat: -31.95, lng: 115.86 }, { lat: -31.95, lng: 115.87 })
+    ).toBeCloseTo(0.94, 1);
+  });
+});
+
+describe("perthClock", () => {
+  it("reads the Perth date, weekday and time from an instant", () => {
+    // 22:40 UTC Wednesday is 06:40 Thursday in Perth (UTC+8).
+    expect(perthClock(new Date("2026-03-04T22:40:00Z"))).toEqual({
+      dateISO: "2026-03-05",
+      weekday: 3,
+      minutes: 400,
+    });
+  });
+});

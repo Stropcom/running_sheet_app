@@ -416,3 +416,154 @@ test("Intelligence Package has Places as a ticked section between Heat Map and P
   await places.click();
   await expect(places.getByRole("checkbox")).not.toBeChecked();
 });
+
+test("Map page: Target Predictor says where next, then where now, with a confidence level", async ({
+  page,
+}) => {
+  const created = await createOperationAndSheet(page);
+  // History that fits the clock this test runs on: ten Home visits under way
+  // around now on today's weekday — seven went to the gym next, three to the
+  // cafe — and the sheet says he is at Home.
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Perth",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find(p => p.type === t)!.value;
+  const today = `${get("year")}-${get("month")}-${get("day")}`;
+  const nowMin = (Number(get("hour")) % 24) * 60 + Number(get("minute"));
+  const weekday = (Math.floor(Date.parse(today) / 86_400_000) + 3) % 7;
+  const stop = (placeKey: string, end: number, next: string) => ({
+    placeKey,
+    weekday,
+    dateISO: "2026-01-01",
+    startMinutes: Math.max(0, end - 400),
+    endMinutes: end,
+    departureLogged: true,
+    nextPlaceKey: next,
+    nextStartMinutes: end + 15,
+  });
+  const predictor = {
+    targetName: "Sahana Priya MENON",
+    operationName: "RAVEN",
+    todayISO: today,
+    places: [
+      {
+        placeKey: "home",
+        name: "14 Marine Parade, COTTESLOE",
+        kind: "home",
+        lat: -31.99,
+        lng: 115.76,
+      },
+      {
+        placeKey: "gym",
+        name: "Elevate Fitness, SUBIACO",
+        kind: "gym",
+        lat: -31.95,
+        lng: 115.8,
+      },
+      {
+        placeKey: "cafe",
+        name: "Little Bird Cafe, SUBIACO",
+        kind: "cafe",
+        lat: -31.951,
+        lng: 115.805,
+      },
+    ],
+    stops: Array.from({ length: 10 }, (_, i) =>
+      stop("home", nowMin + 5 + (i % 3), i < 7 ? "gym" : "cafe")
+    ),
+    lastSeen: {
+      placeKey: "home",
+      dateISO: today,
+      minutes: Math.max(0, nowMin - 20),
+      leaving: false,
+    },
+  };
+  await page.route(/\/api\/trpc\//, async route => {
+    // The map page also fetches things that are not tRPC JSON, or are cut off
+    // when the test ends; those pass through untouched.
+    const resp = await route.fetch().catch(() => null);
+    if (!resp) return;
+    const json = await resp.json().catch(() => null);
+    if (json === null) return route.fulfill({ response: resp });
+    const procs = new URL(route.request().url()).pathname
+      .replace(/^.*\/api\/trpc\//, "")
+      .split(",");
+    const patch = (entry: any, name: string) => {
+      const data =
+        name === "intelligence.getSheetTarget"
+          ? {
+              id: 987655,
+              name: "Sahana Priya MENON",
+              tgt: null,
+              dep: null,
+              arr: null,
+              hb: null,
+              hbf: null,
+              v1: null,
+              v1f: null,
+              v2: null,
+              v2f: null,
+              extraVehicles: null,
+              wildFields: null,
+            }
+          : name === "intelligence.getTargetPredictor"
+            ? predictor
+            : undefined;
+      if (data === undefined) return;
+      delete entry.error;
+      entry.result = { data: { json: data } };
+    };
+    if (Array.isArray(json)) json.forEach((e, i) => patch(e, procs[i]));
+    else patch(json, procs[0]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
+  });
+
+  await page.goto("/");
+  await page.evaluate(({ opId, sheetId }) => {
+    localStorage.setItem(
+      "runlog_map_settings",
+      JSON.stringify({ rsSelectedOpId: opId, rsSelectedSheetId: sheetId })
+    );
+    localStorage.removeItem("runlog_target_predictor_on");
+  }, created);
+  await page.goto("/intelligence/mapping");
+  await page.getByRole("button", { name: "Toggle side panel" }).click();
+
+  // Off until switched on, and nothing is shown on the map while off.
+  const section = page.getByText("Target Predictor", { exact: true }).first();
+  await section.scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("predictor-banner")).toHaveCount(0);
+  await page.getByRole("button", { name: /Target predictor\s*Off/i }).click();
+
+  // Where next: counted from the history, with the confidence stated.
+  const banner = page.getByTestId("predictor-banner");
+  await expect(banner).toContainText("Next: Elevate Fitness");
+  await expect(banner).toContainText("70% of similar visits");
+  await expect(banner).toContainText("Moderate confidence");
+  await expect(page.getByText("Home — 14 Marine Parade").first()).toBeVisible();
+
+  // Where now: area picker appears, and the answer is marked area-adjusted.
+  await page.getByRole("button", { name: "Where now?" }).click();
+  await expect(banner).toContainText(/last seen at Home/);
+  await expect(banner).toContainText("area-adjusted");
+  const builtUp = page.getByRole("button", { name: "Built-up area" });
+  await expect(builtUp).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Back street" }).click();
+  await expect(
+    page.getByRole("button", { name: "Back street" })
+  ).toHaveAttribute("aria-pressed", "true");
+
+  // Switching it off clears the line from the map.
+  await page.getByRole("button", { name: /Target predictor\s*On/i }).click();
+  await expect(banner).toHaveCount(0);
+});

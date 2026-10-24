@@ -17,6 +17,7 @@ import {
   getIntelligenceHeatMapLocations,
   getIntelTargetPatternOfLife,
   getIntelTargetPlaces,
+  getIntelTargetPredictor,
   setTargetPlaceLabel,
   createAuditLog,
   extractEntitiesFromText,
@@ -251,6 +252,32 @@ export const intelligenceRouter = router({
       const result = await getIntelTargetPlaces(
         input.operationId,
         input.targetId
+      );
+      if (!result)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Operation or target not found.",
+        });
+      return result;
+    }),
+
+  /** Target Predictor: the places one target goes (located on the map), his
+   * stops with where he went next, and where the chosen sheet last had him.
+   * Reads uncertified rows too. The predicting is done on the client, from
+   * the clock, by shared/targetPredictor.ts. */
+  getTargetPredictor: protectedProcedure
+    .input(
+      z.object({
+        operationId: z.number(),
+        targetId: z.number(),
+        sheetId: z.number().nullable(),
+      })
+    )
+    .query(async ({ input }) => {
+      const result = await getIntelTargetPredictor(
+        input.operationId,
+        input.targetId,
+        input.sheetId
       );
       if (!result)
         throw new TRPCError({

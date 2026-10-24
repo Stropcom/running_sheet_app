@@ -44,6 +44,11 @@ import {
   type PlaceRecord,
   type RegisteredAddressRef,
 } from "@shared/placesReport";
+import {
+  buildStops,
+  type PredictorPlace,
+  type PredictorStop,
+} from "@shared/targetPredictor";
 
 import {
   classifyVisitDirection,
@@ -1151,6 +1156,77 @@ export async function getIntelTargetPlaces(
     });
   }
   return { ...empty, places };
+}
+
+// ─── Target Predictor ────────────────────────────────────────────────────────
+// What the Map page's Target Predictor needs for one target on one operation:
+// the places he goes (located on the map, cache-first like the Heat Map), the
+// stops with where he went next (shared/targetPredictor.ts), and where the
+// chosen running sheet last had him. The sums are done on the client with the
+// clock — nothing here predicts anything.
+
+export interface IntelTargetPredictorResponse {
+  targetName: string;
+  operationName: string;
+  todayISO: string;
+  places: (PredictorPlace & { kind: PlaceKind })[];
+  stops: PredictorStop[];
+  /** The latest visit on the chosen sheet: where, when, and whether a row
+   * says he was leaving. Null when the sheet has none. */
+  lastSeen: {
+    placeKey: string;
+    dateISO: string;
+    minutes: number;
+    leaving: boolean;
+  } | null;
+}
+
+export async function getIntelTargetPredictor(
+  operationId: number,
+  targetId: number,
+  sheetId: number | null
+): Promise<IntelTargetPredictorResponse | null> {
+  const report = await getIntelTargetPlaces(operationId, targetId);
+  if (!report) return null;
+  const places = await Promise.all(
+    report.places.map(async p => {
+      const at = await resolveLatLng(p.placeKey, p.name);
+      return {
+        placeKey: p.placeKey,
+        name: p.name,
+        kind: p.kind,
+        lat: at?.lat ?? null,
+        lng: at?.lng ?? null,
+      };
+    })
+  );
+  const visits = report.places.flatMap(p => p.visits);
+  let lastSeen: IntelTargetPredictorResponse["lastSeen"] = null;
+  let lastKey = -1;
+  if (sheetId != null) {
+    for (const v of visits) {
+      if (v.sheetId !== sheetId) continue;
+      const minutes = v.endMinutes ?? v.startMinutes;
+      if (minutes === null) continue;
+      const key = Math.floor(Date.parse(v.dateISO) / 60_000) + minutes;
+      if (key <= lastKey) continue;
+      lastKey = key;
+      lastSeen = {
+        placeKey: v.placeKey,
+        dateISO: v.dateISO,
+        minutes,
+        leaving: v.endMinutes !== null,
+      };
+    }
+  }
+  return {
+    targetName: report.targetName,
+    operationName: report.operationName,
+    todayISO: report.todayISO,
+    places,
+    stops: buildStops(visits),
+    lastSeen,
+  };
 }
 
 /** Sets (or, with kind = null, clears) an officer's label on a place for a

@@ -398,3 +398,21 @@ test("Places Report lists where a target goes, by kind, with the visits behind e
   await home.getByRole("button", { name: /Show the 1 visit/ }).click();
   await expect(home.locator("table")).toContainText("no departure logged");
 });
+
+test("Intelligence Package has Places as a ticked section between Heat Map and Pattern of Life", async ({
+  page,
+}) => {
+  await page.goto("/intelligence");
+  await page.getByRole("button", { name: "Packages", exact: true }).click();
+  const contents = page.getByText("Package contents").locator("..");
+  const names = await contents.locator("label .font-medium").allTextContents();
+  const heat = names.indexOf("Heat Map");
+  expect(heat).toBeGreaterThan(-1);
+  expect(names[heat + 1]).toBe("Places");
+  expect(names[heat + 2]).toBe("Pattern of Life");
+  // Like every other section, it is ticked until someone unticks it.
+  const places = contents.locator("label", { hasText: "Places" }).first();
+  await expect(places.getByRole("checkbox")).toBeChecked();
+  await places.click();
+  await expect(places.getByRole("checkbox")).not.toBeChecked();
+});

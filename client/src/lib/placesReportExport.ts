@@ -10,25 +10,12 @@ import {
 const esc = (s: string | null | undefined) =>
   (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-/** The Places Report as a printable page — same shell as the other Intelligence
- * report exports (navy cover band, PROTECTED header, close / print bar). One
- * table of places, then each place's visits. */
-export function buildPlacesReportHtml(params: {
-  targetName: string;
-  operationName: string;
-  periodLabel: string;
-  places: PlaceSummary[];
-}): string {
-  const { targetName, operationName, periodLabel, places } = params;
-  const BLUE_DARK = "#1e3a8a";
-  const BLUE_MID = "#93c5fd";
-  const BLUE_LIGHT = "#dbeafe";
-  const generatedAt = new Date().toLocaleString("en-AU", {
-    dateStyle: "long",
-    timeStyle: "short",
-  });
-  const visits = places.reduce((s, p) => s + p.visits.length, 0);
-
+/** The places table and then each place's visits, as print-ready HTML. Shared
+ * by the Places Report's own export and the Intelligence Package, which embeds
+ * one of these per included target. Uses the package's `data-table` class (the
+ * standalone export defines the same look for it). Running sheets are left out
+ * on purpose — the links to them live on the Places page. */
+export function buildPlacesBodyHtml(places: PlaceSummary[]): string {
   const usual = (p: PlaceSummary) =>
     [
       p.usualDays.map(d => WEEKDAY_SHORT[d]).join(" · "),
@@ -54,7 +41,7 @@ export function buildPlacesReportHtml(params: {
     .map(
       p => `<div class="place">
   <div class="place-h">${esc(p.name)} <span class="muted">— ${esc(placeKindLabel(p.kind))}</span></div>
-  <table class="visits"><thead><tr><th>Date</th><th>Arrived</th><th>Left</th><th>Time there</th></tr></thead><tbody>
+  <table class="data-table visits"><thead><tr><th>Date</th><th>Arrived</th><th>Left</th><th>Time there</th></tr></thead><tbody>
   ${p.visits
     .map(
       v =>
@@ -71,6 +58,31 @@ export function buildPlacesReportHtml(params: {
     )
     .join("");
 
+  return `<table class="data-table"><thead><tr><th>Place</th><th>Kind</th><th class="num">Visits</th><th class="num">Time recorded</th><th class="num">Average stay</th><th>Usually</th></tr></thead><tbody>${rows}</tbody></table>
+  <div class="note">Built from running sheet rows, certified or not. Time at a place is arrival to a logged departure; a visit with no departure logged is counted but has no time. A place nothing recognises is shown as Other.</div>
+  <div class="visits-h">Visits</div>
+  ${details}`;
+}
+
+/** The Places Report as a printable page — same shell as the other Intelligence
+ * report exports (navy cover band, PROTECTED header, close / print bar). One
+ * table of places, then each place's visits. */
+export function buildPlacesReportHtml(params: {
+  targetName: string;
+  operationName: string;
+  periodLabel: string;
+  places: PlaceSummary[];
+}): string {
+  const { targetName, operationName, periodLabel, places } = params;
+  const BLUE_DARK = "#1e3a8a";
+  const BLUE_MID = "#93c5fd";
+  const BLUE_LIGHT = "#dbeafe";
+  const generatedAt = new Date().toLocaleString("en-AU", {
+    dateStyle: "long",
+    timeStyle: "short",
+  });
+  const visits = places.reduce((s, p) => s + p.visits.length, 0);
+
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RunLog — Places Report: ${esc(targetName)}</title>
 <style>* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; } body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.5; color:#1e293b; background:#fff; }
 @page { margin:14mm 12mm; @top-center { content:'PROTECTED'; font-family:sans-serif; font-size:12px; font-weight:700; color:#dc2626; letter-spacing:0.08em } }
@@ -79,7 +91,8 @@ export function buildPlacesReportHtml(params: {
 .entity-name { font-size:22px; font-weight:700; } .gen-time { font-size:9px; opacity:0.7; margin-top:10px; }
 .content { padding:18px 32px 70px; }
 .section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin:14px 0 8px; }
-table { border-collapse:collapse; width:100%; }
+table, .data-table { border-collapse:collapse; width:100%; }
+.visits-h { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK}; margin:16px 0 6px; }
 th { text-align:left; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; color:${BLUE_DARK}; padding:5px 6px; border-bottom:2px solid ${BLUE_DARK}; }
 td { padding:5px 6px; border-bottom:1px solid #e2e8f0; vertical-align:top; }
 .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
@@ -97,10 +110,7 @@ td { padding:5px 6px; border-bottom:1px solid #e2e8f0; vertical-align:top; }
 </div>
 <div class="content">
   <div class="section-title">Places</div>
-  <table><thead><tr><th>Place</th><th>Kind</th><th class="num">Visits</th><th class="num">Time recorded</th><th class="num">Average stay</th><th>Usually</th></tr></thead><tbody>${rows}</tbody></table>
-  <div class="note">Built from running sheet rows, certified or not. Time at a place is arrival to a logged departure; a visit with no departure logged is counted but has no time. A place nothing recognises is shown as Other.</div>
-  <div class="section-title">Visits</div>
-  ${details}
+  ${buildPlacesBodyHtml(places)}
   <div class="footer"><span>RunLog — Places Report</span><span>SENSITIVE — FOR OFFICIAL USE ONLY — ${generatedAt}</span></div>
 </div>
 ${buildExportPreviewCloseBar()}

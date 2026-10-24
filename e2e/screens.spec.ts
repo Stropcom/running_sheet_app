@@ -608,3 +608,137 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   await page.getByRole("button", { name: /Target predictor\s*On/i }).click();
   await expect(banner).toHaveCount(0);
 });
+
+test("Map page: Where now still shows how far he could have got with no history, and lists registered addresses in reach", async ({
+  page,
+}) => {
+  const created = await createOperationAndSheet(page);
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Perth",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find(p => p.type === t)!.value;
+  const today = `${get("year")}-${get("month")}-${get("day")}`;
+  const nowMin = (Number(get("hour")) % 24) * 60 + Number(get("minute"));
+  // Seen 20 minutes ago at a tapped point — no known places for this target
+  // except one registered address about 1.5 km away that he was never seen at.
+  const point = { lat: -31.95, lng: 115.86 };
+  let places: unknown[] = [];
+  const predictor = () => ({
+    targetName: "Sahana Priya MENON",
+    operationName: "RAVEN",
+    todayISO: today,
+    places,
+    stops: [],
+    lastSeen: null,
+  });
+  const sharedSeen = {
+    kind: "point",
+    placeKey: null,
+    lat: point.lat,
+    lng: point.lng,
+    seenMinutes: Math.max(0, nowMin - 20),
+    area: "main",
+    updatedByCIN: "999",
+    updatedAtMs: Date.now(),
+  };
+  await page.route(/\/api\/trpc\//, async route => {
+    const resp = await route.fetch().catch(() => null);
+    if (!resp) return;
+    const json = await resp.json().catch(() => null);
+    if (json === null) return route.fulfill({ response: resp });
+    const procs = new URL(route.request().url()).pathname
+      .replace(/^.*\/api\/trpc\//, "")
+      .split(",");
+    const patch = (entry: any, name: string) => {
+      const data =
+        name === "intelligence.getSheetTarget"
+          ? {
+              id: 987655,
+              name: "Sahana Priya MENON",
+              tgt: null,
+              dep: null,
+              arr: null,
+              hb: null,
+              hbf: null,
+              v1: null,
+              v1f: null,
+              v2: null,
+              v2f: null,
+              extraVehicles: null,
+              wildFields: null,
+            }
+          : name === "intelligence.getTargetPredictor"
+            ? predictor()
+            : name === "intelligence.getPredictorLastSeen"
+              ? sharedSeen
+              : name === "intelligence.getPredictorTrail"
+                ? []
+                : undefined;
+      if (data === undefined) return;
+      delete entry.error;
+      entry.result = { data: { json: data } };
+    };
+    if (Array.isArray(json)) json.forEach((e, i) => patch(e, procs[i]));
+    else patch(json, procs[0]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
+  });
+  await page.goto("/");
+  await page.evaluate(({ opId, sheetId }) => {
+    localStorage.setItem(
+      "runlog_map_settings",
+      JSON.stringify({
+        selectedOpIds: [opId],
+        opsExplicitlySet: true,
+        rsSelectedSheetId: sheetId,
+      })
+    );
+    localStorage.setItem("runlog_target_predictor_on", "1");
+  }, created);
+
+  // 1. No known places and no history: the reach still answers.
+  await page.goto("/intelligence/mapping");
+  await page.getByRole("button", { name: "Toggle side panel" }).click();
+  await page.getByRole("button", { name: "Where now?" }).click();
+  const banner = page.getByTestId("predictor-banner");
+  await expect(banner).toContainText("He could be up to");
+  await expect(banner).toContainText("Reach only");
+  await expect(banner).toContainText("no known locations of interest in reach");
+  await expect(
+    page.getByText("How far he could have got").first()
+  ).toBeVisible();
+  await expect(
+    page.getByText(/None of his known places or registered addresses/)
+  ).toBeVisible();
+
+  // 2. A registered address he has never been seen at, inside the reach, is a
+  // location of interest on its own (no visits needed).
+  places = [
+    {
+      placeKey: "reg",
+      name: "14 Marine Parade, COTTESLOE",
+      kind: "home",
+      lat: point.lat - 0.012,
+      lng: point.lng,
+      visits: 0,
+      registered: true,
+    },
+  ];
+  await page.reload();
+  await page.getByRole("button", { name: "Toggle side panel" }).click();
+  await page.getByRole("button", { name: "Where now?" }).click();
+  await expect(page.getByText("Locations of interest in reach")).toBeVisible();
+  await expect(
+    page.getByText("registered address — no visits on record")
+  ).toBeVisible();
+  await expect(banner).toContainText("1 known location of interest in reach");
+});

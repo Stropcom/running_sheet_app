@@ -108,6 +108,10 @@ export interface PredictorPlace {
   /** Null when the place could not be located on the map. */
   lat: number | null;
   lng: number | null;
+  /** Visits on record (0 = a registered address he has never been seen at). */
+  visits?: number;
+  /** One of the target's registered addresses. */
+  registered?: boolean;
 }
 
 /** One visit with where he went after it. Times are minutes after midnight of
@@ -254,6 +258,15 @@ export interface Candidate {
   state: CandidateState;
 }
 
+/** A location of interest inside the "how far could he have got" ring. */
+export interface ReachPlace {
+  placeKey: string;
+  /** Straight-line km from where he was last seen. */
+  km: number;
+  visits: number;
+  registered: boolean;
+}
+
 export interface Prediction {
   mode: PredictorMode;
   tier: Tier;
@@ -274,6 +287,14 @@ export interface Prediction {
   elapsedMinutes: number;
   reachKm: number;
   area: AreaClass;
+  /** Where now: every known location (places he has been seen at and his
+   * registered addresses) inside the reach, nearest first. Independent of the
+   * history counts — it answers "what is out there that is his", while the
+   * candidates answer "where is he most likely to be". */
+  inReach: ReachPlace[];
+  /** Where now: the last-seen position could be placed on the map, so the
+   * reach (and inReach) mean something. Needs no history at all. */
+  seenLocated: boolean;
   /** True when the area adjustment was applied to the shares. */
   adjusted: boolean;
   /** True when the team's direction of travel changed the shares. */
@@ -551,6 +572,30 @@ export function predict(input: PredictorInput): Prediction {
   }
   candidates.sort((a, b) => b.p - a.p || b.n - a.n);
 
+  // Locations of interest inside the reach, nearest first. The reach is a
+  // little generous (x1.25) because speeds are assumptions, and never smaller
+  // than 600 m so a fresh sighting still lists what is right there.
+  const inReach: ReachPlace[] =
+    mode === "now" && seenPt
+      ? input.places
+          .map(pl => {
+            const at = located(pl);
+            return at
+              ? {
+                  placeKey: pl.placeKey,
+                  km: haversineKm(seenPt, at),
+                  visits: pl.visits ?? 0,
+                  registered: pl.registered ?? false,
+                }
+              : null;
+          })
+          .filter(
+            (r): r is ReachPlace =>
+              r !== null && r.km <= Math.max(reachKm * 1.25, 0.6)
+          )
+          .sort((a, b) => a.km - b.km)
+      : [];
+
   return {
     mode,
     tier,
@@ -562,6 +607,8 @@ export function predict(input: PredictorInput): Prediction {
     elapsedMinutes: elapsed,
     reachKm,
     area: input.area,
+    inReach,
+    seenLocated: mode === "now" && seenPt !== null,
     adjusted,
     directionApplied,
     historyStops: input.stops.length,
@@ -583,6 +630,10 @@ function hhmm(m: number): string {
   return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
 }
 
+export function formatKm(km: number): string {
+  return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
+}
+
 const WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export interface Headline {
@@ -596,6 +647,26 @@ export function describePrediction(
   input: PredictorInput,
   nameOf: (placeKey: string) => string
 ): Headline {
+  // Where now with a last-seen point: how far he could have got is an answer
+  // in its own right, needing no history at all.
+  if (
+    pr.mode === "now" &&
+    pr.seenLocated &&
+    (pr.tier === "none" || !pr.candidates[0])
+  ) {
+    const n = pr.inReach.length;
+    return {
+      main:
+        pr.elapsedMinutes > 0
+          ? `He could be up to ${formatKm(pr.reachKm)} from where he was last seen`
+          : "Just seen — the area he could be in grows with every minute",
+      sub: `${Math.round(pr.elapsedMinutes)} min at about ${AREAS[pr.area].kmh} km/h (${AREAS[pr.area].label.toLowerCase()}) · ${
+        n === 0
+          ? "no known locations of interest in reach"
+          : `${n} known location${n === 1 ? "" : "s"} of interest in reach`
+      }`,
+    };
+  }
   const h = headlineCore(pr, input, nameOf);
   if (pr.tier === "none" || !pr.candidates[0]) return h;
   // Say plainly when the answer rests on very little, or on other days.
@@ -604,6 +675,8 @@ export function describePrediction(
     notes.push(
       `only ${pr.total} similar visit${pr.total === 1 ? "" : "s"} — very limited history`
     );
+  if (pr.mode === "now" && pr.seenLocated && pr.elapsedMinutes > 0)
+    notes.push(`could be up to ${formatKm(pr.reachKm)} away`);
   if (!(input.allHistory ?? USE_ALL_HISTORY)) {
     if (pr.scope === "anyday") notes.push("from other days at this time");
     if (pr.scope === "anytime") notes.push("from other days and times");

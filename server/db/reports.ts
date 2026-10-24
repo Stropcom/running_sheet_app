@@ -964,6 +964,32 @@ export interface IntelTargetPlacesResponse {
   })[];
 }
 
+/** Whether an entity is one of the target's registered addresses — Home, or
+ * Address 2, 3… — read from the synthetic "Target card" occurrence
+ * getAllIntelligenceEntities seeds for each (rowId 0). */
+function registeredRefOf(
+  occurrences: readonly { rowId: number; observationSnippet?: string | null }[],
+  targetName: string,
+  extras: readonly { label: string }[]
+): RegisteredAddressRef | null {
+  const prefix = `Target card — ${targetName} [`;
+  for (const occ of occurrences) {
+    if (occ.rowId !== 0) continue;
+    const snip = occ.observationSnippet ?? "";
+    if (!snip.startsWith(prefix)) continue;
+    const field = snip.slice(prefix.length).replace(/\]$/, "");
+    if (field === "HBF") return { slot: "home", label: "" };
+    const n = /^Address (\d+)$/.exec(field);
+    if (n)
+      return {
+        slot: "extra",
+        number: Number(n[1]),
+        label: extras[Number(n[1]) - 2]?.label ?? "",
+      };
+  }
+  return null;
+}
+
 export async function getIntelTargetPlaces(
   operationId: number,
   targetId: number
@@ -1058,25 +1084,8 @@ export async function getIntelTargetPlaces(
   // The target's registered addresses, from the synthetic "Target card"
   // occurrences getAllIntelligenceEntities seeds for them.
   const extras = parseExtraAddresses(target.extraAddresses);
-  const registeredOf = (entity: (typeof allEntities)[number]) => {
-    for (const occ of entity.occurrences) {
-      if (occ.rowId !== 0) continue;
-      const snip = occ.observationSnippet ?? "";
-      const prefix = `Target card — ${target.name} [`;
-      if (!snip.startsWith(prefix)) continue;
-      const field = snip.slice(prefix.length).replace(/\]$/, "");
-      if (field === "HBF")
-        return { slot: "home", label: "" } satisfies RegisteredAddressRef;
-      const n = /^Address (\d+)$/.exec(field);
-      if (n)
-        return {
-          slot: "extra",
-          number: Number(n[1]),
-          label: extras[Number(n[1]) - 2]?.label ?? "",
-        } satisfies RegisteredAddressRef;
-    }
-    return null;
-  };
+  const registeredOf = (entity: (typeof allEntities)[number]) =>
+    registeredRefOf(entity.occurrences, target.name, extras);
 
   // Signs saved for places (Google's type from the address suggestions, or an
   // officer's own icon) — how a place Google knows as a gym is known here.
@@ -1170,7 +1179,13 @@ export interface IntelTargetPredictorResponse {
   targetName: string;
   operationName: string;
   todayISO: string;
-  places: (PredictorPlace & { kind: PlaceKind })[];
+  places: (PredictorPlace & {
+    kind: PlaceKind;
+    /** One of the target's registered addresses (Home, Address 2…). */
+    registered: boolean;
+    /** Visits on record (0 for a registered address he has not been seen at). */
+    visits: number;
+  })[];
   stops: PredictorStop[];
   /** The latest visit on the chosen sheet: where, when, and whether a row
    * says he was leaving. Null when the sheet has none. */
@@ -1274,13 +1289,49 @@ export async function getIntelTargetPredictor(
 ): Promise<IntelTargetPredictorResponse | null> {
   const report = await getIntelTargetPlaces(operationId, targetId);
   if (!report) return null;
+  // Locations of interest: every place he has been seen at, plus his registered
+  // addresses even if he has never been seen there — so the predictor has
+  // something to offer inside the "how far could he have got" ring on day one.
+  const target = await getTargetById(targetId);
+  const have = new Set(report.places.map(p => p.placeKey));
+  const registeredOnly: {
+    placeKey: string;
+    name: string;
+    kind: PlaceKind;
+  }[] = [];
+  if (target) {
+    const extras = parseExtraAddresses(target.extraAddresses);
+    for (const entity of await getAllIntelligenceEntities()) {
+      if (entity.type !== "address" && entity.type !== "business") continue;
+      const ref = registeredRefOf(entity.occurrences, target.name, extras);
+      if (!ref) continue;
+      const placeKey = normalizeEntityLabel(entity.shortForm);
+      if (have.has(placeKey)) continue;
+      have.add(placeKey);
+      registeredOnly.push({
+        placeKey,
+        name: entity.shortForm,
+        kind: classifyPlace({
+          name: entity.shortForm,
+          registered: ref,
+        }).kind,
+      });
+    }
+  }
   const places = await Promise.all(
-    report.places.map(async p => {
-      const at = await resolveLatLng(p.placeKey, p.name);
-      return {
+    [
+      ...report.places.map(p => ({
         placeKey: p.placeKey,
         name: p.name,
         kind: p.kind,
+        visits: p.visits.length,
+        registered: p.registeredAs !== null,
+      })),
+      ...registeredOnly.map(p => ({ ...p, visits: 0, registered: true })),
+    ].map(async p => {
+      const at = await resolveLatLng(p.placeKey, p.name);
+      return {
+        ...p,
         lat: at?.lat ?? null,
         lng: at?.lng ?? null,
       };

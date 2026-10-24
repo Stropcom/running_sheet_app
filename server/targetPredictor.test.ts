@@ -8,6 +8,7 @@ import {
   areaFromStreetName,
   buildStops,
   describePrediction,
+  formatKm,
   haversineKm,
   perthClock,
   predict,
@@ -466,6 +467,86 @@ describe("counting every visit on record (the current setting)", () => {
     );
     expect(pr.scope).toBe("anyday");
     expect(pr.candidates[0].placeKey).toBe("t2");
+  });
+});
+
+describe("Where now: how far he could have got, and locations of interest", () => {
+  const places: PredictorPlace[] = [
+    { placeKey: "near", name: "Near", lat: -31.95, lng: 115.86, visits: 3 },
+    {
+      placeKey: "reg",
+      name: "Registered address",
+      lat: -31.97,
+      lng: 115.86,
+      visits: 0,
+      registered: true,
+    },
+    { placeKey: "far", name: "Far", lat: -32.5, lng: 115.86, visits: 9 },
+  ];
+  const nameOf = (k: string) => places.find(p => p.placeKey === k)?.name ?? k;
+  const lost = (over: Partial<PredictorInput> = {}): PredictorInput => ({
+    mode: "now",
+    stops: [],
+    places,
+    from: { kind: "point", lat: -31.95, lng: 115.85, minutes: 1000 },
+    nowWeekday: 5,
+    nowMinutes: 1020,
+    area: "main",
+    ...over,
+  });
+
+  it("the reach works with no history and no known places at all", () => {
+    const input = lost({ places: [] });
+    const pr = predict(input);
+    expect(pr.tier).toBe("none");
+    expect(pr.seenLocated).toBe(true);
+    expect(pr.reachKm).toBeCloseTo((70 * 20) / 60);
+    expect(pr.inReach).toEqual([]);
+    const line = describePrediction(pr, input, nameOf);
+    expect(line.main).toBe(
+      "He could be up to 23.3 km from where he was last seen"
+    );
+    expect(line.sub).toContain("20 min at about 70 km/h");
+    expect(line.sub).toContain("no known locations of interest in reach");
+  });
+
+  it("lists known places inside the reach, nearest first, with or without visits", () => {
+    const pr = predict(lost());
+    expect(pr.inReach.map(r => r.placeKey)).toEqual(["near", "reg"]);
+    expect(pr.inReach[1].registered).toBe(true);
+    expect(pr.inReach[1].visits).toBe(0);
+    // "far" is ~60 km away: outside 20 minutes at 70 km/h.
+    expect(pr.inReach.some(r => r.placeKey === "far")).toBe(false);
+  });
+
+  it("the reach grows with the clock and takes in more places", () => {
+    const later = predict(lost({ nowMinutes: 1100 }));
+    expect(later.reachKm).toBeGreaterThan(predict(lost()).reachKm);
+    expect(later.inReach.some(r => r.placeKey === "far")).toBe(true);
+  });
+
+  it("a fresh sighting still lists what is right there", () => {
+    const fresh = lost({
+      nowMinutes: 1000,
+      from: { kind: "point", lat: -31.95, lng: 115.857, minutes: 1000 },
+    });
+    const pr = predict(fresh);
+    expect(pr.elapsedMinutes).toBe(0);
+    expect(pr.inReach.map(r => r.placeKey)).toEqual(["near"]);
+    expect(describePrediction(pr, fresh, nameOf).main).toMatch(/^Just seen/);
+  });
+
+  it("is separate from the history: places in reach are listed even when none is likely", () => {
+    const pr = predict(lost());
+    expect(pr.candidates.every(c => c.placeKey === "_near" || c.n > 0)).toBe(
+      true
+    );
+    expect(pr.inReach.length).toBe(2);
+  });
+
+  it("formats small distances in metres", () => {
+    expect(formatKm(0.45)).toBe("450 m");
+    expect(formatKm(2.34)).toBe("2.3 km");
   });
 });
 

@@ -49,6 +49,7 @@ import {
   TIER_LABEL,
   areaFromStreetName,
   describePrediction,
+  formatKm,
   perthClock,
   predict,
   type AreaClass,
@@ -277,6 +278,12 @@ export function useTargetPredictor({
 
   const firstPlaceKey = data?.places[0]?.placeKey ?? null;
   const seenAt = Math.min(seen.minutes ?? clock.minutes - 15, clock.minutes);
+  // With no known place to pick, "last seen" can only be a tap on the map —
+  // the reach still works from there.
+  const seenKindEff: SeenKind =
+    seen.kind === "place" && !seen.placeKey && !firstPlaceKey
+      ? "tap"
+      : seen.kind;
 
   const from: PredictorFrom | null = useMemo(() => {
     if (!data) return null;
@@ -298,8 +305,8 @@ export function useTargetPredictor({
           }
         : null;
     }
-    if (seen.kind === "none") return { kind: "none" };
-    if (seen.kind === "tap")
+    if (seenKindEff === "none") return { kind: "none" };
+    if (seenKindEff === "tap")
       return seen.point
         ? {
             kind: "point",
@@ -322,6 +329,7 @@ export function useTargetPredictor({
     firstPlaceKey,
     clock.minutes,
     seen,
+    seenKindEff,
     seenAt,
   ]);
 
@@ -510,7 +518,7 @@ export function useTargetPredictor({
     override,
     pickPlaceKey,
     setPickPlaceKey,
-    seenKind: seen.kind,
+    seenKind: seenKindEff,
     setSeenKind,
     seenPlaceKey: seen.placeKey,
     setSeenPlaceKey,
@@ -553,7 +561,7 @@ export function useTargetPredictor({
     tapping:
       on &&
       mode === "now" &&
-      (tapArmed || (!usingSheet && seen.kind === "tap")),
+      (tapArmed || (!usingSheet && seenKindEff === "tap")),
   };
 }
 export type TargetPredictorState = ReturnType<typeof useTargetPredictor>;
@@ -671,13 +679,16 @@ export function TargetPredictorSection({
 
               {p.data && places.length === 0 && (
                 <p className="text-[11px] leading-snug text-muted-foreground">
-                  No places on record for this target on this operation yet, so
-                  there is nothing to predict from.
+                  {p.mode === "now"
+                    ? "No known places for this target on this operation yet. How far he could have got still works — tap the map where he was last seen."
+                    : "No places on record for this target on this operation yet, so there is nothing to predict from."}
                 </p>
               )}
 
-              {p.data && places.length > 0 && <PositionControls p={p} />}
-              {p.data && places.length > 0 && p.mode === "now" && (
+              {p.data && (places.length > 0 || p.mode === "now") && (
+                <PositionControls p={p} />
+              )}
+              {p.data && p.mode === "now" && (
                 <button
                   onClick={() => p.setTapArmed(!p.tapArmed)}
                   aria-pressed={p.tapArmed}
@@ -692,12 +703,11 @@ export function TargetPredictorSection({
                     : "Tap the map where he was last seen"}
                 </button>
               )}
-              {p.data &&
-                places.length > 0 &&
-                p.mode === "now" &&
-                p.from?.kind !== "none" && <AreaControls p={p} />}
+              {p.data && p.mode === "now" && p.from?.kind !== "none" && (
+                <AreaControls p={p} />
+              )}
 
-              {p.data && places.length > 0 && (
+              {p.data && (places.length > 0 || p.mode === "now") && (
                 <div className="space-y-1 pt-0.5">
                   <label className="flex items-center gap-2 text-xs text-foreground">
                     <input
@@ -705,7 +715,7 @@ export function TargetPredictorSection({
                       checked={p.showShade}
                       onChange={e => p.setShowShade(e.target.checked)}
                     />
-                    Show likely areas on the map
+                    Show locations of interest on the map
                   </label>
                   {p.mode === "now" && (
                     <label className="flex items-center gap-2 text-xs text-foreground">
@@ -733,6 +743,13 @@ export function TargetPredictorSection({
                 <DirectionNote p={p} />
               )}
 
+              {/* Where now is two separate answers that work together: how
+                  far he could have got (needs no history) and the locations
+                  of interest inside that reach. */}
+              {pr && p.mode === "now" && <ReachCard pr={pr} />}
+              {pr && p.mode === "now" && pr.seenLocated && (
+                <InterestList p={p} pr={pr} />
+              )}
               {pr && p.input && <Candidates p={p} pr={pr} />}
               {pr && p.input && <HowWorkedOut p={p} pr={pr} />}
             </>
@@ -930,6 +947,82 @@ function AreaControls({ p }: { p: TargetPredictorState }) {
   );
 }
 
+function ReachCard({ pr }: { pr: Prediction }) {
+  if (!pr.seenLocated)
+    return (
+      <div className="rounded-xl border-2 border-border bg-card px-3 py-2">
+        <p className="text-xs font-semibold text-foreground">
+          How far he could have got
+        </p>
+        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+          Needs a last-seen position on the map — tap the map where he was last
+          seen.
+        </p>
+      </div>
+    );
+  return (
+    <div className="rounded-xl border-2 border-border bg-card px-3 py-2">
+      <div className="flex items-center justify-between gap-2 text-xs font-semibold text-foreground">
+        <span>How far he could have got</span>
+        <span className="tabular-nums flex-shrink-0">
+          {pr.elapsedMinutes > 0
+            ? `up to ${formatKm(pr.reachKm)}`
+            : "just seen"}
+        </span>
+      </div>
+      <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+        {Math.round(pr.elapsedMinutes)} min at about {AREAS[pr.area].kmh} km/h (
+        {AREAS[pr.area].label.toLowerCase()}) — the dashed ring on the map. It
+        grows every minute and does not depend on his history.
+      </p>
+    </div>
+  );
+}
+
+function InterestList({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
+  const shown = pr.inReach.slice(0, 8);
+  return (
+    <div className="rounded-xl border-2 border-border bg-card px-3 py-2">
+      <div className="flex items-center justify-between gap-2 text-xs font-semibold text-foreground">
+        <span>Locations of interest in reach</span>
+        <span className="tabular-nums flex-shrink-0">{pr.inReach.length}</span>
+      </div>
+      {shown.length === 0 ? (
+        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+          None of his known places or registered addresses are inside that
+          reach.
+        </p>
+      ) : (
+        <ul className="mt-1 space-y-1">
+          {shown.map(r => (
+            <li
+              key={r.placeKey}
+              className="flex items-start justify-between gap-2 text-[11px] leading-snug"
+            >
+              <span className="min-w-0 text-foreground">
+                <span className="font-semibold">{p.labelOf(r.placeKey)}</span>
+                <span className="block text-muted-foreground">
+                  {r.visits > 0
+                    ? `${r.visits} visit${r.visits === 1 ? "" : "s"} on record`
+                    : "registered address — no visits on record"}
+                </span>
+              </span>
+              <span className="flex-shrink-0 tabular-nums text-muted-foreground">
+                {formatKm(r.km)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {pr.inReach.length > shown.length && (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          …and {pr.inReach.length - shown.length} more, further out.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function DirectionNote({ p }: { p: TargetPredictorState }) {
   const d = p.direction;
   if (p.from?.kind === "none") return null;
@@ -971,6 +1064,11 @@ function Candidates({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
     );
   return (
     <div className="space-y-1.5">
+      {p.mode === "now" && (
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Most likely, from his history
+        </p>
+      )}
       {pr.candidates.slice(0, 4).map(c => {
         const pct = Math.round(c.p * 100);
         const near = c.placeKey === NEAR_KEY;
@@ -1140,6 +1238,9 @@ export function TargetPredictorBanner({
     } else if (p.mode === "now" && p.seenKind === "tap" && !p.usingSheet) {
       main = "Tap the map where he was last seen";
       sub = "Then the predictor can say where he may be.";
+    } else if (p.mode === "now" && !p.from) {
+      main = "Tap the map where he was last seen";
+      sub = "That shows how far he could have got — it needs no history.";
     } else if (p.data && p.data.places.length === 0) {
       main = "No prediction yet";
       sub = "No places on record for this target on this operation.";
@@ -1177,7 +1278,11 @@ export function TargetPredictorBanner({
         className="flex-shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-bold"
         style={{ color: colour, borderColor: colour }}
       >
-        {TIER_LABEL[tier]}
+        {tier === "none" &&
+        p.prediction?.mode === "now" &&
+        p.prediction.seenLocated
+          ? "Reach only — no history"
+          : TIER_LABEL[tier]}
         {tier !== "none" && p.prediction ? ` · ${p.prediction.total}` : ""}
       </span>
     </div>
@@ -1291,6 +1396,18 @@ export function TargetPredictorOverlay({
             to: { lat: pl.lat, lng: pl.lng },
             opacity: 0.1 + c.p * 0.28,
           });
+      }
+      // Locations of interest inside the reach that history does not rank
+      // (registered addresses never visited, places he rarely goes): a light
+      // marking so they can still be searched.
+      if (p.mode === "now") {
+        const shaded = new Set(pr.candidates.map(c => c.placeKey));
+        for (const r of pr.inReach) {
+          if (shaded.has(r.placeKey)) continue;
+          const pl = p.placeByKey.get(r.placeKey);
+          if (!pl || pl.lat === null || pl.lng === null) continue;
+          blobs.push({ lat: pl.lat, lng: pl.lng, radiusPx: 26, opacity: 0.24 });
+        }
       }
     }
     const arrow =

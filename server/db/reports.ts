@@ -1206,6 +1206,8 @@ export interface SharedSeen {
   /** Minutes after midnight, Perth time. */
   seenMinutes: number | null;
   area: "freeway" | "main" | "built" | "back" | null;
+  /** Search: the minute the ring was paused at, or null while it grows. */
+  pausedAtMinutes: number | null;
   updatedByCIN: string | null;
   updatedAtMs: number;
 }
@@ -1233,6 +1235,7 @@ export async function getSharedSeen(
     lng: row.lng,
     seenMinutes: row.seenMinutes,
     area: row.area as SharedSeen["area"],
+    pausedAtMinutes: row.pausedAtMinutes,
     updatedByCIN: row.updatedByCIN,
     updatedAtMs: row.updatedAt.getTime(),
   };
@@ -1248,6 +1251,7 @@ export async function setPredictorLastSeen(params: {
   lng: number | null;
   seenMinutes: number | null;
   area: SharedSeen["area"];
+  pausedAtMinutes: number | null;
   cin: string | null;
 }): Promise<void> {
   const db = await getDb();
@@ -1265,6 +1269,7 @@ export async function setPredictorLastSeen(params: {
         ? null
         : params.seenMinutes,
     area: params.area,
+    pausedAtMinutes: params.kind === "point" ? params.pausedAtMinutes : null,
     updatedByCIN: params.cin,
   };
   await db

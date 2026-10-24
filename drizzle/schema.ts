@@ -1567,7 +1567,7 @@ export type TargetPlaceLabel = typeof targetPlaceLabels.$inferSelect;
 
 // ─── Target Predictor: last seen ─────────────────────────────────────────────
 // Where the team says the target was last seen, set by hand in the Map page's
-// Target Predictor ("Where now?") and shared with everyone who has the sheet
+// Target Predictor ("Search") and shared with everyone who has the sheet
 // open. One row per running sheet; it only counts on the day it was set (the
 // predictor ignores an older one). It is never written to the running sheet.
 // kind: "place" (placeKey), "point" (lat/lng on the map) or "none" (not seen
@@ -1585,6 +1585,9 @@ export const predictorLastSeen = mysqlTable(
     lng: double("lng"),
     seenMinutes: int("seenMinutes"),
     area: varchar("area", { length: 8 }),
+    // Search: the minute the team paused the "how far" ring at (Perth minutes
+    // after midnight), or null while it is growing.
+    pausedAtMinutes: int("pausedAtMinutes"),
     updatedByCIN: varchar("updatedByCIN", { length: 32 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

@@ -28,8 +28,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
 import { trpc } from "@/lib/trpc";
+import { DivIconOverlay } from "@/lib/divIconOverlay";
 import { metresPerPixel } from "@shared/heatMapLayout";
 import {
   DIRECTION_WINDOW_MIN,
@@ -41,7 +41,6 @@ import {
 } from "@shared/travelDirection";
 import {
   AREAS,
-  AREA_CLASSES,
   DEFAULT_AREA,
   MIN_SAMPLES,
   USE_ALL_HISTORY,
@@ -100,14 +99,19 @@ export interface TargetPredictorArgs {
   targetId: number | null;
 }
 
-type SeenKind = "place" | "tap" | "none";
-
+/** Search: the one tapped point, when he was last seen there and, if the team
+ * has paused the ring, the minute it was held at (Perth minutes after
+ * midnight). */
 interface SeenForm {
-  kind: SeenKind;
-  placeKey: string | null;
   point: { lat: number; lng: number } | null;
   minutes: number | null;
+  pausedAt: number | null;
 }
+
+const NO_SEEN: SeenForm = { point: null, minutes: null, pausedAt: null };
+
+/** The "seen how long ago" buttons — Search only ever looks back this far. */
+export const SEEN_AGO_MINUTES = [0, 1, 2, 3, 5] as const;
 
 /** One state for the section, the banner and the overlay. */
 export function useTargetPredictor({
@@ -118,23 +122,18 @@ export function useTargetPredictor({
   const [on, setOnState] = useState<boolean>(readOn);
   const [mode, setMode] = useState<PredictorMode>("next");
   const [clock, setClock] = useState(() => perthClock(new Date()));
-  // By hand: the officer chose where he is / was last seen instead of the sheet.
+  // Where next: the officer chose where he is instead of the sheet.
   const [override, setOverride] = useState(false);
   const [pickPlaceKey, setPickPlaceKey] = useState<string | null>(null);
-  // Where now: the "last seen" form. Edits are saved and shared with the team
-  // (see persist below); what the team has saved flows back into it.
-  const [seen, setSeen] = useState<SeenForm>({
-    kind: "place",
-    placeKey: null,
-    point: null,
-    minutes: null,
-  });
+  // Search: the tapped "last seen" point. Edits are saved and shared with the
+  // team (see persist below); what the team has saved flows back into it.
+  const [seen, setSeen] = useState<SeenForm>(NO_SEEN);
   const [tapRoute, setTapRoute] = useState<string | null>(null);
-  const [areaChoice, setAreaChoiceState] = useState<AreaClass | null>(null);
   const [showShade, setShowShade] = useState(true);
   const [showReach, setShowReach] = useState(true);
   const [directionOn, setDirectionOn] = useState(true);
-  // "Tap the map": the next tap on the map sets where he was last seen.
+  // "Move pin": the next tap on the map moves where he was last seen. With no
+  // pin yet the map takes the first tap on its own (see `tapping`).
   const [tapArmed, setTapArmed] = useState(false);
   // An edit that has not been saved yet.
   const [dirty, setDirty] = useState(false);
@@ -164,9 +163,8 @@ export function useTargetPredictor({
     setTapArmed(false);
     setOverride(false);
     setPickPlaceKey(null);
-    setSeen({ kind: "place", placeKey: null, point: null, minutes: null });
+    setSeen(NO_SEEN);
     setTapRoute(null);
-    setAreaChoiceState(null);
     setDirty(false);
     appliedRef.current = null;
   }, [opId, sheetId, targetId]);
@@ -248,20 +246,29 @@ export function useTargetPredictor({
     if (!shared || dirty || saveMut.isPending) return;
     if (appliedRef.current === shared.updatedAtMs) return;
     appliedRef.current = shared.updatedAtMs;
-    setAreaChoiceState(shared.area);
     setTapRoute(null);
-    // "sheet": no position of its own, only the area.
-    if (shared.kind === "sheet") return;
+    // Only a tapped point counts. An older entry (a place, "not seen yet", the
+    // sheet's own position) has no point on the map, so Search starts blank.
+    if (shared.kind !== "point" || shared.lat === null || shared.lng === null) {
+      setSeen(NO_SEEN);
+      return;
+    }
     setSeen({
-      kind: shared.kind === "point" ? "tap" : shared.kind,
-      placeKey: shared.placeKey,
-      point:
-        shared.lat !== null && shared.lng !== null
-          ? { lat: shared.lat, lng: shared.lng }
-          : null,
+      point: { lat: shared.lat, lng: shared.lng },
       minutes: shared.seenMinutes,
+      pausedAt: shared.pausedAtMinutes ?? null,
     });
   }, [shared, dirty, saveMut.isPending]);
+
+  // Someone else started the search again: the shared position is gone, so it
+  // goes from this screen too (unless this officer has an edit on the way).
+  useEffect(() => {
+    if (shared || dirty || saveMut.isPending || !sharedQuery.isSuccess) return;
+    if (appliedRef.current === null) return;
+    appliedRef.current = null;
+    setSeen(NO_SEEN);
+    setTapRoute(null);
+  }, [shared, dirty, saveMut.isPending, sharedQuery.isSuccess]);
 
   // What the sheet says: only today's entry counts — an old sheet's last row
   // says nothing about where he is now.
@@ -271,20 +278,19 @@ export function useTargetPredictor({
     if (!placeByKey.has(ls.placeKey)) return null;
     return { ...ls, minutes: Math.min(ls.minutes, clock.minutes) };
   }, [data, placeByKey, clock.minutes]);
-  // Where now: a position the team has set wins over the sheet.
-  const teamSet = mode === "now" && !!shared;
-  // ...except one that only sets the area and leaves the position to the sheet.
-  const usingSheet =
-    !!sheetStart && !override && (!teamSet || shared?.kind === "sheet");
+  // Where next starts from what the sheet says. Search never does — it starts
+  // from the point tapped on the map.
+  const usingSheet = mode === "next" && !!sheetStart && !override;
 
   const firstPlaceKey = data?.places[0]?.placeKey ?? null;
-  const seenAt = Math.min(seen.minutes ?? clock.minutes - 15, clock.minutes);
-  // With no known place to pick, "last seen" can only be a tap on the map —
-  // the reach still works from there.
-  const seenKindEff: SeenKind =
-    seen.kind === "place" && !seen.placeKey && !firstPlaceKey
-      ? "tap"
-      : seen.kind;
+  const seenAt = Math.min(seen.minutes ?? clock.minutes, clock.minutes);
+  // A paused ring is held at the minute it was paused, not the clock.
+  const pausedAt =
+    seen.point && seen.pausedAt != null
+      ? Math.max(seenAt, Math.min(seen.pausedAt, clock.minutes))
+      : null;
+  const paused = mode === "now" && pausedAt !== null;
+  const nowMinutes = paused ? pausedAt : clock.minutes;
 
   const from: PredictorFrom | null = useMemo(() => {
     if (!data) return null;
@@ -306,20 +312,13 @@ export function useTargetPredictor({
           }
         : null;
     }
-    if (seenKindEff === "none") return { kind: "none" };
-    if (seenKindEff === "tap")
-      return seen.point
-        ? {
-            kind: "point",
-            lat: seen.point.lat,
-            lng: seen.point.lng,
-            minutes: seenAt,
-          }
-        : null;
-    const key = seen.placeKey ?? firstPlaceKey;
-    // Someone looking for him has lost him, so he is taken as having left.
-    return key
-      ? { kind: "place", placeKey: key, minutes: seenAt, leaving: true }
+    return seen.point
+      ? {
+          kind: "point",
+          lat: seen.point.lat,
+          lng: seen.point.lng,
+          minutes: seenAt,
+        }
       : null;
   }, [
     data,
@@ -329,28 +328,17 @@ export function useTargetPredictor({
     pickPlaceKey,
     firstPlaceKey,
     clock.minutes,
-    seen,
-    seenKindEff,
+    seen.point,
     seenAt,
   ]);
 
-  // The posted speed limit of the road he was last seen on (Google Roads),
-  // looked up from the last-seen point — or the last-seen place's address.
-  // Where it is known it picks the kind of area and sets the travel speed;
-  // where it is not (no limit on record, the key not allowed, offline) the
-  // street name or the officer's own choice does.
+  // The posted speed limit of the road he was last seen on (Main Roads WA
+  // data held by the app), looked up from the tapped point. Where it is known
+  // it picks the kind of area and sets the travel speed; where it is not (no
+  // limit on record) the street name does, else a built-up area is assumed.
   const limitPoint =
-    mode === "now" && from
-      ? from.kind === "point"
-        ? { lat: from.lat, lng: from.lng }
-        : from.kind === "place"
-          ? (() => {
-              const pl = placeByKey.get(from.placeKey);
-              return pl && pl.lat !== null && pl.lng !== null
-                ? { lat: pl.lat, lng: pl.lng }
-                : null;
-            })()
-          : null
+    mode === "now" && from?.kind === "point"
+      ? { lat: from.lat, lng: from.lng }
       : null;
   const limitQuery = trpc.intelligence.getRoadSpeed.useQuery(
     { lat: limitPoint?.lat ?? 0, lng: limitPoint?.lng ?? 0 },
@@ -401,131 +389,119 @@ export function useTargetPredictor({
           ? "unavailable"
           : null;
 
-  // The kind of area he was last seen in: chosen by the officer, else the
-  // posted speed limit, else read from the street name when it is
-  // unmistakable, else the stated default.
+  // The kind of area he was last seen in: the posted speed limit, else read
+  // from the street name when it is unmistakable, else the stated default.
   const autoArea: AreaClass | null = useMemo(() => {
-    if (mode !== "now" || !from) return null;
+    if (mode !== "now" || from?.kind !== "point") return null;
     if (limit) return areaFromSpeedLimit(limit.kph);
-    if (from.kind === "place")
-      return areaFromStreetName(placeByKey.get(from.placeKey)?.name);
-    if (from.kind === "point") return areaFromStreetName(tapRoute);
-    return null;
-  }, [mode, from, placeByKey, tapRoute, limit]);
-  const area: AreaClass = areaChoice ?? autoArea ?? DEFAULT_AREA;
-  const areaSource: "chosen" | "posted" | "street" | "assumed" = areaChoice
-    ? "chosen"
-    : limit
-      ? "posted"
-      : autoArea
-        ? "street"
-        : "assumed";
-  // The travel speed is the posted limit itself unless the officer chose the
-  // area by hand (then it is that area's assumed speed).
-  const limitKmh = !areaChoice && limit ? limit.kph : null;
+    return areaFromStreetName(tapRoute);
+  }, [mode, from, tapRoute, limit]);
+  const area: AreaClass = autoArea ?? DEFAULT_AREA;
+  const areaSource: "posted" | "street" | "assumed" = limit
+    ? "posted"
+    : autoArea
+      ? "street"
+      : "assumed";
+  // The travel speed is the posted limit itself.
+  const limitKmh = limit ? limit.kph : null;
 
-  // Save the form (after a short pause, so a dragged slider is one save) and
-  // share it. Only the by-hand "last seen" of Where now is shared.
+  // Save the position (after a short pause, so a few quick changes are one
+  // save) and share it with the team.
   useEffect(() => {
     if (!dirty || opId == null || sheetId == null || targetId == null) return;
     const id = window.setTimeout(() => {
-      // Using the sheet's position, only the area was set: share just that.
-      const kind = usingSheet
-        ? "sheet"
-        : seen.kind === "tap"
-          ? "point"
-          : seen.kind;
-      if (kind === "place" && !(seen.placeKey ?? firstPlaceKey)) return;
-      if (kind === "point" && !seen.point) return;
+      if (!seen.point) return;
       saveMut.mutate({
         operationId: opId,
         sheetId,
         targetId,
-        kind,
-        placeKey: kind === "place" ? (seen.placeKey ?? firstPlaceKey) : null,
-        lat: kind === "point" ? (seen.point?.lat ?? null) : null,
-        lng: kind === "point" ? (seen.point?.lng ?? null) : null,
-        seenMinutes: kind === "none" || kind === "sheet" ? null : seenAt,
-        // Only an area an officer chose by hand is shared; the automatic one
-        // (posted limit, street name) is worked out by each screen itself.
-        area: areaChoice,
+        kind: "point",
+        placeKey: null,
+        lat: seen.point.lat,
+        lng: seen.point.lng,
+        seenMinutes: seenAt,
+        area: null,
+        pausedAtMinutes: pausedAt,
       });
       setDirty(false);
     }, 700);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, seen, areaChoice, seenAt]);
+  }, [dirty, seen, seenAt, pausedAt]);
 
-  const edit = useCallback((patch: Partial<SeenForm>) => {
-    setSeen(s => ({ ...s, ...patch }));
-    setDirty(true);
-  }, []);
-  const setSeenKind = useCallback((kind: SeenKind) => edit({ kind }), [edit]);
-  const setSeenPlaceKey = useCallback(
-    (placeKey: string) => edit({ placeKey }),
-    [edit]
-  );
-  const setSeenPoint = useCallback(
-    (point: { lat: number; lng: number }) => edit({ point }),
-    [edit]
-  );
-  const setSeenMinutes = useCallback(
-    (minutes: number) => edit({ minutes }),
-    [edit]
-  );
-  const setAreaChoice = useCallback((a: AreaClass | null) => {
-    setAreaChoiceState(a);
-    setDirty(true);
-  }, []);
-
-  /** A tap on the map: that is where he was last seen. */
+  /** A tap on the map or a drag of the pin: that is where he was last seen.
+   * The first one also starts the clock ("just now"); moving it later keeps
+   * the time and the pause. */
   const placeTap = useCallback(
     (point: { lat: number; lng: number }) => {
-      setOverride(true);
       setTapRoute(null);
       setTapArmed(false);
-      toast.success("Last seen set where you tapped.");
-      setSeen(s => ({
-        ...s,
-        kind: "tap",
-        point,
-        minutes: s.minutes ?? sheetStart?.minutes ?? null,
-      }));
+      toast.success(
+        seen.point
+          ? "Last seen moved."
+          : "Last seen set. Drag the pin to adjust."
+      );
+      const now = perthClock(new Date()).minutes;
+      setSeen(s =>
+        s.point ? { ...s, point } : { point, minutes: now, pausedAt: null }
+      );
       setDirty(true);
     },
-    [sheetStart]
+    [seen.point]
   );
 
-  /** "Change": take what the sheet says as the starting point and edit it. */
+  /** "Seen how long ago?": 0 = just now. Changing the time restarts the ring
+   * from that moment, so it is no longer paused. */
+  const setSeenAgo = useCallback((minutesAgo: number) => {
+    const now = perthClock(new Date()).minutes;
+    setClock(perthClock(new Date()));
+    setSeen(s => ({
+      ...s,
+      minutes: Math.max(0, now - minutesAgo),
+      pausedAt: null,
+    }));
+    setDirty(true);
+  }, []);
+
+  /** Hold the ring where it is: the team thinks he is still in the area. */
+  const pauseRing = useCallback(() => {
+    const now = perthClock(new Date());
+    setClock(now);
+    setSeen(s => ({ ...s, pausedAt: now.minutes }));
+    setDirty(true);
+  }, []);
+  /** Let the ring grow again — straight back to the real time since last seen. */
+  const resumeRing = useCallback(() => {
+    setSeen(s => ({ ...s, pausedAt: null }));
+    setDirty(true);
+  }, []);
+
+  /** Throw the pin away (for everyone) and wait for a new first tap. */
+  const startAgain = useCallback(() => {
+    setSeen(NO_SEEN);
+    setTapRoute(null);
+    setTapArmed(false);
+    setDirty(false);
+    appliedRef.current = shared?.updatedAtMs ?? null;
+    if (shared && opId != null && sheetId != null)
+      clearMut.mutate({ operationId: opId, sheetId });
+  }, [shared, opId, sheetId, clearMut]);
+
+  /** Where next: "Change" takes what the sheet says as the starting point. */
   const changeFromSheet = useCallback(() => {
     setOverride(true);
-    if (!sheetStart) return;
-    setPickPlaceKey(sheetStart.placeKey);
-    if (mode === "now") {
-      edit({
-        kind: "place",
-        placeKey: sheetStart.placeKey,
-        point: null,
-        minutes: sheetStart.minutes,
-      });
-    }
-  }, [sheetStart, mode, edit]);
+    if (sheetStart) setPickPlaceKey(sheetStart.placeKey);
+  }, [sheetStart]);
 
-  /** "Use the running sheet": drop the by-hand position (and the team's). */
-  const useSheet = useCallback(() => {
-    setOverride(false);
-    setDirty(false);
-    // The team's position belongs to Where now; Where next is by hand only.
-    if (mode === "now" && shared && opId != null && sheetId != null)
-      clearMut.mutate({ operationId: opId, sheetId });
-  }, [mode, shared, opId, sheetId, clearMut]);
+  /** Where next: "Use the running sheet" again. */
+  const useSheet = useCallback(() => setOverride(false), []);
 
   // The way the team was travelling in the minutes before the last sighting
-  // (Where now, from a place or a tapped point): from the GPS trail officers
+  // (Search, from the tapped point): from the GPS trail officers
   // share on the operation. No trail, too little movement or officers going
   // different ways = no direction, and the predictor says why.
   const seenMs =
-    data && from && from.kind !== "none"
+    data && from
       ? Date.parse(`${data.todayISO}T00:00:00+08:00`) +
         Math.round(from.minutes) * 60_000
       : null;
@@ -557,12 +533,12 @@ export function useTargetPredictor({
       places: data.places,
       from,
       nowWeekday: clock.weekday,
-      nowMinutes: clock.minutes,
+      nowMinutes,
       area,
       heading,
       limitKmh,
     };
-  }, [data, from, mode, clock.weekday, clock.minutes, area, heading, limitKmh]);
+  }, [data, from, mode, clock.weekday, nowMinutes, area, heading, limitKmh]);
   const prediction: Prediction | null = useMemo(
     () => (input ? predict(input) : null),
     [input]
@@ -588,19 +564,18 @@ export function useTargetPredictor({
     override,
     pickPlaceKey,
     setPickPlaceKey,
-    seenKind: seenKindEff,
-    setSeenKind,
-    seenPlaceKey: seen.placeKey,
-    setSeenPlaceKey,
     seenPoint: seen.point,
-    setSeenPoint,
-    seenMinutes: seen.minutes,
-    setSeenMinutes,
     seenAt,
+    /** Whole minutes since he was last seen (to the paused minute, if held). */
+    agoMinutes: Math.max(0, nowMinutes - seenAt),
+    pausedAt,
+    paused,
+    setSeenAgo,
+    pauseRing,
+    resumeRing,
+    startAgain,
     tapRoute,
     setTapRoute,
-    areaChoice,
-    setAreaChoice,
     area,
     areaSource,
     limit,
@@ -621,7 +596,6 @@ export function useTargetPredictor({
     usingSheet,
     /** What the team has set as "last seen" today, or null. */
     shared,
-    teamSet,
     changeFromSheet,
     useSheet,
     from,
@@ -631,11 +605,9 @@ export function useTargetPredictor({
     nameOf,
     labelOf,
     placeByKey,
-    /** "Where now" with the position left for the officer to tap on the map. */
-    tapping:
-      on &&
-      mode === "now" &&
-      (tapArmed || (!usingSheet && seenKindEff === "tap")),
+    /** Search is waiting for a tap on the map: the first one, or the one
+     * after "Move pin". Once a pin is down the map stops taking taps. */
+    tapping: ready && mode === "now" && (tapArmed || !seen.point),
   };
 }
 export type TargetPredictorState = ReturnType<typeof useTargetPredictor>;
@@ -733,14 +705,14 @@ export function TargetPredictorSection({
                         : "border-border bg-card text-foreground hover:bg-accent/40"
                     }`}
                   >
-                    {m === "next" ? "Where next?" : "Where now?"}
+                    {m === "next" ? "Where next?" : "Search"}
                   </button>
                 ))}
               </div>
               <p className="text-[11px] leading-snug text-muted-foreground">
                 {p.mode === "next"
                   ? "Where he is likely to go from where he is now."
-                  : "Where he may be now — for when the team is looking for him."}{" "}
+                  : "For when the team has lost him — tap the map where he was last seen."}{" "}
                 Today is {WEEKDAY_LONG[p.clock.weekday]},{" "}
                 {hhmm(p.clock.minutes)} Perth time.
               </p>
@@ -754,32 +726,16 @@ export function TargetPredictorSection({
               {p.data && places.length === 0 && (
                 <p className="text-[11px] leading-snug text-muted-foreground">
                   {p.mode === "now"
-                    ? "No known places for this target on this operation yet. How far he could have got still works — tap the map where he was last seen."
+                    ? "No known places for this target on this operation yet. How far he could have got still works from the point you tap."
                     : "No places on record for this target on this operation yet, so there is nothing to predict from."}
                 </p>
               )}
 
-              {p.data && (places.length > 0 || p.mode === "now") && (
+              {p.data && p.mode === "next" && places.length > 0 && (
                 <PositionControls p={p} />
               )}
-              {p.data && p.mode === "now" && (
-                <button
-                  onClick={() => p.setTapArmed(!p.tapArmed)}
-                  aria-pressed={p.tapArmed}
-                  className={`w-full ${SEG} ${
-                    p.tapArmed
-                      ? "border-violet-500/50 bg-violet-500/10 text-violet-500"
-                      : "border-border bg-card text-foreground hover:bg-accent/40"
-                  }`}
-                >
-                  {p.tapArmed
-                    ? "Tap the map now… (tap here to cancel)"
-                    : "Tap the map where he was last seen"}
-                </button>
-              )}
-              {p.data && p.mode === "now" && p.from?.kind !== "none" && (
-                <AreaControls p={p} />
-              )}
+              {p.data && p.mode === "now" && <SearchControls p={p} />}
+              {p.data && p.mode === "now" && p.seenPoint && <SpeedNote p={p} />}
 
               {p.data && (places.length > 0 || p.mode === "now") && (
                 <div className="space-y-1 pt-0.5">
@@ -813,14 +769,14 @@ export function TargetPredictorSection({
                   )}
                 </div>
               )}
-              {p.data && p.mode === "now" && p.directionOn && (
+              {p.data && p.mode === "now" && p.seenPoint && p.directionOn && (
                 <DirectionNote p={p} />
               )}
 
               {/* Where now is two separate answers that work together: how
                   far he could have got (needs no history) and the locations
                   of interest inside that reach. */}
-              {pr && p.mode === "now" && <ReachCard pr={pr} />}
+              {pr && p.mode === "now" && <ReachCard p={p} pr={pr} />}
               {pr && p.mode === "now" && pr.seenLocated && (
                 <InterestList p={p} pr={pr} />
               )}
@@ -834,6 +790,7 @@ export function TargetPredictorSection({
   );
 }
 
+/** Where next: where he is now — the running sheet's last entry, or picked. */
 function PositionControls({ p }: { p: TargetPredictorState }) {
   const places = p.data?.places ?? [];
   const label =
@@ -842,14 +799,7 @@ function PositionControls({ p }: { p: TargetPredictorState }) {
 
   if (p.usingSheet && p.sheetStart) {
     const name = p.labelOf(p.sheetStart.placeKey);
-    const verb =
-      p.mode === "next"
-        ? p.sheetStart.leaving
-          ? "Left"
-          : "Now at"
-        : p.sheetStart.leaving
-          ? "Last seen leaving"
-          : "Last seen at";
+    const verb = p.sheetStart.leaving ? "Left" : "Now at";
     return (
       <div className="rounded-xl border-2 border-border bg-card px-3 py-2 space-y-0.5">
         <p className="text-xs text-foreground">
@@ -865,176 +815,163 @@ function PositionControls({ p }: { p: TargetPredictorState }) {
     );
   }
 
-  const setBy = p.shared
-    ? `Shared with the team${p.shared.updatedByCIN ? `, set by ${p.shared.updatedByCIN}` : ""} at ${hhmm(perthClock(new Date(p.shared.updatedAtMs)).minutes)} · `
-    : "";
-  const none = (
-    <>
-      {p.teamSet && setBy}
-      {p.sheetStart ? (
-        <button className={link} onClick={p.useSheet}>
-          Use the running sheet
-        </button>
-      ) : p.teamSet ? (
-        <button className={link} onClick={p.useSheet}>
-          Clear
-        </button>
-      ) : (
-        <span>Nothing logged for him today on the running sheet yet.</span>
-      )}
-    </>
-  );
-
-  if (p.mode === "next") {
-    return (
-      <div className="space-y-1">
-        <span className={label}>Now at</span>
-        <Select
-          value={p.pickPlaceKey ?? places[0].placeKey}
-          onValueChange={v => p.setPickPlaceKey(v)}
-        >
-          <SelectTrigger className="w-full h-9 text-xs rounded-xl border-2">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {places.map(pl => (
-              <SelectItem key={pl.placeKey} value={pl.placeKey}>
-                {p.labelOf(pl.placeKey)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="text-[11px] text-muted-foreground">{none}</p>
-      </div>
-    );
-  }
-
-  const value =
-    p.seenKind === "none"
-      ? "none"
-      : p.seenKind === "tap"
-        ? "tap"
-        : `p:${p.seenPlaceKey ?? places[0].placeKey}`;
-  const min = Math.max(0, p.clock.minutes - 180);
   return (
-    <div className="space-y-2">
-      <div className="space-y-1">
-        <span className={label}>Last seen</span>
-        <Select
-          value={value}
-          onValueChange={v => {
-            if (v === "none") p.setSeenKind("none");
-            else if (v === "tap") p.setSeenKind("tap");
-            else {
-              p.setSeenKind("place");
-              p.setSeenPlaceKey(v.slice(2));
-            }
-          }}
-        >
-          <SelectTrigger className="w-full h-9 text-xs rounded-xl border-2">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">
-              Not seen yet — we are starting out
+    <div className="space-y-1">
+      <span className={label}>Now at</span>
+      <Select
+        value={p.pickPlaceKey ?? places[0].placeKey}
+        onValueChange={v => p.setPickPlaceKey(v)}
+      >
+        <SelectTrigger className="w-full h-9 text-xs rounded-xl border-2">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {places.map(pl => (
+            <SelectItem key={pl.placeKey} value={pl.placeKey}>
+              {p.labelOf(pl.placeKey)}
             </SelectItem>
-            {places.map(pl => (
-              <SelectItem key={pl.placeKey} value={`p:${pl.placeKey}`}>
-                {p.labelOf(pl.placeKey)}
-              </SelectItem>
-            ))}
-            <SelectItem value="tap">
-              Somewhere else — I will tap the map
-            </SelectItem>
-          </SelectContent>
-        </Select>
-        <p className="text-[11px] text-muted-foreground">
-          {p.seenKind === "tap"
-            ? p.seenPoint
-              ? "Tap the map again to move it."
-              : "Tap the map where he was last seen."
-            : p.seenKind === "none"
-              ? "He has not been seen yet, so this uses his routine for this day and time."
-              : none}
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="text-[11px] text-muted-foreground">
+        {p.sheetStart ? (
+          <button className={link} onClick={p.useSheet}>
+            Use the running sheet
+          </button>
+        ) : (
+          "Nothing logged for him today on the running sheet yet."
+        )}
+      </p>
+    </div>
+  );
+}
+
+// Big, equal buttons: Search is used on a phone, often from a moving vehicle.
+const ACTION =
+  "min-w-0 min-h-[44px] px-1 py-2 text-xs font-semibold rounded-lg border-2 transition-colors";
+const ACTION_ON = "border-violet-500/50 bg-violet-500/10 text-violet-500";
+const ACTION_OFF = "border-border bg-card text-foreground hover:bg-accent/40";
+
+/** Search: one tap puts the pin down; after that the map stops taking taps.
+ * The pin is dragged to move it; the buttons set how long ago he was seen,
+ * hold the ring, or throw the pin away and start again. */
+function SearchControls({ p }: { p: TargetPredictorState }) {
+  const label =
+    "text-[11px] font-semibold text-muted-foreground uppercase tracking-wide";
+  if (!p.seenPoint)
+    return (
+      <div className="rounded-xl border-2 border-violet-500/50 bg-violet-500/10 px-3 py-2">
+        <p className="text-xs font-semibold text-violet-500">
+          Tap the map where he was last seen
+        </p>
+        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+          One tap — the cross goes away after it, so a stray touch can&apos;t
+          move it. Then drag the pin to adjust it.
         </p>
       </div>
-      {p.seenKind !== "none" && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className={label}>Last seen at</span>
-            <span className="text-[11px] font-bold text-muted-foreground tabular-nums">
-              {hhmm(p.seenAt)}
-            </span>
-          </div>
-          <Slider
-            min={min}
-            max={Math.max(min + 1, p.clock.minutes)}
-            step={1}
-            value={[Math.max(min, p.seenAt)]}
-            onValueChange={v => p.setSeenMinutes(v[0] ?? p.seenAt)}
-            aria-label="Time last seen"
-          />
+    );
+  const setBy = p.shared?.updatedByCIN
+    ? `Shared with the team, set by ${p.shared.updatedByCIN}. `
+    : "";
+  const ago = Math.round(p.agoMinutes);
+  return (
+    <div className="space-y-2">
+      <div className="rounded-xl border-2 border-border bg-card px-3 py-2 space-y-0.5">
+        <p className="text-xs text-foreground">
+          Last seen <span className="font-semibold">{hhmm(p.seenAt)}</span> —{" "}
+          {ago < 1 ? "just now" : `${ago} min ago`}
+          {p.paused ? " (ring paused)" : ""}
+        </p>
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          {setBy}Drag the pin on the map to move it.
+        </p>
+      </div>
+      <div className="space-y-1">
+        <span className={label}>Seen how long ago?</span>
+        <div
+          className="grid grid-cols-5 gap-1.5"
+          role="group"
+          aria-label="Seen how long ago"
+        >
+          {SEEN_AGO_MINUTES.map(n => (
+            <button
+              key={n}
+              onClick={() => p.setSeenAgo(n)}
+              aria-pressed={Math.round(p.clock.minutes - p.seenAt) === n}
+              className={`${ACTION} ${
+                Math.round(p.clock.minutes - p.seenAt) === n
+                  ? ACTION_ON
+                  : ACTION_OFF
+              }`}
+            >
+              {n === 0 ? "Now" : `${n} min`}
+            </button>
+          ))}
         </div>
+      </div>
+      <div
+        className="grid grid-cols-3 gap-1.5"
+        role="group"
+        aria-label="Search actions"
+      >
+        <button
+          onClick={() => p.setTapArmed(!p.tapArmed)}
+          aria-pressed={p.tapArmed}
+          className={`${ACTION} ${p.tapArmed ? ACTION_ON : ACTION_OFF}`}
+        >
+          {p.tapArmed ? "Tap map…" : "Move pin"}
+        </button>
+        <button
+          onClick={p.paused ? p.resumeRing : p.pauseRing}
+          aria-pressed={p.paused}
+          className={`${ACTION} ${p.paused ? ACTION_ON : ACTION_OFF}`}
+        >
+          {p.paused ? "Resume ring" : "Pause ring"}
+        </button>
+        <button onClick={p.startAgain} className={`${ACTION} ${ACTION_OFF}`}>
+          Start again
+        </button>
+      </div>
+      {p.tapArmed && (
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          Tap the map where he was last seen. Tap Move pin again to cancel.
+        </p>
       )}
     </div>
   );
 }
 
-function AreaControls({ p }: { p: TargetPredictorState }) {
+/** Search: how fast he is taken to travel, and where that came from. */
+function SpeedNote({ p }: { p: TargetPredictorState }) {
   const rule = AREAS[p.area];
   return (
     <div className="space-y-1.5">
-      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-        Area he was last seen in
-      </span>
-      <div
-        className="grid grid-cols-2 gap-1.5"
-        role="group"
-        aria-label="Area he was last seen in"
-      >
-        {AREA_CLASSES.map(a => (
-          <button
-            key={a}
-            onClick={() => p.setAreaChoice(p.areaChoice === a ? null : a)}
-            aria-pressed={p.area === a}
-            className={`${SEG} ${
-              p.area === a
-                ? "border-violet-500/50 bg-violet-500/10 text-violet-500"
-                : "border-border bg-card text-foreground hover:bg-accent/40"
-            }`}
-          >
-            {AREAS[a].label}
-          </button>
-        ))}
-      </div>
       <p className="text-[11px] leading-snug text-muted-foreground">
-        About{" "}
+        Travelling at about{" "}
         <span className="font-semibold text-foreground">
           {p.areaSource === "posted" && p.limit ? p.limit.kph : rule.kmh} km/h
         </span>{" "}
         {p.areaSource === "posted" && p.limit
           ? p.limit.source === "default"
-            ? `— the legal default on ${p.limit.road ?? "the nearest road"} (no sign on record; 50 km/h in built-up areas). Tap another area to override it.`
-            : `— the posted limit on ${p.limit.road ?? "the nearest road"}${p.limit.source === "google" ? " (Google Roads)" : ""}. Tap another area to override it.`
-          : p.areaSource === "chosen"
-            ? "in this area. Chosen by you."
-            : p.areaSource === "street"
-              ? "in this area. Read from the street name — tap another to change it."
-              : `in this area. Assumed — the street name doesn't say. Tap the right one.`}
+            ? `— the legal default on ${p.limit.road ?? "the nearest road"} (no sign on record; 50 km/h in built-up areas).`
+            : `— the posted limit on ${p.limit.road ?? "the nearest road"}${p.limit.source === "google" ? " (Google Roads)" : ""}.`
+          : p.areaSource === "street"
+            ? `— ${rule.label.toLowerCase()}, read from the street name.`
+            : `— ${rule.label.toLowerCase()}, assumed (the road's limit isn't on record).`}
       </p>
       {p.limitWhy && p.limitWhy !== "loading" && (
         <p className="text-[11px] leading-snug text-muted-foreground">
           {p.limitWhy === "default-unknown"
-            ? `No sign on record for ${p.limitRoad ?? "that road"} — the legal default is 50 km/h in built-up areas or 110 km/h outside them, and the data can't say which. Pick the area.`
+            ? `No sign on record for ${p.limitRoad ?? "that road"} — the legal default is 50 km/h in built-up areas or 110 km/h outside them, and the data can't say which, so a built-up speed is assumed.`
             : p.limitWhy === "no-data"
-              ? "Speed-zone data isn't loaded on this server, so the area is picked by hand."
+              ? "Speed-zone data isn't loaded on this server, so an assumed speed is used."
               : p.limitWhy === "no-limit"
-                ? "No posted limit on record for this road."
+                ? "No posted limit on record for this road, so an assumed speed is used."
                 : p.limitWhy === "no-road"
-                  ? "No road was found within 40 m of that point."
+                  ? "No road was found within 40 m of that point, so an assumed speed is used."
                   : p.limitWhy === "refused"
-                    ? "Google refused the speed-limit lookup for this key, so the area is picked by hand."
-                    : "The speed-limit lookup could not be reached, so the area is picked by hand."}
+                    ? "Google refused the speed-limit lookup for this key, so an assumed speed is used."
+                    : "The speed-limit lookup could not be reached, so an assumed speed is used."}
         </p>
       )}
       {p.limit && p.limit.source !== "google" && (
@@ -1059,7 +996,7 @@ function AreaControls({ p }: { p: TargetPredictorState }) {
   );
 }
 
-function ReachCard({ pr }: { pr: Prediction }) {
+function ReachCard({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
   if (!pr.seenLocated)
     return (
       <div className="rounded-xl border-2 border-border bg-card px-3 py-2">
@@ -1084,8 +1021,10 @@ function ReachCard({ pr }: { pr: Prediction }) {
       </div>
       <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
         {Math.round(pr.elapsedMinutes)} min at about {pr.kmh} km/h (
-        {AREAS[pr.area].label.toLowerCase()}) — the dashed ring on the map. It
-        grows every minute and does not depend on his history.
+        {AREAS[pr.area].label.toLowerCase()}) — the ring on the map.{" "}
+        {p.paused
+          ? `Paused at ${hhmm(p.pausedAt ?? p.clock.minutes)}: it is held here. Resume ring and it goes straight back to the real time since he was last seen.`
+          : "It grows every minute and does not depend on his history."}
       </p>
     </div>
   );
@@ -1137,7 +1076,6 @@ function InterestList({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
 
 function DirectionNote({ p }: { p: TargetPredictorState }) {
   const d = p.direction;
-  if (p.from?.kind === "none") return null;
   if (!d)
     return (
       <p className="text-[11px] leading-snug text-muted-foreground">
@@ -1333,10 +1271,13 @@ export function TargetPredictorBanner({
   const colour = TIER_COLOUR[tier];
   let main = p.headline?.main;
   let sub = p.headline?.sub;
-  if (p.tapArmed) {
-    main = "Tap the map where he was last seen";
-    sub =
-      "The predictor will work from that point. Tap Cancel in Map Settings to stop.";
+  if (p.mode === "now" && p.tapping) {
+    main = p.seenPoint
+      ? "Tap the map to move the pin"
+      : "Tap the map where he was last seen";
+    sub = p.seenPoint
+      ? "Or drag the pin itself. Tap Move pin in Map Settings to cancel."
+      : "One tap — then drag the pin to adjust it.";
   } else if (!p.prediction) {
     if (p.blocked) {
       main = "Target predictor";
@@ -1347,9 +1288,6 @@ export function TargetPredictorBanner({
     } else if (p.query.isLoading) {
       main = "Target predictor";
       sub = "Reading his history…";
-    } else if (p.mode === "now" && p.seenKind === "tap" && !p.usingSheet) {
-      main = "Tap the map where he was last seen";
-      sub = "Then the predictor can say where he may be.";
     } else if (p.mode === "now" && !p.from) {
       main = "Tap the map where he was last seen";
       sub = "That shows how far he could have got — it needs no history.";
@@ -1361,6 +1299,8 @@ export function TargetPredictorBanner({
       sub = "Working out a prediction…";
     }
   }
+  if (p.mode === "now" && p.paused && p.seenPoint)
+    sub = `Ring paused at ${hhmm(p.pausedAt ?? p.clock.minutes)} — it is not growing. ${sub ?? ""}`;
   return (
     <div
       className={`absolute z-20 pointer-events-none flex gap-2 rounded-xl border border-border bg-card px-3 py-1.5 shadow-md ${
@@ -1428,18 +1368,12 @@ export function TargetPredictorOverlay({
   const pr = p.prediction;
   const input = p.input;
 
-  // Tap the map to say where he was last seen.
-  const { tapping, placeTap, setTapRoute } = p;
-  useEffect(() => {
-    if (!map || !tapping || !window.google?.maps) return;
-    // A crosshair so it is clear the next tap is for the predictor.
-    map.setOptions({ draggableCursor: "crosshair" });
-    const l = map.addListener("click", (e: google.maps.MapMouseEvent) => {
-      const ll = e.latLng;
-      if (!ll) return;
-      placeTap({ lat: ll.lat(), lng: ll.lng() });
-      // The street name is how the kind of area is read (a freeway or highway
-      // says so); if the lookup fails the officer just picks the area.
+  // The street name is how the kind of area is read when the limit isn't on
+  // record (a freeway or highway says so); if the lookup fails the speed is
+  // simply assumed.
+  const setTapRoute = p.setTapRoute;
+  const readRoadName = useCallback(
+    (ll: google.maps.LatLng) => {
       try {
         new google.maps.Geocoder().geocode(
           { location: ll },
@@ -1452,14 +1386,71 @@ export function TargetPredictorOverlay({
           }
         );
       } catch {
-        /* no lookup: the area stays as chosen or assumed */
+        /* no lookup: the speed stays as assumed */
       }
+    },
+    [setTapRoute]
+  );
+
+  // Tap the map to say where he was last seen — the first tap, or the one
+  // after "Move pin". The crosshair is only there while the map is waiting.
+  const { tapping, placeTap } = p;
+  useEffect(() => {
+    if (!map || !tapping || !window.google?.maps) return;
+    map.setOptions({ draggableCursor: "crosshair" });
+    const l = map.addListener("click", (e: google.maps.MapMouseEvent) => {
+      const ll = e.latLng;
+      if (!ll) return;
+      placeTap({ lat: ll.lat(), lng: ll.lng() });
+      readRoadName(ll);
     });
     return () => {
       l.remove();
       map.setOptions({ draggableCursor: undefined });
     };
-  }, [map, tapping, placeTap, setTapRoute]);
+  }, [map, tapping, placeTap, readRoadName]);
+
+  // The last-seen pin. Drag it to move it — the map itself ignores taps once
+  // the pin is down, so a stray touch can't shift it.
+  const pin = p.on && p.mode === "now" ? p.seenPoint : null;
+  const pinLabel = pin
+    ? `Last seen ${hhmm(p.seenAt)}${p.paused ? " · ring paused" : ""}`
+    : "";
+  const onPinMoved = useRef<(pt: { lat: number; lng: number }) => void>(
+    () => {}
+  );
+  onPinMoved.current = pt => {
+    placeTap(pt);
+    readRoadName(new google.maps.LatLng(pt.lat, pt.lng));
+  };
+  useEffect(() => {
+    if (!map || !window.google?.maps || !pin) return;
+    const el = document.createElement("div");
+    // A roomy, finger-sized grab area with the diamond at its centre.
+    el.style.cssText =
+      "position:relative;width:48px;height:48px;display:flex;align-items:center;justify-content:center;cursor:grab;touch-action:none";
+    el.innerHTML = `<div style="width:18px;height:18px;transform:rotate(45deg);background:#dc2626;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>`;
+    const tag = document.createElement("div");
+    tag.textContent = pinLabel;
+    tag.style.cssText =
+      "position:absolute;left:50%;top:100%;transform:translateX(-50%);margin-top:-8px;white-space:nowrap;font:600 11px system-ui,sans-serif;background:#fff;color:#14181d;border-radius:999px;padding:1px 8px;box-shadow:0 1px 4px rgba(0,0,0,.3)";
+    el.appendChild(tag);
+    const overlay = new DivIconOverlay({
+      map,
+      position: { lat: pin.lat, lng: pin.lng },
+      content: el,
+      zIndex: 60,
+      title: "Drag to move where he was last seen",
+    });
+    overlay.gmpDraggable = true;
+    const l = overlay.addListener("dragend", () =>
+      onPinMoved.current(overlay.position)
+    );
+    return () => {
+      l.remove();
+      overlay.map = null;
+    };
+  }, [map, pin?.lat, pin?.lng, pinLabel]);
 
   const model = useMemo(() => {
     // Even with nothing to predict from, the last-seen marker and the "how far"
@@ -1526,27 +1517,36 @@ export function TargetPredictorOverlay({
       seen && p.mode === "now" && p.direction?.ok && pr.directionApplied
         ? { ...seen, bearing: p.direction.bearing }
         : null;
+    // Held (solid) while the team has paused it, dashed while it grows.
     const ring =
       p.showReach && p.mode === "now" && seen && pr.elapsedMinutes > 0
-        ? { ...seen, radiusM: Math.max(60, pr.reachKm * 1000) }
+        ? {
+            ...seen,
+            radiusM: Math.max(60, pr.reachKm * 1000),
+            paused: p.paused,
+          }
         : null;
-    const lastPoint =
-      input.from.kind === "point"
-        ? { ...seen!, label: `Last seen ${hhmm(input.from.minutes)}` }
-        : null;
-    return { colour, blobs, lines, ring, lastPoint, arrow };
-  }, [p.on, pr, input, p.showShade, p.showReach, p.mode, p.placeByKey]);
+    return { colour, blobs, lines, ring, arrow };
+  }, [
+    p.on,
+    pr,
+    input,
+    p.showShade,
+    p.showReach,
+    p.mode,
+    p.placeByKey,
+    p.paused,
+  ]);
 
   useEffect(() => {
     if (!map || !window.google?.maps || !model) return;
-    const { colour, blobs, lines, ring, lastPoint, arrow } = model;
+    const { colour, blobs, lines, ring, arrow } = model;
 
     class PredictorOverlay extends google.maps.OverlayView {
       private root: HTMLDivElement | null = null;
       private blobEls: HTMLDivElement[] = [];
       private lineEls: HTMLDivElement[] = [];
       private ringEl: HTMLDivElement | null = null;
-      private pinEl: HTMLDivElement | null = null;
       private arrowEl: HTMLDivElement | null = null;
 
       onAdd() {
@@ -1568,22 +1568,9 @@ export function TargetPredictorOverlay({
         });
         if (ring) {
           const el = document.createElement("div");
-          el.style.cssText = `position:absolute;box-sizing:border-box;border-radius:50%;border:2px dashed ${colour};background:${rgba(colour, 0.07)};pointer-events:none`;
+          el.style.cssText = `position:absolute;box-sizing:border-box;border-radius:50%;border:2px ${ring.paused ? "solid" : "dashed"} ${colour};background:${rgba(colour, ring.paused ? 0.12 : 0.07)};pointer-events:none`;
           root.appendChild(el);
           this.ringEl = el;
-        }
-        if (lastPoint) {
-          const el = document.createElement("div");
-          el.style.cssText =
-            "position:absolute;pointer-events:none;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center";
-          el.innerHTML = `<div style="width:16px;height:16px;transform:rotate(45deg);background:#dc2626;border:2.5px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>`;
-          const tag = document.createElement("div");
-          tag.textContent = lastPoint.label;
-          tag.style.cssText =
-            "margin-top:6px;white-space:nowrap;font:600 11px system-ui,sans-serif;background:#fff;color:#14181d;border-radius:999px;padding:1px 8px;box-shadow:0 1px 4px rgba(0,0,0,.3)";
-          el.appendChild(tag);
-          root.appendChild(el);
-          this.pinEl = el;
         }
         if (arrow) {
           const el = document.createElement("div");
@@ -1644,13 +1631,6 @@ export function TargetPredictorOverlay({
             this.arrowEl.style.top = `${pt.y}px`;
           }
         }
-        if (lastPoint && this.pinEl) {
-          const pt = at(lastPoint);
-          if (pt) {
-            this.pinEl.style.left = `${pt.x}px`;
-            this.pinEl.style.top = `${pt.y}px`;
-          }
-        }
       }
 
       onRemove() {
@@ -1659,7 +1639,6 @@ export function TargetPredictorOverlay({
         this.blobEls = [];
         this.lineEls = [];
         this.ringEl = null;
-        this.pinEl = null;
         this.arrowEl = null;
       }
     }

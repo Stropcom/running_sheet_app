@@ -358,6 +358,7 @@ export const intelligenceRouter = router({
         lng: z.number().min(-180).max(180).nullable(),
         seenMinutes: z.number().int().min(0).max(2879).nullable(),
         area: z.enum(["freeway", "main", "built", "back"]).nullable(),
+        pausedAtMinutes: z.number().int().min(0).max(2879).nullable(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -386,7 +387,7 @@ export const intelligenceRouter = router({
               : input.kind === "place"
                 ? `at "${input.placeKey}"`
                 : "at a point on the map"
-        }${input.seenMinutes !== null ? `, ${Math.floor(input.seenMinutes / 60)}:${String(input.seenMinutes % 60).padStart(2, "0")}` : ""})`,
+        }${input.seenMinutes !== null ? `, ${Math.floor(input.seenMinutes / 60)}:${String(input.seenMinutes % 60).padStart(2, "0")}` : ""}${input.pausedAtMinutes !== null ? `, ring paused at ${Math.floor(input.pausedAtMinutes / 60)}:${String(input.pausedAtMinutes % 60).padStart(2, "0")}` : ""})`,
         createdAt: Date.now(),
       });
       return { ok: true };
@@ -403,8 +404,7 @@ export const intelligenceRouter = router({
         userName: ctx.user.cin ?? "Unknown",
         userCIN: ctx.user.cin ?? null,
         action: "predictor_last_seen_changed",
-        details:
-          "Target Predictor last seen cleared (back to the running sheet)",
+        details: "Target Predictor last seen cleared (search started again)",
         createdAt: Date.now(),
       });
       return { ok: true };

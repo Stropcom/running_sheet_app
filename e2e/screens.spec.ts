@@ -566,50 +566,114 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   await expect(banner).toContainText("Moderate confidence");
   await expect(page.getByText("Home — 14 Marine Parade").first()).toBeVisible();
 
-  // Where now: area picker appears, and the answer is marked area-adjusted.
-  await page.getByRole("button", { name: "Where now?" }).click();
-  await expect(banner).toContainText(/last seen at Home/);
-  await expect(banner).toContainText("area-adjusted");
-  await expect(banner).toContainText("favouring places ahead");
-  await expect(page.getByText(/Team heading east/)).toBeVisible();
-  // The map can be tapped for where he was last seen: the line says so, and
-  // tapping the button again cancels it.
-  const tapBtn = page.getByRole("button", {
-    name: "Tap the map where he was last seen",
-  });
-  await tapBtn.click();
+  // Search starts blank: one tap on the map puts the pin down, and there is
+  // no "last seen" drop-down, no time slider and no area buttons any more.
+  await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(banner).toContainText("Tap the map where he was last seen");
-  await page.getByRole("button", { name: /Tap the map now/ }).click();
-  await expect(banner).toContainText(/last seen at Home/);
-  const builtUp = page.getByRole("button", { name: "Built-up area" });
-  await expect(builtUp).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "Back street" }).click();
+  await expect(page.getByText("One tap — the cross goes away")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Where now?" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Back street" })).toHaveCount(
+    0
+  );
+  await expect(page.getByRole("slider")).toHaveCount(0);
+
+  // Google Maps cannot be tapped here, so the pin is put down the way another
+  // officer's screen would: shared for the sheet, then read back.
+  const seedPoint = async (extra: Record<string, unknown> = {}) => {
+    const r = await page.request.post(
+      "/api/trpc/intelligence.setPredictorLastSeen",
+      {
+        data: {
+          json: {
+            operationId: created.opId,
+            sheetId: created.sheetId,
+            targetId: 987655,
+            kind: "point",
+            placeKey: null,
+            lat: -31.99,
+            lng: 115.76,
+            seenMinutes: predictor.lastSeen.minutes,
+            area: null,
+            pausedAtMinutes: null,
+            ...extra,
+          },
+        },
+      }
+    );
+    expect(r.ok(), await r.text()).toBeTruthy();
+  };
+  await seedPoint();
+  const reopenSearch = async () => {
+    await page.reload();
+    await page.getByRole("button", { name: "Toggle side panel" }).click();
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+  };
+  await reopenSearch();
+  await expect(banner).toContainText("area-adjusted");
+  await expect(banner).toContainText("could be up to");
+  await expect(banner).not.toContainText("Tap the map");
   await expect(
-    page.getByRole("button", { name: "Back street" })
+    page.getByText(/Last seen \d\d:\d\d — 2\d min ago/)
+  ).toBeVisible();
+  await expect(page.getByText(/Team heading east/)).toBeVisible();
+  await expect(page.getByText("Seen how long ago?")).toBeVisible();
+
+  // "Move pin" waits for one tap and can be cancelled; the map is otherwise
+  // left alone so a stray touch cannot move the pin.
+  const move = page.getByRole("button", { name: "Move pin" });
+  await move.click();
+  await expect(banner).toContainText("Tap the map to move the pin");
+  await page.getByRole("button", { name: "Tap map…" }).click();
+  await expect(banner).not.toContainText("Tap the map");
+
+  // Seen how long ago: big buttons, no slider. Nothing goes back further than
+  // five minutes.
+  await expect(page.getByRole("button", { name: /^\d+ min$/ })).toHaveCount(4);
+  await expect(
+    page.getByRole("button", { name: "Now", exact: true })
+  ).toBeVisible();
+  const saved = page.waitForResponse(r =>
+    r.url().includes("setPredictorLastSeen")
+  );
+  await page.getByRole("button", { name: "2 min", exact: true }).click();
+  await saved;
+  await expect(
+    page.getByRole("button", { name: "2 min", exact: true })
   ).toHaveAttribute("aria-pressed", "true");
 
-  // What is set by hand is shared: it is saved for the sheet, so a reload (or
-  // another officer's screen) shows the same area.
-  await page.waitForResponse(r => r.url().includes("setPredictorLastSeen"));
-  await page.reload();
-  await page.getByRole("button", { name: "Toggle side panel" }).click();
-  await page.getByRole("button", { name: "Where now?" }).click();
-  await expect(
-    page.getByRole("button", { name: "Back street" })
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("predictor-banner")).toContainText(
-    /last seen at Home/
+  // Pause holds the ring; it is shared, so a reload (or another officer's
+  // screen) shows it held too. Resume lets it grow again.
+  const paused = page.waitForResponse(r =>
+    r.url().includes("setPredictorLastSeen")
   );
-  // "Use the running sheet" is only for a position set by hand, so this one
-  // (area only) is cleared by choosing the area again.
-  await page.getByRole("button", { name: "Back street" }).click();
+  await page.getByRole("button", { name: "Pause ring" }).click();
+  await paused;
+  await expect(banner).toContainText("Ring paused at");
+  await reopenSearch();
+  await expect(banner).toContainText("Ring paused at");
+  const resumed = page.waitForResponse(r =>
+    r.url().includes("setPredictorLastSeen")
+  );
+  await page.getByRole("button", { name: "Resume ring" }).click();
+  await resumed;
+  await expect(banner).not.toContainText("Ring paused");
+
+  // Start again throws the pin away for everyone and waits for a new tap.
+  const cleared = page.waitForResponse(r =>
+    r.url().includes("clearPredictorLastSeen")
+  );
+  await page.getByRole("button", { name: "Start again" }).click();
+  await cleared;
+  await expect(banner).toContainText("Tap the map where he was last seen");
+  await reopenSearch();
+  await expect(banner).toContainText("Tap the map where he was last seen");
 
   // Switching it off clears the line from the map.
   await page.getByRole("button", { name: /Target predictor\s*On/i }).click();
   await expect(banner).toHaveCount(0);
 });
 
-test("Map page: Where now still shows how far he could have got with no history, and lists registered addresses in reach", async ({
+test("Map page: Search still shows how far he could have got with no history, and lists registered addresses in reach", async ({
   page,
 }) => {
   const created = await createOperationAndSheet(page);
@@ -644,6 +708,7 @@ test("Map page: Where now still shows how far he could have got with no history,
     lng: point.lng,
     seenMinutes: Math.max(0, nowMin - 20),
     area: null,
+    pausedAtMinutes: null,
     updatedByCIN: "999",
     updatedAtMs: Date.now(),
   };
@@ -716,7 +781,7 @@ test("Map page: Where now still shows how far he could have got with no history,
   // 1. No known places and no history: the reach still answers.
   await page.goto("/intelligence/mapping");
   await page.getByRole("button", { name: "Toggle side panel" }).click();
-  await page.getByRole("button", { name: "Where now?" }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
   const banner = page.getByTestId("predictor-banner");
   await expect(banner).toContainText("He could be up to");
   await expect(banner).toContainText("Reach only");
@@ -750,7 +815,7 @@ test("Map page: Where now still shows how far he could have got with no history,
   ];
   await page.reload();
   await page.getByRole("button", { name: "Toggle side panel" }).click();
-  await page.getByRole("button", { name: "Where now?" }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.getByText("Locations of interest in reach")).toBeVisible();
   await expect(
     page.getByText("registered address — no visits on record")

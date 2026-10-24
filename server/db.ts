@@ -435,6 +435,7 @@ export {
   LOCATION_HISTORY_MAX_AGE_MS,
   purgeOldLocationHistory,
   getUserLocationHistories,
+  getOperationTrail,
   getCustomMarkers,
   createCustomMarker,
   updateCustomMarker,

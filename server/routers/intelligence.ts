@@ -18,6 +18,7 @@ import {
   getIntelTargetPatternOfLife,
   getIntelTargetPlaces,
   getIntelTargetPredictor,
+  getOperationTrail,
   getSharedSeen,
   setPredictorLastSeen,
   clearPredictorLastSeen,
@@ -288,6 +289,37 @@ export const intelligenceRouter = router({
           message: "Operation or target not found.",
         });
       return result;
+    }),
+
+  /** Target Predictor: the direction the team was travelling in the minutes
+   * before the target was last seen — from the GPS trail officers share on the
+   * operation, limited to people the caller may see (the same rule as the live
+   * trace). The direction itself is worked out by shared/travelDirection.ts. */
+  getPredictorTrail: protectedProcedure
+    .input(
+      z.object({
+        operationId: z.number(),
+        fromMs: z.number(),
+        toMs: z.number(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      if (input.toMs - input.fromMs > 30 * 60_000) return [];
+      const visible = new Set(
+        (
+          await filterLocationRows(
+            toAccessUser(ctx.user),
+            await getUserLocations([])
+          )
+        ).map(r => r.userId)
+      );
+      visible.add(ctx.user.id);
+      return getOperationTrail(
+        input.operationId,
+        Array.from(visible),
+        input.fromMs,
+        input.toMs
+      );
     }),
 
   /** Target Predictor: what the team set as "last seen" for this sheet today

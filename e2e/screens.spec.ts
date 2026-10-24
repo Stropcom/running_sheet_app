@@ -468,10 +468,10 @@ test("Map page: Target Predictor says where next, then where now, with a confide
       },
       {
         placeKey: "cafe",
-        name: "Little Bird Cafe, SUBIACO",
+        name: "Little Bird Cafe, FREMANTLE",
         kind: "cafe",
-        lat: -31.951,
-        lng: 115.805,
+        lat: -31.99,
+        lng: 115.7,
       },
     ],
     stops: Array.from({ length: 10 }, (_, i) =>
@@ -484,6 +484,14 @@ test("Map page: Target Predictor says where next, then where now, with a confide
       leaving: false,
     },
   };
+  // The team was heading east from Home in the five minutes before he was last
+  // seen: the cafe (west of Home) is behind that heading, the gym is ahead.
+  const seenMs =
+    Date.parse(`${today}T00:00:00+08:00`) + predictor.lastSeen.minutes * 60_000;
+  const trail = [
+    { userId: 1, lat: -31.99, lng: 115.76, recordedAt: seenMs - 240_000 },
+    { userId: 1, lat: -31.99, lng: 115.764, recordedAt: seenMs - 20_000 },
+  ];
   await page.route(/\/api\/trpc\//, async route => {
     // The map page also fetches things that are not tRPC JSON, or are cut off
     // when the test ends; those pass through untouched.
@@ -514,7 +522,9 @@ test("Map page: Target Predictor says where next, then where now, with a confide
             }
           : name === "intelligence.getTargetPredictor"
             ? predictor
-            : undefined;
+            : name === "intelligence.getPredictorTrail"
+              ? trail
+              : undefined;
       if (data === undefined) return;
       delete entry.error;
       entry.result = { data: { json: data } };
@@ -556,6 +566,8 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   await page.getByRole("button", { name: "Where now?" }).click();
   await expect(banner).toContainText(/last seen at Home/);
   await expect(banner).toContainText("area-adjusted");
+  await expect(banner).toContainText("favouring places ahead");
+  await expect(page.getByText(/Team heading east/)).toBeVisible();
   const builtUp = page.getByRole("button", { name: "Built-up area" });
   await expect(builtUp).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("button", { name: "Back street" }).click();

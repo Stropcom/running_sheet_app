@@ -20,6 +20,9 @@
 // travel speed and how strongly places near the last sighting are favoured.
 // Those numbers are assumptions, not history — the screen says so.
 import { weekdayIndex, type PlaceVisit } from "./placesReport";
+import { directionWeight, haversineKm } from "./travelDirection";
+
+export { haversineKm };
 
 // ── Tunable rules ────────────────────────────────────────────────────────────
 
@@ -177,20 +180,6 @@ function effectiveStart(s: PredictorStop): number | null {
 
 // ── Geography ────────────────────────────────────────────────────────────────
 
-export function haversineKm(
-  a: { lat: number; lng: number },
-  b: { lat: number; lng: number }
-): number {
-  const R = 6371;
-  const rad = (d: number) => (d * Math.PI) / 180;
-  const dLat = rad(b.lat - a.lat);
-  const dLng = rad(b.lng - a.lng);
-  const h =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
-}
-
 function located(
   p: PredictorPlace | undefined
 ): { lat: number; lng: number } | null {
@@ -223,6 +212,10 @@ export interface PredictorInput {
   nowMinutes: number;
   /** Where he was last seen — sets speed and favoured distance. */
   area: AreaClass;
+  /** Where now: the compass bearing (0 = north) the team was travelling in the
+   * minutes before the last sighting — places ahead of it are favoured over
+   * places behind (shared/travelDirection.ts). Null = no direction. */
+  heading?: number | null;
 }
 
 export type CandidateState = "next" | "at" | "route" | "near";
@@ -263,6 +256,8 @@ export interface Prediction {
   area: AreaClass;
   /** True when the area adjustment was applied to the shares. */
   adjusted: boolean;
+  /** True when the team's direction of travel changed the shares. */
+  directionApplied: boolean;
   /** Visits on record in the whole history used. */
   historyStops: number;
 }
@@ -440,6 +435,7 @@ export function predict(input: PredictorInput): Prediction {
   // reached (from a point), favour nearby ones by the kind of area. The
   // adjustment is an assumption, shown as one.
   let adjusted = false;
+  let directionApplied = false;
   if (mode === "now" && seenPt && candidates.length) {
     // A place that could not be located can't be judged by distance.
     candidates = candidates.filter(c => c.km !== null);
@@ -448,12 +444,18 @@ export function predict(input: PredictorInput): Prediction {
         c => (c.km ?? 0) <= Math.max(reachKm * 1.25, 0.6)
       );
     const lambda = AREAS[input.area].lambdaKm;
+    const heading = input.heading ?? null;
+    const dirW = (c: Candidate) => {
+      const pl = located(placeByKey.get(c.placeKey));
+      return heading !== null && pl ? directionWeight(heading, seenPt, pl) : 1;
+    };
     const weight = (c: Candidate) =>
-      c.history * Math.exp(-(c.km ?? 0) / lambda);
+      c.history * Math.exp(-(c.km ?? 0) / lambda) * dirW(c);
     const sum = candidates.reduce((t, c) => t + weight(c), 0);
     if (sum > 0) {
       for (const c of candidates) c.p = weight(c) / sum;
       adjusted = true;
+      directionApplied = heading !== null && candidates.some(c => dirW(c) < 1);
     }
   }
 
@@ -489,6 +491,7 @@ export function predict(input: PredictorInput): Prediction {
     reachKm,
     area: input.area,
     adjusted,
+    directionApplied,
     historyStops: input.stops.length,
   };
 }
@@ -529,7 +532,11 @@ export function describePrediction(
   }
   const pct = `${Math.round(top.p * 100)}%`;
   const from = input.from;
-  const adj = pr.adjusted ? " (area-adjusted)" : "";
+  const adj = pr.directionApplied
+    ? " (area-adjusted, favouring places ahead)"
+    : pr.adjusted
+      ? " (area-adjusted)"
+      : "";
   const startName = from.kind === "place" ? nameOf(from.placeKey) : null;
   if (pr.mode === "next") {
     const leave =

@@ -32,6 +32,14 @@ import { Slider } from "@/components/ui/slider";
 import { trpc } from "@/lib/trpc";
 import { metresPerPixel } from "@shared/heatMapLayout";
 import {
+  DIRECTION_WINDOW_MIN,
+  FORWARD_HALF_DEG,
+  WHY_NO_DIRECTION,
+  compassName,
+  travelDirection,
+  type TravelDirection,
+} from "@shared/travelDirection";
+import {
   AREAS,
   AREA_CLASSES,
   DEFAULT_AREA,
@@ -121,6 +129,7 @@ export function useTargetPredictor({
   const [areaChoice, setAreaChoiceState] = useState<AreaClass | null>(null);
   const [showShade, setShowShade] = useState(true);
   const [showReach, setShowReach] = useState(true);
+  const [directionOn, setDirectionOn] = useState(true);
   // An edit that has not been saved yet.
   const [dirty, setDirty] = useState(false);
 
@@ -400,6 +409,35 @@ export function useTargetPredictor({
       clearMut.mutate({ operationId: opId, sheetId });
   }, [mode, shared, opId, sheetId, clearMut]);
 
+  // The way the team was travelling in the minutes before the last sighting
+  // (Where now, from a place or a tapped point): from the GPS trail officers
+  // share on the operation. No trail, too little movement or officers going
+  // different ways = no direction, and the predictor says why.
+  const seenMs =
+    data && from && from.kind !== "none"
+      ? Date.parse(`${data.todayISO}T00:00:00+08:00`) +
+        Math.round(from.minutes) * 60_000
+      : null;
+  const wantDirection =
+    ready && mode === "now" && directionOn && seenMs !== null;
+  const trailQuery = trpc.intelligence.getPredictorTrail.useQuery(
+    {
+      operationId: opId ?? 0,
+      fromMs: (seenMs ?? 0) - DIRECTION_WINDOW_MIN * 60_000,
+      toMs: seenMs ?? 0,
+    },
+    { enabled: wantDirection, staleTime: 60_000, retry: false }
+  );
+  const direction: TravelDirection | null = useMemo(() => {
+    if (!wantDirection || seenMs === null || !trailQuery.data) return null;
+    return travelDirection(
+      trailQuery.data,
+      seenMs - DIRECTION_WINDOW_MIN * 60_000,
+      seenMs
+    );
+  }, [wantDirection, seenMs, trailQuery.data]);
+  const heading = direction?.ok ? direction.bearing : null;
+
   const input: PredictorInput | null = useMemo(() => {
     if (!data || !from) return null;
     return {
@@ -410,8 +448,9 @@ export function useTargetPredictor({
       nowWeekday: clock.weekday,
       nowMinutes: clock.minutes,
       area,
+      heading,
     };
-  }, [data, from, mode, clock.weekday, clock.minutes, area]);
+  }, [data, from, mode, clock.weekday, clock.minutes, area, heading]);
   const prediction: Prediction | null = useMemo(
     () => (input ? predict(input) : null),
     [input]
@@ -455,6 +494,9 @@ export function useTargetPredictor({
     setShowShade,
     showReach,
     setShowReach,
+    directionOn,
+    setDirectionOn,
+    direction,
     sheetStart,
     usingSheet,
     /** What the team has set as "last seen" today, or null. */
@@ -617,7 +659,20 @@ export function TargetPredictorSection({
                       Show how far he could have got
                     </label>
                   )}
+                  {p.mode === "now" && (
+                    <label className="flex items-center gap-2 text-xs text-foreground">
+                      <input
+                        type="checkbox"
+                        checked={p.directionOn}
+                        onChange={e => p.setDirectionOn(e.target.checked)}
+                      />
+                      Favour the way the team was travelling
+                    </label>
+                  )}
                 </div>
+              )}
+              {p.data && p.mode === "now" && p.directionOn && (
+                <DirectionNote p={p} />
               )}
 
               {pr && p.input && <Candidates p={p} pr={pr} />}
@@ -817,6 +872,36 @@ function AreaControls({ p }: { p: TargetPredictorState }) {
   );
 }
 
+function DirectionNote({ p }: { p: TargetPredictorState }) {
+  const d = p.direction;
+  if (p.from?.kind === "none") return null;
+  if (!d)
+    return (
+      <p className="text-[11px] leading-snug text-muted-foreground">
+        Reading the team&apos;s trail…
+      </p>
+    );
+  if (!d.ok)
+    return (
+      <p className="text-[11px] leading-snug text-muted-foreground">
+        {WHY_NO_DIRECTION[d.why]}
+      </p>
+    );
+  return (
+    <p className="text-[11px] leading-snug text-muted-foreground">
+      Team heading{" "}
+      <span className="font-semibold text-foreground">
+        {compassName(d.bearing)}
+      </span>{" "}
+      for about {(d.metres / 1000).toFixed(1)} km in the {DIRECTION_WINDOW_MIN}{" "}
+      minutes before he was last seen ({d.officers}{" "}
+      {d.officers === 1 ? "officer" : "officers"}). Places ahead are favoured.
+      This is the team&apos;s direction — it stands in for his only while the
+      team is following him.
+    </p>
+  );
+}
+
 function Candidates({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
   const colour = TIER_COLOUR[pr.tier];
   if (pr.tier === "none" || pr.candidates.length === 0)
@@ -912,6 +997,16 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
               {AREAS[pr.area].label}. {AREAS[pr.area].note} The percentages are
               his history, nudged by this — that nudge is an assumption, not
               something he has done.
+            </p>
+          )}
+          {p.mode === "now" && p.direction?.ok && (
+            <p>
+              <span className="font-semibold text-foreground">Direction:</span>{" "}
+              the team was heading {compassName(p.direction.bearing)} in the{" "}
+              {DIRECTION_WINDOW_MIN} minutes before he was last seen. A place
+              within {FORWARD_HALF_DEG}° either side of that heading keeps its
+              full weight; a place behind it keeps a quarter — never none,
+              because targets double back. An assumption, not his history.
             </p>
           )}
           {p.mode === "now" && pr.elapsedMinutes > 0 && (
@@ -1102,6 +1197,10 @@ export function TargetPredictorOverlay({
           });
       }
     }
+    const arrow =
+      seen && p.mode === "now" && p.direction?.ok && pr.directionApplied
+        ? { ...seen, bearing: p.direction.bearing }
+        : null;
     const ring =
       p.showReach && p.mode === "now" && seen && pr.elapsedMinutes > 0
         ? { ...seen, radiusM: Math.max(60, pr.reachKm * 1000) }
@@ -1110,12 +1209,12 @@ export function TargetPredictorOverlay({
       input.from.kind === "point"
         ? { ...seen!, label: `Last seen ${hhmm(input.from.minutes)}` }
         : null;
-    return { colour, blobs, lines, ring, lastPoint };
+    return { colour, blobs, lines, ring, lastPoint, arrow };
   }, [p.on, pr, input, p.showShade, p.showReach, p.mode, p.placeByKey]);
 
   useEffect(() => {
     if (!map || !window.google?.maps || !model) return;
-    const { colour, blobs, lines, ring, lastPoint } = model;
+    const { colour, blobs, lines, ring, lastPoint, arrow } = model;
 
     class PredictorOverlay extends google.maps.OverlayView {
       private root: HTMLDivElement | null = null;
@@ -1123,6 +1222,7 @@ export function TargetPredictorOverlay({
       private lineEls: HTMLDivElement[] = [];
       private ringEl: HTMLDivElement | null = null;
       private pinEl: HTMLDivElement | null = null;
+      private arrowEl: HTMLDivElement | null = null;
 
       onAdd() {
         const root = document.createElement("div");
@@ -1159,6 +1259,14 @@ export function TargetPredictorOverlay({
           el.appendChild(tag);
           root.appendChild(el);
           this.pinEl = el;
+        }
+        if (arrow) {
+          const el = document.createElement("div");
+          el.style.cssText =
+            "position:absolute;width:96px;height:96px;transform:translate(-50%,-50%);pointer-events:none";
+          el.innerHTML = `<svg width="96" height="96" viewBox="-48 -48 96 96"><g transform="rotate(${arrow.bearing.toFixed(1)})" fill="none" stroke="${colour}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><path d="M0 -14 L0 -42 M-9 -32 L0 -42 L9 -32"/></g></svg>`;
+          root.appendChild(el);
+          this.arrowEl = el;
         }
         this.getPanes()?.overlayLayer.appendChild(root);
         this.root = root;
@@ -1204,6 +1312,13 @@ export function TargetPredictorOverlay({
             this.ringEl.style.top = `${pt.y - r}px`;
           }
         }
+        if (arrow && this.arrowEl) {
+          const pt = at(arrow);
+          if (pt) {
+            this.arrowEl.style.left = `${pt.x}px`;
+            this.arrowEl.style.top = `${pt.y}px`;
+          }
+        }
         if (lastPoint && this.pinEl) {
           const pt = at(lastPoint);
           if (pt) {
@@ -1220,6 +1335,7 @@ export function TargetPredictorOverlay({
         this.lineEls = [];
         this.ringEl = null;
         this.pinEl = null;
+        this.arrowEl = null;
       }
     }
 

@@ -3998,7 +3998,9 @@ export default function IntelligenceMapping() {
   // Target Predictor — the target, operation and running sheet picked at the
   // top of the pane (see components/TargetPredictor.tsx).
   const predictor = useTargetPredictor({
-    opId: isInvestigator ? null : rsSelectedOpId,
+    // The sheet's own operation (rsSelectedOpId is not set by anything on this
+    // page, so it cannot be relied on).
+    opId: isInvestigator ? null : (activeMapOperationId ?? rsSelectedOpId),
     sheetId: isInvestigator ? null : rsSelectedSheetId,
     targetId: isInvestigator ? null : (rsTargetData?.id ?? null),
   });
@@ -10989,7 +10991,9 @@ export default function IntelligenceMapping() {
                   operationName={
                     (
                       (operations ?? []) as Array<{ id: number; name: string }>
-                    ).find(o => o.id === rsSelectedOpId)?.name ?? null
+                    ).find(
+                      o => o.id === (activeMapOperationId ?? rsSelectedOpId)
+                    )?.name ?? null
                   }
                   sheetTitle={rsSelectedSheetTitle ?? null}
                 />

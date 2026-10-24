@@ -542,7 +542,11 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   await page.evaluate(({ opId, sheetId }) => {
     localStorage.setItem(
       "runlog_map_settings",
-      JSON.stringify({ rsSelectedOpId: opId, rsSelectedSheetId: sheetId })
+      JSON.stringify({
+        selectedOpIds: [opId],
+        opsExplicitlySet: true,
+        rsSelectedSheetId: sheetId,
+      })
     );
     localStorage.removeItem("runlog_target_predictor_on");
   }, created);

@@ -165,6 +165,17 @@ export function useTargetPredictor({
   }, [opId, sheetId, targetId]);
 
   const ready = on && opId != null && targetId != null;
+  // Why nothing can be shown, in words — the banner and the pane say it rather
+  // than staying blank.
+  const blocked: string | null = !on
+    ? null
+    : sheetId == null
+      ? "Select a running sheet in Map Settings."
+      : opId == null
+        ? "The selected running sheet's operation could not be found."
+        : targetId == null
+          ? "The selected running sheet has no target linked to it."
+          : null;
   const query = trpc.intelligence.getTargetPredictor.useQuery(
     { operationId: opId ?? 0, targetId: targetId ?? 0, sheetId },
     {
@@ -472,6 +483,7 @@ export function useTargetPredictor({
     query,
     data,
     ready,
+    blocked,
     override,
     pickPlaceKey,
     setPickPlaceKey,
@@ -535,11 +547,13 @@ export function TargetPredictorSection({
 }) {
   const places = p.data?.places ?? [];
   const pr = p.prediction;
-  const reasonNone = p.query.isError
-    ? "The predictor isn't available for this target."
-    : !targetName
-      ? "Select a running sheet that has a target, in the Active RS pane."
-      : null;
+  const reasonNone = p.blocked
+    ? p.blocked
+    : p.query.isError
+      ? "The predictor isn't available for this target."
+      : !targetName
+        ? "Select a running sheet that has a target, in the Active RS pane."
+        : null;
 
   return (
     <div className="px-3 py-3 border-b border-border space-y-2">
@@ -1039,13 +1053,19 @@ export function TargetPredictorBanner({
   p: TargetPredictorState;
   compact: boolean;
 }) {
-  if (!p.on || !p.ready) return null;
+  if (!p.on) return null;
   const tier = p.prediction?.tier ?? "none";
   const colour = TIER_COLOUR[tier];
   let main = p.headline?.main;
   let sub = p.headline?.sub;
   if (!p.prediction) {
-    if (p.query.isLoading) {
+    if (p.blocked) {
+      main = "Target predictor";
+      sub = p.blocked;
+    } else if (p.query.isError) {
+      main = "No prediction available";
+      sub = "The predictor could not read this target's history.";
+    } else if (p.query.isLoading) {
       main = "Target predictor";
       sub = "Reading his history…";
     } else if (p.mode === "now" && p.seenKind === "tap" && !p.usingSheet) {
@@ -1055,7 +1075,8 @@ export function TargetPredictorBanner({
       main = "No prediction yet";
       sub = "No places on record for this target on this operation.";
     } else {
-      return null;
+      main = "Target predictor";
+      sub = "Working out a prediction…";
     }
   }
   return (

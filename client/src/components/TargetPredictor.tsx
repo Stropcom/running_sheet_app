@@ -47,6 +47,7 @@ import {
   USE_ALL_HISTORY,
   NEAR_KEY,
   TIER_LABEL,
+  areaFromSpeedLimit,
   areaFromStreetName,
   describePrediction,
   formatKm,
@@ -333,21 +334,73 @@ export function useTargetPredictor({
     seenAt,
   ]);
 
-  // The kind of area he was last seen in: chosen by the officer, else read from
-  // the street name when it is unmistakable, else the stated default.
+  // The posted speed limit of the road he was last seen on (Google Roads),
+  // looked up from the last-seen point — or the last-seen place's address.
+  // Where it is known it picks the kind of area and sets the travel speed;
+  // where it is not (no limit on record, the key not allowed, offline) the
+  // street name or the officer's own choice does.
+  const limitPoint =
+    mode === "now" && from
+      ? from.kind === "point"
+        ? { lat: from.lat, lng: from.lng }
+        : from.kind === "place"
+          ? (() => {
+              const pl = placeByKey.get(from.placeKey);
+              return pl && pl.lat !== null && pl.lng !== null
+                ? { lat: pl.lat, lng: pl.lng }
+                : null;
+            })()
+          : null
+      : null;
+  const limitQuery = trpc.intelligence.getRoadSpeed.useQuery(
+    { lat: limitPoint?.lat ?? 0, lng: limitPoint?.lng ?? 0 },
+    {
+      enabled: ready && !!limitPoint,
+      staleTime: 60 * 60_000,
+      retry: false,
+      refetchOnWindowFocus: false,
+    }
+  );
+  const limit: { kph: number } | null =
+    limitPoint && limitQuery.data?.ok ? { kph: limitQuery.data.kph } : null;
+  const limitWhy:
+    | "loading"
+    | "no-road"
+    | "no-limit"
+    | "refused"
+    | "unavailable"
+    | null = !limitPoint
+    ? null
+    : limitQuery.isLoading
+      ? "loading"
+      : limitQuery.data && !limitQuery.data.ok
+        ? limitQuery.data.why
+        : limitQuery.isError
+          ? "unavailable"
+          : null;
+
+  // The kind of area he was last seen in: chosen by the officer, else the
+  // posted speed limit, else read from the street name when it is
+  // unmistakable, else the stated default.
   const autoArea: AreaClass | null = useMemo(() => {
     if (mode !== "now" || !from) return null;
+    if (limit) return areaFromSpeedLimit(limit.kph);
     if (from.kind === "place")
       return areaFromStreetName(placeByKey.get(from.placeKey)?.name);
     if (from.kind === "point") return areaFromStreetName(tapRoute);
     return null;
-  }, [mode, from, placeByKey, tapRoute]);
+  }, [mode, from, placeByKey, tapRoute, limit]);
   const area: AreaClass = areaChoice ?? autoArea ?? DEFAULT_AREA;
-  const areaSource: "chosen" | "street" | "assumed" = areaChoice
+  const areaSource: "chosen" | "posted" | "street" | "assumed" = areaChoice
     ? "chosen"
-    : autoArea
-      ? "street"
-      : "assumed";
+    : limit
+      ? "posted"
+      : autoArea
+        ? "street"
+        : "assumed";
+  // The travel speed is the posted limit itself unless the officer chose the
+  // area by hand (then it is that area's assumed speed).
+  const limitKmh = !areaChoice && limit ? limit.kph : null;
 
   // Save the form (after a short pause, so a dragged slider is one save) and
   // share it. Only the by-hand "last seen" of Where now is shared.
@@ -371,21 +424,15 @@ export function useTargetPredictor({
         lat: kind === "point" ? (seen.point?.lat ?? null) : null,
         lng: kind === "point" ? (seen.point?.lng ?? null) : null,
         seenMinutes: kind === "none" || kind === "sheet" ? null : seenAt,
-        area: areaChoice ?? autoArea,
+        // Only an area an officer chose by hand is shared; the automatic one
+        // (posted limit, street name) is worked out by each screen itself.
+        area: areaChoice,
       });
       setDirty(false);
     }, 700);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, seen, areaChoice, autoArea, seenAt]);
-
-  // The street name of a tapped point arrives after the tap; share the area it
-  // gives too.
-  useEffect(() => {
-    if (tapRoute && seen.kind === "tap" && seen.point && mode === "now")
-      setDirty(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tapRoute]);
+  }, [dirty, seen, areaChoice, seenAt]);
 
   const edit = useCallback((patch: Partial<SeenForm>) => {
     setSeen(s => ({ ...s, ...patch }));
@@ -491,8 +538,9 @@ export function useTargetPredictor({
       nowMinutes: clock.minutes,
       area,
       heading,
+      limitKmh,
     };
-  }, [data, from, mode, clock.weekday, clock.minutes, area, heading]);
+  }, [data, from, mode, clock.weekday, clock.minutes, area, heading, limitKmh]);
   const prediction: Prediction | null = useMemo(
     () => (input ? predict(input) : null),
     [input]
@@ -533,6 +581,8 @@ export function useTargetPredictor({
     setAreaChoice,
     area,
     areaSource,
+    limit,
+    limitWhy,
     showShade,
     setShowShade,
     showReach,
@@ -935,14 +985,33 @@ function AreaControls({ p }: { p: TargetPredictorState }) {
       </div>
       <p className="text-[11px] leading-snug text-muted-foreground">
         About{" "}
-        <span className="font-semibold text-foreground">{rule.kmh} km/h</span>{" "}
-        in this area.{" "}
-        {p.areaSource === "chosen"
-          ? "Chosen by you."
-          : p.areaSource === "street"
-            ? "Read from the street name — tap another to change it."
-            : "Assumed — the street name doesn't say. Tap the right one."}
+        <span className="font-semibold text-foreground">
+          {p.areaSource === "posted" && p.limit ? p.limit.kph : rule.kmh} km/h
+        </span>{" "}
+        {p.areaSource === "posted"
+          ? "— the posted limit of the nearest road (Google Roads). Tap another area to override it."
+          : p.areaSource === "chosen"
+            ? "in this area. Chosen by you."
+            : p.areaSource === "street"
+              ? "in this area. Read from the street name — tap another to change it."
+              : `in this area. Assumed — the street name doesn't say. Tap the right one.`}
       </p>
+      {p.limitWhy && p.limitWhy !== "loading" && (
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          {p.limitWhy === "no-limit"
+            ? "Google has no posted limit on record for this road."
+            : p.limitWhy === "no-road"
+              ? "No road was found next to that point."
+              : p.limitWhy === "refused"
+                ? "Google refused the speed-limit lookup for this key, so the area is picked by hand."
+                : "The speed-limit lookup could not be reached, so the area is picked by hand."}
+        </p>
+      )}
+      {p.limitWhy === "loading" && (
+        <p className="text-[11px] text-muted-foreground">
+          Looking up the posted limit…
+        </p>
+      )}
     </div>
   );
 }
@@ -971,7 +1040,7 @@ function ReachCard({ pr }: { pr: Prediction }) {
         </span>
       </div>
       <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-        {Math.round(pr.elapsedMinutes)} min at about {AREAS[pr.area].kmh} km/h (
+        {Math.round(pr.elapsedMinutes)} min at about {pr.kmh} km/h (
         {AREAS[pr.area].label.toLowerCase()}) — the dashed ring on the map. It
         grows every minute and does not depend on his history.
       </p>
@@ -1180,9 +1249,9 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
           {p.mode === "now" && pr.elapsedMinutes > 0 && (
             <p>
               <span className="font-semibold text-foreground">How far:</span>{" "}
-              {Math.round(pr.elapsedMinutes)} min at about {AREAS[pr.area].kmh}{" "}
-              km/h, so up to {pr.reachKm.toFixed(1)} km from where he was seen —
-              the dashed ring, which grows every minute.
+              {Math.round(pr.elapsedMinutes)} min at about {pr.kmh} km/h, so up
+              to {pr.reachKm.toFixed(1)} km from where he was seen — the dashed
+              ring, which grows every minute.
             </p>
           )}
           {all && (

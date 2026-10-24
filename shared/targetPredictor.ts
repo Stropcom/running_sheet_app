@@ -98,6 +98,16 @@ export function areaFromStreetName(
   return null;
 }
 
+/** The kind of area a posted speed limit says (WA): 90 and over is a freeway
+ * or highway at speed, 70–80 a main road, 60 a built-up road, 50 and under a
+ * back street. */
+export function areaFromSpeedLimit(kph: number): AreaClass {
+  if (kph >= 90) return "freeway";
+  if (kph >= 70) return "main";
+  if (kph >= 60) return "built";
+  return "back";
+}
+
 export const DEFAULT_AREA: AreaClass = "built";
 
 // ── Inputs ───────────────────────────────────────────────────────────────────
@@ -232,6 +242,11 @@ export interface PredictorInput {
    * minutes before the last sighting — places ahead of it are favoured over
    * places behind (shared/travelDirection.ts). Null = no direction. */
   heading?: number | null;
+  /** Where now: the posted speed limit (km/h) of the road he was last seen
+   * on, when it is known and the officer has not chosen the area by hand — the
+   * travel speed is then the limit itself rather than the area's assumed
+   * speed. */
+  limitKmh?: number | null;
   /** Count every visit on record whatever the day or time (default
    * USE_ALL_HISTORY). false = the careful search that starts with the same
    * weekday and time of day. */
@@ -286,6 +301,8 @@ export interface Prediction {
   /** Where now: minutes since last seen, how far he could have got (km). */
   elapsedMinutes: number;
   reachKm: number;
+  /** The travel speed the reach was worked out at, km/h. */
+  kmh: number;
   area: AreaClass;
   /** Where now: every known location (places he has been seen at and his
    * registered addresses) inside the reach, nearest first. Independent of the
@@ -371,7 +388,7 @@ export function predict(input: PredictorInput): Prediction {
     mode === "now" && from.kind !== "none" ? from.minutes : null;
   const elapsed =
     seenMinutes === null ? 0 : Math.max(0, input.nowMinutes - seenMinutes);
-  const kmh = AREAS[input.area].kmh;
+  const kmh = input.limitKmh ?? AREAS[input.area].kmh;
   const reachKm = (kmh * elapsed) / 60;
 
   let scope: Scope = "day";
@@ -606,6 +623,7 @@ export function predict(input: PredictorInput): Prediction {
     leaveMinutes,
     elapsedMinutes: elapsed,
     reachKm,
+    kmh,
     area: input.area,
     inReach,
     seenLocated: mode === "now" && seenPt !== null,
@@ -660,7 +678,7 @@ export function describePrediction(
         pr.elapsedMinutes > 0
           ? `He could be up to ${formatKm(pr.reachKm)} from where he was last seen`
           : "Just seen — the area he could be in grows with every minute",
-      sub: `${Math.round(pr.elapsedMinutes)} min at about ${AREAS[pr.area].kmh} km/h (${AREAS[pr.area].label.toLowerCase()}) · ${
+      sub: `${Math.round(pr.elapsedMinutes)} min at about ${pr.kmh} km/h (${AREAS[pr.area].label.toLowerCase()}) · ${
         n === 0
           ? "no known locations of interest in reach"
           : `${n} known location${n === 1 ? "" : "s"} of interest in reach`

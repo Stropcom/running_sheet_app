@@ -5,6 +5,7 @@ import {
   MIN_SAMPLES,
   NEAR_KEY,
   USE_ALL_HISTORY,
+  areaFromSpeedLimit,
   areaFromStreetName,
   buildStops,
   describePrediction,
@@ -109,6 +110,19 @@ describe("buildStops", () => {
     const [s] = buildStops([visit(1, "2026-03-02", "home", 60, null)]);
     expect(s.weekday).toBe(0); // Monday
     expect(s.departureLogged).toBe(false);
+  });
+});
+
+describe("areaFromSpeedLimit", () => {
+  it("reads the kind of area from a posted limit", () => {
+    expect(areaFromSpeedLimit(110)).toBe("freeway");
+    expect(areaFromSpeedLimit(100)).toBe("freeway");
+    expect(areaFromSpeedLimit(90)).toBe("freeway");
+    expect(areaFromSpeedLimit(80)).toBe("main");
+    expect(areaFromSpeedLimit(70)).toBe("main");
+    expect(areaFromSpeedLimit(60)).toBe("built");
+    expect(areaFromSpeedLimit(50)).toBe("back");
+    expect(areaFromSpeedLimit(40)).toBe("back");
   });
 });
 
@@ -542,6 +556,16 @@ describe("Where now: how far he could have got, and locations of interest", () =
       true
     );
     expect(pr.inReach.length).toBe(2);
+  });
+
+  it("uses the posted limit as the travel speed when it is known", () => {
+    const withLimit = predict(lost({ limitKmh: 100 }));
+    expect(withLimit.kmh).toBe(100);
+    expect(withLimit.reachKm).toBeCloseTo((100 * 20) / 60);
+    // No limit: the area's assumed speed, as before.
+    expect(predict(lost()).kmh).toBe(70);
+    const line = describePrediction(withLimit, lost({ limitKmh: 100 }), nameOf);
+    expect(line.sub).toContain("at about 100 km/h");
   });
 
   it("formats small distances in metres", () => {

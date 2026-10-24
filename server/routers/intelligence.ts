@@ -3,6 +3,7 @@ import { LABELLABLE_KINDS } from "@shared/placesReport";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COMMAND_CODES } from "@shared/commands";
+import { lookupRoadSpeed } from "../roadSpeed";
 import {
   filterLocationRows,
   reachableFor,
@@ -321,6 +322,19 @@ export const intelligenceRouter = router({
         input.toMs
       );
     }),
+
+  /** Target Predictor: the posted speed limit of the road nearest a point
+   * (Google Roads API), or why there is none. The predictor uses it to pick
+   * the kind of area and the travel speed; any failure just means the officer
+   * picks the area. */
+  getRoadSpeed: protectedProcedure
+    .input(
+      z.object({
+        lat: z.number().min(-90).max(90),
+        lng: z.number().min(-180).max(180),
+      })
+    )
+    .query(({ input }) => lookupRoadSpeed(input.lat, input.lng)),
 
   /** Target Predictor: what the team set as "last seen" for this sheet today
    * (null when nothing is set). Polled every few seconds while the predictor is

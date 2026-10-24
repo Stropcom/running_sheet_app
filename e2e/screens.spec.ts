@@ -643,7 +643,7 @@ test("Map page: Where now still shows how far he could have got with no history,
     lat: point.lat,
     lng: point.lng,
     seenMinutes: Math.max(0, nowMin - 20),
-    area: "main",
+    area: null,
     updatedByCIN: "999",
     updatedAtMs: Date.now(),
   };
@@ -679,7 +679,9 @@ test("Map page: Where now still shows how far he could have got with no history,
               ? sharedSeen
               : name === "intelligence.getPredictorTrail"
                 ? []
-                : undefined;
+                : name === "intelligence.getRoadSpeed"
+                  ? { ok: true, kph: 100 }
+                  : undefined;
       if (data === undefined) return;
       delete entry.error;
       entry.result = { data: { json: data } };
@@ -713,6 +715,11 @@ test("Map page: Where now still shows how far he could have got with no history,
   await expect(banner).toContainText("He could be up to");
   await expect(banner).toContainText("Reach only");
   await expect(banner).toContainText("no known locations of interest in reach");
+  // The posted limit of the road he was on picks the area and the speed.
+  await expect(banner).toContainText("at about 100 km/h (freeway)");
+  await expect(
+    page.getByText(/the posted limit of the nearest road/)
+  ).toBeVisible();
   await expect(
     page.getByText("How far he could have got").first()
   ).toBeVisible();

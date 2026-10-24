@@ -245,7 +245,10 @@ describe("Where next", () => {
     const input = base({ stops: history });
     const line = describePrediction(predict(input), input, nameOf);
     expect(line.main).toBe("Next: Gym, about 07:07");
-    expect(line.sub).toContain("80% of similar visits");
+    expect(line.sub).toMatch(/^\d+ of \d+ similar visits/);
+    // Counts, never percentages, in anything the officer reads.
+    expect(line.sub).not.toContain("%");
+    expect(line.main).not.toContain("%");
     expect(line.sub).toContain("usually leaves Home about 06:52");
   });
 });

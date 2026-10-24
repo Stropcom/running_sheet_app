@@ -726,7 +726,10 @@ function headlineCore(
       sub: "No similar visit on record for this target on this operation — nothing to count yet.",
     };
   }
-  const pct = `${Math.round(top.p * 100)}%`;
+  // How many of his recorded visits point this way — a count, never a
+  // percentage: the share is the app's own working, not something to read out.
+  const count =
+    top.placeKey === NEAR_KEY ? "" : `${top.n} of ${pr.total} similar visits`;
   const from = input.from;
   const adj = pr.directionApplied
     ? " (area-adjusted, favouring places ahead)"
@@ -741,7 +744,7 @@ function headlineCore(
         : "";
     return {
       main: `Next: ${nameOf(top.placeKey)}${top.arriveMinutes !== null ? `, about ${hhmm(top.arriveMinutes)}` : ""}`,
-      sub: `${pct} of similar visits${leave}`,
+      sub: `${count}${leave}`,
     };
   }
   if (from.kind === "none") {
@@ -749,8 +752,8 @@ function headlineCore(
       main: `Likely at ${nameOf(top.placeKey)} right now`,
       sub:
         pr.scope === "anytime"
-          ? `${pct} of all his recorded visits · not seen yet, and nothing on record at this time of day, so this is where he goes most`
-          : `${pct} of similar visits at this time of day · not seen yet, so this is from his routine only`,
+          ? `${top.n} of his ${pr.total} recorded visits · not seen yet, and nothing on record at this time of day, so this is where he goes most`
+          : `${top.n} of ${pr.total} similar visits at this time of day · not seen yet, so this is from his routine only`,
     };
   }
   const where =
@@ -761,13 +764,16 @@ function headlineCore(
   if (top.placeKey === NEAR_KEY) {
     return {
       main: "May still be close to where he was last seen",
-      sub: `${pct} · ${since} · in this kind of area he has most likely turned off nearby (an assumption, not his history)`,
+      sub: `${since} · in this kind of area he has most likely turned off nearby (an assumption, not his history)`,
     };
   }
   if (from.kind === "point")
     return {
       main: `May be at ${nameOf(top.placeKey)} or on the way there`,
-      sub: `${pct}${adj} · ${since}`,
+      sub: `${[count, adj.trim()].filter(Boolean).join(" ")} · ${since}`.replace(
+        /^ · /,
+        ""
+      ),
     };
   const usual =
     top.arriveMinutes !== null
@@ -776,11 +782,17 @@ function headlineCore(
   return top.state === "at"
     ? {
         main: `May now be at ${nameOf(top.placeKey)}${usual}`,
-        sub: `${pct}${adj} · ${since}`,
+        sub: `${[count, adj.trim()].filter(Boolean).join(" ")} · ${since}`.replace(
+          /^ · /,
+          ""
+        ),
       }
     : {
         main: `May be on the way to ${nameOf(top.placeKey)}${top.arriveMinutes !== null ? `, usually there about ${hhmm(top.arriveMinutes)}` : ""}`,
-        sub: `${pct}${adj} · ${since}`,
+        sub: `${[count, adj.trim()].filter(Boolean).join(" ")} · ${since}`.replace(
+          /^ · /,
+          ""
+        ),
       };
 }
 

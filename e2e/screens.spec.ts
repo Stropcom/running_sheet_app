@@ -562,7 +562,9 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   // Where next: counted from the history, with the confidence stated.
   const banner = page.getByTestId("predictor-banner");
   await expect(banner).toContainText("Next: Elevate Fitness");
-  await expect(banner).toContainText("70% of similar visits");
+  await expect(banner).toContainText("7 of 10 similar visits");
+  // Counts, never percentages, anywhere in the banner or the list.
+  await expect(banner).not.toContainText("%");
   await expect(banner).toContainText("Moderate confidence");
   await expect(page.getByText("Home — 14 Marine Parade").first()).toBeVisible();
 
@@ -611,6 +613,13 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   await reopenSearch();
   await expect(banner).toContainText("area-adjusted");
   await expect(banner).toContainText("could be up to");
+  await expect(banner).not.toContainText("%");
+  await expect(
+    page.getByText("Most likely, from his history", { exact: true })
+  ).toBeVisible();
+  await expect(page.getByRole("main").getByText(/\b(?!60%)\d+%/)).toHaveCount(
+    0
+  );
   await expect(banner).not.toContainText("Tap the map");
   await expect(
     page.getByText(/Last seen \d\d:\d\d — 2\d min ago/)

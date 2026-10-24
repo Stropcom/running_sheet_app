@@ -746,7 +746,7 @@ export function TargetPredictorSection({
                       checked={p.showShade}
                       onChange={e => p.setShowShade(e.target.checked)}
                     />
-                    Show how likely each place is, on its marker
+                    Show the numbers on the markers
                   </label>
                   {p.mode === "now" && (
                     <label className="flex items-center gap-2 text-xs text-foreground">
@@ -1135,30 +1135,29 @@ function Candidates({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
           Most likely, from his history
         </p>
       )}
-      {pr.candidates.slice(0, 4).map(c => {
-        const pct = Math.round(c.p * 100);
+      {pr.candidates.slice(0, 4).map((c, rank) => {
         const near = c.placeKey === NEAR_KEY;
         const meta = near
           ? `Not one of his usual places. A share set by the kind of area he was last seen in (${AREAS[pr.area].label.toLowerCase()}) — an assumption, not history.`
           : pr.adjusted
-            ? `history ${Math.round(c.history * 100)}%${c.km !== null ? ` · ${c.km.toFixed(1)} km from where he was last seen` : ""}${c.arriveMinutes !== null ? ` · usually there about ${hhmm(c.arriveMinutes)}` : ""}`
+            ? `${c.n} of ${pr.total} similar visits${c.km !== null ? ` · ${c.km.toFixed(1)} km from where he was last seen` : ""}${c.arriveMinutes !== null ? ` · usually there about ${hhmm(c.arriveMinutes)}` : ""}`
             : `${c.n} of ${pr.total} similar visits${c.arriveMinutes !== null ? ` · usually there about ${hhmm(c.arriveMinutes)}` : ""}`;
         return (
           <div
             key={c.placeKey}
             className="rounded-xl border-2 border-border bg-card px-3 py-2"
           >
-            <div className="flex items-center justify-between gap-2 text-xs font-semibold text-foreground">
+            <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+              <span
+                className="flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                style={{ background: colour }}
+                aria-label={`Number ${rank + 1}`}
+              >
+                {rank + 1}
+              </span>
               <span className="truncate">
                 {near ? "Somewhere close by" : p.labelOf(c.placeKey)}
               </span>
-              <span className="tabular-nums flex-shrink-0">{pct}%</span>
-            </div>
-            <div className="mt-1 h-1.5 rounded-full bg-muted overflow-hidden">
-              <div
-                className="h-full rounded-full"
-                style={{ width: `${pct}%`, background: colour }}
-              />
             </div>
             <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
               {meta}
@@ -1221,7 +1220,7 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
               ? ". No similar visit on record."
               : pr.tier === "thin"
                 ? `. Only ${pr.total} similar visit${pr.total === 1 ? "" : "s"} — treat this as a lead, not a pattern. ${MIN_SAMPLES} or more are needed before it counts as low confidence.`
-                : `. ${pr.total} similar visits${pr.topHistoryShare !== null ? `, and ${Math.round(pr.topHistoryShare * 100)}% of them went the same way` : ""}. High needs 12 or more, with 70% or more the same.`}
+                : `. ${pr.total} similar visits${pr.topHistoryShare !== null ? `, and ${Math.round(pr.topHistoryShare * pr.total)} of them went the same way` : ""}. High needs 12 or more, with at least 7 in 10 the same.`}
           </p>
           {p.mode === "now" && pr.adjusted && (
             <p>
@@ -1473,38 +1472,17 @@ export function TargetPredictorOverlay({
       input.from.kind === "point"
         ? { lat: input.from.lat, lng: input.from.lng }
         : null;
-    // The map keeps its own markers; a small badge on each one says how likely
-    // it is (nothing is shaded over the map). A registered address he has
-    // never been seen at gets a grey "no visits" badge.
-    const badges: { lat: number; lng: number; text: string; grey: boolean }[] =
-      [];
+    // The map keeps its own markers; a small numbered badge on each one ties
+    // it to the list in the pane (1 = first in "Most likely, from his
+    // history"). No percentages anywhere, and nothing is shaded over the map.
+    const badges: { lat: number; lng: number; text: string }[] = [];
     if (p.showShade) {
-      const ranked = new Set<string>();
-      for (const c of pr.candidates.slice(0, 6)) {
-        if (c.placeKey === NEAR_KEY) continue;
+      pr.candidates.slice(0, 4).forEach((c, rank) => {
+        if (c.placeKey === NEAR_KEY) return;
         const pl = p.placeByKey.get(c.placeKey);
-        if (!pl || pl.lat === null || pl.lng === null) continue;
-        ranked.add(c.placeKey);
-        badges.push({
-          lat: pl.lat,
-          lng: pl.lng,
-          text: `${Math.round(c.p * 100)}%`,
-          grey: false,
-        });
-      }
-      if (p.mode === "now") {
-        for (const r of pr.inReach) {
-          if (ranked.has(r.placeKey) || r.visits > 0) continue;
-          const pl = p.placeByKey.get(r.placeKey);
-          if (!pl || pl.lat === null || pl.lng === null) continue;
-          badges.push({
-            lat: pl.lat,
-            lng: pl.lng,
-            text: "no visits",
-            grey: true,
-          });
-        }
-      }
+        if (!pl || pl.lat === null || pl.lng === null) return;
+        badges.push({ lat: pl.lat, lng: pl.lng, text: String(rank + 1) });
+      });
     }
     const arrow =
       seen && p.mode === "now" && p.direction?.ok && pr.directionApplied
@@ -1594,7 +1572,7 @@ export function TargetPredictorOverlay({
         this.badgeEls = badges.map(b => {
           const el = document.createElement("div");
           el.textContent = b.text;
-          el.style.cssText = `position:absolute;white-space:nowrap;font:700 10.5px system-ui,sans-serif;line-height:13px;height:17px;padding:2px 7px;border-radius:9px;box-sizing:border-box;color:#fff;background:${b.grey ? "#6b7686" : "#14181d"};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);pointer-events:none;z-index:70`;
+          el.style.cssText = `position:absolute;white-space:nowrap;font:700 11px system-ui,sans-serif;line-height:14px;text-align:center;width:18px;height:18px;padding:0;border-radius:50%;box-sizing:border-box;color:#fff;background:#14181d;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);pointer-events:none;z-index:70`;
           badgeRoot.appendChild(el);
           return el;
         });
@@ -1614,7 +1592,7 @@ export function TargetPredictorOverlay({
             el = this.badgeEls[i];
           if (!pt || !el) return;
           el.style.left = `${pt.x + 8}px`;
-          el.style.top = `${pt.y - 31}px`;
+          el.style.top = `${pt.y - 30}px`;
         });
         if (ring && this.ringEl && this.likelyEl) {
           const pt = at(ring);

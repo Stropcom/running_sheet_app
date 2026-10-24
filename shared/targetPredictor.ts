@@ -321,12 +321,16 @@ export function predict(input: PredictorInput): Prediction {
    * does, the one that finds the most (the narrowest of those). */
   const search = (
     steps: { scope: Scope; timed: boolean }[],
-    matches: (s: PredictorStop, timed: boolean) => boolean
+    matches: (s: PredictorStop, timed: boolean) => boolean,
+    /** Stop at the first step that finds anything (used where the narrower
+     * step is the better evidence however few it finds). */
+    firstNonEmpty = false
   ): { scope: Scope; hits: PredictorStop[] } => {
     let best: { scope: Scope; hits: PredictorStop[] } | null = null;
     for (const st of steps) {
       const hits = pool(st.scope).filter(s => matches(s, st.timed));
-      if (hits.length >= MIN_SAMPLES) return { scope: st.scope, hits };
+      if (hits.length >= MIN_SAMPLES || (firstNonEmpty && hits.length > 0))
+        return { scope: st.scope, hits };
       if (!best || hits.length > best.hits.length)
         best = { scope: st.scope, hits };
     }
@@ -426,24 +430,33 @@ export function predict(input: PredictorInput): Prediction {
   } else {
     // Not seen yet, or seen somewhere that is not a known place: where is he
     // usually at this time of day?
-    const occupied = (s: PredictorStop) => {
+    const occupied = (s: PredictorStop, timed: boolean) => {
+      // Nothing on record at this time of day: every visit counts, so the
+      // places he goes most are still ranked rather than nothing at all.
+      if (!timed) return true;
       const start = effectiveStart(s) as number;
       const end = effectiveEnd(s);
       return (
         start <= input.nowMinutes && end !== null && input.nowMinutes <= end
       );
     };
-    // Where is he at this time of day: the time still matters here, the day
-    // does not.
+    // Where is he at this time of day: the time counts here, the day does not
+    // (when all history is used); and when nothing was on record at this time,
+    // all his visits are ranked by how often he goes there.
     const found = search(
       allHistory
-        ? [{ scope: "anyday", timed: true }]
+        ? [
+            { scope: "anyday", timed: true },
+            { scope: "anytime", timed: false },
+          ]
         : [
             { scope: "day", timed: true },
             { scope: "group", timed: true },
             { scope: "anyday", timed: true },
+            { scope: "anytime", timed: false },
           ],
-      occupied
+      occupied,
+      true
     );
     scope = found.scope;
     hits = found.hits;
@@ -631,7 +644,10 @@ function headlineCore(
   if (from.kind === "none") {
     return {
       main: `Likely at ${nameOf(top.placeKey)} right now`,
-      sub: `${pct} of similar ${WEEKDAY_NAMES[input.nowWeekday]}s at this time · not seen yet, so this is from his routine only`,
+      sub:
+        pr.scope === "anytime"
+          ? `${pct} of all his recorded visits · not seen yet, and nothing on record at this time of day, so this is where he goes most`
+          : `${pct} of similar visits at this time of day · not seen yet, so this is from his routine only`,
     };
   }
   const where =

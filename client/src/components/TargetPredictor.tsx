@@ -407,6 +407,7 @@ export function useTargetPredictor({
       setOverride(true);
       setTapRoute(null);
       setTapArmed(false);
+      toast.success("Last seen set where you tapped.");
       setSeen(s => ({
         ...s,
         kind: "tap",
@@ -1023,7 +1024,9 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
   const f = inp.from;
   const how =
     f.kind === "none" || f.kind === "point"
-      ? `where he usually is at ${hhmm(inp.nowMinutes)}`
+      ? pr.scope === "anytime"
+        ? "every place he has been, the most visited first (nothing was on record at this time of day)"
+        : `where he usually is at ${hhmm(inp.nowMinutes)}`
       : pr.scope === "anytime"
         ? `every visit to ${p.nameOf(f.placeKey)} that was followed by another place, then where each went next`
         : p.mode === "next" && !f.leaving
@@ -1242,7 +1245,9 @@ export function TargetPredictorOverlay({
   }, [map, tapping, placeTap, setTapRoute]);
 
   const model = useMemo(() => {
-    if (!p.on || !pr || !input || pr.tier === "none") return null;
+    // Even with nothing to predict from, the last-seen marker and the "how far"
+    // ring are drawn, so a tap visibly lands.
+    if (!p.on || !pr || !input) return null;
     const colour = TIER_COLOUR[pr.tier];
     const seen =
       input.from.kind === "point"

@@ -429,6 +429,37 @@ describe("counting every visit on record (the current setting)", () => {
     expect(predict(rest as PredictorInput).scope).toBe("anytime");
   });
 
+  it("a tapped point still ranks his places when nothing is on record at this time", () => {
+    // Tapped near Terminal 4 at 17:38; every recorded visit was in the morning.
+    const pr = predict(
+      input({
+        from: { kind: "point", lat: -31.94, lng: 115.971, minutes: 1033 },
+        nowMinutes: 1058,
+        area: "main",
+      })
+    );
+    expect(pr.scope).toBe("anytime");
+    expect(pr.tier).not.toBe("none");
+    expect(pr.candidates.length).toBeGreaterThan(0);
+    // The reach (25 min at 70 km/h) covers all three places; the nearest
+    // places are favoured.
+    expect(pr.candidates.some(c => c.placeKey === "t4")).toBe(true);
+    expect(pr.candidates.reduce((t, c) => t + c.p, 0)).toBeCloseTo(1);
+  });
+
+  it("a tapped point is a point on the map even when it gives nothing to predict", () => {
+    const pr = predict(
+      input({
+        stops: [],
+        from: { kind: "point", lat: -31.94, lng: 115.971, minutes: 1033 },
+        nowMinutes: 1058,
+      })
+    );
+    expect(pr.tier).toBe("none");
+    expect(pr.elapsedMinutes).toBe(25);
+    expect(pr.reachKm).toBeCloseTo((70 * 25) / 60);
+  });
+
   it("not seen yet: where he usually is at this time, on any day", () => {
     const pr = predict(
       input({ from: { kind: "none" }, nowWeekday: saturday, nowMinutes: 650 })

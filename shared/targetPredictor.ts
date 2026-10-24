@@ -274,10 +274,17 @@ export interface Candidate {
 }
 
 /** A location of interest inside the "how far could he have got" ring. */
+/** Where he is "most likely" to be by now, as a share of the most he could
+ * have got. A stand-in for traffic lights, congestion and roads that are not
+ * straight — an assumption set by the owner, not something measured. */
+export const LIKELY_REACH_SHARE = 0.6;
+
 export interface ReachPlace {
   placeKey: string;
   /** Straight-line km from where he was last seen. */
   km: number;
+  /** Inside the "most likely" ring (LIKELY_REACH_SHARE of the reach). */
+  likely: boolean;
   visits: number;
   registered: boolean;
 }
@@ -301,6 +308,8 @@ export interface Prediction {
   /** Where now: minutes since last seen, how far he could have got (km). */
   elapsedMinutes: number;
   reachKm: number;
+  /** The "most likely" ring: LIKELY_REACH_SHARE of reachKm. */
+  likelyKm: number;
   /** The travel speed the reach was worked out at, km/h. */
   kmh: number;
   area: AreaClass;
@@ -601,6 +610,8 @@ export function predict(input: PredictorInput): Prediction {
               ? {
                   placeKey: pl.placeKey,
                   km: haversineKm(seenPt, at),
+                  likely:
+                    haversineKm(seenPt, at) <= reachKm * LIKELY_REACH_SHARE,
                   visits: pl.visits ?? 0,
                   registered: pl.registered ?? false,
                 }
@@ -623,6 +634,7 @@ export function predict(input: PredictorInput): Prediction {
     leaveMinutes,
     elapsedMinutes: elapsed,
     reachKm,
+    likelyKm: reachKm * LIKELY_REACH_SHARE,
     kmh,
     area: input.area,
     inReach,

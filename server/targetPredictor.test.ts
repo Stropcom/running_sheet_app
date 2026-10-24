@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PlaceVisit } from "../shared/placesReport";
 import {
   AREAS,
+  LIKELY_REACH_SHARE,
   MIN_SAMPLES,
   NEAR_KEY,
   USE_ALL_HISTORY,
@@ -531,6 +532,18 @@ describe("Where now: how far he could have got, and locations of interest", () =
     expect(pr.inReach[1].visits).toBe(0);
     // "far" is ~60 km away: outside 20 minutes at 70 km/h.
     expect(pr.inReach.some(r => r.placeKey === "far")).toBe(false);
+  });
+
+  it("the most-likely ring is 60% of the reach and marks the places inside it", () => {
+    const pr = predict(lost());
+    expect(LIKELY_REACH_SHARE).toBe(0.6);
+    expect(pr.likelyKm).toBeCloseTo(pr.reachKm * 0.6);
+    for (const r of pr.inReach) expect(r.likely).toBe(r.km <= pr.likelyKm);
+    // It follows the clock and the pause (the clock input) with the reach.
+    const later = predict(lost({ nowMinutes: 1100 }));
+    expect(later.likelyKm).toBeCloseTo(later.reachKm * 0.6);
+    // Nothing to measure from when he has not been located.
+    expect(predict(lost({ places: [] })).inReach).toEqual([]);
   });
 
   it("the reach grows with the clock and takes in more places", () => {

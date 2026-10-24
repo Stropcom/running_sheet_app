@@ -42,6 +42,7 @@ import {
 import {
   AREAS,
   DEFAULT_AREA,
+  LIKELY_REACH_SHARE,
   MIN_SAMPLES,
   USE_ALL_HISTORY,
   NEAR_KEY,
@@ -745,7 +746,7 @@ export function TargetPredictorSection({
                       checked={p.showShade}
                       onChange={e => p.setShowShade(e.target.checked)}
                     />
-                    Show locations of interest on the map
+                    Show how likely each place is, on its marker
                   </label>
                   {p.mode === "now" && (
                     <label className="flex items-center gap-2 text-xs text-foreground">
@@ -1021,10 +1022,24 @@ function ReachCard({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
       </div>
       <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
         {Math.round(pr.elapsedMinutes)} min at about {pr.kmh} km/h (
-        {AREAS[pr.area].label.toLowerCase()}) — the ring on the map.{" "}
+        {AREAS[pr.area].label.toLowerCase()}) — the dashed ring on the map.{" "}
         {p.paused
           ? `Paused at ${hhmm(p.pausedAt ?? p.clock.minutes)}: it is held here. Resume ring and it goes straight back to the real time since he was last seen.`
           : "It grows every minute and does not depend on his history."}
+      </p>
+      {pr.elapsedMinutes > 0 && (
+        <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-border pt-1.5 text-xs font-semibold text-foreground">
+          <span>Most likely by now</span>
+          <span className="tabular-nums flex-shrink-0">
+            about {formatKm(pr.likelyKm)}
+          </span>
+        </div>
+      )}
+      <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+        The solid ring: {Math.round(LIKELY_REACH_SHARE * 100)}% of the most he
+        could have got, to allow for lights, traffic and roads that aren&apos;t
+        straight. A set figure, not measured. Places inside it are the first to
+        check.
       </p>
     </div>
   );
@@ -1056,6 +1071,7 @@ function InterestList({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
                   {r.visits > 0
                     ? `${r.visits} visit${r.visits === 1 ? "" : "s"} on record`
                     : "registered address — no visits on record"}
+                  {r.likely ? " · inside the most-likely ring" : ""}
                 </span>
               </span>
               <span className="flex-shrink-0 tabular-nums text-muted-foreground">
@@ -1235,6 +1251,17 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
               ring, which grows every minute.
             </p>
           )}
+          {p.mode === "now" && pr.elapsedMinutes > 0 && (
+            <p>
+              <span className="font-semibold text-foreground">
+                Most likely:
+              </span>{" "}
+              the solid ring, {Math.round(LIKELY_REACH_SHARE * 100)}% of that (
+              {pr.likelyKm.toFixed(1)} km). Roads are not straight and there are
+              lights and traffic, so he is unlikely to have got the full
+              distance. The 60% is a set figure, not measured.
+            </p>
+          )}
           {all && (
             <p>
               For now every visit on record is counted, whatever the day of the
@@ -1343,21 +1370,6 @@ export function TargetPredictorBanner({
 
 // ── The shading on the map ───────────────────────────────────────────────────
 
-interface Blob {
-  lat: number;
-  lng: number;
-  /** Pixels at any zoom — the fade keeps a readable size. */
-  radiusPx: number;
-  opacity: number;
-}
-
-function rgba(hex: string, a: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r},${g},${b},${a})`;
-}
-
 export function TargetPredictorOverlay({
   p,
   map,
@@ -1460,56 +1472,37 @@ export function TargetPredictorOverlay({
     const seen =
       input.from.kind === "point"
         ? { lat: input.from.lat, lng: input.from.lng }
-        : input.from.kind === "place" && p.mode === "now"
-          ? (() => {
-              const pl = p.placeByKey.get(input.from.placeKey);
-              return pl && pl.lat !== null && pl.lng !== null
-                ? { lat: pl.lat, lng: pl.lng }
-                : null;
-            })()
-          : null;
-    const blobs: Blob[] = [];
-    const lines: {
-      from: { lat: number; lng: number };
-      to: { lat: number; lng: number };
-      opacity: number;
-    }[] = [];
+        : null;
+    // The map keeps its own markers; a small badge on each one says how likely
+    // it is (nothing is shaded over the map). A registered address he has
+    // never been seen at gets a grey "no visits" badge.
+    const badges: { lat: number; lng: number; text: string; grey: boolean }[] =
+      [];
     if (p.showShade) {
-      for (const c of pr.candidates) {
-        if (c.placeKey === NEAR_KEY) {
-          if (seen)
-            blobs.push({
-              ...seen,
-              radiusPx: 50,
-              opacity: Math.min(0.95, 0.18 + c.p * 0.8),
-            });
-          continue;
-        }
+      const ranked = new Set<string>();
+      for (const c of pr.candidates.slice(0, 6)) {
+        if (c.placeKey === NEAR_KEY) continue;
         const pl = p.placeByKey.get(c.placeKey);
         if (!pl || pl.lat === null || pl.lng === null) continue;
-        blobs.push({
+        ranked.add(c.placeKey);
+        badges.push({
           lat: pl.lat,
           lng: pl.lng,
-          radiusPx: 34 + (1 - c.p) * 34,
-          opacity: Math.min(0.95, 0.18 + c.p * 0.8),
+          text: `${Math.round(c.p * 100)}%`,
+          grey: false,
         });
-        if (c.state === "route" && seen)
-          lines.push({
-            from: seen,
-            to: { lat: pl.lat, lng: pl.lng },
-            opacity: 0.1 + c.p * 0.28,
-          });
       }
-      // Locations of interest inside the reach that history does not rank
-      // (registered addresses never visited, places he rarely goes): a light
-      // marking so they can still be searched.
       if (p.mode === "now") {
-        const shaded = new Set(pr.candidates.map(c => c.placeKey));
         for (const r of pr.inReach) {
-          if (shaded.has(r.placeKey)) continue;
+          if (ranked.has(r.placeKey) || r.visits > 0) continue;
           const pl = p.placeByKey.get(r.placeKey);
           if (!pl || pl.lat === null || pl.lng === null) continue;
-          blobs.push({ lat: pl.lat, lng: pl.lng, radiusPx: 26, opacity: 0.24 });
+          badges.push({
+            lat: pl.lat,
+            lng: pl.lng,
+            text: "no visits",
+            grey: true,
+          });
         }
       }
     }
@@ -1517,16 +1510,20 @@ export function TargetPredictorOverlay({
       seen && p.mode === "now" && p.direction?.ok && pr.directionApplied
         ? { ...seen, bearing: p.direction.bearing }
         : null;
-    // Held (solid) while the team has paused it, dashed while it grows.
+    // Two rings and nothing shaded: the most he could have got (dashed while
+    // it grows, solid once paused) and, inside it, where he most likely is.
     const ring =
       p.showReach && p.mode === "now" && seen && pr.elapsedMinutes > 0
         ? {
             ...seen,
             radiusM: Math.max(60, pr.reachKm * 1000),
+            likelyM: Math.max(36, pr.likelyKm * 1000),
+            outerLabel: `Could have got: up to ${formatKm(pr.reachKm)}`,
+            likelyLabel: `Most likely: ${formatKm(pr.likelyKm)}`,
             paused: p.paused,
           }
         : null;
-    return { colour, blobs, lines, ring, arrow };
+    return { colour, badges, ring, arrow };
   }, [
     p.on,
     pr,
@@ -1536,41 +1533,48 @@ export function TargetPredictorOverlay({
     p.mode,
     p.placeByKey,
     p.paused,
+    p.direction,
   ]);
 
   useEffect(() => {
     if (!map || !window.google?.maps || !model) return;
-    const { colour, blobs, lines, ring, arrow } = model;
+    const { colour, badges, ring, arrow } = model;
 
     class PredictorOverlay extends google.maps.OverlayView {
       private root: HTMLDivElement | null = null;
-      private blobEls: HTMLDivElement[] = [];
-      private lineEls: HTMLDivElement[] = [];
+      private badgeRoot: HTMLDivElement | null = null;
+      private badgeEls: HTMLDivElement[] = [];
       private ringEl: HTMLDivElement | null = null;
+      private likelyEl: HTMLDivElement | null = null;
+      private outerTag: HTMLDivElement | null = null;
+      private likelyTag: HTMLDivElement | null = null;
       private arrowEl: HTMLDivElement | null = null;
 
       onAdd() {
+        const tag = (text: string) => {
+          const el = document.createElement("div");
+          el.textContent = text;
+          el.style.cssText =
+            "position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font:600 11px system-ui,sans-serif;background:#fff;color:#14181d;border:1px solid #cbd2da;border-radius:999px;padding:1px 8px;box-shadow:0 1px 3px rgba(0,0,0,.25);pointer-events:none";
+          return el;
+        };
         const root = document.createElement("div");
         root.style.cssText =
           "position:absolute;left:0;top:0;width:0;height:0;pointer-events:none";
-        this.lineEls = lines.map(l => {
-          const el = document.createElement("div");
-          el.style.cssText = `position:absolute;height:26px;border-radius:13px;transform-origin:0 50%;background:${rgba(colour, l.opacity)};pointer-events:none`;
-          root.appendChild(el);
-          return el;
-        });
-        this.blobEls = blobs.map(b => {
-          const el = document.createElement("div");
-          el.style.cssText = "position:absolute;pointer-events:none";
-          el.style.background = `radial-gradient(circle closest-side, ${rgba(colour, Math.min(1, b.opacity))} 0%, ${rgba(colour, b.opacity * 0.55)} 55%, ${rgba(colour, 0)} 100%)`;
-          root.appendChild(el);
-          return el;
-        });
         if (ring) {
-          const el = document.createElement("div");
-          el.style.cssText = `position:absolute;box-sizing:border-box;border-radius:50%;border:2px ${ring.paused ? "solid" : "dashed"} ${colour};background:${rgba(colour, ring.paused ? 0.12 : 0.07)};pointer-events:none`;
-          root.appendChild(el);
-          this.ringEl = el;
+          // No fill: only the rings, so the map underneath stays readable.
+          const outer = document.createElement("div");
+          outer.style.cssText = `position:absolute;box-sizing:border-box;border-radius:50%;border:2px ${ring.paused ? "solid" : "dashed"} ${colour};background:transparent;pointer-events:none`;
+          root.appendChild(outer);
+          this.ringEl = outer;
+          const likely = document.createElement("div");
+          likely.style.cssText = `position:absolute;box-sizing:border-box;border-radius:50%;border:3px solid ${colour};background:transparent;pointer-events:none`;
+          root.appendChild(likely);
+          this.likelyEl = likely;
+          this.outerTag = tag(ring.outerLabel);
+          this.likelyTag = tag(ring.likelyLabel);
+          root.appendChild(this.outerTag);
+          root.appendChild(this.likelyTag);
         }
         if (arrow) {
           const el = document.createElement("div");
@@ -1582,6 +1586,20 @@ export function TargetPredictorOverlay({
         }
         this.getPanes()?.overlayLayer.appendChild(root);
         this.root = root;
+
+        // The badges sit above the map's own markers (same layer as them).
+        const badgeRoot = document.createElement("div");
+        badgeRoot.style.cssText =
+          "position:absolute;left:0;top:0;width:0;height:0;pointer-events:none";
+        this.badgeEls = badges.map(b => {
+          const el = document.createElement("div");
+          el.textContent = b.text;
+          el.style.cssText = `position:absolute;white-space:nowrap;font:700 10.5px system-ui,sans-serif;line-height:13px;height:17px;padding:2px 7px;border-radius:9px;box-sizing:border-box;color:#fff;background:${b.grey ? "#6b7686" : "#14181d"};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);pointer-events:none;z-index:70`;
+          badgeRoot.appendChild(el);
+          return el;
+        });
+        this.getPanes()?.overlayMouseTarget.appendChild(badgeRoot);
+        this.badgeRoot = badgeRoot;
       }
 
       draw() {
@@ -1590,38 +1608,38 @@ export function TargetPredictorOverlay({
         if (!proj || zoom == null) return;
         const at = (pt: { lat: number; lng: number }) =>
           proj.fromLatLngToDivPixel(new google.maps.LatLng(pt.lat, pt.lng));
-        blobs.forEach((b, i) => {
+        // The top-right corner of the marker standing on the place.
+        badges.forEach((b, i) => {
           const pt = at(b),
-            el = this.blobEls[i];
+            el = this.badgeEls[i];
           if (!pt || !el) return;
-          const r = Math.max(b.radiusPx, 120 / metresPerPixel(b.lat, zoom));
-          el.style.width = `${2 * r}px`;
-          el.style.height = `${2 * r}px`;
-          el.style.left = `${pt.x - r}px`;
-          el.style.top = `${pt.y - r}px`;
+          el.style.left = `${pt.x + 8}px`;
+          el.style.top = `${pt.y - 31}px`;
         });
-        lines.forEach((l, i) => {
-          const a = at(l.from),
-            b = at(l.to),
-            el = this.lineEls[i];
-          if (!a || !b || !el) return;
-          const len = Math.hypot(b.x - a.x, b.y - a.y);
-          el.style.width = `${len}px`;
-          el.style.left = `${a.x}px`;
-          el.style.top = `${a.y - 13}px`;
-          el.style.transform = `rotate(${Math.atan2(b.y - a.y, b.x - a.x)}rad)`;
-        });
-        if (ring && this.ringEl) {
+        if (ring && this.ringEl && this.likelyEl) {
           const pt = at(ring);
           if (pt) {
-            const r = Math.max(
-              6,
-              ring.radiusM / metresPerPixel(ring.lat, zoom)
-            );
-            this.ringEl.style.width = `${2 * r}px`;
-            this.ringEl.style.height = `${2 * r}px`;
-            this.ringEl.style.left = `${pt.x - r}px`;
-            this.ringEl.style.top = `${pt.y - r}px`;
+            const mpp = metresPerPixel(ring.lat, zoom);
+            const place = (
+              el: HTMLDivElement,
+              tagEl: HTMLDivElement | null,
+              metres: number,
+              minPx: number
+            ) => {
+              const r = Math.max(minPx, metres / mpp);
+              el.style.width = `${2 * r}px`;
+              el.style.height = `${2 * r}px`;
+              el.style.left = `${pt.x - r}px`;
+              el.style.top = `${pt.y - r}px`;
+              if (tagEl) {
+                tagEl.style.left = `${pt.x}px`;
+                tagEl.style.top = `${pt.y - r}px`;
+                // A label on a ring too small to carry it only adds clutter.
+                tagEl.style.display = r < 48 ? "none" : "block";
+              }
+            };
+            place(this.ringEl, this.outerTag, ring.radiusM, 6);
+            place(this.likelyEl, this.likelyTag, ring.likelyM, 4);
           }
         }
         if (arrow && this.arrowEl) {
@@ -1635,10 +1653,14 @@ export function TargetPredictorOverlay({
 
       onRemove() {
         this.root?.remove();
+        this.badgeRoot?.remove();
         this.root = null;
-        this.blobEls = [];
-        this.lineEls = [];
+        this.badgeRoot = null;
+        this.badgeEls = [];
         this.ringEl = null;
+        this.likelyEl = null;
+        this.outerTag = null;
+        this.likelyTag = null;
         this.arrowEl = null;
       }
     }

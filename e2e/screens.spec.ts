@@ -796,6 +796,12 @@ test("Map page: Search still shows how far he could have got with no history, an
   await expect(
     page.getByText("How far he could have got").first()
   ).toBeVisible();
+  // The solid inner ring: 60% of the most he could have got (20 min at 100
+  // km/h is 33.3 km, so 20.0 km).
+  await expect(page.getByText("Most likely by now")).toBeVisible();
+  await expect(
+    page.getByText(/The solid ring: 60% of the most he/)
+  ).toBeVisible();
   await expect(
     page.getByText(/None of his known places or registered addresses/)
   ).toBeVisible();

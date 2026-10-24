@@ -4004,7 +4004,7 @@ export default function IntelligenceMapping() {
     sheetId: isInvestigator ? null : rsSelectedSheetId,
     targetId: isInvestigator ? null : (rsTargetData?.id ?? null),
   });
-  const predictorTapping = predictor.tapping;
+  const predictorOn = predictor.on;
   // RS Actions pane — create row mutation
   const rsAddMember = trpc.member.add.useMutation();
   const rsCreateRow = trpc.row.create.useMutation();
@@ -4773,9 +4773,10 @@ export default function IntelligenceMapping() {
   };
 
   const handleMapAreaClick = useCallback(() => {
-    // Tapping the map to say where the target was last seen (Target
-    // Predictor) must not close the pane that is asking for it.
-    if (predictorTapping) return;
+    // While the Target Predictor is on, the pane stays open until it is
+    // closed with its X: taps on the map set where the target was last seen
+    // and must not close the pane that is asking for it.
+    if (predictorOn) return;
     if (
       rsActionsPaneOpen &&
       paneTargetProfileId === null &&
@@ -4786,7 +4787,7 @@ export default function IntelligenceMapping() {
       setRsActionsPaneOpen(false);
     }
   }, [
-    predictorTapping,
+    predictorOn,
     rsActionsPaneOpen,
     paneTargetProfileId,
     paneOperationProfileId,
@@ -9766,6 +9767,8 @@ export default function IntelligenceMapping() {
            z-index above the overlays' z-20 (nothing paints over it either),
            giving it the same "full vision" the left pane already has. */}
         <div
+          data-testid="right-pane"
+          data-open={rsActionsPaneOpen ? "true" : "false"}
           className={`relative flex h-full flex-col border-l-[3px] border-primary/40 bg-card shadow-2xl flex-shrink-0 ${
             rsActionsPaneOpen ? "z-30" : ""
           } ${

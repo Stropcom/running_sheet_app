@@ -806,6 +806,15 @@ test("Map page: Search still shows how far he could have got with no history, an
     page.getByText(/None of his known places or registered addresses/)
   ).toBeVisible();
 
+  // The pane stays open when the map is tapped while the predictor is on; only
+  // its X closes it.
+  const pane = page.getByTestId("right-pane");
+  await expect(pane).toHaveAttribute("data-open", "true");
+  await page.mouse.click(300, 400);
+  await page.waitForTimeout(400);
+  await expect(pane).toHaveAttribute("data-open", "true");
+  await expect(page.getByText("Seen how long ago?")).toBeVisible();
+
   // 2. A registered address he has never been seen at, inside the reach, is a
   // location of interest on its own (no visits needed).
   places = [

@@ -363,6 +363,10 @@ export function useTargetPredictor({
   );
   const limit: { kph: number } | null =
     limitPoint && limitQuery.data?.ok ? { kph: limitQuery.data.kph } : null;
+  const limitDetail =
+    limitQuery.data && !limitQuery.data.ok
+      ? (limitQuery.data.detail ?? null)
+      : null;
   const limitWhy:
     | "loading"
     | "no-road"
@@ -583,6 +587,7 @@ export function useTargetPredictor({
     areaSource,
     limit,
     limitWhy,
+    limitDetail,
     showShade,
     setShowShade,
     showReach,
@@ -1007,6 +1012,12 @@ function AreaControls({ p }: { p: TargetPredictorState }) {
                 : "The speed-limit lookup could not be reached, so the area is picked by hand."}
         </p>
       )}
+      {p.limitDetail &&
+        (p.limitWhy === "refused" || p.limitWhy === "unavailable") && (
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            Google said: “{p.limitDetail}”
+          </p>
+        )}
       {p.limitWhy === "loading" && (
         <p className="text-[11px] text-muted-foreground">
           Looking up the posted limit…

@@ -14,7 +14,14 @@ import { makeRequest } from "./_core/map";
 
 export type RoadSpeed =
   | { ok: true; kph: number }
-  | { ok: false; why: "no-road" | "no-limit" | "refused" | "unavailable" };
+  | {
+      ok: false;
+      why: "no-road" | "no-limit" | "refused" | "unavailable";
+      /** Google's own words for a refusal or failure, so the officer (or the
+       * owner) can tell a licence problem from a key setting. Never contains
+       * the key. */
+      detail?: string;
+    };
 
 const CACHE_MS = 6 * 60 * 60 * 1000;
 const ERROR_CACHE_MS = 5 * 60 * 1000;
@@ -69,6 +76,22 @@ export async function lookupRoadSpeed(
   return value;
 }
 
+/** The message inside a Google error body, cut short, with any key removed. */
+function googleMessage(body: string): string {
+  let text = body;
+  try {
+    const j = JSON.parse(body);
+    text = j?.error?.message ?? j?.error_message ?? body;
+  } catch {
+    /* not JSON: use it as it is */
+  }
+  return String(text)
+    .replace(/key=[A-Za-z0-9_-]+/g, "key=…")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 200);
+}
+
 async function lookup(lat: number, lng: number): Promise<RoadSpeed> {
   try {
     const near = await roadsRequest<{
@@ -91,7 +114,11 @@ async function lookup(lat: number, lng: number): Promise<RoadSpeed> {
     };
   } catch (e) {
     if (e instanceof RoadsHttpError && (e.status === 403 || e.status === 401))
-      return { ok: false, why: "refused" };
-    return { ok: false, why: "unavailable" };
+      return { ok: false, why: "refused", detail: googleMessage(e.message) };
+    return {
+      ok: false,
+      why: "unavailable",
+      detail: googleMessage(String((e as Error)?.message ?? e)),
+    };
   }
 }

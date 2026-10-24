@@ -107,10 +107,31 @@ describe("lookupRoadSpeed", () => {
         : json({ error: { status: "PERMISSION_DENIED" } }, 403)
     );
     const { lat, lng } = spot();
-    expect(await lookupRoadSpeed(lat, lng)).toEqual({
-      ok: false,
-      why: "refused",
-    });
+    const r = await lookupRoadSpeed(lat, lng);
+    expect(r).toMatchObject({ ok: false, why: "refused" });
+  });
+
+  it("passes on Google's own message, with the key removed", async () => {
+    stubFetch(url =>
+      url.pathname === "/v1/nearestRoads"
+        ? json({ snappedPoints: [{ placeId: "x" }] })
+        : json(
+            {
+              error: {
+                message:
+                  "Speed limits requires the Asset Tracking licence. See https://x/?key=AIzaSyABC-def_123",
+              },
+            },
+            403
+          )
+    );
+    const { lat, lng } = spot();
+    const r = await lookupRoadSpeed(lat, lng);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.detail).toContain("Asset Tracking licence");
+      expect(r.detail).not.toContain("AIzaSy");
+    }
   });
 
   it("says unavailable when Google cannot be reached, and never throws", async () => {
@@ -118,7 +139,7 @@ describe("lookupRoadSpeed", () => {
       throw new Error("network down");
     });
     const { lat, lng } = spot();
-    expect(await lookupRoadSpeed(lat, lng)).toEqual({
+    expect(await lookupRoadSpeed(lat, lng)).toMatchObject({
       ok: false,
       why: "unavailable",
     });

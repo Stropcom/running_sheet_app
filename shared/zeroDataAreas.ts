@@ -58,6 +58,7 @@ export const ZERO_AREAS: ZeroArea[] = [
       "person_name_match_decisions",
       "intelligence_geocode_cache",
       "intel_pin_overrides",
+      "target_place_labels",
     ],
   },
   {

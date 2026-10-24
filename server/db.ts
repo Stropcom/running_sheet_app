@@ -278,6 +278,8 @@ export {
   resolveLatLng,
   geocodeAddressList,
   getIntelTargetPatternOfLife,
+  getIntelTargetPlaces,
+  setTargetPlaceLabel,
   parseHHMMToMinutes,
   getWeeklyActivityReport,
   invalidateIntelligenceCache,

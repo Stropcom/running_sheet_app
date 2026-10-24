@@ -286,3 +286,133 @@ test("Ego Network on a phone fits the screen and zooms in and out", async ({
   await page.getByRole("button", { name: "Fit to screen" }).click();
   await expect(layer).toHaveCSS("transform", /matrix\(1, 0, 0, 1, 0, 0\)/);
 });
+
+test("Places Report lists where a target goes, by kind, with the visits behind each", async ({
+  page,
+}) => {
+  // Made-up answers, so the test does not depend on what is in the database
+  // (the real rules are tested in server/placesReport.test.ts).
+  const visit = (
+    dateISO: string,
+    start: number | null,
+    end: number | null,
+    dwell: number | null
+  ) => ({
+    placeKey: "x",
+    sheetId: 7,
+    sheetTitle: "20261022 - 701 - RAVEN (MENON)",
+    rowId: 1,
+    dateISO,
+    startMinutes: start,
+    endMinutes: end,
+    endDayOffset: 0,
+    dwellMinutes: dwell,
+  });
+  const today = new Date().toISOString().slice(0, 10);
+  const place = (
+    name: string,
+    kind: string,
+    source: string,
+    registeredAs: string | null,
+    visits: ReturnType<typeof visit>[]
+  ) => ({
+    placeKey: name.toLowerCase(),
+    name,
+    kind,
+    source,
+    registeredAs,
+    officerKind: null,
+    visits: visits.map(v => ({ ...v, placeKey: name.toLowerCase() })),
+  });
+  const places = {
+    targetName: "Sahana Priya MENON",
+    operationName: "RAVEN",
+    todayISO: today,
+    places: [
+      place("14 Marine Parade, COTTESLOE", "home", "registry-home", "Home", [
+        visit(today, 1060, null, null),
+      ]),
+      place("100 St Georges Terrace, PERTH", "work", "registry-label", "Work", [
+        visit(today, 530, 1025, 495),
+      ]),
+      place("62 Rokeby Road, SUBIACO", "gym", "sign", "Address 3", [
+        visit(today, 450, 505, 55),
+      ]),
+    ],
+  };
+  await page.route(/\/api\/trpc\//, async route => {
+    const resp = await route.fetch();
+    const json = await resp.json();
+    const procs = new URL(route.request().url()).pathname
+      .replace(/^.*\/api\/trpc\//, "")
+      .split(",");
+    const patch = (entry: any, name: string) => {
+      const data =
+        name === "operation.list"
+          ? [{ id: 987654, name: "RAVEN" }]
+          : name === "target.list"
+            ? [{ id: 987655, name: "Sahana Priya MENON" }]
+            : name === "intelligence.getTargetPlaces"
+              ? places
+              : undefined;
+      if (data === undefined) return;
+      // The real server has no such operation or target, so it answered with
+      // an error; replace that whole answer.
+      delete entry.error;
+      entry.result = { data: { json: data } };
+    };
+    if (Array.isArray(json)) json.forEach((e, i) => patch(e, procs[i]));
+    else patch(json, procs[0]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
+  });
+
+  await page.goto("/intelligence");
+  await page.getByRole("button", { name: "Places", exact: true }).click();
+  await page.getByText("Select an operation…").click();
+  await page.getByRole("option", { name: "RAVEN" }).click();
+  await page.getByText("Select a target…").click();
+  await page.getByRole("option", { name: /MENON/ }).click();
+
+  const rows = page.getByTestId("place-row");
+  await expect(rows).toHaveCount(3);
+  // The registry's own names are used: Home, and Work with no extra step.
+  const home = rows.filter({ hasText: "14 Marine Parade" });
+  await expect(home).toContainText("Registered home address");
+  await expect(
+    rows.filter({ hasText: "100 St Georges Terrace" })
+  ).toContainText("Work");
+  // A generic "Address 3" that has a name (a gym) shows as the Gym.
+  const gym = rows.filter({ hasText: "62 Rokeby Road" });
+  await expect(gym).toContainText("Gym");
+  await expect(gym).toContainText("Registered as Address 3");
+  // Hiding a kind removes its places.
+  await page.getByRole("button", { name: /^Gym/ }).click();
+  await expect(rows).toHaveCount(2);
+  await page.getByRole("button", { name: /^Gym/ }).click();
+  await expect(rows).toHaveCount(3);
+  // The home evening visit has no departure logged; the list says so.
+  await home.getByRole("button", { name: /Show the 1 visit/ }).click();
+  await expect(home.locator("table")).toContainText("no departure logged");
+});
+
+test("Intelligence Package has Places as a ticked section between Heat Map and Pattern of Life", async ({
+  page,
+}) => {
+  await page.goto("/intelligence");
+  await page.getByRole("button", { name: "Packages", exact: true }).click();
+  const contents = page.getByText("Package contents").locator("..");
+  const names = await contents.locator("label .font-medium").allTextContents();
+  const heat = names.indexOf("Heat Map");
+  expect(heat).toBeGreaterThan(-1);
+  expect(names[heat + 1]).toBe("Places");
+  expect(names[heat + 2]).toBe("Pattern of Life");
+  // Like every other section, it is ticked until someone unticks it.
+  const places = contents.locator("label", { hasText: "Places" }).first();
+  await expect(places.getByRole("checkbox")).toBeChecked();
+  await places.click();
+  await expect(places.getByRole("checkbox")).not.toBeChecked();
+});

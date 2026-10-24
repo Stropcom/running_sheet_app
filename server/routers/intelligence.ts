@@ -1,4 +1,5 @@
 import { PLACE_SIGN_ICONS } from "@shared/placeSigns";
+import { LABELLABLE_KINDS } from "@shared/placesReport";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COMMAND_CODES } from "@shared/commands";
@@ -15,6 +16,9 @@ import {
   getAllIntelligenceEntities,
   getIntelligenceHeatMapLocations,
   getIntelTargetPatternOfLife,
+  getIntelTargetPlaces,
+  setTargetPlaceLabel,
+  createAuditLog,
   extractEntitiesFromText,
   checkPossibleDuplicates,
   searchRegions,
@@ -236,6 +240,63 @@ export const intelligenceRouter = router({
           message: "Operation or target not found.",
         });
       return result;
+    }),
+
+  /** Places Report: the places one target goes — home, work, gym, cafe… —
+   * with every visit (see shared/placesReport.ts). Reads uncertified rows
+   * too; the page filters by period itself. */
+  getTargetPlaces: protectedProcedure
+    .input(z.object({ operationId: z.number(), targetId: z.number() }))
+    .query(async ({ input }) => {
+      const result = await getIntelTargetPlaces(
+        input.operationId,
+        input.targetId
+      );
+      if (!result)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Operation or target not found.",
+        });
+      return result;
+    }),
+
+  /** Places Report: an officer's own label on a place, shared with everyone
+   * who can see the target. kind = null goes back to the automatic label. */
+  setPlaceLabel: protectedProcedure
+    .input(
+      z.object({
+        operationId: z.number(),
+        targetId: z.number(),
+        placeKey: z.string().min(1).max(400),
+        placeName: z.string().max(600),
+        kind: z.enum(LABELLABLE_KINDS).nullable(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const target = await getTargetById(input.targetId);
+      if (!target)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Target not found.",
+        });
+      await setTargetPlaceLabel({
+        targetId: input.targetId,
+        placeKey: input.placeKey,
+        kind: input.kind,
+        cin: ctx.user.cin ?? null,
+      });
+      await createAuditLog({
+        sheetId: 0,
+        userId: ctx.user.id,
+        userName: ctx.user.cin ?? "Unknown",
+        userCIN: ctx.user.cin ?? null,
+        action: "place_label_changed",
+        details: `Place "${input.placeName}" on target "${target.name}" ${
+          input.kind ? `labelled as ${input.kind}` : "set back to automatic"
+        }`,
+        createdAt: Date.now(),
+      });
+      return { ok: true };
     }),
 
   /** Association graph — nodes and weighted edges from entity co-occurrence */

@@ -43,10 +43,22 @@ import {
   fetchHeatMapMapHtml,
 } from "@/lib/heatMapSection";
 import { buildPatternOfLifeGridsHtml } from "@/lib/patternOfLifeSection";
+import { buildPlacesBodyHtml } from "@/lib/placesReportExport";
+import {
+  sortPlaces,
+  summarisePlaces,
+  type PlaceRecord,
+} from "@shared/placesReport";
 
 type PackageScope = "operation" | "target";
 
-type SectionKey = "profile" | "rollup" | "ego" | "heatmap" | "patternOfLife";
+type SectionKey =
+  | "profile"
+  | "rollup"
+  | "ego"
+  | "heatmap"
+  | "places"
+  | "patternOfLife";
 
 /** Display order for both the contents checklist and the built document —
  * profile/context first, then the deployment record, then the analytical
@@ -56,6 +68,7 @@ const SECTION_ORDER: SectionKey[] = [
   "rollup",
   "ego",
   "heatmap",
+  "places",
   "patternOfLife",
 ];
 
@@ -64,6 +77,8 @@ const SECTION_DESCRIPTIONS: Record<SectionKey, string> = {
   rollup: "Every Supervisor Summary in scope",
   ego: "One diagram per included target, that target centred",
   heatmap: "All-time location activity, mapped and ranked",
+  places:
+    "The places each included target goes — home, work, gym… — with visits and time",
   patternOfLife: "One time/location report per included target",
 };
 
@@ -338,6 +353,47 @@ export default function IntelPackages() {
     };
   }
 
+  /** Places — one list per included target, like Pattern of Life: a server
+   * round-trip per target, so only called when the section is enabled. All
+   * recorded days, most visited first. Running sheets are left out (as in the
+   * Places Report's own export). */
+  async function buildPlacesSection(): Promise<PackageSection | null> {
+    if (!chosenTargets.length || operationId == null) return null;
+    const results = await Promise.all(
+      chosenTargets.map(t =>
+        trpcClient.intelligence.getTargetPlaces.query({
+          operationId: operationId!,
+          targetId: t.id,
+        })
+      )
+    );
+    const blocks: string[] = [];
+    const missing: string[] = [];
+    chosenTargets.forEach((t, i) => {
+      const data = results[i];
+      const places = sortPlaces(
+        summarisePlaces(data.places as PlaceRecord[], {
+          sinceISO: null,
+          todayISO: data.todayISO,
+        }),
+        "visits"
+      );
+      if (!places.length) {
+        missing.push(t.name);
+        return;
+      }
+      blocks.push(`<div class="sub-block">
+        <p class="sub-head">${escHtml(t.name)}</p>
+        ${buildPlacesBodyHtml(places)}
+      </div>`);
+    });
+    if (!blocks.length && !missing.length) return null;
+    const missingNote = missing.length
+      ? `<p class="muted-note">No places recorded yet for: ${escHtml(missing.join(", "))}.</p>`
+      : "";
+    return { title: "Places", html: `${blocks.join("\n")}${missingNote}` };
+  }
+
   /** Pattern of Life — one report per included target, same as Ego Network.
    * Unlike the other sections this needs its own server round-trip per
    * target (the association graph and rollup are already fetched whole), so
@@ -488,6 +544,11 @@ export default function IntelPackages() {
       if (enabledSections.has("heatmap")) {
         const heat = await buildHeatMapSection(heatLocations);
         if (heat) sections.push(heat);
+      }
+
+      if (enabledSections.has("places")) {
+        const places = await buildPlacesSection();
+        if (places) sections.push(places);
       }
 
       if (enabledSections.has("patternOfLife")) {
@@ -685,7 +746,9 @@ export default function IntelPackages() {
                           ? "Ego Network"
                           : key === "heatmap"
                             ? "Heat Map"
-                            : "Pattern of Life"}
+                            : key === "places"
+                              ? "Places"
+                              : "Pattern of Life"}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {SECTION_DESCRIPTIONS[key]}

@@ -349,17 +349,25 @@ test("Places Report lists where a target goes, by kind, with the visits behind e
     const patch = (entry: any, name: string) => {
       const data =
         name === "operation.list"
-          ? [{ id: 1, name: "RAVEN" }]
+          ? [{ id: 987654, name: "RAVEN" }]
           : name === "target.list"
-            ? [{ id: 1, name: "Sahana Priya MENON" }]
+            ? [{ id: 987655, name: "Sahana Priya MENON" }]
             : name === "intelligence.getTargetPlaces"
               ? places
               : undefined;
-      if (data !== undefined) entry.result = { data: { json: data } };
+      if (data === undefined) return;
+      // The real server has no such operation or target, so it answered with
+      // an error; replace that whole answer.
+      delete entry.error;
+      entry.result = { data: { json: data } };
     };
     if (Array.isArray(json)) json.forEach((e, i) => patch(e, procs[i]));
     else patch(json, procs[0]);
-    await route.fulfill({ response: resp, json });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
   });
 
   await page.goto("/intelligence");

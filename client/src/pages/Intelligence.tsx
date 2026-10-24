@@ -37,6 +37,7 @@ import {
   Camera,
   Flame,
   Activity,
+  MapPinned,
   Radar,
   PackageOpen,
 } from "lucide-react";
@@ -47,6 +48,7 @@ import { IndicesBadge } from "@/components/IndicesBadge";
 import IntelligenceHeatMap from "@/pages/IntelligenceHeatMap";
 import IntelligencePatternOfLife from "@/pages/IntelligencePatternOfLife";
 import EgoNetworkMap from "@/pages/EgoNetworkMap";
+import IntelligencePlaces from "@/pages/IntelligencePlaces";
 import IntelPackages from "@/pages/IntelPackages";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -60,6 +62,7 @@ type TabView =
   | "locations"
   | "all"
   | "heatmap"
+  | "places"
   | "patternOfLife"
   | "egonet"
   | "packages";
@@ -79,6 +82,7 @@ const INTEL_TABS: readonly string[] = [
   "locations",
   "all",
   "heatmap",
+  "places",
   "patternOfLife",
   "egonet",
   "packages",
@@ -1485,6 +1489,11 @@ const REPORT_TAB_OPTIONS: Array<{
     icon: <Flame className="w-3.5 h-3.5" />,
   },
   {
+    value: "places",
+    label: "Places",
+    icon: <MapPinned className="w-3.5 h-3.5" />,
+  },
+  {
     value: "patternOfLife",
     label: "Pattern of Life",
     icon: <Activity className="w-3.5 h-3.5" />,
@@ -1648,6 +1657,7 @@ export default function IntelligencePage() {
   // applies to them.
   const isMapTab =
     activeTab === "heatmap" ||
+    activeTab === "places" ||
     activeTab === "patternOfLife" ||
     activeTab === "egonet" ||
     activeTab === "packages";
@@ -2161,6 +2171,9 @@ export default function IntelligencePage() {
 
         {/* Heat Map tab content */}
         {activeTab === "heatmap" && <IntelligenceHeatMap />}
+
+        {/* Places Report tab content */}
+        {activeTab === "places" && <IntelligencePlaces />}
 
         {/* Pattern of Life tab content — unlike Heat Map/Ego Network/Packages
             this isn't a canvas that needs to fill the viewport, it's a

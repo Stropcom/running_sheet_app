@@ -340,58 +340,64 @@ export type InsertOperationShare = typeof operationShares.$inferInsert;
 
 // ─── Running Sheets ───────────────────────────────────────────────────────────
 
-export const runningSheets = mysqlTable("running_sheets", {
-  id: int("id").autoincrement().primaryKey(),
-  operationId: int("operationId").notNull(),
-  title: varchar("title", { length: 255 }).notNull(),
-  // The calendar date this sheet represents (YYYY-MM-DD) — distinct from
-  // createdAt, which is just when the DB row was inserted. Drives the
-  // auto-generated title's date segment; editable after creation.
-  sheetDate: varchar("sheetDate", { length: 16 }),
-  targetName: varchar("targetName", { length: 255 }),
-  // JSON array of { cin: string, hasImages: boolean } — daily CIN roster
-  sheetCins: text("sheetCins"),
-  targetId: int("targetId"),
-  createdBy: int("createdBy").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  // Close/Reopen
-  closedAt: bigint("closedAt", { mode: "number" }),
-  closedByCIN: varchar("closedByCIN", { length: 64 }),
-  // Soft-delete
-  deletedAt: bigint("deletedAt", { mode: "number" }),
-  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
-  // JSON object { [continuityCardKey]: rowId } — continuity cards (parked
-  // vehicle, people on foot, ...) that officers have stopped tracking on this
-  // sheet, with the newest relevant row id at the time. Display-only: it
-  // never touches row text, and a card returns if a newer row is logged.
-  continuityDismissed: text("continuityDismissed"),
-}, t => [
-  index("running_sheets_operation_idx").on(t.operationId, t.deletedAt),
-  index("running_sheets_target_idx").on(t.targetId),
-  index("running_sheets_date_idx").on(t.sheetDate),
-]);
+export const runningSheets = mysqlTable(
+  "running_sheets",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    operationId: int("operationId").notNull(),
+    title: varchar("title", { length: 255 }).notNull(),
+    // The calendar date this sheet represents (YYYY-MM-DD) — distinct from
+    // createdAt, which is just when the DB row was inserted. Drives the
+    // auto-generated title's date segment; editable after creation.
+    sheetDate: varchar("sheetDate", { length: 16 }),
+    targetName: varchar("targetName", { length: 255 }),
+    // JSON array of { cin: string, hasImages: boolean } — daily CIN roster
+    sheetCins: text("sheetCins"),
+    targetId: int("targetId"),
+    createdBy: int("createdBy").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    // Close/Reopen
+    closedAt: bigint("closedAt", { mode: "number" }),
+    closedByCIN: varchar("closedByCIN", { length: 64 }),
+    // Soft-delete
+    deletedAt: bigint("deletedAt", { mode: "number" }),
+    deletedByCIN: varchar("deletedByCIN", { length: 64 }),
+    // JSON object { [continuityCardKey]: rowId } — continuity cards (parked
+    // vehicle, people on foot, ...) that officers have stopped tracking on this
+    // sheet, with the newest relevant row id at the time. Display-only: it
+    // never touches row text, and a card returns if a newer row is logged.
+    continuityDismissed: text("continuityDismissed"),
+  },
+  t => [
+    index("running_sheets_operation_idx").on(t.operationId, t.deletedAt),
+    index("running_sheets_target_idx").on(t.targetId),
+    index("running_sheets_date_idx").on(t.sheetDate),
+  ]
+);
 
 export type RunningSheet = typeof runningSheets.$inferSelect;
 export type InsertRunningSheet = typeof runningSheets.$inferInsert;
 
 // ─── Sheet Rows ───────────────────────────────────────────────────────────────
 
-export const sheetRows = mysqlTable("sheet_rows", {
-  id: int("id").autoincrement().primaryKey(),
-  sheetId: int("sheetId").notNull(),
-  rowNumber: int("rowNumber").notNull(),
-  time: varchar("time", { length: 64 }),
-  timeMinutes: int("timeMinutes"),
-  dayOffset: int("dayOffset").default(0).notNull(), // legacy — kept for migration compat
-  rowDate: varchar("rowDate", { length: 16 }), // YYYY-MM-DD — explicit calendar date for this row (null = use inference)
-  observation: text("observation"),
-  isLocked: boolean("isLocked").default(false).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, t => [
-  index("sheet_rows_sheet_row_idx").on(t.sheetId, t.rowNumber),
-]);
+export const sheetRows = mysqlTable(
+  "sheet_rows",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    sheetId: int("sheetId").notNull(),
+    rowNumber: int("rowNumber").notNull(),
+    time: varchar("time", { length: 64 }),
+    timeMinutes: int("timeMinutes"),
+    dayOffset: int("dayOffset").default(0).notNull(), // legacy — kept for migration compat
+    rowDate: varchar("rowDate", { length: 16 }), // YYYY-MM-DD — explicit calendar date for this row (null = use inference)
+    observation: text("observation"),
+    isLocked: boolean("isLocked").default(false).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  t => [index("sheet_rows_sheet_row_idx").on(t.sheetId, t.rowNumber)]
+);
 
 export type SheetRow = typeof sheetRows.$inferSelect;
 export type InsertSheetRow = typeof sheetRows.$inferInsert;
@@ -399,34 +405,40 @@ export type InsertSheetRow = typeof sheetRows.$inferInsert;
 // ─── Row Members ──────────────────────────────────────────────────────────────
 // memberName stores the CIN of the member being observed in this row
 
-export const rowMembers = mysqlTable("row_members", {
-  id: int("id").autoincrement().primaryKey(),
-  rowId: int("rowId").notNull(),
-  memberName: varchar("memberName", { length: 255 }).notNull(), // stores CIN
-  sortOrder: int("sortOrder").default(0).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-}, t => [
-  index("row_members_row_idx").on(t.rowId),
-  index("row_members_member_idx").on(t.memberName),
-]);
+export const rowMembers = mysqlTable(
+  "row_members",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    rowId: int("rowId").notNull(),
+    memberName: varchar("memberName", { length: 255 }).notNull(), // stores CIN
+    sortOrder: int("sortOrder").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => [
+    index("row_members_row_idx").on(t.rowId),
+    index("row_members_member_idx").on(t.memberName),
+  ]
+);
 
 export type RowMember = typeof rowMembers.$inferSelect;
 export type InsertRowMember = typeof rowMembers.$inferInsert;
 
 // ─── Certifications ───────────────────────────────────────────────────────────
 
-export const certifications = mysqlTable("certifications", {
-  id: int("id").autoincrement().primaryKey(),
-  rowId: int("rowId").notNull(),
-  memberId: int("memberId").notNull(),
-  certifiedByUserId: int("certifiedByUserId").notNull(),
-  certifiedByName: varchar("certifiedByName", { length: 255 }).notNull(),
-  certifiedByCIN: varchar("certifiedByCIN", { length: 64 }).notNull(),
-  certifiedAt: bigint("certifiedAt", { mode: "number" }).notNull(),
-  isActive: boolean("isActive").default(true).notNull(),
-}, t => [
-  index("certifications_row_member_idx").on(t.rowId, t.memberId),
-]);
+export const certifications = mysqlTable(
+  "certifications",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    rowId: int("rowId").notNull(),
+    memberId: int("memberId").notNull(),
+    certifiedByUserId: int("certifiedByUserId").notNull(),
+    certifiedByName: varchar("certifiedByName", { length: 255 }).notNull(),
+    certifiedByCIN: varchar("certifiedByCIN", { length: 64 }).notNull(),
+    certifiedAt: bigint("certifiedAt", { mode: "number" }).notNull(),
+    isActive: boolean("isActive").default(true).notNull(),
+  },
+  t => [index("certifications_row_member_idx").on(t.rowId, t.memberId)]
+);
 
 export type Certification = typeof certifications.$inferSelect;
 export type InsertCertification = typeof certifications.$inferInsert;
@@ -436,44 +448,48 @@ export type InsertCertification = typeof certifications.$inferInsert;
 // itself lives in object storage (server/storage.ts); key/url just point
 // at it.
 
-export const rowAttachments = mysqlTable("row_attachments", {
-  id: int("id").autoincrement().primaryKey(),
-  // Nullable — a manually-uploaded photo (see isManualUpload) may not belong
-  // to any running sheet row. Row-captured photos (the original path) always
-  // set this.
-  rowId: int("rowId"),
-  // Always set, either derived from rowId's sheet at upload time (row-captured
-  // photos) or chosen directly by the officer (manual uploads) — every photo
-  // has a home Operation regardless of whether it has a row.
-  operationId: int("operationId").notNull(),
-  // True only for photos added via the standalone Images-folder upload flow,
-  // never for photos attached to a running sheet row. Drives the "Uploaded:
-  // [date]" banner (see client/src/lib/attachmentBanner.ts), which always
-  // shows for these even if optionally linked to a row afterward.
-  isManualUpload: boolean("isManualUpload").default(false).notNull(),
-  key: varchar("key", { length: 512 }).notNull(),
-  url: varchar("url", { length: 512 }).notNull(),
-  mimeType: varchar("mimeType", { length: 64 }).notNull(),
-  caption: text("caption"),
-  uploadedBy: int("uploadedBy").notNull(),
-  uploadedByCIN: varchar("uploadedByCIN", { length: 64 }),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  // Soft-delete — goes to the Recycle Bin for 7 days before purge
-  deletedAt: bigint("deletedAt", { mode: "number" }),
-  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
-  // Number of faces RetinaFace detected in this photo at upload time — null
-  // until that background pass completes (or if it never ran, e.g. photos
-  // uploaded before this column existed). Drives the Governance "Imagery"
-  // check: a photo with faceCount > 0 needs a person-category link
-  // (target/associate/unidentified_person), not just any link — see
-  // requiresPersonLink in Governance.tsx. Never treat null as "0 faces";
-  // it means "unknown", and the governance check falls back to its old
-  // any-link behaviour rather than blocking on an absent value.
-  faceCount: int("faceCount"),
-}, t => [
-  index("row_attachments_row_idx").on(t.rowId),
-  index("row_attachments_operation_idx").on(t.operationId, t.deletedAt),
-]);
+export const rowAttachments = mysqlTable(
+  "row_attachments",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    // Nullable — a manually-uploaded photo (see isManualUpload) may not belong
+    // to any running sheet row. Row-captured photos (the original path) always
+    // set this.
+    rowId: int("rowId"),
+    // Always set, either derived from rowId's sheet at upload time (row-captured
+    // photos) or chosen directly by the officer (manual uploads) — every photo
+    // has a home Operation regardless of whether it has a row.
+    operationId: int("operationId").notNull(),
+    // True only for photos added via the standalone Images-folder upload flow,
+    // never for photos attached to a running sheet row. Drives the "Uploaded:
+    // [date]" banner (see client/src/lib/attachmentBanner.ts), which always
+    // shows for these even if optionally linked to a row afterward.
+    isManualUpload: boolean("isManualUpload").default(false).notNull(),
+    key: varchar("key", { length: 512 }).notNull(),
+    url: varchar("url", { length: 512 }).notNull(),
+    mimeType: varchar("mimeType", { length: 64 }).notNull(),
+    caption: text("caption"),
+    uploadedBy: int("uploadedBy").notNull(),
+    uploadedByCIN: varchar("uploadedByCIN", { length: 64 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    // Soft-delete — goes to the Recycle Bin for 7 days before purge
+    deletedAt: bigint("deletedAt", { mode: "number" }),
+    deletedByCIN: varchar("deletedByCIN", { length: 64 }),
+    // Number of faces RetinaFace detected in this photo at upload time — null
+    // until that background pass completes (or if it never ran, e.g. photos
+    // uploaded before this column existed). Drives the Governance "Imagery"
+    // check: a photo with faceCount > 0 needs a person-category link
+    // (target/associate/unidentified_person), not just any link — see
+    // requiresPersonLink in Governance.tsx. Never treat null as "0 faces";
+    // it means "unknown", and the governance check falls back to its old
+    // any-link behaviour rather than blocking on an absent value.
+    faceCount: int("faceCount"),
+  },
+  t => [
+    index("row_attachments_row_idx").on(t.rowId),
+    index("row_attachments_operation_idx").on(t.operationId, t.deletedAt),
+  ]
+);
 
 export type RowAttachment = typeof rowAttachments.$inferSelect;
 export type InsertRowAttachment = typeof rowAttachments.$inferInsert;
@@ -548,21 +564,23 @@ export type InsertAttachmentEntityLink =
 // to the specific attachment_entity_links row the officer created for that
 // face (target/associate/unidentified_person), so re-identifying a face later
 // is just updating that link's category/label, not this table.
-export const personDetections = mysqlTable("person_detections", {
-  id: int("id").autoincrement().primaryKey(),
-  attachmentId: int("attachmentId").notNull(),
-  entityLinkId: int("entityLinkId").notNull().unique(),
-  bboxX0: double("bboxX0").notNull(),
-  bboxY0: double("bboxY0").notNull(),
-  bboxX1: double("bboxX1").notNull(),
-  bboxY1: double("bboxY1").notNull(),
-  landmarks: text("landmarks").notNull(), // JSON: [[x,y], ...] x5 (eyes, nose, mouth corners)
-  embedding: text("embedding").notNull(), // JSON: number[256]
-  detectionConfidence: double("detectionConfidence").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-}, t => [
-  index("person_detections_attachment_idx").on(t.attachmentId),
-]);
+export const personDetections = mysqlTable(
+  "person_detections",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    attachmentId: int("attachmentId").notNull(),
+    entityLinkId: int("entityLinkId").notNull().unique(),
+    bboxX0: double("bboxX0").notNull(),
+    bboxY0: double("bboxY0").notNull(),
+    bboxX1: double("bboxX1").notNull(),
+    bboxY1: double("bboxY1").notNull(),
+    landmarks: text("landmarks").notNull(), // JSON: [[x,y], ...] x5 (eyes, nose, mouth corners)
+    embedding: text("embedding").notNull(), // JSON: number[256]
+    detectionConfidence: double("detectionConfidence").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  t => [index("person_detections_attachment_idx").on(t.attachmentId)]
+);
 
 export type PersonDetection = typeof personDetections.$inferSelect;
 export type InsertPersonDetection = typeof personDetections.$inferInsert;
@@ -841,61 +859,63 @@ export type InsertTarget = typeof targets.$inferInsert;
 // many-to-many relationship graph yet, see AssociationMap for the separate,
 // purely-inferred co-occurrence graph mined from observation text).
 
-export const associates = mysqlTable("associates", {
-  id: int("id").autoincrement().primaryKey(),
-  targetId: int("targetId").notNull(),
-  // Points at a targets.id representing the SAME real person — the mirror
-  // of targets.linkedAssociateId above. Not to be confused with targetId:
-  // targetId is "which Target Registry entry this associate is filed
-  // under" (unchanged by linking); linkedTargetId is "which OTHER Target
-  // record is this same person" (only set when confirmed via the
-  // possible-duplicate prompt).
-  linkedTargetId: int("linkedTargetId"),
-  // "associate" (a known associate of the target) or "resident" (another
-  // person who lives at the target's home address). Same table, same shape —
-  // the Target Registry just shows them in separate, differently-coloured
-  // sections. Existing rows backfill to "associate".
-  relationship: varchar("relationship", { length: 16 })
-    .default("associate")
-    .notNull(),
+export const associates = mysqlTable(
+  "associates",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    targetId: int("targetId").notNull(),
+    // Points at a targets.id representing the SAME real person — the mirror
+    // of targets.linkedAssociateId above. Not to be confused with targetId:
+    // targetId is "which Target Registry entry this associate is filed
+    // under" (unchanged by linking); linkedTargetId is "which OTHER Target
+    // record is this same person" (only set when confirmed via the
+    // possible-duplicate prompt).
+    linkedTargetId: int("linkedTargetId"),
+    // "associate" (a known associate of the target) or "resident" (another
+    // person who lives at the target's home address). Same table, same shape —
+    // the Target Registry just shows them in separate, differently-coloured
+    // sections. Existing rows backfill to "associate".
+    relationship: varchar("relationship", { length: 16 })
+      .default("associate")
+      .notNull(),
 
-  firstNames: varchar("firstNames", { length: 255 }),
-  surname: varchar("surname", { length: 255 }),
-  bornDate: date("bornDate", { mode: "string" }),
-  name: varchar("name", { length: 255 }).notNull(), // composed "Full Name, Born (SURNAME)"
-  tgt: text("tgt"), // composed short form — bracket content, e.g. "SURNAME"
+    firstNames: varchar("firstNames", { length: 255 }),
+    surname: varchar("surname", { length: 255 }),
+    bornDate: date("bornDate", { mode: "string" }),
+    name: varchar("name", { length: 255 }).notNull(), // composed "Full Name, Born (SURNAME)"
+    tgt: text("tgt"), // composed short form — bracket content, e.g. "SURNAME"
 
-  addrUnitNo: varchar("addrUnitNo", { length: 32 }),
-  addrHouseNo: varchar("addrHouseNo", { length: 32 }),
-  addrStreetName: varchar("addrStreetName", { length: 255 }),
-  addrStreetType: varchar("addrStreetType", { length: 32 }),
-  addrSuburb: varchar("addrSuburb", { length: 255 }),
-  addrState: varchar("addrState", { length: 3 }),
-  addrBusinessName: varchar("addrBusinessName", { length: 255 }),
-  hbf: text("hbf"), // composed Home Address Full
-  hb: text("hb"), // composed Home (short)
+    addrUnitNo: varchar("addrUnitNo", { length: 32 }),
+    addrHouseNo: varchar("addrHouseNo", { length: 32 }),
+    addrStreetName: varchar("addrStreetName", { length: 255 }),
+    addrStreetType: varchar("addrStreetType", { length: 32 }),
+    addrSuburb: varchar("addrSuburb", { length: 255 }),
+    addrState: varchar("addrState", { length: 3 }),
+    addrBusinessName: varchar("addrBusinessName", { length: 255 }),
+    hbf: text("hbf"), // composed Home Address Full
+    hb: text("hb"), // composed Home (short)
 
-  vehRegistration: varchar("vehRegistration", { length: 32 }),
-  vehState: varchar("vehState", { length: 3 }),
-  vehColour: varchar("vehColour", { length: 64 }),
-  vehMake: varchar("vehMake", { length: 64 }),
-  vehModel: varchar("vehModel", { length: 64 }),
-  vehType: varchar("vehType", { length: 32 }),
-  v1f: text("v1f"), // composed Vehicle 1 Full
-  v1: text("v1"), // composed Vehicle 1 (short)
+    vehRegistration: varchar("vehRegistration", { length: 32 }),
+    vehState: varchar("vehState", { length: 3 }),
+    vehColour: varchar("vehColour", { length: 64 }),
+    vehMake: varchar("vehMake", { length: 64 }),
+    vehModel: varchar("vehModel", { length: 64 }),
+    vehType: varchar("vehType", { length: 32 }),
+    v1f: text("v1f"), // composed Vehicle 1 Full
+    v1: text("v1"), // composed Vehicle 1 (short)
 
-  // Same shapes as targets.extraVehicles / targets.extraAddresses
-  extraVehicles: text("extraVehicles"),
-  extraAddresses: text("extraAddresses"),
+    // Same shapes as targets.extraVehicles / targets.extraAddresses
+    extraVehicles: text("extraVehicles"),
+    extraAddresses: text("extraAddresses"),
 
-  createdBy: int("createdBy").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  deletedAt: bigint("deletedAt", { mode: "number" }),
-  deletedByCIN: varchar("deletedByCIN", { length: 64 }),
-}, t => [
-  index("associates_target_idx").on(t.targetId, t.deletedAt),
-]);
+    createdBy: int("createdBy").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    deletedAt: bigint("deletedAt", { mode: "number" }),
+    deletedByCIN: varchar("deletedByCIN", { length: 64 }),
+  },
+  t => [index("associates_target_idx").on(t.targetId, t.deletedAt)]
+);
 
 export type Associate = typeof associates.$inferSelect;
 export type InsertAssociate = typeof associates.$inferInsert;
@@ -907,16 +927,18 @@ export type InsertAssociate = typeof associates.$inferInsert;
 // choice is kept here (not deleted) so historic detail is never lost — the
 // UI shows it back as a "Previous" note on the target profile.
 
-export const targetFieldHistory = mysqlTable("target_field_history", {
-  id: int("id").autoincrement().primaryKey(),
-  targetId: int("targetId").notNull(),
-  fieldName: varchar("fieldName", { length: 32 }).notNull(), // e.g. "name" | "tgt" | "hbf" | "hb" | "v1f" | "v1" | "dep" | "arr"
-  previousValue: text("previousValue").notNull(),
-  supersededAt: bigint("supersededAt", { mode: "number" }).notNull(),
-  supersededByCIN: varchar("supersededByCIN", { length: 64 }),
-}, t => [
-  index("target_field_history_target_idx").on(t.targetId),
-]);
+export const targetFieldHistory = mysqlTable(
+  "target_field_history",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    targetId: int("targetId").notNull(),
+    fieldName: varchar("fieldName", { length: 32 }).notNull(), // e.g. "name" | "tgt" | "hbf" | "hb" | "v1f" | "v1" | "dep" | "arr"
+    previousValue: text("previousValue").notNull(),
+    supersededAt: bigint("supersededAt", { mode: "number" }).notNull(),
+    supersededByCIN: varchar("supersededByCIN", { length: 64 }),
+  },
+  t => [index("target_field_history_target_idx").on(t.targetId)]
+);
 
 export type TargetFieldHistory = typeof targetFieldHistory.$inferSelect;
 export type InsertTargetFieldHistory = typeof targetFieldHistory.$inferInsert;
@@ -926,20 +948,24 @@ export type InsertTargetFieldHistory = typeof targetFieldHistory.$inferInsert;
 // operation can have multiple targets. Deleting an operation removes its links
 // but NOT the target itself.
 
-export const operationTargetLinks = mysqlTable("operation_target_links", {
-  id: int("id").autoincrement().primaryKey(),
-  operationId: int("operationId").notNull(),
-  targetId: int("targetId").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  // The document's free-text narrative, verbatim, when this target was
-  // created via document import for this operation — shown read-only on the
-  // Target profile as "{Operation name} background". Null for a manually
-  // added target, or an import with no narrative text.
-  background: text("background"),
-}, t => [
-  index("operation_target_links_target_idx").on(t.targetId),
-  index("operation_target_links_operation_idx").on(t.operationId),
-]);
+export const operationTargetLinks = mysqlTable(
+  "operation_target_links",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    operationId: int("operationId").notNull(),
+    targetId: int("targetId").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    // The document's free-text narrative, verbatim, when this target was
+    // created via document import for this operation — shown read-only on the
+    // Target profile as "{Operation name} background". Null for a manually
+    // added target, or an import with no narrative text.
+    background: text("background"),
+  },
+  t => [
+    index("operation_target_links_target_idx").on(t.targetId),
+    index("operation_target_links_operation_idx").on(t.operationId),
+  ]
+);
 
 export type OperationTargetLink = typeof operationTargetLinks.$inferSelect;
 export type InsertOperationTargetLink =
@@ -1078,67 +1104,72 @@ export type InsertSubObservationCertification =
 
 // ─── Audit Logs ───────────────────────────────────────────────────────────────
 
-export const auditLogs = mysqlTable("audit_logs", {
-  id: int("id").autoincrement().primaryKey(),
-  sheetId: int("sheetId").notNull(),
-  rowId: int("rowId"),
-  memberId: int("memberId"),
-  userId: int("userId").notNull(),
-  userName: varchar("userName", { length: 255 }).notNull(),
-  userCIN: varchar("userCIN", { length: 64 }),
-  action: mysqlEnum("action", [
-    "row_created",
-    "row_updated",
-    "row_deleted",
-    "member_added",
-    "member_removed",
-    "certified",
-    "uncertified",
-    "sheet_created",
-    "sheet_updated",
-    "sheet_deleted",
-    "sheet_closed",
-    "sheet_reopened",
-    "sheet_moved",
-    "sheet_copied",
-    "user_login",
-    "user_logout",
-    "user_created",
-    "user_updated",
-    "user_deleted",
-    "user_archived",
-    "user_restored",
-    "operation_status_changed",
-    "operation_updated",
-    "operation_shared",
-    "operation_share_revoked",
-    "password_changed",
-    "attachment_added",
-    "attachment_deleted",
-    "summary_completed",
-    "summary_reopened",
-    "smeac_briefing_posted",
-    "smeac_briefing_deleted",
-    "uco_guide_posted",
-    "uco_guide_deleted",
-    "target_background_updated",
-    "command_feature_changed",
-    "data_zeroed",
-    "passkey_registered",
-    "passkey_removed",
-    "passkey_login",
-    "passkey_code_issued",
-    "passkey_code_used",
-    "passkey_locked",
-    "passkey_settings_changed",
-    "document_ai_changed",
-  ]).notNull(),
-  details: text("details"),
-  createdAt: bigint("createdAt", { mode: "number" }).notNull(),
-}, t => [
-  index("audit_logs_sheet_idx").on(t.sheetId),
-  index("audit_logs_created_idx").on(t.createdAt),
-]);
+export const auditLogs = mysqlTable(
+  "audit_logs",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    sheetId: int("sheetId").notNull(),
+    rowId: int("rowId"),
+    memberId: int("memberId"),
+    userId: int("userId").notNull(),
+    userName: varchar("userName", { length: 255 }).notNull(),
+    userCIN: varchar("userCIN", { length: 64 }),
+    action: mysqlEnum("action", [
+      "row_created",
+      "row_updated",
+      "row_deleted",
+      "member_added",
+      "member_removed",
+      "certified",
+      "uncertified",
+      "sheet_created",
+      "sheet_updated",
+      "sheet_deleted",
+      "sheet_closed",
+      "sheet_reopened",
+      "sheet_moved",
+      "sheet_copied",
+      "user_login",
+      "user_logout",
+      "user_created",
+      "user_updated",
+      "user_deleted",
+      "user_archived",
+      "user_restored",
+      "operation_status_changed",
+      "operation_updated",
+      "operation_shared",
+      "operation_share_revoked",
+      "password_changed",
+      "attachment_added",
+      "attachment_deleted",
+      "summary_completed",
+      "summary_reopened",
+      "smeac_briefing_posted",
+      "smeac_briefing_deleted",
+      "uco_guide_posted",
+      "uco_guide_deleted",
+      "target_background_updated",
+      "command_feature_changed",
+      "data_zeroed",
+      "passkey_registered",
+      "passkey_removed",
+      "passkey_login",
+      "passkey_code_issued",
+      "passkey_code_used",
+      "passkey_locked",
+      "passkey_settings_changed",
+      "document_ai_changed",
+      "place_label_changed",
+    ]).notNull(),
+    details: text("details"),
+    createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+  },
+  t => [
+    index("audit_logs_sheet_idx").on(t.sheetId),
+    index("audit_logs_created_idx").on(t.createdAt),
+  ]
+);
 
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertAuditLog = typeof auditLogs.$inferInsert;
@@ -1506,6 +1537,32 @@ export const intelPinOverrides = mysqlTable("intel_pin_overrides", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
+
+// ─── Places Report labels ─────────────────────────────────────────────────────
+// An officer's own label on a place in the Places Report ("this is the
+// target's Work"), per target. Everyone with access to the target sees it. The
+// key is the place's own entity label (the same text the Intelligence folder
+// shows for it). A place with no row here is labelled by its registry label or
+// its name — see shared/placesReport.ts classifyPlace.
+export const targetPlaceLabels = mysqlTable(
+  "target_place_labels",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    targetId: int("targetId").notNull(),
+    placeKey: varchar("placeKey", { length: 400 }).notNull(),
+    kind: varchar("kind", { length: 16 }).notNull(),
+    updatedByCIN: varchar("updatedByCIN", { length: 32 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  t => [
+    uniqueIndex("target_place_labels_target_place_idx").on(
+      t.targetId,
+      t.placeKey
+    ),
+  ]
+);
+export type TargetPlaceLabel = typeof targetPlaceLabels.$inferSelect;
 
 export type IntelPinOverride = typeof intelPinOverrides.$inferSelect;
 export type InsertIntelPinOverride = typeof intelPinOverrides.$inferInsert;
@@ -2427,7 +2484,6 @@ export const scanFindingDismissals = mysqlTable(
 export type ScanFindingDismissal = typeof scanFindingDismissals.$inferSelect;
 export type InsertScanFindingDismissal =
   typeof scanFindingDismissals.$inferInsert;
-
 
 // ─── Passkey login ───────────────────────────────────────────────────────────
 // Device-bound sign-in (WebAuthn). The server keeps only the public key of each

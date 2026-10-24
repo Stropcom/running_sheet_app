@@ -33,6 +33,18 @@ import {
 
 import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
 
+import { parseExtraAddresses } from "@shared/extraAddresses";
+
+import {
+  buildVisits,
+  classifyPlace,
+  LABELLABLE_KINDS,
+  type PlaceKind,
+  type PlaceMention,
+  type PlaceRecord,
+  type RegisteredAddressRef,
+} from "@shared/placesReport";
+
 import {
   classifyVisitDirection,
   timeBucketLabels,
@@ -72,6 +84,8 @@ import {
   operationTargetLinks,
   intelligenceGeocodeCache,
   entityAliases,
+  intelPinOverrides,
+  targetPlaceLabels,
 } from "../../drizzle/schema";
 
 import { attributedRowIds, collapseToVisits } from "../entityAttribution";
@@ -923,6 +937,250 @@ export async function getIntelTargetPatternOfLife(
     peakDepartureBucket,
     peakArrivalBucket,
   };
+}
+
+// ─── Places Report ───────────────────────────────────────────────────────────
+// Where one target goes — see shared/placesReport.ts for every rule (what a
+// place is called, what counts as a visit, how long it lasted). Built from the
+// same attributed rows and place mentions as Pattern of Life, so the two agree
+// on which rows are the target's; unlike that report it does not need a place
+// to be geocodable, and it does NOT require a row to be certified (a live
+// operation is read as it is written).
+
+export interface IntelTargetPlacesResponse {
+  targetName: string;
+  operationName: string;
+  /** Last day of the report, Perth time — "new this week" counts back from it. */
+  todayISO: string;
+  places: (PlaceRecord & {
+    /** The kind an officer set on this report, or null when it is automatic. */
+    officerKind: PlaceKind | null;
+  })[];
+}
+
+export async function getIntelTargetPlaces(
+  operationId: number,
+  targetId: number
+): Promise<IntelTargetPlacesResponse | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [operation] = await db
+    .select({ id: operations.id, name: operations.name })
+    .from(operations)
+    .where(and(eq(operations.id, operationId), isNull(operations.deletedAt)))
+    .limit(1);
+  const target = await getTargetById(targetId);
+  if (!operation || !target) return null;
+  const empty: IntelTargetPlacesResponse = {
+    targetName: target.name,
+    operationName: operation.name,
+    todayISO: perthTodayISO(),
+    places: [],
+  };
+
+  const allEntities = await getAllIntelligenceEntities();
+  const targetEntity = allEntities.find(
+    e => e.isTarget && e.targetId === targetId
+  );
+  const targetRowIds = attributedRowIds(targetEntity?.occurrences, {
+    operationId,
+  });
+  if (!targetRowIds.size) return empty;
+
+  const sheetIds = new Set<number>();
+  for (const occ of targetEntity?.occurrences ?? [])
+    if (targetRowIds.has(occ.rowId)) sheetIds.add(occ.sheetId);
+  if (!sheetIds.size) return empty;
+
+  const sheets = await db
+    .select({
+      id: runningSheets.id,
+      createdAt: runningSheets.createdAt,
+      sheetDate: runningSheets.sheetDate,
+    })
+    .from(runningSheets)
+    .where(inArray(runningSheets.id, Array.from(sheetIds)));
+  const sheetDateInfo = new Map(sheets.map(s => [s.id, s]));
+
+  // Every row of those sheets, in order — a row's "previous row" decides
+  // whether it is a street list rather than an observation (isNonObservationRow).
+  const allSheetRows = await db
+    .select({
+      id: sheetRows.id,
+      sheetId: sheetRows.sheetId,
+      rowDate: sheetRows.rowDate,
+      dayOffset: sheetRows.dayOffset,
+      observation: sheetRows.observation,
+      timeMinutes: sheetRows.timeMinutes,
+      rowNumber: sheetRows.rowNumber,
+    })
+    .from(sheetRows)
+    .where(inArray(sheetRows.sheetId, Array.from(sheetIds)))
+    .orderBy(sheetRows.sheetId, sheetRows.timeMinutes, sheetRows.rowNumber);
+  const rowById = new Map(
+    allSheetRows.filter(r => targetRowIds.has(r.id)).map(r => [r.id, r])
+  );
+  const previousObservationByRowId = new Map<number, string | null>();
+  const rowOrderIndex = new Map<number, number>();
+  const bySheet = new Map<number, typeof allSheetRows>();
+  for (const row of allSheetRows) {
+    if (!bySheet.has(row.sheetId)) bySheet.set(row.sheetId, []);
+    bySheet.get(row.sheetId)!.push(row);
+  }
+  for (const list of Array.from(bySheet.values())) {
+    list.forEach((r, i) => {
+      previousObservationByRowId.set(
+        r.id,
+        i > 0 ? (list[i - 1].observation ?? null) : null
+      );
+      rowOrderIndex.set(r.id, i);
+    });
+  }
+  const resolveDateISO = (row: {
+    sheetId: number;
+    rowDate: string | null;
+    dayOffset: number;
+  }): string => {
+    if (row.rowDate) return row.rowDate;
+    const info = sheetDateInfo.get(row.sheetId);
+    return addDaysISO(
+      info?.sheetDate ?? toPerthDateISO(info?.createdAt ?? new Date()),
+      row.dayOffset
+    );
+  };
+
+  // The target's registered addresses, from the synthetic "Target card"
+  // occurrences getAllIntelligenceEntities seeds for them.
+  const extras = parseExtraAddresses(target.extraAddresses);
+  const registeredOf = (entity: (typeof allEntities)[number]) => {
+    for (const occ of entity.occurrences) {
+      if (occ.rowId !== 0) continue;
+      const snip = occ.observationSnippet ?? "";
+      const prefix = `Target card — ${target.name} [`;
+      if (!snip.startsWith(prefix)) continue;
+      const field = snip.slice(prefix.length).replace(/\]$/, "");
+      if (field === "HBF")
+        return { slot: "home", label: "" } satisfies RegisteredAddressRef;
+      const n = /^Address (\d+)$/.exec(field);
+      if (n)
+        return {
+          slot: "extra",
+          number: Number(n[1]),
+          label: extras[Number(n[1]) - 2]?.label ?? "",
+        } satisfies RegisteredAddressRef;
+    }
+    return null;
+  };
+
+  // Signs saved for places (Google's type from the address suggestions, or an
+  // officer's own icon) — how a place Google knows as a gym is known here.
+  const signs = new Map<string, string>();
+  for (const o of await db
+    .select({
+      label: intelPinOverrides.label,
+      icon: intelPinOverrides.markerIcon,
+    })
+    .from(intelPinOverrides))
+    if (o.icon) signs.set(o.label, o.icon);
+  const officer = new Map<string, PlaceKind>();
+  for (const l of await db
+    .select()
+    .from(targetPlaceLabels)
+    .where(eq(targetPlaceLabels.targetId, targetId)))
+    officer.set(l.placeKey, l.kind as PlaceKind);
+
+  const mentions: PlaceMention[] = [];
+  const meta = new Map<
+    string,
+    { name: string; entity: (typeof allEntities)[number] }
+  >();
+  for (const entity of allEntities) {
+    if (entity.type !== "address" && entity.type !== "business") continue;
+    for (const occ of entity.occurrences) {
+      if (occ.rowId === 0 || !targetRowIds.has(occ.rowId)) continue;
+      const row = rowById.get(occ.rowId);
+      if (!row?.observation || row.timeMinutes == null) continue;
+      if (
+        isNonObservationRow(
+          row.observation,
+          previousObservationByRowId.get(occ.rowId) ?? null
+        )
+      )
+        continue;
+      if (!OBSERVATION_SIGNAL_RE.test(row.observation)) continue;
+      const placeKey = normalizeEntityLabel(entity.shortForm);
+      if (!meta.has(placeKey))
+        meta.set(placeKey, { name: entity.shortForm, entity });
+      mentions.push({
+        placeKey,
+        sheetId: occ.sheetId,
+        sheetTitle: occ.sheetTitle,
+        order: rowOrderIndex.get(occ.rowId) ?? 0,
+        rowId: occ.rowId,
+        dateISO: resolveDateISO(row),
+        timeMinutes: row.timeMinutes,
+        direction: classifyVisitDirection(row.observation),
+      });
+    }
+  }
+
+  const visitsByPlace = new Map<string, ReturnType<typeof buildVisits>>();
+  for (const v of buildVisits(mentions)) {
+    if (!visitsByPlace.has(v.placeKey)) visitsByPlace.set(v.placeKey, []);
+    visitsByPlace.get(v.placeKey)!.push(v);
+  }
+  const places: IntelTargetPlacesResponse["places"] = [];
+  for (const [placeKey, visits] of Array.from(visitsByPlace.entries())) {
+    const info = meta.get(placeKey);
+    if (!info) continue;
+    const officerKind = officer.get(placeKey) ?? null;
+    const c = classifyPlace({
+      name: info.name,
+      savedSign: signs.get(info.name) ?? null,
+      registered: registeredOf(info.entity),
+      officerKind,
+    });
+    places.push({
+      placeKey,
+      name: info.name,
+      kind: c.kind,
+      source: c.source,
+      registeredAs: c.registeredAs,
+      visits,
+      officerKind,
+    });
+  }
+  return { ...empty, places };
+}
+
+/** Sets (or, with kind = null, clears) an officer's label on a place for a
+ * target. */
+export async function setTargetPlaceLabel(params: {
+  targetId: number;
+  placeKey: string;
+  kind: PlaceKind | null;
+  cin: string | null;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const { targetId, placeKey, kind, cin } = params;
+  if (kind === null) {
+    await db
+      .delete(targetPlaceLabels)
+      .where(
+        and(
+          eq(targetPlaceLabels.targetId, targetId),
+          eq(targetPlaceLabels.placeKey, placeKey)
+        )
+      );
+    return;
+  }
+  if (!(LABELLABLE_KINDS as readonly string[]).includes(kind))
+    throw new Error("That kind of place cannot be set by hand.");
+  await db
+    .insert(targetPlaceLabels)
+    .values({ targetId, placeKey, kind, updatedByCIN: cin })
+    .onDuplicateKeyUpdate({ set: { kind, updatedByCIN: cin } });
 }
 
 // ─── Weekly Activity Report ─────────────────────────────────────────────────

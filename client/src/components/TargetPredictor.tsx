@@ -18,7 +18,8 @@
  * overlay subclass is built inside its effect, never at module scope (same rule
  * as lib/divIconOverlay.ts and MapHeatOverlay).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { Crosshair } from "lucide-react";
 import {
   Select,
@@ -89,6 +90,13 @@ export interface TargetPredictorArgs {
 
 type SeenKind = "place" | "tap" | "none";
 
+interface SeenForm {
+  kind: SeenKind;
+  placeKey: string | null;
+  point: { lat: number; lng: number } | null;
+  minutes: number | null;
+}
+
 /** One state for the section, the banner and the overlay. */
 export function useTargetPredictor({
   opId,
@@ -101,17 +109,20 @@ export function useTargetPredictor({
   // By hand: the officer chose where he is / was last seen instead of the sheet.
   const [override, setOverride] = useState(false);
   const [pickPlaceKey, setPickPlaceKey] = useState<string | null>(null);
-  const [seenKind, setSeenKind] = useState<SeenKind>("place");
-  const [seenPlaceKey, setSeenPlaceKey] = useState<string | null>(null);
-  const [seenPoint, setSeenPoint] = useState<{
-    lat: number;
-    lng: number;
-  } | null>(null);
-  const [seenMinutes, setSeenMinutes] = useState<number | null>(null);
+  // Where now: the "last seen" form. Edits are saved and shared with the team
+  // (see persist below); what the team has saved flows back into it.
+  const [seen, setSeen] = useState<SeenForm>({
+    kind: "place",
+    placeKey: null,
+    point: null,
+    minutes: null,
+  });
   const [tapRoute, setTapRoute] = useState<string | null>(null);
-  const [areaChoice, setAreaChoice] = useState<AreaClass | null>(null);
+  const [areaChoice, setAreaChoiceState] = useState<AreaClass | null>(null);
   const [showShade, setShowShade] = useState(true);
   const [showReach, setShowReach] = useState(true);
+  // An edit that has not been saved yet.
+  const [dirty, setDirty] = useState(false);
 
   const setOn = useCallback((v: boolean) => {
     setOnState(v);
@@ -137,12 +148,11 @@ export function useTargetPredictor({
   useEffect(() => {
     setOverride(false);
     setPickPlaceKey(null);
-    setSeenPlaceKey(null);
-    setSeenPoint(null);
-    setSeenMinutes(null);
+    setSeen({ kind: "place", placeKey: null, point: null, minutes: null });
     setTapRoute(null);
-    setAreaChoice(null);
-    setSeenKind("place");
+    setAreaChoiceState(null);
+    setDirty(false);
+    appliedRef.current = null;
   }, [opId, sheetId, targetId]);
 
   const ready = on && opId != null && targetId != null;
@@ -156,6 +166,28 @@ export function useTargetPredictor({
     }
   );
   const data = query.data ?? null;
+
+  // What the team has set as "last seen" — polled so everyone with the sheet
+  // open sees the same position.
+  const sharedQuery = trpc.intelligence.getPredictorLastSeen.useQuery(
+    { operationId: opId ?? 0, sheetId: sheetId ?? 0 },
+    {
+      enabled: ready && sheetId != null,
+      refetchInterval: 10_000,
+      retry: false,
+    }
+  );
+  const shared = sharedQuery.data ?? null;
+
+  const utils = trpc.useUtils();
+  const saveMut = trpc.intelligence.setPredictorLastSeen.useMutation({
+    onSuccess: () => utils.intelligence.getPredictorLastSeen.invalidate(),
+    onError: e => toast.error(e.message),
+  });
+  const clearMut = trpc.intelligence.clearPredictorLastSeen.useMutation({
+    onSuccess: () => utils.intelligence.getPredictorLastSeen.invalidate(),
+    onError: e => toast.error(e.message),
+  });
 
   const placeByKey = useMemo(
     () => new Map((data?.places ?? []).map(p => [p.placeKey, p])),
@@ -182,6 +214,28 @@ export function useTargetPredictor({
     [placeByKey]
   );
 
+  // What the team saved flows into the form — unless this officer has an edit
+  // waiting to be saved or one in flight, which must not be overwritten.
+  const appliedRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!shared || dirty || saveMut.isPending) return;
+    if (appliedRef.current === shared.updatedAtMs) return;
+    appliedRef.current = shared.updatedAtMs;
+    setAreaChoiceState(shared.area);
+    setTapRoute(null);
+    // "sheet": no position of its own, only the area.
+    if (shared.kind === "sheet") return;
+    setSeen({
+      kind: shared.kind === "point" ? "tap" : shared.kind,
+      placeKey: shared.placeKey,
+      point:
+        shared.lat !== null && shared.lng !== null
+          ? { lat: shared.lat, lng: shared.lng }
+          : null,
+      minutes: shared.seenMinutes,
+    });
+  }, [shared, dirty, saveMut.isPending]);
+
   // What the sheet says: only today's entry counts — an old sheet's last row
   // says nothing about where he is now.
   const sheetStart = useMemo(() => {
@@ -190,10 +244,14 @@ export function useTargetPredictor({
     if (!placeByKey.has(ls.placeKey)) return null;
     return { ...ls, minutes: Math.min(ls.minutes, clock.minutes) };
   }, [data, placeByKey, clock.minutes]);
-  const usingSheet = !!sheetStart && !override;
+  // Where now: a position the team has set wins over the sheet.
+  const teamSet = mode === "now" && !!shared;
+  // ...except one that only sets the area and leaves the position to the sheet.
+  const usingSheet =
+    !!sheetStart && !override && (!teamSet || shared?.kind === "sheet");
 
   const firstPlaceKey = data?.places[0]?.placeKey ?? null;
-  const seenAt = Math.min(seenMinutes ?? clock.minutes - 15, clock.minutes);
+  const seenAt = Math.min(seen.minutes ?? clock.minutes - 15, clock.minutes);
 
   const from: PredictorFrom | null = useMemo(() => {
     if (!data) return null;
@@ -215,17 +273,17 @@ export function useTargetPredictor({
           }
         : null;
     }
-    if (seenKind === "none") return { kind: "none" };
-    if (seenKind === "tap")
-      return seenPoint
+    if (seen.kind === "none") return { kind: "none" };
+    if (seen.kind === "tap")
+      return seen.point
         ? {
             kind: "point",
-            lat: seenPoint.lat,
-            lng: seenPoint.lng,
+            lat: seen.point.lat,
+            lng: seen.point.lng,
             minutes: seenAt,
           }
         : null;
-    const key = seenPlaceKey ?? firstPlaceKey;
+    const key = seen.placeKey ?? firstPlaceKey;
     // Someone looking for him has lost him, so he is taken as having left.
     return key
       ? { kind: "place", placeKey: key, minutes: seenAt, leaving: true }
@@ -238,9 +296,7 @@ export function useTargetPredictor({
     pickPlaceKey,
     firstPlaceKey,
     clock.minutes,
-    seenKind,
-    seenPoint,
-    seenPlaceKey,
+    seen,
     seenAt,
   ]);
 
@@ -259,6 +315,90 @@ export function useTargetPredictor({
     : autoArea
       ? "street"
       : "assumed";
+
+  // Save the form (after a short pause, so a dragged slider is one save) and
+  // share it. Only the by-hand "last seen" of Where now is shared.
+  useEffect(() => {
+    if (!dirty || opId == null || sheetId == null || targetId == null) return;
+    const id = window.setTimeout(() => {
+      // Using the sheet's position, only the area was set: share just that.
+      const kind = usingSheet
+        ? "sheet"
+        : seen.kind === "tap"
+          ? "point"
+          : seen.kind;
+      if (kind === "place" && !(seen.placeKey ?? firstPlaceKey)) return;
+      if (kind === "point" && !seen.point) return;
+      saveMut.mutate({
+        operationId: opId,
+        sheetId,
+        targetId,
+        kind,
+        placeKey: kind === "place" ? (seen.placeKey ?? firstPlaceKey) : null,
+        lat: kind === "point" ? (seen.point?.lat ?? null) : null,
+        lng: kind === "point" ? (seen.point?.lng ?? null) : null,
+        seenMinutes: kind === "none" || kind === "sheet" ? null : seenAt,
+        area: areaChoice ?? autoArea,
+      });
+      setDirty(false);
+    }, 700);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, seen, areaChoice, autoArea, seenAt]);
+
+  // The street name of a tapped point arrives after the tap; share the area it
+  // gives too.
+  useEffect(() => {
+    if (tapRoute && seen.kind === "tap" && seen.point && mode === "now")
+      setDirty(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tapRoute]);
+
+  const edit = useCallback((patch: Partial<SeenForm>) => {
+    setSeen(s => ({ ...s, ...patch }));
+    setDirty(true);
+  }, []);
+  const setSeenKind = useCallback((kind: SeenKind) => edit({ kind }), [edit]);
+  const setSeenPlaceKey = useCallback(
+    (placeKey: string) => edit({ placeKey }),
+    [edit]
+  );
+  const setSeenPoint = useCallback(
+    (point: { lat: number; lng: number }) => edit({ point }),
+    [edit]
+  );
+  const setSeenMinutes = useCallback(
+    (minutes: number) => edit({ minutes }),
+    [edit]
+  );
+  const setAreaChoice = useCallback((a: AreaClass | null) => {
+    setAreaChoiceState(a);
+    setDirty(true);
+  }, []);
+
+  /** "Change": take what the sheet says as the starting point and edit it. */
+  const changeFromSheet = useCallback(() => {
+    setOverride(true);
+    if (!sheetStart) return;
+    setPickPlaceKey(sheetStart.placeKey);
+    if (mode === "now") {
+      edit({
+        kind: "place",
+        placeKey: sheetStart.placeKey,
+        point: null,
+        minutes: sheetStart.minutes,
+      });
+    }
+  }, [sheetStart, mode, edit]);
+
+  /** "Use the running sheet": drop the by-hand position (and the team's). */
+  const useSheet = useCallback(() => {
+    setOverride(false);
+    setDirty(false);
+    // The team's position belongs to Where now; Where next is by hand only.
+    if (mode === "now" && shared && opId != null && sheetId != null)
+      clearMut.mutate({ operationId: opId, sheetId });
+  }, [mode, shared, opId, sheetId, clearMut]);
 
   const input: PredictorInput | null = useMemo(() => {
     if (!data || !from) return null;
@@ -294,16 +434,15 @@ export function useTargetPredictor({
     data,
     ready,
     override,
-    setOverride,
     pickPlaceKey,
     setPickPlaceKey,
-    seenKind,
+    seenKind: seen.kind,
     setSeenKind,
-    seenPlaceKey,
+    seenPlaceKey: seen.placeKey,
     setSeenPlaceKey,
-    seenPoint,
+    seenPoint: seen.point,
     setSeenPoint,
-    seenMinutes,
+    seenMinutes: seen.minutes,
     setSeenMinutes,
     seenAt,
     tapRoute,
@@ -318,6 +457,11 @@ export function useTargetPredictor({
     setShowReach,
     sheetStart,
     usingSheet,
+    /** What the team has set as "last seen" today, or null. */
+    shared,
+    teamSet,
+    changeFromSheet,
+    useSheet,
     from,
     input,
     prediction,
@@ -326,7 +470,7 @@ export function useTargetPredictor({
     labelOf,
     placeByKey,
     /** "Where now" with the position left for the officer to tap on the map. */
-    tapping: on && mode === "now" && !usingSheet && seenKind === "tap",
+    tapping: on && mode === "now" && !usingSheet && seen.kind === "tap",
   };
 }
 export type TargetPredictorState = ReturnType<typeof useTargetPredictor>;
@@ -509,7 +653,7 @@ function PositionControls({ p }: { p: TargetPredictorState }) {
         </p>
         <p className="text-[11px] text-muted-foreground">
           {hhmm(p.sheetStart.minutes)}, from the running sheet ·{" "}
-          <button className={link} onClick={() => p.setOverride(true)}>
+          <button className={link} onClick={p.changeFromSheet}>
             Change
           </button>
         </p>
@@ -517,12 +661,24 @@ function PositionControls({ p }: { p: TargetPredictorState }) {
     );
   }
 
-  const none = p.sheetStart ? (
-    <button className={link} onClick={() => p.setOverride(false)}>
-      Use the running sheet
-    </button>
-  ) : (
-    <span>Nothing logged for him today on the running sheet yet.</span>
+  const setBy = p.shared
+    ? `Shared with the team${p.shared.updatedByCIN ? `, set by ${p.shared.updatedByCIN}` : ""} at ${hhmm(perthClock(new Date(p.shared.updatedAtMs)).minutes)} · `
+    : "";
+  const none = (
+    <>
+      {p.teamSet && setBy}
+      {p.sheetStart ? (
+        <button className={link} onClick={p.useSheet}>
+          Use the running sheet
+        </button>
+      ) : p.teamSet ? (
+        <button className={link} onClick={p.useSheet}>
+          Clear
+        </button>
+      ) : (
+        <span>Nothing logged for him today on the running sheet yet.</span>
+      )}
+    </>
   );
 
   if (p.mode === "next") {

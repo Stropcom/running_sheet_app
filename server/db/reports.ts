@@ -91,6 +91,7 @@ import {
   entityAliases,
   intelPinOverrides,
   targetPlaceLabels,
+  predictorLastSeen,
 } from "../../drizzle/schema";
 
 import { attributedRowIds, collapseToVisits } from "../entityAttribution";
@@ -1179,6 +1180,91 @@ export interface IntelTargetPredictorResponse {
     minutes: number;
     leaving: boolean;
   } | null;
+}
+
+export interface SharedSeen {
+  /** "sheet" = no position of its own: the running sheet's, with this area. */
+  kind: "place" | "point" | "none" | "sheet";
+  placeKey: string | null;
+  lat: number | null;
+  lng: number | null;
+  /** Minutes after midnight, Perth time. */
+  seenMinutes: number | null;
+  area: "freeway" | "main" | "built" | "back" | null;
+  updatedByCIN: string | null;
+  updatedAtMs: number;
+}
+
+/** What the team set by hand as "last seen" for this sheet today, shared with
+ * everyone who has it open. Null when nothing is set (or it is from an earlier
+ * day). A light query: the predictor polls it every few seconds. */
+export async function getSharedSeen(
+  sheetId: number
+): Promise<SharedSeen | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const todayISO = perthTodayISO();
+  const [row] = await db
+    .select()
+    .from(predictorLastSeen)
+    .where(eq(predictorLastSeen.sheetId, sheetId))
+    .limit(1);
+  // Only today's counts: yesterday's "last seen" says nothing about now.
+  if (!row || row.dateISO !== todayISO) return null;
+  return {
+    kind: row.kind as SharedSeen["kind"],
+    placeKey: row.placeKey,
+    lat: row.lat,
+    lng: row.lng,
+    seenMinutes: row.seenMinutes,
+    area: row.area as SharedSeen["area"],
+    updatedByCIN: row.updatedByCIN,
+    updatedAtMs: row.updatedAt.getTime(),
+  };
+}
+
+/** Sets (replacing any earlier one) where the team says he was last seen. */
+export async function setPredictorLastSeen(params: {
+  sheetId: number;
+  targetId: number;
+  kind: SharedSeen["kind"];
+  placeKey: string | null;
+  lat: number | null;
+  lng: number | null;
+  seenMinutes: number | null;
+  area: SharedSeen["area"];
+  cin: string | null;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const values = {
+    sheetId: params.sheetId,
+    targetId: params.targetId,
+    dateISO: perthTodayISO(),
+    kind: params.kind,
+    placeKey: params.kind === "place" ? params.placeKey : null,
+    lat: params.kind === "point" ? params.lat : null,
+    lng: params.kind === "point" ? params.lng : null,
+    seenMinutes:
+      params.kind === "none" || params.kind === "sheet"
+        ? null
+        : params.seenMinutes,
+    area: params.area,
+    updatedByCIN: params.cin,
+  };
+  await db
+    .insert(predictorLastSeen)
+    .values(values)
+    .onDuplicateKeyUpdate({ set: values });
+}
+
+/** Back to what the running sheet says. */
+export async function clearPredictorLastSeen(sheetId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .delete(predictorLastSeen)
+    .where(eq(predictorLastSeen.sheetId, sheetId));
 }
 
 export async function getIntelTargetPredictor(

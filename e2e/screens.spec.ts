@@ -563,6 +563,22 @@ test("Map page: Target Predictor says where next, then where now, with a confide
     page.getByRole("button", { name: "Back street" })
   ).toHaveAttribute("aria-pressed", "true");
 
+  // What is set by hand is shared: it is saved for the sheet, so a reload (or
+  // another officer's screen) shows the same area.
+  await page.waitForResponse(r => r.url().includes("setPredictorLastSeen"));
+  await page.reload();
+  await page.getByRole("button", { name: "Toggle side panel" }).click();
+  await page.getByRole("button", { name: "Where now?" }).click();
+  await expect(
+    page.getByRole("button", { name: "Back street" })
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("predictor-banner")).toContainText(
+    /last seen at Home/
+  );
+  // "Use the running sheet" is only for a position set by hand, so this one
+  // (area only) is cleared by choosing the area again.
+  await page.getByRole("button", { name: "Back street" }).click();
+
   // Switching it off clears the line from the map.
   await page.getByRole("button", { name: /Target predictor\s*On/i }).click();
   await expect(banner).toHaveCount(0);

@@ -1161,6 +1161,7 @@ export const auditLogs = mysqlTable(
       "passkey_settings_changed",
       "document_ai_changed",
       "place_label_changed",
+      "predictor_last_seen_changed",
     ]).notNull(),
     details: text("details"),
     createdAt: bigint("createdAt", { mode: "number" }).notNull(),
@@ -1563,6 +1564,34 @@ export const targetPlaceLabels = mysqlTable(
   ]
 );
 export type TargetPlaceLabel = typeof targetPlaceLabels.$inferSelect;
+
+// ─── Target Predictor: last seen ─────────────────────────────────────────────
+// Where the team says the target was last seen, set by hand in the Map page's
+// Target Predictor ("Where now?") and shared with everyone who has the sheet
+// open. One row per running sheet; it only counts on the day it was set (the
+// predictor ignores an older one). It is never written to the running sheet.
+// kind: "place" (placeKey), "point" (lat/lng on the map) or "none" (not seen
+// yet). seenMinutes is minutes after midnight, Perth time.
+export const predictorLastSeen = mysqlTable(
+  "predictor_last_seen",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    sheetId: int("sheetId").notNull(),
+    targetId: int("targetId").notNull(),
+    dateISO: varchar("dateISO", { length: 10 }).notNull(),
+    kind: varchar("kind", { length: 8 }).notNull(),
+    placeKey: varchar("placeKey", { length: 400 }),
+    lat: double("lat"),
+    lng: double("lng"),
+    seenMinutes: int("seenMinutes"),
+    area: varchar("area", { length: 8 }),
+    updatedByCIN: varchar("updatedByCIN", { length: 32 }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  t => [uniqueIndex("predictor_last_seen_sheet_idx").on(t.sheetId)]
+);
+export type PredictorLastSeen = typeof predictorLastSeen.$inferSelect;
 
 export type IntelPinOverride = typeof intelPinOverrides.$inferSelect;
 export type InsertIntelPinOverride = typeof intelPinOverrides.$inferInsert;

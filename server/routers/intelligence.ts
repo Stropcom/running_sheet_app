@@ -18,6 +18,9 @@ import {
   getIntelTargetPatternOfLife,
   getIntelTargetPlaces,
   getIntelTargetPredictor,
+  getSharedSeen,
+  setPredictorLastSeen,
+  clearPredictorLastSeen,
   setTargetPlaceLabel,
   createAuditLog,
   extractEntitiesFromText,
@@ -285,6 +288,80 @@ export const intelligenceRouter = router({
           message: "Operation or target not found.",
         });
       return result;
+    }),
+
+  /** Target Predictor: what the team set as "last seen" for this sheet today
+   * (null when nothing is set). Polled every few seconds while the predictor is
+   * on, so everyone sees the same position. */
+  getPredictorLastSeen: protectedProcedure
+    .input(z.object({ operationId: z.number(), sheetId: z.number() }))
+    .query(({ input }) => getSharedSeen(input.sheetId)),
+
+  /** Target Predictor: where the team says the target was last seen, set by
+   * hand and shared with everyone who has the sheet open (today only; the
+   * running sheet itself is not touched). */
+  setPredictorLastSeen: protectedProcedure
+    .input(
+      z.object({
+        operationId: z.number(),
+        sheetId: z.number(),
+        targetId: z.number(),
+        kind: z.enum(["place", "point", "none", "sheet"]),
+        placeKey: z.string().min(1).max(400).nullable(),
+        lat: z.number().min(-90).max(90).nullable(),
+        lng: z.number().min(-180).max(180).nullable(),
+        seenMinutes: z.number().int().min(0).max(2879).nullable(),
+        area: z.enum(["freeway", "main", "built", "back"]).nullable(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      if (input.kind === "place" && !input.placeKey)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "A place is needed.",
+        });
+      if (input.kind === "point" && (input.lat === null || input.lng === null))
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "A point on the map is needed.",
+        });
+      await setPredictorLastSeen({ ...input, cin: ctx.user.cin ?? null });
+      await createAuditLog({
+        sheetId: input.sheetId,
+        userId: ctx.user.id,
+        userName: ctx.user.cin ?? "Unknown",
+        userCIN: ctx.user.cin ?? null,
+        action: "predictor_last_seen_changed",
+        details: `Target Predictor last seen set (${
+          input.kind === "none"
+            ? "not seen yet"
+            : input.kind === "sheet"
+              ? "the running sheet's position, area set"
+              : input.kind === "place"
+                ? `at "${input.placeKey}"`
+                : "at a point on the map"
+        }${input.seenMinutes !== null ? `, ${Math.floor(input.seenMinutes / 60)}:${String(input.seenMinutes % 60).padStart(2, "0")}` : ""})`,
+        createdAt: Date.now(),
+      });
+      return { ok: true };
+    }),
+
+  /** Target Predictor: go back to what the running sheet says. */
+  clearPredictorLastSeen: protectedProcedure
+    .input(z.object({ operationId: z.number(), sheetId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      await clearPredictorLastSeen(input.sheetId);
+      await createAuditLog({
+        sheetId: input.sheetId,
+        userId: ctx.user.id,
+        userName: ctx.user.cin ?? "Unknown",
+        userCIN: ctx.user.cin ?? null,
+        action: "predictor_last_seen_changed",
+        details:
+          "Target Predictor last seen cleared (back to the running sheet)",
+        createdAt: Date.now(),
+      });
+      return { ok: true };
     }),
 
   /** Places Report: an officer's own label on a place, shared with everyone

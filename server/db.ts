@@ -283,6 +283,8 @@ export {
   getSharedSeen,
   setPredictorLastSeen,
   clearPredictorLastSeen,
+  startPredictorSearch,
+  getTodaysSearches,
   setTargetPlaceLabel,
   parseHHMMToMinutes,
   getWeeklyActivityReport,

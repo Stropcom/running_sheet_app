@@ -5,10 +5,17 @@ import { z } from "zod";
 import { COMMAND_CODES } from "@shared/commands";
 import { lookupRoadSpeed } from "../roadSpeed";
 import {
+  accessibleOperationIds,
   filterLocationRows,
   reachableFor,
   toAccessUser,
 } from "../operationAccess";
+import {
+  isOnSearchTeam,
+  isSearchLive,
+  rosterCins,
+  teamCinsOf,
+} from "@shared/teamSearch";
 import { protectedProcedure, router } from "../_core/trpc";
 import {
   getInvestigatorAllowedOperationIds,
@@ -23,6 +30,9 @@ import {
   getSharedSeen,
   setPredictorLastSeen,
   clearPredictorLastSeen,
+  startPredictorSearch,
+  getTodaysSearches,
+  getAllUsers,
   setTargetPlaceLabel,
   createAuditLog,
   extractEntitiesFromText,
@@ -383,7 +393,7 @@ export const intelligenceRouter = router({
           input.kind === "none"
             ? "not seen yet"
             : input.kind === "sheet"
-              ? "the running sheet's position, area set"
+              ? "pin cleared, search still on"
               : input.kind === "place"
                 ? `at "${input.placeKey}"`
                 : "at a point on the map"
@@ -393,7 +403,76 @@ export const intelligenceRouter = router({
       return { ok: true };
     }),
 
-  /** Target Predictor: go back to what the running sheet says. */
+  /** Search: starts it for the whole team on this sheet (no pin yet). Every
+   * officer on the sheet's CIN roster then has it switched on by their own
+   * screen (see getMyTeamSearch). Does nothing if one is already running. */
+  startTeamSearch: protectedProcedure
+    .input(
+      z.object({
+        operationId: z.number(),
+        sheetId: z.number(),
+        targetId: z.number(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const started = await startPredictorSearch({
+        sheetId: input.sheetId,
+        targetId: input.targetId,
+        cin: ctx.user.cin ?? null,
+      });
+      if (started)
+        await createAuditLog({
+          sheetId: input.sheetId,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? null,
+          action: "predictor_last_seen_changed",
+          details: "Target Predictor search started for the team",
+          createdAt: Date.now(),
+        });
+      return { started };
+    }),
+
+  /** Search: the one running today that this officer is on the team of — on
+   * the sheet's CIN roster, or the one who started it — and may reach. Null
+   * when there is none. Polled by every screen, so it takes no ids: it only
+   * ever answers about the caller. */
+  getMyTeamSearch: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user.role === "investigator" || !ctx.user.cin) return null;
+    const rows = await getTodaysSearches();
+    if (rows.length === 0) return null;
+    const accessible = await accessibleOperationIds(toAccessUser(ctx.user), 1);
+    const mine = rows
+      .filter(r => isSearchLive(r.seen.updatedAtMs, Date.now()))
+      .filter(r => accessible === null || accessible.has(r.operationId))
+      .filter(r =>
+        isOnSearchTeam({
+          cin: ctx.user.cin,
+          roster: rosterCins(r.sheetCins),
+          updatedByCIN: r.seen.updatedByCIN,
+        })
+      )
+      .sort((a, b) => b.seen.updatedAtMs - a.seen.updatedAtMs)[0];
+    if (!mine) return null;
+    const cins = new Set(
+      teamCinsOf(rosterCins(mine.sheetCins), mine.seen.updatedByCIN)
+    );
+    const everyone = await getAllUsers();
+    const team = everyone.filter(
+      u => !u.archivedAt && u.cin && cins.has(u.cin.trim())
+    );
+    return {
+      sheetId: mine.sheetId,
+      operationId: mine.operationId,
+      targetId: mine.targetId,
+      startedAtMs: mine.seen.startedAtMs,
+      startedByCIN: mine.seen.updatedByCIN,
+      hasPin: mine.seen.kind === "point",
+      teamUserIds: team.map(u => u.id),
+    };
+  }),
+
+  /** Search: ends the search for the whole team. */
   clearPredictorLastSeen: protectedProcedure
     .input(z.object({ operationId: z.number(), sheetId: z.number() }))
     .mutation(async ({ input, ctx }) => {
@@ -404,7 +483,7 @@ export const intelligenceRouter = router({
         userName: ctx.user.cin ?? "Unknown",
         userCIN: ctx.user.cin ?? null,
         action: "predictor_last_seen_changed",
-        details: "Target Predictor last seen cleared (search started again)",
+        details: "Target Predictor search ended for the team",
         createdAt: Date.now(),
       });
       return { ok: true };

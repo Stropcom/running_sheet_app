@@ -417,10 +417,23 @@ test("Intelligence Package has Places as a ticked section between Heat Map and P
   await expect(places.getByRole("checkbox")).not.toBeChecked();
 });
 
+// A Search started by a test is ended afterwards, so it cannot keep switching
+// the predictor on for the next test (it is shared for the whole team).
+const searchesToEnd: { opId: number; sheetId: number }[] = [];
+test.afterEach(async ({ page }) => {
+  for (const s of searchesToEnd.splice(0))
+    await page.request
+      .post("/api/trpc/intelligence.clearPredictorLastSeen", {
+        data: { json: { operationId: s.opId, sheetId: s.sheetId } },
+      })
+      .catch(() => null);
+});
+
 test("Map page: Target Predictor says where next, then where now, with a confidence level", async ({
   page,
 }) => {
   const created = await createOperationAndSheet(page);
+  searchesToEnd.push(created);
   // History that fits the clock this test runs on: ten Home visits under way
   // around now on today's weekday — seven went to the gym next, three to the
   // cafe — and the sheet says he is at Home.
@@ -568,11 +581,21 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   await expect(banner).toContainText("Moderate confidence");
   await expect(page.getByText("Home — 14 Marine Parade").first()).toBeVisible();
 
-  // Search starts blank: one tap on the map puts the pin down, and there is
-  // no "last seen" drop-down, no time slider and no area buttons any more.
+  // Search starts blank: one tap on the map puts the pin down. It has no top
+  // banner, and the pane is stripped back: no names line, no "from the
+  // operation" sentence, no clock line, no drop-down, slider or area buttons.
+  await expect(
+    page.getByText(/From the operation and running sheet selected above/)
+  ).toBeVisible();
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(banner).toContainText("Tap the map where he was last seen");
+  await expect(banner).toHaveCount(0);
   await expect(page.getByText("One tap — the cross goes away")).toBeVisible();
+  await expect(
+    page.getByText(/From the operation and running sheet selected above/)
+  ).toHaveCount(0);
+  await expect(page.getByText("Sahana Priya MENON")).toHaveCount(0);
+  await expect(page.getByText(/For when the team has lost him/)).toHaveCount(0);
+  await expect(page.getByText(/Today is /)).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Where now?" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Back street" })).toHaveCount(
     0
@@ -611,29 +634,36 @@ test("Map page: Target Predictor says where next, then where now, with a confide
     await page.getByRole("button", { name: "Search", exact: true }).click();
   };
   await reopenSearch();
-  await expect(banner).toContainText("area-adjusted");
-  await expect(banner).toContainText("could be up to");
-  await expect(banner).not.toContainText("%");
+  await expect(banner).toHaveCount(0);
   await expect(
     page.getByText("Most likely, from his history", { exact: true })
   ).toBeVisible();
   await expect(page.getByRole("main").getByText(/\b(?!60%)\d+%/)).toHaveCount(
     0
   );
-  await expect(banner).not.toContainText("Tap the map");
-  await expect(
-    page.getByText(/Last seen \d\d:\d\d — 2\d min ago/)
-  ).toBeVisible();
-  await expect(page.getByText(/Team heading east/)).toBeVisible();
   await expect(page.getByText("Seen how long ago?")).toBeVisible();
+  // Taken out: the last-seen line, the shared-by line, the direction note and
+  // the two distance cards (the rings on the map carry those numbers).
+  await expect(page.getByText(/Last seen \d\d:\d\d — /)).toHaveCount(0);
+  await expect(page.getByText(/Shared with the team, set by/)).toHaveCount(0);
+  await expect(page.getByText(/Team heading|no direction is used/)).toHaveCount(
+    0
+  );
+  await expect(
+    page.getByText("How far he could have got", { exact: true })
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Most likely by now", { exact: true })
+  ).toHaveCount(0);
 
   // "Move pin" waits for one tap and can be cancelled; the map is otherwise
   // left alone so a stray touch cannot move the pin.
-  const move = page.getByRole("button", { name: "Move pin" });
-  await move.click();
-  await expect(banner).toContainText("Tap the map to move the pin");
+  await page.getByRole("button", { name: "Move pin" }).click();
+  await expect(
+    page.getByText(/Tap the map where he was last seen\./)
+  ).toBeVisible();
   await page.getByRole("button", { name: "Tap map…" }).click();
-  await expect(banner).not.toContainText("Tap the map");
+  await expect(page.getByRole("button", { name: "Move pin" })).toBeVisible();
 
   // Seen how long ago: big buttons, no slider. Nothing goes back further than
   // five minutes.
@@ -657,35 +687,43 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   );
   await page.getByRole("button", { name: "Pause ring" }).click();
   await paused;
-  await expect(banner).toContainText("Ring paused at");
+  await expect(page.getByRole("button", { name: "Resume ring" })).toBeVisible();
   await reopenSearch();
-  await expect(banner).toContainText("Ring paused at");
+  await expect(page.getByRole("button", { name: "Resume ring" })).toBeVisible();
   const resumed = page.waitForResponse(r =>
     r.url().includes("setPredictorLastSeen")
   );
   await page.getByRole("button", { name: "Resume ring" }).click();
   await resumed;
-  await expect(banner).not.toContainText("Ring paused");
+  await expect(page.getByRole("button", { name: "Pause ring" })).toBeVisible();
 
-  // Start again throws the pin away for everyone and waits for a new tap.
-  const cleared = page.waitForResponse(r =>
-    r.url().includes("clearPredictorLastSeen")
+  // Start again throws the pin away for everyone and waits for a new tap; the
+  // search itself carries on.
+  const again = page.waitForResponse(r =>
+    r.url().includes("setPredictorLastSeen")
   );
   await page.getByRole("button", { name: "Start again" }).click();
-  await cleared;
-  await expect(banner).toContainText("Tap the map where he was last seen");
+  await again;
+  await expect(page.getByText("One tap — the cross goes away")).toBeVisible();
   await reopenSearch();
-  await expect(banner).toContainText("Tap the map where he was last seen");
+  await expect(page.getByText("One tap — the cross goes away")).toBeVisible();
 
-  // Switching it off clears the line from the map.
-  await page.getByRole("button", { name: /Target predictor\s*On/i }).click();
-  await expect(banner).toHaveCount(0);
+  // End search switches it off for the whole team, this screen included.
+  const ended = page.waitForResponse(r =>
+    r.url().includes("clearPredictorLastSeen")
+  );
+  await page.getByTestId("end-search").click();
+  await ended;
+  await expect(
+    page.getByRole("button", { name: /Target predictor\s*Off/i })
+  ).toBeVisible();
 });
 
 test("Map page: Search still shows how far he could have got with no history, and lists registered addresses in reach", async ({
   page,
 }) => {
   const created = await createOperationAndSheet(page);
+  searchesToEnd.push(created);
   const parts = new Intl.DateTimeFormat("en-AU", {
     timeZone: "Australia/Perth",
     year: "numeric",
@@ -791,25 +829,14 @@ test("Map page: Search still shows how far he could have got with no history, an
   await page.goto("/intelligence/mapping");
   await page.getByRole("button", { name: "Toggle side panel" }).click();
   await page.getByRole("button", { name: "Search", exact: true }).click();
-  const banner = page.getByTestId("predictor-banner");
-  await expect(banner).toContainText("He could be up to");
-  await expect(banner).toContainText("Reach only");
-  await expect(banner).toContainText("no known locations of interest in reach");
+  // Search has no top banner; its answers are in the pane and on the map.
+  await expect(page.getByTestId("predictor-banner")).toHaveCount(0);
   // The posted limit of the road he was on picks the area and the speed.
-  await expect(banner).toContainText("at about 100 km/h (freeway)");
+  await expect(page.getByText(/Travelling at about\s*100 km\/h/)).toBeVisible();
   await expect(page.getByText(/the posted limit on Kwinana Fwy/)).toBeVisible();
   // The data's licence asks for a credit.
   await expect(
     page.getByText(/Main Roads Western Australia, Legal Speed Limits \(CC BY/)
-  ).toBeVisible();
-  await expect(
-    page.getByText("How far he could have got").first()
-  ).toBeVisible();
-  // The solid inner ring: 60% of the most he could have got (20 min at 100
-  // km/h is 33.3 km, so 20.0 km).
-  await expect(page.getByText("Most likely by now")).toBeVisible();
-  await expect(
-    page.getByText(/The solid ring: 60% of the most he/)
   ).toBeVisible();
   await expect(
     page.getByText(/None of his known places or registered addresses/)
@@ -844,5 +871,139 @@ test("Map page: Search still shows how far he could have got with no history, an
   await expect(
     page.getByText("registered address — no visits on record")
   ).toBeVisible();
-  await expect(banner).toContainText("1 known location of interest in reach");
+});
+
+test("Map page: a Search started on one screen switches on by itself for the rest of the team", async ({
+  page,
+  browser,
+}) => {
+  const created = await createOperationAndSheet(page);
+  searchesToEnd.push(created);
+  // A second screen — another officer's device — open on the Map with the
+  // predictor off and no sheet selected.
+  const other = await browser.newContext({
+    storageState: "e2e/.auth/user.json",
+  });
+  const second = await other.newPage();
+  // The sheet is given a target, as in the other predictor tests.
+  await second.route(/\/api\/trpc\//, async route => {
+    const resp = await route.fetch().catch(() => null);
+    if (!resp) return;
+    const json = await resp.json().catch(() => null);
+    if (json === null) return route.fulfill({ response: resp });
+    const procs = new URL(route.request().url()).pathname
+      .replace(/^.*\/api\/trpc\//, "")
+      .split(",");
+    const patch = (entry: any, name: string) => {
+      if (name !== "intelligence.getSheetTarget") return;
+      delete entry.error;
+      entry.result = {
+        data: {
+          json: {
+            id: 987655,
+            name: "Sahana Priya MENON",
+            tgt: null,
+            dep: null,
+            arr: null,
+            hb: null,
+            hbf: null,
+            v1: null,
+            v1f: null,
+            v2: null,
+            v2f: null,
+            extraVehicles: null,
+            wildFields: null,
+          },
+        },
+      };
+    };
+    if (Array.isArray(json)) json.forEach((e, i) => patch(e, procs[i]));
+    else patch(json, procs[0]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
+  });
+  await second.goto("/");
+  await second.evaluate(() => {
+    localStorage.removeItem("runlog_target_predictor_on");
+    localStorage.removeItem("runlog_map_settings");
+  });
+  await second.goto("/intelligence/mapping");
+  const sharing = () =>
+    second.evaluate(() => {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i)!;
+        if (k.startsWith("runlog_sharing_u")) return localStorage.getItem(k);
+      }
+      return null;
+    });
+  expect(
+    await second.evaluate(() =>
+      localStorage.getItem("runlog_target_predictor_on")
+    )
+  ).toBeNull();
+
+  // Search is started for the sheet's team from the first screen.
+  const started = await page.request.post(
+    "/api/trpc/intelligence.startTeamSearch",
+    {
+      data: {
+        json: {
+          operationId: created.opId,
+          sheetId: created.sheetId,
+          targetId: 987655,
+        },
+      },
+    }
+  );
+  expect(started.ok(), await started.text()).toBeTruthy();
+
+  // The second screen follows within a few polls: predictor on, the sheet
+  // selected, Show & Share on — nobody touches it.
+  await expect
+    .poll(
+      () =>
+        second.evaluate(() =>
+          localStorage.getItem("runlog_target_predictor_on")
+        ),
+      { timeout: 40_000 }
+    )
+    .toBe("1");
+  await expect
+    .poll(
+      () =>
+        second.evaluate(
+          () =>
+            JSON.parse(localStorage.getItem("runlog_map_settings") || "{}")
+              .rsSelectedSheetId ?? null
+        ),
+      { timeout: 20_000 }
+    )
+    .toBe(created.sheetId);
+  await expect.poll(sharing, { timeout: 20_000 }).toBe("true");
+  await second.getByRole("button", { name: "Toggle side panel" }).click();
+  await expect(
+    second.getByRole("button", { name: "Search", exact: true })
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(second.getByTestId("predictor-banner")).toHaveCount(0);
+
+  // Ended for the team: it goes off again and Show & Share goes back.
+  const ended = await page.request.post(
+    "/api/trpc/intelligence.clearPredictorLastSeen",
+    { data: { json: { operationId: created.opId, sheetId: created.sheetId } } }
+  );
+  expect(ended.ok(), await ended.text()).toBeTruthy();
+  await expect
+    .poll(
+      () =>
+        second.evaluate(() =>
+          localStorage.getItem("runlog_target_predictor_on")
+        ),
+      { timeout: 40_000 }
+    )
+    .toBe("0");
+  await expect.poll(sharing, { timeout: 20_000 }).toBe("false");
+  await other.close();
 });

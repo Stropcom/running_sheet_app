@@ -5,6 +5,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  ne,
   notExists,
   or,
   sql,
@@ -21,6 +22,7 @@ import {
 import type { CommandCode } from "@shared/commands";
 
 import { scopeEntities } from "@shared/operationAccess";
+import { isSearchLive } from "@shared/teamSearch";
 
 import { intelScope } from "../intelScope";
 
@@ -1210,6 +1212,9 @@ export interface SharedSeen {
   pausedAtMinutes: number | null;
   updatedByCIN: string | null;
   updatedAtMs: number;
+  /** When this search began (the row is new for every start), so a screen can
+   * tell a fresh search from one it has already dealt with or dismissed. */
+  startedAtMs: number;
 }
 
 /** What the team set by hand as "last seen" for this sheet today, shared with
@@ -1238,6 +1243,7 @@ export async function getSharedSeen(
     pausedAtMinutes: row.pausedAtMinutes,
     updatedByCIN: row.updatedByCIN,
     updatedAtMs: row.updatedAt.getTime(),
+    startedAtMs: row.createdAt.getTime(),
   };
 }
 
@@ -1272,10 +1278,109 @@ export async function setPredictorLastSeen(params: {
     pausedAtMinutes: params.kind === "point" ? params.pausedAtMinutes : null,
     updatedByCIN: params.cin,
   };
+  // A row from an earlier day is thrown away first, so today's search is a new
+  // row (and a new start time) rather than yesterday's, brought back to life.
+  await db
+    .delete(predictorLastSeen)
+    .where(
+      and(
+        eq(predictorLastSeen.sheetId, params.sheetId),
+        ne(predictorLastSeen.dateISO, values.dateISO)
+      )
+    );
   await db
     .insert(predictorLastSeen)
     .values(values)
     .onDuplicateKeyUpdate({ set: values });
+}
+
+/** Starts a search for the whole team on this sheet: a row with no pin yet.
+ * Does nothing when one is already running today. Returns whether it started
+ * a new one. */
+export async function startPredictorSearch(params: {
+  sheetId: number;
+  targetId: number;
+  cin: string | null;
+}): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const today = perthTodayISO();
+  const [row] = await db
+    .select({
+      dateISO: predictorLastSeen.dateISO,
+      updatedAt: predictorLastSeen.updatedAt,
+    })
+    .from(predictorLastSeen)
+    .where(eq(predictorLastSeen.sheetId, params.sheetId))
+    .limit(1);
+  // Still running: today's, and touched within its lifetime. An old one that
+  // was never ended is replaced by a fresh start.
+  if (
+    row &&
+    row.dateISO === today &&
+    isSearchLive(row.updatedAt.getTime(), Date.now())
+  )
+    return false;
+  if (row)
+    await db
+      .delete(predictorLastSeen)
+      .where(eq(predictorLastSeen.sheetId, params.sheetId));
+  await db.insert(predictorLastSeen).values({
+    sheetId: params.sheetId,
+    targetId: params.targetId,
+    dateISO: today,
+    kind: "sheet",
+    updatedByCIN: params.cin,
+  });
+  return true;
+}
+
+export interface TodaysSearchRow {
+  seen: SharedSeen;
+  sheetId: number;
+  operationId: number;
+  targetId: number;
+  /** The sheet's CIN roster, as stored (JSON). */
+  sheetCins: string | null;
+}
+
+/** Every search running today, with the sheet it belongs to. The router keeps
+ * only the ones the caller is on the team of and may reach. */
+export async function getTodaysSearches(): Promise<TodaysSearchRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      row: predictorLastSeen,
+      operationId: runningSheets.operationId,
+      sheetCins: runningSheets.sheetCins,
+    })
+    .from(predictorLastSeen)
+    .innerJoin(runningSheets, eq(runningSheets.id, predictorLastSeen.sheetId))
+    .where(
+      and(
+        eq(predictorLastSeen.dateISO, perthTodayISO()),
+        isNull(runningSheets.deletedAt)
+      )
+    );
+  return rows.map(r => ({
+    seen: {
+      kind: r.row.kind as SharedSeen["kind"],
+      placeKey: r.row.placeKey,
+      lat: r.row.lat,
+      lng: r.row.lng,
+      seenMinutes: r.row.seenMinutes,
+      area: r.row.area as SharedSeen["area"],
+      pausedAtMinutes: r.row.pausedAtMinutes,
+      updatedByCIN: r.row.updatedByCIN,
+      updatedAtMs: r.row.updatedAt.getTime(),
+      startedAtMs: r.row.createdAt.getTime(),
+    },
+    sheetId: r.row.sheetId,
+    operationId: r.operationId,
+    targetId: r.row.targetId,
+    sheetCins: r.sheetCins,
+  }));
 }
 
 /** Back to what the running sheet says. */

@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { DivIconOverlay } from "@/lib/divIconOverlay";
+import { useTeamSearch } from "@/lib/teamSearch";
 import { metresPerPixel } from "@shared/heatMapLayout";
 import {
   DIRECTION_WINDOW_MIN,
@@ -121,7 +122,9 @@ export function useTargetPredictor({
   targetId,
 }: TargetPredictorArgs) {
   const [on, setOnState] = useState<boolean>(readOn);
-  const [mode, setMode] = useState<PredictorMode>("next");
+  const [mode, setModeState] = useState<PredictorMode>("next");
+  // The search running for this officer's team on the sheet, if any.
+  const team = useTeamSearch();
   const [clock, setClock] = useState(() => perthClock(new Date()));
   // Where next: the officer chose where he is instead of the sheet.
   const [override, setOverride] = useState(false);
@@ -139,7 +142,7 @@ export function useTargetPredictor({
   // An edit that has not been saved yet.
   const [dirty, setDirty] = useState(false);
 
-  const setOn = useCallback((v: boolean) => {
+  const persistOn = useCallback((v: boolean) => {
     setOnState(v);
     try {
       window.localStorage.setItem(ON_KEY, v ? "1" : "0");
@@ -147,6 +150,17 @@ export function useTargetPredictor({
       /* private window: fine, it just won't be remembered */
     }
   }, []);
+  // Turning it off during a team search only leaves the search on this screen;
+  // the others carry on. Turning it on again rejoins.
+  const { dismiss: leaveSearch, rejoin: rejoinSearch } = team;
+  const setOn = useCallback(
+    (v: boolean) => {
+      persistOn(v);
+      if (v) rejoinSearch();
+      else if (team.active) leaveSearch();
+    },
+    [persistOn, rejoinSearch, leaveSearch, team.active]
+  );
 
   // The clock moves while it is on, so "how far he could have got" grows.
   useEffect(() => {
@@ -169,6 +183,24 @@ export function useTargetPredictor({
     setDirty(false);
     appliedRef.current = null;
   }, [opId, sheetId, targetId]);
+
+  // A search for the team has started (or this screen has just opened with one
+  // running): the predictor goes on, in Search. Once per start, so an officer
+  // can still switch to Where next afterwards. When it ends for everyone, what
+  // it switched on is switched off again.
+  const syncedKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (team.active && team.key) {
+      if (syncedKey.current === team.key) return;
+      syncedKey.current = team.key;
+      persistOn(true);
+      setModeState("now");
+    } else if (syncedKey.current) {
+      syncedKey.current = null;
+      persistOn(false);
+      setModeState("next");
+    }
+  }, [team.active, team.key, persistOn]);
 
   const ready = on && opId != null && targetId != null;
   // Why nothing can be shown, in words — the banner and the pane say it rather
@@ -207,13 +239,42 @@ export function useTargetPredictor({
 
   const utils = trpc.useUtils();
   const saveMut = trpc.intelligence.setPredictorLastSeen.useMutation({
-    onSuccess: () => utils.intelligence.getPredictorLastSeen.invalidate(),
+    onSuccess: () => {
+      utils.intelligence.getPredictorLastSeen.invalidate();
+      utils.intelligence.getMyTeamSearch.invalidate();
+    },
     onError: e => toast.error(e.message),
   });
   const clearMut = trpc.intelligence.clearPredictorLastSeen.useMutation({
-    onSuccess: () => utils.intelligence.getPredictorLastSeen.invalidate(),
+    onSuccess: () => {
+      utils.intelligence.getPredictorLastSeen.invalidate();
+      utils.intelligence.getMyTeamSearch.invalidate();
+    },
     onError: e => toast.error(e.message),
   });
+
+  const startMut = trpc.intelligence.startTeamSearch.useMutation({
+    onSuccess: () => utils.intelligence.getMyTeamSearch.invalidate(),
+    onError: e => toast.error(e.message),
+  });
+  /** "Where next?" / "Search". Choosing Search starts it for the whole team
+   * (their screens follow within a few seconds) unless one is running. */
+  const setMode = useCallback(
+    (m: PredictorMode) => {
+      setModeState(m);
+      if (m !== "now") return;
+      rejoinSearch();
+      if (
+        opId != null &&
+        sheetId != null &&
+        targetId != null &&
+        !(team.search && team.search.sheetId === sheetId)
+      )
+        startMut.mutate({ operationId: opId, sheetId, targetId });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [opId, sheetId, targetId, team.search, rejoinSearch]
+  );
 
   const placeByKey = useMemo(
     () => new Map((data?.places ?? []).map(p => [p.placeKey, p])),
@@ -477,14 +538,37 @@ export function useTargetPredictor({
     setDirty(true);
   }, []);
 
-  /** Throw the pin away (for everyone) and wait for a new first tap. */
+  /** Throw the pin away (for everyone) and wait for a new first tap. The
+   * search itself carries on. */
   const startAgain = useCallback(() => {
     setSeen(NO_SEEN);
     setTapRoute(null);
     setTapArmed(false);
     setDirty(false);
     appliedRef.current = shared?.updatedAtMs ?? null;
-    if (shared && opId != null && sheetId != null)
+    if (opId != null && sheetId != null && targetId != null)
+      saveMut.mutate({
+        operationId: opId,
+        sheetId,
+        targetId,
+        kind: "sheet",
+        placeKey: null,
+        lat: null,
+        lng: null,
+        seenMinutes: null,
+        area: null,
+        pausedAtMinutes: null,
+      });
+  }, [shared, opId, sheetId, targetId, saveMut]);
+
+  /** End the search for the whole team: every screen switches it off. */
+  const endSearch = useCallback(() => {
+    setSeen(NO_SEEN);
+    setTapRoute(null);
+    setTapArmed(false);
+    setDirty(false);
+    appliedRef.current = shared?.updatedAtMs ?? null;
+    if (opId != null && sheetId != null)
       clearMut.mutate({ operationId: opId, sheetId });
   }, [shared, opId, sheetId, clearMut]);
 
@@ -575,6 +659,8 @@ export function useTargetPredictor({
     pauseRing,
     resumeRing,
     startAgain,
+    endSearch,
+    team,
     tapRoute,
     setTapRoute,
     area,
@@ -670,7 +756,7 @@ export function TargetPredictorSection({
 
       {p.on && (
         <div className="space-y-2">
-          {targetName ? (
+          {targetName && p.mode === "next" ? (
             <p className="text-[11px] leading-snug text-muted-foreground">
               <span className="font-semibold text-foreground">
                 {targetName}
@@ -710,13 +796,13 @@ export function TargetPredictorSection({
                   </button>
                 ))}
               </div>
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                {p.mode === "next"
-                  ? "Where he is likely to go from where he is now."
-                  : "For when the team has lost him — tap the map where he was last seen."}{" "}
-                Today is {WEEKDAY_LONG[p.clock.weekday]},{" "}
-                {hhmm(p.clock.minutes)} Perth time.
-              </p>
+              {p.mode === "next" && (
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  Where he is likely to go from where he is now. Today is{" "}
+                  {WEEKDAY_LONG[p.clock.weekday]}, {hhmm(p.clock.minutes)} Perth
+                  time.
+                </p>
+              )}
 
               {p.query.isLoading && (
                 <p className="text-[11px] text-muted-foreground">
@@ -770,14 +856,10 @@ export function TargetPredictorSection({
                   )}
                 </div>
               )}
-              {p.data && p.mode === "now" && p.seenPoint && p.directionOn && (
-                <DirectionNote p={p} />
-              )}
 
               {/* Where now is two separate answers that work together: how
                   far he could have got (needs no history) and the locations
                   of interest inside that reach. */}
-              {pr && p.mode === "now" && <ReachCard p={p} pr={pr} />}
               {pr && p.mode === "now" && pr.seenLocated && (
                 <InterestList p={p} pr={pr} />
               )}
@@ -859,34 +941,32 @@ const ACTION_OFF = "border-border bg-card text-foreground hover:bg-accent/40";
 function SearchControls({ p }: { p: TargetPredictorState }) {
   const label =
     "text-[11px] font-semibold text-muted-foreground uppercase tracking-wide";
+  const end = (
+    <button
+      onClick={p.endSearch}
+      className={`${ACTION} w-full ${ACTION_OFF}`}
+      data-testid="end-search"
+    >
+      End search for the whole team
+    </button>
+  );
   if (!p.seenPoint)
     return (
-      <div className="rounded-xl border-2 border-violet-500/50 bg-violet-500/10 px-3 py-2">
-        <p className="text-xs font-semibold text-violet-500">
-          Tap the map where he was last seen
-        </p>
-        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-          One tap — the cross goes away after it, so a stray touch can&apos;t
-          move it. Then drag the pin to adjust it.
-        </p>
+      <div className="space-y-2">
+        <div className="rounded-xl border-2 border-violet-500/50 bg-violet-500/10 px-3 py-2">
+          <p className="text-xs font-semibold text-violet-500">
+            Tap the map where he was last seen
+          </p>
+          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+            One tap — the cross goes away after it, so a stray touch can&apos;t
+            move it. Then drag the pin to adjust it.
+          </p>
+        </div>
+        {end}
       </div>
     );
-  const setBy = p.shared?.updatedByCIN
-    ? `Shared with the team, set by ${p.shared.updatedByCIN}. `
-    : "";
-  const ago = Math.round(p.agoMinutes);
   return (
     <div className="space-y-2">
-      <div className="rounded-xl border-2 border-border bg-card px-3 py-2 space-y-0.5">
-        <p className="text-xs text-foreground">
-          Last seen <span className="font-semibold">{hhmm(p.seenAt)}</span> —{" "}
-          {ago < 1 ? "just now" : `${ago} min ago`}
-          {p.paused ? " (ring paused)" : ""}
-        </p>
-        <p className="text-[11px] leading-snug text-muted-foreground">
-          {setBy}Drag the pin on the map to move it.
-        </p>
-      </div>
       <div className="space-y-1">
         <span className={label}>Seen how long ago?</span>
         <div
@@ -938,6 +1018,7 @@ function SearchControls({ p }: { p: TargetPredictorState }) {
           Tap the map where he was last seen. Tap Move pin again to cancel.
         </p>
       )}
+      {end}
     </div>
   );
 }
@@ -997,54 +1078,6 @@ function SpeedNote({ p }: { p: TargetPredictorState }) {
   );
 }
 
-function ReachCard({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
-  if (!pr.seenLocated)
-    return (
-      <div className="rounded-xl border-2 border-border bg-card px-3 py-2">
-        <p className="text-xs font-semibold text-foreground">
-          How far he could have got
-        </p>
-        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-          Needs a last-seen position on the map — tap the map where he was last
-          seen.
-        </p>
-      </div>
-    );
-  return (
-    <div className="rounded-xl border-2 border-border bg-card px-3 py-2">
-      <div className="flex items-center justify-between gap-2 text-xs font-semibold text-foreground">
-        <span>How far he could have got</span>
-        <span className="tabular-nums flex-shrink-0">
-          {pr.elapsedMinutes > 0
-            ? `up to ${formatKm(pr.reachKm)}`
-            : "just seen"}
-        </span>
-      </div>
-      <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-        {Math.round(pr.elapsedMinutes)} min at about {pr.kmh} km/h (
-        {AREAS[pr.area].label.toLowerCase()}) — the dashed ring on the map.{" "}
-        {p.paused
-          ? `Paused at ${hhmm(p.pausedAt ?? p.clock.minutes)}: it is held here. Resume ring and it goes straight back to the real time since he was last seen.`
-          : "It grows every minute and does not depend on his history."}
-      </p>
-      {pr.elapsedMinutes > 0 && (
-        <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-border pt-1.5 text-xs font-semibold text-foreground">
-          <span>Most likely by now</span>
-          <span className="tabular-nums flex-shrink-0">
-            about {formatKm(pr.likelyKm)}
-          </span>
-        </div>
-      )}
-      <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-        The solid ring: {Math.round(LIKELY_REACH_SHARE * 100)}% of the most he
-        could have got, to allow for lights, traffic and roads that aren&apos;t
-        straight. A set figure, not measured. Places inside it are the first to
-        check.
-      </p>
-    </div>
-  );
-}
-
 function InterestList({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
   const shown = pr.inReach.slice(0, 8);
   return (
@@ -1087,35 +1120,6 @@ function InterestList({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
         </p>
       )}
     </div>
-  );
-}
-
-function DirectionNote({ p }: { p: TargetPredictorState }) {
-  const d = p.direction;
-  if (!d)
-    return (
-      <p className="text-[11px] leading-snug text-muted-foreground">
-        Reading the team&apos;s trail…
-      </p>
-    );
-  if (!d.ok)
-    return (
-      <p className="text-[11px] leading-snug text-muted-foreground">
-        {WHY_NO_DIRECTION[d.why]}
-      </p>
-    );
-  return (
-    <p className="text-[11px] leading-snug text-muted-foreground">
-      Team heading{" "}
-      <span className="font-semibold text-foreground">
-        {compassName(d.bearing)}
-      </span>{" "}
-      for about {(d.metres / 1000).toFixed(1)} km in the {DIRECTION_WINDOW_MIN}{" "}
-      minutes before he was last seen ({d.officers}{" "}
-      {d.officers === 1 ? "officer" : "officers"}). Places ahead are favoured.
-      This is the team&apos;s direction — it stands in for his only while the
-      team is following him.
-    </p>
   );
 }
 
@@ -1292,19 +1296,13 @@ export function TargetPredictorBanner({
   p: TargetPredictorState;
   compact: boolean;
 }) {
-  if (!p.on) return null;
+  // Search has no banner: its answers are the rings, the markers and the pane.
+  if (!p.on || p.mode === "now") return null;
   const tier = p.prediction?.tier ?? "none";
   const colour = TIER_COLOUR[tier];
   let main = p.headline?.main;
   let sub = p.headline?.sub;
-  if (p.mode === "now" && p.tapping) {
-    main = p.seenPoint
-      ? "Tap the map to move the pin"
-      : "Tap the map where he was last seen";
-    sub = p.seenPoint
-      ? "Or drag the pin itself. Tap Move pin in Map Settings to cancel."
-      : "One tap — then drag the pin to adjust it.";
-  } else if (!p.prediction) {
+  if (!p.prediction) {
     if (p.blocked) {
       main = "Target predictor";
       sub = p.blocked;
@@ -1314,9 +1312,6 @@ export function TargetPredictorBanner({
     } else if (p.query.isLoading) {
       main = "Target predictor";
       sub = "Reading his history…";
-    } else if (p.mode === "now" && !p.from) {
-      main = "Tap the map where he was last seen";
-      sub = "That shows how far he could have got — it needs no history.";
     } else if (p.data && p.data.places.length === 0) {
       main = "No prediction yet";
       sub = "No places on record for this target on this operation.";
@@ -1325,8 +1320,6 @@ export function TargetPredictorBanner({
       sub = "Working out a prediction…";
     }
   }
-  if (p.mode === "now" && p.paused && p.seenPoint)
-    sub = `Ring paused at ${hhmm(p.pausedAt ?? p.clock.minutes)} — it is not growing. ${sub ?? ""}`;
   return (
     <div
       className={`absolute z-20 pointer-events-none flex gap-2 rounded-xl border border-border bg-card px-3 py-1.5 shadow-md ${

@@ -68,7 +68,9 @@ import {
 } from "@shared/markerLink";
 import { fullStreetTypes } from "@shared/streetTypes";
 import {
+  SHARING_EVENT,
   broadcastSharing,
+  readSharingFlag,
   getNativeBackgroundLocation,
 } from "@/lib/nativeLocation";
 import {
@@ -2136,6 +2138,10 @@ export default function IntelligenceMapping() {
       return false;
     }
   });
+  // The latest value of the switch, readable straight after it is changed
+  // (the state above only catches up on the next render).
+  const sharingRef = useRef(sharingEnabled);
+  sharingRef.current = sharingEnabled;
   // Per-user visibility: Set of userIds that are hidden
   const [hiddenUsers, setHiddenUsers] = useState<Set<number>>(new Set());
   // Users currently being "live traced" — draws their recorded trail as a
@@ -4276,6 +4282,7 @@ export default function IntelligenceMapping() {
   const handleSharingToggle = (checked: boolean) => {
     // Locked on for a team that must share.
     if (!checked && mustShare) return;
+    sharingRef.current = checked;
     setSharingEnabled(checked);
     // Tell the app-wide location service at once (it follows this switch).
     broadcastSharing(user?.id, checked);
@@ -4327,6 +4334,67 @@ export default function IntelligenceMapping() {
     if (mustShare && !sharingEnabled) handleSharingToggle(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mustShare, sharingEnabled]);
+
+  // Show & Share follows the switch kept in storage, so something outside this
+  // page can turn it on or off (a team Search switches it on for everyone on
+  // the sheet, from any screen — see components/TeamSearchWatcher.tsx).
+  const toggleSharingRef = useRef(handleSharingToggle);
+  toggleSharingRef.current = handleSharingToggle;
+  useEffect(() => {
+    if (!user?.id) return;
+    const follow = () => {
+      const flag = readSharingFlag(user.id);
+      if (flag !== sharingRef.current) toggleSharingRef.current(flag);
+    };
+    window.addEventListener(SHARING_EVENT, follow);
+    return () => window.removeEventListener(SHARING_EVENT, follow);
+  }, [user?.id]);
+
+  // A Search is running for the team on this officer's running sheet: select
+  // that sheet and its operation, and draw everyone's Track from the moment the
+  // search started. When it ends, or this officer leaves it, the Tracks it
+  // switched on go again.
+  const teamSearch = predictor.team;
+  const teamSearchKeyRef = useRef<string | null>(null);
+  const teamTrackedRef = useRef<number[]>([]);
+  const teamTrackIds = teamSearch.search?.teamUserIds.join(",") ?? "";
+  useEffect(() => {
+    const t = teamSearch;
+    if (t.active && t.search && t.key) {
+      if (teamSearchKeyRef.current !== t.key) {
+        teamSearchKeyRef.current = t.key;
+        const { operationId, sheetId } = t.search;
+        setSelectedOpIds(prev =>
+          prev.includes(operationId) ? prev : [...prev, operationId]
+        );
+        setOpsExplicitlySet(true);
+        setRsSelectedSheetId(sheetId);
+      }
+      const add = t.search.teamUserIds.filter(
+        id => !teamTrackedRef.current.includes(id)
+      );
+      if (add.length) {
+        for (const id of add)
+          if (!trackStartsRef.current.has(id))
+            trackStartsRef.current.set(id, t.search.startedAtMs);
+        teamTrackedRef.current = [...teamTrackedRef.current, ...add];
+        setTracedUserIds(prev => new Set([...Array.from(prev), ...add]));
+      }
+      return;
+    }
+    if (teamSearchKeyRef.current !== null) {
+      teamSearchKeyRef.current = null;
+      const gone = teamTrackedRef.current;
+      teamTrackedRef.current = [];
+      for (const id of gone) trackStartsRef.current.delete(id);
+      setTracedUserIds(prev => {
+        const next = new Set(prev);
+        for (const id of gone) next.delete(id);
+        return next;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamSearch.active, teamSearch.key, teamTrackIds]);
 
   // Update operationIds in the DB when selectedOpIds change while sharing
   useEffect(() => {

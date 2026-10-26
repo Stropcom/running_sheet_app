@@ -391,12 +391,21 @@ export default function MyProfilePage() {
     }
   }, [profile]);
 
+  // After a choice is saved, refresh the account so a slow earlier load of it
+  // cannot put the old palette / header style back on screen.
+  const refreshAppearance = () => {
+    void utils.auth.me.invalidate();
+    void utils.profile.me.invalidate();
+  };
+
   const updateColorPaletteMutation =
     trpc.profile.updateColorPalette.useMutation({
+      onSuccess: refreshAppearance,
       onError: err => toast.error(err.message),
     });
 
   const updateChromeStyleMutation = trpc.profile.updateChromeStyle.useMutation({
+    onSuccess: refreshAppearance,
     onError: err => toast.error(err.message),
   });
 

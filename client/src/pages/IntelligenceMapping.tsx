@@ -195,6 +195,15 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { MapHeatOverlay } from "@/components/MapHeatOverlay";
+import {
+  SeenAgoButtons,
+  SearchButtons,
+  TargetPredictorBanner,
+  TargetPredictorOverlay,
+  TargetPredictorPinPopup,
+  TargetPredictorSection,
+  useTargetPredictor,
+} from "@/components/TargetPredictor";
 import { HEAT_RAMP } from "@/lib/heatMapSection";
 import {
   Popover,
@@ -3455,6 +3464,11 @@ export default function IntelligenceMapping() {
   // pattern as updateLocationMutRef, since the auto-revert effect below
   // needs a stable reference to call it from outside the render closure.
   const [onFootPopupOpen, setOnFootPopupOpen] = useState(false);
+  // The Search section of the "My Pill" popup is opened by its
+  // Search button.
+  const [pointerSearchOpen, setPointerSearchOpen] = useState(false);
+  // "Customise" (heading shape, pill colour) in that popup starts closed.
+  const [pillCustomiseOpen, setPillCustomiseOpen] = useState(false);
   const setOnFootMut = trpc.intelligence.setOnFoot.useMutation();
   const setOnFootMutRef = useRef(setOnFootMut);
   // Gender/skin-tone (on-foot glyph) + vehicle icon (Wheels mode) prefs —
@@ -3989,6 +4003,16 @@ export default function IntelligenceMapping() {
         t => t.id === heatDefaultTargetId
       )?.name
     : undefined;
+  // Target Predictor — the target, operation and running sheet picked at the
+  // top of the pane (see components/TargetPredictor.tsx).
+  const predictor = useTargetPredictor({
+    // The sheet's own operation (rsSelectedOpId is not set by anything on this
+    // page, so it cannot be relied on).
+    opId: isInvestigator ? null : (activeMapOperationId ?? rsSelectedOpId),
+    sheetId: isInvestigator ? null : rsSelectedSheetId,
+    targetId: isInvestigator ? null : (rsTargetData?.id ?? null),
+  });
+  const predictorOn = predictor.on;
   // RS Actions pane — create row mutation
   const rsAddMember = trpc.member.add.useMutation();
   const rsCreateRow = trpc.row.create.useMutation();
@@ -4311,6 +4335,52 @@ export default function IntelligenceMapping() {
     if (mustShare && !sharingEnabled) handleSharingToggle(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mustShare, sharingEnabled]);
+
+  // A Search is running for the team on this officer's running sheet (and Show &
+  // Share is on here): select that sheet and its operation, and draw everyone's
+  // Track from the moment the search started. When it ends, or this officer leaves it, the Tracks it
+  // switched on go again.
+  const teamSearch = predictor.team;
+  const teamSearchKeyRef = useRef<string | null>(null);
+  const teamTrackedRef = useRef<number[]>([]);
+  const teamTrackIds = teamSearch.search?.teamUserIds.join(",") ?? "";
+  useEffect(() => {
+    const t = teamSearch;
+    if (t.active && t.search && t.key) {
+      if (teamSearchKeyRef.current !== t.key) {
+        teamSearchKeyRef.current = t.key;
+        const { operationId, sheetId } = t.search;
+        setSelectedOpIds(prev =>
+          prev.includes(operationId) ? prev : [...prev, operationId]
+        );
+        setOpsExplicitlySet(true);
+        setRsSelectedSheetId(sheetId);
+      }
+      const add = t.search.teamUserIds.filter(
+        id => !teamTrackedRef.current.includes(id)
+      );
+      if (add.length) {
+        for (const id of add)
+          if (!trackStartsRef.current.has(id))
+            trackStartsRef.current.set(id, t.search.startedAtMs);
+        teamTrackedRef.current = [...teamTrackedRef.current, ...add];
+        setTracedUserIds(prev => new Set([...Array.from(prev), ...add]));
+      }
+      return;
+    }
+    if (teamSearchKeyRef.current !== null) {
+      teamSearchKeyRef.current = null;
+      const gone = teamTrackedRef.current;
+      teamTrackedRef.current = [];
+      for (const id of gone) trackStartsRef.current.delete(id);
+      setTracedUserIds(prev => {
+        const next = new Set(prev);
+        for (const id of gone) next.delete(id);
+        return next;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamSearch.active, teamSearch.key, teamTrackIds]);
 
   // Update operationIds in the DB when selectedOpIds change while sharing
   useEffect(() => {
@@ -4757,6 +4827,10 @@ export default function IntelligenceMapping() {
   };
 
   const handleMapAreaClick = useCallback(() => {
+    // While the Target Predictor is on, the pane stays open until it is
+    // closed with its X: taps on the map set where the target was last seen
+    // and must not close the pane that is asking for it.
+    if (predictorOn) return;
     if (
       rsActionsPaneOpen &&
       paneTargetProfileId === null &&
@@ -4767,6 +4841,7 @@ export default function IntelligenceMapping() {
       setRsActionsPaneOpen(false);
     }
   }, [
+    predictorOn,
     rsActionsPaneOpen,
     paneTargetProfileId,
     paneOperationProfileId,
@@ -9264,7 +9339,7 @@ export default function IntelligenceMapping() {
                 centerRequest={flyCentreReq}
                 onMarkerClick={id => {
                   setFlyPick(null);
-                  // Your own pill opens "Customise my pointer", as on the
+                  // Your own pill opens "My Pill", as on the
                   // flat map.
                   if (user && id === `team:${user.id}_${deviceIdRef.current}`) {
                     setFlySelectedId(null);
@@ -9715,6 +9790,11 @@ export default function IntelligenceMapping() {
             </div>
           )}
 
+          {/* Target Predictor — the answer, one line at the top of the map. */}
+          {!isInvestigator && !flySelectedId && (
+            <TargetPredictorBanner p={predictor} compact={narrowScreen} />
+          )}
+
           {showStreetHeadingBar && ownLiveEntry && (
             <StreetHeadingBar
               lat={ownLiveEntry.lat}
@@ -9741,6 +9821,8 @@ export default function IntelligenceMapping() {
            z-index above the overlays' z-20 (nothing paints over it either),
            giving it the same "full vision" the left pane already has. */}
         <div
+          data-testid="right-pane"
+          data-open={rsActionsPaneOpen ? "true" : "false"}
           className={`relative flex h-full flex-col border-l-[3px] border-primary/40 bg-card shadow-2xl flex-shrink-0 ${
             rsActionsPaneOpen ? "z-30" : ""
           } ${
@@ -10952,11 +11034,41 @@ export default function IntelligenceMapping() {
                 </div>
               )}
               {/* end Heat Map */}
+
+              {/* ── TARGET PREDICTOR — one switch, off by default. On: a line
+                at the top of the map says where the selected sheet's target
+                is likely to go next, or may be now, with a confidence level,
+                and shades the likely places. Plain counting over his own
+                history on the operation. Not for map-only Investigator
+                accounts (the history isn't open to them). ── */}
+              {!isInvestigator && (
+                <TargetPredictorSection
+                  p={predictor}
+                  targetName={rsTargetData?.name ?? null}
+                  operationName={
+                    (
+                      (operations ?? []) as Array<{ id: number; name: string }>
+                    ).find(
+                      o => o.id === (activeMapOperationId ?? rsSelectedOpId)
+                    )?.name ?? null
+                  }
+                  sheetTitle={rsSelectedSheetTitle ?? null}
+                />
+              )}
+              {/* end Target Predictor */}
             </div>
           )}
           {/* end Pane Body */}
         </div>
         {/* end RS Actions Right Pane */}
+
+        {/* Target Predictor rings and badges — adds a layer to the map, draws nothing itself. */}
+        <TargetPredictorOverlay
+          p={predictor}
+          map={mapReady && !isInvestigator ? mapRef.current : null}
+        />
+        {/* The popup that opens when the red last-seen diamond is tapped. */}
+        <TargetPredictorPinPopup p={predictor} />
 
         {/* Heat Map overlay — draws nothing itself, it adds a layer to the map. */}
         <MapHeatOverlay
@@ -15073,10 +15185,19 @@ export default function IntelligenceMapping() {
         colour picker — see setOnFoot/setPinAppearance. The on-foot glyph
         is always the plain neutral 🧍/🚶/🏃 now — the gender/skin-tone
         picker previously here was removed entirely. */}
-      <Dialog open={onFootPopupOpen} onOpenChange={setOnFootPopupOpen}>
+      <Dialog
+        open={onFootPopupOpen}
+        onOpenChange={open => {
+          setOnFootPopupOpen(open);
+          if (!open) {
+            setPointerSearchOpen(false);
+            setPillCustomiseOpen(false);
+          }
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Customise my pointer</DialogTitle>
+            <DialogTitle>My Pill</DialogTitle>
           </DialogHeader>
           {(() => {
             const ownLiveUser = (liveUsers as LiveUser[] | undefined)?.find(
@@ -15088,6 +15209,89 @@ export default function IntelligenceMapping() {
 
             return (
               <div className="flex flex-col gap-4 py-2">
+                {/* Search and Track — at the top. Search starts Search for the
+                    team on the selected running sheet; it is empty when off and
+                    shaded when on. Track is a switch of its own (your own
+                    track, as under Team in the right pane) and stays where it
+                    is whether or not Search is on; Search's options open
+                    below it. Choosing how long ago he was seen closes this
+                    popup so the map can be tapped for where. */}
+                {!isInvestigator && (
+                  <div className="space-y-2" data-testid="pointer-search">
+                    {(() => {
+                      const searchOn = predictor.on && predictor.mode === "now";
+                      const tracking = !!user && tracedUserIds.has(user.id);
+                      const base =
+                        "flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border-2 text-sm font-semibold transition-colors disabled:opacity-50";
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            disabled={!predictor.canSearch}
+                            onClick={() => {
+                              predictor.startFromPointer();
+                              setPointerSearchOpen(true);
+                            }}
+                            aria-pressed={searchOn}
+                            className={`${base} ${
+                              searchOn
+                                ? "border-violet-500/50 bg-violet-500/10 text-violet-500"
+                                : "border-border bg-card text-foreground hover:bg-accent/40"
+                            }`}
+                          >
+                            <Crosshair className="h-4 w-4" />
+                            Search
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!user}
+                            onClick={() => user && toggleUserTrace(user.id)}
+                            aria-pressed={tracking}
+                            className={`${base} ${
+                              tracking
+                                ? "border-indigo-500 bg-indigo-500/10 text-indigo-400"
+                                : "border-border bg-card text-foreground hover:bg-accent/40"
+                            }`}
+                          >
+                            {tracking ? "Tracking" : "Track"}
+                          </button>
+                          {!predictor.canSearch && (
+                            <p className="text-xs text-muted-foreground">
+                              Select a running sheet that has a target (Active
+                              RS) to search.
+                            </p>
+                          )}
+                          {tracking && !sharingEnabled && (
+                            <p className="text-xs text-muted-foreground">
+                              Your track is drawn while Show &amp; Share is on.
+                            </p>
+                          )}
+                          {(searchOn || pointerSearchOpen) &&
+                            predictor.canSearch && (
+                              <>
+                                <SeenAgoButtons
+                                  p={predictor}
+                                  onPick={n => {
+                                    predictor.beginSighting(n);
+                                    setPointerSearchOpen(false);
+                                    setOnFootPopupOpen(false);
+                                  }}
+                                />
+                                <SearchButtons
+                                  p={predictor}
+                                  showEnd
+                                  onDone={() => {
+                                    setPointerSearchOpen(false);
+                                    setOnFootPopupOpen(false);
+                                  }}
+                                />
+                              </>
+                            )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -15126,78 +15330,101 @@ export default function IntelligenceMapping() {
                   over 15 km/h.
                 </p>
 
-                {!onFoot && (
-                  <div className="space-y-1.5">
-                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                      Heading shape
-                    </p>
-                    <div className="grid grid-cols-4 gap-2">
-                      {HEADING_SHAPE_OPTIONS.map(opt => (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          onClick={() =>
-                            setPinAppearanceMut.mutate({
-                              pinVehicleIcon: opt.key,
-                            })
-                          }
-                          title={opt.label}
-                          aria-label={opt.label}
-                          className={`flex items-center justify-center rounded-lg border-2 py-2 transition-all ${
-                            headingShape === opt.key
-                              ? "border-primary bg-primary/10 scale-105"
-                              : "border-border bg-accent/30 hover:border-primary/50"
-                          }`}
-                        >
-                          <span
-                            className="w-5 h-5 flex items-center justify-center"
-                            dangerouslySetInnerHTML={{
-                              __html: renderHeadingShapeInner(opt.key),
-                            }}
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                      Pill colour
-                    </p>
-                    {pinColor && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPinAppearanceMut.mutate({ pinColor: null })
-                        }
-                        className="text-[10px] font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
-                      >
-                        Reset to team colour
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-5 gap-2 justify-items-center">
-                    {PIN_COLOUR_SWATCHES.map(swatch => (
-                      <button
-                        key={swatch.hex}
-                        type="button"
-                        onClick={() =>
-                          setPinAppearanceMut.mutate({ pinColor: swatch.hex })
-                        }
-                        title={swatch.name}
-                        aria-label={swatch.name}
-                        className={`h-8 w-8 rounded-full border-2 transition-all ${
-                          pinColor === swatch.hex
-                            ? "border-foreground scale-110"
-                            : "border-transparent hover:scale-105"
+                <Collapsible
+                  open={pillCustomiseOpen}
+                  onOpenChange={setPillCustomiseOpen}
+                  className="space-y-3"
+                >
+                  <CollapsibleTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex min-h-[44px] w-full items-center justify-between rounded-lg border-2 border-border bg-card px-3 text-sm font-semibold hover:bg-accent/40"
+                    >
+                      Customise
+                      <ChevronDown
+                        className={`h-4 w-4 transition-transform ${
+                          pillCustomiseOpen ? "rotate-180" : ""
                         }`}
-                        style={{ background: swatch.hex }}
                       />
-                    ))}
-                  </div>
-                </div>
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-4">
+                    {!onFoot && (
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                          Heading shape
+                        </p>
+                        <div className="grid grid-cols-4 gap-2">
+                          {HEADING_SHAPE_OPTIONS.map(opt => (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              onClick={() =>
+                                setPinAppearanceMut.mutate({
+                                  pinVehicleIcon: opt.key,
+                                })
+                              }
+                              title={opt.label}
+                              aria-label={opt.label}
+                              className={`flex items-center justify-center rounded-lg border-2 py-2 transition-all ${
+                                headingShape === opt.key
+                                  ? "border-primary bg-primary/10 scale-105"
+                                  : "border-border bg-accent/30 hover:border-primary/50"
+                              }`}
+                            >
+                              <span
+                                className="w-5 h-5 flex items-center justify-center"
+                                dangerouslySetInnerHTML={{
+                                  __html: renderHeadingShapeInner(opt.key),
+                                }}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                          Pill colour
+                        </p>
+                        {pinColor && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPinAppearanceMut.mutate({ pinColor: null })
+                            }
+                            className="text-[10px] font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
+                          >
+                            Reset to team colour
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-5 gap-2 justify-items-center">
+                        {PIN_COLOUR_SWATCHES.map(swatch => (
+                          <button
+                            key={swatch.hex}
+                            type="button"
+                            onClick={() =>
+                              setPinAppearanceMut.mutate({
+                                pinColor: swatch.hex,
+                              })
+                            }
+                            title={swatch.name}
+                            aria-label={swatch.name}
+                            className={`h-8 w-8 rounded-full border-2 transition-all ${
+                              pinColor === swatch.hex
+                                ? "border-foreground scale-110"
+                                : "border-transparent hover:scale-105"
+                            }`}
+                            style={{ background: swatch.hex }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
               </div>
             );
           })()}

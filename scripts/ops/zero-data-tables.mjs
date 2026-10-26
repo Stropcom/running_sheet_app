@@ -69,6 +69,7 @@ export const CLEAR_TABLES = [
   "intelligence_geocode_cache",
   "intel_pin_overrides",
   "target_place_labels",
+  "predictor_last_seen",
   // Targets
   "targets",
   "associates",

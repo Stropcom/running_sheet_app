@@ -1,6 +1,18 @@
 import { signIconOf } from "@shared/placeSigns";
 
-import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  sql,
+} from "drizzle-orm";
 
 import { formatIntelAddress } from "@shared/addressFormat";
 
@@ -876,6 +888,47 @@ export async function getUserLocationHistories(
     });
   }
   return result;
+}
+
+/** GPS points shared on one operation inside a time window, for the Target
+ * Predictor's direction of travel (shared/travelDirection.ts). Only the given
+ * officers (the caller has already limited them to people they may see), and
+ * only points recorded while sharing on this operation. */
+export async function getOperationTrail(
+  operationId: number,
+  userIds: number[],
+  fromMs: number,
+  toMs: number
+): Promise<{ userId: number; lat: number; lng: number; recordedAt: number }[]> {
+  const db = await getDb();
+  if (!db || userIds.length === 0) return [];
+  const rows = await db
+    .select({
+      userId: userLocationHistory.userId,
+      lat: userLocationHistory.lat,
+      lng: userLocationHistory.lng,
+      recordedAt: userLocationHistory.recordedAt,
+      operationIds: userLocationHistory.operationIds,
+    })
+    .from(userLocationHistory)
+    .where(
+      and(
+        inArray(userLocationHistory.userId, userIds),
+        gte(userLocationHistory.recordedAt, fromMs),
+        lte(userLocationHistory.recordedAt, toMs)
+      )
+    )
+    .orderBy(asc(userLocationHistory.recordedAt));
+  return rows
+    .filter(r => {
+      try {
+        const ids = JSON.parse(r.operationIds || "[]");
+        return Array.isArray(ids) && ids.includes(operationId);
+      } catch {
+        return false;
+      }
+    })
+    .map(({ operationIds: _ops, ...r }) => r);
 }
 
 // ─── Custom Map Markers ───────────────────────────────────────────────────────

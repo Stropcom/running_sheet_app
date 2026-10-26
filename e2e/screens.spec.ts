@@ -416,3 +416,617 @@ test("Intelligence Package has Places as a ticked section between Heat Map and P
   await places.click();
   await expect(places.getByRole("checkbox")).not.toBeChecked();
 });
+
+// A Search started by a test is ended afterwards, so it cannot keep switching
+// the predictor on for the next test (it is shared for the whole team).
+const searchesToEnd: { opId: number; sheetId: number }[] = [];
+test.afterEach(async ({ page }) => {
+  for (const s of searchesToEnd.splice(0))
+    await page.request
+      .post("/api/trpc/intelligence.clearPredictorLastSeen", {
+        data: { json: { operationId: s.opId, sheetId: s.sheetId } },
+      })
+      .catch(() => null);
+});
+
+test("Map page: Target Predictor says where next, then where now, with a confidence level", async ({
+  page,
+}) => {
+  const created = await createOperationAndSheet(page);
+  searchesToEnd.push(created);
+  // History that fits the clock this test runs on: ten Home visits under way
+  // around now on today's weekday — seven went to the gym next, three to the
+  // cafe — and the sheet says he is at Home.
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Perth",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find(p => p.type === t)!.value;
+  const today = `${get("year")}-${get("month")}-${get("day")}`;
+  const nowMin = (Number(get("hour")) % 24) * 60 + Number(get("minute"));
+  const weekday = (Math.floor(Date.parse(today) / 86_400_000) + 3) % 7;
+  const stop = (placeKey: string, end: number, next: string) => ({
+    placeKey,
+    weekday,
+    dateISO: "2026-01-01",
+    startMinutes: Math.max(0, end - 400),
+    endMinutes: end,
+    departureLogged: true,
+    nextPlaceKey: next,
+    nextStartMinutes: end + 15,
+  });
+  const predictor = {
+    targetName: "Sahana Priya MENON",
+    operationName: "RAVEN",
+    todayISO: today,
+    places: [
+      {
+        placeKey: "home",
+        name: "14 Marine Parade, COTTESLOE",
+        kind: "home",
+        lat: -31.99,
+        lng: 115.76,
+      },
+      {
+        placeKey: "gym",
+        name: "Elevate Fitness, SUBIACO",
+        kind: "gym",
+        lat: -31.95,
+        lng: 115.8,
+      },
+      {
+        placeKey: "cafe",
+        name: "Little Bird Cafe, FREMANTLE",
+        kind: "cafe",
+        lat: -31.99,
+        lng: 115.7,
+      },
+    ],
+    stops: Array.from({ length: 10 }, (_, i) =>
+      stop("home", nowMin + 5 + (i % 3), i < 7 ? "gym" : "cafe")
+    ),
+    lastSeen: {
+      placeKey: "home",
+      dateISO: today,
+      minutes: Math.max(0, nowMin - 20),
+      leaving: false,
+    },
+  };
+  // The team was heading east from Home in the five minutes before he was last
+  // seen: the cafe (west of Home) is behind that heading, the gym is ahead.
+  const seenMs =
+    Date.parse(`${today}T00:00:00+08:00`) + predictor.lastSeen.minutes * 60_000;
+  const trail = [
+    { userId: 1, lat: -31.99, lng: 115.76, recordedAt: seenMs - 240_000 },
+    { userId: 1, lat: -31.99, lng: 115.764, recordedAt: seenMs - 20_000 },
+  ];
+  await page.route(/\/api\/trpc\//, async route => {
+    // The map page also fetches things that are not tRPC JSON, or are cut off
+    // when the test ends; those pass through untouched.
+    const resp = await route.fetch().catch(() => null);
+    if (!resp) return;
+    const json = await resp.json().catch(() => null);
+    if (json === null) return route.fulfill({ response: resp });
+    const procs = new URL(route.request().url()).pathname
+      .replace(/^.*\/api\/trpc\//, "")
+      .split(",");
+    const patch = (entry: any, name: string) => {
+      const data =
+        name === "intelligence.getSheetTarget"
+          ? {
+              id: 987655,
+              name: "Sahana Priya MENON",
+              tgt: null,
+              dep: null,
+              arr: null,
+              hb: null,
+              hbf: null,
+              v1: null,
+              v1f: null,
+              v2: null,
+              v2f: null,
+              extraVehicles: null,
+              wildFields: null,
+            }
+          : name === "intelligence.getTargetPredictor"
+            ? predictor
+            : name === "intelligence.getPredictorTrail"
+              ? trail
+              : undefined;
+      if (data === undefined) return;
+      delete entry.error;
+      entry.result = { data: { json: data } };
+    };
+    if (Array.isArray(json)) json.forEach((e, i) => patch(e, procs[i]));
+    else patch(json, procs[0]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
+  });
+
+  await page.goto("/");
+  await page.evaluate(({ opId, sheetId }) => {
+    localStorage.setItem(
+      "runlog_map_settings",
+      JSON.stringify({
+        selectedOpIds: [opId],
+        opsExplicitlySet: true,
+        rsSelectedSheetId: sheetId,
+      })
+    );
+    localStorage.removeItem("runlog_target_predictor_on");
+  }, created);
+  await page.goto("/intelligence/mapping");
+  await page.getByRole("button", { name: "Toggle side panel" }).click();
+
+  // Off until switched on, and nothing is shown on the map while off.
+  const section = page.getByText("Target Predictor", { exact: true }).first();
+  await section.scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("predictor-banner")).toHaveCount(0);
+  await page.getByRole("button", { name: /Target predictor\s*Off/i }).click();
+
+  // Where next: counted from the history, with the confidence stated.
+  const banner = page.getByTestId("predictor-banner");
+  await expect(banner).toContainText("Next: Elevate Fitness");
+  await expect(banner).toContainText("7 of 10 similar visits");
+  // Counts, never percentages, anywhere in the banner or the list.
+  await expect(banner).not.toContainText("%");
+  await expect(banner).toContainText("Moderate confidence");
+  await expect(page.getByText("Home — 14 Marine Parade").first()).toBeVisible();
+
+  // Search starts blank: one tap on the map puts the pin down. It has no top
+  // banner, and the pane is stripped back: no names line, no "from the
+  // operation" sentence, no clock line, no drop-down, slider or area buttons.
+  await expect(
+    page.getByText(/From the operation and running sheet selected above/)
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(banner).toHaveCount(0);
+  await expect(page.getByText("One tap — the cross goes away")).toBeVisible();
+  await expect(
+    page.getByText(/From the operation and running sheet selected above/)
+  ).toHaveCount(0);
+  await expect(page.getByText("Sahana Priya MENON")).toHaveCount(0);
+  await expect(page.getByText(/For when the team has lost him/)).toHaveCount(0);
+  await expect(page.getByText(/Today is /)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Where now?" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Back street" })).toHaveCount(
+    0
+  );
+  await expect(page.getByRole("slider")).toHaveCount(0);
+
+  // Google Maps cannot be tapped here, so the pin is put down the way another
+  // officer's screen would: shared for the sheet, then read back.
+  const seedPoint = async (extra: Record<string, unknown> = {}) => {
+    const r = await page.request.post(
+      "/api/trpc/intelligence.setPredictorLastSeen",
+      {
+        data: {
+          json: {
+            operationId: created.opId,
+            sheetId: created.sheetId,
+            targetId: 987655,
+            kind: "point",
+            placeKey: null,
+            lat: -31.99,
+            lng: 115.76,
+            seenMinutes: predictor.lastSeen.minutes,
+            area: null,
+            pausedAtMinutes: null,
+            ...extra,
+          },
+        },
+      }
+    );
+    expect(r.ok(), await r.text()).toBeTruthy();
+  };
+  await seedPoint();
+  const reopenSearch = async () => {
+    await page.reload();
+    await page.getByRole("button", { name: "Toggle side panel" }).click();
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+  };
+  await reopenSearch();
+  await expect(banner).toHaveCount(0);
+  await expect(
+    page.getByText("Most likely, from his history", { exact: true })
+  ).toBeVisible();
+  await expect(page.getByRole("main").getByText(/\b(?!60%)\d+%/)).toHaveCount(
+    0
+  );
+  await expect(page.getByText("Seen how long ago?")).toBeVisible();
+  // Taken out: the last-seen line, the shared-by line, the direction note and
+  // the two distance cards (the rings on the map carry those numbers).
+  await expect(page.getByText(/Last seen \d\d:\d\d — /)).toHaveCount(0);
+  await expect(page.getByText(/Shared with the team, set by/)).toHaveCount(0);
+  await expect(page.getByText(/Team heading|no direction is used/)).toHaveCount(
+    0
+  );
+  await expect(
+    page.getByText("How far he could have got", { exact: true })
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Most likely by now", { exact: true })
+  ).toHaveCount(0);
+
+  // There is no Move pin or Start again: the pin is dragged to move it, and the
+  // map is otherwise left alone so a stray touch cannot shift it.
+  await expect(page.getByRole("button", { name: "Move pin" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Start again" })).toHaveCount(
+    0
+  );
+
+  // Seen how long ago: big buttons, no slider. Nothing goes back further than
+  // five minutes.
+  await expect(page.getByRole("button", { name: /^\d+ min$/ })).toHaveCount(4);
+  await expect(
+    page.getByRole("button", { name: "Now", exact: true })
+  ).toBeVisible();
+  const saved = page.waitForResponse(r =>
+    r.url().includes("setPredictorLastSeen")
+  );
+  await page.getByRole("button", { name: "2 min", exact: true }).click();
+  await saved;
+  await expect(
+    page.getByRole("button", { name: "2 min", exact: true })
+  ).toHaveAttribute("aria-pressed", "true");
+
+  // Pause holds the ring; it is shared, so a reload (or another officer's
+  // screen) shows it held too. Resume lets it grow again.
+  const paused = page.waitForResponse(r =>
+    r.url().includes("setPredictorLastSeen")
+  );
+  await page.getByRole("button", { name: "Pause ring" }).click();
+  await paused;
+  await expect(page.getByRole("button", { name: "Resume ring" })).toBeVisible();
+  await reopenSearch();
+  await expect(page.getByRole("button", { name: "Resume ring" })).toBeVisible();
+  const resumed = page.waitForResponse(r =>
+    r.url().includes("setPredictorLastSeen")
+  );
+  await page.getByRole("button", { name: "Resume ring" }).click();
+  await resumed;
+  await expect(page.getByRole("button", { name: "Pause ring" })).toBeVisible();
+
+  // End search sits next to Pause and only ends the search on this screen.
+  await page.getByTestId("end-search").click();
+  await expect(
+    page.getByRole("button", { name: /Target predictor\s*Off/i })
+  ).toBeVisible();
+});
+
+test("Map page: Search still shows how far he could have got with no history, and lists registered addresses in reach", async ({
+  page,
+}) => {
+  const created = await createOperationAndSheet(page);
+  searchesToEnd.push(created);
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Perth",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find(p => p.type === t)!.value;
+  const today = `${get("year")}-${get("month")}-${get("day")}`;
+  const nowMin = (Number(get("hour")) % 24) * 60 + Number(get("minute"));
+  // Seen 20 minutes ago at a tapped point — no known places for this target
+  // except one registered address about 1.5 km away that he was never seen at.
+  const point = { lat: -31.95, lng: 115.86 };
+  let places: unknown[] = [];
+  const predictor = () => ({
+    targetName: "Sahana Priya MENON",
+    operationName: "RAVEN",
+    todayISO: today,
+    places,
+    stops: [],
+    lastSeen: null,
+  });
+  const sharedSeen = {
+    kind: "point",
+    placeKey: null,
+    lat: point.lat,
+    lng: point.lng,
+    seenMinutes: Math.max(0, nowMin - 20),
+    area: null,
+    pausedAtMinutes: null,
+    updatedByCIN: "999",
+    updatedAtMs: Date.now(),
+  };
+  await page.route(/\/api\/trpc\//, async route => {
+    const resp = await route.fetch().catch(() => null);
+    if (!resp) return;
+    const json = await resp.json().catch(() => null);
+    if (json === null) return route.fulfill({ response: resp });
+    const procs = new URL(route.request().url()).pathname
+      .replace(/^.*\/api\/trpc\//, "")
+      .split(",");
+    const patch = (entry: any, name: string) => {
+      const data =
+        name === "intelligence.getSheetTarget"
+          ? {
+              id: 987655,
+              name: "Sahana Priya MENON",
+              tgt: null,
+              dep: null,
+              arr: null,
+              hb: null,
+              hbf: null,
+              v1: null,
+              v1f: null,
+              v2: null,
+              v2f: null,
+              extraVehicles: null,
+              wildFields: null,
+            }
+          : name === "intelligence.getTargetPredictor"
+            ? predictor()
+            : name === "intelligence.getPredictorLastSeen"
+              ? sharedSeen
+              : name === "intelligence.getPredictorTrail"
+                ? []
+                : name === "intelligence.getRoadSpeed"
+                  ? {
+                      ok: true,
+                      kph: 100,
+                      source: "posted",
+                      road: "Kwinana Fwy",
+                      dataDate: "2026-10-24",
+                    }
+                  : undefined;
+      if (data === undefined) return;
+      delete entry.error;
+      entry.result = { data: { json: data } };
+    };
+    if (Array.isArray(json)) json.forEach((e, i) => patch(e, procs[i]));
+    else patch(json, procs[0]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
+  });
+  await page.goto("/");
+  await page.evaluate(({ opId, sheetId }) => {
+    localStorage.setItem(
+      "runlog_map_settings",
+      JSON.stringify({
+        selectedOpIds: [opId],
+        opsExplicitlySet: true,
+        rsSelectedSheetId: sheetId,
+      })
+    );
+    localStorage.setItem("runlog_target_predictor_on", "1");
+  }, created);
+
+  // 1. No known places and no history: the reach still answers.
+  await page.goto("/intelligence/mapping");
+  await page.getByRole("button", { name: "Toggle side panel" }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  // Search has no top banner; its answers are in the pane and on the map.
+  await expect(page.getByTestId("predictor-banner")).toHaveCount(0);
+  // The posted limit of the road he was on picks the area and the speed.
+  await expect(page.getByText(/Travelling at about\s*100 km\/h/)).toBeVisible();
+  await expect(page.getByText(/the posted limit on Kwinana Fwy/)).toBeVisible();
+  // The data's licence asks for a credit.
+  await expect(
+    page.getByText(/Main Roads Western Australia, Legal Speed Limits \(CC BY/)
+  ).toBeVisible();
+  await expect(
+    page.getByText(/None of his known places or registered addresses/)
+  ).toBeVisible();
+
+  // The pane stays open when the map is tapped while the predictor is on; only
+  // its X closes it.
+  const pane = page.getByTestId("right-pane");
+  await expect(pane).toHaveAttribute("data-open", "true");
+  await page.mouse.click(300, 400);
+  await page.waitForTimeout(400);
+  await expect(pane).toHaveAttribute("data-open", "true");
+  await expect(page.getByText("Seen how long ago?")).toBeVisible();
+
+  // 2. A registered address he has never been seen at, inside the reach, is a
+  // location of interest on its own (no visits needed).
+  places = [
+    {
+      placeKey: "reg",
+      name: "14 Marine Parade, COTTESLOE",
+      kind: "home",
+      lat: point.lat - 0.012,
+      lng: point.lng,
+      visits: 0,
+      registered: true,
+    },
+  ];
+  await page.reload();
+  await page.getByRole("button", { name: "Toggle side panel" }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.getByText("Locations of interest in reach")).toBeVisible();
+  await expect(
+    page.getByText("registered address — no visits on record")
+  ).toBeVisible();
+});
+
+test("Map page: a Search started on one screen switches on by itself for the rest of the team", async ({
+  page,
+  browser,
+}) => {
+  // Waits for the polls (every 8 s) twice over.
+  test.setTimeout(150_000);
+  const created = await createOperationAndSheet(page);
+  searchesToEnd.push(created);
+  // A second screen — another officer's device — open on the Map with the
+  // predictor off and no sheet selected.
+  const other = await browser.newContext({
+    storageState: "e2e/.auth/user.json",
+  });
+  const second = await other.newPage();
+  // The sheet is given a target, as in the other predictor tests.
+  await second.route(/\/api\/trpc\//, async route => {
+    const resp = await route.fetch().catch(() => null);
+    if (!resp) return;
+    const json = await resp.json().catch(() => null);
+    if (json === null) return route.fulfill({ response: resp });
+    const procs = new URL(route.request().url()).pathname
+      .replace(/^.*\/api\/trpc\//, "")
+      .split(",");
+    const patch = (entry: any, name: string) => {
+      if (name === "intelligence.getTargetPredictor") {
+        delete entry.error;
+        entry.result = {
+          data: {
+            json: {
+              targetName: "Sahana Priya MENON",
+              operationName: "RAVEN",
+              todayISO: new Date().toLocaleDateString("en-CA", {
+                timeZone: "Australia/Perth",
+              }),
+              places: [],
+              stops: [],
+              lastSeen: null,
+            },
+          },
+        };
+        return;
+      }
+      if (name !== "intelligence.getSheetTarget") return;
+      delete entry.error;
+      entry.result = {
+        data: {
+          json: {
+            id: 987655,
+            name: "Sahana Priya MENON",
+            tgt: null,
+            dep: null,
+            arr: null,
+            hb: null,
+            hbf: null,
+            v1: null,
+            v1f: null,
+            v2: null,
+            v2f: null,
+            extraVehicles: null,
+            wildFields: null,
+          },
+        },
+      };
+    };
+    if (Array.isArray(json)) json.forEach((e, i) => patch(e, procs[i]));
+    else patch(json, procs[0]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
+  });
+  await second.goto("/");
+  await second.evaluate(() => {
+    localStorage.removeItem("runlog_target_predictor_on");
+    localStorage.removeItem("runlog_map_settings");
+  });
+  await second.goto("/intelligence/mapping");
+  // This screen's user id, as the app itself records it once the Map has loaded.
+  await expect
+    .poll(
+      () => second.evaluate(() => localStorage.getItem("runlog_last_user_id")),
+      {
+        timeout: 20_000,
+      }
+    )
+    .not.toBeNull();
+  const predictorOn = () =>
+    second.evaluate(() => localStorage.getItem("runlog_target_predictor_on"));
+  const myTeamSearch = async () => {
+    const r = await page.request.get("/api/trpc/intelligence.getMyTeamSearch");
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  expect(await predictorOn()).toBeNull();
+
+  // Search is started for the sheet's team from the first screen.
+  const started = await page.request.post(
+    "/api/trpc/intelligence.startTeamSearch",
+    {
+      data: {
+        json: {
+          operationId: created.opId,
+          sheetId: created.sheetId,
+          targetId: 987655,
+        },
+      },
+    }
+  );
+  expect(started.ok(), await started.text()).toBeTruthy();
+
+  // A screen with Show & Share off does not join by itself: it is not the device
+  // the officer is working on, and nothing switches Show & Share on for them.
+  // It is offered a Join instead.
+  await second.waitForTimeout(12_000);
+  expect(await predictorOn()).toBeNull();
+  await second.getByRole("button", { name: "Toggle side panel" }).click();
+  await expect(second.getByTestId("join-search")).toBeVisible();
+  await expect(second.getByText(/Your location is\s*not shared/)).toBeVisible();
+
+  // One tap joins: predictor on, in Search, the sheet selected.
+  // (The same offer also shows as a notice on every screen; this is the
+  // pane's.)
+  await second
+    .getByTestId("join-search")
+    .getByRole("button", { name: "Join", exact: true })
+    .click();
+  await expect.poll(predictorOn, { timeout: 40_000 }).toBe("1");
+  await expect
+    .poll(
+      () =>
+        second.evaluate(
+          () =>
+            JSON.parse(localStorage.getItem("runlog_map_settings") || "{}")
+              .rsSelectedSheetId ?? null
+        ),
+      { timeout: 20_000 }
+    )
+    .toBe(created.sheetId);
+  await expect(
+    second.getByRole("button", { name: "Search", exact: true })
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(second.getByTestId("predictor-banner")).toHaveCount(0);
+
+  // End search there only ends it on that screen: the predictor goes off, but
+  // the search carries on for everyone else.
+  await second.getByTestId("end-search").click();
+  await expect.poll(predictorOn, { timeout: 10_000 }).toBe("0");
+  expect(await myTeamSearch()).not.toBeNull();
+
+  // Started again from the first screen: a screen that has Show & Share on (the
+  // officer's working device) comes back in by itself, even though it had ended
+  // the earlier search.
+  await second.evaluate(() => {
+    const id = localStorage.getItem("runlog_last_user_id");
+    localStorage.setItem(`runlog_sharing_u${id}`, "true");
+    window.dispatchEvent(new Event("runlog:sharing-changed"));
+  });
+  const again = await page.request.post(
+    "/api/trpc/intelligence.startTeamSearch",
+    {
+      data: {
+        json: {
+          operationId: created.opId,
+          sheetId: created.sheetId,
+          targetId: 987655,
+        },
+      },
+    }
+  );
+  expect(again.ok(), await again.text()).toBeTruthy();
+  await expect.poll(predictorOn, { timeout: 40_000 }).toBe("1");
+  await other.close();
+});

@@ -3,11 +3,19 @@ import { LABELLABLE_KINDS } from "@shared/placesReport";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { COMMAND_CODES } from "@shared/commands";
+import { lookupRoadSpeed } from "../roadSpeed";
 import {
+  accessibleOperationIds,
   filterLocationRows,
   reachableFor,
   toAccessUser,
 } from "../operationAccess";
+import {
+  isOnSearchTeam,
+  isSearchLive,
+  rosterCins,
+  teamCinsOf,
+} from "@shared/teamSearch";
 import { protectedProcedure, router } from "../_core/trpc";
 import {
   getInvestigatorAllowedOperationIds,
@@ -17,6 +25,14 @@ import {
   getIntelligenceHeatMapLocations,
   getIntelTargetPatternOfLife,
   getIntelTargetPlaces,
+  getIntelTargetPredictor,
+  getOperationTrail,
+  getSharedSeen,
+  setPredictorLastSeen,
+  clearPredictorLastSeen,
+  startPredictorSearch,
+  getTodaysSearches,
+  getAllUsers,
   setTargetPlaceLabel,
   createAuditLog,
   extractEntitiesFromText,
@@ -258,6 +274,222 @@ export const intelligenceRouter = router({
           message: "Operation or target not found.",
         });
       return result;
+    }),
+
+  /** Target Predictor: the places one target goes (located on the map), his
+   * stops with where he went next, and where the chosen sheet last had him.
+   * Reads uncertified rows too. The predicting is done on the client, from
+   * the clock, by shared/targetPredictor.ts. */
+  getTargetPredictor: protectedProcedure
+    .input(
+      z.object({
+        operationId: z.number(),
+        targetId: z.number(),
+        sheetId: z.number().nullable(),
+      })
+    )
+    .query(async ({ input }) => {
+      const result = await getIntelTargetPredictor(
+        input.operationId,
+        input.targetId,
+        input.sheetId
+      );
+      if (!result)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Operation or target not found.",
+        });
+      return result;
+    }),
+
+  /** Target Predictor: the direction the team was travelling in the minutes
+   * before the target was last seen — from the GPS trail officers share on the
+   * operation, limited to people the caller may see (the same rule as the live
+   * trace). The direction itself is worked out by shared/travelDirection.ts. */
+  getPredictorTrail: protectedProcedure
+    .input(
+      z.object({
+        operationId: z.number(),
+        fromMs: z.number(),
+        toMs: z.number(),
+      })
+    )
+    .query(async ({ input, ctx }) => {
+      if (input.toMs - input.fromMs > 30 * 60_000) return [];
+      const visible = new Set(
+        (
+          await filterLocationRows(
+            toAccessUser(ctx.user),
+            await getUserLocations([])
+          )
+        ).map(r => r.userId)
+      );
+      visible.add(ctx.user.id);
+      return getOperationTrail(
+        input.operationId,
+        Array.from(visible),
+        input.fromMs,
+        input.toMs
+      );
+    }),
+
+  /** Target Predictor: the posted speed limit of the road nearest a point
+   * (Google Roads API), or why there is none. The predictor uses it to pick
+   * the kind of area and the travel speed; any failure just means the officer
+   * picks the area. */
+  getRoadSpeed: protectedProcedure
+    .input(
+      z.object({
+        lat: z.number().min(-90).max(90),
+        lng: z.number().min(-180).max(180),
+      })
+    )
+    .query(({ input }) => lookupRoadSpeed(input.lat, input.lng)),
+
+  /** Target Predictor: what the team set as "last seen" for this sheet today
+   * (null when nothing is set). Polled every few seconds while the predictor is
+   * on, so everyone sees the same position. */
+  getPredictorLastSeen: protectedProcedure
+    .input(z.object({ operationId: z.number(), sheetId: z.number() }))
+    .query(({ input }) => getSharedSeen(input.sheetId)),
+
+  /** Target Predictor: where the team says the target was last seen, set by
+   * hand and shared with everyone who has the sheet open (today only; the
+   * running sheet itself is not touched). */
+  setPredictorLastSeen: protectedProcedure
+    .input(
+      z.object({
+        operationId: z.number(),
+        sheetId: z.number(),
+        targetId: z.number(),
+        kind: z.enum(["place", "point", "none", "sheet"]),
+        placeKey: z.string().min(1).max(400).nullable(),
+        lat: z.number().min(-90).max(90).nullable(),
+        lng: z.number().min(-180).max(180).nullable(),
+        seenMinutes: z.number().int().min(0).max(2879).nullable(),
+        area: z.enum(["freeway", "main", "built", "back"]).nullable(),
+        pausedAtMinutes: z.number().int().min(0).max(2879).nullable(),
+        seenAtMs: z.number().int().positive().nullable().optional(),
+        pausedAtMs: z.number().int().positive().nullable().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      if (input.kind === "place" && !input.placeKey)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "A place is needed.",
+        });
+      if (input.kind === "point" && (input.lat === null || input.lng === null))
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "A point on the map is needed.",
+        });
+      await setPredictorLastSeen({ ...input, cin: ctx.user.cin ?? null });
+      await createAuditLog({
+        sheetId: input.sheetId,
+        userId: ctx.user.id,
+        userName: ctx.user.cin ?? "Unknown",
+        userCIN: ctx.user.cin ?? null,
+        action: "predictor_last_seen_changed",
+        details: `Target Predictor last seen set (${
+          input.kind === "none"
+            ? "not seen yet"
+            : input.kind === "sheet"
+              ? "pin cleared, search still on"
+              : input.kind === "place"
+                ? `at "${input.placeKey}"`
+                : "at a point on the map"
+        }${input.seenMinutes !== null ? `, ${Math.floor(input.seenMinutes / 60)}:${String(input.seenMinutes % 60).padStart(2, "0")}` : ""}${input.pausedAtMinutes !== null ? `, ring paused at ${Math.floor(input.pausedAtMinutes / 60)}:${String(input.pausedAtMinutes % 60).padStart(2, "0")}` : ""})`,
+        createdAt: Date.now(),
+      });
+      return { ok: true };
+    }),
+
+  /** Search: starts it for the whole team on this sheet (no pin yet). Every
+   * officer on the sheet's CIN roster then has it switched on by their own
+   * screen (see getMyTeamSearch). Does nothing if one is already running. */
+  startTeamSearch: protectedProcedure
+    .input(
+      z.object({
+        operationId: z.number(),
+        sheetId: z.number(),
+        targetId: z.number(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { restarted } = await startPredictorSearch({
+        sheetId: input.sheetId,
+        targetId: input.targetId,
+        cin: ctx.user.cin ?? null,
+      });
+      await createAuditLog({
+        sheetId: input.sheetId,
+        userId: ctx.user.id,
+        userName: ctx.user.cin ?? "Unknown",
+        userCIN: ctx.user.cin ?? null,
+        action: "predictor_last_seen_changed",
+        details: restarted
+          ? "Target Predictor search started again for the team"
+          : "Target Predictor search started for the team",
+        createdAt: Date.now(),
+      });
+      return { started: true, restarted };
+    }),
+
+  /** Search: the one running today that this officer is on the team of — on
+   * the sheet's CIN roster, or the one who started it — and may reach. Null
+   * when there is none. Polled by every screen, so it takes no ids: it only
+   * ever answers about the caller. */
+  getMyTeamSearch: protectedProcedure.query(async ({ ctx }) => {
+    if (ctx.user.role === "investigator" || !ctx.user.cin) return null;
+    const rows = await getTodaysSearches();
+    if (rows.length === 0) return null;
+    const accessible = await accessibleOperationIds(toAccessUser(ctx.user), 1);
+    const mine = rows
+      .filter(r => isSearchLive(r.seen.updatedAtMs, Date.now()))
+      .filter(r => accessible === null || accessible.has(r.operationId))
+      .filter(r =>
+        isOnSearchTeam({
+          cin: ctx.user.cin,
+          roster: rosterCins(r.sheetCins),
+          updatedByCIN: r.seen.updatedByCIN,
+        })
+      )
+      .sort((a, b) => b.seen.updatedAtMs - a.seen.updatedAtMs)[0];
+    if (!mine) return null;
+    const cins = new Set(
+      teamCinsOf(rosterCins(mine.sheetCins), mine.seen.updatedByCIN)
+    );
+    const everyone = await getAllUsers();
+    const team = everyone.filter(
+      u => !u.archivedAt && u.cin && cins.has(u.cin.trim())
+    );
+    return {
+      sheetId: mine.sheetId,
+      operationId: mine.operationId,
+      targetId: mine.targetId,
+      startedAtMs: mine.seen.startedAtMs,
+      startedByCIN: mine.seen.updatedByCIN,
+      hasPin: mine.seen.kind === "point",
+      teamUserIds: team.map(u => u.id),
+    };
+  }),
+
+  /** Search: ends the search for the whole team. */
+  clearPredictorLastSeen: protectedProcedure
+    .input(z.object({ operationId: z.number(), sheetId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      await clearPredictorLastSeen(input.sheetId);
+      await createAuditLog({
+        sheetId: input.sheetId,
+        userId: ctx.user.id,
+        userName: ctx.user.cin ?? "Unknown",
+        userCIN: ctx.user.cin ?? null,
+        action: "predictor_last_seen_changed",
+        details: "Target Predictor search ended for the team",
+        createdAt: Date.now(),
+      });
+      return { ok: true };
     }),
 
   /** Places Report: an officer's own label on a place, shared with everyone

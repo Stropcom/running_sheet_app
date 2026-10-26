@@ -5,6 +5,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  ne,
   notExists,
   or,
   sql,
@@ -21,6 +22,7 @@ import {
 import type { CommandCode } from "@shared/commands";
 
 import { scopeEntities } from "@shared/operationAccess";
+import { isSearchFresh, isSearchLive } from "@shared/teamSearch";
 
 import { intelScope } from "../intelScope";
 
@@ -44,6 +46,11 @@ import {
   type PlaceRecord,
   type RegisteredAddressRef,
 } from "@shared/placesReport";
+import {
+  buildStops,
+  type PredictorPlace,
+  type PredictorStop,
+} from "@shared/targetPredictor";
 
 import {
   classifyVisitDirection,
@@ -86,6 +93,7 @@ import {
   entityAliases,
   intelPinOverrides,
   targetPlaceLabels,
+  predictorLastSeen,
 } from "../../drizzle/schema";
 
 import { attributedRowIds, collapseToVisits } from "../entityAttribution";
@@ -958,6 +966,32 @@ export interface IntelTargetPlacesResponse {
   })[];
 }
 
+/** Whether an entity is one of the target's registered addresses — Home, or
+ * Address 2, 3… — read from the synthetic "Target card" occurrence
+ * getAllIntelligenceEntities seeds for each (rowId 0). */
+function registeredRefOf(
+  occurrences: readonly { rowId: number; observationSnippet?: string | null }[],
+  targetName: string,
+  extras: readonly { label: string }[]
+): RegisteredAddressRef | null {
+  const prefix = `Target card — ${targetName} [`;
+  for (const occ of occurrences) {
+    if (occ.rowId !== 0) continue;
+    const snip = occ.observationSnippet ?? "";
+    if (!snip.startsWith(prefix)) continue;
+    const field = snip.slice(prefix.length).replace(/\]$/, "");
+    if (field === "HBF") return { slot: "home", label: "" };
+    const n = /^Address (\d+)$/.exec(field);
+    if (n)
+      return {
+        slot: "extra",
+        number: Number(n[1]),
+        label: extras[Number(n[1]) - 2]?.label ?? "",
+      };
+  }
+  return null;
+}
+
 export async function getIntelTargetPlaces(
   operationId: number,
   targetId: number
@@ -1052,25 +1086,8 @@ export async function getIntelTargetPlaces(
   // The target's registered addresses, from the synthetic "Target card"
   // occurrences getAllIntelligenceEntities seeds for them.
   const extras = parseExtraAddresses(target.extraAddresses);
-  const registeredOf = (entity: (typeof allEntities)[number]) => {
-    for (const occ of entity.occurrences) {
-      if (occ.rowId !== 0) continue;
-      const snip = occ.observationSnippet ?? "";
-      const prefix = `Target card — ${target.name} [`;
-      if (!snip.startsWith(prefix)) continue;
-      const field = snip.slice(prefix.length).replace(/\]$/, "");
-      if (field === "HBF")
-        return { slot: "home", label: "" } satisfies RegisteredAddressRef;
-      const n = /^Address (\d+)$/.exec(field);
-      if (n)
-        return {
-          slot: "extra",
-          number: Number(n[1]),
-          label: extras[Number(n[1]) - 2]?.label ?? "",
-        } satisfies RegisteredAddressRef;
-    }
-    return null;
-  };
+  const registeredOf = (entity: (typeof allEntities)[number]) =>
+    registeredRefOf(entity.occurrences, target.name, extras);
 
   // Signs saved for places (Google's type from the address suggestions, or an
   // officer's own icon) — how a place Google knows as a gym is known here.
@@ -1151,6 +1168,347 @@ export async function getIntelTargetPlaces(
     });
   }
   return { ...empty, places };
+}
+
+// ─── Target Predictor ────────────────────────────────────────────────────────
+// What the Map page's Target Predictor needs for one target on one operation:
+// the places he goes (located on the map, cache-first like the Heat Map), the
+// stops with where he went next (shared/targetPredictor.ts), and where the
+// chosen running sheet last had him. The sums are done on the client with the
+// clock — nothing here predicts anything.
+
+export interface IntelTargetPredictorResponse {
+  targetName: string;
+  operationName: string;
+  todayISO: string;
+  places: (PredictorPlace & {
+    kind: PlaceKind;
+    /** One of the target's registered addresses (Home, Address 2…). */
+    registered: boolean;
+    /** Visits on record (0 for a registered address he has not been seen at). */
+    visits: number;
+  })[];
+  stops: PredictorStop[];
+  /** The latest visit on the chosen sheet: where, when, and whether a row
+   * says he was leaving. Null when the sheet has none. */
+  lastSeen: {
+    placeKey: string;
+    dateISO: string;
+    minutes: number;
+    leaving: boolean;
+  } | null;
+}
+
+export interface SharedSeen {
+  /** "sheet" = no position of its own: the running sheet's, with this area. */
+  kind: "place" | "point" | "none" | "sheet";
+  placeKey: string | null;
+  lat: number | null;
+  lng: number | null;
+  /** Minutes after midnight, Perth time. */
+  seenMinutes: number | null;
+  area: "freeway" | "main" | "built" | "back" | null;
+  /** Search: the minute the ring was paused at, or null while it grows. */
+  pausedAtMinutes: number | null;
+  /** The same moments to the second (epoch ms), or null on a row written
+   * before they existed — the minutes above are then used. */
+  seenAtMs: number | null;
+  pausedAtMs: number | null;
+  updatedByCIN: string | null;
+  updatedAtMs: number;
+  /** When this search began (the row is new for every start), so a screen can
+   * tell a fresh search from one it has already dealt with or dismissed. */
+  startedAtMs: number;
+}
+
+/** What the team set by hand as "last seen" for this sheet today, shared with
+ * everyone who has it open. Null when nothing is set (or it is from an earlier
+ * day). A light query: the predictor polls it every few seconds. */
+export async function getSharedSeen(
+  sheetId: number
+): Promise<SharedSeen | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const todayISO = perthTodayISO();
+  const [row] = await db
+    .select()
+    .from(predictorLastSeen)
+    .where(eq(predictorLastSeen.sheetId, sheetId))
+    .limit(1);
+  // Only today's counts: yesterday's "last seen" says nothing about now.
+  if (!row || row.dateISO !== todayISO) return null;
+  return {
+    kind: row.kind as SharedSeen["kind"],
+    placeKey: row.placeKey,
+    lat: row.lat,
+    lng: row.lng,
+    seenMinutes: row.seenMinutes,
+    area: row.area as SharedSeen["area"],
+    pausedAtMinutes: row.pausedAtMinutes,
+    seenAtMs: row.seenAtMs,
+    pausedAtMs: row.pausedAtMs,
+    updatedByCIN: row.updatedByCIN,
+    updatedAtMs: row.updatedAt.getTime(),
+    startedAtMs: row.createdAt.getTime(),
+  };
+}
+
+/** Sets (replacing any earlier one) where the team says he was last seen. */
+export async function setPredictorLastSeen(params: {
+  sheetId: number;
+  targetId: number;
+  kind: SharedSeen["kind"];
+  placeKey: string | null;
+  lat: number | null;
+  lng: number | null;
+  seenMinutes: number | null;
+  area: SharedSeen["area"];
+  pausedAtMinutes: number | null;
+  seenAtMs?: number | null;
+  pausedAtMs?: number | null;
+  cin: string | null;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const values = {
+    sheetId: params.sheetId,
+    targetId: params.targetId,
+    dateISO: perthTodayISO(),
+    kind: params.kind,
+    placeKey: params.kind === "place" ? params.placeKey : null,
+    lat: params.kind === "point" ? params.lat : null,
+    lng: params.kind === "point" ? params.lng : null,
+    seenMinutes:
+      params.kind === "none" || params.kind === "sheet"
+        ? null
+        : params.seenMinutes,
+    area: params.area,
+    pausedAtMinutes: params.kind === "point" ? params.pausedAtMinutes : null,
+    seenAtMs: params.kind === "point" ? (params.seenAtMs ?? null) : null,
+    pausedAtMs: params.kind === "point" ? (params.pausedAtMs ?? null) : null,
+    updatedByCIN: params.cin,
+  };
+  // A row from an earlier day is thrown away first, so today's search is a new
+  // row (and a new start time) rather than yesterday's, brought back to life.
+  await db
+    .delete(predictorLastSeen)
+    .where(
+      and(
+        eq(predictorLastSeen.sheetId, params.sheetId),
+        ne(predictorLastSeen.dateISO, values.dateISO)
+      )
+    );
+  await db
+    .insert(predictorLastSeen)
+    .values(values)
+    .onDuplicateKeyUpdate({ set: values });
+}
+
+/** Starts Search for the whole team on this sheet. Always a fresh start as far
+ * as every screen is concerned (the start time is renewed), so a screen that
+ * had left an earlier search on this sheet comes back in. A search that is
+ * already running and was touched in the last 10 minutes keeps its pin; an
+ * older one, or none, begins blank. */
+export async function startPredictorSearch(params: {
+  sheetId: number;
+  targetId: number;
+  cin: string | null;
+}): Promise<{ restarted: boolean }> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  const today = perthTodayISO();
+  const now = Date.now();
+  const [row] = await db
+    .select({
+      dateISO: predictorLastSeen.dateISO,
+      updatedAt: predictorLastSeen.updatedAt,
+    })
+    .from(predictorLastSeen)
+    .where(eq(predictorLastSeen.sheetId, params.sheetId))
+    .limit(1);
+  const running =
+    !!row &&
+    row.dateISO === today &&
+    isSearchLive(row.updatedAt.getTime(), now);
+  if (running) {
+    const keepPin = isSearchFresh(row!.updatedAt.getTime(), now);
+    await db
+      .update(predictorLastSeen)
+      .set({
+        createdAt: new Date(now),
+        updatedByCIN: params.cin,
+        ...(keepPin
+          ? {}
+          : {
+              kind: "sheet",
+              placeKey: null,
+              lat: null,
+              lng: null,
+              seenMinutes: null,
+              seenAtMs: null,
+              pausedAtMinutes: null,
+              pausedAtMs: null,
+              area: null,
+            }),
+      })
+      .where(eq(predictorLastSeen.sheetId, params.sheetId));
+    return { restarted: true };
+  }
+  if (row)
+    await db
+      .delete(predictorLastSeen)
+      .where(eq(predictorLastSeen.sheetId, params.sheetId));
+  await db.insert(predictorLastSeen).values({
+    sheetId: params.sheetId,
+    targetId: params.targetId,
+    dateISO: today,
+    kind: "sheet",
+    updatedByCIN: params.cin,
+  });
+  return { restarted: false };
+}
+
+export interface TodaysSearchRow {
+  seen: SharedSeen;
+  sheetId: number;
+  operationId: number;
+  targetId: number;
+  /** The sheet's CIN roster, as stored (JSON). */
+  sheetCins: string | null;
+}
+
+/** Every search running today, with the sheet it belongs to. The router keeps
+ * only the ones the caller is on the team of and may reach. */
+export async function getTodaysSearches(): Promise<TodaysSearchRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({
+      row: predictorLastSeen,
+      operationId: runningSheets.operationId,
+      sheetCins: runningSheets.sheetCins,
+    })
+    .from(predictorLastSeen)
+    .innerJoin(runningSheets, eq(runningSheets.id, predictorLastSeen.sheetId))
+    .where(
+      and(
+        eq(predictorLastSeen.dateISO, perthTodayISO()),
+        isNull(runningSheets.deletedAt)
+      )
+    );
+  return rows.map(r => ({
+    seen: {
+      kind: r.row.kind as SharedSeen["kind"],
+      placeKey: r.row.placeKey,
+      lat: r.row.lat,
+      lng: r.row.lng,
+      seenMinutes: r.row.seenMinutes,
+      area: r.row.area as SharedSeen["area"],
+      pausedAtMinutes: r.row.pausedAtMinutes,
+      seenAtMs: r.row.seenAtMs,
+      pausedAtMs: r.row.pausedAtMs,
+      updatedByCIN: r.row.updatedByCIN,
+      updatedAtMs: r.row.updatedAt.getTime(),
+      startedAtMs: r.row.createdAt.getTime(),
+    },
+    sheetId: r.row.sheetId,
+    operationId: r.operationId,
+    targetId: r.row.targetId,
+    sheetCins: r.sheetCins,
+  }));
+}
+
+/** Back to what the running sheet says. */
+export async function clearPredictorLastSeen(sheetId: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .delete(predictorLastSeen)
+    .where(eq(predictorLastSeen.sheetId, sheetId));
+}
+
+export async function getIntelTargetPredictor(
+  operationId: number,
+  targetId: number,
+  sheetId: number | null
+): Promise<IntelTargetPredictorResponse | null> {
+  const report = await getIntelTargetPlaces(operationId, targetId);
+  if (!report) return null;
+  // Locations of interest: every place he has been seen at, plus his registered
+  // addresses even if he has never been seen there — so the predictor has
+  // something to offer inside the "how far could he have got" ring on day one.
+  const target = await getTargetById(targetId);
+  const have = new Set(report.places.map(p => p.placeKey));
+  const registeredOnly: {
+    placeKey: string;
+    name: string;
+    kind: PlaceKind;
+  }[] = [];
+  if (target) {
+    const extras = parseExtraAddresses(target.extraAddresses);
+    for (const entity of await getAllIntelligenceEntities()) {
+      if (entity.type !== "address" && entity.type !== "business") continue;
+      const ref = registeredRefOf(entity.occurrences, target.name, extras);
+      if (!ref) continue;
+      const placeKey = normalizeEntityLabel(entity.shortForm);
+      if (have.has(placeKey)) continue;
+      have.add(placeKey);
+      registeredOnly.push({
+        placeKey,
+        name: entity.shortForm,
+        kind: classifyPlace({
+          name: entity.shortForm,
+          registered: ref,
+        }).kind,
+      });
+    }
+  }
+  const places = await Promise.all(
+    [
+      ...report.places.map(p => ({
+        placeKey: p.placeKey,
+        name: p.name,
+        kind: p.kind,
+        visits: p.visits.length,
+        registered: p.registeredAs !== null,
+      })),
+      ...registeredOnly.map(p => ({ ...p, visits: 0, registered: true })),
+    ].map(async p => {
+      const at = await resolveLatLng(p.placeKey, p.name);
+      return {
+        ...p,
+        lat: at?.lat ?? null,
+        lng: at?.lng ?? null,
+      };
+    })
+  );
+  const visits = report.places.flatMap(p => p.visits);
+  let lastSeen: IntelTargetPredictorResponse["lastSeen"] = null;
+  let lastKey = -1;
+  if (sheetId != null) {
+    for (const v of visits) {
+      if (v.sheetId !== sheetId) continue;
+      const minutes = v.endMinutes ?? v.startMinutes;
+      if (minutes === null) continue;
+      const key = Math.floor(Date.parse(v.dateISO) / 60_000) + minutes;
+      if (key <= lastKey) continue;
+      lastKey = key;
+      lastSeen = {
+        placeKey: v.placeKey,
+        dateISO: v.dateISO,
+        minutes,
+        leaving: v.endMinutes !== null,
+      };
+    }
+  }
+  return {
+    targetName: report.targetName,
+    operationName: report.operationName,
+    todayISO: report.todayISO,
+    places,
+    stops: buildStops(visits),
+    lastSeen,
+  };
 }
 
 /** Sets (or, with kind = null, clears) an officer's label on a place for a

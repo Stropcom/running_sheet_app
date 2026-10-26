@@ -249,3 +249,10 @@ A departure with unseen occupants ("Vehicle 1FAT001, unseen occupant/s, departed
 - **Cache:** a fuller address is cached under its own key, so a wrong position already cached for the bare label is not reused. No migration, no clearing needed.
 - **Not changed:** the Target Predictor's places (`getIntelTargetPredictor`) still geocode the bare label — its places carry no occurrence text. Same fix would need the text passed in.
 - Tests: `server/geocodeQuery.test.ts`. Real geocoding cannot be reached from the sandbox, so the corrected positions were not seen on the live map.
+
+## "My Pill" moved out of the Map page file (v2.41.2)
+
+- **A move only — no behaviour change.** The My Pill popup (Search, Track, Wheels / Foot, Customise) is now `client/src/components/MyPillDialog.tsx`; the pill's shape and colour options and the heading-shape drawing (`renderHeadingShapeInner`, `PIN_COLOUR_SWATCHES`, `HEADING_SHAPE_OPTIONS`) are `client/src/lib/pillOptions.ts`. `IntelligenceMapping.tsx` keeps only the open/closed state, the Wheels / Foot mutation (its auto-revert effect needs a stable reference to it) and a `<MyPillDialog />` line. The popup now owns its Search-open and Customise-open state and its Track and pill-appearance mutations.
+- **Size:** `IntelligenceMapping.tsx` 15,458 → 15,110 lines.
+- **Checked:** `pnpm check`, the full unit suite, and the Search / Target Predictor / team browser tests. The popup itself has no permanent browser test, because it opens only from a tap on your own pill on the real Google map, which the sandbox cannot reach. It was opened with a temporary test-only switch (removed) at laptop and phone widths: Search, Track, Wheels / Foot, Customise opens and closes, a colour pick, the Track switch and Foot each sent the right call, and Escape closes it. **Not checked:** tapping the real pill on a live map.
+- **Next in the plan:** move the Predictor's overlay and pin popup out of `TargetPredictor.tsx` (1,791 lines).

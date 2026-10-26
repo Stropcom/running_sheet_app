@@ -1210,6 +1210,10 @@ export interface SharedSeen {
   area: "freeway" | "main" | "built" | "back" | null;
   /** Search: the minute the ring was paused at, or null while it grows. */
   pausedAtMinutes: number | null;
+  /** The same moments to the second (epoch ms), or null on a row written
+   * before they existed — the minutes above are then used. */
+  seenAtMs: number | null;
+  pausedAtMs: number | null;
   updatedByCIN: string | null;
   updatedAtMs: number;
   /** When this search began (the row is new for every start), so a screen can
@@ -1241,6 +1245,8 @@ export async function getSharedSeen(
     seenMinutes: row.seenMinutes,
     area: row.area as SharedSeen["area"],
     pausedAtMinutes: row.pausedAtMinutes,
+    seenAtMs: row.seenAtMs,
+    pausedAtMs: row.pausedAtMs,
     updatedByCIN: row.updatedByCIN,
     updatedAtMs: row.updatedAt.getTime(),
     startedAtMs: row.createdAt.getTime(),
@@ -1258,6 +1264,8 @@ export async function setPredictorLastSeen(params: {
   seenMinutes: number | null;
   area: SharedSeen["area"];
   pausedAtMinutes: number | null;
+  seenAtMs?: number | null;
+  pausedAtMs?: number | null;
   cin: string | null;
 }): Promise<void> {
   const db = await getDb();
@@ -1276,6 +1284,8 @@ export async function setPredictorLastSeen(params: {
         : params.seenMinutes,
     area: params.area,
     pausedAtMinutes: params.kind === "point" ? params.pausedAtMinutes : null,
+    seenAtMs: params.kind === "point" ? (params.seenAtMs ?? null) : null,
+    pausedAtMs: params.kind === "point" ? (params.pausedAtMs ?? null) : null,
     updatedByCIN: params.cin,
   };
   // A row from an earlier day is thrown away first, so today's search is a new
@@ -1372,6 +1382,8 @@ export async function getTodaysSearches(): Promise<TodaysSearchRow[]> {
       seenMinutes: r.row.seenMinutes,
       area: r.row.area as SharedSeen["area"],
       pausedAtMinutes: r.row.pausedAtMinutes,
+      seenAtMs: r.row.seenAtMs,
+      pausedAtMs: r.row.pausedAtMs,
       updatedByCIN: r.row.updatedByCIN,
       updatedAtMs: r.row.updatedAt.getTime(),
       startedAtMs: r.row.createdAt.getTime(),

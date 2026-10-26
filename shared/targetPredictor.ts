@@ -805,6 +805,8 @@ export function perthClock(at: Date): {
   dateISO: string;
   weekday: number;
   minutes: number;
+  /** Minutes after midnight with the seconds as a fraction. */
+  exactMinutes: number;
 } {
   const parts = new Intl.DateTimeFormat("en-AU", {
     timeZone: "Australia/Perth",
@@ -813,6 +815,7 @@ export function perthClock(at: Date): {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
     hour12: false,
   }).formatToParts(at);
   const get = (t: string) => parts.find(p => p.type === t)?.value ?? "0";
@@ -821,5 +824,9 @@ export function perthClock(at: Date): {
     dateISO,
     weekday: weekdayIndex(dateISO),
     minutes: (Number(get("hour")) % 24) * 60 + Number(get("minute")),
+    exactMinutes:
+      (Number(get("hour")) % 24) * 60 +
+      Number(get("minute")) +
+      Number(get("second")) / 60,
   };
 }

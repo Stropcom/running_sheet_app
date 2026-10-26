@@ -608,6 +608,7 @@ describe("perthClock", () => {
       dateISO: "2026-03-05",
       weekday: 3,
       minutes: 400,
+      exactMinutes: 400,
     });
   });
 });

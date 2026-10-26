@@ -946,6 +946,13 @@
       "when": 1792994000000,
       "tag": "0134_perpetual_stepford_cuckoos",
       "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "5",
+      "when": 1793080400000,
+      "tag": "0135_colossal_miracleman",
+      "breakpoints": true
     }
   ]
 }

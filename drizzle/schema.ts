@@ -1588,6 +1588,11 @@ export const predictorLastSeen = mysqlTable(
     // Search: the minute the team paused the "how far" ring at (Perth minutes
     // after midnight), or null while it is growing.
     pausedAtMinutes: int("pausedAtMinutes"),
+    // The same two moments to the second, as epoch milliseconds, so the rings
+    // can grow every 15 seconds from the exact time he was seen. The minute
+    // columns above are still written (and read when these are null).
+    seenAtMs: bigint("seenAtMs", { mode: "number" }),
+    pausedAtMs: bigint("pausedAtMs", { mode: "number" }),
     updatedByCIN: varchar("updatedByCIN", { length: 32 }),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

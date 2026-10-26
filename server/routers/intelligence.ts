@@ -369,6 +369,8 @@ export const intelligenceRouter = router({
         seenMinutes: z.number().int().min(0).max(2879).nullable(),
         area: z.enum(["freeway", "main", "built", "back"]).nullable(),
         pausedAtMinutes: z.number().int().min(0).max(2879).nullable(),
+        seenAtMs: z.number().int().positive().nullable().optional(),
+        pausedAtMs: z.number().int().positive().nullable().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {

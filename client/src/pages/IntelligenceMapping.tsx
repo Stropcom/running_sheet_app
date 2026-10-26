@@ -68,9 +68,7 @@ import {
 } from "@shared/markerLink";
 import { fullStreetTypes } from "@shared/streetTypes";
 import {
-  SHARING_EVENT,
   broadcastSharing,
-  readSharingFlag,
   getNativeBackgroundLocation,
 } from "@/lib/nativeLocation";
 import {
@@ -198,8 +196,11 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { MapHeatOverlay } from "@/components/MapHeatOverlay";
 import {
+  SeenAgoButtons,
+  SearchButtons,
   TargetPredictorBanner,
   TargetPredictorOverlay,
+  TargetPredictorPinPopup,
   TargetPredictorSection,
   useTargetPredictor,
 } from "@/components/TargetPredictor";
@@ -2138,10 +2139,6 @@ export default function IntelligenceMapping() {
       return false;
     }
   });
-  // The latest value of the switch, readable straight after it is changed
-  // (the state above only catches up on the next render).
-  const sharingRef = useRef(sharingEnabled);
-  sharingRef.current = sharingEnabled;
   // Per-user visibility: Set of userIds that are hidden
   const [hiddenUsers, setHiddenUsers] = useState<Set<number>>(new Set());
   // Users currently being "live traced" — draws their recorded trail as a
@@ -3467,6 +3464,9 @@ export default function IntelligenceMapping() {
   // pattern as updateLocationMutRef, since the auto-revert effect below
   // needs a stable reference to call it from outside the render closure.
   const [onFootPopupOpen, setOnFootPopupOpen] = useState(false);
+  // The Search section of the "Customise my pointer" popup is opened by its
+  // Search button.
+  const [pointerSearchOpen, setPointerSearchOpen] = useState(false);
   const setOnFootMut = trpc.intelligence.setOnFoot.useMutation();
   const setOnFootMutRef = useRef(setOnFootMut);
   // Gender/skin-tone (on-foot glyph) + vehicle icon (Wheels mode) prefs —
@@ -4282,7 +4282,6 @@ export default function IntelligenceMapping() {
   const handleSharingToggle = (checked: boolean) => {
     // Locked on for a team that must share.
     if (!checked && mustShare) return;
-    sharingRef.current = checked;
     setSharingEnabled(checked);
     // Tell the app-wide location service at once (it follows this switch).
     broadcastSharing(user?.id, checked);
@@ -4335,24 +4334,9 @@ export default function IntelligenceMapping() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mustShare, sharingEnabled]);
 
-  // Show & Share follows the switch kept in storage, so something outside this
-  // page can turn it on or off (a team Search switches it on for everyone on
-  // the sheet, from any screen — see components/TeamSearchWatcher.tsx).
-  const toggleSharingRef = useRef(handleSharingToggle);
-  toggleSharingRef.current = handleSharingToggle;
-  useEffect(() => {
-    if (!user?.id) return;
-    const follow = () => {
-      const flag = readSharingFlag(user.id);
-      if (flag !== sharingRef.current) toggleSharingRef.current(flag);
-    };
-    window.addEventListener(SHARING_EVENT, follow);
-    return () => window.removeEventListener(SHARING_EVENT, follow);
-  }, [user?.id]);
-
-  // A Search is running for the team on this officer's running sheet: select
-  // that sheet and its operation, and draw everyone's Track from the moment the
-  // search started. When it ends, or this officer leaves it, the Tracks it
+  // A Search is running for the team on this officer's running sheet (and Show &
+  // Share is on here): select that sheet and its operation, and draw everyone's
+  // Track from the moment the search started. When it ends, or this officer leaves it, the Tracks it
   // switched on go again.
   const teamSearch = predictor.team;
   const teamSearchKeyRef = useRef<string | null>(null);
@@ -11076,11 +11060,13 @@ export default function IntelligenceMapping() {
         </div>
         {/* end RS Actions Right Pane */}
 
-        {/* Target Predictor shading — adds a layer to the map, draws nothing itself. */}
+        {/* Target Predictor rings and badges — adds a layer to the map, draws nothing itself. */}
         <TargetPredictorOverlay
           p={predictor}
           map={mapReady && !isInvestigator ? mapRef.current : null}
         />
+        {/* The popup that opens when the red last-seen diamond is tapped. */}
+        <TargetPredictorPinPopup p={predictor} />
 
         {/* Heat Map overlay — draws nothing itself, it adds a layer to the map. */}
         <MapHeatOverlay
@@ -15197,7 +15183,13 @@ export default function IntelligenceMapping() {
         colour picker — see setOnFoot/setPinAppearance. The on-foot glyph
         is always the plain neutral 🧍/🚶/🏃 now — the gender/skin-tone
         picker previously here was removed entirely. */}
-      <Dialog open={onFootPopupOpen} onOpenChange={setOnFootPopupOpen}>
+      <Dialog
+        open={onFootPopupOpen}
+        onOpenChange={open => {
+          setOnFootPopupOpen(open);
+          if (!open) setPointerSearchOpen(false);
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Customise my pointer</DialogTitle>
@@ -15212,6 +15204,52 @@ export default function IntelligenceMapping() {
 
             return (
               <div className="flex flex-col gap-4 py-2">
+                {/* Search — at the top. It starts Search for the team on the
+                    selected running sheet; choosing how long ago he was seen
+                    closes this popup so the map can be tapped for where. */}
+                {!isInvestigator && (
+                  <div className="space-y-2" data-testid="pointer-search">
+                    <button
+                      type="button"
+                      disabled={!predictor.canSearch}
+                      onClick={() => {
+                        predictor.startFromPointer();
+                        setPointerSearchOpen(true);
+                      }}
+                      aria-pressed={pointerSearchOpen}
+                      className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border-2 border-violet-500/50 bg-violet-500/10 text-sm font-semibold text-violet-500 transition-colors hover:bg-violet-500/20 disabled:opacity-50"
+                    >
+                      <Crosshair className="h-4 w-4" />
+                      Search
+                    </button>
+                    {!predictor.canSearch && (
+                      <p className="text-xs text-muted-foreground">
+                        Select a running sheet that has a target (Active RS) to
+                        search.
+                      </p>
+                    )}
+                    {pointerSearchOpen && predictor.canSearch && (
+                      <>
+                        <SeenAgoButtons
+                          p={predictor}
+                          onPick={n => {
+                            predictor.beginSighting(n);
+                            setPointerSearchOpen(false);
+                            setOnFootPopupOpen(false);
+                          }}
+                        />
+                        <SearchButtons
+                          p={predictor}
+                          showEnd
+                          onDone={() => {
+                            setPointerSearchOpen(false);
+                            setOnFootPopupOpen(false);
+                          }}
+                        />
+                      </>
+                    )}
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"

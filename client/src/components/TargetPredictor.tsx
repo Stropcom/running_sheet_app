@@ -29,8 +29,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { DivIconOverlay } from "@/lib/divIconOverlay";
 import { useTeamSearch } from "@/lib/teamSearch";
+import {
+  RING_REFRESH_MS,
+  SEEN_AGO_MINUTES,
+  msFromPerthMinutes,
+  searchElapsed,
+  seenAgo,
+} from "@shared/searchClock";
 import { metresPerPixel } from "@shared/heatMapLayout";
 import {
   DIRECTION_WINDOW_MIN,
@@ -101,19 +114,18 @@ export interface TargetPredictorArgs {
   targetId: number | null;
 }
 
-/** Search: the one tapped point, when he was last seen there and, if the team
- * has paused the ring, the minute it was held at (Perth minutes after
- * midnight). */
+/** Search: the one tapped point, the moment he was last seen there and, if the
+ * team has paused the rings, the moment they were held at — both to the
+ * second (epoch ms), so the rings can grow every 15 seconds. */
 interface SeenForm {
   point: { lat: number; lng: number } | null;
-  minutes: number | null;
-  pausedAt: number | null;
+  atMs: number | null;
+  pausedAtMs: number | null;
 }
 
-const NO_SEEN: SeenForm = { point: null, minutes: null, pausedAt: null };
+const NO_SEEN: SeenForm = { point: null, atMs: null, pausedAtMs: null };
 
-/** The "seen how long ago" buttons — Search only ever looks back this far. */
-export const SEEN_AGO_MINUTES = [0, 1, 2, 3, 5] as const;
+export { SEEN_AGO_MINUTES };
 
 /** One state for the section, the banner and the overlay. */
 export function useTargetPredictor({
@@ -125,7 +137,15 @@ export function useTargetPredictor({
   const [mode, setModeState] = useState<PredictorMode>("next");
   // The search running for this officer's team on the sheet, if any.
   const team = useTeamSearch();
-  const [clock, setClock] = useState(() => perthClock(new Date()));
+  // "Now", redrawn every 15 seconds while the predictor is on. Everything that
+  // grows with time (the rings) is worked out from it.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const clock = useMemo(() => perthClock(new Date(nowMs)), [nowMs]);
+  // A sighting time chosen before the map is tapped ("seen 2 min ago", then
+  // tap): the next tap uses it instead of "just now".
+  const pendingSeenAtRef = useRef<number | null>(null);
+  // The popup that opens when the red last-seen diamond is tapped.
+  const [pinPopupOpen, setPinPopupOpen] = useState(false);
   // Where next: the officer chose where he is instead of the sheet.
   const [override, setOverride] = useState(false);
   const [pickPlaceKey, setPickPlaceKey] = useState<string | null>(null);
@@ -165,11 +185,8 @@ export function useTargetPredictor({
   // The clock moves while it is on, so "how far he could have got" grows.
   useEffect(() => {
     if (!on) return;
-    setClock(perthClock(new Date()));
-    const id = window.setInterval(
-      () => setClock(perthClock(new Date())),
-      30_000
-    );
+    setNowMs(Date.now());
+    const id = window.setInterval(() => setNowMs(Date.now()), RING_REFRESH_MS);
     return () => window.clearInterval(id);
   }, [on]);
 
@@ -245,14 +262,6 @@ export function useTargetPredictor({
     },
     onError: e => toast.error(e.message),
   });
-  const clearMut = trpc.intelligence.clearPredictorLastSeen.useMutation({
-    onSuccess: () => {
-      utils.intelligence.getPredictorLastSeen.invalidate();
-      utils.intelligence.getMyTeamSearch.invalidate();
-    },
-    onError: e => toast.error(e.message),
-  });
-
   const startMut = trpc.intelligence.startTeamSearch.useMutation({
     onSuccess: () => utils.intelligence.getMyTeamSearch.invalidate(),
     onError: e => toast.error(e.message),
@@ -275,6 +284,15 @@ export function useTargetPredictor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [opId, sheetId, targetId, team.search, rejoinSearch]
   );
+
+  /** The pointer's Search button: the predictor goes on, in Search, and the
+   * search is started for the team. */
+  const startFromPointer = useCallback(() => {
+    persistOn(true);
+    setMode("now");
+  }, [persistOn, setMode]);
+  /** There is a sheet with a target to search on. */
+  const canSearch = opId != null && sheetId != null && targetId != null;
 
   const placeByKey = useMemo(
     () => new Map((data?.places ?? []).map(p => [p.placeKey, p])),
@@ -315,10 +333,20 @@ export function useTargetPredictor({
       setSeen(NO_SEEN);
       return;
     }
+    // A row written before the times were kept to the second only has minutes.
+    const today = perthClock(new Date()).dateISO;
     setSeen({
       point: { lat: shared.lat, lng: shared.lng },
-      minutes: shared.seenMinutes,
-      pausedAt: shared.pausedAtMinutes ?? null,
+      atMs:
+        shared.seenAtMs ??
+        (shared.seenMinutes != null
+          ? msFromPerthMinutes(today, shared.seenMinutes)
+          : null),
+      pausedAtMs:
+        shared.pausedAtMs ??
+        (shared.pausedAtMinutes != null
+          ? msFromPerthMinutes(today, shared.pausedAtMinutes)
+          : null),
     });
   }, [shared, dirty, saveMut.isPending]);
 
@@ -345,14 +373,26 @@ export function useTargetPredictor({
   const usingSheet = mode === "next" && !!sheetStart && !override;
 
   const firstPlaceKey = data?.places[0]?.placeKey ?? null;
-  const seenAt = Math.min(seen.minutes ?? clock.minutes, clock.minutes);
-  // A paused ring is held at the minute it was paused, not the clock.
-  const pausedAt =
-    seen.point && seen.pausedAt != null
-      ? Math.max(seenAt, Math.min(seen.pausedAt, clock.minutes))
-      : null;
-  const paused = mode === "now" && pausedAt !== null;
-  const nowMinutes = paused ? pausedAt : clock.minutes;
+  // Search runs on a clock kept to the second: when he was last seen (now,
+  // until he is), and the moment the rings were paused at, if they are. A paused
+  // ring is held at that moment, not at the clock.
+  const seenAtMs = Math.min(seen.atMs ?? nowMs, nowMs);
+  const times = searchElapsed(
+    seenAtMs,
+    seen.point ? seen.pausedAtMs : null,
+    nowMs
+  );
+  const paused = mode === "now" && !!seen.point && times.paused;
+  const effectiveNowMs = paused ? times.effectiveNowMs : nowMs;
+  // Minutes after midnight (Perth), with the seconds as a fraction: what the
+  // rings and the history matching are worked out at.
+  const nowMinutes = perthClock(new Date(effectiveNowMs)).exactMinutes;
+  const seenMinutesExact = nowMinutes - times.elapsedMinutes;
+  // The same moments as whole minutes, for showing and for older rows.
+  const seenAt = perthClock(new Date(seenAtMs)).minutes;
+  const pausedAt = paused
+    ? perthClock(new Date(times.effectiveNowMs)).minutes
+    : null;
 
   const from: PredictorFrom | null = useMemo(() => {
     if (!data) return null;
@@ -379,7 +419,7 @@ export function useTargetPredictor({
           kind: "point",
           lat: seen.point.lat,
           lng: seen.point.lng,
-          minutes: seenAt,
+          minutes: seenMinutesExact,
         }
       : null;
   }, [
@@ -391,7 +431,7 @@ export function useTargetPredictor({
     firstPlaceKey,
     clock.minutes,
     seen.point,
-    seenAt,
+    seenMinutesExact,
   ]);
 
   // The posted speed limit of the road he was last seen on (Main Roads WA
@@ -481,96 +521,89 @@ export function useTargetPredictor({
         placeKey: null,
         lat: seen.point.lat,
         lng: seen.point.lng,
-        seenMinutes: seenAt,
+        seenMinutes: perthClock(new Date(seenAtMs)).minutes,
         area: null,
-        pausedAtMinutes: pausedAt,
+        pausedAtMinutes: seen.pausedAtMs
+          ? perthClock(new Date(seen.pausedAtMs)).minutes
+          : null,
+        seenAtMs,
+        pausedAtMs: seen.pausedAtMs,
       });
       setDirty(false);
     }, 700);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, seen, seenAt, pausedAt]);
+  }, [dirty, seen]);
 
   /** A tap on the map or a drag of the pin: that is where he was last seen.
-   * The first one also starts the clock ("just now"); moving it later keeps
-   * the time and the pause. */
+   * A tap after "seen 2 min ago" (see beginSighting) starts a new sighting at
+   * that time; the first tap otherwise starts it "just now"; dragging the pin
+   * later keeps the time and the pause. */
   const placeTap = useCallback(
     (point: { lat: number; lng: number }) => {
       setTapRoute(null);
       setTapArmed(false);
+      const pending = pendingSeenAtRef.current;
+      pendingSeenAtRef.current = null;
       toast.success(
-        seen.point
+        seen.point && pending === null
           ? "Last seen moved."
           : "Last seen set. Drag the pin to adjust."
       );
-      const now = perthClock(new Date()).minutes;
+      const now = Date.now();
+      setNowMs(now);
       setSeen(s =>
-        s.point ? { ...s, point } : { point, minutes: now, pausedAt: null }
+        s.point && pending === null
+          ? { ...s, point }
+          : { point, atMs: pending ?? now, pausedAtMs: null }
       );
       setDirty(true);
     },
     [seen.point]
   );
 
-  /** "Seen how long ago?": 0 = just now. Changing the time restarts the ring
-   * from that moment, so it is no longer paused. */
+  /** "Seen how long ago?": 0 = just now. Changing the time restarts the rings
+   * from that moment, so they are no longer paused. */
   const setSeenAgo = useCallback((minutesAgo: number) => {
-    const now = perthClock(new Date()).minutes;
-    setClock(perthClock(new Date()));
-    setSeen(s => ({
-      ...s,
-      minutes: Math.max(0, now - minutesAgo),
-      pausedAt: null,
-    }));
+    const now = Date.now();
+    setNowMs(now);
+    setSeen(s => ({ ...s, atMs: seenAgo(minutesAgo, now), pausedAtMs: null }));
     setDirty(true);
   }, []);
 
-  /** Hold the ring where it is: the team thinks he is still in the area. */
+  /** A new sighting: the time is chosen first, then the map is tapped for
+   * where it was (the pointer's Search button does this). */
+  const beginSighting = useCallback((minutesAgo: number) => {
+    const now = Date.now();
+    setNowMs(now);
+    pendingSeenAtRef.current = seenAgo(minutesAgo, now);
+    setTapArmed(true);
+    toast.message("Tap the map where he was last seen");
+  }, []);
+
+  /** Hold the rings where they are: the team thinks he is still in the area. */
   const pauseRing = useCallback(() => {
-    const now = perthClock(new Date());
-    setClock(now);
-    setSeen(s => ({ ...s, pausedAt: now.minutes }));
+    const now = Date.now();
+    setNowMs(now);
+    setSeen(s => ({ ...s, pausedAtMs: now }));
     setDirty(true);
   }, []);
-  /** Let the ring grow again — straight back to the real time since last seen. */
+  /** Let the rings grow again — straight back to the real time since last
+   * seen. */
   const resumeRing = useCallback(() => {
-    setSeen(s => ({ ...s, pausedAt: null }));
+    setSeen(s => ({ ...s, pausedAtMs: null }));
     setDirty(true);
   }, []);
 
-  /** Throw the pin away (for everyone) and wait for a new first tap. The
-   * search itself carries on. */
-  const startAgain = useCallback(() => {
-    setSeen(NO_SEEN);
-    setTapRoute(null);
-    setTapArmed(false);
-    setDirty(false);
-    appliedRef.current = shared?.updatedAtMs ?? null;
-    if (opId != null && sheetId != null && targetId != null)
-      saveMut.mutate({
-        operationId: opId,
-        sheetId,
-        targetId,
-        kind: "sheet",
-        placeKey: null,
-        lat: null,
-        lng: null,
-        seenMinutes: null,
-        area: null,
-        pausedAtMinutes: null,
-      });
-  }, [shared, opId, sheetId, targetId, saveMut]);
-
-  /** End the search for the whole team: every screen switches it off. */
+  /** End the search on THIS screen only: the predictor goes off here, and with
+   * it the Tracks it switched on. The others carry on, so one slip cannot take
+   * the search away from the whole team. */
   const endSearch = useCallback(() => {
-    setSeen(NO_SEEN);
-    setTapRoute(null);
     setTapArmed(false);
-    setDirty(false);
-    appliedRef.current = shared?.updatedAtMs ?? null;
-    if (opId != null && sheetId != null)
-      clearMut.mutate({ operationId: opId, sheetId });
-  }, [shared, opId, sheetId, clearMut]);
+    pendingSeenAtRef.current = null;
+    setModeState("next");
+    setOn(false);
+  }, [setOn]);
 
   /** Where next: "Change" takes what the sheet says as the starting point. */
   const changeFromSheet = useCallback(() => {
@@ -651,14 +684,19 @@ export function useTargetPredictor({
     setPickPlaceKey,
     seenPoint: seen.point,
     seenAt,
-    /** Whole minutes since he was last seen (to the paused minute, if held). */
-    agoMinutes: Math.max(0, nowMinutes - seenAt),
+    /** Minutes since he was last seen, with the seconds (to the paused moment,
+     * if held). */
+    agoMinutes: times.elapsedMinutes,
     pausedAt,
     paused,
     setSeenAgo,
     pauseRing,
     resumeRing,
-    startAgain,
+    beginSighting,
+    startFromPointer,
+    canSearch,
+    pinPopupOpen,
+    setPinPopupOpen,
     endSearch,
     team,
     tapRoute,
@@ -939,20 +977,9 @@ const ACTION_OFF = "border-border bg-card text-foreground hover:bg-accent/40";
  * The pin is dragged to move it; the buttons set how long ago he was seen,
  * hold the ring, or throw the pin away and start again. */
 function SearchControls({ p }: { p: TargetPredictorState }) {
-  const label =
-    "text-[11px] font-semibold text-muted-foreground uppercase tracking-wide";
-  const end = (
-    <button
-      onClick={p.endSearch}
-      className={`${ACTION} w-full ${ACTION_OFF}`}
-      data-testid="end-search"
-    >
-      End search for the whole team
-    </button>
-  );
-  if (!p.seenPoint)
-    return (
-      <div className="space-y-2">
+  return (
+    <div className="space-y-2">
+      {!p.seenPoint && (
         <div className="rounded-xl border-2 border-violet-500/50 bg-violet-500/10 px-3 py-2">
           <p className="text-xs font-semibold text-violet-500">
             Tap the map where he was last seen
@@ -962,64 +989,124 @@ function SearchControls({ p }: { p: TargetPredictorState }) {
             move it. Then drag the pin to adjust it.
           </p>
         </div>
-        {end}
-      </div>
-    );
+      )}
+      {/* With no pin yet a time is chosen first and the next tap uses it; with
+          a pin it just changes the time. */}
+      <SeenAgoButtons
+        p={p}
+        onPick={n => (p.seenPoint ? p.setSeenAgo(n) : p.beginSighting(n))}
+      />
+      <SearchButtons p={p} showEnd />
+    </div>
+  );
+}
+
+/** "Seen how long ago?" — five big, equal buttons. Used in the pane and both
+ * popups. */
+export function SeenAgoButtons({
+  p,
+  onPick,
+}: {
+  p: TargetPredictorState;
+  onPick: (minutesAgo: number) => void;
+}) {
+  const label =
+    "text-[11px] font-semibold text-muted-foreground uppercase tracking-wide";
   return (
-    <div className="space-y-2">
-      <div className="space-y-1">
-        <span className={label}>Seen how long ago?</span>
-        <div
-          className="grid grid-cols-5 gap-1.5"
-          role="group"
-          aria-label="Seen how long ago"
-        >
-          {SEEN_AGO_MINUTES.map(n => (
+    <div className="space-y-1">
+      <span className={label}>Seen how long ago?</span>
+      <div
+        className="grid grid-cols-5 gap-1.5"
+        role="group"
+        aria-label="Seen how long ago"
+      >
+        {SEEN_AGO_MINUTES.map(n => {
+          const on = !!p.seenPoint && Math.round(p.agoMinutes) === n;
+          return (
             <button
               key={n}
-              onClick={() => p.setSeenAgo(n)}
-              aria-pressed={Math.round(p.clock.minutes - p.seenAt) === n}
-              className={`${ACTION} ${
-                Math.round(p.clock.minutes - p.seenAt) === n
-                  ? ACTION_ON
-                  : ACTION_OFF
-              }`}
+              onClick={() => onPick(n)}
+              aria-pressed={on}
+              className={`${ACTION} ${on ? ACTION_ON : ACTION_OFF}`}
             >
               {n === 0 ? "Now" : `${n} min`}
             </button>
-          ))}
-        </div>
+          );
+        })}
       </div>
-      <div
-        className="grid grid-cols-3 gap-1.5"
-        role="group"
-        aria-label="Search actions"
-      >
-        <button
-          onClick={() => p.setTapArmed(!p.tapArmed)}
-          aria-pressed={p.tapArmed}
-          className={`${ACTION} ${p.tapArmed ? ACTION_ON : ACTION_OFF}`}
-        >
-          {p.tapArmed ? "Tap map…" : "Move pin"}
-        </button>
-        <button
-          onClick={p.paused ? p.resumeRing : p.pauseRing}
-          aria-pressed={p.paused}
-          className={`${ACTION} ${p.paused ? ACTION_ON : ACTION_OFF}`}
-        >
-          {p.paused ? "Resume ring" : "Pause ring"}
-        </button>
-        <button onClick={p.startAgain} className={`${ACTION} ${ACTION_OFF}`}>
-          Start again
-        </button>
-      </div>
-      {p.tapArmed && (
-        <p className="text-[11px] leading-snug text-muted-foreground">
-          Tap the map where he was last seen. Tap Move pin again to cancel.
-        </p>
-      )}
-      {end}
     </div>
+  );
+}
+
+/** Pause / Resume the rings, and (optionally) End search. They are two equal
+ * buttons side by side, or one full-width button when there is no End. End
+ * search only ends the search on this screen, so a slip cannot take it away
+ * from the rest of the team. */
+export function SearchButtons({
+  p,
+  showEnd,
+  onDone,
+}: {
+  p: TargetPredictorState;
+  showEnd: boolean;
+  onDone?: () => void;
+}) {
+  return (
+    <div
+      className={`grid gap-1.5 ${showEnd ? "grid-cols-2" : "grid-cols-1"}`}
+      role="group"
+      aria-label="Search actions"
+    >
+      <button
+        onClick={() => {
+          (p.paused ? p.resumeRing : p.pauseRing)();
+          onDone?.();
+        }}
+        disabled={!p.seenPoint}
+        aria-pressed={p.paused}
+        className={`${ACTION} disabled:opacity-50 ${p.paused ? ACTION_ON : ACTION_OFF}`}
+      >
+        {p.paused ? "Resume ring" : "Pause ring"}
+      </button>
+      {showEnd && (
+        <button
+          onClick={() => {
+            p.endSearch();
+            onDone?.();
+          }}
+          className={`${ACTION} ${ACTION_OFF}`}
+          data-testid="end-search"
+        >
+          End search
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** The popup that opens when the red last-seen diamond is tapped: choose how
+ * long ago he was seen, or pause / resume the rings. Closes as soon as one is
+ * chosen. */
+export function TargetPredictorPinPopup({ p }: { p: TargetPredictorState }) {
+  const close = () => p.setPinPopupOpen(false);
+  return (
+    <Dialog open={p.pinPopupOpen} onOpenChange={p.setPinPopupOpen}>
+      <DialogContent className="max-w-sm" data-testid="pin-popup">
+        <DialogHeader>
+          <DialogTitle>Last seen {hhmm(p.seenAt)}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 py-1">
+          <SeenAgoButtons
+            p={p}
+            onPick={n => {
+              p.setSeenAgo(n);
+              close();
+            }}
+          />
+          <SearchButtons p={p} showEnd={false} onDone={close} />
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1371,6 +1458,7 @@ export function TargetPredictorOverlay({
 }) {
   const pr = p.prediction;
   const input = p.input;
+  const setPinPopupOpen = p.setPinPopupOpen;
 
   // The street name is how the kind of area is read when the limit isn't on
   // record (a freeway or highway says so); if the lookup fails the speed is
@@ -1397,7 +1485,7 @@ export function TargetPredictorOverlay({
   );
 
   // Tap the map to say where he was last seen — the first tap, or the one
-  // after "Move pin". The crosshair is only there while the map is waiting.
+  // after a time is chosen from the pointer's Search. The crosshair is only there while the map is waiting.
   const { tapping, placeTap } = p;
   useEffect(() => {
     if (!map || !tapping || !window.google?.maps) return;
@@ -1444,14 +1532,17 @@ export function TargetPredictorOverlay({
       position: { lat: pin.lat, lng: pin.lng },
       content: el,
       zIndex: 60,
-      title: "Drag to move where he was last seen",
+      title: "Drag to move where he was last seen; tap for more",
     });
     overlay.gmpDraggable = true;
     const l = overlay.addListener("dragend", () =>
       onPinMoved.current(overlay.position)
     );
+    // A tap (not a drag) opens the popup: how long ago, pause / resume.
+    const c = overlay.addListener("click", () => setPinPopupOpen(true));
     return () => {
       l.remove();
+      c.remove();
       overlay.map = null;
     };
   }, [map, pin?.lat, pin?.lng, pinLabel]);

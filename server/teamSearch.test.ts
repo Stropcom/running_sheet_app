@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  SEARCH_FRESH_MS,
   SEARCH_LIFETIME_MS,
   isOnSearchTeam,
+  isSearchFresh,
   isSearchLive,
   rosterCins,
   teamCinsOf,
@@ -62,5 +64,14 @@ describe("Team Search: who is on the team", () => {
     expect(isSearchLive(now - 60_000, now)).toBe(true);
     expect(isSearchLive(now - SEARCH_LIFETIME_MS, now)).toBe(true);
     expect(isSearchLive(now - SEARCH_LIFETIME_MS - 1, now)).toBe(false);
+  });
+
+  it("starting again keeps a pin touched in the last 10 minutes and drops an older one", () => {
+    const now = 1_000_000_000_000;
+    expect(isSearchFresh(now - 60_000, now)).toBe(true);
+    expect(isSearchFresh(now - SEARCH_FRESH_MS, now)).toBe(true);
+    expect(isSearchFresh(now - SEARCH_FRESH_MS - 1, now)).toBe(false);
+    // Fresh is always inside the lifetime.
+    expect(SEARCH_FRESH_MS).toBeLessThan(SEARCH_LIFETIME_MS);
   });
 });

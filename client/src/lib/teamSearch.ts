@@ -18,6 +18,7 @@ import { SHARING_EVENT, readSharingFlag } from "@/lib/nativeLocation";
 export const TEAM_SEARCH_POLL_MS = 8_000;
 
 const DISMISSED_KEY = "runlog_team_search_dismissed";
+const JOINED_KEY = "runlog_team_search_joined";
 const DISMISSED_EVENT = "runlog-team-search-dismissed";
 
 export interface TeamSearch {
@@ -35,13 +36,15 @@ export interface TeamSearch {
 export const searchKey = (s: Pick<TeamSearch, "sheetId" | "startedAtMs">) =>
   `${s.sheetId}:${s.startedAtMs}`;
 
-function readDismissed(): string | null {
+function readKey(name: string): string | null {
   try {
-    return window.localStorage.getItem(DISMISSED_KEY);
+    return window.localStorage.getItem(name);
   } catch {
     return null;
   }
 }
+const readDismissed = () => readKey(DISMISSED_KEY);
+const readJoined = () => readKey(JOINED_KEY);
 
 /** The running search for this officer, and whether this screen has taken
  * part ("active") or been told to leave it. */
@@ -55,9 +58,14 @@ export function useTeamSearch() {
   });
   const search = (query.data ?? null) as TeamSearch | null;
   const [dismissed, setDismissed] = useState<string | null>(readDismissed);
+  // A search this screen joined by hand (a screen with Show & Share off).
+  const [joined, setJoined] = useState<string | null>(readJoined);
 
   useEffect(() => {
-    const sync = () => setDismissed(readDismissed());
+    const sync = () => {
+      setDismissed(readDismissed());
+      setJoined(readJoined());
+    };
     window.addEventListener(DISMISSED_EVENT, sync);
     window.addEventListener("storage", sync);
     return () => {
@@ -67,7 +75,8 @@ export function useTeamSearch() {
   }, []);
 
   // Show & Share on this device: the officer's working device. It is never
-  // switched on for them; a screen with it off simply stays out of the search.
+  // switched on for them. A screen with it off does not join by itself (it is
+  // not the device they are working on), but can join with one tap.
   const userId = user?.id;
   const [sharingOn, setSharingOn] = useState<boolean>(() =>
     readSharingFlag(userId)
@@ -84,7 +93,10 @@ export function useTeamSearch() {
   }, [userId]);
 
   const key = search ? searchKey(search) : null;
-  const active = !!search && dismissed !== key && sharingOn;
+  const active = !!search && dismissed !== key && (sharingOn || joined === key);
+  /** Running for this officer, but this screen is not in it (Show & Share is
+   * off here and it has not been joined): it is offered a Join. */
+  const offered = !!search && !active && dismissed !== key;
 
   /** Leave this search on this screen only; the others carry on. */
   const dismiss = useCallback(() => {
@@ -105,13 +117,26 @@ export function useTeamSearch() {
     }
     window.dispatchEvent(new Event(DISMISSED_EVENT));
   }, []);
+  /** Join the running search on this screen, whatever Show & Share is. */
+  const join = useCallback(() => {
+    if (!key) return;
+    try {
+      window.localStorage.setItem(JOINED_KEY, key);
+      window.localStorage.removeItem(DISMISSED_KEY);
+    } catch {
+      /* ignore */
+    }
+    window.dispatchEvent(new Event(DISMISSED_EVENT));
+  }, [key]);
 
   return {
     search,
     key,
     active,
+    offered,
     loaded: query.isSuccess,
     dismiss,
     rejoin,
+    join,
   };
 }

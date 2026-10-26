@@ -967,18 +967,22 @@ test("Map page: a Search started on one screen switches on by itself for the res
   );
   expect(started.ok(), await started.text()).toBeTruthy();
 
-  // A screen with Show & Share off stays out of it: it is not the device the
-  // officer is working on, and nothing switches Show & Share on for them.
+  // A screen with Show & Share off does not join by itself: it is not the device
+  // the officer is working on, and nothing switches Show & Share on for them.
+  // It is offered a Join instead.
   await second.waitForTimeout(12_000);
   expect(await predictorOn()).toBeNull();
+  await second.getByRole("button", { name: "Toggle side panel" }).click();
+  await expect(second.getByTestId("join-search")).toBeVisible();
+  await expect(second.getByText(/Your location is\s*not shared/)).toBeVisible();
 
-  // Once Show & Share is on there (the officer's working device) the search
-  // switches itself on: predictor on, the sheet selected — nobody touches it.
-  await second.evaluate(() => {
-    const id = localStorage.getItem("runlog_last_user_id");
-    localStorage.setItem(`runlog_sharing_u${id}`, "true");
-    window.dispatchEvent(new Event("runlog:sharing-changed"));
-  });
+  // One tap joins: predictor on, in Search, the sheet selected.
+  // (The same offer also shows as a notice on every screen; this is the
+  // pane's.)
+  await second
+    .getByTestId("join-search")
+    .getByRole("button", { name: "Join", exact: true })
+    .click();
   await expect.poll(predictorOn, { timeout: 40_000 }).toBe("1");
   await expect
     .poll(
@@ -991,7 +995,6 @@ test("Map page: a Search started on one screen switches on by itself for the res
       { timeout: 20_000 }
     )
     .toBe(created.sheetId);
-  await second.getByRole("button", { name: "Toggle side panel" }).click();
   await expect(
     second.getByRole("button", { name: "Search", exact: true })
   ).toHaveAttribute("aria-pressed", "true");
@@ -1002,5 +1005,28 @@ test("Map page: a Search started on one screen switches on by itself for the res
   await second.getByTestId("end-search").click();
   await expect.poll(predictorOn, { timeout: 10_000 }).toBe("0");
   expect(await myTeamSearch()).not.toBeNull();
+
+  // Started again from the first screen: a screen that has Show & Share on (the
+  // officer's working device) comes back in by itself, even though it had ended
+  // the earlier search.
+  await second.evaluate(() => {
+    const id = localStorage.getItem("runlog_last_user_id");
+    localStorage.setItem(`runlog_sharing_u${id}`, "true");
+    window.dispatchEvent(new Event("runlog:sharing-changed"));
+  });
+  const again = await page.request.post(
+    "/api/trpc/intelligence.startTeamSearch",
+    {
+      data: {
+        json: {
+          operationId: created.opId,
+          sheetId: created.sheetId,
+          targetId: 987655,
+        },
+      },
+    }
+  );
+  expect(again.ok(), await again.text()).toBeTruthy();
+  await expect.poll(predictorOn, { timeout: 40_000 }).toBe("1");
   await other.close();
 });

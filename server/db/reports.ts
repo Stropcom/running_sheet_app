@@ -22,7 +22,7 @@ import {
 import type { CommandCode } from "@shared/commands";
 
 import { scopeEntities } from "@shared/operationAccess";
-import { isSearchLive } from "@shared/teamSearch";
+import { isSearchFresh, isSearchLive } from "@shared/teamSearch";
 
 import { intelScope } from "../intelScope";
 
@@ -1304,17 +1304,20 @@ export async function setPredictorLastSeen(params: {
     .onDuplicateKeyUpdate({ set: values });
 }
 
-/** Starts a search for the whole team on this sheet: a row with no pin yet.
- * Does nothing when one is already running today. Returns whether it started
- * a new one. */
+/** Starts Search for the whole team on this sheet. Always a fresh start as far
+ * as every screen is concerned (the start time is renewed), so a screen that
+ * had left an earlier search on this sheet comes back in. A search that is
+ * already running and was touched in the last 10 minutes keeps its pin; an
+ * older one, or none, begins blank. */
 export async function startPredictorSearch(params: {
   sheetId: number;
   targetId: number;
   cin: string | null;
-}): Promise<boolean> {
+}): Promise<{ restarted: boolean }> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const today = perthTodayISO();
+  const now = Date.now();
   const [row] = await db
     .select({
       dateISO: predictorLastSeen.dateISO,
@@ -1323,14 +1326,34 @@ export async function startPredictorSearch(params: {
     .from(predictorLastSeen)
     .where(eq(predictorLastSeen.sheetId, params.sheetId))
     .limit(1);
-  // Still running: today's, and touched within its lifetime. An old one that
-  // was never ended is replaced by a fresh start.
-  if (
-    row &&
+  const running =
+    !!row &&
     row.dateISO === today &&
-    isSearchLive(row.updatedAt.getTime(), Date.now())
-  )
-    return false;
+    isSearchLive(row.updatedAt.getTime(), now);
+  if (running) {
+    const keepPin = isSearchFresh(row!.updatedAt.getTime(), now);
+    await db
+      .update(predictorLastSeen)
+      .set({
+        createdAt: new Date(now),
+        updatedByCIN: params.cin,
+        ...(keepPin
+          ? {}
+          : {
+              kind: "sheet",
+              placeKey: null,
+              lat: null,
+              lng: null,
+              seenMinutes: null,
+              seenAtMs: null,
+              pausedAtMinutes: null,
+              pausedAtMs: null,
+              area: null,
+            }),
+      })
+      .where(eq(predictorLastSeen.sheetId, params.sheetId));
+    return { restarted: true };
+  }
   if (row)
     await db
       .delete(predictorLastSeen)
@@ -1342,7 +1365,7 @@ export async function startPredictorSearch(params: {
     kind: "sheet",
     updatedByCIN: params.cin,
   });
-  return true;
+  return { restarted: false };
 }
 
 export interface TodaysSearchRow {

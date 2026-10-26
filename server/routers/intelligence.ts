@@ -417,22 +417,23 @@ export const intelligenceRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const started = await startPredictorSearch({
+      const { restarted } = await startPredictorSearch({
         sheetId: input.sheetId,
         targetId: input.targetId,
         cin: ctx.user.cin ?? null,
       });
-      if (started)
-        await createAuditLog({
-          sheetId: input.sheetId,
-          userId: ctx.user.id,
-          userName: ctx.user.cin ?? "Unknown",
-          userCIN: ctx.user.cin ?? null,
-          action: "predictor_last_seen_changed",
-          details: "Target Predictor search started for the team",
-          createdAt: Date.now(),
-        });
-      return { started };
+      await createAuditLog({
+        sheetId: input.sheetId,
+        userId: ctx.user.id,
+        userName: ctx.user.cin ?? "Unknown",
+        userCIN: ctx.user.cin ?? null,
+        action: "predictor_last_seen_changed",
+        details: restarted
+          ? "Target Predictor search started again for the team"
+          : "Target Predictor search started for the team",
+        createdAt: Date.now(),
+      });
+      return { started: true, restarted };
     }),
 
   /** Search: the one running today that this officer is on the team of — on

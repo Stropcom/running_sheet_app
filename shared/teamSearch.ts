@@ -62,3 +62,13 @@ export const SEARCH_LIFETIME_MS = 4 * 60 * 60 * 1000;
 export function isSearchLive(updatedAtMs: number, nowMs: number): boolean {
   return nowMs - updatedAtMs <= SEARCH_LIFETIME_MS;
 }
+
+/** Starting Search again joins the search that is already running if it was
+ * touched within this long; an older one is replaced by a blank, so a pin from
+ * half an hour ago does not come back with a huge ring. */
+export const SEARCH_FRESH_MS = 10 * 60 * 1000;
+
+/** Whether a running search last updated at `updatedAtMs` is still fresh. */
+export function isSearchFresh(updatedAtMs: number, nowMs: number): boolean {
+  return nowMs - updatedAtMs <= SEARCH_FRESH_MS;
+}

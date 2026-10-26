@@ -3464,9 +3464,11 @@ export default function IntelligenceMapping() {
   // pattern as updateLocationMutRef, since the auto-revert effect below
   // needs a stable reference to call it from outside the render closure.
   const [onFootPopupOpen, setOnFootPopupOpen] = useState(false);
-  // The Search section of the "Customise my pointer" popup is opened by its
+  // The Search section of the "My Pill" popup is opened by its
   // Search button.
   const [pointerSearchOpen, setPointerSearchOpen] = useState(false);
+  // "Customise" (heading shape, pill colour) in that popup starts closed.
+  const [pillCustomiseOpen, setPillCustomiseOpen] = useState(false);
   const setOnFootMut = trpc.intelligence.setOnFoot.useMutation();
   const setOnFootMutRef = useRef(setOnFootMut);
   // Gender/skin-tone (on-foot glyph) + vehicle icon (Wheels mode) prefs —
@@ -9337,7 +9339,7 @@ export default function IntelligenceMapping() {
                 centerRequest={flyCentreReq}
                 onMarkerClick={id => {
                   setFlyPick(null);
-                  // Your own pill opens "Customise my pointer", as on the
+                  // Your own pill opens "My Pill", as on the
                   // flat map.
                   if (user && id === `team:${user.id}_${deviceIdRef.current}`) {
                     setFlySelectedId(null);
@@ -15187,12 +15189,15 @@ export default function IntelligenceMapping() {
         open={onFootPopupOpen}
         onOpenChange={open => {
           setOnFootPopupOpen(open);
-          if (!open) setPointerSearchOpen(false);
+          if (!open) {
+            setPointerSearchOpen(false);
+            setPillCustomiseOpen(false);
+          }
         }}
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Customise my pointer</DialogTitle>
+            <DialogTitle>My Pill</DialogTitle>
           </DialogHeader>
           {(() => {
             const ownLiveUser = (liveUsers as LiveUser[] | undefined)?.find(
@@ -15204,50 +15209,87 @@ export default function IntelligenceMapping() {
 
             return (
               <div className="flex flex-col gap-4 py-2">
-                {/* Search — at the top. It starts Search for the team on the
-                    selected running sheet; choosing how long ago he was seen
-                    closes this popup so the map can be tapped for where. */}
+                {/* Search and Track — at the top. Search starts Search for the
+                    team on the selected running sheet; it is empty when off and
+                    shaded when on. Track is a switch of its own (your own
+                    track, as under Team in the right pane) and stays where it
+                    is whether or not Search is on; Search's options open
+                    below it. Choosing how long ago he was seen closes this
+                    popup so the map can be tapped for where. */}
                 {!isInvestigator && (
                   <div className="space-y-2" data-testid="pointer-search">
-                    <button
-                      type="button"
-                      disabled={!predictor.canSearch}
-                      onClick={() => {
-                        predictor.startFromPointer();
-                        setPointerSearchOpen(true);
-                      }}
-                      aria-pressed={pointerSearchOpen}
-                      className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border-2 border-violet-500/50 bg-violet-500/10 text-sm font-semibold text-violet-500 transition-colors hover:bg-violet-500/20 disabled:opacity-50"
-                    >
-                      <Crosshair className="h-4 w-4" />
-                      Search
-                    </button>
-                    {!predictor.canSearch && (
-                      <p className="text-xs text-muted-foreground">
-                        Select a running sheet that has a target (Active RS) to
-                        search.
-                      </p>
-                    )}
-                    {pointerSearchOpen && predictor.canSearch && (
-                      <>
-                        <SeenAgoButtons
-                          p={predictor}
-                          onPick={n => {
-                            predictor.beginSighting(n);
-                            setPointerSearchOpen(false);
-                            setOnFootPopupOpen(false);
-                          }}
-                        />
-                        <SearchButtons
-                          p={predictor}
-                          showEnd
-                          onDone={() => {
-                            setPointerSearchOpen(false);
-                            setOnFootPopupOpen(false);
-                          }}
-                        />
-                      </>
-                    )}
+                    {(() => {
+                      const searchOn = predictor.on && predictor.mode === "now";
+                      const tracking = !!user && tracedUserIds.has(user.id);
+                      const base =
+                        "flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border-2 text-sm font-semibold transition-colors disabled:opacity-50";
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            disabled={!predictor.canSearch}
+                            onClick={() => {
+                              predictor.startFromPointer();
+                              setPointerSearchOpen(true);
+                            }}
+                            aria-pressed={searchOn}
+                            className={`${base} ${
+                              searchOn
+                                ? "border-violet-500/50 bg-violet-500/10 text-violet-500"
+                                : "border-border bg-card text-foreground hover:bg-accent/40"
+                            }`}
+                          >
+                            <Crosshair className="h-4 w-4" />
+                            Search
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!user}
+                            onClick={() => user && toggleUserTrace(user.id)}
+                            aria-pressed={tracking}
+                            className={`${base} ${
+                              tracking
+                                ? "border-indigo-500 bg-indigo-500/10 text-indigo-400"
+                                : "border-border bg-card text-foreground hover:bg-accent/40"
+                            }`}
+                          >
+                            {tracking ? "Tracking" : "Track"}
+                          </button>
+                          {!predictor.canSearch && (
+                            <p className="text-xs text-muted-foreground">
+                              Select a running sheet that has a target (Active
+                              RS) to search.
+                            </p>
+                          )}
+                          {tracking && !sharingEnabled && (
+                            <p className="text-xs text-muted-foreground">
+                              Your track is drawn while Show &amp; Share is on.
+                            </p>
+                          )}
+                          {(searchOn || pointerSearchOpen) &&
+                            predictor.canSearch && (
+                              <>
+                                <SeenAgoButtons
+                                  p={predictor}
+                                  onPick={n => {
+                                    predictor.beginSighting(n);
+                                    setPointerSearchOpen(false);
+                                    setOnFootPopupOpen(false);
+                                  }}
+                                />
+                                <SearchButtons
+                                  p={predictor}
+                                  showEnd
+                                  onDone={() => {
+                                    setPointerSearchOpen(false);
+                                    setOnFootPopupOpen(false);
+                                  }}
+                                />
+                              </>
+                            )}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-2">
@@ -15288,78 +15330,101 @@ export default function IntelligenceMapping() {
                   over 15 km/h.
                 </p>
 
-                {!onFoot && (
-                  <div className="space-y-1.5">
-                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                      Heading shape
-                    </p>
-                    <div className="grid grid-cols-4 gap-2">
-                      {HEADING_SHAPE_OPTIONS.map(opt => (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          onClick={() =>
-                            setPinAppearanceMut.mutate({
-                              pinVehicleIcon: opt.key,
-                            })
-                          }
-                          title={opt.label}
-                          aria-label={opt.label}
-                          className={`flex items-center justify-center rounded-lg border-2 py-2 transition-all ${
-                            headingShape === opt.key
-                              ? "border-primary bg-primary/10 scale-105"
-                              : "border-border bg-accent/30 hover:border-primary/50"
-                          }`}
-                        >
-                          <span
-                            className="w-5 h-5 flex items-center justify-center"
-                            dangerouslySetInnerHTML={{
-                              __html: renderHeadingShapeInner(opt.key),
-                            }}
-                          />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                      Pill colour
-                    </p>
-                    {pinColor && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPinAppearanceMut.mutate({ pinColor: null })
-                        }
-                        className="text-[10px] font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
-                      >
-                        Reset to team colour
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-5 gap-2 justify-items-center">
-                    {PIN_COLOUR_SWATCHES.map(swatch => (
-                      <button
-                        key={swatch.hex}
-                        type="button"
-                        onClick={() =>
-                          setPinAppearanceMut.mutate({ pinColor: swatch.hex })
-                        }
-                        title={swatch.name}
-                        aria-label={swatch.name}
-                        className={`h-8 w-8 rounded-full border-2 transition-all ${
-                          pinColor === swatch.hex
-                            ? "border-foreground scale-110"
-                            : "border-transparent hover:scale-105"
+                <Collapsible
+                  open={pillCustomiseOpen}
+                  onOpenChange={setPillCustomiseOpen}
+                  className="space-y-3"
+                >
+                  <CollapsibleTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex min-h-[44px] w-full items-center justify-between rounded-lg border-2 border-border bg-card px-3 text-sm font-semibold hover:bg-accent/40"
+                    >
+                      Customise
+                      <ChevronDown
+                        className={`h-4 w-4 transition-transform ${
+                          pillCustomiseOpen ? "rotate-180" : ""
                         }`}
-                        style={{ background: swatch.hex }}
                       />
-                    ))}
-                  </div>
-                </div>
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-4">
+                    {!onFoot && (
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                          Heading shape
+                        </p>
+                        <div className="grid grid-cols-4 gap-2">
+                          {HEADING_SHAPE_OPTIONS.map(opt => (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              onClick={() =>
+                                setPinAppearanceMut.mutate({
+                                  pinVehicleIcon: opt.key,
+                                })
+                              }
+                              title={opt.label}
+                              aria-label={opt.label}
+                              className={`flex items-center justify-center rounded-lg border-2 py-2 transition-all ${
+                                headingShape === opt.key
+                                  ? "border-primary bg-primary/10 scale-105"
+                                  : "border-border bg-accent/30 hover:border-primary/50"
+                              }`}
+                            >
+                              <span
+                                className="w-5 h-5 flex items-center justify-center"
+                                dangerouslySetInnerHTML={{
+                                  __html: renderHeadingShapeInner(opt.key),
+                                }}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                          Pill colour
+                        </p>
+                        {pinColor && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPinAppearanceMut.mutate({ pinColor: null })
+                            }
+                            className="text-[10px] font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
+                          >
+                            Reset to team colour
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-5 gap-2 justify-items-center">
+                        {PIN_COLOUR_SWATCHES.map(swatch => (
+                          <button
+                            key={swatch.hex}
+                            type="button"
+                            onClick={() =>
+                              setPinAppearanceMut.mutate({
+                                pinColor: swatch.hex,
+                              })
+                            }
+                            title={swatch.name}
+                            aria-label={swatch.name}
+                            className={`h-8 w-8 rounded-full border-2 transition-all ${
+                              pinColor === swatch.hex
+                                ? "border-foreground scale-110"
+                                : "border-transparent hover:scale-105"
+                            }`}
+                            style={{ background: swatch.hex }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
               </div>
             );
           })()}

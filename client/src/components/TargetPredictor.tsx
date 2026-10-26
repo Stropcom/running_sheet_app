@@ -267,22 +267,18 @@ export function useTargetPredictor({
     onError: e => toast.error(e.message),
   });
   /** "Where next?" / "Search". Choosing Search starts it for the whole team
-   * (their screens follow within a few seconds) unless one is running. */
+   * (their screens follow within a few seconds). Choosing it again starts it
+   * again, which brings back any screen that had left the earlier one. */
   const setMode = useCallback(
     (m: PredictorMode) => {
       setModeState(m);
       if (m !== "now") return;
       rejoinSearch();
-      if (
-        opId != null &&
-        sheetId != null &&
-        targetId != null &&
-        !(team.search && team.search.sheetId === sheetId)
-      )
+      if (opId != null && sheetId != null && targetId != null)
         startMut.mutate({ operationId: opId, sheetId, targetId });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [opId, sheetId, targetId, team.search, rejoinSearch]
+    [opId, sheetId, targetId, rejoinSearch]
   );
 
   /** The pointer's Search button: the predictor goes on, in Search, and the
@@ -792,6 +788,33 @@ export function TargetPredictorSection({
         </span>
       </button>
 
+      {/* A search is running for this officer's sheet but this screen is not in
+          it (Show & Share is off here): offered, never forced. */}
+      {p.team.offered && p.team.search && (
+        <div
+          className="space-y-1.5 rounded-xl border-2 border-violet-500/50 bg-violet-500/10 px-3 py-2"
+          data-testid="join-search"
+        >
+          <p className="text-xs font-semibold text-violet-500">
+            A search is running
+            {p.team.search.startedByCIN
+              ? `, started by ${p.team.search.startedByCIN}`
+              : ""}
+          </p>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            Show &amp; Share is off on this screen, so it has not joined. Join
+            to see the rings and the team&apos;s tracks here. Your location is
+            not shared.
+          </p>
+          <button
+            onClick={p.team.join}
+            className={`${ACTION} w-full ${ACTION_OFF}`}
+          >
+            Join
+          </button>
+        </div>
+      )}
+
       {p.on && (
         <div className="space-y-2">
           {targetName && p.mode === "next" ? (
@@ -1085,8 +1108,8 @@ export function SearchButtons({
 }
 
 /** The popup that opens when the red last-seen diamond is tapped: choose how
- * long ago he was seen, or pause / resume the rings. Closes as soon as one is
- * chosen. */
+ * long ago he was seen, pause / resume the rings, or End search (on this screen
+ * only). Closes as soon as one is chosen. */
 export function TargetPredictorPinPopup({ p }: { p: TargetPredictorState }) {
   const close = () => p.setPinPopupOpen(false);
   return (
@@ -1103,7 +1126,7 @@ export function TargetPredictorPinPopup({ p }: { p: TargetPredictorState }) {
               close();
             }}
           />
-          <SearchButtons p={p} showEnd={false} onDone={close} />
+          <SearchButtons p={p} showEnd onDone={close} />
         </div>
       </DialogContent>
     </Dialog>

@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { formatIntelVehicle } from "@shared/addressFormat";
+import { fullAddressForGeocode } from "@shared/geocodeQuery";
 
 import {
   operations,
@@ -1640,15 +1641,9 @@ export async function getIntelLocationProfile(
   // occurrence's fullDescription — the free text immediately preceding
   // this entity's bracket, which composeAddress always writes as
   // "<street>, SUBURB STATE" (see extractEntitiesFromText above).
-  const LOCATION_SUBURB_STATE_RE =
-    /,\s*[A-Za-z][\w\s]*?\s+(WA|NSW|VIC|QLD|SA|TAS|NT|ACT)\b/;
-  let fullAddress: string | null = null;
-  for (const occ of entity.occurrences) {
-    if (LOCATION_SUBURB_STATE_RE.test(occ.fullDescription)) {
-      fullAddress = occ.fullDescription.trim();
-      break;
-    }
-  }
+  const fullAddress = fullAddressForGeocode(
+    entity.occurrences.map(o => o.fullDescription)
+  );
 
   const allTargets = await db
     .select({

@@ -36,6 +36,7 @@ import {
 import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
 
 import { parseExtraAddresses } from "@shared/extraAddresses";
+import { fullAddressForGeocode } from "@shared/geocodeQuery";
 
 import {
   buildVisits,
@@ -395,6 +396,7 @@ export async function getIntelligenceHeatMapLocations(params: {
   type QualifyingMention = {
     entityKey: string;
     label: string;
+    fullDescription: string;
     sheetId: number;
     order: number;
   };
@@ -437,10 +439,20 @@ export async function getIntelligenceHeatMapLocations(params: {
       qualifying.push({
         entityKey: normalizeEntityLabel(entity.shortForm),
         label: entity.shortForm,
+        fullDescription: occ.fullDescription,
         sheetId: occ.sheetId,
         order: rowOrderIndex.get(occ.rowId) ?? 0,
       });
     }
+  }
+
+  // The fuller written form of each address, for geocoding (see
+  // resolvePlaceLatLng) — every qualifying mention's, not just the visits'.
+  const fullDescriptionsByKey = new Map<string, string[]>();
+  for (const m of qualifying) {
+    const list = fullDescriptionsByKey.get(m.entityKey);
+    if (list) list.push(m.fullDescription);
+    else fullDescriptionsByKey.set(m.entityKey, [m.fullDescription]);
   }
 
   // ── Collapse consecutive mentions of the same address into one visit ──────
@@ -457,7 +469,11 @@ export async function getIntelligenceHeatMapLocations(params: {
 
   const results = await Promise.all(
     Array.from(grouped.entries()).map(async ([key, { label, count }]) => {
-      const coords = await resolveLatLng(key, label);
+      const coords = await resolvePlaceLatLng(
+        key,
+        label,
+        fullDescriptionsByKey.get(key) ?? []
+      );
       if (!coords) return null;
       return { label, count, lat: coords.lat, lng: coords.lng };
     })
@@ -505,6 +521,21 @@ export async function resolveLatLng(
   } catch {
     return null;
   }
+}
+
+/** Geocode a place the sheets name, preferring the fuller "<street>, SUBURB
+ * STATE" the officer wrote before its bracket (same rule as the Location
+ * profile) over the bare short form, which for a place name like "Terminal 4"
+ * can resolve anywhere in the State. A fuller address is cached under its own
+ * key, so a wrong position cached earlier for the bare label is never reused. */
+async function resolvePlaceLatLng(
+  addressKey: string,
+  label: string,
+  fullDescriptions: readonly string[]
+): Promise<{ lat: number; lng: number } | null> {
+  const full = fullAddressForGeocode(fullDescriptions);
+  if (!full) return resolveLatLng(addressKey, label);
+  return resolveLatLng(normalizeEntityLabel(full).slice(0, 500), full);
 }
 
 /** Batch-geocode a list of raw address strings via the same cache-first
@@ -769,6 +800,7 @@ export async function getIntelTargetPatternOfLife(
   type QualifyingMention = {
     entityKey: string;
     label: string;
+    fullDescription: string;
     sheetId: number;
     order: number;
     timeMinutes: number;
@@ -793,6 +825,7 @@ export async function getIntelTargetPatternOfLife(
       qualifying.push({
         entityKey: normalizeEntityLabel(entity.shortForm),
         label: entity.shortForm,
+        fullDescription: occ.fullDescription,
         sheetId: occ.sheetId,
         order: rowOrderIndex.get(occ.rowId) ?? 0,
         timeMinutes: row.timeMinutes,
@@ -806,13 +839,20 @@ export async function getIntelTargetPatternOfLife(
   // count toward the location-based sections, same quality bar as the Heat
   // Map (an address-shaped mention that doesn't resolve to a real place
   // isn't reliable enough to plot).
-  const distinctKeys = new Map<string, string>();
-  for (const m of qualifying)
-    if (!distinctKeys.has(m.entityKey)) distinctKeys.set(m.entityKey, m.label);
+  const distinctKeys = new Map<string, { label: string; full: string[] }>();
+  for (const m of qualifying) {
+    const seen = distinctKeys.get(m.entityKey);
+    if (seen) seen.full.push(m.fullDescription);
+    else
+      distinctKeys.set(m.entityKey, {
+        label: m.label,
+        full: [m.fullDescription],
+      });
+  }
   const geocodable = new Set<string>();
   await Promise.all(
-    Array.from(distinctKeys.entries()).map(async ([key, label]) => {
-      const coords = await resolveLatLng(key, label);
+    Array.from(distinctKeys.entries()).map(async ([key, { label, full }]) => {
+      const coords = await resolvePlaceLatLng(key, label, full);
       if (coords) geocodable.add(key);
     })
   );
@@ -908,7 +948,8 @@ export async function getIntelTargetPatternOfLife(
         direction: m.direction as "arrived" | "departed",
       }));
     if (homeEvents.length) {
-      homeAddressLabel = distinctKeys.get(homeEntityKey) ?? homeAddressLabel;
+      homeAddressLabel =
+        distinctKeys.get(homeEntityKey)?.label ?? homeAddressLabel;
       const buckets = computeHomePresenceByBucket(homeEvents, 12);
       homePresence = buckets.map(toHomePresencePercent);
       homeLikelyRanges = dominantRanges(homePresence, "home", 12);

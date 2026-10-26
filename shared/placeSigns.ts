@@ -1,6 +1,7 @@
 // Square signs for banks, post offices, pubs, hotels (accommodation), gyms,
-// shopping centres, supermarkets, hardware stores, parks, cafes, restaurants, fast food / takeaway and
-// airports —
+// shopping centres, supermarkets, hardware stores, parks, cafes, restaurants, fast food / takeaway,
+// airports, and the health set (hospital, pharmacy / chemist, doctor / medical
+// centre, physio / chiropractor / osteopath, dentist) —
 // the same idea as the bus stop and train station signs
 // (shared/transitPlace.ts): the default map pin of a place that is one of
 // these is its sign instead of the house, however the place got into the
@@ -9,7 +10,8 @@
 // Two ways to tell, both deterministic:
 //   1. Google's place types, when we have them (a tapped place, a suggestion):
 //      bank / atm, post_office, bar, lodging, gym, shopping_mall, supermarket /
-//      grocery, hardware / home improvement, cafe, restaurant, fast food / takeaway, airport.
+//      grocery, hardware / home improvement, cafe, restaurant, fast food / takeaway, airport,
+//      hospital, pharmacy / drugstore, doctor, physiotherapist, dentist.
 //   2. The way the place is written — its NAME, the first part of the label
 //      ("Commonwealth Bank East Victoria Park Branch, Shop 19 The Park Centre,
 //      789 Albany Highway, …"), never the street part, so "Bank Street" or
@@ -36,7 +38,12 @@ export type PlaceSignIcon =
   | "place_cafe"
   | "place_restaurant"
   | "place_fast_food"
-  | "place_airport";
+  | "place_airport"
+  | "place_hospital"
+  | "place_pharmacy"
+  | "place_doctor"
+  | "place_physio"
+  | "place_dentist";
 
 export const PLACE_SIGN_ICONS: PlaceSignIcon[] = [
   "place_bank",
@@ -52,6 +59,11 @@ export const PLACE_SIGN_ICONS: PlaceSignIcon[] = [
   "place_restaurant",
   "place_fast_food",
   "place_airport",
+  "place_hospital",
+  "place_pharmacy",
+  "place_doctor",
+  "place_physio",
+  "place_dentist",
 ];
 
 const STREET_END_RE =
@@ -120,6 +132,26 @@ const AIRPORT_RE =
 const NOT_AN_AIRPORT_RE =
   /\b(?:station|parking|car\s*park|taxi|shuttle|police|fire|freight|cargo|storage|motel|hotel|inn|lodge|apartments?)\b/i;
 
+// The health set. Deliberately narrow — a vet, a beauty or skin clinic and
+// cosmetic surgery are not a doctor, so a bare "clinic" or "surgery" is never
+// enough on its own, and a bare "doctor" only counts as the name's last word
+// ("Subiaco Doctors"), not "Doctors Gully". Specific first: a hospital's
+// pharmacy is a pharmacy, a dental hospital is a dentist.
+const PHARMACY_RE =
+  /\b(?:pharmac(?:y|ies)|chemists?|chemmart|amcal|terry\s+white|soul\s+pattinson|discount\s+drug\s+stores?)\b/i;
+const DENTAL_RE =
+  /\b(?:dental|dentists?|dentistry|orthodontic[s]?|orthodontists?)\b/i;
+const PHYSIO_RE =
+  /\b(?:physio(?:therap(?:y|ists?))?|chiropract(?:ic|ors?)|chiro|osteopath(?:s|y|ic)?|osteo|exercise\s+physiolog(?:y|ists?))\b/i;
+const DOCTOR_RE =
+  /\b(?:medical\s+(?:centre|center|practice|clinic|group|rooms)|doctors?\s+(?:surgery|clinic|practice|rooms|centre|center)|general\s+practi(?:ce|tioners?)|family\s+(?:practice|medical|doctors?)|gp\s+(?:clinic|practice)|super\s*clinic|walk-?in\s+clinic|urgent\s+care)\b|\bdoctors?$/i;
+const NOT_A_DOCTOR_RE =
+  /\b(?:vet|veterinary|animal|pet|skin|beauty|laser|cosmetic|hair|tattoo|massage)\b/i;
+const HOSPITAL_RE = /\bhospitals?\b/i;
+// A hospital's car park, laundry, pathology, chapel… is not the hospital.
+const NOT_A_HOSPITAL_RE =
+  /\b(?:car\s*park|carpark|parking|pathology|radiology|laundry|childcare|child\s+care|kindergarten|florist|gift|chapel|mortuary|morgue|helipad)\b/i;
+
 // A numbered terminal ("Terminal 4") is only read as an airport terminal when
 // the rest of its label says the place is at an airport — the locality part,
 // as Google writes it: "Terminal 4, Perth Airport WA 6105, Australia". A bare
@@ -174,6 +206,14 @@ export function placeSignOfName(label: string): PlaceSignIcon | null {
   if (CAFE_RE.test(name)) return "place_cafe";
   if (FAST_FOOD_RE.test(name)) return "place_fast_food";
   if (RESTAURANT_RE.test(name)) return "place_restaurant";
+  // The health set, most specific first (see the note above).
+  if (PHARMACY_RE.test(name)) return "place_pharmacy";
+  if (DENTAL_RE.test(name)) return "place_dentist";
+  if (PHYSIO_RE.test(name)) return "place_physio";
+  if (DOCTOR_RE.test(name) && !NOT_A_DOCTOR_RE.test(name))
+    return "place_doctor";
+  if (HOSPITAL_RE.test(name) && !NOT_A_HOSPITAL_RE.test(name))
+    return "place_hospital";
   if (AIRPORT_RE.test(name) && !NOT_AN_AIRPORT_RE.test(name))
     return "place_airport";
   // "Terminal 4, Perth Airport WA 6105, Australia": a numbered terminal whose
@@ -237,6 +277,22 @@ export function placeSignFromTypes(
     !NOT_A_HARDWARE_RE.test(name)
   )
     return "place_hardware";
+  // Google's health types. A pharmacy first (a hospital's or a chain's), then
+  // dentists, physios and chiropractors, then hospitals, then doctors — a
+  // hospital is often also typed "doctor".
+  if (t.has("pharmacy") || t.has("drugstore") || t.has("drug_store"))
+    return "place_pharmacy";
+  if (t.has("dentist") || t.has("dental_clinic")) return "place_dentist";
+  if (t.has("physiotherapist") || t.has("chiropractor") || t.has("osteopath"))
+    return "place_physio";
+  if (t.has("hospital")) return "place_hospital";
+  if (
+    (t.has("doctor") ||
+      t.has("medical_clinic") ||
+      t.has("general_practitioner")) &&
+    !NOT_A_DOCTOR_RE.test(name)
+  )
+    return "place_doctor";
   // Google's park types — but not a caravan park, campground or lodging, or a
   // cemetery that Google also calls a park.
   if (

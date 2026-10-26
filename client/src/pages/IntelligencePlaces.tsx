@@ -13,6 +13,7 @@ import {
   MapPin,
   Plane,
   RefreshCw,
+  Stethoscope,
   ShoppingBag,
   Trees,
   BookMarked,
@@ -105,6 +106,12 @@ const KIND_STYLE: Record<
     tile: "border-teal-300 bg-teal-50 text-teal-700 dark:border-teal-400/40 dark:bg-teal-400/10 dark:text-teal-300",
     pill: "border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-400/40 dark:bg-teal-400/10 dark:text-teal-300",
     dot: "bg-teal-600 dark:bg-teal-400",
+  },
+  health: {
+    Icon: Stethoscope,
+    tile: "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-400/40 dark:bg-rose-400/10 dark:text-rose-300",
+    pill: "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-400/40 dark:bg-rose-400/10 dark:text-rose-300",
+    dot: "bg-rose-600 dark:bg-rose-400",
   },
   registered: {
     Icon: BookMarked,

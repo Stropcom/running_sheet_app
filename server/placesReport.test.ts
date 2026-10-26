@@ -6,6 +6,7 @@ import {
   isGenericAddressLabel,
   kindOfPlaceName,
   kindOfRegisteredLabel,
+  placeKindLabel,
   sortPlaces,
   summarisePlaces,
   weekdayIndex,
@@ -35,6 +36,20 @@ const m = (
 };
 
 describe("kindOfPlaceName", () => {
+  it("puts the health signs under Health & medical", () => {
+    for (const name of [
+      "Royal Perth Hospital, Wellington Street",
+      "Chemist Warehouse Subiaco",
+      "Subiaco Medical Centre",
+      "Perth Physiotherapy Clinic",
+      "Subiaco Dental Centre",
+    ])
+      expect(kindOfPlaceName(name)).toBe("health");
+    expect(placeKindLabel("health")).toBe("Health & medical");
+    // A sign saved for the place counts too.
+    expect(kindOfPlaceName("Some Name", "place_dentist")).toBe("health");
+  });
+
   it("reads the kind from the name, the way the map signs do", () => {
     expect(kindOfPlaceName("Elevate Gym, 62 Rokeby Road, SUBIACO WA")).toBe(
       "gym"

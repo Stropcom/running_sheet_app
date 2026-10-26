@@ -585,6 +585,8 @@ interface LiveUser {
   operationIds: number[];
   updatedAt: number;
   onFoot: boolean;
+  /** This officer has switched their own track off (see My Pill). */
+  trackHidden: boolean;
   pinGender: "neutral" | "male" | "female";
   pinSkinTone: "default" | "brown";
   pinVehicleIcon:
@@ -3470,6 +3472,10 @@ export default function IntelligenceMapping() {
   // "Customise" (heading shape, pill colour) in that popup starts closed.
   const [pillCustomiseOpen, setPillCustomiseOpen] = useState(false);
   const setOnFootMut = trpc.intelligence.setOnFoot.useMutation();
+  // My Pill → Track: whether this officer's own track is shown on other screens.
+  const setTrackHiddenMut = trpc.intelligence.setMyTrackHidden.useMutation({
+    onSuccess: () => utils.auth.me.invalidate(),
+  });
   const setOnFootMutRef = useRef(setOnFootMut);
   // Gender/skin-tone (on-foot glyph) + vehicle icon (Wheels mode) prefs —
   // see the pin-customise popup near the end of this component.
@@ -4011,6 +4017,14 @@ export default function IntelligenceMapping() {
     opId: isInvestigator ? null : (activeMapOperationId ?? rsSelectedOpId),
     sheetId: isInvestigator ? null : rsSelectedSheetId,
     targetId: isInvestigator ? null : (rsTargetData?.id ?? null),
+    // A Search running on any operation selected here is shown here.
+    selectedOpIds: isInvestigator
+      ? []
+      : selectedOpIds.length > 0
+        ? selectedOpIds
+        : activeMapOperationId != null
+          ? [activeMapOperationId]
+          : [],
   });
   const predictorOn = predictor.on;
   // RS Actions pane — create row mutation
@@ -4336,51 +4350,55 @@ export default function IntelligenceMapping() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mustShare, sharingEnabled]);
 
-  // A Search is running for the team on this officer's running sheet (and Show &
-  // Share is on here): select that sheet and its operation, and draw everyone's
-  // Track from the moment the search started. When it ends, or this officer leaves it, the Tracks it
-  // switched on go again.
+  // While a Search is running on an operation selected here, everyone's Track is
+  // drawn on this screen by itself, from the moment the search started —
+  // everyone who is sharing their location and has not switched their own track
+  // off (My Pill). Ending the search does not take the Tracks away: each officer
+  // switches their own off, and the moment they do it goes from this screen too.
   const teamSearch = predictor.team;
-  const teamSearchKeyRef = useRef<string | null>(null);
-  const teamTrackedRef = useRef<number[]>([]);
-  const teamTrackIds = teamSearch.search?.teamUserIds.join(",") ?? "";
+  const autoTrackedRef = useRef<number[]>([]);
+  const liveTrackable = ((liveUsers as LiveUser[] | undefined) ?? []).filter(
+    u => !u.trackHidden
+  );
+  const trackableKey = Array.from(new Set(liveTrackable.map(u => u.userId)))
+    .sort((a, b) => a - b)
+    .join(",");
+  const hiddenKey = Array.from(
+    new Set(
+      ((liveUsers as LiveUser[] | undefined) ?? [])
+        .filter(u => u.trackHidden)
+        .map(u => u.userId)
+    )
+  )
+    .sort((a, b) => a - b)
+    .join(",");
   useEffect(() => {
-    const t = teamSearch;
-    if (t.active && t.search && t.key) {
-      if (teamSearchKeyRef.current !== t.key) {
-        teamSearchKeyRef.current = t.key;
-        const { operationId, sheetId } = t.search;
-        setSelectedOpIds(prev =>
-          prev.includes(operationId) ? prev : [...prev, operationId]
-        );
-        setOpsExplicitlySet(true);
-        setRsSelectedSheetId(sheetId);
-      }
-      const add = t.search.teamUserIds.filter(
-        id => !teamTrackedRef.current.includes(id)
-      );
-      if (add.length) {
-        for (const id of add)
-          if (!trackStartsRef.current.has(id))
-            trackStartsRef.current.set(id, t.search.startedAtMs);
-        teamTrackedRef.current = [...teamTrackedRef.current, ...add];
-        setTracedUserIds(prev => new Set([...Array.from(prev), ...add]));
-      }
-      return;
-    }
-    if (teamSearchKeyRef.current !== null) {
-      teamSearchKeyRef.current = null;
-      const gone = teamTrackedRef.current;
-      teamTrackedRef.current = [];
-      for (const id of gone) trackStartsRef.current.delete(id);
-      setTracedUserIds(prev => {
-        const next = new Set(prev);
-        for (const id of gone) next.delete(id);
-        return next;
-      });
-    }
+    const hidden = new Set(hiddenKey ? hiddenKey.split(",").map(Number) : []);
+    const drop = autoTrackedRef.current.filter(id => hidden.has(id));
+    const add =
+      teamSearch.active && teamSearch.search && trackableKey
+        ? trackableKey
+            .split(",")
+            .map(Number)
+            .filter(id => !autoTrackedRef.current.includes(id))
+        : [];
+    if (!drop.length && !add.length) return;
+    for (const id of drop) trackStartsRef.current.delete(id);
+    for (const id of add)
+      if (!trackStartsRef.current.has(id))
+        trackStartsRef.current.set(id, teamSearch.search!.startedAtMs);
+    autoTrackedRef.current = [
+      ...autoTrackedRef.current.filter(id => !hidden.has(id)),
+      ...add,
+    ];
+    setTracedUserIds(prev => {
+      const next = new Set(prev);
+      for (const id of drop) next.delete(id);
+      for (const id of add) next.add(id);
+      return next;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamSearch.active, teamSearch.key, teamTrackIds]);
+  }, [teamSearch.active, teamSearch.key, trackableKey, hiddenKey]);
 
   // Update operationIds in the DB when selectedOpIds change while sharing
   useEffect(() => {
@@ -15211,8 +15229,8 @@ export default function IntelligenceMapping() {
               <div className="flex flex-col gap-4 py-2">
                 {/* Search and Track — at the top. Search starts Search for the
                     team on the selected running sheet; it is empty when off and
-                    shaded when on. Track is a switch of its own (your own
-                    track, as under Team in the right pane) and stays where it
+                    shaded when on. Track is a switch of its own (your own track
+                    shown to the others, or hidden) and stays where it
                     is whether or not Search is on; Search's options open
                     below it. Choosing how long ago he was seen closes this
                     popup so the map can be tapped for where. */}
@@ -15220,7 +15238,10 @@ export default function IntelligenceMapping() {
                   <div className="space-y-2" data-testid="pointer-search">
                     {(() => {
                       const searchOn = predictor.on && predictor.mode === "now";
-                      const tracking = !!user && tracedUserIds.has(user.id);
+                      // Your own track, shown on everyone's screen (a Search
+                      // draws everyone's by itself). Off = hidden from the
+                      // others; you still see the search.
+                      const tracking = !!user && !user.trackHidden;
                       const base =
                         "flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border-2 text-sm font-semibold transition-colors disabled:opacity-50";
                       return (
@@ -15244,8 +15265,10 @@ export default function IntelligenceMapping() {
                           </button>
                           <button
                             type="button"
-                            disabled={!user}
-                            onClick={() => user && toggleUserTrace(user.id)}
+                            disabled={!user || setTrackHiddenMut.isPending}
+                            onClick={() =>
+                              setTrackHiddenMut.mutate({ hidden: tracking })
+                            }
                             aria-pressed={tracking}
                             className={`${base} ${
                               tracking
@@ -15261,11 +15284,11 @@ export default function IntelligenceMapping() {
                               RS) to search.
                             </p>
                           )}
-                          {tracking && !sharingEnabled && (
-                            <p className="text-xs text-muted-foreground">
-                              Your track is drawn while Show &amp; Share is on.
-                            </p>
-                          )}
+                          <p className="text-xs text-muted-foreground">
+                            {tracking
+                              ? "Your track is shown to everyone while Show & Share is on. Tap to hide it — you still see the search."
+                              : "Your track is hidden from the others. You still see the search."}
+                          </p>
                           {(searchOn || pointerSearchOpen) &&
                             predictor.canSearch && (
                               <>

@@ -430,6 +430,8 @@ export {
   getIntelMappingLocations,
   getUserLocations,
   setUserOnFoot,
+  setUserTrackHidden,
+  getTrackHiddenUserIds,
   setUserPinAppearance,
   upsertUserLocation,
   clearUserLocation,

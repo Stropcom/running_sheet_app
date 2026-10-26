@@ -432,6 +432,7 @@ test.afterEach(async ({ page }) => {
 test("Map page: Target Predictor says where next, then where now, with a confidence level", async ({
   page,
 }) => {
+  test.setTimeout(90_000);
   const created = await createOperationAndSheet(page);
   searchesToEnd.push(created);
   // History that fits the clock this test runs on: ten Home visits under way
@@ -695,11 +696,37 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   await resumed;
   await expect(page.getByRole("button", { name: "Pause ring" })).toBeVisible();
 
-  // End search sits next to Pause and only ends the search on this screen.
+  // End search sits next to Pause and takes two taps, so a stray touch cannot end
+  // the search for everyone. It then ends it for everyone: the pin and rings go,
+  // and the next Search starts blank.
+  const searchOf = async () => {
+    const r = await page.request.get(
+      `/api/trpc/intelligence.getMyTeamSearch?input=${encodeURIComponent(
+        JSON.stringify({ json: { operationIds: [created.opId] } })
+      )}`
+    );
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  expect(await searchOf()).not.toBeNull();
   await page.getByTestId("end-search").click();
+  await expect(page.getByTestId("end-search")).toContainText(
+    "Tap again to end"
+  );
+  expect(await searchOf()).not.toBeNull();
+  const ended = page.waitForResponse(r =>
+    r.url().includes("clearPredictorLastSeen")
+  );
+  await page.getByTestId("end-search").click();
+  await ended;
   await expect(
     page.getByRole("button", { name: /Target predictor\s*Off/i })
   ).toBeVisible();
+  expect(await searchOf()).toBeNull();
+  await page.getByRole("button", { name: /Target predictor\s*Off/i }).click();
+  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await expect(page.getByText("One tap — the cross goes away")).toBeVisible();
+  expect((await searchOf()).hasPin).toBe(false);
 });
 
 test("Map page: Search still shows how far he could have got with no history, and lists registered addresses in reach", async ({
@@ -929,104 +956,101 @@ test("Map page: a Search started on one screen switches on by itself for the res
     });
   });
   await second.goto("/");
-  await second.evaluate(() => {
+  // This screen has the operation selected on the Map — and nothing else: no
+  // sheet, no target, Show & Share off.
+  await second.evaluate(opId => {
     localStorage.removeItem("runlog_target_predictor_on");
-    localStorage.removeItem("runlog_map_settings");
-  });
+    localStorage.setItem(
+      "runlog_map_settings",
+      JSON.stringify({ selectedOpIds: [opId], opsExplicitlySet: true })
+    );
+  }, created.opId);
   await second.goto("/intelligence/mapping");
-  // This screen's user id, as the app itself records it once the Map has loaded.
-  await expect
-    .poll(
-      () => second.evaluate(() => localStorage.getItem("runlog_last_user_id")),
-      {
-        timeout: 20_000,
-      }
-    )
-    .not.toBeNull();
   const predictorOn = () =>
     second.evaluate(() => localStorage.getItem("runlog_target_predictor_on"));
-  const myTeamSearch = async () => {
-    const r = await page.request.get("/api/trpc/intelligence.getMyTeamSearch");
+  const searchOf = async () => {
+    const r = await page.request.get(
+      `/api/trpc/intelligence.getMyTeamSearch?input=${encodeURIComponent(
+        JSON.stringify({ json: { operationIds: [created.opId] } })
+      )}`
+    );
     expect(r.ok(), await r.text()).toBeTruthy();
     return (await r.json()).result.data.json;
   };
-  expect(await predictorOn()).toBeNull();
-
-  // Search is started for the sheet's team from the first screen.
-  const started = await page.request.post(
-    "/api/trpc/intelligence.startTeamSearch",
-    {
+  const startOn = (sheetId: number) =>
+    page.request.post("/api/trpc/intelligence.startTeamSearch", {
       data: {
-        json: {
-          operationId: created.opId,
-          sheetId: created.sheetId,
-          targetId: 987655,
-        },
+        json: { operationId: created.opId, sheetId, targetId: 987655 },
       },
-    }
-  );
-  expect(started.ok(), await started.text()).toBeTruthy();
-
-  // A screen with Show & Share off does not join by itself: it is not the device
-  // the officer is working on, and nothing switches Show & Share on for them.
-  // It is offered a Join instead.
-  await second.waitForTimeout(12_000);
+    });
   expect(await predictorOn()).toBeNull();
-  await second.getByRole("button", { name: "Toggle side panel" }).click();
-  await expect(second.getByTestId("join-search")).toBeVisible();
-  await expect(second.getByText(/Your location is\s*not shared/)).toBeVisible();
 
-  // One tap joins: predictor on, in Search, the sheet selected.
-  // (The same offer also shows as a notice on every screen; this is the
-  // pane's.)
-  await second
-    .getByTestId("join-search")
-    .getByRole("button", { name: "Join", exact: true })
-    .click();
+  // Search is started on the first screen. The second one — logged in and with
+  // the operation selected, Show & Share off — shows it by itself: nothing asks
+  // it to join, and nothing is switched on for its location.
+  const started = await startOn(created.sheetId);
+  expect(started.ok(), await started.text()).toBeTruthy();
   await expect.poll(predictorOn, { timeout: 40_000 }).toBe("1");
-  await expect
-    .poll(
-      () =>
-        second.evaluate(
-          () =>
-            JSON.parse(localStorage.getItem("runlog_map_settings") || "{}")
-              .rsSelectedSheetId ?? null
-        ),
-      { timeout: 20_000 }
-    )
-    .toBe(created.sheetId);
+  await second.getByRole("button", { name: "Toggle side panel" }).click();
+  await expect(second.getByTestId("join-search")).toHaveCount(0);
   await expect(
     second.getByRole("button", { name: "Search", exact: true })
   ).toHaveAttribute("aria-pressed", "true");
+  await expect(second.getByText("One tap — the cross goes away")).toBeVisible();
   await expect(second.getByTestId("predictor-banner")).toHaveCount(0);
 
-  // End search there only ends it on that screen: the predictor goes off, but
-  // the search carries on for everyone else.
+  // The first search has priority: a search started on another sheet of the
+  // same operation joins it instead of starting a second one.
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  const other2 = await page.request.post("/api/trpc/sheet.create", {
+    data: { json: { operationId: created.opId, sheetDate: today } },
+  });
+  expect(other2.ok(), await other2.text()).toBeTruthy();
+  const sheetB = (await other2.json()).result.data.json;
+  const secondId = sheetB.id ?? sheetB.sheetId;
+  expect(typeof secondId).toBe("number");
+  const heldRes = await startOn(secondId);
+  expect(heldRes.ok(), await heldRes.text()).toBeTruthy();
+  const held = (await heldRes.json()).result.data.json;
+  expect(held.started).toBe(false);
+  expect(held.holdingSheetId).toBe(created.sheetId);
+  expect((await searchOf()).sheetId).toBe(created.sheetId);
+
+  // End search takes two taps, then it is over for everyone and every screen
+  // switches it off.
+  await second.getByTestId("end-search").click();
+  await expect(second.getByTestId("end-search")).toContainText(
+    "Tap again to end"
+  );
+  expect(await searchOf()).not.toBeNull();
   await second.getByTestId("end-search").click();
   await expect.poll(predictorOn, { timeout: 10_000 }).toBe("0");
-  expect(await myTeamSearch()).not.toBeNull();
+  await expect.poll(searchOf, { timeout: 10_000 }).toBeNull();
 
-  // Started again from the first screen: a screen that has Show & Share on (the
-  // officer's working device) comes back in by itself, even though it had ended
-  // the earlier search.
-  await second.evaluate(() => {
-    const id = localStorage.getItem("runlog_last_user_id");
-    localStorage.setItem(`runlog_sharing_u${id}`, "true");
-    window.dispatchEvent(new Event("runlog:sharing-changed"));
-  });
-  const again = await page.request.post(
-    "/api/trpc/intelligence.startTeamSearch",
+  // Started again: a new, blank search, shown by itself on the second screen.
+  const again = await startOn(created.sheetId);
+  expect(again.ok(), await again.text()).toBeTruthy();
+  expect((await searchOf()).hasPin).toBe(false);
+  await expect.poll(predictorOn, { timeout: 40_000 }).toBe("1");
+
+  // My Pill → Track: an officer can switch their own track off (default: shown).
+  const trackHidden = async () =>
+    (await (await page.request.get("/api/trpc/auth.me")).json()).result.data
+      .json.trackHidden;
+  expect(await trackHidden()).toBe(false);
+  const hide = await page.request.post(
+    "/api/trpc/intelligence.setMyTrackHidden",
     {
-      data: {
-        json: {
-          operationId: created.opId,
-          sheetId: created.sheetId,
-          targetId: 987655,
-        },
-      },
+      data: { json: { hidden: true } },
     }
   );
-  expect(again.ok(), await again.text()).toBeTruthy();
-  await expect.poll(predictorOn, { timeout: 40_000 }).toBe("1");
+  expect(hide.ok(), await hide.text()).toBeTruthy();
+  expect(await trackHidden()).toBe(true);
+  await page.request.post("/api/trpc/intelligence.setMyTrackHidden", {
+    data: { json: { hidden: false } },
+  });
+  expect(await trackHidden()).toBe(false);
   await other.close();
 });

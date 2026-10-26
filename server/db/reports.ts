@@ -22,7 +22,7 @@ import {
 import type { CommandCode } from "@shared/commands";
 
 import { scopeEntities } from "@shared/operationAccess";
-import { isSearchFresh, isSearchLive } from "@shared/teamSearch";
+import { holdsPriority, isSearchLive } from "@shared/teamSearch";
 
 import { intelScope } from "../intelScope";
 
@@ -1304,20 +1304,56 @@ export async function setPredictorLastSeen(params: {
     .onDuplicateKeyUpdate({ set: values });
 }
 
-/** Starts Search for the whole team on this sheet. Always a fresh start as far
- * as every screen is concerned (the start time is renewed), so a screen that
- * had left an earlier search on this sheet comes back in. A search that is
- * already running and was touched in the last 10 minutes keeps its pin; an
- * older one, or none, begins blank. */
+/** Starts Search on this sheet. The search is shown to everybody who has this
+ * operation selected, so there is only one at a time per operation:
+ *  - one already running on this sheet is left as it is (nothing is wiped);
+ *  - one running on ANOTHER sheet of the same operation that has been touched in
+ *    the last hour holds the operation — the first search has priority — and
+ *    nothing new is started (`holdingSheetId` says which);
+ *  - older ones on the operation are over: they are removed and this one starts
+ *    blank. */
 export async function startPredictorSearch(params: {
   sheetId: number;
   targetId: number;
   cin: string | null;
-}): Promise<{ restarted: boolean }> {
+}): Promise<{ existing: boolean; holdingSheetId: number | null }> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const today = perthTodayISO();
   const now = Date.now();
+
+  const [sheet] = await db
+    .select({ operationId: runningSheets.operationId })
+    .from(runningSheets)
+    .where(eq(runningSheets.id, params.sheetId))
+    .limit(1);
+  if (sheet) {
+    const others = await db
+      .select({
+        sheetId: predictorLastSeen.sheetId,
+        updatedAt: predictorLastSeen.updatedAt,
+        dateISO: predictorLastSeen.dateISO,
+      })
+      .from(predictorLastSeen)
+      .innerJoin(runningSheets, eq(runningSheets.id, predictorLastSeen.sheetId))
+      .where(
+        and(
+          eq(runningSheets.operationId, sheet.operationId),
+          ne(predictorLastSeen.sheetId, params.sheetId)
+        )
+      );
+    const holding = others.find(
+      o => o.dateISO === today && holdsPriority(o.updatedAt.getTime(), now)
+    );
+    if (holding) return { existing: true, holdingSheetId: holding.sheetId };
+    // The rest are over: a start takes the operation.
+    const stale = others.map(o => o.sheetId);
+    if (stale.length)
+      await db
+        .delete(predictorLastSeen)
+        .where(inArray(predictorLastSeen.sheetId, stale));
+  }
+
   const [row] = await db
     .select({
       dateISO: predictorLastSeen.dateISO,
@@ -1326,34 +1362,12 @@ export async function startPredictorSearch(params: {
     .from(predictorLastSeen)
     .where(eq(predictorLastSeen.sheetId, params.sheetId))
     .limit(1);
-  const running =
-    !!row &&
+  if (
+    row &&
     row.dateISO === today &&
-    isSearchLive(row.updatedAt.getTime(), now);
-  if (running) {
-    const keepPin = isSearchFresh(row!.updatedAt.getTime(), now);
-    await db
-      .update(predictorLastSeen)
-      .set({
-        createdAt: new Date(now),
-        updatedByCIN: params.cin,
-        ...(keepPin
-          ? {}
-          : {
-              kind: "sheet",
-              placeKey: null,
-              lat: null,
-              lng: null,
-              seenMinutes: null,
-              seenAtMs: null,
-              pausedAtMinutes: null,
-              pausedAtMs: null,
-              area: null,
-            }),
-      })
-      .where(eq(predictorLastSeen.sheetId, params.sheetId));
-    return { restarted: true };
-  }
+    isSearchLive(row.updatedAt.getTime(), now)
+  )
+    return { existing: true, holdingSheetId: null };
   if (row)
     await db
       .delete(predictorLastSeen)
@@ -1365,7 +1379,7 @@ export async function startPredictorSearch(params: {
     kind: "sheet",
     updatedByCIN: params.cin,
   });
-  return { restarted: false };
+  return { existing: false, holdingSheetId: null };
 }
 
 export interface TodaysSearchRow {

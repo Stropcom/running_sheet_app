@@ -68,8 +68,10 @@ import {
 } from "@shared/markerLink";
 import { fullStreetTypes } from "@shared/streetTypes";
 import {
+  SHARING_EVENT,
   broadcastSharing,
   getNativeBackgroundLocation,
+  readSharingFlag,
 } from "@/lib/nativeLocation";
 import {
   locateTargetFromPending,
@@ -151,6 +153,17 @@ import {
   type ContinuityCardData,
 } from "@/components/ContinuityCards";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { MyPillDialog } from "@/components/MyPillDialog";
+import {
+  NO_AUTO_TRACK,
+  autoTrackAllOff,
+  autoTrackStep,
+  type AutoTrackState,
+} from "@shared/autoTrack";
+import {
+  renderHeadingShapeInner,
+  type PinHeadingShape,
+} from "@/lib/pillOptions";
 import { useIsMobile } from "@/hooks/useMobile";
 import DashboardLayout from "@/components/DashboardLayout";
 import { MapView } from "@/components/Map";
@@ -196,8 +209,6 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { MapHeatOverlay } from "@/components/MapHeatOverlay";
 import {
-  SeenAgoButtons,
-  SearchButtons,
   TargetPredictorBanner,
   TargetPredictorOverlay,
   TargetPredictorPinPopup,
@@ -210,18 +221,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import {
   VoiceInputButton,
@@ -587,20 +587,7 @@ interface LiveUser {
   onFoot: boolean;
   pinGender: "neutral" | "male" | "female";
   pinSkinTone: "default" | "brown";
-  pinVehicleIcon:
-    | "arrow"
-    | "dart"
-    | "cursor"
-    | "finger"
-    | "up_arrow_emoji"
-    | "rocket"
-    | "airplane"
-    | "pizza"
-    | "car"
-    | "racing_car"
-    | "motorcycle"
-    | "truck"
-    | "police_car";
+  pinVehicleIcon: PinHeadingShape;
   pinColor: string | null;
 }
 
@@ -1085,76 +1072,6 @@ const HEADING_SHAPE_ROTATION_OFFSET_DEG: Partial<
   airplane: 45,
   pizza: -135,
 };
-
-// Returns the shape's own markup (not yet rotated — the caller wraps this
-// in a rotated container, see createUserPinElement) for whichever
-// pinVehicleIcon the officer has picked. car/racing_car/motorcycle/truck/
-// police_car aren't built yet (reserved for a future side-view-vehicle
-// mode, see their own comment in schema.ts) — falls through to the default
-// arrow rather than rendering nothing if one is ever set.
-function renderHeadingShapeInner(shape: LiveUser["pinVehicleIcon"]): string {
-  const shadow = "filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45));";
-  const svg = (points: string) =>
-    `<svg viewBox="0 0 24 24" width="25" height="25" style="overflow:visible;${shadow}"><polygon points="${points}" fill="#16a34a"/></svg>`;
-  const glyph = (emoji: string) =>
-    `<span style="font-size:20px;line-height:25px;width:25px;height:25px;display:block;text-align:center;${shadow}">${emoji}</span>`;
-  switch (shape) {
-    case "dart":
-      return svg("12 1 20 22 12 16 4 22");
-    case "cursor":
-      return svg("5 2 5 20 9.5 15.5 12.5 22 15.5 20.5 12.5 14 19 14");
-    case "finger":
-      return glyph("☝️");
-    case "up_arrow_emoji":
-      return glyph("⬆️");
-    case "rocket":
-      return glyph("🚀");
-    case "airplane":
-      return glyph("✈️");
-    case "pizza":
-      return glyph("🍕");
-    default:
-      return svg("12 2 19 21 12 17 5 21 12 2");
-  }
-}
-
-// Pin-customise popup's colour picker — a fixed 10-swatch palette rather
-// than a free colour input, so every officer's pill stays legible (white
-// text on top) and visually distinct from the others at a glance. Values
-// are what gets stored in users.pinColor and read straight back for the
-// pill's background — see PIN_COLOUR_SWATCHES' own comment in schema.ts.
-const PIN_COLOUR_SWATCHES: { hex: string; name: string }[] = [
-  { hex: "#ec4899", name: "Pink" },
-  { hex: "#1976d2", name: "Blue" },
-  { hex: "#f9a825", name: "Yellow" },
-  { hex: "#16a34a", name: "Green" },
-  { hex: "#dc2626", name: "Red" },
-  { hex: "#7c3aed", name: "Purple" },
-  { hex: "#0891b2", name: "Teal" },
-  { hex: "#ea580c", name: "Orange" },
-  { hex: "#4f46e5", name: "Indigo" },
-  { hex: "#57534e", name: "Slate" },
-];
-
-// Pin-customise popup's Wheels-mode heading-shape picker — every
-// non-reserved pinVehicleIcon value (arrow is the default, the other seven
-// picked from the "Heading Shape Ideas" artifact) with a human label for
-// the button's title/aria-label. Preview markup for each comes straight
-// from renderHeadingShapeInner, so the popup can never drift out of sync
-// with what actually renders on the live pin.
-const HEADING_SHAPE_OPTIONS: {
-  key: LiveUser["pinVehicleIcon"];
-  label: string;
-}[] = [
-  { key: "arrow", label: "Arrow (default)" },
-  { key: "dart", label: "Dart" },
-  { key: "cursor", label: "Cursor" },
-  { key: "finger", label: "Index finger" },
-  { key: "up_arrow_emoji", label: "Up arrow" },
-  { key: "rocket", label: "Rocket" },
-  { key: "airplane", label: "Airplane" },
-  { key: "pizza", label: "Pizza slice" },
-];
 
 const DARK_MAP_STYLES: google.maps.MapTypeStyle[] = [
   { elementType: "geometry", stylers: [{ color: "#212121" }] },
@@ -3459,21 +3376,13 @@ export default function IntelligenceMapping() {
   });
 
   // "On Foot" pin state — own pill click opens a popup to toggle it (see
-  // the click listener on the own marker below and the Dialog rendered
-  // near the end of this component). setOnFootMutRef mirrors the same
+  // the click listener on the own marker below and the MyPillDialog
+  // rendered near the end of this component). setOnFootMutRef mirrors the same
   // pattern as updateLocationMutRef, since the auto-revert effect below
   // needs a stable reference to call it from outside the render closure.
   const [onFootPopupOpen, setOnFootPopupOpen] = useState(false);
-  // The Search section of the "My Pill" popup is opened by its
-  // Search button.
-  const [pointerSearchOpen, setPointerSearchOpen] = useState(false);
-  // "Customise" (heading shape, pill colour) in that popup starts closed.
-  const [pillCustomiseOpen, setPillCustomiseOpen] = useState(false);
   const setOnFootMut = trpc.intelligence.setOnFoot.useMutation();
   const setOnFootMutRef = useRef(setOnFootMut);
-  // Gender/skin-tone (on-foot glyph) + vehicle icon (Wheels mode) prefs —
-  // see the pin-customise popup near the end of this component.
-  const setPinAppearanceMut = trpc.intelligence.setPinAppearance.useMutation();
   useEffect(() => {
     setOnFootMutRef.current = setOnFootMut;
   });
@@ -4011,6 +3920,14 @@ export default function IntelligenceMapping() {
     opId: isInvestigator ? null : (activeMapOperationId ?? rsSelectedOpId),
     sheetId: isInvestigator ? null : rsSelectedSheetId,
     targetId: isInvestigator ? null : (rsTargetData?.id ?? null),
+    // A Search running on any operation selected here is shown here.
+    selectedOpIds: isInvestigator
+      ? []
+      : selectedOpIds.length > 0
+        ? selectedOpIds
+        : activeMapOperationId != null
+          ? [activeMapOperationId]
+          : [],
   });
   const predictorOn = predictor.on;
   // RS Actions pane — create row mutation
@@ -4285,6 +4202,7 @@ export default function IntelligenceMapping() {
     // Locked on for a team that must share.
     if (!checked && mustShare) return;
     setSharingEnabled(checked);
+    sharingRef.current = checked;
     // Tell the app-wide location service at once (it follows this switch).
     broadcastSharing(user?.id, checked);
     if (checked) {
@@ -4301,6 +4219,23 @@ export default function IntelligenceMapping() {
       stopWatching();
     }
   };
+
+  // The switch is also in the top banner (the operation name), which only
+  // changes the flag and says so. Follow it here, so the GPS starts and stops
+  // exactly as it does from the switch in this page's side panel.
+  const sharingRef = useRef(sharingEnabled);
+  sharingRef.current = sharingEnabled;
+  const handleSharingToggleRef = useRef(handleSharingToggle);
+  handleSharingToggleRef.current = handleSharingToggle;
+  useEffect(() => {
+    if (!user?.id) return;
+    const follow = () => {
+      const on = readSharingFlag(user.id);
+      if (on !== sharingRef.current) handleSharingToggleRef.current(on);
+    };
+    window.addEventListener(SHARING_EVENT, follow);
+    return () => window.removeEventListener(SHARING_EVENT, follow);
+  }, [user?.id]);
 
   // Cross-tab sync: deviceId is deliberately per-TAB (see its declaration
   // above), so a second tab left open on the same device/browser runs its
@@ -4336,51 +4271,40 @@ export default function IntelligenceMapping() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mustShare, sharingEnabled]);
 
-  // A Search is running for the team on this officer's running sheet (and Show &
-  // Share is on here): select that sheet and its operation, and draw everyone's
-  // Track from the moment the search started. When it ends, or this officer leaves it, the Tracks it
-  // switched on go again.
+  // While a Search is shown on this screen, everyone's Track (the trail drawn
+  // here) is switched on by itself, from the moment the search started — for
+  // everyone sharing their location on the operation. A device with its location
+  // off is not in the live list, so it is never tracked. The Search switches a
+  // Track on once and never holds it on: switching one off, from the Teams panel
+  // or from My Pill, keeps it off for that Search (see shared/autoTrack.ts).
+  // Ending the search does not take the Tracks away.
   const teamSearch = predictor.team;
-  const teamSearchKeyRef = useRef<string | null>(null);
-  const teamTrackedRef = useRef<number[]>([]);
-  const teamTrackIds = teamSearch.search?.teamUserIds.join(",") ?? "";
+  const autoTrackRef = useRef<AutoTrackState>(NO_AUTO_TRACK);
+  const liveIdsKey = Array.from(
+    new Set(((liveUsers as LiveUser[] | undefined) ?? []).map(u => u.userId))
+  )
+    .sort((a, b) => a - b)
+    .join(",");
   useEffect(() => {
-    const t = teamSearch;
-    if (t.active && t.search && t.key) {
-      if (teamSearchKeyRef.current !== t.key) {
-        teamSearchKeyRef.current = t.key;
-        const { operationId, sheetId } = t.search;
-        setSelectedOpIds(prev =>
-          prev.includes(operationId) ? prev : [...prev, operationId]
-        );
-        setOpsExplicitlySet(true);
-        setRsSelectedSheetId(sheetId);
-      }
-      const add = t.search.teamUserIds.filter(
-        id => !teamTrackedRef.current.includes(id)
-      );
-      if (add.length) {
-        for (const id of add)
-          if (!trackStartsRef.current.has(id))
-            trackStartsRef.current.set(id, t.search.startedAtMs);
-        teamTrackedRef.current = [...teamTrackedRef.current, ...add];
-        setTracedUserIds(prev => new Set([...Array.from(prev), ...add]));
-      }
-      return;
-    }
-    if (teamSearchKeyRef.current !== null) {
-      teamSearchKeyRef.current = null;
-      const gone = teamTrackedRef.current;
-      teamTrackedRef.current = [];
-      for (const id of gone) trackStartsRef.current.delete(id);
-      setTracedUserIds(prev => {
-        const next = new Set(prev);
-        for (const id of gone) next.delete(id);
-        return next;
-      });
-    }
+    const searchKey =
+      teamSearch.active && teamSearch.search ? teamSearch.key : null;
+    const { next, add } = autoTrackStep(
+      autoTrackRef.current,
+      searchKey,
+      liveIdsKey ? liveIdsKey.split(",").map(Number) : []
+    );
+    autoTrackRef.current = next;
+    if (!add.length || !teamSearch.search) return;
+    for (const id of add)
+      if (!trackStartsRef.current.has(id))
+        trackStartsRef.current.set(id, teamSearch.search.startedAtMs);
+    setTracedUserIds(prev => {
+      const out = new Set(prev);
+      for (const id of add) out.add(id);
+      return out;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamSearch.active, teamSearch.key, teamTrackIds]);
+  }, [teamSearch.active, teamSearch.key, liveIdsKey]);
 
   // Update operationIds in the DB when selectedOpIds change while sharing
   useEffect(() => {
@@ -8076,6 +8000,33 @@ export default function IntelligenceMapping() {
       }
       return next;
     });
+  };
+
+  // My Pill → Track: the same switch as Track in the Teams panel, for everyone
+  // at once and on this screen only. On shows the trail of me and of everyone
+  // sharing their location on the operation; off clears every trail here. It
+  // never changes anyone else's screen, and while off a Search switches no
+  // more on for the rest of that Search.
+  const setTrackAll = (on: boolean) => {
+    if (on) {
+      const ids = Array.from(
+        new Set(
+          ((liveUsers as LiveUser[] | undefined) ?? []).map(u => u.userId)
+        )
+      );
+      const now = Date.now();
+      for (const id of ids)
+        if (!trackStartsRef.current.has(id))
+          trackStartsRef.current.set(id, now);
+      setTracedUserIds(prev => new Set([...Array.from(prev), ...ids]));
+    } else {
+      trackStartsRef.current.clear();
+      setTracedUserIds(new Set());
+      autoTrackRef.current = autoTrackAllOff(
+        autoTrackRef.current,
+        teamSearch.active && teamSearch.search ? teamSearch.key : null
+      );
+    }
   };
 
   // ── RS Quick-entry helper ────────────────────────────────────────────────────
@@ -15179,257 +15130,19 @@ export default function IntelligenceMapping() {
         );
       })()}
 
-      {/* Pin-customise popup — opened by tapping your own name pill on the
-        map (see the click listener attached in createUserPinElement).
-        Wheels/Foot mode, a Wheels-only heading-shape picker, and a pill
-        colour picker — see setOnFoot/setPinAppearance. The on-foot glyph
-        is always the plain neutral 🧍/🚶/🏃 now — the gender/skin-tone
-        picker previously here was removed entirely. */}
-      <Dialog
+      {/* "My Pill" — opened by tapping your own name pill on the map. */}
+      <MyPillDialog
         open={onFootPopupOpen}
-        onOpenChange={open => {
-          setOnFootPopupOpen(open);
-          if (!open) {
-            setPointerSearchOpen(false);
-            setPillCustomiseOpen(false);
-          }
-        }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>My Pill</DialogTitle>
-          </DialogHeader>
-          {(() => {
-            const ownLiveUser = (liveUsers as LiveUser[] | undefined)?.find(
-              u => u.userId === user?.id && u.deviceId === deviceId
-            );
-            const onFoot = ownLiveUser?.onFoot ?? false;
-            const headingShape = ownLiveUser?.pinVehicleIcon ?? "arrow";
-            const pinColor = ownLiveUser?.pinColor ?? null;
-
-            return (
-              <div className="flex flex-col gap-4 py-2">
-                {/* Search and Track — at the top. Search starts Search for the
-                    team on the selected running sheet; it is empty when off and
-                    shaded when on. Track is a switch of its own (your own
-                    track, as under Team in the right pane) and stays where it
-                    is whether or not Search is on; Search's options open
-                    below it. Choosing how long ago he was seen closes this
-                    popup so the map can be tapped for where. */}
-                {!isInvestigator && (
-                  <div className="space-y-2" data-testid="pointer-search">
-                    {(() => {
-                      const searchOn = predictor.on && predictor.mode === "now";
-                      const tracking = !!user && tracedUserIds.has(user.id);
-                      const base =
-                        "flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border-2 text-sm font-semibold transition-colors disabled:opacity-50";
-                      return (
-                        <>
-                          <button
-                            type="button"
-                            disabled={!predictor.canSearch}
-                            onClick={() => {
-                              predictor.startFromPointer();
-                              setPointerSearchOpen(true);
-                            }}
-                            aria-pressed={searchOn}
-                            className={`${base} ${
-                              searchOn
-                                ? "border-violet-500/50 bg-violet-500/10 text-violet-500"
-                                : "border-border bg-card text-foreground hover:bg-accent/40"
-                            }`}
-                          >
-                            <Crosshair className="h-4 w-4" />
-                            Search
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!user}
-                            onClick={() => user && toggleUserTrace(user.id)}
-                            aria-pressed={tracking}
-                            className={`${base} ${
-                              tracking
-                                ? "border-indigo-500 bg-indigo-500/10 text-indigo-400"
-                                : "border-border bg-card text-foreground hover:bg-accent/40"
-                            }`}
-                          >
-                            {tracking ? "Tracking" : "Track"}
-                          </button>
-                          {!predictor.canSearch && (
-                            <p className="text-xs text-muted-foreground">
-                              Select a running sheet that has a target (Active
-                              RS) to search.
-                            </p>
-                          )}
-                          {tracking && !sharingEnabled && (
-                            <p className="text-xs text-muted-foreground">
-                              Your track is drawn while Show &amp; Share is on.
-                            </p>
-                          )}
-                          {(searchOn || pointerSearchOpen) &&
-                            predictor.canSearch && (
-                              <>
-                                <SeenAgoButtons
-                                  p={predictor}
-                                  onPick={n => {
-                                    predictor.beginSighting(n);
-                                    setPointerSearchOpen(false);
-                                    setOnFootPopupOpen(false);
-                                  }}
-                                />
-                                <SearchButtons
-                                  p={predictor}
-                                  showEnd
-                                  onDone={() => {
-                                    setPointerSearchOpen(false);
-                                    setOnFootPopupOpen(false);
-                                  }}
-                                />
-                              </>
-                            )}
-                        </>
-                      );
-                    })()}
-                  </div>
-                )}
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setOnFootMut.mutate({ onFoot: false })}
-                    className={`flex flex-col items-center gap-1 rounded-lg border-2 py-3 transition-all ${
-                      !onFoot
-                        ? "border-primary bg-primary/10 scale-105"
-                        : "border-border bg-accent/30 hover:border-primary/50"
-                    }`}
-                  >
-                    {/* Same shape as the live pin's own arrow — see
-                        renderHeadingShapeInner — not a generic ⬆️ emoji. */}
-                    <span
-                      className="w-5 h-5 flex items-center justify-center"
-                      dangerouslySetInnerHTML={{
-                        __html: renderHeadingShapeInner("arrow"),
-                      }}
-                    />
-                    <span className="text-xs font-semibold">Wheels</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setOnFootMut.mutate({ onFoot: true })}
-                    className={`flex flex-col items-center gap-1 rounded-lg border-2 py-3 transition-all ${
-                      onFoot
-                        ? "border-primary bg-primary/10 scale-105"
-                        : "border-border bg-accent/30 hover:border-primary/50"
-                    }`}
-                  >
-                    <span className="text-xl">🚶</span>
-                    <span className="text-xs font-semibold">Foot</span>
-                  </button>
-                </div>
-                <p className="text-xs text-muted-foreground -mt-2">
-                  Foot switches back to Wheels automatically once speed goes
-                  over 15 km/h.
-                </p>
-
-                <Collapsible
-                  open={pillCustomiseOpen}
-                  onOpenChange={setPillCustomiseOpen}
-                  className="space-y-3"
-                >
-                  <CollapsibleTrigger asChild>
-                    <button
-                      type="button"
-                      className="flex min-h-[44px] w-full items-center justify-between rounded-lg border-2 border-border bg-card px-3 text-sm font-semibold hover:bg-accent/40"
-                    >
-                      Customise
-                      <ChevronDown
-                        className={`h-4 w-4 transition-transform ${
-                          pillCustomiseOpen ? "rotate-180" : ""
-                        }`}
-                      />
-                    </button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="space-y-4">
-                    {!onFoot && (
-                      <div className="space-y-1.5">
-                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                          Heading shape
-                        </p>
-                        <div className="grid grid-cols-4 gap-2">
-                          {HEADING_SHAPE_OPTIONS.map(opt => (
-                            <button
-                              key={opt.key}
-                              type="button"
-                              onClick={() =>
-                                setPinAppearanceMut.mutate({
-                                  pinVehicleIcon: opt.key,
-                                })
-                              }
-                              title={opt.label}
-                              aria-label={opt.label}
-                              className={`flex items-center justify-center rounded-lg border-2 py-2 transition-all ${
-                                headingShape === opt.key
-                                  ? "border-primary bg-primary/10 scale-105"
-                                  : "border-border bg-accent/30 hover:border-primary/50"
-                              }`}
-                            >
-                              <span
-                                className="w-5 h-5 flex items-center justify-center"
-                                dangerouslySetInnerHTML={{
-                                  __html: renderHeadingShapeInner(opt.key),
-                                }}
-                              />
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                          Pill colour
-                        </p>
-                        {pinColor && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setPinAppearanceMut.mutate({ pinColor: null })
-                            }
-                            className="text-[10px] font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
-                          >
-                            Reset to team colour
-                          </button>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-5 gap-2 justify-items-center">
-                        {PIN_COLOUR_SWATCHES.map(swatch => (
-                          <button
-                            key={swatch.hex}
-                            type="button"
-                            onClick={() =>
-                              setPinAppearanceMut.mutate({
-                                pinColor: swatch.hex,
-                              })
-                            }
-                            title={swatch.name}
-                            aria-label={swatch.name}
-                            className={`h-8 w-8 rounded-full border-2 transition-all ${
-                              pinColor === swatch.hex
-                                ? "border-foreground scale-110"
-                                : "border-transparent hover:scale-105"
-                            }`}
-                            style={{ background: swatch.hex }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
-              </div>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
+        onOpenChange={setOnFootPopupOpen}
+        own={(liveUsers as LiveUser[] | undefined)?.find(
+          u => u.userId === user?.id && u.deviceId === deviceId
+        )}
+        isInvestigator={isInvestigator}
+        tracking={tracedUserIds.size > 0}
+        onSetTracking={setTrackAll}
+        predictor={predictor}
+        onSetOnFoot={onFoot => setOnFootMut.mutate({ onFoot })}
+      />
     </DashboardLayout>
   );
 }

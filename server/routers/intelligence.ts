@@ -10,12 +10,7 @@ import {
   reachableFor,
   toAccessUser,
 } from "../operationAccess";
-import {
-  isOnSearchTeam,
-  isSearchLive,
-  rosterCins,
-  teamCinsOf,
-} from "@shared/teamSearch";
+import { chooseSearch } from "@shared/teamSearch";
 import { protectedProcedure, router } from "../_core/trpc";
 import {
   getInvestigatorAllowedOperationIds,
@@ -32,7 +27,6 @@ import {
   clearPredictorLastSeen,
   startPredictorSearch,
   getTodaysSearches,
-  getAllUsers,
   setTargetPlaceLabel,
   createAuditLog,
   extractEntitiesFromText,
@@ -417,65 +411,70 @@ export const intelligenceRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const { restarted } = await startPredictorSearch({
+      const { existing, holdingSheetId } = await startPredictorSearch({
         sheetId: input.sheetId,
         targetId: input.targetId,
         cin: ctx.user.cin ?? null,
       });
-      await createAuditLog({
-        sheetId: input.sheetId,
-        userId: ctx.user.id,
-        userName: ctx.user.cin ?? "Unknown",
-        userCIN: ctx.user.cin ?? null,
-        action: "predictor_last_seen_changed",
-        details: restarted
-          ? "Target Predictor search started again for the team"
-          : "Target Predictor search started for the team",
-        createdAt: Date.now(),
-      });
-      return { started: true, restarted };
+      if (!existing)
+        await createAuditLog({
+          sheetId: input.sheetId,
+          userId: ctx.user.id,
+          userName: ctx.user.cin ?? "Unknown",
+          userCIN: ctx.user.cin ?? null,
+          action: "predictor_last_seen_changed",
+          details: "Target Predictor search started",
+          createdAt: Date.now(),
+        });
+      // holdingSheetId: another search on this operation was first and still
+      // holds it, so nothing new was started — everyone sees that one.
+      return { started: !existing, holdingSheetId };
     }),
 
-  /** Search: the one running today that this officer is on the team of — on
-   * the sheet's CIN roster, or the one who started it — and may reach. Null
-   * when there is none. Polled by every screen, so it takes no ids: it only
-   * ever answers about the caller. */
-  getMyTeamSearch: protectedProcedure.query(async ({ ctx }) => {
-    if (ctx.user.role === "investigator" || !ctx.user.cin) return null;
-    const rows = await getTodaysSearches();
-    if (rows.length === 0) return null;
-    const accessible = await accessibleOperationIds(toAccessUser(ctx.user), 1);
-    const mine = rows
-      .filter(r => isSearchLive(r.seen.updatedAtMs, Date.now()))
-      .filter(r => accessible === null || accessible.has(r.operationId))
-      .filter(r =>
-        isOnSearchTeam({
-          cin: ctx.user.cin,
-          roster: rosterCins(r.sheetCins),
-          updatedByCIN: r.seen.updatedByCIN,
-        })
-      )
-      .sort((a, b) => b.seen.updatedAtMs - a.seen.updatedAtMs)[0];
-    if (!mine) return null;
-    const cins = new Set(
-      teamCinsOf(rosterCins(mine.sheetCins), mine.seen.updatedByCIN)
-    );
-    const everyone = await getAllUsers();
-    const team = everyone.filter(
-      u => !u.archivedAt && u.cin && cins.has(u.cin.trim())
-    );
-    return {
-      sheetId: mine.sheetId,
-      operationId: mine.operationId,
-      targetId: mine.targetId,
-      startedAtMs: mine.seen.startedAtMs,
-      startedByCIN: mine.seen.updatedByCIN,
-      hasPin: mine.seen.kind === "point",
-      teamUserIds: team.map(u => u.id),
-    };
-  }),
+  /** Search: the one running today on the operation(s) this screen has
+   * selected, if the caller may reach that operation — whatever sheet or target
+   * they have selected themselves. Several: the one that started first. Null
+   * when there is none (and always for Investigator accounts). Polled by the
+   * Map page. */
+  getMyTeamSearch: protectedProcedure
+    .input(z.object({ operationIds: z.array(z.number()).max(50) }))
+    .query(async ({ input, ctx }) => {
+      if (ctx.user.role === "investigator" || input.operationIds.length === 0)
+        return null;
+      const rows = await getTodaysSearches();
+      if (rows.length === 0) return null;
+      const accessible = await accessibleOperationIds(
+        toAccessUser(ctx.user),
+        1
+      );
+      const wanted = new Set(input.operationIds);
+      const mine = rows.filter(
+        r =>
+          wanted.has(r.operationId) &&
+          (accessible === null || accessible.has(r.operationId))
+      );
+      const first = chooseSearch(
+        mine.map(r => ({
+          ...r,
+          startedAtMs: r.seen.startedAtMs,
+          updatedAtMs: r.seen.updatedAtMs,
+        })),
+        Date.now()
+      );
+      if (!first) return null;
+      return {
+        sheetId: first.sheetId,
+        operationId: first.operationId,
+        targetId: first.targetId,
+        startedAtMs: first.seen.startedAtMs,
+        startedByCIN: first.seen.updatedByCIN,
+        hasPin: first.seen.kind === "point",
+      };
+    }),
 
-  /** Search: ends the search for the whole team. */
+  /** Search: ends the search for everyone — the pin, the rings and the pause
+   * go from every screen, and the next Search starts blank. Tracks are not
+   * touched: each officer switches their own off. */
   clearPredictorLastSeen: protectedProcedure
     .input(z.object({ operationId: z.number(), sheetId: z.number() }))
     .mutation(async ({ input, ctx }) => {
@@ -486,7 +485,7 @@ export const intelligenceRouter = router({
         userName: ctx.user.cin ?? "Unknown",
         userCIN: ctx.user.cin ?? null,
         action: "predictor_last_seen_changed",
-        details: "Target Predictor search ended for the team",
+        details: "Target Predictor search ended",
         createdAt: Date.now(),
       });
       return { ok: true };

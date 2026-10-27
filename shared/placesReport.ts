@@ -23,6 +23,7 @@ export const PLACE_KINDS = [
   { id: "travel", label: "Travel" },
   { id: "leisure", label: "Stay & leisure" },
   { id: "services", label: "Bank & post" },
+  { id: "health", label: "Health & medical" },
   { id: "registered", label: "Registered address" },
   { id: "other", label: "Other" },
 ] as const;
@@ -67,6 +68,11 @@ const SIGN_KIND: Record<
   place_restaurant: "food",
   place_fast_food: "food",
   place_airport: "travel",
+  place_hospital: "health",
+  place_pharmacy: "health",
+  place_doctor: "health",
+  place_physio: "health",
+  place_dentist: "health",
   bus_stop: "travel",
   train_station: "travel",
 };

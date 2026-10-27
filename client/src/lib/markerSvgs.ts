@@ -66,6 +66,11 @@ export type MarkerIcon =
   | "place_restaurant"
   | "place_fast_food"
   | "place_airport"
+  | "place_hospital"
+  | "place_pharmacy"
+  | "place_doctor"
+  | "place_physio"
+  | "place_dentist"
   // Colour-changeable versions of shapes from the AFP iSurv "Surveillance"
   // marker set (see session notes) — same silhouettes as several fixed
   // Tactical icons (tacticalMarkers.ts), traced from the same source
@@ -160,6 +165,11 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
   place_restaurant: "Restaurant Sign",
   place_fast_food: "Fast Food Sign",
   place_airport: "Airport Sign",
+  place_hospital: "Hospital Sign",
+  place_pharmacy: "Pharmacy Sign",
+  place_doctor: "Doctor Sign",
+  place_physio: "Physio / Chiro Sign",
+  place_dentist: "Dentist Sign",
   circle_x: "Circled X",
   ring_1: "Circle 1",
   ring_2: "Circle 2",
@@ -211,6 +221,11 @@ export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
       "place_restaurant",
       "place_fast_food",
       "place_airport",
+      "place_hospital",
+      "place_pharmacy",
+      "place_doctor",
+      "place_physio",
+      "place_dentist",
     ],
   },
   { label: "Arrow", icons: ["arrow_up", "arrow_right", "arrow_thin"] },
@@ -328,6 +343,25 @@ const PLACE_SIGN_PICTOGRAMS: Record<string, (c: string) => string> = {
      <path d="M3.4 18.8 H20.6 V19.4 a2.6 2.6 0 0 1 -2.6 2.6 H6 a2.6 2.6 0 0 1 -2.6 -2.6 Z" fill="#fff"/>`,
   place_airport: () =>
     `<path d="M21.6 14.4 v-2.4 L13.2 7 V3.4 a1.6 1.6 0 0 0 -3.2 0 V7 L1.6 12 v2.4 l8.4 -2.4 v4.6 l-2.4 1.8 V21 l4 -1.2 4 1.2 v-2.2 l-2.4 -1.8 V12 Z" fill="#fff" transform="translate(0.4 0.4)"/>`,
+  // The health set. A hospital is the road-sign H.
+  place_hospital: () =>
+    `<rect x="4.6" y="2.8" width="4.2" height="18.4" rx="1.3" fill="#fff"/><rect x="15.2" y="2.8" width="4.2" height="18.4" rx="1.3" fill="#fff"/><rect x="4.6" y="9.9" width="14.8" height="4.2" rx="1.3" fill="#fff"/>`,
+  // A pharmacy is a cross over a capsule (the capsule's far half is shaded in
+  // the sign colour).
+  place_pharmacy: c =>
+    `<rect x="9.4" y="1.8" width="5.2" height="12.6" rx="1.4" fill="#fff"/><rect x="5.7" y="5.5" width="12.6" height="5.2" rx="1.4" fill="#fff"/>
+     <g transform="rotate(-35 12 18.6)"><rect x="3.6" y="15.6" width="16.8" height="6" rx="3" fill="#fff"/><path d="M12 15.6 V21.6" stroke="${c}" stroke-width="1.3"/><rect x="12.4" y="16.2" width="7.4" height="4.8" rx="2.4" fill="${c}" opacity=".55"/></g>`,
+  // A doctor (GP, medical centre) is a medical bag with a cross cut out.
+  place_doctor: c =>
+    `<path d="M8.4 8.4 V6.6 a1.9 1.9 0 0 1 1.9 -1.9 h3.4 a1.9 1.9 0 0 1 1.9 1.9 V8.4" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round"/>
+     <rect x="2.8" y="8" width="18.4" height="13.6" rx="2.2" fill="#fff"/><rect x="10.4" y="10.8" width="3.2" height="8" rx="0.8" fill="${c}"/><rect x="8" y="13.2" width="8" height="3.2" rx="0.8" fill="${c}"/>`,
+  // Physio, chiropractor, osteopath: a spine in an S-curve, drawn as separate
+  // vertebrae (a dashed thick line).
+  place_physio: () =>
+    `<path d="M13.4 2.4 C18.6 6.4 6.6 9.8 11.4 13.8 C15.8 17.2 9.2 20 10.8 22.4" fill="none" stroke="#fff" stroke-width="4.6" stroke-dasharray="2.7 1.5"/>`,
+  // A dentist is a tooth.
+  place_dentist: () =>
+    `<path d="M7.6 3 C5 3 3.4 5.1 3.4 7.8 C3.4 10.6 5.3 11.9 5.9 14.6 C6.4 17 6.3 21.2 8.6 21.2 C10.6 21.2 10.4 16.8 12 16.8 C13.6 16.8 13.4 21.2 15.4 21.2 C17.7 21.2 17.6 17 18.1 14.6 C18.7 11.9 20.6 10.6 20.6 7.8 C20.6 5.1 19 3 16.4 3 C14.6 3 13.6 4.1 12 4.1 C10.4 4.1 9.4 3 7.6 3 Z" fill="#fff"/>`,
 };
 
 /** A rounded square with a pictogram — the shared shape of the place signs
@@ -460,6 +494,11 @@ export function getMarkerSvg(icon: MarkerIcon, colour: MarkerColour): string {
     case "place_restaurant":
     case "place_fast_food":
     case "place_airport":
+    case "place_hospital":
+    case "place_pharmacy":
+    case "place_doctor":
+    case "place_physio":
+    case "place_dentist":
       return placeSign(icon, c, dark);
 
     case "taxi":

@@ -484,6 +484,16 @@
   --sidebar-ring: var(--ring);
 }
 
+/* The operation name in the top banner is a Show & Share switch and shows this
+   green while it is on — the Phosphor theme's own green (its dark and light
+   values), whichever theme is chosen, so it reads the same for everyone. */
+:root {
+  --share-on: oklch(0.72 0.16 145);
+}
+:root:not(.dark)[data-chrome="light"] {
+  --share-on: oklch(0.52 0.12 150);
+}
+
 /* On the light panel the pale folder colours (the -400 shades, made for a dark
    rail) would fade on white, so inside the header and the side panel each
    hue is shown one step deeper. This is automatic — there is no separate

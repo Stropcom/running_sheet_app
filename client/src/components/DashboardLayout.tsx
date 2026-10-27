@@ -1,5 +1,6 @@
 import { RosterCommandBar, isRosterPath } from "@/components/RosterCommandBar";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { BannerOperation } from "@/components/BannerOperation";
 import { PasskeyBanner } from "@/components/PasskeyBanner";
 import { useCommandFeatures } from "@/lib/commandFeatures";
 import { trpc } from "@/lib/trpc";
@@ -2049,14 +2050,7 @@ function DashboardLayoutContent({
               link, just consolidated into the one place every other page
               already has it. */}
           <div className="flex items-center gap-2">
-            {mapOperationLabel && (
-              <div
-                className="hidden xl:flex items-center justify-center max-w-[220px] px-3 py-2 rounded-xl border border-sidebar-border/60 bg-transparent text-sm font-semibold shadow-sm text-sidebar-foreground"
-                title={`Map operation: ${mapOperationLabel}`}
-              >
-                <span className="truncate">{mapOperationLabel}</span>
-              </div>
-            )}
+            {mapOperationLabel && <BannerOperation label={mapOperationLabel} />}
             <button
               onClick={() => {
                 if (activeRsId) setLocation(`/sheet/${activeRsId}`);

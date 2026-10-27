@@ -104,6 +104,10 @@ export const users = mysqlTable("users", {
   // 15 km/h (see the auto-revert logic in IntelligenceMapping.tsx), not
   // just on manual toggle-off.
   onFoot: boolean("onFoot").default(false).notNull(),
+  /** This officer has switched their own track off: other screens do not draw
+   * it (a Search draws everyone's, automatically, except these). They still see
+   * the search. Self-only, like onFoot. */
+  trackHidden: boolean("trackHidden").default(false).notNull(),
   // Pin-customise popup, on-foot glyph only (see IntelligenceMapping.tsx's
   // createUserPinElement) — gender/skin-tone modifiers applied via Unicode
   // ZWJ sequences on top of the base 🧍/🚶/🏃 glyph. "neutral"/"default"

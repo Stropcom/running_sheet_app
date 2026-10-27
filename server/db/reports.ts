@@ -22,7 +22,7 @@ import {
 import type { CommandCode } from "@shared/commands";
 
 import { scopeEntities } from "@shared/operationAccess";
-import { isSearchFresh, isSearchLive } from "@shared/teamSearch";
+import { holdsPriority, isSearchLive } from "@shared/teamSearch";
 
 import { intelScope } from "../intelScope";
 
@@ -36,6 +36,7 @@ import {
 import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
 
 import { parseExtraAddresses } from "@shared/extraAddresses";
+import { fullAddressForGeocode } from "@shared/geocodeQuery";
 
 import {
   buildVisits,
@@ -395,6 +396,7 @@ export async function getIntelligenceHeatMapLocations(params: {
   type QualifyingMention = {
     entityKey: string;
     label: string;
+    fullDescription: string;
     sheetId: number;
     order: number;
   };
@@ -437,10 +439,20 @@ export async function getIntelligenceHeatMapLocations(params: {
       qualifying.push({
         entityKey: normalizeEntityLabel(entity.shortForm),
         label: entity.shortForm,
+        fullDescription: occ.fullDescription,
         sheetId: occ.sheetId,
         order: rowOrderIndex.get(occ.rowId) ?? 0,
       });
     }
+  }
+
+  // The fuller written form of each address, for geocoding (see
+  // resolvePlaceLatLng) — every qualifying mention's, not just the visits'.
+  const fullDescriptionsByKey = new Map<string, string[]>();
+  for (const m of qualifying) {
+    const list = fullDescriptionsByKey.get(m.entityKey);
+    if (list) list.push(m.fullDescription);
+    else fullDescriptionsByKey.set(m.entityKey, [m.fullDescription]);
   }
 
   // ── Collapse consecutive mentions of the same address into one visit ──────
@@ -457,7 +469,11 @@ export async function getIntelligenceHeatMapLocations(params: {
 
   const results = await Promise.all(
     Array.from(grouped.entries()).map(async ([key, { label, count }]) => {
-      const coords = await resolveLatLng(key, label);
+      const coords = await resolvePlaceLatLng(
+        key,
+        label,
+        fullDescriptionsByKey.get(key) ?? []
+      );
       if (!coords) return null;
       return { label, count, lat: coords.lat, lng: coords.lng };
     })
@@ -505,6 +521,21 @@ export async function resolveLatLng(
   } catch {
     return null;
   }
+}
+
+/** Geocode a place the sheets name, preferring the fuller "<street>, SUBURB
+ * STATE" the officer wrote before its bracket (same rule as the Location
+ * profile) over the bare short form, which for a place name like "Terminal 4"
+ * can resolve anywhere in the State. A fuller address is cached under its own
+ * key, so a wrong position cached earlier for the bare label is never reused. */
+async function resolvePlaceLatLng(
+  addressKey: string,
+  label: string,
+  fullDescriptions: readonly string[]
+): Promise<{ lat: number; lng: number } | null> {
+  const full = fullAddressForGeocode(fullDescriptions);
+  if (!full) return resolveLatLng(addressKey, label);
+  return resolveLatLng(normalizeEntityLabel(full).slice(0, 500), full);
 }
 
 /** Batch-geocode a list of raw address strings via the same cache-first
@@ -769,6 +800,7 @@ export async function getIntelTargetPatternOfLife(
   type QualifyingMention = {
     entityKey: string;
     label: string;
+    fullDescription: string;
     sheetId: number;
     order: number;
     timeMinutes: number;
@@ -793,6 +825,7 @@ export async function getIntelTargetPatternOfLife(
       qualifying.push({
         entityKey: normalizeEntityLabel(entity.shortForm),
         label: entity.shortForm,
+        fullDescription: occ.fullDescription,
         sheetId: occ.sheetId,
         order: rowOrderIndex.get(occ.rowId) ?? 0,
         timeMinutes: row.timeMinutes,
@@ -806,13 +839,20 @@ export async function getIntelTargetPatternOfLife(
   // count toward the location-based sections, same quality bar as the Heat
   // Map (an address-shaped mention that doesn't resolve to a real place
   // isn't reliable enough to plot).
-  const distinctKeys = new Map<string, string>();
-  for (const m of qualifying)
-    if (!distinctKeys.has(m.entityKey)) distinctKeys.set(m.entityKey, m.label);
+  const distinctKeys = new Map<string, { label: string; full: string[] }>();
+  for (const m of qualifying) {
+    const seen = distinctKeys.get(m.entityKey);
+    if (seen) seen.full.push(m.fullDescription);
+    else
+      distinctKeys.set(m.entityKey, {
+        label: m.label,
+        full: [m.fullDescription],
+      });
+  }
   const geocodable = new Set<string>();
   await Promise.all(
-    Array.from(distinctKeys.entries()).map(async ([key, label]) => {
-      const coords = await resolveLatLng(key, label);
+    Array.from(distinctKeys.entries()).map(async ([key, { label, full }]) => {
+      const coords = await resolvePlaceLatLng(key, label, full);
       if (coords) geocodable.add(key);
     })
   );
@@ -908,7 +948,8 @@ export async function getIntelTargetPatternOfLife(
         direction: m.direction as "arrived" | "departed",
       }));
     if (homeEvents.length) {
-      homeAddressLabel = distinctKeys.get(homeEntityKey) ?? homeAddressLabel;
+      homeAddressLabel =
+        distinctKeys.get(homeEntityKey)?.label ?? homeAddressLabel;
       const buckets = computeHomePresenceByBucket(homeEvents, 12);
       homePresence = buckets.map(toHomePresencePercent);
       homeLikelyRanges = dominantRanges(homePresence, "home", 12);
@@ -1304,20 +1345,56 @@ export async function setPredictorLastSeen(params: {
     .onDuplicateKeyUpdate({ set: values });
 }
 
-/** Starts Search for the whole team on this sheet. Always a fresh start as far
- * as every screen is concerned (the start time is renewed), so a screen that
- * had left an earlier search on this sheet comes back in. A search that is
- * already running and was touched in the last 10 minutes keeps its pin; an
- * older one, or none, begins blank. */
+/** Starts Search on this sheet. The search is shown to everybody who has this
+ * operation selected, so there is only one at a time per operation:
+ *  - one already running on this sheet is left as it is (nothing is wiped);
+ *  - one running on ANOTHER sheet of the same operation that has been touched in
+ *    the last hour holds the operation — the first search has priority — and
+ *    nothing new is started (`holdingSheetId` says which);
+ *  - older ones on the operation are over: they are removed and this one starts
+ *    blank. */
 export async function startPredictorSearch(params: {
   sheetId: number;
   targetId: number;
   cin: string | null;
-}): Promise<{ restarted: boolean }> {
+}): Promise<{ existing: boolean; holdingSheetId: number | null }> {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
   const today = perthTodayISO();
   const now = Date.now();
+
+  const [sheet] = await db
+    .select({ operationId: runningSheets.operationId })
+    .from(runningSheets)
+    .where(eq(runningSheets.id, params.sheetId))
+    .limit(1);
+  if (sheet) {
+    const others = await db
+      .select({
+        sheetId: predictorLastSeen.sheetId,
+        updatedAt: predictorLastSeen.updatedAt,
+        dateISO: predictorLastSeen.dateISO,
+      })
+      .from(predictorLastSeen)
+      .innerJoin(runningSheets, eq(runningSheets.id, predictorLastSeen.sheetId))
+      .where(
+        and(
+          eq(runningSheets.operationId, sheet.operationId),
+          ne(predictorLastSeen.sheetId, params.sheetId)
+        )
+      );
+    const holding = others.find(
+      o => o.dateISO === today && holdsPriority(o.updatedAt.getTime(), now)
+    );
+    if (holding) return { existing: true, holdingSheetId: holding.sheetId };
+    // The rest are over: a start takes the operation.
+    const stale = others.map(o => o.sheetId);
+    if (stale.length)
+      await db
+        .delete(predictorLastSeen)
+        .where(inArray(predictorLastSeen.sheetId, stale));
+  }
+
   const [row] = await db
     .select({
       dateISO: predictorLastSeen.dateISO,
@@ -1326,34 +1403,12 @@ export async function startPredictorSearch(params: {
     .from(predictorLastSeen)
     .where(eq(predictorLastSeen.sheetId, params.sheetId))
     .limit(1);
-  const running =
-    !!row &&
+  if (
+    row &&
     row.dateISO === today &&
-    isSearchLive(row.updatedAt.getTime(), now);
-  if (running) {
-    const keepPin = isSearchFresh(row!.updatedAt.getTime(), now);
-    await db
-      .update(predictorLastSeen)
-      .set({
-        createdAt: new Date(now),
-        updatedByCIN: params.cin,
-        ...(keepPin
-          ? {}
-          : {
-              kind: "sheet",
-              placeKey: null,
-              lat: null,
-              lng: null,
-              seenMinutes: null,
-              seenAtMs: null,
-              pausedAtMinutes: null,
-              pausedAtMs: null,
-              area: null,
-            }),
-      })
-      .where(eq(predictorLastSeen.sheetId, params.sheetId));
-    return { restarted: true };
-  }
+    isSearchLive(row.updatedAt.getTime(), now)
+  )
+    return { existing: true, holdingSheetId: null };
   if (row)
     await db
       .delete(predictorLastSeen)
@@ -1365,7 +1420,7 @@ export async function startPredictorSearch(params: {
     kind: "sheet",
     updatedByCIN: params.cin,
   });
-  return { restarted: false };
+  return { existing: false, holdingSheetId: null };
 }
 
 export interface TodaysSearchRow {

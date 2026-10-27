@@ -73,7 +73,8 @@ describe("place signs by how the place is written", () => {
     expect(placeSignOfName("Blood Bank")).toBeNull();
     expect(placeSignOfName("Salad Bar")).toBeNull();
     expect(placeSignOfName("Masonic Lodge")).toBeNull();
-    expect(placeSignOfName("Medical Centre")).toBeNull();
+    // "Medical Centre" is never a shopping centre; it is a doctor (the health set).
+    expect(placeSignOfName("Medical Centre")).toBe("place_doctor");
     // "Riverbank" is not a bank — it is a park (the park sign, v2.23.0)
     expect(placeSignOfName("Riverbank Park")).toBe("place_park");
   });
@@ -383,5 +384,120 @@ describe("the place sign markers", () => {
 
   it("count as place markers for the target flag", () => {
     for (const icon of PLACE_SIGN_ICONS) expect(markerKind(icon)).toBe("place");
+  });
+});
+
+describe("the health signs (hospital, pharmacy, doctor, physio, dentist)", () => {
+  it("know a hospital, a pharmacy, a dentist, a physio and a doctor by name", () => {
+    expect(
+      placeSignOfName("Royal Perth Hospital, Wellington Street, PERTH")
+    ).toBe("place_hospital");
+    expect(placeSignOfName("St John of God Subiaco Hospital")).toBe(
+      "place_hospital"
+    );
+    for (const name of [
+      "Chemist Warehouse Subiaco, 123 Rokeby Road",
+      "Priceline Pharmacy Cottesloe",
+      "Terry White Chemmart Fremantle",
+      "Amcal Pharmacy Claremont",
+      "Soul Pattinson Chemist Perth",
+    ])
+      expect(placeSignOfName(name)).toBe("place_pharmacy");
+    expect(placeSignOfName("Subiaco Dental Centre, Rokeby Road")).toBe(
+      "place_dentist"
+    );
+    expect(placeSignOfName("Cottesloe Orthodontics")).toBe("place_dentist");
+    for (const name of [
+      "Perth Physiotherapy Clinic, Hay Street",
+      "Cottesloe Chiropractic",
+      "Applecross Osteopath",
+      "Active Exercise Physiology",
+    ])
+      expect(placeSignOfName(name)).toBe("place_physio");
+    for (const name of [
+      "Subiaco Medical Centre, Rokeby Road",
+      "City Doctors",
+      "Doctors Surgery Mount Lawley",
+      "Karrinyup Family Practice",
+      "Midland Urgent Care",
+    ])
+      expect(placeSignOfName(name)).toBe("place_doctor");
+  });
+
+  it("the most specific word wins: a hospital's pharmacy, a dental hospital", () => {
+    expect(placeSignOfName("Fiona Stanley Hospital Pharmacy")).toBe(
+      "place_pharmacy"
+    );
+    expect(placeSignOfName("Perth Dental Hospital")).toBe("place_dentist");
+    // A chain's pharmacy is not its supermarket.
+    expect(placeSignOfName("Woolworths Pharmacy Subiaco")).toBe(
+      "place_pharmacy"
+    );
+    expect(placeSignOfName("Woolworths Subiaco")).toBe("place_supermarket");
+  });
+
+  it("never guesses: streets, car parks, vets, skin and cosmetic clinics, and other words", () => {
+    for (const name of [
+      "Hospital Avenue",
+      "Hospital Road, Subiaco",
+      "Pharmacy Street",
+      "Royal Perth Hospital Car Park",
+      "Fiona Stanley Hospital Pathology",
+      "Subiaco Vet Medical Centre",
+      "Skin Clinic Perth",
+      "Cosmetic Surgery Clinic",
+      "Dr Smith Surgery",
+      "Doctors Gully",
+      "Chemistry Lab",
+      "Hospitality Group Perth",
+      "Osteoporosis Australia",
+    ])
+      expect(placeSignOfName(name)).toBeNull();
+  });
+
+  it("an earlier, more specific kind of place keeps its own sign", () => {
+    expect(placeSignOfName("Hospital Cafe, Wellington Street")).toBe(
+      "place_cafe"
+    );
+    expect(placeSignOfName("The Doctors Tavern")).toBe("place_pub");
+    expect(placeSignOfName("Pilates and Physio Studio")).toBe("place_gym");
+  });
+
+  it("know them from Google's place types", () => {
+    expect(
+      placeSignFromTypes(["pharmacy", "drugstore", "health", "store"])
+    ).toBe("place_pharmacy");
+    expect(placeSignFromTypes(["dentist", "health"])).toBe("place_dentist");
+    expect(placeSignFromTypes(["physiotherapist", "health"])).toBe(
+      "place_physio"
+    );
+    expect(placeSignFromTypes(["hospital", "health"])).toBe("place_hospital");
+    expect(
+      placeSignFromTypes(["doctor", "health"], "Subiaco Medical Centre")
+    ).toBe("place_doctor");
+    // A hospital is often also typed "doctor": the hospital wins.
+    expect(placeSignFromTypes(["doctor", "hospital", "health"])).toBe(
+      "place_hospital"
+    );
+    // A vet that Google calls a doctor is not a doctor.
+    expect(placeSignFromTypes(["doctor"], "Subiaco Vet Centre")).toBeNull();
+    // A supermarket with a pharmacy inside is still the supermarket.
+    expect(
+      placeSignFromTypes(["supermarket", "pharmacy"], "Coles Subiaco")
+    ).toBe("place_supermarket");
+  });
+
+  it("are all default pins, offered in the picker, with the new kind in the Places Report", () => {
+    for (const icon of [
+      "place_hospital",
+      "place_pharmacy",
+      "place_doctor",
+      "place_physio",
+      "place_dentist",
+    ] as const) {
+      expect(PLACE_SIGN_ICONS).toContain(icon);
+      expect(MARKER_ICON_LABELS[icon]).toMatch(/Sign$/);
+    }
+    expect(signIconOf("Subiaco Dental Centre")).toBe("place_dentist");
   });
 });

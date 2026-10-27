@@ -109,9 +109,13 @@ function hhmm(m: number): string {
 }
 
 export interface TargetPredictorArgs {
+  /** The operation, running sheet and target this screen has selected. */
   opId: number | null;
   sheetId: number | null;
   targetId: number | null;
+  /** The operation(s) this screen has selected on the Map: a search running
+   * on any of them is shown here. */
+  selectedOpIds: number[];
 }
 
 /** Search: the one tapped point, the moment he was last seen there and, if the
@@ -129,14 +133,22 @@ export { SEEN_AGO_MINUTES };
 
 /** One state for the section, the banner and the overlay. */
 export function useTargetPredictor({
-  opId,
-  sheetId,
-  targetId,
+  opId: argOpId,
+  sheetId: argSheetId,
+  targetId: argTargetId,
+  selectedOpIds,
 }: TargetPredictorArgs) {
   const [on, setOnState] = useState<boolean>(readOn);
   const [mode, setModeState] = useState<PredictorMode>("next");
-  // The search running for this officer's team on the sheet, if any.
-  const team = useTeamSearch();
+  // The search running on the operation(s) this screen has selected, if any.
+  const team = useTeamSearch(selectedOpIds);
+  // While a search is running the predictor works on THAT search's operation,
+  // sheet and target — not whatever this screen has selected — so everyone who
+  // has the operation selected sees the same search.
+  const followTeam = team.active && !!team.search && mode === "now";
+  const opId = followTeam ? team.search!.operationId : argOpId;
+  const sheetId = followTeam ? team.search!.sheetId : argSheetId;
+  const targetId = followTeam ? team.search!.targetId : argTargetId;
   // "Now", redrawn every 15 seconds while the predictor is on. Everything that
   // grows with time (the rings) is worked out from it.
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -262,8 +274,23 @@ export function useTargetPredictor({
     },
     onError: e => toast.error(e.message),
   });
+  const clearMut = trpc.intelligence.clearPredictorLastSeen.useMutation({
+    onSuccess: () => {
+      utils.intelligence.getPredictorLastSeen.invalidate();
+      utils.intelligence.getMyTeamSearch.invalidate();
+    },
+    onError: e => toast.error(e.message),
+  });
   const startMut = trpc.intelligence.startTeamSearch.useMutation({
-    onSuccess: () => utils.intelligence.getMyTeamSearch.invalidate(),
+    onSuccess: res => {
+      utils.intelligence.getMyTeamSearch.invalidate();
+      // Another search on this operation was first and still holds it: that is
+      // the one everyone sees.
+      if (res.holdingSheetId != null)
+        toast.message(
+          "A search is already running on this operation — showing that one."
+        );
+    },
     onError: e => toast.error(e.message),
   });
   /** "Where next?" / "Search". Choosing Search starts it for the whole team
@@ -274,11 +301,15 @@ export function useTargetPredictor({
       setModeState(m);
       if (m !== "now") return;
       rejoinSearch();
-      if (opId != null && sheetId != null && targetId != null)
-        startMut.mutate({ operationId: opId, sheetId, targetId });
+      if (argOpId != null && argSheetId != null && argTargetId != null)
+        startMut.mutate({
+          operationId: argOpId,
+          sheetId: argSheetId,
+          targetId: argTargetId,
+        });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [opId, sheetId, targetId, rejoinSearch]
+    [argOpId, argSheetId, argTargetId, rejoinSearch]
   );
 
   /** The pointer's Search button: the predictor goes on, in Search, and the
@@ -288,7 +319,8 @@ export function useTargetPredictor({
     setMode("now");
   }, [persistOn, setMode]);
   /** There is a sheet with a target to search on. */
-  const canSearch = opId != null && sheetId != null && targetId != null;
+  const canSearch =
+    argOpId != null && argSheetId != null && argTargetId != null;
 
   const placeByKey = useMemo(
     () => new Map((data?.places ?? []).map(p => [p.placeKey, p])),
@@ -591,15 +623,22 @@ export function useTargetPredictor({
     setDirty(true);
   }, []);
 
-  /** End the search on THIS screen only: the predictor goes off here, and with
-   * it the Tracks it switched on. The others carry on, so one slip cannot take
-   * the search away from the whole team. */
+  /** End the search for everyone: the pin, the rings and the pause go from
+   * every screen, and the next Search starts blank. (The buttons ask twice, so
+   * a stray tap cannot do it.) Tracks are not touched — each officer switches
+   * their own off. */
   const endSearch = useCallback(() => {
+    setSeen(NO_SEEN);
+    setTapRoute(null);
     setTapArmed(false);
     pendingSeenAtRef.current = null;
+    setDirty(false);
+    appliedRef.current = shared?.updatedAtMs ?? null;
     setModeState("next");
-    setOn(false);
-  }, [setOn]);
+    persistOn(false);
+    if (opId != null && sheetId != null)
+      clearMut.mutate({ operationId: opId, sheetId });
+  }, [shared, opId, sheetId, clearMut, persistOn]);
 
   /** Where next: "Change" takes what the sheet says as the starting point. */
   const changeFromSheet = useCallback(() => {
@@ -688,6 +727,9 @@ export function useTargetPredictor({
     setSeenAgo,
     pauseRing,
     resumeRing,
+    /** The search shown is the team's (its operation, sheet and target), not
+     * what this screen has selected. */
+    followTeam,
     beginSighting,
     startFromPointer,
     canSearch,
@@ -740,7 +782,7 @@ const SEG =
 
 export function TargetPredictorSection({
   p,
-  targetName,
+  targetName: ownTargetName,
   operationName,
   sheetTitle,
 }: {
@@ -751,6 +793,10 @@ export function TargetPredictorSection({
 }) {
   const places = p.data?.places ?? [];
   const pr = p.prediction;
+  // Following the team's search, the target is the search's — this screen may
+  // have no sheet or target of its own selected.
+  const targetName =
+    ownTargetName ?? (p.followTeam ? (p.data?.targetName ?? null) : null);
   const reasonNone = p.blocked
     ? p.blocked
     : p.query.isError
@@ -787,33 +833,6 @@ export function TargetPredictorSection({
           {p.on ? "On" : "Off"}
         </span>
       </button>
-
-      {/* A search is running for this officer's sheet but this screen is not in
-          it (Show & Share is off here): offered, never forced. */}
-      {p.team.offered && p.team.search && (
-        <div
-          className="space-y-1.5 rounded-xl border-2 border-violet-500/50 bg-violet-500/10 px-3 py-2"
-          data-testid="join-search"
-        >
-          <p className="text-xs font-semibold text-violet-500">
-            A search is running
-            {p.team.search.startedByCIN
-              ? `, started by ${p.team.search.startedByCIN}`
-              : ""}
-          </p>
-          <p className="text-[11px] leading-snug text-muted-foreground">
-            Show &amp; Share is off on this screen, so it has not joined. Join
-            to see the rings and the team&apos;s tracks here. Your location is
-            not shared.
-          </p>
-          <button
-            onClick={p.team.join}
-            className={`${ACTION} w-full ${ACTION_OFF}`}
-          >
-            Join
-          </button>
-        </div>
-      )}
 
       {p.on && (
         <div className="space-y-2">
@@ -1063,8 +1082,9 @@ export function SeenAgoButtons({
 
 /** Pause / Resume the rings, and (optionally) End search. They are two equal
  * buttons side by side, or one full-width button when there is no End. End
- * search only ends the search on this screen, so a slip cannot take it away
- * from the rest of the team. */
+ * search ends the search for everyone (the pin and rings go from every screen
+ * and the next Search starts blank), so it takes two taps: the first turns the
+ * button into "Tap again to end" for a few seconds. Tracks are not touched. */
 export function SearchButtons({
   p,
   showEnd,
@@ -1074,6 +1094,12 @@ export function SearchButtons({
   showEnd: boolean;
   onDone?: () => void;
 }) {
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const id = window.setTimeout(() => setConfirming(false), 4_000);
+    return () => window.clearTimeout(id);
+  }, [confirming]);
   return (
     <div
       className={`grid gap-1.5 ${showEnd ? "grid-cols-2" : "grid-cols-1"}`}
@@ -1094,13 +1120,19 @@ export function SearchButtons({
       {showEnd && (
         <button
           onClick={() => {
+            if (!confirming) {
+              setConfirming(true);
+              return;
+            }
+            setConfirming(false);
             p.endSearch();
             onDone?.();
           }}
-          className={`${ACTION} ${ACTION_OFF}`}
+          aria-pressed={confirming}
+          className={`${ACTION} ${confirming ? ACTION_ON : ACTION_OFF}`}
           data-testid="end-search"
         >
-          End search
+          {confirming ? "Tap again to end" : "End search"}
         </button>
       )}
     </div>
@@ -1108,8 +1140,8 @@ export function SearchButtons({
 }
 
 /** The popup that opens when the red last-seen diamond is tapped: choose how
- * long ago he was seen, pause / resume the rings, or End search (on this screen
- * only). Closes as soon as one is chosen. */
+ * long ago he was seen, pause / resume the rings, or End search (for everyone,
+ * after a second tap). Closes as soon as one is chosen. */
 export function TargetPredictorPinPopup({ p }: { p: TargetPredictorState }) {
   const close = () => p.setPinPopupOpen(false);
   return (

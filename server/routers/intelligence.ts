@@ -27,8 +27,6 @@ import {
   clearPredictorLastSeen,
   startPredictorSearch,
   getTodaysSearches,
-  getTrackHiddenUserIds,
-  setUserTrackHidden,
   setTargetPlaceLabel,
   createAuditLog,
   extractEntitiesFromText,
@@ -321,8 +319,6 @@ export const intelligenceRouter = router({
         ).map(r => r.userId)
       );
       visible.add(ctx.user.id);
-      for (const id of Array.from(await getTrackHiddenUserIds()))
-        if (id !== ctx.user.id) visible.delete(id);
       return getOperationTrail(
         input.operationId,
         Array.from(visible),
@@ -474,16 +470,6 @@ export const intelligenceRouter = router({
         startedByCIN: first.seen.updatedByCIN,
         hasPin: first.seen.kind === "point",
       };
-    }),
-
-  /** Search: this officer's own track — shown to other screens (default) or
-   * switched off. Self-only. A Search draws everyone's track automatically
-   * except those who have switched theirs off; they still see the search. */
-  setMyTrackHidden: protectedProcedure
-    .input(z.object({ hidden: z.boolean() }))
-    .mutation(async ({ ctx, input }) => {
-      await setUserTrackHidden(ctx.user.id, input.hidden);
-      return { ok: true };
     }),
 
   /** Search: ends the search for everyone — the pin, the rings and the pause
@@ -783,10 +769,6 @@ export const intelligenceRouter = router({
         ).map(r => r.userId)
       );
       visible.add(ctx.user.id);
-      // An officer who has switched their own track off is not served to anyone
-      // else.
-      for (const id of Array.from(await getTrackHiddenUserIds()))
-        if (id !== ctx.user.id) visible.delete(id);
       return getUserLocationHistories(
         input.userIds.filter(id => visible.has(id)),
         input.sinceMs

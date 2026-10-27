@@ -155,6 +155,12 @@ import {
 import { useAuth } from "@/_core/hooks/useAuth";
 import { MyPillDialog } from "@/components/MyPillDialog";
 import {
+  NO_AUTO_TRACK,
+  autoTrackAllOff,
+  autoTrackStep,
+  type AutoTrackState,
+} from "@shared/autoTrack";
+import {
   renderHeadingShapeInner,
   type PinHeadingShape,
 } from "@/lib/pillOptions";
@@ -579,8 +585,6 @@ interface LiveUser {
   operationIds: number[];
   updatedAt: number;
   onFoot: boolean;
-  /** This officer has switched their own track off (see My Pill). */
-  trackHidden: boolean;
   pinGender: "neutral" | "male" | "female";
   pinSkinTone: "default" | "brown";
   pinVehicleIcon: PinHeadingShape;
@@ -4267,55 +4271,40 @@ export default function IntelligenceMapping() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mustShare, sharingEnabled]);
 
-  // While a Search is running on an operation selected here, everyone's Track is
-  // drawn on this screen by itself, from the moment the search started —
-  // everyone who is sharing their location and has not switched their own track
-  // off (My Pill). Ending the search does not take the Tracks away: each officer
-  // switches their own off, and the moment they do it goes from this screen too.
+  // While a Search is shown on this screen, everyone's Track (the trail drawn
+  // here) is switched on by itself, from the moment the search started — for
+  // everyone sharing their location on the operation. A device with its location
+  // off is not in the live list, so it is never tracked. The Search switches a
+  // Track on once and never holds it on: switching one off, from the Teams panel
+  // or from My Pill, keeps it off for that Search (see shared/autoTrack.ts).
+  // Ending the search does not take the Tracks away.
   const teamSearch = predictor.team;
-  const autoTrackedRef = useRef<number[]>([]);
-  const liveTrackable = ((liveUsers as LiveUser[] | undefined) ?? []).filter(
-    u => !u.trackHidden
-  );
-  const trackableKey = Array.from(new Set(liveTrackable.map(u => u.userId)))
-    .sort((a, b) => a - b)
-    .join(",");
-  const hiddenKey = Array.from(
-    new Set(
-      ((liveUsers as LiveUser[] | undefined) ?? [])
-        .filter(u => u.trackHidden)
-        .map(u => u.userId)
-    )
+  const autoTrackRef = useRef<AutoTrackState>(NO_AUTO_TRACK);
+  const liveIdsKey = Array.from(
+    new Set(((liveUsers as LiveUser[] | undefined) ?? []).map(u => u.userId))
   )
     .sort((a, b) => a - b)
     .join(",");
   useEffect(() => {
-    const hidden = new Set(hiddenKey ? hiddenKey.split(",").map(Number) : []);
-    const drop = autoTrackedRef.current.filter(id => hidden.has(id));
-    const add =
-      teamSearch.active && teamSearch.search && trackableKey
-        ? trackableKey
-            .split(",")
-            .map(Number)
-            .filter(id => !autoTrackedRef.current.includes(id))
-        : [];
-    if (!drop.length && !add.length) return;
-    for (const id of drop) trackStartsRef.current.delete(id);
+    const searchKey =
+      teamSearch.active && teamSearch.search ? teamSearch.key : null;
+    const { next, add } = autoTrackStep(
+      autoTrackRef.current,
+      searchKey,
+      liveIdsKey ? liveIdsKey.split(",").map(Number) : []
+    );
+    autoTrackRef.current = next;
+    if (!add.length || !teamSearch.search) return;
     for (const id of add)
       if (!trackStartsRef.current.has(id))
-        trackStartsRef.current.set(id, teamSearch.search!.startedAtMs);
-    autoTrackedRef.current = [
-      ...autoTrackedRef.current.filter(id => !hidden.has(id)),
-      ...add,
-    ];
+        trackStartsRef.current.set(id, teamSearch.search.startedAtMs);
     setTracedUserIds(prev => {
-      const next = new Set(prev);
-      for (const id of drop) next.delete(id);
-      for (const id of add) next.add(id);
-      return next;
+      const out = new Set(prev);
+      for (const id of add) out.add(id);
+      return out;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [teamSearch.active, teamSearch.key, trackableKey, hiddenKey]);
+  }, [teamSearch.active, teamSearch.key, liveIdsKey]);
 
   // Update operationIds in the DB when selectedOpIds change while sharing
   useEffect(() => {
@@ -8011,6 +8000,33 @@ export default function IntelligenceMapping() {
       }
       return next;
     });
+  };
+
+  // My Pill → Track: the same switch as Track in the Teams panel, for everyone
+  // at once and on this screen only. On shows the trail of me and of everyone
+  // sharing their location on the operation; off clears every trail here. It
+  // never changes anyone else's screen, and while off a Search switches no
+  // more on for the rest of that Search.
+  const setTrackAll = (on: boolean) => {
+    if (on) {
+      const ids = Array.from(
+        new Set(
+          ((liveUsers as LiveUser[] | undefined) ?? []).map(u => u.userId)
+        )
+      );
+      const now = Date.now();
+      for (const id of ids)
+        if (!trackStartsRef.current.has(id))
+          trackStartsRef.current.set(id, now);
+      setTracedUserIds(prev => new Set([...Array.from(prev), ...ids]));
+    } else {
+      trackStartsRef.current.clear();
+      setTracedUserIds(new Set());
+      autoTrackRef.current = autoTrackAllOff(
+        autoTrackRef.current,
+        teamSearch.active && teamSearch.search ? teamSearch.key : null
+      );
+    }
   };
 
   // ── RS Quick-entry helper ────────────────────────────────────────────────────
@@ -15122,6 +15138,8 @@ export default function IntelligenceMapping() {
           u => u.userId === user?.id && u.deviceId === deviceId
         )}
         isInvestigator={isInvestigator}
+        tracking={tracedUserIds.size > 0}
+        onSetTracking={setTrackAll}
         predictor={predictor}
         onSetOnFoot={onFoot => setOnFootMut.mutate({ onFoot })}
       />

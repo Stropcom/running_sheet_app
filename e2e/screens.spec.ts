@@ -1035,23 +1035,41 @@ test("Map page: a Search started on one screen switches on by itself for the res
   expect((await searchOf()).hasPin).toBe(false);
   await expect.poll(predictorOn, { timeout: 40_000 }).toBe("1");
 
-  // My Pill → Track: an officer can switch their own track off (default: shown).
-  const trackHidden = async () =>
-    (await (await page.request.get("/api/trpc/auth.me")).json()).result.data
-      .json.trackHidden;
-  expect(await trackHidden()).toBe(false);
-  const hide = await page.request.post(
-    "/api/trpc/intelligence.setMyTrackHidden",
+  // Tracks. A device with its location off is never tracked: nobody is sharing
+  // yet, so the Teams panel has no Track button at all.
+  const trackButton = second
+    .getByRole("button", { name: /^(Track|Tracking)$/ })
+    .first();
+  await expect(trackButton).toHaveCount(0);
+  // The moment a device is sharing its location on the operation, the running
+  // search switches its Track on by itself ...
+  const share = await page.request.post(
+    "/api/trpc/intelligence.updateUserLocation",
     {
-      data: { json: { hidden: true } },
+      data: {
+        json: {
+          deviceId: "e2e-track-device",
+          lat: -31.95,
+          lng: 115.86,
+          operationIds: [created.opId],
+          sharingEnabled: true,
+        },
+      },
     }
   );
-  expect(hide.ok(), await hide.text()).toBeTruthy();
-  expect(await trackHidden()).toBe(true);
-  await page.request.post("/api/trpc/intelligence.setMyTrackHidden", {
-    data: { json: { hidden: false } },
+  expect(share.ok(), await share.text()).toBeTruthy();
+  await expect(trackButton).toHaveText("Tracking", { timeout: 30_000 });
+  // ... but does not hold it on: switched off by hand it stays off while the
+  // list is polled again and again, and can be switched back on.
+  await trackButton.click();
+  await expect(trackButton).toHaveText("Track");
+  await second.waitForTimeout(4_000);
+  await expect(trackButton).toHaveText("Track");
+  await trackButton.click();
+  await expect(trackButton).toHaveText("Tracking");
+  await page.request.post("/api/trpc/intelligence.clearUserLocation", {
+    data: { json: { deviceId: "e2e-track-device" } },
   });
-  expect(await trackHidden()).toBe(false);
   await other.close();
 });
 

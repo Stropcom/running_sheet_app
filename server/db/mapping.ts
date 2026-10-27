@@ -446,8 +446,6 @@ export interface UserLocationRow {
   operationIds: number[];
   updatedAt: number;
   onFoot: boolean;
-  /** This officer has switched their own track off. */
-  trackHidden: boolean;
   pinGender: "neutral" | "male" | "female";
   pinSkinTone: "default" | "brown";
   pinVehicleIcon:
@@ -495,7 +493,6 @@ export async function getUserLocations(
       operationIds: userLocations.operationIds,
       updatedAt: userLocations.updatedAt,
       onFoot: users.onFoot,
-      trackHidden: users.trackHidden,
       pinGender: users.pinGender,
       pinSkinTone: users.pinSkinTone,
       pinVehicleIcon: users.pinVehicleIcon,
@@ -520,28 +517,6 @@ export async function getUserLocations(
     }
     return { ...r, operationIds: opIds };
   });
-}
-
-/** Sets whether the user's own track is hidden from other screens. Self-only
- * (the router passes the caller's own id), like the on-foot flag. */
-export async function setUserTrackHidden(
-  userId: number,
-  trackHidden: boolean
-): Promise<void> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(users).set({ trackHidden }).where(eq(users.id, userId));
-}
-
-/** Ids of the officers who have switched their own track off. */
-export async function getTrackHiddenUserIds(): Promise<Set<number>> {
-  const db = await getDb();
-  if (!db) return new Set();
-  const rows = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.trackHidden, true));
-  return new Set(rows.map(r => r.id));
 }
 
 /**

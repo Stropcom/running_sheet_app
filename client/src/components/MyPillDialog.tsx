@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { ChevronDown, Crosshair } from "lucide-react";
-import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import {
   HEADING_SHAPE_OPTIONS,
@@ -41,6 +40,8 @@ export function MyPillDialog({
   onOpenChange,
   own,
   isInvestigator,
+  tracking,
+  onSetTracking,
   predictor,
   onSetOnFoot,
 }: {
@@ -48,19 +49,16 @@ export function MyPillDialog({
   onOpenChange: (open: boolean) => void;
   own: MyPillOwnPin | undefined;
   isInvestigator: boolean;
+  /** Trails are showing on this screen. */
+  tracking: boolean;
+  onSetTracking: (on: boolean) => void;
   predictor: TargetPredictorState;
   onSetOnFoot: (onFoot: boolean) => void;
 }) {
-  const { user } = useAuth();
-  const utils = trpc.useUtils();
   // The Search section opens from its Search button.
   const [pointerSearchOpen, setPointerSearchOpen] = useState(false);
   // "Customise" (heading shape, pill colour) starts closed.
   const [pillCustomiseOpen, setPillCustomiseOpen] = useState(false);
-  // Track: whether this officer's own track is shown on other screens.
-  const setTrackHiddenMut = trpc.intelligence.setMyTrackHidden.useMutation({
-    onSuccess: () => utils.auth.me.invalidate(),
-  });
   const setPinAppearanceMut = trpc.intelligence.setPinAppearance.useMutation();
 
   const onFoot = own?.onFoot ?? false;
@@ -85,19 +83,17 @@ export function MyPillDialog({
         <div className="flex flex-col gap-4 py-2">
           {/* Search and Track — at the top. Search starts Search for the
                     team on the selected running sheet; it is empty when off and
-                    shaded when on. Track is a switch of its own (your own track
-                    shown to the others, or hidden) and stays where it
-                    is whether or not Search is on; Search's options open
-                    below it. Choosing how long ago he was seen closes this
-                    popup so the map can be tapped for where. */}
+                    shaded when on. Track is a switch of its own, the same as
+                    Track in the Teams panel but for everyone at once: it shows
+                    the trails of me and of everyone sharing on the operation,
+                    on this screen only. It stays where it is whether or not
+                    Search is on; Search's options open below it. Choosing how
+                    long ago he was seen closes this popup so the map can be
+                    tapped for where. */}
           {!isInvestigator && (
             <div className="space-y-2" data-testid="pointer-search">
               {(() => {
                 const searchOn = predictor.on && predictor.mode === "now";
-                // Your own track, shown on everyone's screen (a Search
-                // draws everyone's by itself). Off = hidden from the
-                // others; you still see the search.
-                const tracking = !!user && !user.trackHidden;
                 const base =
                   "flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border-2 text-sm font-semibold transition-colors disabled:opacity-50";
                 return (
@@ -121,10 +117,7 @@ export function MyPillDialog({
                     </button>
                     <button
                       type="button"
-                      disabled={!user || setTrackHiddenMut.isPending}
-                      onClick={() =>
-                        setTrackHiddenMut.mutate({ hidden: tracking })
-                      }
+                      onClick={() => onSetTracking(!tracking)}
                       aria-pressed={tracking}
                       className={`${base} ${
                         tracking
@@ -142,8 +135,8 @@ export function MyPillDialog({
                     )}
                     <p className="text-xs text-muted-foreground">
                       {tracking
-                        ? "Your track is shown to everyone while Show & Share is on. Tap to hide it — you still see the search."
-                        : "Your track is hidden from the others. You still see the search."}
+                        ? "Trails are showing on your screen for everyone sharing on this operation. Tap to clear them."
+                        : "Tap to show the trails of you and everyone sharing on this operation. A Search switches them on for you; you can switch them off any time."}
                     </p>
                     {(searchOn || pointerSearchOpen) && predictor.canSearch && (
                       <>

@@ -87,6 +87,17 @@ const WEEKDAY_LONG = [
 
 const ON_KEY = "runlog_target_predictor_on";
 
+/** Search ("Where now") used to list "Most likely, from his history" with
+ * numbered badges on the map and a "How this was worked out" panel. Taken out
+ * for now — a guess from history is not accurate enough — and kept here, off,
+ * so it can be switched back on by setting this to true. Where next is not
+ * affected: it is that history answer. */
+const SHOW_HISTORY_GUESS_IN_SEARCH = false;
+
+/** The two Search rings, named the same on the map and in the pane. */
+const OUTER_RING_NAME = "Speed Limit, Free Run";
+const INNER_RING_NAME = "Traffic, Minimum";
+
 const TIER_COLOUR: Record<Tier, string> = {
   high: "#0f7a55",
   mid: "#9a6200",
@@ -906,14 +917,16 @@ export function TargetPredictorSection({
 
               {p.data && (places.length > 0 || p.mode === "now") && (
                 <div className="space-y-1 pt-0.5">
-                  <label className="flex items-center gap-2 text-xs text-foreground">
-                    <input
-                      type="checkbox"
-                      checked={p.showShade}
-                      onChange={e => p.setShowShade(e.target.checked)}
-                    />
-                    Show the numbers on the markers
-                  </label>
+                  {(p.mode !== "now" || SHOW_HISTORY_GUESS_IN_SEARCH) && (
+                    <label className="flex items-center gap-2 text-xs text-foreground">
+                      <input
+                        type="checkbox"
+                        checked={p.showShade}
+                        onChange={e => p.setShowShade(e.target.checked)}
+                      />
+                      Show the numbers on the markers
+                    </label>
+                  )}
                   {p.mode === "now" && (
                     <label className="flex items-center gap-2 text-xs text-foreground">
                       <input
@@ -943,8 +956,14 @@ export function TargetPredictorSection({
               {pr && p.mode === "now" && pr.seenLocated && (
                 <InterestList p={p} pr={pr} />
               )}
-              {pr && p.input && <Candidates p={p} pr={pr} />}
-              {pr && p.input && <HowWorkedOut p={p} pr={pr} />}
+              {pr &&
+                p.input &&
+                (p.mode !== "now" || SHOW_HISTORY_GUESS_IN_SEARCH) && (
+                  <>
+                    <Candidates p={p} pr={pr} />
+                    <HowWorkedOut p={p} pr={pr} />
+                  </>
+                )}
             </>
           )}
         </div>
@@ -1246,7 +1265,7 @@ function InterestList({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
                   {r.visits > 0
                     ? `${r.visits} visit${r.visits === 1 ? "" : "s"} on record`
                     : "registered address — no visits on record"}
-                  {r.likely ? " · inside the most-likely ring" : ""}
+                  {r.likely ? ` · inside the ${INNER_RING_NAME} ring` : ""}
                 </span>
               </span>
               <span className="flex-shrink-0 tabular-nums text-muted-foreground">
@@ -1390,7 +1409,9 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
           )}
           {p.mode === "now" && pr.elapsedMinutes > 0 && (
             <p>
-              <span className="font-semibold text-foreground">How far:</span>{" "}
+              <span className="font-semibold text-foreground">
+                {OUTER_RING_NAME}:
+              </span>{" "}
               {Math.round(pr.elapsedMinutes)} min at about {pr.kmh} km/h, so up
               to {pr.reachKm.toFixed(1)} km from where he was seen — the dashed
               ring, which grows every minute.
@@ -1399,7 +1420,7 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
           {p.mode === "now" && pr.elapsedMinutes > 0 && (
             <p>
               <span className="font-semibold text-foreground">
-                Most likely:
+                {INNER_RING_NAME}:
               </span>{" "}
               the solid ring, {Math.round(LIKELY_REACH_SHARE * 100)}% of that (
               {pr.likelyKm.toFixed(1)} km). Roads are not straight and there are
@@ -1615,7 +1636,7 @@ export function TargetPredictorOverlay({
     // it to the list in the pane (1 = first in "Most likely, from his
     // history"). No percentages anywhere, and nothing is shaded over the map.
     const badges: { lat: number; lng: number; text: string }[] = [];
-    if (p.showShade) {
+    if (p.showShade && (p.mode !== "now" || SHOW_HISTORY_GUESS_IN_SEARCH)) {
       pr.candidates.slice(0, 4).forEach((c, rank) => {
         if (c.placeKey === NEAR_KEY) return;
         const pl = p.placeByKey.get(c.placeKey);
@@ -1635,8 +1656,8 @@ export function TargetPredictorOverlay({
             ...seen,
             radiusM: Math.max(60, pr.reachKm * 1000),
             likelyM: Math.max(36, pr.likelyKm * 1000),
-            outerLabel: `Could have got: up to ${formatKm(pr.reachKm)}`,
-            likelyLabel: `Most likely: ${formatKm(pr.likelyKm)}`,
+            outerLabel: `${OUTER_RING_NAME}: ${formatKm(pr.reachKm)}`,
+            likelyLabel: `${INNER_RING_NAME}: ${formatKm(pr.likelyKm)}`,
             paused: p.paused,
           }
         : null;

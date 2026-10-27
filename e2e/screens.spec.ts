@@ -636,9 +636,16 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   };
   await reopenSearch();
   await expect(banner).toHaveCount(0);
+  // Search no longer lists "Most likely, from his history" or the panel that
+  // explains it (a guess from history is not accurate enough); Where next,
+  // checked above, still is that history answer.
   await expect(
     page.getByText("Most likely, from his history", { exact: true })
-  ).toBeVisible();
+  ).toHaveCount(0);
+  await expect(page.getByText(/How this was worked out/)).toHaveCount(0);
+  await expect(page.getByText("Show the numbers on the markers")).toHaveCount(
+    0
+  );
   await expect(page.getByRole("main").getByText(/\b(?!60%)\d+%/)).toHaveCount(
     0
   );
@@ -878,6 +885,9 @@ test("Map page: Search still shows how far he could have got with no history, an
   await page.getByRole("button", { name: "Toggle side panel" }).click();
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.getByText("Locations of interest in reach")).toBeVisible();
+  // The explanation panel is gone from Search; the rings keep their names on the
+  // map only (Google Maps cannot be reached here to read them).
+  await expect(page.getByText(/How this was worked out/)).toHaveCount(0);
   await expect(
     page.getByText("registered address — no visits on record")
   ).toBeVisible();

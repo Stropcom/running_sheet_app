@@ -68,8 +68,10 @@ import {
 } from "@shared/markerLink";
 import { fullStreetTypes } from "@shared/streetTypes";
 import {
+  SHARING_EVENT,
   broadcastSharing,
   getNativeBackgroundLocation,
+  readSharingFlag,
 } from "@/lib/nativeLocation";
 import {
   locateTargetFromPending,
@@ -4196,6 +4198,7 @@ export default function IntelligenceMapping() {
     // Locked on for a team that must share.
     if (!checked && mustShare) return;
     setSharingEnabled(checked);
+    sharingRef.current = checked;
     // Tell the app-wide location service at once (it follows this switch).
     broadcastSharing(user?.id, checked);
     if (checked) {
@@ -4212,6 +4215,23 @@ export default function IntelligenceMapping() {
       stopWatching();
     }
   };
+
+  // The switch is also in the top banner (the operation name), which only
+  // changes the flag and says so. Follow it here, so the GPS starts and stops
+  // exactly as it does from the switch in this page's side panel.
+  const sharingRef = useRef(sharingEnabled);
+  sharingRef.current = sharingEnabled;
+  const handleSharingToggleRef = useRef(handleSharingToggle);
+  handleSharingToggleRef.current = handleSharingToggle;
+  useEffect(() => {
+    if (!user?.id) return;
+    const follow = () => {
+      const on = readSharingFlag(user.id);
+      if (on !== sharingRef.current) handleSharingToggleRef.current(on);
+    };
+    window.addEventListener(SHARING_EVENT, follow);
+    return () => window.removeEventListener(SHARING_EVENT, follow);
+  }, [user?.id]);
 
   // Cross-tab sync: deviceId is deliberately per-TAB (see its declaration
   // above), so a second tab left open on the same device/browser runs its

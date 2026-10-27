@@ -1054,3 +1054,72 @@ test("Map page: a Search started on one screen switches on by itself for the res
   expect(await trackHidden()).toBe(false);
   await other.close();
 });
+
+test("Top banner: the operation name is a Show & Share switch, green while on", async ({
+  page,
+}) => {
+  const created = await createOperationAndSheet(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  // The operation is selected on the Map, and sharing starts off.
+  await page.evaluate(opId => {
+    for (const k of Object.keys(localStorage))
+      if (k.startsWith("runlog_sharing_u")) localStorage.removeItem(k);
+    localStorage.setItem(
+      "runlog_map_settings",
+      JSON.stringify({ selectedOpIds: [opId], opsExplicitlySet: true })
+    );
+  }, created.opId);
+  await page.goto("/intelligence/mapping");
+
+  const banner = page
+    .locator("header.app-chrome button[aria-pressed]")
+    .filter({ hasText: /smoke/i });
+  const colour = () =>
+    banner.evaluate(el => getComputedStyle(el).color as string);
+  const flag = () =>
+    page.evaluate(() => {
+      const k = Object.keys(localStorage).find(k =>
+        k.startsWith("runlog_sharing_u")
+      );
+      return k ? localStorage.getItem(k) : null;
+    });
+  // The side panel's own Show & Share switch, which the banner must agree with.
+  const paneSwitch = page.getByRole("button", { name: /Show & Share/ }).first();
+  if (!(await paneSwitch.isVisible()))
+    await page.getByRole("button", { name: "Toggle side panel" }).click();
+  await expect(paneSwitch).toBeVisible();
+
+  await expect(banner).toHaveAttribute("aria-pressed", "false");
+  const white = await colour();
+
+  await banner.click();
+  await expect(banner).toHaveAttribute("aria-pressed", "true");
+  await expect(paneSwitch).toHaveAttribute("aria-pressed", "true");
+  expect(await flag()).toBe("true");
+  // Phosphor green: the same colour the --share-on variable resolves to.
+  const green = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--share-on)";
+    document.body.appendChild(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return c;
+  });
+  // The colour fades in, so wait for it to settle.
+  await expect.poll(colour).toBe(green);
+  expect(green).not.toBe(white);
+
+  // The side-panel switch turns it off again too, and the banner follows.
+  await paneSwitch.click();
+  await expect(banner).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(colour).toBe(white);
+  expect(await flag()).toBe("false");
+
+  // And the banner turns it off when it was on.
+  await banner.click();
+  await expect(paneSwitch).toHaveAttribute("aria-pressed", "true");
+  await banner.click();
+  await expect(paneSwitch).toHaveAttribute("aria-pressed", "false");
+  expect(await flag()).toBe("false");
+});

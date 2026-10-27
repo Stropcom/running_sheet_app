@@ -1,7 +1,7 @@
 /// <reference types="@types/google.maps" />
 /**
- * Target Predictor on the Map page: a switch in the right-hand pane, a one-line
- * answer at the top of the map, and shaded areas on the map.
+ * Search on the Map page: a button in the right-hand pane that starts a search
+ * for the team, and the rings, pin and markers it draws on the map.
  *
  * Every rule (what counts as a similar visit, how the area of the last sighting
  * changes the answer, what the confidence levels mean) is in
@@ -9,10 +9,9 @@
  * history on the operation — no model, no randomness, nothing sent anywhere.
  * It is a pattern, never a certainty, and is never written to a running sheet.
  *
- * Three pieces, one state (useTargetPredictor):
- *   TargetPredictorSection — the switch and its controls, in the pane
- *   TargetPredictorBanner  — the answer and its confidence, at the top of the map
- *   TargetPredictorOverlay — the shading, the "how far" ring and the pins
+ * Two pieces, one state (useTargetPredictor):
+ *   TargetPredictorSection — the Search button and its controls, in the pane
+ *   TargetPredictorOverlay — the two rings, the last-seen pin and the markers
  *
  * `google.maps.OverlayView` only exists once the Maps script has loaded, so the
  * overlay subclass is built inside its effect, never at module scope (same rule
@@ -21,13 +20,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Crosshair } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import {
   Dialog,
@@ -63,35 +55,22 @@ import {
   TIER_LABEL,
   areaFromSpeedLimit,
   areaFromStreetName,
-  describePrediction,
   formatKm,
   perthClock,
   predict,
   type AreaClass,
   type PredictorFrom,
   type PredictorInput,
-  type PredictorMode,
   type Prediction,
   type Tier,
 } from "@shared/targetPredictor";
 
-const WEEKDAY_LONG = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-];
-
 const ON_KEY = "runlog_target_predictor_on";
 
-/** Search ("Where now") used to list "Most likely, from his history" with
- * numbered badges on the map and a "How this was worked out" panel. Taken out
- * for now — a guess from history is not accurate enough — and kept here, off,
- * so it can be switched back on by setting this to true. Where next is not
- * affected: it is that history answer. */
+/** Search used to list "Most likely, from his history" with numbered badges
+ * on the map and a "How this was worked out" panel. Taken out for now — a guess
+ * from history is not accurate enough — and kept here, off, so it can be
+ * switched back on by setting this to true. */
 const SHOW_HISTORY_GUESS_IN_SEARCH = false;
 
 /** The two Search rings, named the same on the map and in the pane. */
@@ -142,7 +121,7 @@ const NO_SEEN: SeenForm = { point: null, atMs: null, pausedAtMs: null };
 
 export { SEEN_AGO_MINUTES };
 
-/** One state for the section, the banner and the overlay. */
+/** One state for the section and the overlay. */
 export function useTargetPredictor({
   opId: argOpId,
   sheetId: argSheetId,
@@ -150,13 +129,12 @@ export function useTargetPredictor({
   selectedOpIds,
 }: TargetPredictorArgs) {
   const [on, setOnState] = useState<boolean>(readOn);
-  const [mode, setModeState] = useState<PredictorMode>("next");
   // The search running on the operation(s) this screen has selected, if any.
   const team = useTeamSearch(selectedOpIds);
   // While a search is running the predictor works on THAT search's operation,
   // sheet and target — not whatever this screen has selected — so everyone who
   // has the operation selected sees the same search.
-  const followTeam = team.active && !!team.search && mode === "now";
+  const followTeam = team.active && !!team.search;
   const opId = followTeam ? team.search!.operationId : argOpId;
   const sheetId = followTeam ? team.search!.sheetId : argSheetId;
   const targetId = followTeam ? team.search!.targetId : argTargetId;
@@ -169,9 +147,6 @@ export function useTargetPredictor({
   const pendingSeenAtRef = useRef<number | null>(null);
   // The popup that opens when the red last-seen diamond is tapped.
   const [pinPopupOpen, setPinPopupOpen] = useState(false);
-  // Where next: the officer chose where he is instead of the sheet.
-  const [override, setOverride] = useState(false);
-  const [pickPlaceKey, setPickPlaceKey] = useState<string | null>(null);
   // Search: the tapped "last seen" point. Edits are saved and shared with the
   // team (see persist below); what the team has saved flows back into it.
   const [seen, setSeen] = useState<SeenForm>(NO_SEEN);
@@ -216,8 +191,6 @@ export function useTargetPredictor({
   // Another target or sheet means the by-hand choices no longer apply.
   useEffect(() => {
     setTapArmed(false);
-    setOverride(false);
-    setPickPlaceKey(null);
     setSeen(NO_SEEN);
     setTapRoute(null);
     setDirty(false);
@@ -225,26 +198,24 @@ export function useTargetPredictor({
   }, [opId, sheetId, targetId]);
 
   // A search for the team has started (or this screen has just opened with one
-  // running): the predictor goes on, in Search. Once per start, so an officer
-  // can still switch to Where next afterwards. When it ends for everyone, what
-  // it switched on is switched off again.
+  // running): Search goes on. Once per start, so an officer can still switch it
+  // off on this screen afterwards. When it ends for everyone, what it switched
+  // on is switched off again.
   const syncedKey = useRef<string | null>(null);
   useEffect(() => {
     if (team.active && team.key) {
       if (syncedKey.current === team.key) return;
       syncedKey.current = team.key;
       persistOn(true);
-      setModeState("now");
     } else if (syncedKey.current) {
       syncedKey.current = null;
       persistOn(false);
-      setModeState("next");
     }
   }, [team.active, team.key, persistOn]);
 
   const ready = on && opId != null && targetId != null;
-  // Why nothing can be shown, in words — the banner and the pane say it rather
-  // than staying blank.
+  // Why nothing can be shown, in words — the pane says it rather than staying
+  // blank.
   const blocked: string | null = !on
     ? null
     : sheetId == null
@@ -304,31 +275,21 @@ export function useTargetPredictor({
     },
     onError: e => toast.error(e.message),
   });
-  /** "Where next?" / "Search". Choosing Search starts it for the whole team
-   * (their screens follow within a few seconds). Choosing it again starts it
-   * again, which brings back any screen that had left the earlier one. */
-  const setMode = useCallback(
-    (m: PredictorMode) => {
-      setModeState(m);
-      if (m !== "now") return;
-      rejoinSearch();
-      if (argOpId != null && argSheetId != null && argTargetId != null)
-        startMut.mutate({
-          operationId: argOpId,
-          sheetId: argSheetId,
-          targetId: argTargetId,
-        });
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [argOpId, argSheetId, argTargetId, rejoinSearch]
-  );
-
-  /** The pointer's Search button: the predictor goes on, in Search, and the
-   * search is started for the team. */
+  /** Start Search for the whole team (their screens follow within a few
+   * seconds), on the sheet and target this screen has selected, and bring this
+   * screen back into it. Starting it again brings back any screen that had
+   * left the earlier one. Search goes on for this screen too. */
   const startFromPointer = useCallback(() => {
     persistOn(true);
-    setMode("now");
-  }, [persistOn, setMode]);
+    rejoinSearch();
+    if (argOpId != null && argSheetId != null && argTargetId != null)
+      startMut.mutate({
+        operationId: argOpId,
+        sheetId: argSheetId,
+        targetId: argTargetId,
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persistOn, argOpId, argSheetId, argTargetId, rejoinSearch]);
   /** There is a sheet with a target to search on. */
   const canSearch =
     argOpId != null && argSheetId != null && argTargetId != null;
@@ -399,19 +360,6 @@ export function useTargetPredictor({
     setTapRoute(null);
   }, [shared, dirty, saveMut.isPending, sharedQuery.isSuccess]);
 
-  // What the sheet says: only today's entry counts — an old sheet's last row
-  // says nothing about where he is now.
-  const sheetStart = useMemo(() => {
-    const ls = data?.lastSeen;
-    if (!ls || !data || ls.dateISO !== data.todayISO) return null;
-    if (!placeByKey.has(ls.placeKey)) return null;
-    return { ...ls, minutes: Math.min(ls.minutes, clock.minutes) };
-  }, [data, placeByKey, clock.minutes]);
-  // Where next starts from what the sheet says. Search never does — it starts
-  // from the point tapped on the map.
-  const usingSheet = mode === "next" && !!sheetStart && !override;
-
-  const firstPlaceKey = data?.places[0]?.placeKey ?? null;
   // Search runs on a clock kept to the second: when he was last seen (now,
   // until he is), and the moment the rings were paused at, if they are. A paused
   // ring is held at that moment, not at the clock.
@@ -421,7 +369,7 @@ export function useTargetPredictor({
     seen.point ? seen.pausedAtMs : null,
     nowMs
   );
-  const paused = mode === "now" && !!seen.point && times.paused;
+  const paused = !!seen.point && times.paused;
   const effectiveNowMs = paused ? times.effectiveNowMs : nowMs;
   // Minutes after midnight (Perth), with the seconds as a fraction: what the
   // rings and the history matching are worked out at.
@@ -434,53 +382,21 @@ export function useTargetPredictor({
     : null;
 
   const from: PredictorFrom | null = useMemo(() => {
-    if (!data) return null;
-    if (usingSheet && sheetStart)
-      return {
-        kind: "place",
-        placeKey: sheetStart.placeKey,
-        minutes: sheetStart.minutes,
-        leaving: sheetStart.leaving,
-      };
-    if (mode === "next") {
-      const key = pickPlaceKey ?? firstPlaceKey;
-      return key
-        ? {
-            kind: "place",
-            placeKey: key,
-            minutes: clock.minutes,
-            leaving: false,
-          }
-        : null;
-    }
-    return seen.point
-      ? {
-          kind: "point",
-          lat: seen.point.lat,
-          lng: seen.point.lng,
-          minutes: seenMinutesExact,
-        }
-      : null;
-  }, [
-    data,
-    usingSheet,
-    sheetStart,
-    mode,
-    pickPlaceKey,
-    firstPlaceKey,
-    clock.minutes,
-    seen.point,
-    seenMinutesExact,
-  ]);
+    if (!data || !seen.point) return null;
+    return {
+      kind: "point",
+      lat: seen.point.lat,
+      lng: seen.point.lng,
+      minutes: seenMinutesExact,
+    };
+  }, [data, seen.point, seenMinutesExact]);
 
   // The posted speed limit of the road he was last seen on (Main Roads WA
   // data held by the app), looked up from the tapped point. Where it is known
   // it picks the kind of area and sets the travel speed; where it is not (no
   // limit on record) the street name does, else a built-up area is assumed.
   const limitPoint =
-    mode === "now" && from?.kind === "point"
-      ? { lat: from.lat, lng: from.lng }
-      : null;
+    from?.kind === "point" ? { lat: from.lat, lng: from.lng } : null;
   const limitQuery = trpc.intelligence.getRoadSpeed.useQuery(
     { lat: limitPoint?.lat ?? 0, lng: limitPoint?.lng ?? 0 },
     {
@@ -533,10 +449,10 @@ export function useTargetPredictor({
   // The kind of area he was last seen in: the posted speed limit, else read
   // from the street name when it is unmistakable, else the stated default.
   const autoArea: AreaClass | null = useMemo(() => {
-    if (mode !== "now" || from?.kind !== "point") return null;
+    if (from?.kind !== "point") return null;
     if (limit) return areaFromSpeedLimit(limit.kph);
     return areaFromStreetName(tapRoute);
-  }, [mode, from, tapRoute, limit]);
+  }, [from, tapRoute, limit]);
   const area: AreaClass = autoArea ?? DEFAULT_AREA;
   const areaSource: "posted" | "street" | "assumed" = limit
     ? "posted"
@@ -645,20 +561,10 @@ export function useTargetPredictor({
     pendingSeenAtRef.current = null;
     setDirty(false);
     appliedRef.current = shared?.updatedAtMs ?? null;
-    setModeState("next");
     persistOn(false);
     if (opId != null && sheetId != null)
       clearMut.mutate({ operationId: opId, sheetId });
   }, [shared, opId, sheetId, clearMut, persistOn]);
-
-  /** Where next: "Change" takes what the sheet says as the starting point. */
-  const changeFromSheet = useCallback(() => {
-    setOverride(true);
-    if (sheetStart) setPickPlaceKey(sheetStart.placeKey);
-  }, [sheetStart]);
-
-  /** Where next: "Use the running sheet" again. */
-  const useSheet = useCallback(() => setOverride(false), []);
 
   // The way the team was travelling in the minutes before the last sighting
   // (Search, from the tapped point): from the GPS trail officers
@@ -669,8 +575,7 @@ export function useTargetPredictor({
       ? Date.parse(`${data.todayISO}T00:00:00+08:00`) +
         Math.round(from.minutes) * 60_000
       : null;
-  const wantDirection =
-    ready && mode === "now" && directionOn && seenMs !== null;
+  const wantDirection = ready && directionOn && seenMs !== null;
   const trailQuery = trpc.intelligence.getPredictorTrail.useQuery(
     {
       operationId: opId ?? 0,
@@ -692,7 +597,7 @@ export function useTargetPredictor({
   const input: PredictorInput | null = useMemo(() => {
     if (!data || !from) return null;
     return {
-      mode,
+      mode: "now",
       stops: data.stops,
       places: data.places,
       from,
@@ -702,32 +607,19 @@ export function useTargetPredictor({
       heading,
       limitKmh,
     };
-  }, [data, from, mode, clock.weekday, nowMinutes, area, heading, limitKmh]);
+  }, [data, from, clock.weekday, nowMinutes, area, heading, limitKmh]);
   const prediction: Prediction | null = useMemo(
     () => (input ? predict(input) : null),
     [input]
   );
-  const headline = useMemo(
-    () =>
-      prediction && input
-        ? describePrediction(prediction, input, nameOf)
-        : null,
-    [prediction, input, nameOf]
-  );
-
   return {
     on,
     setOn,
-    mode,
-    setMode,
     clock,
     query,
     data,
     ready,
     blocked,
-    override,
-    pickPlaceKey,
-    setPickPlaceKey,
     seenPoint: seen.point,
     seenAt,
     /** Minutes since he was last seen, with the seconds (to the paused moment,
@@ -766,30 +658,22 @@ export function useTargetPredictor({
     setTapArmed,
     placeTap,
     direction,
-    sheetStart,
-    usingSheet,
     /** What the team has set as "last seen" today, or null. */
     shared,
-    changeFromSheet,
-    useSheet,
     from,
     input,
     prediction,
-    headline,
     nameOf,
     labelOf,
     placeByKey,
     /** Search is waiting for a tap on the map: the first one, or the one
      * after "Move pin". Once a pin is down the map stops taking taps. */
-    tapping: ready && mode === "now" && (tapArmed || !seen.point),
+    tapping: ready && (tapArmed || !seen.point),
   };
 }
 export type TargetPredictorState = ReturnType<typeof useTargetPredictor>;
 
 // ── The pane ─────────────────────────────────────────────────────────────────
-
-const SEG =
-  "flex-1 min-w-0 px-2 py-1.5 text-xs font-semibold rounded-lg border-2 transition-colors";
 
 export function TargetPredictorSection({
   p,
@@ -819,46 +703,27 @@ export function TargetPredictorSection({
   return (
     <div className="px-3 py-3 border-b border-border space-y-2">
       <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-        Target Predictor
+        Search
       </span>
+      {/* The one switch: Search. Off = empty, on = shaded. Pressing it starts a
+          search for the team on the selected running sheet; pressing it while
+          it is on leaves Search on this screen (the others carry on — End
+          search is what ends it for everyone). */}
       <button
-        onClick={() => p.setOn(!p.on)}
-        className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+        onClick={() => (p.on ? p.setOn(false) : p.startFromPointer())}
+        className={`flex items-center justify-center gap-2 w-full min-h-[44px] px-3 py-2 rounded-xl border-2 text-sm font-semibold active:scale-[0.98] transition-all min-w-0 ${
           p.on
-            ? "border-violet-500/40 bg-violet-500/10 hover:bg-violet-500/20"
-            : "border-border bg-card hover:bg-accent/40"
+            ? "border-violet-500/50 bg-violet-500/10 text-violet-500 hover:bg-violet-500/20"
+            : "border-border bg-card text-foreground hover:bg-accent/40"
         }`}
         aria-pressed={p.on}
       >
-        <Crosshair
-          className={`h-3.5 w-3.5 flex-shrink-0 ${p.on ? "text-violet-500" : "text-muted-foreground"}`}
-        />
-        <span
-          className={`text-xs font-semibold truncate flex-1 text-left ${p.on ? "text-violet-500" : "text-foreground"}`}
-        >
-          Target predictor
-        </span>
-        <span
-          className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${p.on ? "text-violet-500" : "text-muted-foreground"}`}
-        >
-          {p.on ? "On" : "Off"}
-        </span>
+        <Crosshair className="h-4 w-4 flex-shrink-0" />
+        Search
       </button>
 
       {p.on && (
         <div className="space-y-2">
-          {targetName && p.mode === "next" ? (
-            <p className="text-[11px] leading-snug text-muted-foreground">
-              <span className="font-semibold text-foreground">
-                {targetName}
-              </span>
-              {operationName ? ` · ${operationName}` : ""}
-              {sheetTitle ? ` · ${sheetTitle}` : ""}
-              <br />
-              From the operation and running sheet selected above, using his
-              whole history on this operation.
-            </p>
-          ) : null}
           {reasonNone && (
             <p className="text-[11px] leading-snug text-muted-foreground">
               {reasonNone}
@@ -867,34 +732,6 @@ export function TargetPredictorSection({
 
           {targetName && (
             <>
-              <div
-                className="flex gap-1.5"
-                role="group"
-                aria-label="What to predict"
-              >
-                {(["next", "now"] as const).map(m => (
-                  <button
-                    key={m}
-                    onClick={() => p.setMode(m)}
-                    aria-pressed={p.mode === m}
-                    className={`${SEG} ${
-                      p.mode === m
-                        ? "border-violet-500/50 bg-violet-500/10 text-violet-500"
-                        : "border-border bg-card text-foreground hover:bg-accent/40"
-                    }`}
-                  >
-                    {m === "next" ? "Where next?" : "Search"}
-                  </button>
-                ))}
-              </div>
-              {p.mode === "next" && (
-                <p className="text-[11px] leading-snug text-muted-foreground">
-                  Where he is likely to go from where he is now. Today is{" "}
-                  {WEEKDAY_LONG[p.clock.weekday]}, {hhmm(p.clock.minutes)} Perth
-                  time.
-                </p>
-              )}
-
               {p.query.isLoading && (
                 <p className="text-[11px] text-muted-foreground">
                   Reading his history…
@@ -903,21 +740,17 @@ export function TargetPredictorSection({
 
               {p.data && places.length === 0 && (
                 <p className="text-[11px] leading-snug text-muted-foreground">
-                  {p.mode === "now"
-                    ? "No known places for this target on this operation yet. How far he could have got still works from the point you tap."
-                    : "No places on record for this target on this operation yet, so there is nothing to predict from."}
+                  No known places for this target on this operation yet. How far
+                  he could have got still works from the point you tap.
                 </p>
               )}
 
-              {p.data && p.mode === "next" && places.length > 0 && (
-                <PositionControls p={p} />
-              )}
-              {p.data && p.mode === "now" && <SearchControls p={p} />}
-              {p.data && p.mode === "now" && p.seenPoint && <SpeedNote p={p} />}
+              {p.data && <SearchControls p={p} />}
+              {p.data && p.seenPoint && <SpeedNote p={p} />}
 
-              {p.data && (places.length > 0 || p.mode === "now") && (
+              {p.data && (
                 <div className="space-y-1 pt-0.5">
-                  {(p.mode !== "now" || SHOW_HISTORY_GUESS_IN_SEARCH) && (
+                  {SHOW_HISTORY_GUESS_IN_SEARCH && (
                     <label className="flex items-center gap-2 text-xs text-foreground">
                       <input
                         type="checkbox"
@@ -927,103 +760,39 @@ export function TargetPredictorSection({
                       Show the numbers on the markers
                     </label>
                   )}
-                  {p.mode === "now" && (
-                    <label className="flex items-center gap-2 text-xs text-foreground">
-                      <input
-                        type="checkbox"
-                        checked={p.showReach}
-                        onChange={e => p.setShowReach(e.target.checked)}
-                      />
-                      Show how far he could have got
-                    </label>
-                  )}
-                  {p.mode === "now" && (
-                    <label className="flex items-center gap-2 text-xs text-foreground">
-                      <input
-                        type="checkbox"
-                        checked={p.directionOn}
-                        onChange={e => p.setDirectionOn(e.target.checked)}
-                      />
-                      Favour the way the team was travelling
-                    </label>
-                  )}
+                  <label className="flex items-center gap-2 text-xs text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={p.showReach}
+                      onChange={e => p.setShowReach(e.target.checked)}
+                    />
+                    Show how far he could have got
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={p.directionOn}
+                      onChange={e => p.setDirectionOn(e.target.checked)}
+                    />
+                    Favour the way the team was travelling
+                  </label>
                 </div>
               )}
 
               {/* Where now is two separate answers that work together: how
                   far he could have got (needs no history) and the locations
                   of interest inside that reach. */}
-              {pr && p.mode === "now" && pr.seenLocated && (
-                <InterestList p={p} pr={pr} />
+              {pr && pr.seenLocated && <InterestList p={p} pr={pr} />}
+              {pr && p.input && SHOW_HISTORY_GUESS_IN_SEARCH && (
+                <>
+                  <Candidates p={p} pr={pr} />
+                  <HowWorkedOut p={p} pr={pr} />
+                </>
               )}
-              {pr &&
-                p.input &&
-                (p.mode !== "now" || SHOW_HISTORY_GUESS_IN_SEARCH) && (
-                  <>
-                    <Candidates p={p} pr={pr} />
-                    <HowWorkedOut p={p} pr={pr} />
-                  </>
-                )}
             </>
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-/** Where next: where he is now — the running sheet's last entry, or picked. */
-function PositionControls({ p }: { p: TargetPredictorState }) {
-  const places = p.data?.places ?? [];
-  const label =
-    "text-[11px] font-semibold text-muted-foreground uppercase tracking-wide";
-  const link = "text-[11px] font-semibold text-violet-500 hover:underline";
-
-  if (p.usingSheet && p.sheetStart) {
-    const name = p.labelOf(p.sheetStart.placeKey);
-    const verb = p.sheetStart.leaving ? "Left" : "Now at";
-    return (
-      <div className="rounded-xl border-2 border-border bg-card px-3 py-2 space-y-0.5">
-        <p className="text-xs text-foreground">
-          {verb} <span className="font-semibold">{name}</span>
-        </p>
-        <p className="text-[11px] text-muted-foreground">
-          {hhmm(p.sheetStart.minutes)}, from the running sheet ·{" "}
-          <button className={link} onClick={p.changeFromSheet}>
-            Change
-          </button>
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-1">
-      <span className={label}>Now at</span>
-      <Select
-        value={p.pickPlaceKey ?? places[0].placeKey}
-        onValueChange={v => p.setPickPlaceKey(v)}
-      >
-        <SelectTrigger className="w-full h-9 text-xs rounded-xl border-2">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {places.map(pl => (
-            <SelectItem key={pl.placeKey} value={pl.placeKey}>
-              {p.labelOf(pl.placeKey)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <p className="text-[11px] text-muted-foreground">
-        {p.sheetStart ? (
-          <button className={link} onClick={p.useSheet}>
-            Use the running sheet
-          </button>
-        ) : (
-          "Nothing logged for him today on the running sheet yet."
-        )}
-      </p>
     </div>
   );
 }
@@ -1295,11 +1064,9 @@ function Candidates({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
     );
   return (
     <div className="space-y-1.5">
-      {p.mode === "now" && (
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Most likely, from his history
-        </p>
-      )}
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        Most likely, from his history
+      </p>
       {pr.candidates.slice(0, 4).map((c, rank) => {
         const near = c.placeKey === NEAR_KEY;
         const meta = near
@@ -1349,17 +1116,10 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
         : pr.scope === "anyday"
           ? "any day of the week"
           : "any day and any time of day";
-  const f = inp.from;
   const how =
-    f.kind === "none" || f.kind === "point"
-      ? pr.scope === "anytime"
-        ? "every place he has been, the most visited first (nothing was on record at this time of day)"
-        : `where he usually is at ${hhmm(inp.nowMinutes)}`
-      : pr.scope === "anytime"
-        ? `every visit to ${p.nameOf(f.placeKey)} that was followed by another place, then where each went next`
-        : p.mode === "next" && !f.leaving
-          ? `visits to ${p.nameOf(f.placeKey)} that were under way around ${hhmm(inp.nowMinutes)}, then where each went next`
-          : `visits to ${p.nameOf(f.placeKey)} that ended within an hour of ${hhmm(f.minutes)}, then where each went next`;
+    pr.scope === "anytime"
+      ? "every place he has been, the most visited first (nothing was on record at this time of day)"
+      : `where he usually is at ${hhmm(inp.nowMinutes)}`;
   return (
     <div className="rounded-xl border-2 border-border bg-card px-3 py-2">
       <button
@@ -1387,7 +1147,7 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
                 ? `. Only ${pr.total} similar visit${pr.total === 1 ? "" : "s"} — treat this as a lead, not a pattern. ${MIN_SAMPLES} or more are needed before it counts as low confidence.`
                 : `. ${pr.total} similar visits${pr.topHistoryShare !== null ? `, and ${Math.round(pr.topHistoryShare * pr.total)} of them went the same way` : ""}. High needs 12 or more, with at least 7 in 10 the same.`}
           </p>
-          {p.mode === "now" && pr.adjusted && (
+          {pr.adjusted && (
             <p>
               <span className="font-semibold text-foreground">
                 Where he was seen:
@@ -1397,7 +1157,7 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
               something he has done.
             </p>
           )}
-          {p.mode === "now" && p.direction?.ok && (
+          {p.direction?.ok && (
             <p>
               <span className="font-semibold text-foreground">Direction:</span>{" "}
               the team was heading {compassName(p.direction.bearing)} in the{" "}
@@ -1407,7 +1167,7 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
               because targets double back. An assumption, not his history.
             </p>
           )}
-          {p.mode === "now" && pr.elapsedMinutes > 0 && (
+          {pr.elapsedMinutes > 0 && (
             <p>
               <span className="font-semibold text-foreground">
                 {OUTER_RING_NAME}:
@@ -1417,7 +1177,7 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
               ring, which grows every minute.
             </p>
           )}
-          {p.mode === "now" && pr.elapsedMinutes > 0 && (
+          {pr.elapsedMinutes > 0 && (
             <p>
               <span className="font-semibold text-foreground">
                 {INNER_RING_NAME}:
@@ -1446,79 +1206,6 @@ function HowWorkedOut({ p, pr }: { p: TargetPredictorState; pr: Prediction }) {
           </p>
         </div>
       )}
-    </div>
-  );
-}
-
-// ── The line at the top of the map ───────────────────────────────────────────
-
-export function TargetPredictorBanner({
-  p,
-  compact,
-}: {
-  p: TargetPredictorState;
-  compact: boolean;
-}) {
-  // Search has no banner: its answers are the rings, the markers and the pane.
-  if (!p.on || p.mode === "now") return null;
-  const tier = p.prediction?.tier ?? "none";
-  const colour = TIER_COLOUR[tier];
-  let main = p.headline?.main;
-  let sub = p.headline?.sub;
-  if (!p.prediction) {
-    if (p.blocked) {
-      main = "Target predictor";
-      sub = p.blocked;
-    } else if (p.query.isError) {
-      main = "No prediction available";
-      sub = "The predictor could not read this target's history.";
-    } else if (p.query.isLoading) {
-      main = "Target predictor";
-      sub = "Reading his history…";
-    } else if (p.data && p.data.places.length === 0) {
-      main = "No prediction yet";
-      sub = "No places on record for this target on this operation.";
-    } else {
-      main = "Target predictor";
-      sub = "Working out a prediction…";
-    }
-  }
-  return (
-    <div
-      className={`absolute z-20 pointer-events-none flex gap-2 rounded-xl border border-border bg-card px-3 py-1.5 shadow-md ${
-        compact ? "flex-col items-start" : "items-center"
-      }`}
-      style={{
-        top: compact ? 108 : 10,
-        left: compact ? 10 : 280,
-        right: compact ? 64 : 164,
-        borderLeft: `4px solid ${colour}`,
-      }}
-      role="status"
-      aria-live="polite"
-      data-testid="predictor-banner"
-    >
-      <div className="min-w-0 w-full flex-1">
-        <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground">
-          {main}
-        </p>
-        <p
-          className={`text-xs text-muted-foreground ${compact ? "line-clamp-2" : "truncate"}`}
-        >
-          {sub}
-        </p>
-      </div>
-      <span
-        className="flex-shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-bold"
-        style={{ color: colour, borderColor: colour }}
-      >
-        {tier === "none" &&
-        p.prediction?.mode === "now" &&
-        p.prediction.seenLocated
-          ? "Reach only — no history"
-          : TIER_LABEL[tier]}
-        {tier !== "none" && p.prediction ? ` · ${p.prediction.total}` : ""}
-      </span>
     </div>
   );
 }
@@ -1580,7 +1267,7 @@ export function TargetPredictorOverlay({
 
   // The last-seen pin. Drag it to move it — the map itself ignores taps once
   // the pin is down, so a stray touch can't shift it.
-  const pin = p.on && p.mode === "now" ? p.seenPoint : null;
+  const pin = p.on ? p.seenPoint : null;
   const pinLabel = pin
     ? `Last seen ${hhmm(p.seenAt)}${p.paused ? " · ring paused" : ""}`
     : "";
@@ -1636,7 +1323,7 @@ export function TargetPredictorOverlay({
     // it to the list in the pane (1 = first in "Most likely, from his
     // history"). No percentages anywhere, and nothing is shaded over the map.
     const badges: { lat: number; lng: number; text: string }[] = [];
-    if (p.showShade && (p.mode !== "now" || SHOW_HISTORY_GUESS_IN_SEARCH)) {
+    if (p.showShade && SHOW_HISTORY_GUESS_IN_SEARCH) {
       pr.candidates.slice(0, 4).forEach((c, rank) => {
         if (c.placeKey === NEAR_KEY) return;
         const pl = p.placeByKey.get(c.placeKey);
@@ -1645,13 +1332,13 @@ export function TargetPredictorOverlay({
       });
     }
     const arrow =
-      seen && p.mode === "now" && p.direction?.ok && pr.directionApplied
+      seen && p.direction?.ok && pr.directionApplied
         ? { ...seen, bearing: p.direction.bearing }
         : null;
     // Two rings and nothing shaded: the most he could have got (dashed while
     // it grows, solid once paused) and, inside it, where he most likely is.
     const ring =
-      p.showReach && p.mode === "now" && seen && pr.elapsedMinutes > 0
+      p.showReach && seen && pr.elapsedMinutes > 0
         ? {
             ...seen,
             radiusM: Math.max(60, pr.reachKm * 1000),
@@ -1668,7 +1355,6 @@ export function TargetPredictorOverlay({
     input,
     p.showShade,
     p.showReach,
-    p.mode,
     p.placeByKey,
     p.paused,
     p.direction,

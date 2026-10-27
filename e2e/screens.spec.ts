@@ -29,6 +29,16 @@ const SURNAME = Array.from({ length: 8 }, () =>
 ).join("");
 const INTRO = `Observed Lawrence ${SURNAME} (${SURNAME}) walking to 12 Smith Street, Perth.`;
 
+// The pane's Search button starts a search for the team and is shaded while
+// Search is on; pressing it while on leaves Search on this screen. This makes
+// sure it is on without pressing it twice.
+async function searchOn(page: import("@playwright/test").Page) {
+  const button = page.getByRole("button", { name: "Search", exact: true });
+  if ((await button.getAttribute("aria-pressed")) !== "true")
+    await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+}
+
 test("a row can be deleted", async ({ page }) => {
   await createOperationAndSheet(page);
   await addRowWithObservation(page, "Row that will be removed");
@@ -429,7 +439,7 @@ test.afterEach(async ({ page }) => {
       .catch(() => null);
 });
 
-test("Map page: Target Predictor says where next, then where now, with a confidence level", async ({
+test("Map page: Search is one button that starts a blank search, with no Where next", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -567,29 +577,27 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   await page.goto("/intelligence/mapping");
   await page.getByRole("button", { name: "Toggle side panel" }).click();
 
-  // Off until switched on, and nothing is shown on the map while off.
-  const section = page.getByText("Target Predictor", { exact: true }).first();
-  await section.scrollIntoViewIfNeeded();
+  // Off until the Search button is pressed, and nothing is shown while off. The
+  // pane has the one Search button: no "Target Predictor" heading or On / Off
+  // row, and no Where next.
+  const searchButton = page.getByRole("button", {
+    name: "Search",
+    exact: true,
+  });
+  await searchButton.scrollIntoViewIfNeeded();
+  await expect(searchButton).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByText("Target Predictor")).toHaveCount(0);
+  await expect(page.getByText(/Target predictor/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Where next/ })).toHaveCount(0);
   await expect(page.getByTestId("predictor-banner")).toHaveCount(0);
-  await page.getByRole("button", { name: /Target predictor\s*Off/i }).click();
-
-  // Where next: counted from the history, with the confidence stated.
-  const banner = page.getByTestId("predictor-banner");
-  await expect(banner).toContainText("Next: Elevate Fitness");
-  await expect(banner).toContainText("7 of 10 similar visits");
-  // Counts, never percentages, anywhere in the banner or the list.
-  await expect(banner).not.toContainText("%");
-  await expect(banner).toContainText("Moderate confidence");
-  await expect(page.getByText("Home — 14 Marine Parade").first()).toBeVisible();
+  await expect(page.getByText("One tap — the cross goes away")).toHaveCount(0);
 
   // Search starts blank: one tap on the map puts the pin down. It has no top
   // banner, and the pane is stripped back: no names line, no "from the
   // operation" sentence, no clock line, no drop-down, slider or area buttons.
-  await expect(
-    page.getByText(/From the operation and running sheet selected above/)
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(banner).toHaveCount(0);
+  await searchButton.click();
+  await expect(searchButton).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("predictor-banner")).toHaveCount(0);
   await expect(page.getByText("One tap — the cross goes away")).toBeVisible();
   await expect(
     page.getByText(/From the operation and running sheet selected above/)
@@ -632,10 +640,10 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   const reopenSearch = async () => {
     await page.reload();
     await page.getByRole("button", { name: "Toggle side panel" }).click();
-    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await searchOn(page);
   };
   await reopenSearch();
-  await expect(banner).toHaveCount(0);
+  await expect(page.getByTestId("predictor-banner")).toHaveCount(0);
   // Search no longer lists "Most likely, from his history" or the panel that
   // explains it (a guess from history is not accurate enough); Where next,
   // checked above, still is that history answer.
@@ -727,10 +735,9 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   await page.getByTestId("end-search").click();
   await ended;
   await expect(
-    page.getByRole("button", { name: /Target predictor\s*Off/i })
-  ).toBeVisible();
+    page.getByRole("button", { name: "Search", exact: true })
+  ).toHaveAttribute("aria-pressed", "false");
   expect(await searchOf()).toBeNull();
-  await page.getByRole("button", { name: /Target predictor\s*Off/i }).click();
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.getByText("One tap — the cross goes away")).toBeVisible();
   expect((await searchOf()).hasPin).toBe(false);
@@ -845,7 +852,7 @@ test("Map page: Search still shows how far he could have got with no history, an
   // 1. No known places and no history: the reach still answers.
   await page.goto("/intelligence/mapping");
   await page.getByRole("button", { name: "Toggle side panel" }).click();
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await searchOn(page);
   // Search has no top banner; its answers are in the pane and on the map.
   await expect(page.getByTestId("predictor-banner")).toHaveCount(0);
   // The posted limit of the road he was on picks the area and the speed.
@@ -883,7 +890,7 @@ test("Map page: Search still shows how far he could have got with no history, an
   ];
   await page.reload();
   await page.getByRole("button", { name: "Toggle side panel" }).click();
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await searchOn(page);
   await expect(page.getByText("Locations of interest in reach")).toBeVisible();
   // The explanation panel is gone from Search; the rings keep their names on the
   // map only (Google Maps cannot be reached here to read them).

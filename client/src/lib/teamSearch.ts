@@ -3,7 +3,7 @@
 // Starting Search on a running sheet writes one shared row for the sheet
 // (server: intelligence.startTeamSearch). Every screen that is logged in and has
 // that operation selected on the Map polls intelligence.getMyTeamSearch and,
-// while one is running, switches the Target Predictor on in Search by itself —
+// while one is running, switches Search on by itself —
 // whatever sheet or target that screen has selected, and whether or not its
 // Show & Share is on. Nothing asks to join and nothing is switched on for
 // anyone's location. This file is the polling hook and the small per-screen

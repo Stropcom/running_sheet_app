@@ -52,6 +52,20 @@ export async function createOperationAndSheet(
 }
 
 /**
+ * Clicks "Add Row" and leaves the new row's observation cell open for typing.
+ * The first row of a sheet comes with "Surveillance commenced in the vicinity
+ * of " already written and its cell already open; any later row starts empty
+ * and its cell is opened here.
+ */
+export async function openNewRowCell(page: Page) {
+  await page.getByRole("button", { name: "Add Row" }).click();
+  const placeholder = page.getByText("Enter observation…").first();
+  const open = page.locator("textarea").first();
+  await expect(placeholder.or(open)).toBeVisible();
+  if (!(await open.isVisible())) await placeholder.click();
+}
+
+/**
  * Adds a row to the open sheet and types its observation. The new row is the
  * last one with an empty observation, so this works for the second and third
  * row as well as the first. Returns the row's locator (matched by its text).
@@ -64,8 +78,7 @@ export async function addRowWithObservation(
   /** Text to find the saved row by, when the app tidies what was typed. */
   match: string = text
 ) {
-  await page.getByRole("button", { name: "Add Row" }).click();
-  await page.getByText("Enter observation…").first().click();
+  await openNewRowCell(page);
   await page.locator("textarea").first().fill(text);
   // Click an empty part of the page so the cell saves (it saves on click-out).
   await page.mouse.click(700, 620);

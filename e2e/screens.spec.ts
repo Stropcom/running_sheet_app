@@ -11,6 +11,7 @@ import {
   PASSWORD,
   addRowWithObservation,
   createOperationAndSheet,
+  openNewRowCell,
 } from "./helpers";
 
 test.skip(
@@ -80,8 +81,7 @@ test("the same person typed on a second sheet asks if it is the same person", as
   page,
 }) => {
   await createOperationAndSheet(page);
-  await page.getByRole("button", { name: "Add Row" }).click();
-  await page.getByText("Enter observation…").first().click();
+  await openNewRowCell(page);
   await page.locator("textarea").first().fill(INTRO);
   await page.mouse.click(700, 620);
   const ask = page.getByRole("dialog").filter({
@@ -1157,4 +1157,75 @@ test("Top banner: the operation name is a Show & Share switch, green while on", 
   await banner.click();
   await expect(paneSwitch).toHaveAttribute("aria-pressed", "false");
   expect(await flag()).toBe("false");
+});
+
+test("The first row of a sheet comes with the opening and the whole team on it", async ({
+  page,
+}) => {
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", {
+    name: `First row ${Date.now()}`,
+  });
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  // A team roster of one registered officer, and one name that is not a
+  // registered CIN (it must not end up on the row).
+  const sheet = await post("sheet.create", {
+    operationId: op.id ?? op.operationId ?? op,
+    sheetDate: today,
+    sheetCins: [
+      { cin, hasImages: false, isTeamLeader: true, isAuthor: true },
+      { cin: "NOTAUSER9", hasImages: false },
+    ],
+  });
+  await page.goto(`/sheet/${sheet.id ?? sheet.sheetId}`);
+  await expect(page.getByText("No rows yet")).toBeVisible();
+
+  // First row: the opening is written, the cell is open with the caret at the
+  // end (ready for the address), and the team is on the row. Read in one step,
+  // because the browser can take window focus away a moment later and the cell
+  // then saves and closes, as it always does.
+  await page.getByRole("button", { name: "Add Row" }).click();
+  const textarea = page.locator("textarea").first();
+  await expect
+    .poll(() =>
+      textarea.evaluate(el => ({
+        value: (el as HTMLTextAreaElement).value,
+        caretAtEnd:
+          (el as HTMLTextAreaElement).selectionStart ===
+          (el as HTMLTextAreaElement).value.length,
+      }))
+    )
+    .toEqual({
+      value: "Surveillance commenced in the vicinity of ",
+      caretAtEnd: true,
+    });
+  const row = page.locator("tbody tr").first();
+  await expect(row.getByText(cin, { exact: true })).toBeVisible();
+  await expect(row.getByText("NOTAUSER9")).toHaveCount(0);
+
+  // Saved, not just shown: reload and the opening and the team are still on it.
+  await page.reload();
+  const saved = page.locator("tbody tr").first();
+  await expect(saved).toContainText(
+    "Surveillance commenced in the vicinity of"
+  );
+  await expect(saved.getByText(cin, { exact: true })).toBeVisible();
+  await expect(saved.getByText("NOTAUSER9")).toHaveCount(0);
+
+  // Only the first row: the next one starts empty, with nobody on it.
+  await page.getByRole("button", { name: "Add Row" }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(2);
+  const second = page
+    .locator("tbody tr")
+    .filter({ hasText: "Enter observation…" });
+  await expect(second).toHaveCount(1);
+  await expect(second.getByText(cin, { exact: true })).toHaveCount(0);
 });

@@ -501,3 +501,58 @@ describe("the health signs (hospital, pharmacy, doctor, physio, dentist)", () =>
     expect(signIconOf("Subiaco Dental Centre")).toBe("place_dentist");
   });
 });
+
+describe("the mosque sign", () => {
+  it("knows a mosque by name", () => {
+    for (const name of [
+      "Perth Mosque, 427 William Street, MOUNT LAWLEY",
+      "Masjid Al-Noor, Thornlie",
+      "Rockingham Mosque",
+      "Canning Musalla",
+      "Kenwick Musallah, 12 Smith Street",
+      "al-Hidayah Masjid",
+    ])
+      expect(placeSignOfName(name)).toBe("place_mosque");
+  });
+
+  it("knows a mosque by Google's type, and not a place of worship in general", () => {
+    expect(
+      placeSignFromTypes(
+        ["mosque", "place_of_worship", "point_of_interest"],
+        "Perth Mosque"
+      )
+    ).toBe("place_mosque");
+    expect(
+      placeSignFromTypes(["place_of_worship", "point_of_interest"], "St Mary's")
+    ).toBeNull();
+  });
+
+  it("is narrow: a street, a car park, a school or an Islamic centre is not tagged", () => {
+    expect(placeSignOfName("Mosque Road, Perth")).toBeNull();
+    expect(placeSignOfName("Mosque Street")).toBeNull();
+    expect(placeSignOfName("Mosque Car Park, Thornlie")).toBeNull();
+    expect(placeSignOfName("Masjid Parking")).toBeNull();
+    expect(placeSignOfName("Mosque Primary School")).toBeNull();
+    expect(placeSignOfName("Islamic Centre of Perth")).toBeNull();
+    expect(
+      placeSignFromTypes(["mosque"], "Mosque Car Park, Thornlie")
+    ).toBeNull();
+  });
+
+  it("keeps a cafe that carries the word, and does not read a street as the place", () => {
+    expect(placeSignOfName("Masjid Cafe, Thornlie")).toBe("place_cafe");
+    expect(placeSignOfName("Mosque Street Bakery")).toBeNull();
+    expect(placeSignOfName("Mosque Lane Dental")).toBe("place_dentist");
+  });
+
+  it("is a default pin, offered in the picker, and drawn", () => {
+    expect(PLACE_SIGN_ICONS).toContain("place_mosque");
+    expect(MARKER_ICON_LABELS.place_mosque).toBe("Mosque Sign");
+    expect(signIconOf("Perth Mosque, 427 William Street")).toBe("place_mosque");
+    const flat = MARKER_ICON_GROUPS.flatMap(g => g.icons);
+    expect(flat).toContain("place_mosque");
+    const svg = getMarkerSvg("place_mosque", "purple");
+    expect(svg).toContain(MARKER_COLOURS.purple);
+    expect(svg).toContain("A8.6 8.6"); // the crescent
+  });
+});

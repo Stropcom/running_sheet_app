@@ -50,6 +50,12 @@ describe("kindOfPlaceName", () => {
     expect(kindOfPlaceName("Some Name", "place_dentist")).toBe("health");
   });
 
+  it("puts the mosque under Place of worship", () => {
+    expect(kindOfPlaceName("Perth Mosque, 427 William Street")).toBe("worship");
+    expect(placeKindLabel("worship")).toBe("Place of worship");
+    expect(kindOfPlaceName("Some Name", "place_mosque")).toBe("worship");
+  });
+
   it("reads the kind from the name, the way the map signs do", () => {
     expect(kindOfPlaceName("Elevate Gym, 62 Rokeby Road, SUBIACO WA")).toBe(
       "gym"

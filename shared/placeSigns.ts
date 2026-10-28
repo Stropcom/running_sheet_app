@@ -1,7 +1,7 @@
 // Square signs for banks, post offices, pubs, hotels (accommodation), gyms,
 // shopping centres, supermarkets, hardware stores, parks, cafes, restaurants, fast food / takeaway,
-// airports, and the health set (hospital, pharmacy / chemist, doctor / medical
-// centre, physio / chiropractor / osteopath, dentist) —
+// airports, the health set (hospital, pharmacy / chemist, doctor / medical
+// centre, physio / chiropractor / osteopath, dentist) and the mosque —
 // the same idea as the bus stop and train station signs
 // (shared/transitPlace.ts): the default map pin of a place that is one of
 // these is its sign instead of the house, however the place got into the
@@ -11,7 +11,7 @@
 //   1. Google's place types, when we have them (a tapped place, a suggestion):
 //      bank / atm, post_office, bar, lodging, gym, shopping_mall, supermarket /
 //      grocery, hardware / home improvement, cafe, restaurant, fast food / takeaway, airport,
-//      hospital, pharmacy / drugstore, doctor, physiotherapist, dentist.
+//      hospital, pharmacy / drugstore, doctor, physiotherapist, dentist, mosque.
 //   2. The way the place is written — its NAME, the first part of the label
 //      ("Commonwealth Bank East Victoria Park Branch, Shop 19 The Park Centre,
 //      789 Albany Highway, …"), never the street part, so "Bank Street" or
@@ -43,7 +43,8 @@ export type PlaceSignIcon =
   | "place_pharmacy"
   | "place_doctor"
   | "place_physio"
-  | "place_dentist";
+  | "place_dentist"
+  | "place_mosque";
 
 export const PLACE_SIGN_ICONS: PlaceSignIcon[] = [
   "place_bank",
@@ -64,6 +65,7 @@ export const PLACE_SIGN_ICONS: PlaceSignIcon[] = [
   "place_doctor",
   "place_physio",
   "place_dentist",
+  "place_mosque",
 ];
 
 const STREET_END_RE =
@@ -152,6 +154,16 @@ const HOSPITAL_RE = /\bhospitals?\b/i;
 const NOT_A_HOSPITAL_RE =
   /\b(?:car\s*park|carpark|parking|pathology|radiology|laundry|childcare|child\s+care|kindergarten|florist|gift|chapel|mortuary|morgue|helipad)\b/i;
 
+// A mosque, by its name: "Mosque", "Masjid", "Musalla". Deliberately narrow — a
+// general "Islamic Centre" or "Islamic Society" can be a school or an office, so
+// only the word for the place of prayer counts; a car park, school or
+// childcare centre at a mosque is not the mosque, and the word followed by a
+// street type ("Mosque Street Bakery") is a street, not the place.
+const MOSQUE_RE =
+  /\b(?:mosques?|masjid|musall?ah?)\b(?!\s+(?:street|st|road|rd|avenue|ave|lane|ln|drive|dr|way|court|ct|place|pl|crescent|cres|terrace|parade|close)\b)/i;
+const NOT_A_MOSQUE_RE =
+  /\b(?:car\s*park|carpark|parking|school|college|childcare|child\s+care|kindergarten|library|bookshop|bookstore)\b/i;
+
 // A numbered terminal ("Terminal 4") is only read as an airport terminal when
 // the rest of its label says the place is at an airport — the locality part,
 // as Google writes it: "Terminal 4, Perth Airport WA 6105, Australia". A bare
@@ -214,6 +226,8 @@ export function placeSignOfName(label: string): PlaceSignIcon | null {
     return "place_doctor";
   if (HOSPITAL_RE.test(name) && !NOT_A_HOSPITAL_RE.test(name))
     return "place_hospital";
+  if (MOSQUE_RE.test(name) && !NOT_A_MOSQUE_RE.test(name))
+    return "place_mosque";
   if (AIRPORT_RE.test(name) && !NOT_AN_AIRPORT_RE.test(name))
     return "place_airport";
   // "Terminal 4, Perth Airport WA 6105, Australia": a numbered terminal whose
@@ -285,6 +299,7 @@ export function placeSignFromTypes(
   if (t.has("dentist") || t.has("dental_clinic")) return "place_dentist";
   if (t.has("physiotherapist") || t.has("chiropractor") || t.has("osteopath"))
     return "place_physio";
+  if (t.has("mosque") && !NOT_A_MOSQUE_RE.test(name)) return "place_mosque";
   if (t.has("hospital")) return "place_hospital";
   if (
     (t.has("doctor") ||

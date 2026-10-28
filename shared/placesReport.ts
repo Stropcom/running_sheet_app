@@ -24,6 +24,7 @@ export const PLACE_KINDS = [
   { id: "leisure", label: "Stay & leisure" },
   { id: "services", label: "Bank & post" },
   { id: "health", label: "Health & medical" },
+  { id: "worship", label: "Place of worship" },
   { id: "registered", label: "Registered address" },
   { id: "other", label: "Other" },
 ] as const;
@@ -73,6 +74,7 @@ const SIGN_KIND: Record<
   place_doctor: "health",
   place_physio: "health",
   place_dentist: "health",
+  place_mosque: "worship",
   bus_stop: "travel",
   train_station: "travel",
 };

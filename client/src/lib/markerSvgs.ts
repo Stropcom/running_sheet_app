@@ -71,6 +71,7 @@ export type MarkerIcon =
   | "place_doctor"
   | "place_physio"
   | "place_dentist"
+  | "place_mosque"
   // Colour-changeable versions of shapes from the AFP iSurv "Surveillance"
   // marker set (see session notes) — same silhouettes as several fixed
   // Tactical icons (tacticalMarkers.ts), traced from the same source
@@ -170,6 +171,7 @@ export const MARKER_ICON_LABELS: Record<MarkerIcon, string> = {
   place_doctor: "Doctor Sign",
   place_physio: "Physio / Chiro Sign",
   place_dentist: "Dentist Sign",
+  place_mosque: "Mosque Sign",
   circle_x: "Circled X",
   ring_1: "Circle 1",
   ring_2: "Circle 2",
@@ -226,6 +228,7 @@ export const MARKER_ICON_GROUPS: { label: string; icons: MarkerIcon[] }[] = [
       "place_doctor",
       "place_physio",
       "place_dentist",
+      "place_mosque",
     ],
   },
   { label: "Arrow", icons: ["arrow_up", "arrow_right", "arrow_thin"] },
@@ -359,6 +362,10 @@ const PLACE_SIGN_PICTOGRAMS: Record<string, (c: string) => string> = {
   // vertebrae (a dashed thick line).
   place_physio: () =>
     `<path d="M13.4 2.4 C18.6 6.4 6.6 9.8 11.4 13.8 C15.8 17.2 9.2 20 10.8 22.4" fill="none" stroke="#fff" stroke-width="4.6" stroke-dasharray="2.7 1.5"/>`,
+  // A mosque is a crescent with a star in its opening.
+  place_mosque: () =>
+    `<path d="M15.95 4.97 A8.6 8.6 0 1 0 15.95 19.03 A7.2 7.2 0 1 1 15.95 4.97 Z" fill="#fff"/>
+     <path d="M17.4 8.6 l1.15 2.45 2.65 .35 -1.95 1.85 .5 2.65 -2.35 -1.3 -2.35 1.3 .5 -2.65 -1.95 -1.85 2.65 -.35 Z" fill="#fff"/>`,
   // A dentist is a tooth.
   place_dentist: () =>
     `<path d="M7.6 3 C5 3 3.4 5.1 3.4 7.8 C3.4 10.6 5.3 11.9 5.9 14.6 C6.4 17 6.3 21.2 8.6 21.2 C10.6 21.2 10.4 16.8 12 16.8 C13.6 16.8 13.4 21.2 15.4 21.2 C17.7 21.2 17.6 17 18.1 14.6 C18.7 11.9 20.6 10.6 20.6 7.8 C20.6 5.1 19 3 16.4 3 C14.6 3 13.6 4.1 12 4.1 C10.4 4.1 9.4 3 7.6 3 Z" fill="#fff"/>`,
@@ -499,6 +506,7 @@ export function getMarkerSvg(icon: MarkerIcon, colour: MarkerColour): string {
     case "place_doctor":
     case "place_physio":
     case "place_dentist":
+    case "place_mosque":
       return placeSign(icon, c, dark);
 
     case "taxi":

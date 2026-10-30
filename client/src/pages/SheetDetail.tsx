@@ -2080,6 +2080,7 @@ function EditableCell({
   usedAddressLabels,
   rowId,
   autoEdit,
+  autoEditKeyboard,
   onAutoEdited,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -2105,6 +2106,9 @@ function EditableCell({
    * just created the row), so the next tap adds to it as the next paragraph.
    * Opened without the on-screen keyboard until the officer taps into it. */
   autoEdit?: boolean;
+  /** With autoEdit: keep the on-screen keyboard (the officer is about to type
+   * the rest of the text) and put the caret at the end. */
+  autoEditKeyboard?: boolean;
   onAutoEdited?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -2117,9 +2121,12 @@ function EditableCell({
   // Opened by a card tap: focus it without raising the on-screen keyboard
   // (inputMode "none") until the officer actually taps into the text.
   const [noKeyboard, setNoKeyboard] = useState(false);
+  // The caret goes to the end of the text when the cell opens by itself.
+  const [caretToEnd, setCaretToEnd] = useState(false);
   useEffect(() => {
     if (autoEdit && !locked && multiline) {
-      setNoKeyboard(true);
+      setNoKeyboard(!autoEditKeyboard);
+      setCaretToEnd(true);
       setEditing(true);
       onAutoEdited?.();
     }
@@ -2596,11 +2603,13 @@ function EditableCell({
             onPointerDown={() => setNoKeyboard(false)}
             onFocus={e => {
               notifyObservationFocus();
-              // A cell opened by a card tap starts with the caret at the end,
-              // ready for the next paragraph.
-              if (noKeyboard) {
+              // A cell opened by a card tap (or opened by itself on a new first
+              // row) starts with the caret at the end, ready for the next
+              // paragraph.
+              if (noKeyboard || caretToEnd) {
                 const len = e.currentTarget.value.length;
                 e.currentTarget.setSelectionRange(len, len);
+                setCaretToEnd(false);
               }
             }}
             value={draft}
@@ -3181,6 +3190,9 @@ export default function SheetDetail({
   // A row just created by tapping a continuity card: its observation opens
   // for editing so the next tap adds to it (see EditableCell autoEdit).
   const [justAddedRowId, setJustAddedRowId] = useState<number | null>(null);
+  // The row opened for typing is the officer's own to type in (the first row of
+  // a sheet): keep the on-screen keyboard, unlike a card tap.
+  const [justAddedKeyboard, setJustAddedKeyboard] = useState(false);
 
   const invalidateRows = useCallback(() => {
     utils.row.list.invalidate({ sheetId });
@@ -3312,7 +3324,18 @@ export default function SheetDetail({
         observation?: string;
       }) => {
         if (isOnline) {
-          _addRowOnline.mutate(input);
+          _addRowOnline.mutate(input, {
+            // The first row comes with "Surveillance commenced in the
+            // vicinity of " and the team already on it: open it for typing
+            // with the caret after the text, ready for the address.
+            onSuccess: created => {
+              if (created.autoFilled) {
+                setJustAddedKeyboard(true);
+                setJustAddedRowId(created.id);
+                setTimeout(() => setJustAddedRowId(null), 6000);
+              }
+            },
+          });
         } else {
           addPendingRowToCachedSheet(input.sheetId, {
             rowNumber: Date.now(),
@@ -6756,7 +6779,11 @@ export default function SheetDetail({
                                   value={row.observation}
                                   rowId={row.id}
                                   autoEdit={justAddedRowId === row.id}
-                                  onAutoEdited={() => setJustAddedRowId(null)}
+                                  autoEditKeyboard={justAddedKeyboard}
+                                  onAutoEdited={() => {
+                                    setJustAddedRowId(null);
+                                    setJustAddedKeyboard(false);
+                                  }}
                                   locked={row.isLocked || !canEdit}
                                   multiline
                                   placeholder="Enter observation…"

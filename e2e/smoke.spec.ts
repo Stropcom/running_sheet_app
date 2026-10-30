@@ -39,8 +39,12 @@ test("create an operation and a sheet, add a row and certify it", async ({
 
   // Row: the observation, then the CIN of whoever was present
   await page.getByRole("button", { name: "Add Row" }).click();
-  await page.getByText("Enter observation…").first().click();
+  // The first row of a sheet comes with its opening already written and its
+  // cell open, ready for the address.
   const textarea = page.locator("textarea").first();
+  await expect(textarea).toHaveValue(
+    "Surveillance commenced in the vicinity of "
+  );
   await textarea.fill(observation);
   // Click an empty part of the page so the cell saves (it saves on click-out).
   await page.mouse.click(700, 620);

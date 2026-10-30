@@ -11,6 +11,7 @@ import {
   PASSWORD,
   addRowWithObservation,
   createOperationAndSheet,
+  openNewRowCell,
 } from "./helpers";
 
 test.skip(
@@ -28,6 +29,16 @@ const SURNAME = Array.from({ length: 8 }, () =>
   String.fromCharCode(65 + Math.floor(Math.random() * 26))
 ).join("");
 const INTRO = `Observed Lawrence ${SURNAME} (${SURNAME}) walking to 12 Smith Street, Perth.`;
+
+// The pane's Search button starts a search for the team and is shaded while
+// Search is on; pressing it while on leaves Search on this screen. This makes
+// sure it is on without pressing it twice.
+async function searchOn(page: import("@playwright/test").Page) {
+  const button = page.getByRole("button", { name: "Search", exact: true });
+  if ((await button.getAttribute("aria-pressed")) !== "true")
+    await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+}
 
 test("a row can be deleted", async ({ page }) => {
   await createOperationAndSheet(page);
@@ -70,8 +81,7 @@ test("the same person typed on a second sheet asks if it is the same person", as
   page,
 }) => {
   await createOperationAndSheet(page);
-  await page.getByRole("button", { name: "Add Row" }).click();
-  await page.getByText("Enter observation…").first().click();
+  await openNewRowCell(page);
   await page.locator("textarea").first().fill(INTRO);
   await page.mouse.click(700, 620);
   const ask = page.getByRole("dialog").filter({
@@ -429,7 +439,7 @@ test.afterEach(async ({ page }) => {
       .catch(() => null);
 });
 
-test("Map page: Target Predictor says where next, then where now, with a confidence level", async ({
+test("Map page: Search is one button that starts a blank search, with no Where next", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -567,29 +577,27 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   await page.goto("/intelligence/mapping");
   await page.getByRole("button", { name: "Toggle side panel" }).click();
 
-  // Off until switched on, and nothing is shown on the map while off.
-  const section = page.getByText("Target Predictor", { exact: true }).first();
-  await section.scrollIntoViewIfNeeded();
+  // Off until the Search button is pressed, and nothing is shown while off. The
+  // pane has the one Search button: no "Target Predictor" heading or On / Off
+  // row, and no Where next.
+  const searchButton = page.getByRole("button", {
+    name: "Search",
+    exact: true,
+  });
+  await searchButton.scrollIntoViewIfNeeded();
+  await expect(searchButton).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByText("Target Predictor")).toHaveCount(0);
+  await expect(page.getByText(/Target predictor/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Where next/ })).toHaveCount(0);
   await expect(page.getByTestId("predictor-banner")).toHaveCount(0);
-  await page.getByRole("button", { name: /Target predictor\s*Off/i }).click();
-
-  // Where next: counted from the history, with the confidence stated.
-  const banner = page.getByTestId("predictor-banner");
-  await expect(banner).toContainText("Next: Elevate Fitness");
-  await expect(banner).toContainText("7 of 10 similar visits");
-  // Counts, never percentages, anywhere in the banner or the list.
-  await expect(banner).not.toContainText("%");
-  await expect(banner).toContainText("Moderate confidence");
-  await expect(page.getByText("Home — 14 Marine Parade").first()).toBeVisible();
+  await expect(page.getByText("One tap — the cross goes away")).toHaveCount(0);
 
   // Search starts blank: one tap on the map puts the pin down. It has no top
   // banner, and the pane is stripped back: no names line, no "from the
   // operation" sentence, no clock line, no drop-down, slider or area buttons.
-  await expect(
-    page.getByText(/From the operation and running sheet selected above/)
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Search", exact: true }).click();
-  await expect(banner).toHaveCount(0);
+  await searchButton.click();
+  await expect(searchButton).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("predictor-banner")).toHaveCount(0);
   await expect(page.getByText("One tap — the cross goes away")).toBeVisible();
   await expect(
     page.getByText(/From the operation and running sheet selected above/)
@@ -632,13 +640,20 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   const reopenSearch = async () => {
     await page.reload();
     await page.getByRole("button", { name: "Toggle side panel" }).click();
-    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await searchOn(page);
   };
   await reopenSearch();
-  await expect(banner).toHaveCount(0);
+  await expect(page.getByTestId("predictor-banner")).toHaveCount(0);
+  // Search no longer lists "Most likely, from his history" or the panel that
+  // explains it (a guess from history is not accurate enough); Where next,
+  // checked above, still is that history answer.
   await expect(
     page.getByText("Most likely, from his history", { exact: true })
-  ).toBeVisible();
+  ).toHaveCount(0);
+  await expect(page.getByText(/How this was worked out/)).toHaveCount(0);
+  await expect(page.getByText("Show the numbers on the markers")).toHaveCount(
+    0
+  );
   await expect(page.getByRole("main").getByText(/\b(?!60%)\d+%/)).toHaveCount(
     0
   );
@@ -720,10 +735,9 @@ test("Map page: Target Predictor says where next, then where now, with a confide
   await page.getByTestId("end-search").click();
   await ended;
   await expect(
-    page.getByRole("button", { name: /Target predictor\s*Off/i })
-  ).toBeVisible();
+    page.getByRole("button", { name: "Search", exact: true })
+  ).toHaveAttribute("aria-pressed", "false");
   expect(await searchOf()).toBeNull();
-  await page.getByRole("button", { name: /Target predictor\s*Off/i }).click();
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(page.getByText("One tap — the cross goes away")).toBeVisible();
   expect((await searchOf()).hasPin).toBe(false);
@@ -838,7 +852,7 @@ test("Map page: Search still shows how far he could have got with no history, an
   // 1. No known places and no history: the reach still answers.
   await page.goto("/intelligence/mapping");
   await page.getByRole("button", { name: "Toggle side panel" }).click();
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await searchOn(page);
   // Search has no top banner; its answers are in the pane and on the map.
   await expect(page.getByTestId("predictor-banner")).toHaveCount(0);
   // The posted limit of the road he was on picks the area and the speed.
@@ -876,8 +890,11 @@ test("Map page: Search still shows how far he could have got with no history, an
   ];
   await page.reload();
   await page.getByRole("button", { name: "Toggle side panel" }).click();
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await searchOn(page);
   await expect(page.getByText("Locations of interest in reach")).toBeVisible();
+  // The explanation panel is gone from Search; the rings keep their names on the
+  // map only (Google Maps cannot be reached here to read them).
+  await expect(page.getByText(/How this was worked out/)).toHaveCount(0);
   await expect(
     page.getByText("registered address — no visits on record")
   ).toBeVisible();
@@ -1140,4 +1157,75 @@ test("Top banner: the operation name is a Show & Share switch, green while on", 
   await banner.click();
   await expect(paneSwitch).toHaveAttribute("aria-pressed", "false");
   expect(await flag()).toBe("false");
+});
+
+test("The first row of a sheet comes with the opening and the whole team on it", async ({
+  page,
+}) => {
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", {
+    name: `First row ${Date.now()}`,
+  });
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  // A team roster of one registered officer, and one name that is not a
+  // registered CIN (it must not end up on the row).
+  const sheet = await post("sheet.create", {
+    operationId: op.id ?? op.operationId ?? op,
+    sheetDate: today,
+    sheetCins: [
+      { cin, hasImages: false, isTeamLeader: true, isAuthor: true },
+      { cin: "NOTAUSER9", hasImages: false },
+    ],
+  });
+  await page.goto(`/sheet/${sheet.id ?? sheet.sheetId}`);
+  await expect(page.getByText("No rows yet")).toBeVisible();
+
+  // First row: the opening is written, the cell is open with the caret at the
+  // end (ready for the address), and the team is on the row. Read in one step,
+  // because the browser can take window focus away a moment later and the cell
+  // then saves and closes, as it always does.
+  await page.getByRole("button", { name: "Add Row" }).click();
+  const textarea = page.locator("textarea").first();
+  await expect
+    .poll(() =>
+      textarea.evaluate(el => ({
+        value: (el as HTMLTextAreaElement).value,
+        caretAtEnd:
+          (el as HTMLTextAreaElement).selectionStart ===
+          (el as HTMLTextAreaElement).value.length,
+      }))
+    )
+    .toEqual({
+      value: "Surveillance commenced in the vicinity of ",
+      caretAtEnd: true,
+    });
+  const row = page.locator("tbody tr").first();
+  await expect(row.getByText(cin, { exact: true })).toBeVisible();
+  await expect(row.getByText("NOTAUSER9")).toHaveCount(0);
+
+  // Saved, not just shown: reload and the opening and the team are still on it.
+  await page.reload();
+  const saved = page.locator("tbody tr").first();
+  await expect(saved).toContainText(
+    "Surveillance commenced in the vicinity of"
+  );
+  await expect(saved.getByText(cin, { exact: true })).toBeVisible();
+  await expect(saved.getByText("NOTAUSER9")).toHaveCount(0);
+
+  // Only the first row: the next one starts empty, with nobody on it.
+  await page.getByRole("button", { name: "Add Row" }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(2);
+  const second = page
+    .locator("tbody tr")
+    .filter({ hasText: "Enter observation…" });
+  await expect(second).toHaveCount(1);
+  await expect(second.getByText(cin, { exact: true })).toHaveCount(0);
 });

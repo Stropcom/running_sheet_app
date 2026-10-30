@@ -13,6 +13,7 @@ import {
   MapPin,
   Plane,
   RefreshCw,
+  MoonStar,
   Stethoscope,
   ShoppingBag,
   Trees,
@@ -106,6 +107,12 @@ const KIND_STYLE: Record<
     tile: "border-teal-300 bg-teal-50 text-teal-700 dark:border-teal-400/40 dark:bg-teal-400/10 dark:text-teal-300",
     pill: "border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-400/40 dark:bg-teal-400/10 dark:text-teal-300",
     dot: "bg-teal-600 dark:bg-teal-400",
+  },
+  worship: {
+    Icon: MoonStar,
+    tile: "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-400/10 dark:text-emerald-300",
+    pill: "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-400/40 dark:bg-emerald-400/10 dark:text-emerald-300",
+    dot: "bg-emerald-600 dark:bg-emerald-400",
   },
   health: {
     Icon: Stethoscope,

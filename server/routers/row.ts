@@ -1,8 +1,11 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+import { firstRowFill } from "@shared/firstRow";
 import {
+  addRowMember,
   createAuditLog,
+  getAllUsers,
   createSheetRow,
   deleteSheetRow,
   getCertificationsByRowIds,
@@ -207,12 +210,30 @@ export const rowRouter = router({
         // running-sheet record. A whole-row flag, not per-sentence: text
         // can mix typed and voice-inserted content in one submission.
         viaVoice: z.boolean().optional(),
+        // The first row of a sheet is made with "Surveillance commenced in
+        // the vicinity of " already written (when no text is given) and the
+        // whole team roster on it — see shared/firstRow.ts. The offline
+        // sync adds a row's CINs itself, so it turns this off.
+        autoFirstRow: z.boolean().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
       await guardActiveSheet(input.sheetId);
       const existingRows = await getRowsBySheetId(input.sheetId);
       const rowNumber = existingRows.length + 1;
+      const sheet = await getRunningSheetById(input.sheetId);
+      const fill =
+        input.autoFirstRow === false
+          ? {
+              observation: input.observation,
+              members: [] as string[],
+              filledObservation: false,
+            }
+          : firstRowFill(
+              existingRows.length,
+              sheet?.sheetCins,
+              input.observation
+            );
       // A row always gets a concrete rowDate at creation, even when the
       // caller doesn't supply one — derived from the sheet's picker date
       // (sheetDate), never left to be inferred later from createdAt, which
@@ -222,7 +243,6 @@ export const rowRouter = router({
       // only case this still leaves null.
       let rowDate = input.rowDate;
       if (!rowDate) {
-        const sheet = await getRunningSheetById(input.sheetId);
         if (sheet?.sheetDate) {
           rowDate = addDaysISO(sheet.sheetDate, input.dayOffset ?? 0);
         }
@@ -234,9 +254,39 @@ export const rowRouter = router({
         timeMinutes: input.timeMinutes,
         dayOffset: input.dayOffset ?? 0,
         rowDate,
-        observation: input.observation,
+        observation: fill.observation,
         isLocked: false,
       });
+      // The team roster goes on the first row, as if each CIN had been added
+      // by hand: only registered CINs (the same check as member.add), in
+      // roster order, each with its own audit entry.
+      let teamAdded = 0;
+      if (fill.members.length) {
+        const registered = new Set(
+          (await getAllUsers()).map(u => u.cin.toUpperCase())
+        );
+        for (const cin of fill.members) {
+          if (!registered.has(cin)) continue;
+          const memberId = await addRowMember({
+            rowId: id,
+            memberName: cin,
+            sortOrder: teamAdded + 1,
+          });
+          teamAdded++;
+          await createAuditLog({
+            sheetId: input.sheetId,
+            rowId: id,
+            memberId,
+            userId: ctx.user.id,
+            userName: ctx.user.cin ?? "Unknown",
+            userCIN: ctx.user.cin ?? undefined,
+            action: "member_added",
+            details: `CIN ${cin} added to row (first row of the sheet: whole team from the roster)`,
+            createdAt: Date.now(),
+          });
+        }
+      }
+      const autoFilled = fill.filledObservation || teamAdded > 0;
       await createAuditLog({
         sheetId: input.sheetId,
         rowId: id,
@@ -244,9 +294,17 @@ export const rowRouter = router({
         userName: ctx.user.cin ?? "Unknown",
         userCIN: ctx.user.cin ?? undefined,
         action: "row_created",
-        details: input.viaVoice
-          ? `Row ${rowNumber} created (includes voice-transcribed text, on-device)`
-          : `Row ${rowNumber} created`,
+        details:
+          (input.viaVoice
+            ? `Row ${rowNumber} created (includes voice-transcribed text, on-device)`
+            : `Row ${rowNumber} created`) +
+          (autoFilled
+            ? ` — first row of the sheet filled in automatically${
+                fill.filledObservation
+                  ? ' with "Surveillance commenced in the vicinity of"'
+                  : ""
+              }${teamAdded > 0 ? ` and ${teamAdded} team CIN${teamAdded === 1 ? "" : "s"}` : ""}`
+            : ""),
         createdAt: Date.now(),
       });
       // See insertTravelledViaRow — a row created with "continued via:"
@@ -272,7 +330,7 @@ export const rowRouter = router({
           createdAt: Date.now(),
         });
       }
-      return { id, rowNumber };
+      return { id, rowNumber, autoFilled };
     }),
 
   update: protectedProcedure

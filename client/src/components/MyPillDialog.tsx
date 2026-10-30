@@ -93,7 +93,7 @@ export function MyPillDialog({
           {!isInvestigator && (
             <div className="space-y-2" data-testid="pointer-search">
               {(() => {
-                const searchOn = predictor.on && predictor.mode === "now";
+                const searchOn = predictor.on;
                 const base =
                   "flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border-2 text-sm font-semibold transition-colors disabled:opacity-50";
                 return (

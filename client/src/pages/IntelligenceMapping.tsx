@@ -209,7 +209,6 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { MapHeatOverlay } from "@/components/MapHeatOverlay";
 import {
-  TargetPredictorBanner,
   TargetPredictorOverlay,
   TargetPredictorPinPopup,
   TargetPredictorSection,
@@ -3912,7 +3911,7 @@ export default function IntelligenceMapping() {
         t => t.id === heatDefaultTargetId
       )?.name
     : undefined;
-  // Target Predictor — the target, operation and running sheet picked at the
+  // Search — the target, operation and running sheet picked at the
   // top of the pane (see components/TargetPredictor.tsx).
   const predictor = useTargetPredictor({
     // The sheet's own operation (rsSelectedOpId is not set by anything on this
@@ -4751,7 +4750,7 @@ export default function IntelligenceMapping() {
   };
 
   const handleMapAreaClick = useCallback(() => {
-    // While the Target Predictor is on, the pane stays open until it is
+    // While Search is on, the pane stays open until it is
     // closed with its X: taps on the map set where the target was last seen
     // and must not close the pane that is asking for it.
     if (predictorOn) return;
@@ -9741,11 +9740,6 @@ export default function IntelligenceMapping() {
             </div>
           )}
 
-          {/* Target Predictor — the answer, one line at the top of the map. */}
-          {!isInvestigator && !flySelectedId && (
-            <TargetPredictorBanner p={predictor} compact={narrowScreen} />
-          )}
-
           {showStreetHeadingBar && ownLiveEntry && (
             <StreetHeadingBar
               lat={ownLiveEntry.lat}
@@ -10986,12 +10980,11 @@ export default function IntelligenceMapping() {
               )}
               {/* end Heat Map */}
 
-              {/* ── TARGET PREDICTOR — one switch, off by default. On: a line
-                at the top of the map says where the selected sheet's target
-                is likely to go next, or may be now, with a confidence level,
-                and shades the likely places. Plain counting over his own
-                history on the operation. Not for map-only Investigator
-                accounts (the history isn't open to them). ── */}
+              {/* ── SEARCH — one button, off by default. On: a search for the
+                team on the selected sheet's target — a pin where he was last
+                seen and two rings round it for how far he could have got.
+                Plain arithmetic, nothing sent anywhere. Not for map-only
+                Investigator accounts (the history isn't open to them). ── */}
               {!isInvestigator && (
                 <TargetPredictorSection
                   p={predictor}
@@ -11006,14 +10999,14 @@ export default function IntelligenceMapping() {
                   sheetTitle={rsSelectedSheetTitle ?? null}
                 />
               )}
-              {/* end Target Predictor */}
+              {/* end Search */}
             </div>
           )}
           {/* end Pane Body */}
         </div>
         {/* end RS Actions Right Pane */}
 
-        {/* Target Predictor rings and badges — adds a layer to the map, draws nothing itself. */}
+        {/* Search rings and pin — adds a layer to the map, draws nothing itself. */}
         <TargetPredictorOverlay
           p={predictor}
           map={mapReady && !isInvestigator ? mapRef.current : null}

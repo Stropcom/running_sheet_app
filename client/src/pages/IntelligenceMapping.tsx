@@ -10636,94 +10636,6 @@ export default function IntelligenceMapping() {
               )}
               {/* end TEAMS */}
 
-              {/* ── STREET & HEADING — own section, same on/off pattern as
-                Location's "Show & Share" above: a deliberate toggle with
-                its own heading rather than a switch buried elsewhere. ── */}
-              <div className="px-3 py-3 border-b border-border space-y-2">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-                  Street &amp; Heading
-                </span>
-                <button
-                  onClick={() => setShowStreetHeadingBar(!showStreetHeadingBar)}
-                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
-                    showStreetHeadingBar
-                      ? "border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20"
-                      : "border-border bg-card hover:bg-accent/40"
-                  }`}
-                  aria-pressed={showStreetHeadingBar}
-                >
-                  <Compass
-                    className={`h-3.5 w-3.5 flex-shrink-0 ${
-                      showStreetHeadingBar
-                        ? "text-sky-500"
-                        : "text-muted-foreground"
-                    }`}
-                  />
-                  <span
-                    className={`text-xs font-semibold truncate flex-1 text-left ${
-                      showStreetHeadingBar ? "text-sky-500" : "text-foreground"
-                    }`}
-                  >
-                    Current Street &amp; Direction
-                  </span>
-                  <span
-                    className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
-                      showStreetHeadingBar
-                        ? "text-sky-500"
-                        : "text-muted-foreground"
-                    }`}
-                  >
-                    {showStreetHeadingBar ? "On" : "Off"}
-                  </span>
-                </button>
-              </div>
-              {/* end Street & Heading */}
-
-              {/* ── MARKER ENTITY COUNT — same on/off pattern as Street &
-                Heading: the number on a house marker is the total distinct
-                people and vehicles linked to it. ── */}
-              <div className="px-3 py-3 border-b border-border space-y-2">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-                  Marker Entity Count
-                </span>
-                <button
-                  onClick={() =>
-                    setShowMarkerEntityCount(!showMarkerEntityCount)
-                  }
-                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
-                    showMarkerEntityCount
-                      ? "border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20"
-                      : "border-border bg-card hover:bg-accent/40"
-                  }`}
-                  aria-pressed={showMarkerEntityCount}
-                >
-                  <Hash
-                    className={`h-3.5 w-3.5 flex-shrink-0 ${
-                      showMarkerEntityCount
-                        ? "text-sky-500"
-                        : "text-muted-foreground"
-                    }`}
-                  />
-                  <span
-                    className={`text-xs font-semibold truncate flex-1 text-left ${
-                      showMarkerEntityCount ? "text-sky-500" : "text-foreground"
-                    }`}
-                  >
-                    Entity count on markers
-                  </span>
-                  <span
-                    className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
-                      showMarkerEntityCount
-                        ? "text-sky-500"
-                        : "text-muted-foreground"
-                    }`}
-                  >
-                    {showMarkerEntityCount ? "On" : "Off"}
-                  </span>
-                </button>
-              </div>
-              {/* end Marker Entity Count */}
-
               {/* ── TARGET LOGGER — same on/off pattern as the sections
                 above. The first switch is the whole feature (the Target
                 logger panel on the running sheet and in the quick-entry
@@ -10802,6 +10714,70 @@ export default function IntelligenceMapping() {
                 )}
               </div>
               {/* end Target Logger */}
+
+              {/* ── SEARCH — one button, off by default. On: a search for the
+                team on the selected sheet's target — a pin where he was last
+                seen and two rings round it for how far he could have got.
+                Plain arithmetic, nothing sent anywhere. Not for map-only
+                Investigator accounts (the history isn't open to them). ── */}
+              {!isInvestigator && (
+                <TargetPredictorSection
+                  p={predictor}
+                  targetName={rsTargetData?.name ?? null}
+                  operationName={
+                    (
+                      (operations ?? []) as Array<{ id: number; name: string }>
+                    ).find(
+                      o => o.id === (activeMapOperationId ?? rsSelectedOpId)
+                    )?.name ?? null
+                  }
+                  sheetTitle={rsSelectedSheetTitle ?? null}
+                />
+              )}
+              {/* end Search */}
+
+              {/* ── STREET & HEADING — own section, same on/off pattern as
+                Location's "Show & Share" above: a deliberate toggle with
+                its own heading rather than a switch buried elsewhere. ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Street &amp; Heading
+                </span>
+                <button
+                  onClick={() => setShowStreetHeadingBar(!showStreetHeadingBar)}
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+                    showStreetHeadingBar
+                      ? "border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20"
+                      : "border-border bg-card hover:bg-accent/40"
+                  }`}
+                  aria-pressed={showStreetHeadingBar}
+                >
+                  <Compass
+                    className={`h-3.5 w-3.5 flex-shrink-0 ${
+                      showStreetHeadingBar
+                        ? "text-sky-500"
+                        : "text-muted-foreground"
+                    }`}
+                  />
+                  <span
+                    className={`text-xs font-semibold truncate flex-1 text-left ${
+                      showStreetHeadingBar ? "text-sky-500" : "text-foreground"
+                    }`}
+                  >
+                    Current Street &amp; Direction
+                  </span>
+                  <span
+                    className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                      showStreetHeadingBar
+                        ? "text-sky-500"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {showStreetHeadingBar ? "On" : "Off"}
+                  </span>
+                </button>
+              </div>
+              {/* end Street & Heading */}
 
               {/* ── NEARBY LOCATION — one switch, off by default. On: every
                 Intelligence Folder / Target Registry location within 500 m
@@ -10981,26 +10957,50 @@ export default function IntelligenceMapping() {
               )}
               {/* end Heat Map */}
 
-              {/* ── SEARCH — one button, off by default. On: a search for the
-                team on the selected sheet's target — a pin where he was last
-                seen and two rings round it for how far he could have got.
-                Plain arithmetic, nothing sent anywhere. Not for map-only
-                Investigator accounts (the history isn't open to them). ── */}
-              {!isInvestigator && (
-                <TargetPredictorSection
-                  p={predictor}
-                  targetName={rsTargetData?.name ?? null}
-                  operationName={
-                    (
-                      (operations ?? []) as Array<{ id: number; name: string }>
-                    ).find(
-                      o => o.id === (activeMapOperationId ?? rsSelectedOpId)
-                    )?.name ?? null
+              {/* ── MARKER ENTITY COUNT — same on/off pattern as Street &
+                Heading: the number on a house marker is the total distinct
+                people and vehicles linked to it. ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Marker Entity Count
+                </span>
+                <button
+                  onClick={() =>
+                    setShowMarkerEntityCount(!showMarkerEntityCount)
                   }
-                  sheetTitle={rsSelectedSheetTitle ?? null}
-                />
-              )}
-              {/* end Search */}
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+                    showMarkerEntityCount
+                      ? "border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20"
+                      : "border-border bg-card hover:bg-accent/40"
+                  }`}
+                  aria-pressed={showMarkerEntityCount}
+                >
+                  <Hash
+                    className={`h-3.5 w-3.5 flex-shrink-0 ${
+                      showMarkerEntityCount
+                        ? "text-sky-500"
+                        : "text-muted-foreground"
+                    }`}
+                  />
+                  <span
+                    className={`text-xs font-semibold truncate flex-1 text-left ${
+                      showMarkerEntityCount ? "text-sky-500" : "text-foreground"
+                    }`}
+                  >
+                    Entity count on markers
+                  </span>
+                  <span
+                    className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                      showMarkerEntityCount
+                        ? "text-sky-500"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {showMarkerEntityCount ? "On" : "Off"}
+                  </span>
+                </button>
+              </div>
+              {/* end Marker Entity Count */}
             </div>
           )}
           {/* end Pane Body */}

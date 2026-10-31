@@ -327,3 +327,13 @@ use it so far; the transit, vessel and walk-out buttons keep "[route]".
 
 **Checked.** Unit tests; Playwright `screens.spec.ts` — saved arrival row, and an
 unsaved box typed in without clicking out.
+
+## Map Settings pane order (v2.47.1)
+
+Below Teams the sections now read, top to bottom: **Target Logger, Search,
+Street & Heading, Nearby Location, Heat Map, Marker Entity Count** (they were
+Street & Heading, Entity Count, Target Logger, Nearby Location, Heat Map,
+Search). Only the order changed — each block moved whole in
+`IntelligenceMapping.tsx` (the `── <NAME>` / `end <Name>` comments mark them),
+no behaviour change. Earlier notes that say "below Heat Map" / "under Nearby
+Location" describe the old order.

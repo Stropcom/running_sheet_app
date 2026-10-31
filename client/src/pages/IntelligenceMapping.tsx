@@ -10,7 +10,8 @@ import { fillRoute } from "@shared/parkingRoute";
 import { placeLinkedToTarget } from "@shared/targetLocation";
 import {
   createTargetLocationTile,
-  recolourTargetLocationTile,
+  refreshTargetLocationTile,
+  rotateTargetLocationTile,
 } from "@/lib/targetLocationTile";
 import { TargetLocationSection } from "@/components/TargetLocationSection";
 import { orderRsChips } from "@shared/rsChips";
@@ -4843,7 +4844,7 @@ export default function IntelligenceMapping() {
       showTargetLocationRef.current &&
       placeLinkedToTarget(loc, activeTargetIdRef.current)
     ) {
-      const tile = createTargetLocationTile(40, colour);
+      const tile = createTargetLocationTile(40, colour, icon, rotation);
       if (tile) el.appendChild(tile);
     }
 
@@ -7609,6 +7610,7 @@ export default function IntelligenceMapping() {
       const directImg = intelPinImgRefs.current.get(label);
       if (directImg) {
         directImg.style.transform = `rotate(${rotation}deg)`;
+        rotateTargetLocationTile(directImg.parentElement, rotation);
       } else {
         const markerEntry = markersRef.current.find(
           (m: any) => m.title === label
@@ -12552,9 +12554,11 @@ export default function IntelligenceMapping() {
                       img.style.width = "40px";
                       img.style.height = "40px";
                       img.style.transform = `rotate(${intelEditRotation}deg)`;
-                      recolourTargetLocationTile(
+                      refreshTargetLocationTile(
                         img.parentElement,
-                        intelEditColour as MarkerColour
+                        intelEditColour as MarkerColour,
+                        intelEditIcon,
+                        intelEditRotation
                       );
                     }
                     setEditingIntelLabel(null);

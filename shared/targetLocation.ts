@@ -11,8 +11,10 @@
  * (`secondaryLocs`) counts when any of them is tied. Pure rules, tested in
  * server/targetLocation.test.ts.
  *
- * The mark is a soft see-through square behind the marker in the marker's own
- * colour — no border, one fixed strength and size, on or off only.
+ * The mark is a soft see-through shape behind the marker in the marker's own
+ * colour — no border, one fixed strength and size, on or off only. A house
+ * marker gets a house-shaped glow that follows its outline; every other icon
+ * gets a rounded square.
  */
 
 export interface TargetLocationPlace {
@@ -73,5 +75,50 @@ export function tileStyle(iconPx: number, markerHex: string): TileStyle | null {
     radiusPx: Math.round(iconPx * 0.28 * TILE_SIZE * 10) / 10,
     background: `linear-gradient(150deg, rgba(${rgb},${+(a * 1.25).toFixed(3)}), rgba(${rgb},${+(a * 0.75).toFixed(3)}))`,
     boxShadow: `0 0 ${Math.round(iconPx * 0.16 * TILE_SIZE * 10) / 10}px rgba(${rgb},${+(a * 0.9).toFixed(3)})`,
+  };
+}
+
+/** Icons that get the house-shaped glow; everything else gets the square. */
+const HOUSE_ICONS = new Set(["house_filled", "house_outline"]);
+
+export type TileShape = "house" | "square";
+
+export function tileShapeFor(icon: string): TileShape {
+  return HOUSE_ICONS.has(icon) ? "house" : "square";
+}
+
+/** The house marker's silhouette (no door), in the icon's own 48 × 48 box —
+ * the same outline as the house icon in lib/markerSvgs.ts. */
+export const HOUSE_GLOW_PATH = "M24,4 44,22 40,22 40,44 8,44 8,22 4,22Z";
+
+export interface HouseGlowStyle {
+  /** The drawing sits exactly over the icon (same size, no offset). */
+  sizePx: number;
+  /** Width of the thick rounded outline, in the 48 × 48 drawing's units. */
+  strokeWidth: number;
+  rgb: string;
+  opacity: number;
+  blurPx: number;
+}
+
+/** The house glow for an icon `iconPx` wide. It reaches as far past the house's
+ * edge as the square tile does (the tile's overhang past the icon box plus the
+ * icon's own margin round the house), so the two read as the same size. */
+export function houseGlowStyle(
+  iconPx: number,
+  markerHex: string
+): HouseGlowStyle | null {
+  const rgb = hexToRgb(markerHex);
+  if (!rgb) return null;
+  const tileOverhang = (iconPx * 1.4 * TILE_SIZE - iconPx) / 2;
+  const iconMargin = (iconPx * 4) / 48;
+  const reachPx = tileOverhang + iconMargin;
+  const unitPx = iconPx / 48;
+  return {
+    sizePx: iconPx,
+    strokeWidth: Math.round(((2 * reachPx) / unitPx) * 100) / 100,
+    rgb,
+    opacity: TILE_STRENGTH,
+    blurPx: Math.round(iconPx * 0.015 * 100) / 100,
   };
 }

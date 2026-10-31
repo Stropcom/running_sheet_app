@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  HOUSE_GLOW_PATH,
   TILE_SIZE,
+  houseGlowStyle,
+  tileShapeFor,
   TILE_STRENGTH,
   hexToRgb,
   placeLinkedToTarget,
@@ -77,5 +80,33 @@ describe("tileStyle", () => {
     expect(tileStyle(40, "red")).toBeNull();
     expect(hexToRgb("#12")).toBeNull();
     expect(hexToRgb("#212121")).toBe("33,33,33");
+  });
+});
+
+describe("house glow", () => {
+  it("house icons get the house shape, every other icon the square", () => {
+    expect(tileShapeFor("house_filled")).toBe("house");
+    expect(tileShapeFor("house_outline")).toBe("house");
+    expect(tileShapeFor("sedan")).toBe("square");
+    expect(tileShapeFor("place_bank")).toBe("square");
+    expect(tileShapeFor("")).toBe("square");
+  });
+
+  it("sits over the icon and takes the marker's colour at 30% strength", () => {
+    const g = houseGlowStyle(40, "#8E24AA")!;
+    expect(g.sizePx).toBe(40);
+    expect(g.rgb).toBe("142,36,170");
+    expect(g.opacity).toBe(0.3);
+    expect(HOUSE_GLOW_PATH).toContain("24,4");
+  });
+
+  it("reaches as far past the house as the square tile does", () => {
+    // Tile overhang past the icon box (2.4px) + the icon's own margin round the
+    // house (3.33px) = 5.73px each side, drawn as a 13.76-unit outline.
+    expect(houseGlowStyle(40, "#E53935")!.strokeWidth).toBe(13.76);
+  });
+
+  it("gives nothing for a colour it can't read", () => {
+    expect(houseGlowStyle(40, "red")).toBeNull();
   });
 });

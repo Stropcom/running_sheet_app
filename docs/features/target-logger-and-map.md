@@ -367,6 +367,16 @@ dialog recolours its tile at once (`recolourTargetLocationTile`). The switch is
 `components/TargetLocationSection.tsx`. Turning the switch on/off or changing the
 active sheet's target redraws the pins, the same way the entity-count switch does.
 
+**House-shaped glow (v2.48.2).** A **house** marker (`house_filled` or
+`house_outline`) gets a glow that follows the house's outline instead of the
+square: the same silhouette as the icon, drawn as a thick rounded outline that
+reaches as far past the house as the square does (`houseGlowStyle`, same colour,
+30%, no border, a hair of blur). It turns with the icon (rotation slider and Edit
+dialog both update it at once, `rotateTargetLocationTile` /
+`refreshTargetLocationTile`). **Every other icon keeps the square** for now (a
+sign, a vehicle, etc. would each need its own outline). `tileShapeFor(icon)` in
+`shared/targetLocation.ts` decides which; tests in `server/targetLocation.test.ts`.
+
 **Name (v2.48.1).** The section is called **Target Markers** (it was first built
 as "Target Location"), because the Target Logger section already has a sub-switch
 called "Target location" (the flag that shows where the target is now). The code

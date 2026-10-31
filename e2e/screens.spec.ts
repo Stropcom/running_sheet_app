@@ -1552,16 +1552,29 @@ test("Map page: Target Markers is an on/off switch under Search, off to start, r
   const sw = page.getByTestId("target-location-switch");
   await expect(sw).toBeVisible();
   await expect(sw).toHaveAttribute("aria-pressed", "false");
-  // The section sits after Search and before Street & Heading.
-  const y = async (loc: import("@playwright/test").Locator) =>
-    (await loc.boundingBox())!.y;
-  const searchY = await y(
-    page.getByRole("button", { name: "Search", exact: true })
-  );
-  const switchY = await y(sw);
-  const streetY = await y(page.getByText("Street & Heading", { exact: true }));
-  expect(switchY).toBeGreaterThan(searchY);
-  expect(streetY).toBeGreaterThan(switchY);
+  // The section sits after Search and before Street & Heading — by position in
+  // the page, which does not move when the pane scrolls or reflows.
+  const inOrder = await page.evaluate(() => {
+    const switchEl = document.querySelector(
+      '[data-testid="target-location-switch"]'
+    )!;
+    const searchBtn = Array.from(document.querySelectorAll("button")).find(
+      b => b.textContent?.trim() === "Search"
+    )!;
+    const streetHeads = Array.from(document.querySelectorAll("span")).filter(
+      e => e.textContent?.trim() === "Street & Heading"
+    );
+    const follows = (a: Element, b: Element) =>
+      !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    return {
+      searchBeforeSwitch: follows(searchBtn, switchEl),
+      streetHeads: streetHeads.length,
+      switchBeforeStreet: streetHeads.every(h => follows(switchEl, h)),
+    };
+  });
+  expect(inOrder.searchBeforeSwitch).toBe(true);
+  expect(inOrder.streetHeads).toBeGreaterThan(0);
+  expect(inOrder.switchBeforeStreet).toBe(true);
   // On or off — nothing else to choose.
   await sw.click();
   await expect(sw).toHaveAttribute("aria-pressed", "true");

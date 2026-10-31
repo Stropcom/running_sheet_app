@@ -21,13 +21,20 @@ export const ROUTE_PLACEHOLDER = "[route]";
 interface ParkingRoute {
   /** What the officer wrote about where the vehicle is parked. */
   parked: RegExp;
-  /** The words that replace "[route]" ("walked <route> towards …"). */
-  route: string;
+  /** The words for "[route]" in "…walked [route], entered <place> and continued
+   * out of sight." (Walked in). */
+  walkIn: string;
+  /** The words for "[route]" in "…walked [route] towards [location]." (Walked
+   * away); empty leaves "walked towards [location]". */
+  walkAway: string;
 }
 
 // A name that merely contains the words ("Car Park Road") is not a car park.
 const NOT_A_STREET =
   "(?!\\s+(?:street|st|road|rd|avenue|ave|drive|dr|lane|ln|way|place|pl|court|ct|crescent|cres|boulevard|blvd|terrace|tce|parade|pde)\\b)";
+
+const STREET_TYPES =
+  "(?:Street|Road|Avenue|Drive|Lane|Place|Court|Crescent|Terrace|Parade|Way|Boulevard|Highway|Close)";
 
 export const PARKING_ROUTES: readonly ParkingRoute[] = [
   {
@@ -35,7 +42,17 @@ export const PARKING_ROUTES: readonly ParkingRoute[] = [
       `\\b(?:car\\s?parks?|carparks?|parking\\s+(?:lot|bays?)|car\\s+bays?)\\b${NOT_A_STREET}`,
       "i"
     ),
-    route: "through the car park",
+    walkIn: "through the car park",
+    walkAway: "through the car park",
+  },
+  {
+    // Parked on the street / road / kerb, or on a named street.
+    parked: new RegExp(
+      `\\bparked\\b[^.]*?\\b(?:on|along)\\s+(?:the\\s+)?(?:street|road|kerb|curb|verge)\\b|\\bparked\\s+(?:on|along)\\s+(?:[A-Z][\\w'-]*\\s+){1,3}${STREET_TYPES}\\b`,
+      "i"
+    ),
+    walkIn: "to",
+    walkAway: "",
   },
 ];
 
@@ -54,14 +71,19 @@ function sentences(text: string): string[] {
     .filter(Boolean);
 }
 
-/** The route words for a vehicle, from the officer's text (latest text first
- * wins; within a text, the latest mention of the vehicle). A sentence that
- * names the registration, plus the sentence right after it when that one is
- * about parking ("Parked in the car park."), is the vehicle's parking. */
-export function routeForVehicle(
+/** Where the vehicle was last parked, from the officer's text. The vehicle's
+ * latest arrival or parking statement decides — a sentence naming the
+ * registration that says it arrived or parked, plus any sentence right after it
+ * that begins "Parked" — and nothing older is looked at (an earlier visit's car
+ * park must not leak into a later arrival on the street). Later text is read
+ * first, and the box being typed in comes last. A mention that is only a walk to
+ * or from the vehicle says nothing about where it is parked and is skipped.
+ * Null when that statement fits no known place, or fits two (it would be a
+ * guess). */
+export function parkingForVehicle(
   rego: string,
   texts: readonly (string | null | undefined)[]
-): string | null {
+): ParkingRoute | null {
   const key = regoKey(rego);
   if (key.length < 2) return null;
   for (let t = texts.length - 1; t >= 0; t--) {
@@ -77,20 +99,29 @@ export function routeForVehicle(
       )
         window.push(list[j]);
       const said = window.join(" ");
-      for (const p of PARKING_ROUTES) if (p.parked.test(said)) return p.route;
+      if (!/\b(?:arrived|parked|parking)\b/i.test(said)) continue;
+      const hits = PARKING_ROUTES.filter(p => p.parked.test(said));
+      return hits.length === 1 ? hits[0] : null;
     }
   }
   return null;
 }
 
 /** The action text with its first "[route]" filled in for this vehicle, or
- * the text unchanged when the sheet doesn't say. */
+ * the text unchanged when the sheet doesn't say. Walked in ("walked [route],
+ * entered …") and Walked away ("walked [route] towards …") read differently. */
 export function fillRoute(
   text: string,
   rego: string | undefined,
   texts: readonly (string | null | undefined)[]
 ): string {
   if (!rego || !text.includes(ROUTE_PLACEHOLDER)) return text;
-  const route = routeForVehicle(rego, texts);
-  return route ? text.replace(ROUTE_PLACEHOLDER, route) : text;
+  const parking = parkingForVehicle(rego, texts);
+  if (!parking) return text;
+  const walkingIn = text.includes(`${ROUTE_PLACEHOLDER},`);
+  const route = walkingIn ? parking.walkIn : parking.walkAway;
+  // Nothing to say: "walked [route] towards" reads "walked towards".
+  return route
+    ? text.replace(ROUTE_PLACEHOLDER, route)
+    : text.replace(` ${ROUTE_PLACEHOLDER}`, "");
 }

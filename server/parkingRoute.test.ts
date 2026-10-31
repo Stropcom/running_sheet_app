@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fillRoute, routeForVehicle } from "@shared/parkingRoute";
+import { fillRoute, parkingForVehicle } from "@shared/parkingRoute";
 
 const ARRIVAL =
   "Vehicle 1ARD64, DARYANI driver and sole occupant, arrived at High Wycombe Bar and Grill, 1 Kalamunda Road, HIGH WYCOMBE WA.";
@@ -8,7 +8,10 @@ const WALK_IN =
 const WALK_AWAY =
   "DARYANI exited the vehicle and walked [route] towards [location].";
 
-describe("routeForVehicle", () => {
+const routeForVehicle = (rego: string, texts: (string | null)[]) =>
+  parkingForVehicle(rego, texts)?.walkIn ?? null;
+
+describe("where the vehicle is parked", () => {
   it("reads the car park from the sentence after the arrival", () => {
     expect(
       routeForVehicle("1ARD64", [`${ARRIVAL} Parked in the car park.`])
@@ -32,13 +35,13 @@ describe("routeForVehicle", () => {
     ).toBe("through the car park");
   });
 
-  it("ignores a car park that belongs to a different vehicle", () => {
+  it("ignores a car park that belongs to a different vehicle (this one is on the street)", () => {
     expect(
       routeForVehicle("1ARD64", [
         "Vehicle 2XYZ99 arrived at the shops. Parked in the car park.",
         `${ARRIVAL} Parked on the street.`,
       ])
-    ).toBeNull();
+    ).toBe("to");
   });
 
   it("matches the registration however it is spaced or cased", () => {
@@ -87,5 +90,84 @@ describe("fillRoute", () => {
     expect(fillRoute("Vehicle departed.", "1ARD64", texts)).toBe(
       "Vehicle departed."
     );
+  });
+});
+
+describe("parked on the street", () => {
+  const STREET_ARRIVAL =
+    "Vehicle 1ARD64, DARYANI driver and sole occupant, arrived at Laika Coffee, 11 Lathlain Place, LATHLAIN WA (Laika Coffee) and parked on the street.";
+  const IN =
+    "DARYANI exited the vehicle, walked [route], entered Laika Coffee and continued out of sight.";
+  const AWAY =
+    "DARYANI exited the vehicle and walked [route] towards [location].";
+
+  it("Walked in reads 'walked to, entered …'", () => {
+    expect(fillRoute(IN, "1ARD64", [STREET_ARRIVAL])).toBe(
+      "DARYANI exited the vehicle, walked to, entered Laika Coffee and continued out of sight."
+    );
+  });
+
+  it("Walked away drops the placeholder rather than writing 'to towards'", () => {
+    expect(fillRoute(AWAY, "1ARD64", [STREET_ARRIVAL])).toBe(
+      "DARYANI exited the vehicle and walked towards [location]."
+    );
+  });
+
+  it("reads the other ways of saying it", () => {
+    for (const parked of [
+      "parked on the road",
+      "parked along the kerb",
+      "parked on Smith Street",
+      "parked on the verge",
+    ])
+      expect(
+        fillRoute(IN, "1ARD64", [
+          `Vehicle 1ARD64 arrived at the shops and ${parked}.`,
+        ])
+      ).toContain("walked to, entered");
+  });
+
+  it("is not a car park, and a street and a car park together are left for the officer", () => {
+    expect(fillRoute(IN, "1ARD64", [STREET_ARRIVAL])).not.toContain("car park");
+    expect(
+      fillRoute(IN, "1ARD64", [
+        "Vehicle 1ARD64 arrived at the shops and parked on the road near the car park.",
+      ])
+    ).toBe(IN);
+  });
+});
+
+describe("only the vehicle's latest arrival counts", () => {
+  const IN =
+    "DARYANI exited the vehicle, walked [route], entered Laika Coffee and continued out of sight.";
+  // From a real sheet: an earlier visit walked through a car park to the vehicle.
+  const EARLIER =
+    "DARYANI exited Boab Tavern and walked through the car park towards Vehicle 1ARD64. Vehicle 1ARD64 departed Boab Tavern and continued via:";
+  const EARLIER_ARRIVAL =
+    "Vehicle 1ARD64, DARYANI driver and sole occupant, arrived at Boab Tavern. Parked in the car park.";
+
+  it("an earlier car park does not leak into a later arrival on the street", () => {
+    expect(
+      fillRoute(IN, "1ARD64", [
+        EARLIER_ARRIVAL,
+        EARLIER,
+        "Vehicle 1ARD64, DARYANI driver and sole occupant, arrived at Laika Coffee and parked on the street.",
+      ])
+    ).toBe(
+      "DARYANI exited the vehicle, walked to, entered Laika Coffee and continued out of sight."
+    );
+  });
+
+  it("a later arrival that says nothing about parking leaves [route] for the officer", () => {
+    expect(
+      fillRoute(IN, "1ARD64", [
+        EARLIER_ARRIVAL,
+        "Vehicle 1ARD64, DARYANI driver and sole occupant, arrived at Laika Coffee.",
+      ])
+    ).toBe(IN);
+  });
+
+  it("a walk to the vehicle says nothing about where it is parked", () => {
+    expect(fillRoute(IN, "1ARD64", [EARLIER])).toBe(IN);
   });
 });

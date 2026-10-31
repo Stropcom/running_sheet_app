@@ -391,3 +391,28 @@ the server's `relatedTargetIds` against a real database (target address, second
 target, associate address); the tile drawn next to the entity count badge; the
 switch, its place in the pane and its memory in `e2e/screens.spec.ts`. **Not seen
 on a live map** (Google Maps can't be reached from the sandbox).
+
+## "[route]" fix: only the latest arrival counts, and street parking (v2.48.3)
+
+**The bug.** v2.47.0 looked back through every mention of the vehicle for a car
+park, so a vehicle that had been in a car park at an earlier visit ("…walked
+through the car park towards Vehicle 1ARD64") put "walked through the car park"
+into a later row where it had parked **on the street**. Now the vehicle's
+**latest arrival or parking statement** decides and nothing older is read
+(`parkingForVehicle` in `shared/parkingRoute.ts`): a sentence naming the rego that
+says "arrived", "parked" or "parking" (plus a following "Parked …" sentence). A
+mention that is only a walk to or from the vehicle is skipped. If that statement
+says nothing about where, "[route]" is left for the officer. If it fits two
+places ("on the road near the car park") it is also left — a guess is not made.
+
+**Street / road parking (new, the second row of `PARKING_ROUTES`).** "parked on
+the street / road / kerb / verge", "parked along …", or "parked on <Name>
+Street|Road|…" reads as the street. **Walked in** then writes "walked to,
+entered <place> and continued out of sight" (as the officer worded it); **Walked
+away** drops the placeholder ("walked towards [location]") rather than "to
+towards". Each place now has its own Walked in and Walked away words
+(`walkIn`, `walkAway`). Driveway parking is not done yet; it is another row.
+
+**Checked.** `server/parkingRoute.test.ts` (including the real sheet's earlier car
+park and a later street arrival); `e2e/screens.spec.ts` (saved earlier car park
+visit, then a street arrival).

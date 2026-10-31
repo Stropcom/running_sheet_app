@@ -1578,3 +1578,51 @@ test("Map page: Target Markers is an on/off switch under Search, off to start, r
     "false"
   );
 });
+
+test("Walked in after an arrival on the street says 'walked to', not an earlier visit's car park", async ({
+  page,
+}) => {
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", {
+    name: `Street route ${Date.now()}`,
+  });
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  const sheet = await post("sheet.create", {
+    operationId: op.id ?? op.operationId ?? op,
+    sheetDate: today,
+    sheetCins: [{ cin, hasImages: false, isTeamLeader: true, isAuthor: true }],
+  });
+  const sheetId = sheet.id ?? sheet.sheetId;
+  const row = (observation: string) =>
+    post("row.create", { sheetId, observation });
+  await row(
+    "Vehicle 1ARD64, DARYANI driver and sole occupant, arrived at 7 Boab Road, PERTH WA (7 Boab Road). Parked in the car park."
+  );
+  await row(
+    "DARYANI exited 7 Boab Road and walked through the car park towards Vehicle 1ARD64."
+  );
+  await row(
+    "Vehicle 1ARD64, DARYANI driver and sole occupant, departed 7 Boab Road and continued via:"
+  );
+  await row(
+    "Vehicle 1ARD64, DARYANI driver and sole occupant, arrived at 12 Smith Street, PERTH WA (12 Smith Street) and parked on the street."
+  );
+  await page.goto(`/sheet/${sheetId}`);
+  await page.getByText("Target Logger", { exact: true }).first().click();
+  await page.getByRole("button", { name: "Walked in", exact: true }).click();
+  const walked = page
+    .locator("tbody tr")
+    .filter({ hasText: "exited the vehicle, walked" });
+  await expect(walked).toHaveCount(1);
+  await expect(walked).toContainText("walked to, entered 12 Smith Street");
+  await expect(walked).not.toContainText("car park");
+  await expect(walked).not.toContainText("[route]");
+});

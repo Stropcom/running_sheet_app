@@ -1,4 +1,5 @@
 import { useMyTeams } from "@/lib/teams";
+import { fillRoute } from "@shared/parkingRoute";
 import { IMAGERY_PHRASE_PATTERN, cinsWithImagery } from "@shared/rowImagery";
 import { seatedOccupantWording, seatsOf } from "@shared/vehicleSeats";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -5635,11 +5636,13 @@ export default function SheetDetail({
                               {
                                 key: `wa-${rego}`,
                                 label: "Walked away",
+                                rego,
                                 text: `${carNames} exited the vehicle and walked [route] towards [location].`,
                               },
                               {
                                 key: `wi-${rego}`,
                                 label: "Walked in",
+                                rego,
                                 text: `${carNames} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
                               },
                             ]
@@ -6516,7 +6519,20 @@ export default function SheetDetail({
                           rowId: null,
                         })
                       }
-                      onAction={addContinuityEntry}
+                      onAction={(text, _mode, rego) =>
+                        addContinuityEntry(
+                          fillRoute(text, rego, [
+                            ...[...(rows ?? [])]
+                              .sort(
+                                (a, b) =>
+                                  (a.rowNumber ?? 0) - (b.rowNumber ?? 0)
+                              )
+                              .map(r => r.observation),
+                            // What is typed in the open box right now.
+                            openObservationCell()?.value,
+                          ])
+                        )
+                      }
                     />
                   </div>
                 )}

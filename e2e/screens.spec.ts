@@ -1460,3 +1460,85 @@ test("A suburb spelled like a target's surname does not list that target at the 
   expect(advent!.observedTargets.join(" | ")).toContain(daryani);
   expect(advent!.observedTargets.join(" | ")).not.toContain(vale);
 });
+
+test("Walked in says 'through the car park' when the vehicle's arrival says it parked in the car park", async ({
+  page,
+}) => {
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", {
+    name: `Car park route ${Date.now()}`,
+  });
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  const sheet = await post("sheet.create", {
+    operationId: op.id ?? op.operationId ?? op,
+    sheetDate: today,
+    sheetCins: [{ cin, hasImages: false, isTeamLeader: true, isAuthor: true }],
+  });
+  const sheetId = sheet.id ?? sheet.sheetId;
+  await post("row.create", {
+    sheetId,
+    observation:
+      "Vehicle 1ARD64, DARYANI driver and sole occupant, arrived at 12 Smith Street, PERTH WA (12 Smith Street). Parked in the car park.",
+  });
+  await page.goto(`/sheet/${sheetId}`);
+  await page.getByText("Target Logger", { exact: true }).first().click();
+  await page.getByRole("button", { name: "Walked in", exact: true }).click();
+  const walked = page
+    .locator("tbody tr")
+    .filter({ hasText: "exited the vehicle, walked" });
+  await expect(walked).toHaveCount(1);
+  await expect(walked).toContainText("walked through the car park, entered");
+  await expect(walked).not.toContainText("[route]");
+});
+
+test("Walked in reads the car park from the box being typed in, without clicking out", async ({
+  page,
+}) => {
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", {
+    name: `Car park live ${Date.now()}`,
+  });
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  const sheet = await post("sheet.create", {
+    operationId: op.id ?? op.operationId ?? op,
+    sheetDate: today,
+    sheetCins: [{ cin, hasImages: false, isTeamLeader: true, isAuthor: true }],
+  });
+  const sheetId = sheet.id ?? sheet.sheetId;
+  await post("row.create", {
+    sheetId,
+    observation: "Surveillance commenced in the vicinity of 12 Smith Street.",
+  });
+  await page.goto(`/sheet/${sheetId}`);
+  await expect(page.locator("tbody tr").first()).toBeVisible();
+  await openNewRowCell(page);
+  const box = page.locator("textarea").first();
+  await box.fill(
+    "Vehicle 1ARD64, DARYANI driver and sole occupant, arrived at 12 Smith Street, PERTH WA (12 Smith Street). Parked in the car park."
+  );
+  // Not saved: the card is built from the open box, and the tap reads it.
+  const header = page.getByText("Target Logger", { exact: true }).first();
+  await expect(header).toBeVisible();
+  await header.click();
+  const walkedIn = page.getByRole("button", { name: "Walked in", exact: true });
+  await expect(walkedIn).toBeVisible();
+  await walkedIn.click();
+  await expect(box).toHaveValue(/walked through the car park, entered/);
+  await expect(box).not.toHaveValue(/\[route\]/);
+});

@@ -294,3 +294,36 @@ A departure with unseen occupants ("Vehicle 1FAT001, unseen occupant/s, departed
 - **Which places get it.** By name (`MOSQUE_RE` in `shared/placeSigns.ts`): "Mosque", "Masjid", "Musalla / Musallah" — deliberately narrow. "Islamic Centre / Society" is **not** enough on its own (it can be a school or an office). A car park, school, college, childcare centre, kindergarten, library or bookshop that carries the word is not the mosque; the word followed by a street type ("Mosque Street Bakery") is a street; a street itself ("Mosque Road") never tags. A cafe or restaurant that carries the word keeps its own sign. By Google's place type: `mosque` only, not "place of worship" in general.
 - **Places Report.** A new kind, **Place of worship** (`PLACE_KINDS` id `worship`, emerald, moon-and-star icon); a mosque falls under it, and it is open for other places of worship later. The label column is plain text, so **no database change**.
 - **Checked:** `server/placeSigns.test.ts` ("the mosque sign": names, Google type, the false matches above, precedence, default pin, picker, drawing) and `server/placesReport.test.ts`; the sign drawn through the real marker code in all five colours and at map size beside the hospital, pharmacy, bank and cafe signs. **Not seen:** a real Google place with the `mosque` type on a live map (Google cannot be reached from the sandbox).
+
+## "[route]" filled from where the vehicle parked (v2.47.0)
+
+**What it does.** On a parked vehicle's card, *Walked in* and *Walked away* write
+"…walked [route] towards [location]." because the card can't know how the
+target got from the vehicle to where he went. When the officer's own words about
+**that vehicle** say it parked in a car park ("…arrived at High Wycombe Bar and
+Grill. Parked in the car park."), the placeholder is filled: "…walked through
+the car park, entered …". The tabs and labels stay exactly as they were — only
+the inserted sentence adapts. Where the sheet doesn't say, "[route]" is left for
+the officer, as before. Nothing is rewritten after the fact: it is read at the
+moment of the tap.
+
+**Live text, no click-out.** The tap reads the text in the open observation box
+(Running Sheet) / Quick Entry box (Map) *as it is right now*, plus the saved rows
+(oldest to newest, the box last, newest match wins). So the arrival and "Parked
+in the car park." can still be unsaved.
+
+**Rule.** `shared/parkingRoute.ts` (pure, tests in `server/parkingRoute.test.ts`).
+The vehicle's sentence is the one naming its registration (spacing/case ignored)
+plus any sentence right after it that begins "Parked"/"Parking". A car park of
+another vehicle is never used; a street called "Car Park Road" is not a car park.
+`ContinuityAction.rego` carries the vehicle from the card to the tap handler
+(`ContinuityCards` → `fillRoute` in `SheetDetail.tsx` and the Quick Entry box in
+`IntelligenceMapping.tsx`).
+
+**Adding more (street / road parking, driveway).** Add a row to `PARKING_ROUTES`
+(a pattern for what the officer wrote, and the words that replace "[route]") and
+a test. Nothing else changes. Only the vehicle Walked in / Walked away buttons
+use it so far; the transit, vessel and walk-out buttons keep "[route]".
+
+**Checked.** Unit tests; Playwright `screens.spec.ts` — saved arrival row, and an
+unsaved box typed in without clicking out.

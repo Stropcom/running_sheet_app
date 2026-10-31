@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { fillRoute } from "@shared/parkingRoute";
 import { orderRsChips } from "@shared/rsChips";
 import {
   chooseFlagMarker,
@@ -13983,12 +13984,14 @@ export default function IntelligenceMapping() {
                                     {
                                       key: `wa-${v.rego}`,
                                       label: "Walked away",
+                                      rego: v.rego,
                                       mode: "paragraph",
                                       text: `${occNames} exited the vehicle and walked [route] towards [location].`,
                                     },
                                     {
                                       key: `wir-${v.rego}`,
                                       label: "Walked in",
+                                      rego: v.rego,
                                       mode: "paragraph",
                                       text: `${occNames} exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`,
                                     }
@@ -14407,7 +14410,18 @@ export default function IntelligenceMapping() {
                                   // for the officer to review and edit; nothing
                                   // is saved until Submit. With text already
                                   // there it goes in as the next paragraph.
-                                  onAction={text => {
+                                  onAction={(rawText, _mode, rego) => {
+                                    const text = fillRoute(rawText, rego, [
+                                      ...[...(rsInlineRows ?? [])]
+                                        .sort(
+                                          (a, b) =>
+                                            (a.rowNumber ?? 0) -
+                                            (b.rowNumber ?? 0)
+                                        )
+                                        .map(r => r.observation),
+                                      // What is typed in the box right now.
+                                      rsInlineText,
+                                    ]);
                                     pushInlineUndo(rsInlineText);
                                     setRsInlineText(prev => {
                                       if (!prev.trim()) return text;

@@ -20,9 +20,10 @@ export const ROUTE_PLACEHOLDER = "[route]";
 
 interface ParkingRoute {
   /** What the officer wrote about where the vehicle is parked. */
-  parked: RegExp;
+  parked: readonly RegExp[];
   /** The words for "[route]" in "…walked [route], entered <place> and continued
-   * out of sight." (Walked in). */
+   * out of sight." (Walked in); empty drops the whole "walked [route]," part
+   * ("exited the vehicle, entered <place> …"). */
   walkIn: string;
   /** The words for "[route]" in "…walked [route] towards [location]." (Walked
    * away); empty leaves "walked towards [location]". */
@@ -38,20 +39,35 @@ const STREET_TYPES =
 
 export const PARKING_ROUTES: readonly ParkingRoute[] = [
   {
-    parked: new RegExp(
-      `\\b(?:car\\s?parks?|carparks?|parking\\s+(?:lot|bays?)|car\\s+bays?)\\b${NOT_A_STREET}`,
-      "i"
-    ),
+    parked: [
+      new RegExp(
+        `\\b(?:car\\s?parks?|carparks?|parking\\s+(?:lot|bays?)|car\\s+bays?)\\b${NOT_A_STREET}`,
+        "i"
+      ),
+    ],
     walkIn: "through the car park",
     walkAway: "through the car park",
   },
   {
     // Parked on the street / road / kerb, or on a named street.
-    parked: new RegExp(
-      `\\bparked\\b[^.]*?\\b(?:on|along)\\s+(?:the\\s+)?(?:street|road|kerb|curb|verge)\\b|\\bparked\\s+(?:on|along)\\s+(?:[A-Z][\\w'-]*\\s+){1,3}${STREET_TYPES}\\b`,
-      "i"
-    ),
+    parked: [
+      new RegExp(
+        "\\bparked\\b[^.]*?\\b(?:on|along)\\s+(?:the\\s+)?(?:street|road|kerb|curb|verge)\\b",
+        "i"
+      ),
+      // A named street: the name starts with capitals ("Smith Street"), so
+      // "the drive way" is not one.
+      new RegExp(
+        `\\b[Pp]arked\\s+(?:[Oo]n|[Aa]long)\\s+(?:[A-Z][\\w'-]*\\s+){1,3}${STREET_TYPES}\\b`
+      ),
+    ],
     walkIn: "to",
+    walkAway: "",
+  },
+  {
+    // Parked in the driveway: the walk from the vehicle isn't worth a sentence.
+    parked: [new RegExp(`\\b(?:driveway|drive\\s+way)\\b${NOT_A_STREET}`, "i")],
+    walkIn: "",
     walkAway: "",
   },
 ];
@@ -100,7 +116,9 @@ export function parkingForVehicle(
         window.push(list[j]);
       const said = window.join(" ");
       if (!/\b(?:arrived|parked|parking)\b/i.test(said)) continue;
-      const hits = PARKING_ROUTES.filter(p => p.parked.test(said));
+      const hits = PARKING_ROUTES.filter(p =>
+        p.parked.some(re => re.test(said))
+      );
       return hits.length === 1 ? hits[0] : null;
     }
   }
@@ -120,8 +138,10 @@ export function fillRoute(
   if (!parking) return text;
   const walkingIn = text.includes(`${ROUTE_PLACEHOLDER},`);
   const route = walkingIn ? parking.walkIn : parking.walkAway;
-  // Nothing to say: "walked [route] towards" reads "walked towards".
-  return route
-    ? text.replace(ROUTE_PLACEHOLDER, route)
+  if (route) return text.replace(ROUTE_PLACEHOLDER, route);
+  // Nothing to say: Walked in loses "walked [route], " ("exited the vehicle,
+  // entered …"); Walked away's "walked [route] towards" reads "walked towards".
+  return walkingIn
+    ? text.replace(`walked ${ROUTE_PLACEHOLDER}, `, "")
     : text.replace(` ${ROUTE_PLACEHOLDER}`, "");
 }

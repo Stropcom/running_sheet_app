@@ -416,3 +416,16 @@ towards". Each place now has its own Walked in and Walked away words
 **Checked.** `server/parkingRoute.test.ts` (including the real sheet's earlier car
 park and a later street arrival); `e2e/screens.spec.ts` (saved earlier car park
 visit, then a street arrival).
+
+## "[route]": parked in the driveway (v2.48.4)
+
+A vehicle whose latest arrival says it **parked in / on the driveway** (or "drive
+way") now fills **Walked in** as "…exited the vehicle, entered 38 Lawley Crescent
+and continued out of sight." — the whole "walked [route]," part is dropped, kept
+simple. **Walked away** reads "walked towards [location]" (same as street parking).
+A street called "Driveway Road" is not a driveway, and a driveway together with
+street parking in the same arrival is left for the officer. `PARKING_ROUTES`
+(`shared/parkingRoute.ts`) now has an empty `walkIn` meaning "drop the clause",
+and each place's "parked" test is a list of patterns (the named-street pattern is
+case-sensitive so "the drive way" isn't read as "… Way"). Tests:
+`server/parkingRoute.test.ts`; `e2e/screens.spec.ts` (driveway arrival).

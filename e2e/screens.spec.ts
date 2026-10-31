@@ -1626,3 +1626,44 @@ test("Walked in after an arrival on the street says 'walked to', not an earlier 
   await expect(walked).not.toContainText("car park");
   await expect(walked).not.toContainText("[route]");
 });
+
+test("Walked in after an arrival parked in the driveway is just 'exited the vehicle, entered …'", async ({
+  page,
+}) => {
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", {
+    name: `Driveway route ${Date.now()}`,
+  });
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  const sheet = await post("sheet.create", {
+    operationId: op.id ?? op.operationId ?? op,
+    sheetDate: today,
+    sheetCins: [{ cin, hasImages: false, isTeamLeader: true, isAuthor: true }],
+  });
+  const sheetId = sheet.id ?? sheet.sheetId;
+  await post("row.create", {
+    sheetId,
+    observation:
+      "Vehicle 1ARD64, DARYANI driver and sole occupant, arrived at 38 Lawley Crescent, MOUNT LAWLEY WA (38 Lawley Crescent) and parked in the driveway.",
+  });
+  await page.goto(`/sheet/${sheetId}`);
+  await page.getByText("Target Logger", { exact: true }).first().click();
+  await page.getByRole("button", { name: "Walked in", exact: true }).click();
+  const walked = page
+    .locator("tbody tr")
+    .filter({ hasText: "exited the vehicle, entered" });
+  await expect(walked).toHaveCount(1);
+  await expect(walked).toContainText(
+    "exited the vehicle, entered 38 Lawley Crescent and continued out of sight."
+  );
+  await expect(walked).not.toContainText("walked");
+  await expect(walked).not.toContainText("[route]");
+});

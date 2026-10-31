@@ -171,3 +171,50 @@ describe("only the vehicle's latest arrival counts", () => {
     expect(fillRoute(IN, "1ARD64", [EARLIER])).toBe(IN);
   });
 });
+
+describe("parked in the driveway", () => {
+  const DRIVE_ARRIVAL =
+    "Vehicle 1ARD64, DARYANI driver and sole occupant, arrived at 38 Lawley Crescent, MOUNT LAWLEY WA (38 Lawley Crescent) and parked in the driveway.";
+  const IN =
+    "DARYANI exited the vehicle, walked [route], entered 38 Lawley Crescent and continued out of sight.";
+  const AWAY =
+    "DARYANI exited the vehicle and walked [route] towards [location].";
+
+  it("Walked in is just 'exited the vehicle, entered …'", () => {
+    expect(fillRoute(IN, "1ARD64", [DRIVE_ARRIVAL])).toBe(
+      "DARYANI exited the vehicle, entered 38 Lawley Crescent and continued out of sight."
+    );
+  });
+
+  it("Walked away says 'walked towards [location]'", () => {
+    expect(fillRoute(AWAY, "1ARD64", [DRIVE_ARRIVAL])).toBe(
+      "DARYANI exited the vehicle and walked towards [location]."
+    );
+  });
+
+  it("reads 'Parked in the driveway.' as its own sentence, and 'drive way'", () => {
+    expect(
+      fillRoute(IN, "1ARD64", [
+        "Vehicle 1ARD64 arrived at 38 Lawley Crescent. Parked in the driveway.",
+      ])
+    ).toContain("exited the vehicle, entered 38 Lawley");
+    expect(
+      fillRoute(IN, "1ARD64", [
+        "Vehicle 1ARD64 arrived at the house and parked on the drive way.",
+      ])
+    ).toContain("exited the vehicle, entered");
+  });
+
+  it("a street called Driveway Road is not a driveway, and a driveway on the street is left alone", () => {
+    expect(
+      fillRoute(IN, "1ARD64", [
+        "Vehicle 1ARD64 arrived at 5 Driveway Road, PERTH WA.",
+      ])
+    ).toBe(IN);
+    expect(
+      fillRoute(IN, "1ARD64", [
+        "Vehicle 1ARD64 arrived at the house and parked on the street near the driveway.",
+      ])
+    ).toBe(IN);
+  });
+});

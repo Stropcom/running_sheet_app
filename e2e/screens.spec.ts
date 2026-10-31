@@ -1246,8 +1246,16 @@ test("Add Row stamps the time, and Cease adds the ceased row with everyone still
   const today = new Date().toLocaleDateString("en-CA", {
     timeZone: "Australia/Perth",
   });
+  // Cease is a chip in the target chips, so the sheet has a target with a home
+  // address to give it a row of chips.
+  const target = await post("target.create", {
+    operationId: op.id ?? op.operationId ?? op,
+    name: `Cease Target ${Date.now()}`,
+    hbf: "12 Smith Street, PERTH WA",
+  });
   const sheet = await post("sheet.create", {
     operationId: op.id ?? op.operationId ?? op,
+    targetId: target.id ?? target.targetId ?? target,
     sheetDate: today,
     sheetCins: [{ cin, hasImages: false, isTeamLeader: true, isAuthor: true }],
   });
@@ -1298,8 +1306,16 @@ test("Cease writes the place the team commenced at when nothing else says where 
   const today = new Date().toLocaleDateString("en-CA", {
     timeZone: "Australia/Perth",
   });
+  // Cease is a chip in the target chips, so the sheet has a target with a home
+  // address to give it a row of chips.
+  const target = await post("target.create", {
+    operationId: op.id ?? op.operationId ?? op,
+    name: `Cease Target ${Date.now()}`,
+    hbf: "12 Smith Street, PERTH WA",
+  });
   const sheet = await post("sheet.create", {
     operationId: op.id ?? op.operationId ?? op,
+    targetId: target.id ?? target.targetId ?? target,
     sheetDate: today,
     sheetCins: [{ cin, hasImages: false, isTeamLeader: true, isAuthor: true }],
   });
@@ -1328,7 +1344,7 @@ test("Cease writes the place the team commenced at when nothing else says where 
   await expect(page.getByTestId("cease-row")).toHaveCount(0);
 });
 
-test("Cease is the last of the target chips, and the toolbar button only covers for it", async ({
+test("Cease is the last of the target chips and is not in the toolbar", async ({
   page,
 }) => {
   const cin = process.env.E2E_CIN ?? "E2E1";
@@ -1375,20 +1391,21 @@ test("Cease is the last of the target chips, and the toolbar button only covers 
   const chips = page.locator("button").filter({ hasText: /^(HBF|Cease)$/i });
   await expect(chips.last()).toHaveAttribute("data-testid", "cease-row");
 
-  // With the target panel collapsed there is no chip, so the toolbar covers.
+  // With the target panel collapsed there is no chip, and still nothing in the
+  // toolbar beside Add Row.
   await page
     .getByText(/^TARGET —/)
     .first()
     .click();
-  await expect(toolbar.getByTestId("cease-row")).toHaveCount(1);
-  await expect(all).toHaveCount(1);
-  await page
-    .getByText(/^TARGET —/)
-    .first()
-    .click();
+  await expect(all).toHaveCount(0);
   await expect(toolbar.getByTestId("cease-row")).toHaveCount(0);
+  await page
+    .getByText(/^TARGET —/)
+    .first()
+    .click();
+  await expect(all).toHaveCount(1);
 
-  // The chip does the same as the button: the whole ceased row.
+  // The chip adds the whole ceased row.
   await all.click();
   const ceased = page
     .locator("tbody tr")
@@ -1679,4 +1696,78 @@ test("Walked in after an arrival parked in the driveway is just 'exited the vehi
   );
   await expect(walked).not.toContainText("walked");
   await expect(walked).not.toContainText("[route]");
+});
+
+test("Map page: RS Quick Entry has the Cease chip at the end of the target chips", async ({
+  page,
+}) => {
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", { name: `QE cease ${Date.now()}` });
+  const opId = op.id ?? op.operationId ?? op;
+  const target = await post("target.create", {
+    operationId: opId,
+    name: `QE Target ${Date.now()}`,
+    hbf: "12 Smith Street, PERTH WA",
+  });
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  const sheet = await post("sheet.create", {
+    operationId: opId,
+    sheetDate: today,
+    targetId: target.id ?? target.targetId ?? target,
+    sheetCins: [{ cin, hasImages: false, isTeamLeader: true, isAuthor: true }],
+  });
+  const sheetId = sheet.id ?? sheet.sheetId;
+  await post("row.create", {
+    sheetId,
+    observation:
+      "Surveillance commenced in the vicinity of 12 Smith Street, PERTH WA (12 Smith Street).",
+  });
+  await page.evaluate(
+    ([op, sh]) =>
+      localStorage.setItem(
+        "runlog_map_settings",
+        JSON.stringify({ rsSelectedOpId: op, rsSelectedSheetId: sh })
+      ),
+    [opId, sheetId]
+  );
+  await page.goto("/intelligence/mapping");
+  await page.waitForFunction(
+    () => typeof (window as any).__intelRsQuickEntry === "function"
+  );
+  await page.evaluate(() => {
+    (window as any).__intelRsQuickEntry("12 Smith Street, PERTH WA");
+  });
+  await expect(page.getByText("RS Quick Entry")).toBeVisible();
+
+  // The chip is the last of the target chips (HBF and the rest).
+  const cease = page.getByTestId("cease-row");
+  await expect(cease).toHaveCount(1);
+  await expect(cease).toHaveText("Cease");
+  const chips = page.locator("button").filter({ hasText: /^(HBF|Cease)$/i });
+  await expect(chips.last()).toHaveAttribute("data-testid", "cease-row");
+
+  // One tap: the ceased row, at the place the team commenced.
+  await cease.click();
+  await expect(page.getByText("Surveillance ceased added")).toBeVisible();
+  const list = await page.request.get(
+    `/api/trpc/row.list?input=${encodeURIComponent(JSON.stringify({ json: { sheetId } }))}`
+  );
+  const rows = (await list.json()).result.data.json as {
+    observation: string | null;
+  }[];
+  const ceased = rows.filter(r =>
+    r.observation?.startsWith("Surveillance ceased in the vicinity of")
+  );
+  expect(ceased).toHaveLength(1);
+  expect(ceased[0].observation).toContain("12 Smith Street");
+  // Everyone has ceased: the chip goes.
+  await expect(page.getByTestId("cease-row")).toHaveCount(0);
 });

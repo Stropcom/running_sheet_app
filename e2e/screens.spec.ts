@@ -1542,3 +1542,39 @@ test("Walked in reads the car park from the box being typed in, without clicking
   await expect(box).toHaveValue(/walked through the car park, entered/);
   await expect(box).not.toHaveValue(/\[route\]/);
 });
+
+test("Map page: Target Location is an on/off switch under Search, off to start, remembered", async ({
+  page,
+}) => {
+  await createOperationAndSheet(page);
+  await page.goto("/intelligence/mapping");
+  await page.getByRole("button", { name: "Toggle side panel" }).click();
+  const sw = page.getByTestId("target-location-switch");
+  await expect(sw).toBeVisible();
+  await expect(sw).toHaveAttribute("aria-pressed", "false");
+  // The section sits after Search and before Street & Heading.
+  const y = async (loc: import("@playwright/test").Locator) =>
+    (await loc.boundingBox())!.y;
+  const searchY = await y(
+    page.getByRole("button", { name: "Search", exact: true })
+  );
+  const switchY = await y(sw);
+  const streetY = await y(page.getByText("Street & Heading", { exact: true }));
+  expect(switchY).toBeGreaterThan(searchY);
+  expect(streetY).toBeGreaterThan(switchY);
+  // On or off — nothing else to choose.
+  await sw.click();
+  await expect(sw).toHaveAttribute("aria-pressed", "true");
+  await expect(sw).toContainText("On");
+  await page.reload();
+  await page.getByRole("button", { name: "Toggle side panel" }).click();
+  await expect(page.getByTestId("target-location-switch")).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await page.getByTestId("target-location-switch").click();
+  await expect(page.getByTestId("target-location-switch")).toHaveAttribute(
+    "aria-pressed",
+    "false"
+  );
+});

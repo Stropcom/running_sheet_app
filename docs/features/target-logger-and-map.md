@@ -337,3 +337,45 @@ Search). Only the order changed — each block moved whole in
 `IntelligenceMapping.tsx` (the `── <NAME>` / `end <Name>` comments mark them),
 no behaviour change. Earlier notes that say "below Heat Map" / "under Nearby
 Location" describe the old order.
+
+## Target Location on the Map page (v2.48.0)
+
+**What it does.** A **Target Location** switch in the Map Settings pane (after
+Search, before Street & Heading; off to start, remembered per device in
+`runlog_map_settings.showTargetLocation`; not shown to map-only Investigator
+accounts). On, every marker tied to **the target of the active running sheet**
+gets a soft see-through square behind it. The tile is **the marker's own colour**
+(red behind a target's address, purple behind others, or whatever colour an
+officer set on the marker), no border, **30% strength, 80% size** — fixed, on or
+off only, no other options. A marker that has no tie to that target is untouched.
+No target on the sheet (or no sheet) tints nothing; the pane says so.
+
+**What counts as tied (registry and running sheet look the same).** The server
+puts `relatedTargetIds` on each place (`server/db/mapping.ts`): the targets in
+`linkedTargets` (the target's registered home and additional addresses, and any
+place a row of the sheets names together with the target) plus the target whose
+**registered associate** lives there. `placeLinkedToTarget` (`shared/targetLocation.ts`)
+asks whether the active target is in that list, or in the list of any place merged
+into the same marker (`secondaryLocs`). Nothing is guessed from names or distance.
+The map only has the places for the operations/targets chosen at the top of the
+pane, so a target outside that choice finds nothing to tint.
+
+**Where it is.** The tile is built in `createPinElement` by
+`lib/targetLocationTile.ts` (sits behind the icon; the icon, count badge and photo
+pill are lifted above it with z-index). Changing a marker's colour in the Edit
+dialog recolours its tile at once (`recolourTargetLocationTile`). The switch is
+`components/TargetLocationSection.tsx`. Turning the switch on/off or changing the
+active sheet's target redraws the pins, the same way the entity-count switch does.
+
+**Name clash.** The Target Logger section already has a sub-switch called "Target
+location" (the flag that shows where the target is now). The two are different
+things; if the names confuse, rename this one.
+
+**Not done / limits.** The 3D Fly view draws its own icons and does not show the
+tile. The tile is drawn in the marker's colour setting, so on a place sign (bank,
+pub…), whose picture has its own colours, it matches the marker's colour setting,
+not the sign's picture. **Checked:** unit tests (`server/targetLocation.test.ts`);
+the server's `relatedTargetIds` against a real database (target address, second
+target, associate address); the tile drawn next to the entity count badge; the
+switch, its place in the pane and its memory in `e2e/screens.spec.ts`. **Not seen
+on a live map** (Google Maps can't be reached from the sandbox).

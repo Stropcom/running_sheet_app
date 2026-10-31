@@ -74,6 +74,12 @@ export interface IntelMapLocation {
   assocVehicles: string[];
   /** Total link count (targets + assocPersons + assocVehicles) */
   linkCount: number;
+  /** Every target this place is tied to: the targets in `linkedTargets`
+   * (their registered addresses, and rows that name both the target and the
+   * place) plus the target whose registered associate lives here. The map's
+   * Target Location switch marks the places whose list holds the active
+   * running sheet's target (shared/targetLocation.ts). */
+  relatedTargetIds: number[];
   /** Only what running-sheet observations recorded at this location (the
    * fields above also carry registry-derived entries): target names, other
    * people, and vehicles. The map popup's OBSERVATIONS block. */
@@ -205,6 +211,7 @@ export async function getIntelMappingLocations(
         assocPersons: [],
         assocVehicles: [],
         linkCount: 0,
+        relatedTargetIds: [],
         observedTargets: [],
         observedPersons: [],
         observedVehicles: [],
@@ -288,6 +295,7 @@ export async function getIntelMappingLocations(
     const relevantAssociates = await db
       .select({
         name: associates.name,
+        targetId: associates.targetId,
         hbf: associates.hbf,
         hb: associates.hb,
         extraAddresses: associates.extraAddresses,
@@ -321,6 +329,9 @@ export async function getIntelMappingLocations(
         // home address, or the address was already mined from real text).
         if (loc.type === "observation") loc.type = "associate_address";
         if (!loc.assocPersons.includes(a.name)) loc.assocPersons.push(a.name);
+        // A registered associate of the target lives here.
+        if (a.targetId != null && !loc.relatedTargetIds.includes(a.targetId))
+          loc.relatedTargetIds.push(a.targetId);
       }
     }
   }
@@ -412,6 +423,9 @@ export async function getIntelMappingLocations(
   // Step 3: Compute link counts and return
   const result: IntelMapLocation[] = [];
   for (const loc of Array.from(locationMap.values())) {
+    for (const lt of loc.linkedTargets)
+      if (!loc.relatedTargetIds.includes(lt.targetId))
+        loc.relatedTargetIds.push(lt.targetId);
     loc.linkCount =
       loc.linkedTargets.length +
       loc.assocPersons.length +

@@ -1,7 +1,7 @@
 import { Crosshair } from "lucide-react";
 
 /**
- * Map Settings: TARGET LOCATION — one switch, off by default. On: every marker
+ * Map Settings: TARGET MARKERS — one switch, off by default. On: every marker
  * tied to the target of the active running sheet gets a soft see-through tile
  * in its own colour (rules in shared/targetLocation.ts). On or off only.
  */
@@ -20,7 +20,7 @@ export function TargetLocationSection({
   return (
     <div className="px-3 py-3 border-b border-border space-y-2">
       <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-        Target Location
+        Target Markers
       </span>
       <button
         onClick={onToggle}
@@ -42,7 +42,7 @@ export function TargetLocationSection({
             on ? "text-rose-500" : "text-foreground"
           }`}
         >
-          Target location
+          Target markers
         </span>
         <span
           className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${

@@ -338,9 +338,9 @@ Search). Only the order changed — each block moved whole in
 no behaviour change. Earlier notes that say "below Heat Map" / "under Nearby
 Location" describe the old order.
 
-## Target Location on the Map page (v2.48.0)
+## Target Markers on the Map page (v2.48.0, renamed v2.48.1)
 
-**What it does.** A **Target Location** switch in the Map Settings pane (after
+**What it does.** A **Target Markers** switch in the Map Settings pane (after
 Search, before Street & Heading; off to start, remembered per device in
 `runlog_map_settings.showTargetLocation`; not shown to map-only Investigator
 accounts). On, every marker tied to **the target of the active running sheet**
@@ -367,9 +367,11 @@ dialog recolours its tile at once (`recolourTargetLocationTile`). The switch is
 `components/TargetLocationSection.tsx`. Turning the switch on/off or changing the
 active sheet's target redraws the pins, the same way the entity-count switch does.
 
-**Name clash.** The Target Logger section already has a sub-switch called "Target
-location" (the flag that shows where the target is now). The two are different
-things; if the names confuse, rename this one.
+**Name (v2.48.1).** The section is called **Target Markers** (it was first built
+as "Target Location"), because the Target Logger section already has a sub-switch
+called "Target location" (the flag that shows where the target is now). The code
+keeps the old names (`TargetLocationSection`, `shared/targetLocation.ts`,
+`showTargetLocation`) so saved settings carry over.
 
 **Not done / limits.** The 3D Fly view draws its own icons and does not show the
 tile. The tile is drawn in the marker's colour setting, so on a place sign (bank,

@@ -1543,7 +1543,7 @@ test("Walked in reads the car park from the box being typed in, without clicking
   await expect(box).not.toHaveValue(/\[route\]/);
 });
 
-test("Map page: Target Location is an on/off switch under Search, off to start, remembered", async ({
+test("Map page: Target Markers is an on/off switch under Search, off to start, remembered", async ({
   page,
 }) => {
   await createOperationAndSheet(page);

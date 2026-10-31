@@ -1771,3 +1771,52 @@ test("Map page: RS Quick Entry has the Cease chip at the end of the target chips
   // Everyone has ceased: the chip goes.
   await expect(page.getByTestId("cease-row")).toHaveCount(0);
 });
+
+test("Add on a row opens the list of team CINs straight away, on laptop and phone", async ({
+  page,
+}) => {
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", { name: `Add CIN ${Date.now()}` });
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  const sheet = await post("sheet.create", {
+    operationId: op.id ?? op.operationId ?? op,
+    sheetDate: today,
+    sheetCins: [{ cin, hasImages: false, isTeamLeader: true, isAuthor: true }],
+  });
+  const sheetId = sheet.id ?? sheet.sheetId;
+  const addRow = () =>
+    post("row.create", {
+      sheetId,
+      observation: `Observed a car ${Math.random().toString(36).slice(2, 7)}.`,
+    });
+  // A row with someone already on it, so Add (not the first-row team fill) is
+  // what is pressed. The first row takes the whole team on creation.
+  await addRow();
+  const second = await addRow();
+  expect(second).toBeTruthy();
+  for (const size of [
+    { width: 1280, height: 800 },
+    { width: 390, height: 800 },
+  ]) {
+    await page.setViewportSize(size);
+    await page.goto(`/sheet/${sheetId}`);
+    // The second row has nobody on it.
+    const rows = page.locator("tbody tr, [data-testid='sheet-row-card']");
+    await expect(rows.first()).toBeVisible();
+    // On a phone the toolbar button that adds a row is also called "Add", so
+    // take the last one on the page: a row's own Add.
+    const add = page.getByRole("button", { name: "Add", exact: true }).last();
+    await add.click();
+    // The list of CINs is open after the one tap: the options are showing.
+    await expect(page.getByRole("option", { name: cin })).toBeVisible();
+    await page.keyboard.press("Escape");
+  }
+});

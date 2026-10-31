@@ -98,3 +98,15 @@ in the Last Entry banner, where it can be edited. `CeaseRowButton` is now chip-o
 (the toolbar `variant="button"` and `onPresence` are removed). Tests:
 `e2e/screens.spec.ts` (Cease on the sheet now needs a target with chips; Cease not
 in the toolbar; Quick Entry chip).
+
+## Add (CIN) opens the list straight away (v2.49.2)
+
+On a row's CIN column, **Add** now shows the CIN dropdown with its list already
+open (Space, each team CIN, ★ Add all team CINs) — one tap to pick a CIN instead of
+tap Add, then tap the dropdown. Same on the laptop table and the phone/tablet card
+layout (one `CinCell` panel, `listOpen` in `SheetDetail.tsx`). The list is opened
+~60 ms after the dropdown appears: opened in the same breath, the tap that pressed
+Add also reached the new list and closed it again (Radix `defaultOpen` did exactly
+that). A sheet with no team roster still gets the typed-CIN box (nothing to list).
+Checked in e2e at 1280 and 390 px, and with touch taps in a headless mobile
+browser; **not tried on a real iPhone/Safari** — check there after deploy.

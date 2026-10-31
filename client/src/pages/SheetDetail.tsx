@@ -1247,6 +1247,19 @@ function CinCertifyCell({
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [newNameValid, setNewNameValid] = useState(false);
+  // Pressing Add shows the dropdown with its list already open, so picking a
+  // CIN is one tap, not two. Opened a moment after the dropdown appears: opened
+  // in the same breath as the press, the tap that pressed Add also reaches the
+  // new list and shuts it again.
+  const [listOpen, setListOpen] = useState(false);
+  useEffect(() => {
+    if (!adding) {
+      setListOpen(false);
+      return;
+    }
+    const t = setTimeout(() => setListOpen(true), 60);
+    return () => clearTimeout(t);
+  }, [adding]);
 
   const handleAdd = () => {
     if (!newName.trim()) return;
@@ -1319,6 +1332,8 @@ function CinCertifyCell({
         /* Dropdown mode: pick from team roster — Space at top, duplicates allowed */
         <div className="flex items-center gap-1.5">
           <Select
+            open={listOpen}
+            onOpenChange={setListOpen}
             value={newName}
             onValueChange={v => {
               if (v === "__all__") {

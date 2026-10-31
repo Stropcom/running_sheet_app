@@ -6,6 +6,14 @@ import {
   useRef,
   useState,
 } from "react";
+import { fillRoute } from "@shared/parkingRoute";
+import { placeLinkedToTarget } from "@shared/targetLocation";
+import {
+  createTargetLocationTile,
+  refreshTargetLocationTile,
+  rotateTargetLocationTile,
+} from "@/lib/targetLocationTile";
+import { TargetLocationSection } from "@/components/TargetLocationSection";
 import { orderRsChips } from "@shared/rsChips";
 import {
   chooseFlagMarker,
@@ -563,6 +571,10 @@ interface IntelMapLocation {
   observedPersons?: string[];
   observedVehicles?: string[];
   linkCount: number;
+  /** Targets this place is tied to (registry or running sheet) — the Target
+   * Location switch tints the markers whose list holds the active sheet's
+   * target. Optional so an older server response still renders. */
+  relatedTargetIds?: number[];
   lat?: number;
   lng?: number;
   /** Observation intel locations that were absorbed into this target_address pin at the same geocoded position */
@@ -2115,6 +2127,20 @@ export default function IntelligenceMapping() {
   );
   const showMarkerEntityCountRef = useRef(showMarkerEntityCount);
   showMarkerEntityCountRef.current = showMarkerEntityCount;
+  // TARGET LOCATION — a soft tile behind every marker tied to the target of
+  // the active running sheet. Off by default, remembered per device.
+  const [showTargetLocation, setShowTargetLocation] = useState<boolean>(() => {
+    try {
+      const s = localStorage.getItem(LS_MAP_SETTINGS_KEY);
+      if (s) return JSON.parse(s).showTargetLocation === true;
+    } catch {
+      /* ignore */
+    }
+    return false;
+  });
+  const showTargetLocationRef = useRef(showTargetLocation);
+  showTargetLocationRef.current = showTargetLocation;
+  const activeTargetIdRef = useRef<number | null>(null);
   // NEARBY LOCATION — every Intelligence / Target Registry location within
   // 500 m of the officer, as diamonds on top of the normal pins. Off by
   // default; remembered per device like the other Map Settings switches.
@@ -3218,6 +3244,7 @@ export default function IntelligenceMapping() {
           panelWidthProfile,
           showStreetHeadingBar,
           showMarkerEntityCount,
+          showTargetLocation,
           nearbyOn,
           heatOn,
           heatOpChoice,
@@ -3248,6 +3275,7 @@ export default function IntelligenceMapping() {
     panelWidthProfile,
     showStreetHeadingBar,
     showMarkerEntityCount,
+    showTargetLocation,
     nearbyOn,
     heatOn,
     heatOpChoice,
@@ -3850,6 +3878,9 @@ export default function IntelligenceMapping() {
     { sheetId: rsSelectedSheetId! },
     { enabled: rsSelectedSheetId !== null }
   );
+  activeTargetIdRef.current = isInvestigator
+    ? null
+    : (rsTargetData?.id ?? null);
   // Heat Map — which operation and target. By default the same ones the top
   // of the pane has selected: the running sheet's operation and its target, else
   // the map's first selected operation (and a single selected target). Anything
@@ -4807,6 +4838,16 @@ export default function IntelligenceMapping() {
     const el = document.createElement("div");
     el.style.cssText = `position:relative;display:inline-flex;flex-direction:column;align-items:center;cursor:pointer;`;
 
+    // Target Location: a soft tile in the marker's own colour behind it, when
+    // the place is tied to the target of the active running sheet.
+    if (
+      showTargetLocationRef.current &&
+      placeLinkedToTarget(loc, activeTargetIdRef.current)
+    ) {
+      const tile = createTargetLocationTile(40, colour, icon, rotation);
+      if (tile) el.appendChild(tile);
+    }
+
     const img = document.createElement("img");
     img.src = getMarkerIconUrl(icon, colour);
     // Previously sized a few px larger than Surveillance icons to
@@ -4816,7 +4857,7 @@ export default function IntelligenceMapping() {
     // Same size for both now (see the matching note on the custom map
     // marker pin rendering and the picker's tactical tile size).
     const iconPx = 40;
-    img.style.cssText = `width:${iconPx}px;height:${iconPx}px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;transform:rotate(${rotation}deg);`;
+    img.style.cssText = `width:${iconPx}px;height:${iconPx}px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));display:block;transform:rotate(${rotation}deg);position:relative;z-index:1;`;
     el.appendChild(img);
     // Direct img ref for live rotation/icon updates — avoids stale
     // `.content.querySelector` lookups (see intelPinImgRefs declaration).
@@ -4825,7 +4866,7 @@ export default function IntelligenceMapping() {
     if (count > 0) {
       const badge = document.createElement("div");
       badge.style.cssText = `
-        position:absolute;top:-5px;right:-5px;
+        position:absolute;top:-5px;right:-5px;z-index:2;
         background:${isTarget ? "#dc2626" : "#7c3aed"};
         color:#fff;font-size:11px;font-weight:700;
         min-width:18px;height:18px;
@@ -4846,7 +4887,10 @@ export default function IntelligenceMapping() {
       photoKeysRef.current.has(normalizeEntityLabelClient(loc.label)),
       personPhotosByKeyRef.current.has(addressMatchKey(loc.label))
     );
-    if (pinPhotoPill) el.appendChild(pinPhotoPill);
+    if (pinPhotoPill) {
+      pinPhotoPill.style.zIndex = "2";
+      el.appendChild(pinPhotoPill);
+    }
     return el;
   }, []);
 
@@ -5613,7 +5657,12 @@ export default function IntelligenceMapping() {
       renderLocations(locations);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showMarkerEntityCount, registeredPeopleData]);
+  }, [
+    showMarkerEntityCount,
+    registeredPeopleData,
+    showTargetLocation,
+    rsTargetData?.id,
+  ]);
 
   const hadPersonPhotosRef = useRef(false);
   useEffect(() => {
@@ -7561,6 +7610,7 @@ export default function IntelligenceMapping() {
       const directImg = intelPinImgRefs.current.get(label);
       if (directImg) {
         directImg.style.transform = `rotate(${rotation}deg)`;
+        rotateTargetLocationTile(directImg.parentElement, rotation);
       } else {
         const markerEntry = markersRef.current.find(
           (m: any) => m.title === label
@@ -10635,94 +10685,6 @@ export default function IntelligenceMapping() {
               )}
               {/* end TEAMS */}
 
-              {/* ── STREET & HEADING — own section, same on/off pattern as
-                Location's "Show & Share" above: a deliberate toggle with
-                its own heading rather than a switch buried elsewhere. ── */}
-              <div className="px-3 py-3 border-b border-border space-y-2">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-                  Street &amp; Heading
-                </span>
-                <button
-                  onClick={() => setShowStreetHeadingBar(!showStreetHeadingBar)}
-                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
-                    showStreetHeadingBar
-                      ? "border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20"
-                      : "border-border bg-card hover:bg-accent/40"
-                  }`}
-                  aria-pressed={showStreetHeadingBar}
-                >
-                  <Compass
-                    className={`h-3.5 w-3.5 flex-shrink-0 ${
-                      showStreetHeadingBar
-                        ? "text-sky-500"
-                        : "text-muted-foreground"
-                    }`}
-                  />
-                  <span
-                    className={`text-xs font-semibold truncate flex-1 text-left ${
-                      showStreetHeadingBar ? "text-sky-500" : "text-foreground"
-                    }`}
-                  >
-                    Current Street &amp; Direction
-                  </span>
-                  <span
-                    className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
-                      showStreetHeadingBar
-                        ? "text-sky-500"
-                        : "text-muted-foreground"
-                    }`}
-                  >
-                    {showStreetHeadingBar ? "On" : "Off"}
-                  </span>
-                </button>
-              </div>
-              {/* end Street & Heading */}
-
-              {/* ── MARKER ENTITY COUNT — same on/off pattern as Street &
-                Heading: the number on a house marker is the total distinct
-                people and vehicles linked to it. ── */}
-              <div className="px-3 py-3 border-b border-border space-y-2">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
-                  Marker Entity Count
-                </span>
-                <button
-                  onClick={() =>
-                    setShowMarkerEntityCount(!showMarkerEntityCount)
-                  }
-                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
-                    showMarkerEntityCount
-                      ? "border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20"
-                      : "border-border bg-card hover:bg-accent/40"
-                  }`}
-                  aria-pressed={showMarkerEntityCount}
-                >
-                  <Hash
-                    className={`h-3.5 w-3.5 flex-shrink-0 ${
-                      showMarkerEntityCount
-                        ? "text-sky-500"
-                        : "text-muted-foreground"
-                    }`}
-                  />
-                  <span
-                    className={`text-xs font-semibold truncate flex-1 text-left ${
-                      showMarkerEntityCount ? "text-sky-500" : "text-foreground"
-                    }`}
-                  >
-                    Entity count on markers
-                  </span>
-                  <span
-                    className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
-                      showMarkerEntityCount
-                        ? "text-sky-500"
-                        : "text-muted-foreground"
-                    }`}
-                  >
-                    {showMarkerEntityCount ? "On" : "Off"}
-                  </span>
-                </button>
-              </div>
-              {/* end Marker Entity Count */}
-
               {/* ── TARGET LOGGER — same on/off pattern as the sections
                 above. The first switch is the whole feature (the Target
                 logger panel on the running sheet and in the quick-entry
@@ -10801,6 +10763,84 @@ export default function IntelligenceMapping() {
                 )}
               </div>
               {/* end Target Logger */}
+
+              {/* ── SEARCH — one button, off by default. On: a search for the
+                team on the selected sheet's target — a pin where he was last
+                seen and two rings round it for how far he could have got.
+                Plain arithmetic, nothing sent anywhere. Not for map-only
+                Investigator accounts (the history isn't open to them). ── */}
+              {!isInvestigator && (
+                <TargetPredictorSection
+                  p={predictor}
+                  targetName={rsTargetData?.name ?? null}
+                  operationName={
+                    (
+                      (operations ?? []) as Array<{ id: number; name: string }>
+                    ).find(
+                      o => o.id === (activeMapOperationId ?? rsSelectedOpId)
+                    )?.name ?? null
+                  }
+                  sheetTitle={rsSelectedSheetTitle ?? null}
+                />
+              )}
+              {/* end Search */}
+
+              {/* ── TARGET LOCATION — one switch, off by default. On: the
+                markers tied to the target of the active running sheet (by the
+                Target Registry or its running sheets) get a soft tile in their
+                own colour. Not for map-only Investigator accounts. ── */}
+              {!isInvestigator && (
+                <TargetLocationSection
+                  on={showTargetLocation}
+                  onToggle={() => setShowTargetLocation(v => !v)}
+                  targetName={rsTargetData?.name ?? null}
+                  hasSheet={rsSelectedSheetId !== null}
+                />
+              )}
+              {/* end Target Location */}
+
+              {/* ── STREET & HEADING — own section, same on/off pattern as
+                Location's "Show & Share" above: a deliberate toggle with
+                its own heading rather than a switch buried elsewhere. ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Street &amp; Heading
+                </span>
+                <button
+                  onClick={() => setShowStreetHeadingBar(!showStreetHeadingBar)}
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+                    showStreetHeadingBar
+                      ? "border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20"
+                      : "border-border bg-card hover:bg-accent/40"
+                  }`}
+                  aria-pressed={showStreetHeadingBar}
+                >
+                  <Compass
+                    className={`h-3.5 w-3.5 flex-shrink-0 ${
+                      showStreetHeadingBar
+                        ? "text-sky-500"
+                        : "text-muted-foreground"
+                    }`}
+                  />
+                  <span
+                    className={`text-xs font-semibold truncate flex-1 text-left ${
+                      showStreetHeadingBar ? "text-sky-500" : "text-foreground"
+                    }`}
+                  >
+                    Current Street &amp; Direction
+                  </span>
+                  <span
+                    className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                      showStreetHeadingBar
+                        ? "text-sky-500"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {showStreetHeadingBar ? "On" : "Off"}
+                  </span>
+                </button>
+              </div>
+              {/* end Street & Heading */}
 
               {/* ── NEARBY LOCATION — one switch, off by default. On: every
                 Intelligence Folder / Target Registry location within 500 m
@@ -10980,26 +11020,50 @@ export default function IntelligenceMapping() {
               )}
               {/* end Heat Map */}
 
-              {/* ── SEARCH — one button, off by default. On: a search for the
-                team on the selected sheet's target — a pin where he was last
-                seen and two rings round it for how far he could have got.
-                Plain arithmetic, nothing sent anywhere. Not for map-only
-                Investigator accounts (the history isn't open to them). ── */}
-              {!isInvestigator && (
-                <TargetPredictorSection
-                  p={predictor}
-                  targetName={rsTargetData?.name ?? null}
-                  operationName={
-                    (
-                      (operations ?? []) as Array<{ id: number; name: string }>
-                    ).find(
-                      o => o.id === (activeMapOperationId ?? rsSelectedOpId)
-                    )?.name ?? null
+              {/* ── MARKER ENTITY COUNT — same on/off pattern as Street &
+                Heading: the number on a house marker is the total distinct
+                people and vehicles linked to it. ── */}
+              <div className="px-3 py-3 border-b border-border space-y-2">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide block">
+                  Marker Entity Count
+                </span>
+                <button
+                  onClick={() =>
+                    setShowMarkerEntityCount(!showMarkerEntityCount)
                   }
-                  sheetTitle={rsSelectedSheetTitle ?? null}
-                />
-              )}
-              {/* end Search */}
+                  className={`flex items-center gap-2 w-full px-3 py-2 rounded-xl border-2 active:scale-[0.98] transition-all min-w-0 ${
+                    showMarkerEntityCount
+                      ? "border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20"
+                      : "border-border bg-card hover:bg-accent/40"
+                  }`}
+                  aria-pressed={showMarkerEntityCount}
+                >
+                  <Hash
+                    className={`h-3.5 w-3.5 flex-shrink-0 ${
+                      showMarkerEntityCount
+                        ? "text-sky-500"
+                        : "text-muted-foreground"
+                    }`}
+                  />
+                  <span
+                    className={`text-xs font-semibold truncate flex-1 text-left ${
+                      showMarkerEntityCount ? "text-sky-500" : "text-foreground"
+                    }`}
+                  >
+                    Entity count on markers
+                  </span>
+                  <span
+                    className={`text-[11px] font-bold uppercase tracking-wide flex-shrink-0 ${
+                      showMarkerEntityCount
+                        ? "text-sky-500"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {showMarkerEntityCount ? "On" : "Off"}
+                  </span>
+                </button>
+              </div>
+              {/* end Marker Entity Count */}
             </div>
           )}
           {/* end Pane Body */}
@@ -12490,6 +12554,12 @@ export default function IntelligenceMapping() {
                       img.style.width = "40px";
                       img.style.height = "40px";
                       img.style.transform = `rotate(${intelEditRotation}deg)`;
+                      refreshTargetLocationTile(
+                        img.parentElement,
+                        intelEditColour as MarkerColour,
+                        intelEditIcon,
+                        intelEditRotation
+                      );
                     }
                     setEditingIntelLabel(null);
                     toast.success("Marker appearance saved");
@@ -13983,12 +14053,14 @@ export default function IntelligenceMapping() {
                                     {
                                       key: `wa-${v.rego}`,
                                       label: "Walked away",
+                                      rego: v.rego,
                                       mode: "paragraph",
                                       text: `${occNames} exited the vehicle and walked [route] towards [location].`,
                                     },
                                     {
                                       key: `wir-${v.rego}`,
                                       label: "Walked in",
+                                      rego: v.rego,
                                       mode: "paragraph",
                                       text: `${occNames} exited the vehicle, walked [route], entered ${shortAddr} and continued out of sight.`,
                                     }
@@ -14407,7 +14479,18 @@ export default function IntelligenceMapping() {
                                   // for the officer to review and edit; nothing
                                   // is saved until Submit. With text already
                                   // there it goes in as the next paragraph.
-                                  onAction={text => {
+                                  onAction={(rawText, _mode, rego) => {
+                                    const text = fillRoute(rawText, rego, [
+                                      ...[...(rsInlineRows ?? [])]
+                                        .sort(
+                                          (a, b) =>
+                                            (a.rowNumber ?? 0) -
+                                            (b.rowNumber ?? 0)
+                                        )
+                                        .map(r => r.observation),
+                                      // What is typed in the box right now.
+                                      rsInlineText,
+                                    ]);
                                     pushInlineUndo(rsInlineText);
                                     setRsInlineText(prev => {
                                       if (!prev.trim()) return text;

@@ -277,7 +277,7 @@ export function useOfflineCreateRow(sheetLocalId?: string) {
             time: input.time,
             observation: input.observation,
             // The members are added below, from what the caller gave.
-            autoFirstRow: false,
+            autoFill: false,
           });
           // Add members online
           for (const cin of input.members ?? []) {

@@ -1,4 +1,5 @@
 import { useMyTeams } from "@/lib/teams";
+import { fillRoute } from "@shared/parkingRoute";
 import { IMAGERY_PHRASE_PATTERN, cinsWithImagery } from "@shared/rowImagery";
 import { seatedOccupantWording, seatsOf } from "@shared/vehicleSeats";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -39,6 +40,8 @@ import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { ResizablePhoto } from "@/components/ResizablePhoto";
 import { endedContinuityCard } from "@/lib/surveillanceCard";
+import { CeaseRowButton } from "@/components/CeaseRowButton";
+import { ceasePlaceFor } from "@shared/ceaseRow";
 import {
   locateTargetFromPending,
   samePlace,
@@ -3176,6 +3179,31 @@ export default function SheetDetail({
       pendingPlacements,
     ]
   );
+  // The place for the Cease button's row — worked out when it is pressed,
+  // whatever the Target Logger's own switches say: where the Logger has the
+  // target (only when he is at a place), else where the team commenced
+  // (shared/ceaseRow.ts).
+  // It is a chip at the end of the target / shortcuts chips; the toolbar button
+  // is only for a sheet that has no chip row showing (no chips, or collapsed).
+  const [ceaseChipShown, setCeaseChipShown] = useState(false);
+  const ceaseOpenForTyping = (rowId: number) => {
+    setJustAddedKeyboard(true);
+    setJustAddedRowId(rowId);
+    setTimeout(() => setJustAddedRowId(null), 6000);
+  };
+  const ceasePlace = () =>
+    ceasePlaceFor(
+      locateTargetFromPending({
+        subject: trackedTarget,
+        arrivals: pendingArrivals ?? [],
+        departures: pendingDepartures ?? [],
+        walkIns: pendingWalkIns ?? [],
+        headingTo: pendingHeadingTo ?? [],
+        placements: pendingPlacements ?? [],
+        extractNames: extractOccupantNames,
+      }),
+      rows ?? []
+    );
   // Names already introduced in full anywhere on the sheet — saved rows AND
   // the text open for editing — so a card's inserted sentence refers to
   // someone already introduced by their short name only.
@@ -4213,6 +4241,15 @@ export default function SheetDetail({
     !isClosed && (user?.role === "member" || user?.role === "admin");
   const canCertify =
     !isClosed && (user?.role === "member" || user?.role === "admin");
+
+  // Cease is offered while there is something to cease: open to the officer,
+  // online, at least one row, surveillance not ended.
+  const ceaseAvailable =
+    canEdit &&
+    isOnline &&
+    !!surveillance &&
+    !surveillance.ended &&
+    (rows?.length ?? 0) > 0;
 
   // Parse daily roster CINs for team expansion and Certify All
   // Sort: Team Leader first, then all others in numeric/alphabetic order
@@ -5599,11 +5636,13 @@ export default function SheetDetail({
                               {
                                 key: `wa-${rego}`,
                                 label: "Walked away",
+                                rego,
                                 text: `${carNames} exited the vehicle and walked [route] towards [location].`,
                               },
                               {
                                 key: `wi-${rego}`,
                                 label: "Walked in",
+                                rego,
                                 text: `${carNames} exited the vehicle, walked [route], entered ${a.address} and continued out of sight.`,
                               },
                             ]
@@ -6362,6 +6401,18 @@ export default function SheetDetail({
                                           />
                                         );
                                       })}
+                                      {/* Cease — last of the chips, in the same
+                                          look. Press it for the ceased row. */}
+                                      {ceaseAvailable && (
+                                        <CeaseRowButton
+                                          variant="chip"
+                                          sheetId={sheetId}
+                                          getPlace={ceasePlace}
+                                          onChanged={invalidateRows}
+                                          onOpenForTyping={ceaseOpenForTyping}
+                                          onPresence={setCeaseChipShown}
+                                        />
+                                      )}
                                     </div>
                                   </>
                                 );
@@ -6468,7 +6519,20 @@ export default function SheetDetail({
                           rowId: null,
                         })
                       }
-                      onAction={addContinuityEntry}
+                      onAction={(text, _mode, rego) =>
+                        addContinuityEntry(
+                          fillRoute(text, rego, [
+                            ...[...(rows ?? [])]
+                              .sort(
+                                (a, b) =>
+                                  (a.rowNumber ?? 0) - (b.rowNumber ?? 0)
+                              )
+                              .map(r => r.observation),
+                            // What is typed in the open box right now.
+                            openObservationCell()?.value,
+                          ])
+                        )
+                      }
                     />
                   </div>
                 )}
@@ -6496,6 +6560,16 @@ export default function SheetDetail({
               <Plus className="w-4 h-4" />
               Add<span className="hidden sm:inline"> Row</span>
             </Button>
+          )}
+          {/* Cease — the ceased row for everyone still on, beside Add Row;
+              only while there is something to cease. */}
+          {ceaseAvailable && !ceaseChipShown && (
+            <CeaseRowButton
+              sheetId={sheetId}
+              getPlace={ceasePlace}
+              onChanged={invalidateRows}
+              onOpenForTyping={ceaseOpenForTyping}
+            />
           )}
           <Tooltip>
             <TooltipTrigger asChild>

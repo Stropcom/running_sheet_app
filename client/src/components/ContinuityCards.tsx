@@ -41,6 +41,10 @@ export interface ContinuityAction {
    * row (offline, or a sheet that isn't for today): "inline" appends to the
    * current text, "paragraph" opens its own paragraph. */
   mode?: "inline" | "paragraph";
+  /** The vehicle this action is about. When the text still has a "[route]",
+   * the caller fills it from what the sheet says about that vehicle's parking
+   * at the moment of the tap (shared/parkingRoute.ts). */
+  rego?: string;
 }
 
 export interface ContinuityCardData {
@@ -96,7 +100,11 @@ export function ContinuityCards({
   onDismiss: (key: string, rowId: number) => void;
   onRestore: (key: string) => void;
   /** Called when an action is tapped — adds the sentence to the sheet. */
-  onAction: (text: string, mode?: "inline" | "paragraph") => void;
+  onAction: (
+    text: string,
+    mode?: "inline" | "paragraph",
+    rego?: string
+  ) => void;
   /** True while an action is being saved. */
   busy?: boolean;
 }) {
@@ -310,7 +318,7 @@ export function ContinuityCards({
                           key={a.key}
                           type="button"
                           onMouseDown={e => e.preventDefault()}
-                          onClick={() => onAction(a.text, a.mode)}
+                          onClick={() => onAction(a.text, a.mode, a.rego)}
                           disabled={busy}
                           title={a.text}
                           className="cursor-pointer disabled:cursor-wait disabled:opacity-60 rounded-md border border-primary/45 bg-[color-mix(in_oklab,var(--primary)_9%,var(--card))] px-2 py-1 text-left font-mono text-xs font-semibold text-primary transition-all hover:bg-[color-mix(in_oklab,var(--primary)_18%,var(--card))] active:scale-[0.98] @max-xl:py-1.5 @max-xl:text-xs"

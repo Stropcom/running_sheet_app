@@ -294,3 +294,138 @@ A departure with unseen occupants ("Vehicle 1FAT001, unseen occupant/s, departed
 - **Which places get it.** By name (`MOSQUE_RE` in `shared/placeSigns.ts`): "Mosque", "Masjid", "Musalla / Musallah" — deliberately narrow. "Islamic Centre / Society" is **not** enough on its own (it can be a school or an office). A car park, school, college, childcare centre, kindergarten, library or bookshop that carries the word is not the mosque; the word followed by a street type ("Mosque Street Bakery") is a street; a street itself ("Mosque Road") never tags. A cafe or restaurant that carries the word keeps its own sign. By Google's place type: `mosque` only, not "place of worship" in general.
 - **Places Report.** A new kind, **Place of worship** (`PLACE_KINDS` id `worship`, emerald, moon-and-star icon); a mosque falls under it, and it is open for other places of worship later. The label column is plain text, so **no database change**.
 - **Checked:** `server/placeSigns.test.ts` ("the mosque sign": names, Google type, the false matches above, precedence, default pin, picker, drawing) and `server/placesReport.test.ts`; the sign drawn through the real marker code in all five colours and at map size beside the hospital, pharmacy, bank and cafe signs. **Not seen:** a real Google place with the `mosque` type on a live map (Google cannot be reached from the sandbox).
+
+## "[route]" filled from where the vehicle parked (v2.47.0)
+
+**What it does.** On a parked vehicle's card, *Walked in* and *Walked away* write
+"…walked [route] towards [location]." because the card can't know how the
+target got from the vehicle to where he went. When the officer's own words about
+**that vehicle** say it parked in a car park ("…arrived at High Wycombe Bar and
+Grill. Parked in the car park."), the placeholder is filled: "…walked through
+the car park, entered …". The tabs and labels stay exactly as they were — only
+the inserted sentence adapts. Where the sheet doesn't say, "[route]" is left for
+the officer, as before. Nothing is rewritten after the fact: it is read at the
+moment of the tap.
+
+**Live text, no click-out.** The tap reads the text in the open observation box
+(Running Sheet) / Quick Entry box (Map) *as it is right now*, plus the saved rows
+(oldest to newest, the box last, newest match wins). So the arrival and "Parked
+in the car park." can still be unsaved.
+
+**Rule.** `shared/parkingRoute.ts` (pure, tests in `server/parkingRoute.test.ts`).
+The vehicle's sentence is the one naming its registration (spacing/case ignored)
+plus any sentence right after it that begins "Parked"/"Parking". A car park of
+another vehicle is never used; a street called "Car Park Road" is not a car park.
+`ContinuityAction.rego` carries the vehicle from the card to the tap handler
+(`ContinuityCards` → `fillRoute` in `SheetDetail.tsx` and the Quick Entry box in
+`IntelligenceMapping.tsx`).
+
+**Adding more (street / road parking, driveway).** Add a row to `PARKING_ROUTES`
+(a pattern for what the officer wrote, and the words that replace "[route]") and
+a test. Nothing else changes. Only the vehicle Walked in / Walked away buttons
+use it so far; the transit, vessel and walk-out buttons keep "[route]".
+
+**Checked.** Unit tests; Playwright `screens.spec.ts` — saved arrival row, and an
+unsaved box typed in without clicking out.
+
+## Map Settings pane order (v2.47.1)
+
+Below Teams the sections now read, top to bottom: **Target Logger, Search,
+Street & Heading, Nearby Location, Heat Map, Marker Entity Count** (they were
+Street & Heading, Entity Count, Target Logger, Nearby Location, Heat Map,
+Search). Only the order changed — each block moved whole in
+`IntelligenceMapping.tsx` (the `── <NAME>` / `end <Name>` comments mark them),
+no behaviour change. Earlier notes that say "below Heat Map" / "under Nearby
+Location" describe the old order.
+
+## Target Markers on the Map page (v2.48.0, renamed v2.48.1)
+
+**What it does.** A **Target Markers** switch in the Map Settings pane (after
+Search, before Street & Heading; off to start, remembered per device in
+`runlog_map_settings.showTargetLocation`; not shown to map-only Investigator
+accounts). On, every marker tied to **the target of the active running sheet**
+gets a soft see-through square behind it. The tile is **the marker's own colour**
+(red behind a target's address, purple behind others, or whatever colour an
+officer set on the marker), no border, **30% strength, 80% size** — fixed, on or
+off only, no other options. A marker that has no tie to that target is untouched.
+No target on the sheet (or no sheet) tints nothing; the pane says so.
+
+**What counts as tied (registry and running sheet look the same).** The server
+puts `relatedTargetIds` on each place (`server/db/mapping.ts`): the targets in
+`linkedTargets` (the target's registered home and additional addresses, and any
+place a row of the sheets names together with the target) plus the target whose
+**registered associate** lives there. `placeLinkedToTarget` (`shared/targetLocation.ts`)
+asks whether the active target is in that list, or in the list of any place merged
+into the same marker (`secondaryLocs`). Nothing is guessed from names or distance.
+The map only has the places for the operations/targets chosen at the top of the
+pane, so a target outside that choice finds nothing to tint.
+
+**Where it is.** The tile is built in `createPinElement` by
+`lib/targetLocationTile.ts` (sits behind the icon; the icon, count badge and photo
+pill are lifted above it with z-index). Changing a marker's colour in the Edit
+dialog recolours its tile at once (`recolourTargetLocationTile`). The switch is
+`components/TargetLocationSection.tsx`. Turning the switch on/off or changing the
+active sheet's target redraws the pins, the same way the entity-count switch does.
+
+**House-shaped glow (v2.48.2).** A **house** marker (`house_filled` or
+`house_outline`) gets a glow that follows the house's outline instead of the
+square: the same silhouette as the icon, drawn as a thick rounded outline that
+reaches as far past the house as the square does (`houseGlowStyle`, same colour,
+30%, no border, a hair of blur). It turns with the icon (rotation slider and Edit
+dialog both update it at once, `rotateTargetLocationTile` /
+`refreshTargetLocationTile`). **Every other icon keeps the square** for now (a
+sign, a vehicle, etc. would each need its own outline). `tileShapeFor(icon)` in
+`shared/targetLocation.ts` decides which; tests in `server/targetLocation.test.ts`.
+
+**Name (v2.48.1).** The section is called **Target Markers** (it was first built
+as "Target Location"), because the Target Logger section already has a sub-switch
+called "Target location" (the flag that shows where the target is now). The code
+keeps the old names (`TargetLocationSection`, `shared/targetLocation.ts`,
+`showTargetLocation`) so saved settings carry over.
+
+**Not done / limits.** The 3D Fly view draws its own icons and does not show the
+tile. The tile is drawn in the marker's colour setting, so on a place sign (bank,
+pub…), whose picture has its own colours, it matches the marker's colour setting,
+not the sign's picture. **Checked:** unit tests (`server/targetLocation.test.ts`);
+the server's `relatedTargetIds` against a real database (target address, second
+target, associate address); the tile drawn next to the entity count badge; the
+switch, its place in the pane and its memory in `e2e/screens.spec.ts`. **Not seen
+on a live map** (Google Maps can't be reached from the sandbox).
+
+## "[route]" fix: only the latest arrival counts, and street parking (v2.48.3)
+
+**The bug.** v2.47.0 looked back through every mention of the vehicle for a car
+park, so a vehicle that had been in a car park at an earlier visit ("…walked
+through the car park towards Vehicle 1ARD64") put "walked through the car park"
+into a later row where it had parked **on the street**. Now the vehicle's
+**latest arrival or parking statement** decides and nothing older is read
+(`parkingForVehicle` in `shared/parkingRoute.ts`): a sentence naming the rego that
+says "arrived", "parked" or "parking" (plus a following "Parked …" sentence). A
+mention that is only a walk to or from the vehicle is skipped. If that statement
+says nothing about where, "[route]" is left for the officer. If it fits two
+places ("on the road near the car park") it is also left — a guess is not made.
+
+**Street / road parking (new, the second row of `PARKING_ROUTES`).** "parked on
+the street / road / kerb / verge", "parked along …", or "parked on <Name>
+Street|Road|…" reads as the street. **Walked in** then writes "walked to,
+entered <place> and continued out of sight" (as the officer worded it); **Walked
+away** drops the placeholder ("walked towards [location]") rather than "to
+towards". Each place now has its own Walked in and Walked away words
+(`walkIn`, `walkAway`). Driveway parking is not done yet; it is another row.
+
+**Checked.** `server/parkingRoute.test.ts` (including the real sheet's earlier car
+park and a later street arrival); `e2e/screens.spec.ts` (saved earlier car park
+visit, then a street arrival).
+
+## "[route]": parked in the driveway (v2.48.4)
+
+A vehicle whose latest arrival says it **parked in / on the driveway** (or "drive
+way") now fills **Walked in** as "…exited the vehicle, entered 38 Lawley Crescent
+and continued out of sight." — the whole "walked [route]," part is dropped, kept
+simple. **Walked away** reads "walked towards [location]" (same as street parking).
+A street called "Driveway Road" is not a driveway, and a driveway together with
+street parking in the same arrival is left for the officer. `PARKING_ROUTES`
+(`shared/parkingRoute.ts`) now has an empty `walkIn` meaning "drop the clause",
+and each place's "parked" test is a list of patterns (the named-street pattern is
+case-sensitive so "the drive way" isn't read as "… Way"). Tests:
+`server/parkingRoute.test.ts`; `e2e/screens.spec.ts` (driveway arrival).

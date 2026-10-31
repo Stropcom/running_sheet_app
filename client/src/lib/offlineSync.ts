@@ -190,8 +190,9 @@ async function processSyncEntry(entry: {
         sheetId,
         time: payload.time,
         observation: payload.observation,
-        // The CINs are added below, from what was queued.
-        autoFirstRow: false,
+        // The CINs are added below, from what was queued, and the time is the
+        // one written when the row was made — not the time it is replayed.
+        autoFill: false,
       });
       idMap.set(localId, result.id);
       await updateDraftRow(localId, { serverId: result.id, synced: true });
@@ -238,8 +239,9 @@ async function processSyncEntry(entry: {
         sheetId: payload.sheetServerId,
         time: payload.time,
         observation: payload.observation,
-        // The CINs are added below, from what was queued.
-        autoFirstRow: false,
+        // The CINs are added below, from what was queued, and the time is the
+        // one written when the row was made — not the time it is replayed.
+        autoFill: false,
       });
       idMap.set(String(localId), result.id);
       // Add CIN members if any

@@ -37,6 +37,7 @@ import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
 
 import { parseExtraAddresses } from "@shared/extraAddresses";
 import { fullAddressForGeocode } from "@shared/geocodeQuery";
+import { insideCapsSuburb } from "@shared/suburbMention";
 
 import {
   buildVisits,
@@ -3466,6 +3467,13 @@ async function buildAllIntelligenceEntities(): Promise<IntelligenceEntity[]> {
           while ((tokenMatch = re.exec(row.observation)) !== null) {
             const mStart = tokenMatch.index;
             const mEnd = mStart + tokenMatch[0].length;
+            // A capital word that is part of a suburb ("MAIDA VALE WA") is the
+            // place, not a person of that surname — see shared/suburbMention.ts.
+            if (
+              entry.type === "person" &&
+              insideCapsSuburb(row.observation, mStart, mEnd)
+            )
+              continue;
             // Only count this occurrence if it is NOT inside a paren
             if (!isInsideParenContent(mStart, mEnd)) {
               // A bare surname alias that follows a different given name

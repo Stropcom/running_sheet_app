@@ -3182,6 +3182,14 @@ export default function SheetDetail({
   // whatever the Target Logger's own switches say: where the Logger has the
   // target (only when he is at a place), else where the team commenced
   // (shared/ceaseRow.ts).
+  // It is a chip at the end of the target / shortcuts chips; the toolbar button
+  // is only for a sheet that has no chip row showing (no chips, or collapsed).
+  const [ceaseChipShown, setCeaseChipShown] = useState(false);
+  const ceaseOpenForTyping = (rowId: number) => {
+    setJustAddedKeyboard(true);
+    setJustAddedRowId(rowId);
+    setTimeout(() => setJustAddedRowId(null), 6000);
+  };
   const ceasePlace = () =>
     ceasePlaceFor(
       locateTargetFromPending({
@@ -4232,6 +4240,15 @@ export default function SheetDetail({
     !isClosed && (user?.role === "member" || user?.role === "admin");
   const canCertify =
     !isClosed && (user?.role === "member" || user?.role === "admin");
+
+  // Cease is offered while there is something to cease: open to the officer,
+  // online, at least one row, surveillance not ended.
+  const ceaseAvailable =
+    canEdit &&
+    isOnline &&
+    !!surveillance &&
+    !surveillance.ended &&
+    (rows?.length ?? 0) > 0;
 
   // Parse daily roster CINs for team expansion and Certify All
   // Sort: Team Leader first, then all others in numeric/alphabetic order
@@ -6381,6 +6398,18 @@ export default function SheetDetail({
                                           />
                                         );
                                       })}
+                                      {/* Cease — last of the chips, in the same
+                                          look. Press it for the ceased row. */}
+                                      {ceaseAvailable && (
+                                        <CeaseRowButton
+                                          variant="chip"
+                                          sheetId={sheetId}
+                                          getPlace={ceasePlace}
+                                          onChanged={invalidateRows}
+                                          onOpenForTyping={ceaseOpenForTyping}
+                                          onPresence={setCeaseChipShown}
+                                        />
+                                      )}
                                     </div>
                                   </>
                                 );
@@ -6518,22 +6547,14 @@ export default function SheetDetail({
           )}
           {/* Cease — the ceased row for everyone still on, beside Add Row;
               only while there is something to cease. */}
-          {canEdit &&
-            isOnline &&
-            !!surveillance &&
-            !surveillance.ended &&
-            (rows?.length ?? 0) > 0 && (
-              <CeaseRowButton
-                sheetId={sheetId}
-                getPlace={ceasePlace}
-                onChanged={invalidateRows}
-                onOpenForTyping={rowId => {
-                  setJustAddedKeyboard(true);
-                  setJustAddedRowId(rowId);
-                  setTimeout(() => setJustAddedRowId(null), 6000);
-                }}
-              />
-            )}
+          {ceaseAvailable && !ceaseChipShown && (
+            <CeaseRowButton
+              sheetId={sheetId}
+              getPlace={ceasePlace}
+              onChanged={invalidateRows}
+              onOpenForTyping={ceaseOpenForTyping}
+            />
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

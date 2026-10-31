@@ -1327,3 +1327,75 @@ test("Cease writes the place the team commenced at when nothing else says where 
   await expect(ceased.getByText(cin, { exact: true })).toBeVisible();
   await expect(page.getByTestId("cease-row")).toHaveCount(0);
 });
+
+test("Cease is the last of the target chips, and the toolbar button only covers for it", async ({
+  page,
+}) => {
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", {
+    name: `Cease chip ${Date.now()}`,
+  });
+  const opId = op.id ?? op.operationId ?? op;
+  // A target with a home address gives the sheet a row of chips.
+  const target = await post("target.create", {
+    operationId: opId,
+    name: `Chip Target ${Date.now()}`,
+    hbf: "12 Smith Street, PERTH WA",
+  });
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  const sheet = await post("sheet.create", {
+    operationId: opId,
+    sheetDate: today,
+    targetId: target.id ?? target.targetId ?? target,
+    sheetCins: [{ cin, hasImages: false, isTeamLeader: true, isAuthor: true }],
+  });
+  const sheetId = sheet.id ?? sheet.sheetId;
+  await post("row.create", {
+    sheetId,
+    observation:
+      "Surveillance commenced in the vicinity of 12 Smith Street, PERTH WA (12 Smith Street).",
+  });
+  await page.goto(`/sheet/${sheetId}`);
+
+  // One Cease control: a chip in the target chips, none in the toolbar.
+  const toolbar = page.getByTestId("sheet-toolbar");
+  const all = page.getByTestId("cease-row");
+  await expect(all).toHaveCount(1);
+  await expect(toolbar.getByTestId("cease-row")).toHaveCount(0);
+  await expect(all).toHaveText("Cease");
+  // It sits after the other chips, on the same panel.
+  const chips = page.locator("button").filter({ hasText: /^(HBF|Cease)$/i });
+  await expect(chips.last()).toHaveAttribute("data-testid", "cease-row");
+
+  // With the target panel collapsed there is no chip, so the toolbar covers.
+  await page
+    .getByText(/^TARGET —/)
+    .first()
+    .click();
+  await expect(toolbar.getByTestId("cease-row")).toHaveCount(1);
+  await expect(all).toHaveCount(1);
+  await page
+    .getByText(/^TARGET —/)
+    .first()
+    .click();
+  await expect(toolbar.getByTestId("cease-row")).toHaveCount(0);
+
+  // The chip does the same as the button: the whole ceased row.
+  await all.click();
+  const ceased = page
+    .locator("tbody tr")
+    .filter({ hasText: "Surveillance ceased in the vicinity of" });
+  await expect(ceased).toHaveCount(1);
+  await expect(ceased).toContainText(
+    "12 Smith Street, PERTH WA (12 Smith Street)."
+  );
+  await expect(ceased.getByText(cin, { exact: true })).toBeVisible();
+});

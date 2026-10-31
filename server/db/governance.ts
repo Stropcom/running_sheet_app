@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { isAttachmentProperlyLinked } from "@shared/attachmentLinking";
 
 import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
+import { insideCapsSuburb } from "@shared/suburbMention";
 
 import {
   operations,
@@ -789,7 +790,7 @@ const SUMMARY_ABBREVIATIONS: Array<[RegExp, string]> = [
  *  6. "PHOTOGRAPH/S TAKEN" is dropped entirely — investigators reading a
  *     Summary don't need this noted, it's implicit in the photo count.
  */
-function buildSummaryAbbreviatedText(
+export function buildSummaryAbbreviatedText(
   observation: string,
   tgtAlias: string | null
 ): string {
@@ -824,9 +825,12 @@ function buildSummaryAbbreviatedText(
 
   // 3. The sheet's own target's alias -> "TGT".
   if (tgtAlias && tgtAlias.trim()) {
-    text = text.replace(
+    // Not inside a suburb: on a sheet for target VALE, "MAIDA VALE WA" stays.
+    const source = text;
+    text = source.replace(
       new RegExp(`\\b${escapeRegExp(tgtAlias.trim())}\\b`, "g"),
-      "TGT"
+      (hit, offset: number) =>
+        insideCapsSuburb(source, offset, offset + hit.length) ? hit : "TGT"
     );
   }
 

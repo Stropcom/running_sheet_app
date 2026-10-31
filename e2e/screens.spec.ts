@@ -1399,3 +1399,64 @@ test("Cease is the last of the target chips, and the toolbar button only covers 
   );
   await expect(ceased.getByText(cin, { exact: true })).toBeVisible();
 });
+
+test("A suburb spelled like a target's surname does not list that target at the address", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  // A surname that is also the second half of a suburb ("MAIDA VALE"), so no
+  // other test's data can match it.
+  const word = () =>
+    Array.from({ length: 8 }, () =>
+      String.fromCharCode(65 + Math.floor(Math.random() * 26))
+    ).join("");
+  const vale = word();
+  const daryani = word();
+  const op = await post("operation.create", { name: `Suburb ${Date.now()}` });
+  const opId = op.id ?? op.operationId ?? op;
+  const t1 = await post("target.create", {
+    operationId: opId,
+    name: `Arman Reza ${daryani}`,
+    tgt: daryani,
+  });
+  await post("target.create", {
+    operationId: opId,
+    name: `Elliot Marcus ${vale}`,
+    tgt: vale,
+  });
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  const sheet = await post("sheet.create", {
+    operationId: opId,
+    sheetDate: today,
+    targetId: t1.id ?? t1.targetId ?? t1,
+  });
+  // The row names one target and the suburb, never the other target.
+  await post("row.create", {
+    sheetId: sheet.id ?? sheet.sheetId,
+    time: "05:00 PM",
+    timeMinutes: 1020,
+    autoFill: false,
+    observation: `Vehicle 1ARD64, ${daryani} driver and sole occupant, arrived at Advent Park, 345 Kalamunda Road, MAIDA ${vale} WA (Advent Park)`,
+  });
+  const r = await page.request.get(
+    `/api/trpc/intelligence.mappingLocations?input=${encodeURIComponent(
+      JSON.stringify({ json: { operationIds: [opId] } })
+    )}`
+  );
+  expect(r.ok(), await r.text()).toBeTruthy();
+  const locs = (await r.json()).result.data.json as {
+    label?: string;
+    observedTargets: string[];
+  }[];
+  const advent = locs.find(l => (l.label ?? "").includes("Advent Park"));
+  expect(advent, JSON.stringify(locs)).toBeTruthy();
+  expect(advent!.observedTargets.join(" | ")).toContain(daryani);
+  expect(advent!.observedTargets.join(" | ")).not.toContain(vale);
+});

@@ -1229,3 +1229,55 @@ test("The first row of a sheet comes with the opening and the whole team on it",
   await expect(second).toHaveCount(1);
   await expect(second.getByText(cin, { exact: true })).toHaveCount(0);
 });
+
+test("Add Row stamps the time, and Cease adds the ceased row with everyone still on", async ({
+  page,
+}) => {
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", {
+    name: `Cease ${Date.now()}`,
+  });
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  const sheet = await post("sheet.create", {
+    operationId: op.id ?? op.operationId ?? op,
+    sheetDate: today,
+    sheetCins: [{ cin, hasImages: false, isTeamLeader: true, isAuthor: true }],
+  });
+  await page.goto(`/sheet/${sheet.id ?? sheet.sheetId}`);
+  await expect(page.getByText("No rows yet")).toBeVisible();
+
+  // Nothing to cease on an empty sheet.
+  const cease = page.getByTestId("cease-row");
+  await expect(cease).toHaveCount(0);
+
+  // Add Row arrives with the current time, not "Set time".
+  await page.getByRole("button", { name: "Add Row" }).click();
+  const rows = page.locator("tbody tr");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText(/\d\d:\d\d [AP]M/);
+  await expect(rows.first()).not.toContainText("Set time");
+
+  // Cease: the ceased row, with the time and the officer still on. No place is
+  // known on this sheet, so it is left open for the address.
+  await expect(cease).toBeVisible();
+  await cease.click();
+  await expect(rows).toHaveCount(2);
+  await expect(cease).toHaveCount(0);
+  await page.reload();
+  const ceased = page
+    .locator("tbody tr")
+    .filter({ hasText: "Surveillance ceased in the vicinity of" });
+  await expect(ceased).toHaveCount(1);
+  await expect(ceased).toContainText(/\d\d:\d\d [AP]M/);
+  await expect(ceased.getByText(cin, { exact: true })).toBeVisible();
+  // Everyone has ceased: nothing more to cease.
+  await expect(page.getByTestId("cease-row")).toHaveCount(0);
+});

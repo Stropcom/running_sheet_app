@@ -39,6 +39,8 @@ import { LinkAttachmentDialog } from "@/components/LinkAttachmentDialog";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { ResizablePhoto } from "@/components/ResizablePhoto";
 import { endedContinuityCard } from "@/lib/surveillanceCard";
+import { CeaseRowButton } from "@/components/CeaseRowButton";
+import { ceasePlaceOf } from "@shared/ceaseRow";
 import {
   locateTargetFromPending,
   samePlace,
@@ -3176,6 +3178,21 @@ export default function SheetDetail({
       pendingPlacements,
     ]
   );
+  // Where the target was last logged, for the Cease button's row — worked out
+  // when it is pressed, whatever the Target Logger's own switches say, and only
+  // when he is at a place (shared/ceaseRow.ts).
+  const ceasePlace = () =>
+    ceasePlaceOf(
+      locateTargetFromPending({
+        subject: trackedTarget,
+        arrivals: pendingArrivals ?? [],
+        departures: pendingDepartures ?? [],
+        walkIns: pendingWalkIns ?? [],
+        headingTo: pendingHeadingTo ?? [],
+        placements: pendingPlacements ?? [],
+        extractNames: extractOccupantNames,
+      })
+    );
   // Names already introduced in full anywhere on the sheet — saved rows AND
   // the text open for editing — so a card's inserted sentence refers to
   // someone already introduced by their short name only.
@@ -6497,6 +6514,24 @@ export default function SheetDetail({
               Add<span className="hidden sm:inline"> Row</span>
             </Button>
           )}
+          {/* Cease — the ceased row for everyone still on, beside Add Row;
+              only while there is something to cease. */}
+          {canEdit &&
+            isOnline &&
+            !!surveillance &&
+            !surveillance.ended &&
+            (rows?.length ?? 0) > 0 && (
+              <CeaseRowButton
+                sheetId={sheetId}
+                getPlace={ceasePlace}
+                onChanged={invalidateRows}
+                onOpenForTyping={rowId => {
+                  setJustAddedKeyboard(true);
+                  setJustAddedRowId(rowId);
+                  setTimeout(() => setJustAddedRowId(null), 6000);
+                }}
+              />
+            )}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

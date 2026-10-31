@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   CEASE_OPENING,
   ceaseMembers,
+  ceasePlaceFor,
   ceasePlaceOf,
   ceaseRowText,
+  lastSurveillancePlace,
 } from "@shared/ceaseRow";
 import type { TargetPosition } from "@shared/targetPosition";
 
@@ -95,5 +97,75 @@ describe("who goes on the ceased row", () => {
 
   it("works with no roster, numbers in numeric order", () => {
     expect(ceaseMembers(["10", "9", "3"], null)).toEqual(["3", "9", "10"]);
+  });
+});
+
+describe("where the team commenced, when nothing else says", () => {
+  const commenced =
+    "Surveillance commenced in the vicinity of 38 Lawley Crescent, MOUNT LAWLEY WA (38 Lawley Crescent).";
+
+  it("reads the place the latest commenced / ceased row names, as written", () => {
+    expect(
+      lastSurveillancePlace([{ rowNumber: 1, observation: commenced }])
+    ).toBe("38 Lawley Crescent, MOUNT LAWLEY WA (38 Lawley Crescent)");
+    // The latest one counts; a row that names no place is skipped.
+    expect(
+      lastSurveillancePlace([
+        { rowNumber: 1, observation: commenced },
+        {
+          rowNumber: 2,
+          observation: "Surveillance commenced in the vicinity of 5 Park Road.",
+        },
+        { rowNumber: 3, observation: "Target seen leaving." },
+        {
+          rowNumber: 4,
+          observation: "Surveillance ceased in the vicinity of ",
+        },
+      ])
+    ).toBe("5 Park Road");
+  });
+
+  it("goes by the order the rows were made, not the order given", () => {
+    expect(
+      lastSurveillancePlace([
+        { rowNumber: 2, observation: "Surveillance ceased at 9 Low Street." },
+        { rowNumber: 1, observation: commenced },
+      ])
+    ).toBe("9 Low Street");
+  });
+
+  it("is null when no row names one", () => {
+    expect(lastSurveillancePlace([])).toBeNull();
+    expect(
+      lastSurveillancePlace([
+        {
+          rowNumber: 1,
+          observation: "Surveillance commenced in the vicinity of ",
+        },
+        { rowNumber: 2, observation: null },
+      ])
+    ).toBeNull();
+  });
+
+  it("is used only when the Target Logger has no position; a logged position wins, and blank when he is moving", () => {
+    const rows = [{ rowNumber: 1, observation: commenced }];
+    expect(ceasePlaceFor(null, rows)).toBe(
+      "38 Lawley Crescent, MOUNT LAWLEY WA (38 Lawley Crescent)"
+    );
+    expect(ceasePlaceFor(pos({ place: "12 Smith Street" }), rows)).toBe(
+      "12 Smith Street"
+    );
+    // He has left in a vehicle: the commenced place is not where he is.
+    expect(ceasePlaceFor(pos({ state: "moving" }), rows)).toBeNull();
+    expect(ceasePlaceFor(null, [])).toBeNull();
+  });
+
+  it("makes a whole sentence of it, keeping the bracket short form", () => {
+    expect(
+      ceaseRowText("38 Lawley Crescent, MOUNT LAWLEY WA (38 Lawley Crescent)")
+        .observation
+    ).toBe(
+      "Surveillance ceased in the vicinity of 38 Lawley Crescent, MOUNT LAWLEY WA (38 Lawley Crescent)."
+    );
   });
 });

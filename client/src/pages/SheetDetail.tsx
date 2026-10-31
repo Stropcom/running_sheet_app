@@ -40,7 +40,7 @@ import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import { ResizablePhoto } from "@/components/ResizablePhoto";
 import { endedContinuityCard } from "@/lib/surveillanceCard";
 import { CeaseRowButton } from "@/components/CeaseRowButton";
-import { ceasePlaceOf } from "@shared/ceaseRow";
+import { ceasePlaceFor } from "@shared/ceaseRow";
 import {
   locateTargetFromPending,
   samePlace,
@@ -3178,11 +3178,12 @@ export default function SheetDetail({
       pendingPlacements,
     ]
   );
-  // Where the target was last logged, for the Cease button's row — worked out
-  // when it is pressed, whatever the Target Logger's own switches say, and only
-  // when he is at a place (shared/ceaseRow.ts).
+  // The place for the Cease button's row — worked out when it is pressed,
+  // whatever the Target Logger's own switches say: where the Logger has the
+  // target (only when he is at a place), else where the team commenced
+  // (shared/ceaseRow.ts).
   const ceasePlace = () =>
-    ceasePlaceOf(
+    ceasePlaceFor(
       locateTargetFromPending({
         subject: trackedTarget,
         arrivals: pendingArrivals ?? [],
@@ -3191,7 +3192,8 @@ export default function SheetDetail({
         headingTo: pendingHeadingTo ?? [],
         placements: pendingPlacements ?? [],
         extractNames: extractOccupantNames,
-      })
+      }),
+      rows ?? []
     );
   // Names already introduced in full anywhere on the sheet — saved rows AND
   // the text open for editing — so a card's inserted sentence refers to

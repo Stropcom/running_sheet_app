@@ -3,13 +3,15 @@
  *
  * A sheet nearly always ends with "Surveillance ceased in the vicinity of
  * [address]" with everyone who is still on on it. One tap on Cease writes that
- * row: the opening, the place where the target was last logged (only when he is
- * at a place — never while he is moving, where a place would be a guess), and
- * every CIN that has not already ceased (shared/surveillanceState.ts). Pure
+ * row: the opening, the place (where the target was last logged, else where the
+ * team commenced — never while he is moving, where a place would be a guess),
+ * and every CIN that has not already ceased (shared/surveillanceState.ts). Pure
  * rules; the server's row.cease applies them (server/routers/row.ts).
  */
 import { rosterCins } from "./firstRow";
 import { fullStreetTypes } from "./streetTypes";
+import { surveillanceSignal } from "./surveillanceState";
+import { surveillancePlace } from "./surveillanceHandover";
 import type { TargetPosition } from "./targetPosition";
 
 export const CEASE_OPENING = "Surveillance ceased in the vicinity of ";
@@ -24,6 +26,39 @@ export function ceasePlaceOf(pos: TargetPosition | null): string | null {
   if (pos.state !== "inside" && pos.state !== "vehicle") return null;
   const place = pos.place.trim();
   return place.length >= 3 ? place : null;
+}
+
+/** The place the sheet's latest "Surveillance commenced / ceased …" row names,
+ * in the words it was written ("38 Lawley Crescent, MOUNT LAWLEY WA (38 Lawley
+ * Crescent)"), or null when no such row names one. Rows are read in the order
+ * they were made. */
+export function lastSurveillancePlace(
+  rows: readonly { rowNumber?: number; observation: string | null }[]
+): string | null {
+  const ordered = rows
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => (a.r.rowNumber ?? a.i) - (b.r.rowNumber ?? b.i))
+    .map(x => x.r);
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    const signal = surveillanceSignal(ordered[i].observation);
+    if (!signal) continue;
+    const place = surveillancePlace(ordered[i].observation, signal);
+    if (place) return place;
+  }
+  return null;
+}
+
+/** The place for the ceased row. Where the Target Logger has the target (a
+ * position is logged): a real place only (`ceasePlaceOf`) — if he is moving it
+ * stays blank for the officer. Where it has nothing logged since the team
+ * commenced: the place the sheet last said surveillance was at, which is where
+ * the team is. */
+export function ceasePlaceFor(
+  pos: TargetPosition | null,
+  rows: readonly { rowNumber?: number; observation: string | null }[]
+): string | null {
+  if (pos) return ceasePlaceOf(pos);
+  return lastSurveillancePlace(rows);
 }
 
 /** The row's text. With a place it is a whole sentence (ending in a full stop,

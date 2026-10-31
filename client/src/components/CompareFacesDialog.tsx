@@ -118,11 +118,15 @@ function CompareSlot({
           </Select>
 
           {slot.operationId != null && (
-            <div className="max-h-48 overflow-y-auto grid grid-cols-3 gap-1.5">
+            // The scroll box is a plain block and the grid sits inside it, so the
+            // box's height limit can never squeeze the grid's rows (that is what
+            // piled the photos on top of each other).
+            <div className="max-h-[55vh] overflow-y-auto">
+            <div className="grid grid-cols-3 sm:grid-cols-4 auto-rows-max content-start gap-2">
               {photosLoading ? (
-                <p className="col-span-3 text-sm text-muted-foreground text-center py-4">Loading…</p>
+                <p className="col-span-full text-sm text-muted-foreground text-center py-4">Loading…</p>
               ) : !photos || photos.length === 0 ? (
-                <p className="col-span-3 text-sm text-muted-foreground text-center py-4">No photos in this operation</p>
+                <p className="col-span-full text-sm text-muted-foreground text-center py-4">No photos in this operation</p>
               ) : (
                 (photos as any[]).map(p => {
                   // Who the photo is already linked to, so the right one is
@@ -144,6 +148,7 @@ function CompareSlot({
                   );
                 })
               )}
+            </div>
             </div>
           )}
         </>
@@ -233,7 +238,7 @@ export function CompareFacesDialog({
         onOpenChange(o);
       }}
     >
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[calc(100%-2rem)] sm:max-w-5xl max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ScanFace className="h-5 w-5" />

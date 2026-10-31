@@ -72,3 +72,19 @@ A new **Item** tab in the link window (`LinkAttachmentDialog`, between Locations
 - Description only — no exhibit or reference number.
 - Migration `0130_attachment_link_item.sql` adds `'item'` to the enum, guarded so it runs once. `scripts/dev/check-schema-drift.ts` now also compares enum values, so a missed enum change fails the e2e workflow.
 - Checked in a browser: describe → Confirm upload → pill → pop-over text; six equal tabs at laptop / tablet and a 3×2 grid at phone width; the Images folder shows the pill and description. Unit tests: `server/attachmentLinking.test.ts`.
+
+## Compare Faces: bigger window, photos no longer pile up (v2.49.1)
+
+The Compare Faces picker (`components/CompareFacesDialog.tsx`, Images page) had two
+faults. **Small window:** the base dialog caps itself at `sm:max-w-lg`, which beat
+the `max-w-2xl` the dialog asked for, so it was always about 512 px wide. It now
+sets `sm:max-w-5xl` (and `max-h-[92vh]`), so two photos sit side by side with room
+to compare faces. **Photos on top of each other:** the photo grid was itself the
+height-limited scroll box (`grid max-h-48 overflow-y-auto`); in some browsers a
+grid whose own height is capped squeezes its rows to fit, so the tiles overlapped.
+The scroll box (`max-h-[55vh]`, was 192 px) is now a plain block with the grid
+inside it (`auto-rows-max`, 3 columns, 4 from `sm`), so the limit can never squeeze
+the rows. **Rule:** don't put `overflow` and a height limit on a grid you also
+want the rows of to stay full height — scroll an outer block instead. Checked in a
+headless browser with mock photos at laptop and phone width (the overlap itself
+only shows in some browsers, so the same-browser overlap was not reproduced here).

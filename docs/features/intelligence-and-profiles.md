@@ -63,3 +63,36 @@ Detailed per-feature notes moved out of `CLAUDE.md` (text unchanged, original or
 - **Direction of error.** Under-report: a suburb written with no state and no street before it, or a surname written straight after "Road, " at the end of an address, is the only way this can miss a real mention. Nothing new can be credited.
 - **Checked:** unit tests for the rule and the Summary; reproduced on a real server (two registered targets, the Advent Park row: before, both listed; after, only Daryani) and a row that genuinely says "VALE departed … walked to Advent Park" still lists him; `e2e/screens.spec.ts` ("A suburb spelled like a target's surname does not list that target at the address" — fails with the fix switched off, passes with it).
 - **Not checked:** other places that might match a capital surname inside address text (none found in a search of `server/` and `shared/`); the pop-up on a live Google map.
+
+## "Vehicle REGO (Vehicle REGO)": a clean vehicle in the Intelligence folder (v2.49.6)
+
+**Why the bracket appears.** The space-bar trigger in the observation box
+introduces a vehicle once with a bracket the first time its rego is typed
+("1MEN83" → "1MEN83 (Vehicle 1MEN83)"). The Intelligence folder takes a vehicle in
+from that bracket (later bare mentions are matched to it). The Target Logger's
+chips write the vehicle plainly ("Vehicle 1MEN83, MENON driver…"), which is **not**
+an introduction, so the first time an officer types the rego by hand — even right
+after "walked towards Vehicle" — it still gets the bracket. That is by design for a rego typed after a description ("grey Toyota 1ABC123" →
+"… 1ABC123 (Vehicle 1ABC123)"). **A rego typed straight after the word "Vehicle"
+no longer gets a bracket at all** (`detectVehicleMentionTrigger`): "Vehicle 1MEN83" is
+already the short form, the bracket added nothing, and it was what produced the
+wrong entity below. Taking the bracket out of such a row, by hand, fixes the
+vehicle the same way.
+
+**The fault it exposed (server).** For a bracket that only repeats "Vehicle REGO"
+written just before it ("…exited Crown Towers Perth and walked towards Vehicle
+1MEN83 (Vehicle 1MEN83), in the valet parking…"), the vehicle's name was rebuilt from
+the sentence in front of the rego, so the folder showed **"1MEN83 exited Crown
+Towers Perth and walked towards Vehicle"** instead of 1MEN83. `extractEntitiesFromText`
+(`server/db/intelligence.ts`) now treats "Vehicle REGO" straight before the bracket as
+*no description* (a real description never ends in the word "Vehicle" before the
+plate), so the entity is plain **1MEN83** and a real description ("a white Toyota
+Landcruiser, bearing WA registration 1FBP509 (Vehicle 1FBP509)") is still kept.
+**Rows already saved** keep the odd entity name until the entity is re-read: it is
+rebuilt from the row text, so it corrects itself once this version is running (the
+Intelligence folder re-reads the rows), and a Merge Entities / alias can tidy any left.
+
+**The second bug (client).** `computeUsedVehicleRegos` only recognised a bare
+"(1FCC987)" bracket, not the "(Vehicle 1FCC987)" the trigger itself writes, so a
+vehicle already introduced that way was bracketed again each time its rego was typed
+in a later row. It now counts both. Tests: `server/entityClassification.test.ts`.

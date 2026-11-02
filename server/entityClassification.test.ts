@@ -5,6 +5,10 @@
  * entity is already known to be an address.
  */
 
+import {
+  computeUsedVehicleRegos,
+  detectVehicleMentionTrigger,
+} from "@/lib/mentionAutocomplete";
 import { describe, it, expect } from "vitest";
 import { extractEntitiesFromText } from "./db";
 
@@ -257,5 +261,70 @@ describe("extractEntitiesFromText — vehicle description reconstruction", () =>
     );
     expect(entities[0].shortForm).not.toContain("car park");
     expect(entities[0].shortForm).not.toContain("towards");
+  });
+
+  it('a bracket that only repeats "Vehicle REGO" has no description (the walked-towards-the-vehicle row)', () => {
+    // Reported from a real sheet: "...walked towards Vehicle 1MEN83 (Vehicle
+    // 1MEN83), in the valet parking pick up area." put the whole sentence in
+    // front of the rego into the vehicle's name in the Intelligence folder
+    // ("1MEN83 exited Crown Towers Perth and walked towards Vehicle").
+    const text =
+      "MENON, VALE and LANGLEY exited Crown Towers Perth and walked towards Vehicle 1MEN83 (Vehicle 1MEN83), in the valet parking pick up area.";
+    const vehicles = extractEntitiesFromText(text).filter(
+      e => e.type === "vehicle"
+    );
+    expect(vehicles).toHaveLength(1);
+    expect(vehicles[0].shortForm).toMatch(/^1MEN83$/);
+  });
+
+  it("a real description in front of the rego is still kept", () => {
+    const text =
+      "A white Toyota Landcruiser, bearing WA registration 1FBP509 (Vehicle 1FBP509) was observed.";
+    const vehicles = extractEntitiesFromText(text).filter(
+      e => e.type === "vehicle"
+    );
+    expect(vehicles).toHaveLength(1);
+    expect(vehicles[0].shortForm).toBe("1FBP509 white Toyota Landcruiser");
+  });
+});
+
+describe("computeUsedVehicleRegos", () => {
+  const rows = (...obs: string[]) => obs.map(observation => ({ observation }));
+
+  it("counts a rego introduced as (Vehicle REGO) or (REGO)", () => {
+    const used = computeUsedVehicleRegos(
+      rows(
+        "grey Toyota Hilux 1ABC123 (Vehicle 1ABC123) arrived.",
+        "white van 2XYZ789 (2XYZ789) arrived."
+      )
+    );
+    expect(used.has("1ABC123")).toBe(true);
+    expect(used.has("2XYZ789")).toBe(true);
+  });
+
+  it("a plain 'Vehicle REGO' from a chip is not an introduction", () => {
+    const used = computeUsedVehicleRegos(
+      rows("Vehicle 1MEN83, MENON driver, arrived at Crown Towers Perth.")
+    );
+    expect(used.has("1MEN83")).toBe(false);
+  });
+});
+
+describe("detectVehicleMentionTrigger", () => {
+  const trig = (text: string) =>
+    detectVehicleMentionTrigger(text, text.length, new Set());
+
+  it("does not bracket a rego typed straight after the word Vehicle", () => {
+    expect(trig("MENON walked towards Vehicle 1MEN83")).toBeNull();
+    expect(trig("walked towards vehicle 1MEN83")).toBeNull();
+  });
+
+  it("still brackets a rego that follows a description", () => {
+    expect(
+      trig("walked to a grey Toyota Hilux, bearing WA registration 1ABC123")
+    ).toMatchObject({
+      word: "1ABC123",
+    });
+    expect(trig("1ABC123")).toMatchObject({ word: "1ABC123" });
   });
 });

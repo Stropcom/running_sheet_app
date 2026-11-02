@@ -17,7 +17,8 @@ describe("a model name is not bracketed as a registration", () => {
   it("still brackets a plate, introduced or on its own", () => {
     expect(typed("sedan, bearing WA registration 1FAB007")?.word).toBe("1FAB007");
     expect(typed("A blue Mercedes Benz C200, sedan, bearing WA registration 1FAB007")?.word).toBe("1FAB007");
-    expect(typed("Vehicle 1FAB007")?.word).toBe("1FAB007");
+    // Straight after the word "Vehicle" it is already the short form, so no bracket.
+    expect(typed("Vehicle 1FAB007")).toBeNull();
     expect(typed("walked to 1TDM414")?.word).toBe("1TDM414");
     expect(typed("a white Toyota Hilux, rego 1ABC234")?.word).toBe("1ABC234");
   });

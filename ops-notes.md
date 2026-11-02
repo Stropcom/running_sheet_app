@@ -715,3 +715,37 @@ and logging. It changes nothing and prints no secret. **To use it:** on the drop
 Things it cannot see: the DigitalOcean cloud firewall, two-factor on the hosting and
 Apple accounts, who receives the alerts, and whether a copy of the vault key is kept
 off the server — those are answered from the control panels and by the owner.
+
+### Security check results — first run on the droplet (2026-11-02, v2.49.3)
+
+**Fine:** `ufw` active, default deny, only 22/80/443 allowed (IPv4 and IPv6); SSH
+password login off (key only, one key); automatic security updates on and none
+waiting; HTTP redirects to HTTPS; certificate (Let's Encrypt) valid to 20 Dec 2026
+with a certbot renewal timer; TLS 1.3 negotiated, old protocols refused; HSTS,
+nosniff, frame and referrer headers sent; JWT secret 64 characters, WIPC key 64
+characters; `/healthz` answers 200; the app uses the **DigitalOcean managed MySQL**
+over its private address (a separate local MySQL also runs, listening on 127.0.0.1).
+
+**To act on (in rough order):** (1) `.env` is mode 644 — `chmod 600`; (2) `/root/backups`
+holds 298 plain-text SQL dumps (1.1 GB), directory 755 and files 644, never pruned,
+no copy off the server — tighten permissions, prune to ~14, encrypt, copy off-server;
+(3) the app and pm2 run as **root** and root is the only login account — create a
+normal account, run the app as it, then set `PermitRootLogin no`; (4) `Server: nginx/1.24.0`
+shows the version — `server_tokens off;`; (5) a **reboot is pending** (new kernel; up
+5 weeks); (6) no `fail2ban` (1,215 failed SSH logins on file, harmless with key-only
+login but noisy); (7) `do-agent` not running, so no droplet CPU/disk graphs or alerts;
+(8) the app listens on `*:3000` (ufw blocks it, but bind to 127.0.0.1); (9) SSH
+X11 forwarding on; (10) no Content-Security-Policy or Permissions-Policy header;
+(11) the database connection does not verify the server certificate
+(`rejectUnauthorized: false`, server/db/core.ts).
+
+**Script false alarms found by this run (fixed in v2.49.4):** it counted commented-out
+nginx lines (`# server_tokens off;`) and the old http-level `ssl_protocols` line as
+live settings, and listed the backup folder twice.
+
+**Also seen:** `.env` has a variable named `ORT` (likely a typo for `PORT`; harmless as
+the port defaults to 3000); `NODE_ENV` is not in `.env` (check pm2 sets it). Logins in
+the last week came from DigitalOcean-range addresses (the web console). Still to
+check in the control panels: managed-database Trusted sources and daily backups, the
+cloud firewall, two-factor sign-in on the DigitalOcean and Apple accounts, who gets
+the alerts, and whether a copy of the vault key is kept off the server.

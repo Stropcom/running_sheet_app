@@ -126,7 +126,7 @@ sec "3. Firewall and open ports"
 if have ufw; then
   if [ $IS_ROOT -eq 1 ]; then
     UFW="$(ufw status verbose 2>/dev/null)"
-    if printf '%s' "$UFW" | grep -q 'Status: active'; then ok "ufw firewall is active"; else chk "ufw firewall is installed but NOT active"; fi
+    if printf '%s' "$UFW" | grep -q 'Status: active'; then UFWACTIVE=1; ok "ufw firewall is active"; else chk "ufw firewall is installed but NOT active"; fi
     printf '%s\n' "$UFW" | indent
   else nope "ufw status (needs sudo)"; fi
 else
@@ -139,10 +139,16 @@ if have ss; then
   EXPOSED="$(ss -H -tuln 2>/dev/null | awk '{print $5}' | grep -E '^(0\.0\.0\.0|\[::\]|\*):' | sed 's/.*://' | sort -un | tr '\n' ' ')"
   inf "Ports open on ALL addresses: ${EXPOSED:-none}"
   for p in $EXPOSED; do
-    case "$p" in 22|80|443) ;; *) chk "Port $p is listening on every address: confirm it is meant to be reachable from the internet and is covered by the firewall" ;; esac
+    case "$p" in 22|80|443|3000|3306|3307|5432|6379|27017) ;; *) chk "Port $p is listening on every address: confirm it is meant to be reachable from the internet and is covered by the firewall" ;; esac
   done
   for p in 3000 3306 3307 5432 6379 27017; do
-    if ss -H -tuln 2>/dev/null | awk '{print $5}' | grep -qE "^(0\.0\.0\.0|\[::\]|\*):$p$"; then chk "Port $p is open on all addresses (app/database ports should be localhost only)"; fi
+    if ss -H -tuln 2>/dev/null | awk '{print $5}' | grep -qE "^(0\.0\.0\.0|\[::\]|\*):$p$"; then
+      if [ "${UFWACTIVE:-0}" = "1" ] && ! ufw status 2>/dev/null | grep -qE "^$p(/|[[:space:]])"; then
+        chk "Port $p listens on all addresses but the firewall does not allow it in: safe today, yet it should listen on 127.0.0.1 only so one firewall mistake cannot expose it"
+      else
+        chk "Port $p is open on all addresses (app/database ports should be localhost only)"
+      fi
+    fi
   done
 fi
 
@@ -151,11 +157,12 @@ sec "4. Web server (nginx) and TLS"
 if have nginx; then
   inf "nginx: $(nginx -v 2>&1)"
   NG=""
-  if [ $IS_ROOT -eq 1 ]; then NG="$(nginx -T 2>/dev/null)"; fi
+  if [ $IS_ROOT -eq 1 ]; then NG="$(nginx -T 2>/dev/null | grep -vE '^\s*#')"; fi
   if [ -n "$NG" ]; then
     printf '%s\n' "$NG" | grep -E '^\s*(server_name|listen|return 301|ssl_protocols|ssl_ciphers|server_tokens|client_max_body_size|limit_req|limit_conn|add_header|proxy_pass|ssl_certificate |ssl_stapling|ssl_prefer_server_ciphers)\b' | sed 's/^\s*/          /' | sort -u
-    printf '%s\n' "$NG" | grep -qiE 'ssl_protocols[^;]*(TLSv1 |TLSv1;|TLSv1\.1)' && chk "TLS 1.0 or 1.1 is enabled in nginx"
-    printf '%s\n' "$NG" | grep -qE 'server_tokens\s+off' && ok "nginx hides its version" || chk "nginx shows its version (server_tokens is not off)"
+    LASTPROTO="$(printf '%s\n' "$NG" | grep -E '^\s*ssl_protocols' | tail -1)"
+    if printf '%s' "$LASTPROTO" | grep -qE 'TLSv1[ ;]|TLSv1\.1'; then chk "The last ssl_protocols line allows TLS 1.0/1.1: $LASTPROTO"; else ok "The ssl_protocols line that applies allows TLS 1.2 and 1.3 only (several lines are listed above; the later one, from the server block, wins)"; fi
+    printf '%s\n' "$NG" | grep -qE '^\s*server_tokens\s+off' && ok "nginx is set to hide its version" || chk "nginx does not hide its version (add server_tokens off; in nginx.conf)"
     printf '%s\n' "$NG" | grep -qE 'return 301 https' && ok "HTTP is redirected to HTTPS" || chk "No HTTP to HTTPS redirect found in the nginx config"
     printf '%s\n' "$NG" | grep -qE 'limit_req' && ok "nginx request rate limiting is configured" || inf "No nginx rate limiting (the app limits sign-in attempts itself)"
     printf '%s\n' "$NG" | grep -qE 'client_max_body_size' && inf "Upload size limit is set in nginx" || chk "client_max_body_size not set in nginx (the default is 1 MB: uploads of photos need it raised; the app caps a photo at 25 MB)"
@@ -189,7 +196,9 @@ if [ -n "$DOMAIN" ] && have openssl; then
     for hdr in Strict-Transport-Security X-Content-Type-Options X-Frame-Options Referrer-Policy Content-Security-Policy Permissions-Policy; do
       if printf '%s' "$H" | grep -qi "^$hdr:"; then ok "Header sent: $hdr"; else chk "Header NOT sent: $hdr"; fi
     done
-    printf '%s' "$H" | grep -iE '^(server|x-powered-by):' | indent
+    SRV="$(printf '%s' "$H" | grep -iE '^(server|x-powered-by):' | tr -d '\r')"
+    [ -n "$SRV" ] && printf '%s\n' "$SRV" | indent
+    printf '%s' "$SRV" | grep -qE '[0-9]+\.[0-9]+' && chk "The Server header shows a version number (set server_tokens off;)"
   fi
 else
   inf "No domain given or found: re-run with --domain runlog.com.au to check the certificate and headers"
@@ -205,8 +214,11 @@ if [ -d "$APP_DIR" ]; then
   [ -f "$APP_DIR/package.json" ] && inf "Version: $(grep -m1 '"version"' "$APP_DIR/package.json" | sed 's/[^0-9.]//g')"
   if have git && [ -d "$APP_DIR/.git" ]; then
     inf "Branch: $(git -C "$APP_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null), commit $(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null)"
-    DIRTY="$(git -C "$APP_DIR" status --porcelain 2>/dev/null | wc -l)"
-    [ "$DIRTY" -gt 0 ] && chk "$DIRTY uncommitted file(s) in the app folder (a deploy resets these)" || ok "App folder matches the commit (no loose edits)"
+    DIRTYLIST="$(git -C "$APP_DIR" status --porcelain 2>/dev/null)"
+    if [ -n "$DIRTYLIST" ]; then
+      chk "$(printf '%s\n' "$DIRTYLIST" | wc -l) file(s) differ from the commit (M = edited and reset by a deploy; ?? = untracked, left alone):"
+      printf '%s\n' "$DIRTYLIST" | head -12 | indent
+    else ok "App folder matches the commit (no loose edits)"; fi
   fi
   ENVF="$APP_DIR/.env"
   if [ -f "$ENVF" ]; then
@@ -221,7 +233,15 @@ if [ -d "$APP_DIR" ]; then
       wl="$(len WIPC_VAULT_KEY)"; if [ "$wl" -eq 64 ]; then ok "WIPC_VAULT_KEY is set (64 characters)"; elif [ "$wl" -eq 0 ]; then inf "WIPC_VAULT_KEY is not set (the WIPC vault is then unavailable)"; else chk "WIPC_VAULT_KEY has $wl characters (must be 64)"; fi
       db="$(grep -E '^DATABASE_URL=' "$ENVF" | head -1 | cut -d= -f2- | sed -E 's#^["'\'']?[a-z0-9+]+://[^@]*@##; s#[/?].*$##; s#["'\'']$##')"
       [ -n "$db" ] && inf "Database address the app uses (credentials hidden): $db"
-      case "$db" in localhost*|127.0.0.1*|"[::1]"*) ok "The app talks to a database on this machine" ;; "") ;; *) chk "The database is on another host ($db): confirm the link is private and encrypted" ;; esac
+      case "$db" in
+        localhost*|127.0.0.1*|"[::1]"*) ok "The app talks to a database on this machine" ;;
+        "") ;;
+        *ondigitalocean.com*) inf "The app uses a DigitalOcean managed database. In the control panel confirm: Trusted sources lists only this droplet, 'Require SSL' is on, and daily backups are on. Note the app does not verify the database's certificate (rejectUnauthorized is false in server/db/core.ts)." ;;
+        *) chk "The database is on another host ($db): confirm the link is private and encrypted" ;;
+      esac
+      echo "$db" | grep -qE '^private-' && ok "The database address is the private (VPC) one" || true
+      bad="$(grep -E '^[A-Z]{1,4}=' "$ENVF" | cut -d= -f1 | grep -vxE 'PORT|NODE_ENV|TZ' | tr '\n' ' ')"
+      [ -n "$bad" ] && chk "Unexpected short variable name(s) in .env: $bad (a typo such as ORT for PORT?)"
       grep -qE '^NODE_ENV=.?production' "$ENVF" && ok "NODE_ENV is production" || inf "NODE_ENV is not set to production in .env (it may be set by pm2 instead)"
     else nope "Reading .env (needs sudo); only the file permissions are shown"; fi
   else
@@ -255,9 +275,12 @@ grep -HEi '^\s*(bind-address|skip-networking|require_secure_transport|ssl|local_
 
 # ───────────────────────────────────────────────────────────────────────────────
 sec "7. Backups"
+SEENB=" "
 for B in "$HOME/backups" "/root/backups" "/home/*/backups" "$APP_DIR/backups" /var/backups/runlog; do
   for d in $B; do
     [ -d "$d" ] || continue
+    case "$SEENB" in *" $d "*) continue ;; esac
+    SEENB="$SEENB$d "
     inf "Backup folder: $d (owner $(stat -c '%U:%G' "$d"), mode $(stat -c '%a' "$d"))"
     case "$(stat -c '%a' "$d")" in *[1-7]) chk "Backup folder is accessible to other accounts" ;; esac
     ls -lt --time-style=long-iso "$d" 2>/dev/null | head -8 | indent
@@ -267,6 +290,8 @@ for B in "$HOME/backups" "/root/backups" "/home/*/backups" "$APP_DIR/backups" /v
       [ "$age" -gt 7 ] && chk "Newest backup is $age days old" || ok "Newest backup is $age day(s) old"
     fi
     n="$(find "$d" -maxdepth 1 -type f 2>/dev/null | wc -l)"
+    [ "$(find "$d" -maxdepth 1 -type f -perm /004 2>/dev/null | wc -l)" -gt 0 ] && chk "Backup files are readable by every account on the server (should be mode 600)"
+    [ "$n" -gt 30 ] && chk "$n backup files and no clean-up: they pile up (keep the newest 14 or so)"
     inf "Files in the folder: $n; total size $(du -sh "$d" 2>/dev/null | cut -f1)"
     find "$d" -maxdepth 1 -type f \( -name '*.gpg' -o -name '*.enc' -o -name '*.age' \) 2>/dev/null | grep -q . && ok "Some backups look encrypted" || chk "Backups look like plain files (not encrypted) and sit on this server's own disk"
   done

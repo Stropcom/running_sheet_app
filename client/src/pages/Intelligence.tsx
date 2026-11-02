@@ -42,7 +42,16 @@ import {
   PackageOpen,
 } from "lucide-react";
 import { useViewMode } from "@/contexts/ViewModeContext";
-import { formatIntelAddress, formatIntelVehicle } from "@/lib/addressFormat";
+import {
+  formatIntelAddress,
+  formatIntelVehicle,
+  tidyRepeatedPlaceName,
+} from "@/lib/addressFormat";
+
+// A place name for display: tidied, and shown once when the label repeats it
+// ("Terminal 4, Terminal 4" → "Terminal 4").
+const placeLabel = (shortForm: string) =>
+  tidyRepeatedPlaceName(formatIntelAddress(shortForm));
 import { RegionSearchButton } from "@/components/RegionSearch";
 import { IndicesBadge } from "@/components/IndicesBadge";
 import IntelligenceHeatMap from "@/pages/IntelligenceHeatMap";
@@ -344,7 +353,7 @@ function buildProfileHtml(entity: Entity, allEntities: Entity[]) {
           entity.occurrences[0]?.fullDescription
         )
       : entity.type === "address" || entity.type === "business"
-        ? formatIntelAddress(entity.shortForm)
+        ? placeLabel(entity.shortForm)
         : entity.shortForm
   );
 
@@ -735,7 +744,7 @@ ${sheets.map(sheet => `<span class="assoc-chip">${esc(sheet.sheetTitle)}</span>`
 </div>
 <div class="assoc-list">`;
     for (const a of relatedAddresses) {
-      html += `<span class="assoc-chip">${esc(formatIntelAddress(a.shortForm))}<span class="chip-count">×${a.occurrences.length}</span></span>`;
+      html += `<span class="assoc-chip">${esc(placeLabel(a.shortForm))}<span class="chip-count">×${a.occurrences.length}</span></span>`;
     }
     html += `</div>`;
   }
@@ -765,7 +774,7 @@ ${sheets.map(sheet => `<span class="assoc-chip">${esc(sheet.sheetTitle)}</span>`
 </div>
 <div class="assoc-list">`;
     for (const b of relatedBusinesses) {
-      html += `<span class="assoc-chip">${esc(formatIntelAddress(b.shortForm))}<span class="chip-count">×${b.occurrences.length}</span></span>`;
+      html += `<span class="assoc-chip">${esc(placeLabel(b.shortForm))}<span class="chip-count">×${b.occurrences.length}</span></span>`;
     }
     html += `</div>`;
   }
@@ -871,7 +880,7 @@ function ProfileDialog({
                     entity.occurrences[0]?.fullDescription
                   )
                 : entity.type === "address" || entity.type === "business"
-                  ? formatIntelAddress(entity.shortForm)
+                  ? placeLabel(entity.shortForm)
                   : entity.shortForm}
             </span>
           </DialogTitle>
@@ -964,7 +973,7 @@ function ProfileDialog({
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.address}`}
                 >
                   <MapPin className="w-3 h-3" />
-                  {formatIntelAddress(a.shortForm)}
+                  {placeLabel(a.shortForm)}
                   <span className="opacity-60">×{a.occurrences.length}</span>
                 </button>
               ))}
@@ -1008,7 +1017,7 @@ function ProfileDialog({
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border cursor-pointer hover:opacity-80 transition-opacity ${TYPE_COLORS.business}`}
                 >
                   <Building2 className="w-3 h-3" />
-                  {formatIntelAddress(b.shortForm)}
+                  {placeLabel(b.shortForm)}
                   <span className="opacity-60">×{b.occurrences.length}</span>
                 </button>
               ))}
@@ -1218,7 +1227,7 @@ function OperationsTab({
                               )
                             : entity.type === "address" ||
                                 entity.type === "business"
-                              ? formatIntelAddress(entity.shortForm)
+                              ? placeLabel(entity.shortForm)
                               : entity.shortForm}
                         </p>
                       </div>
@@ -2294,7 +2303,7 @@ export default function IntelligencePage() {
                           entity.occurrences[0]?.fullDescription
                         )
                       : entity.type === "address" || entity.type === "business"
-                        ? formatIntelAddress(entity.shortForm)
+                        ? placeLabel(entity.shortForm)
                         : entity.shortForm;
                   const handleClick = () => {
                     if (entity.isTarget && entity.targetId)
@@ -2386,7 +2395,7 @@ export default function IntelligencePage() {
                           entity.occurrences[0]?.fullDescription
                         )
                       : entity.type === "address" || entity.type === "business"
-                        ? formatIntelAddress(entity.shortForm)
+                        ? placeLabel(entity.shortForm)
                         : entity.shortForm;
                   return (
                     <button

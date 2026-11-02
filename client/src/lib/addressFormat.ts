@@ -31,11 +31,15 @@ import {
   isValid as isValidDate,
   format as formatDate,
 } from "date-fns";
-import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
+import {
+  formatIntelAddress,
+  formatIntelVehicle,
+  tidyRepeatedPlaceName,
+} from "@shared/addressFormat";
 import { lowerVehicleColour } from "@shared/vehicleColour";
 import { fullStreetTypes } from "@shared/streetTypes";
 
-export { formatIntelAddress, formatIntelVehicle };
+export { formatIntelAddress, formatIntelVehicle, tidyRepeatedPlaceName };
 
 const AU_STATES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
 

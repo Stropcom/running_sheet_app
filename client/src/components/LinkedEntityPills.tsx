@@ -77,15 +77,39 @@ function extractSurname(label: string): string | null {
   return /^[A-Z][A-Z'-]{1,40}$/.test(last) ? last : null;
 }
 
-// Purple "Profile SURNAME" pill — links straight to that person's
-// Intelligence page profile. Deliberately a separate colour from the green
-// linked pills above it (this is navigation, not link status) and only
-// rendered for target/associate categories, which are the only two with an
-// actual Intelligence profile page (vehicle/location/unidentified_person
-// aren't "a person's profile"). A target links by id (the only category
-// with a real foreign key — see attachLinkedCounts in server/db.ts); an
-// associate has no id here, so it links by its exact name text instead,
-// same as every other associate-profile link in the app.
+// Which linked categories have an Intelligence profile page: a person (target
+// or associate), a vehicle and a location.
+const PROFILE_CATEGORIES = new Set([
+  "target",
+  "associate",
+  "vehicle",
+  "location",
+]);
+
+// The short name on a vehicle's or location's Profile pill: a vehicle's rego
+// (the first word of "1MEN83 blue Mercedes-Benz GLC station sedan"), a
+// location's street or place (the part before the first comma of "12 Amherst
+// Street, FREMANTLE").
+function profileName(category: string, label: string): string | null {
+  if (category === "vehicle") {
+    const rego = label.trim().split(/\s+/)[0] ?? "";
+    return rego || null;
+  }
+  if (category === "location") {
+    const place = label.split(",")[0]?.trim() ?? "";
+    return place || null;
+  }
+  return extractSurname(label);
+}
+
+// Purple "Profile NAME" pill — links straight to that entity's Intelligence
+// page profile: "Profile SURNAME" for a person, "Profile 1MEN83" for a vehicle,
+// "Profile 12 Amherst Street" for a location. Deliberately a separate colour
+// from the green linked pills above it (this is navigation, not link status).
+// A target links by id (the only category with a real foreign key — see
+// attachLinkedCounts in server/db.ts); an associate, a vehicle and a location
+// have no id here, so each links by its exact label text instead, same as every
+// other profile link in the app.
 function ProfilePillRow({
   category,
   label,
@@ -95,8 +119,8 @@ function ProfilePillRow({
   label: string;
   targetId: number | null;
 }) {
-  const surname = extractSurname(label);
-  if (!surname) return null;
+  const name = profileName(category, label);
+  if (!name) return null;
   const href =
     category === "target"
       ? targetId != null
@@ -104,17 +128,25 @@ function ProfilePillRow({
         : null
       : category === "associate"
         ? `/intelligence/associate/${encodeURIComponent(label)}`
-        : null;
+        : category === "vehicle"
+          ? `/intelligence/vehicle/${encodeURIComponent(label)}`
+          : category === "location"
+            ? `/intelligence/location/${encodeURIComponent(label)}`
+            : null;
   if (!href) return null;
   return (
     <Link
       href={href}
       onClick={e => e.stopPropagation()}
-      title={`Open ${surname}'s Intelligence profile`}
+      title={
+        category === "vehicle" || category === "location"
+          ? `Open the Intelligence profile for ${name}`
+          : `Open ${name}'s Intelligence profile`
+      }
       className="flex items-center gap-1 w-full px-2 py-0.5 rounded-full text-white text-[9px] font-medium bg-violet-600/90 hover:bg-violet-600 transition-colors"
     >
       <FolderSearch className="h-2.5 w-2.5 shrink-0" />
-      <span className="truncate">Profile {surname}</span>
+      <span className="truncate">Profile {name}</span>
     </Link>
   );
 }
@@ -228,8 +260,9 @@ export function LinkedEntityPills({
    * so this is skipped for those. */
   hasRow?: boolean;
   onClick?: () => void;
-  /** Adds a purple "Profile SURNAME" pill below everything else, per linked
-   * target/associate, that navigates to their Intelligence page profile —
+  /** Adds a purple "Profile …" pill below everything else, per linked
+   * target, associate, vehicle and location, that navigates to its Intelligence
+   * page profile —
    * only the Images folder wants this (see ImagesPage.tsx); every other
    * caller of this component omits it. */
   showProfileLinks?: boolean;
@@ -307,7 +340,7 @@ export function LinkedEntityPills({
       )}
       {showProfileLinks &&
         sorted
-          .filter(e => e.category === "target" || e.category === "associate")
+          .filter(e => PROFILE_CATEGORIES.has(e.category))
           .map((e, idx) => (
             <ProfilePillRow
               key={`profile-${e.category}-${e.label}-${idx}`}

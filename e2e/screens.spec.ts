@@ -11,6 +11,7 @@ import {
   PASSWORD,
   addRowWithObservation,
   createOperationAndSheet,
+  makePng,
   openNewRowCell,
 } from "./helpers";
 
@@ -1856,4 +1857,55 @@ test("Target Logger keeps people at the building when they enter a lift", async 
   // Still inside the building they went into: the lift is not a place of its own.
   await expect(page.getByText(/Crown Towers Perth · since/)).toBeVisible();
   await expect(page.getByText(/elevators/i)).toHaveCount(1); // the row's own text
+});
+
+test("Images: a photo linked to a vehicle or a location has a purple Profile pill, like a person", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", {
+    name: `Profile pills ${Date.now()}`,
+  });
+  const opId = op.id ?? op.operationId ?? op;
+  const upload = async () => {
+    const a = await post("attachment.uploadManual", {
+      operationId: opId,
+      dataBase64: makePng().toString("base64"),
+      mimeType: "image/png",
+      fileName: "x.png",
+    });
+    return a.id ?? a.attachmentId ?? a;
+  };
+  const place = await upload();
+  await post("attachment.linkToEntity", {
+    attachmentId: place,
+    category: "location",
+    entityLabel: "12 Amherst Street, FREMANTLE",
+  });
+  const car = await upload();
+  await post("attachment.linkToEntity", {
+    attachmentId: car,
+    category: "vehicle",
+    entityLabel: "1MEN83 blue Mercedes-Benz GLC station sedan",
+  });
+  await page.goto(`/images/${opId}`);
+  // The manually uploaded photos are listed under their own group.
+  await page.getByText("Manually uploaded").first().click();
+  const loc = page.getByRole("link", { name: "Profile 12 Amherst Street" });
+  const veh = page.getByRole("link", { name: "Profile 1MEN83" });
+  await expect(loc).toBeVisible();
+  await expect(veh).toBeVisible();
+  await expect(loc).toHaveAttribute(
+    "href",
+    "/intelligence/location/12%20Amherst%20Street%2C%20FREMANTLE"
+  );
+  await expect(veh).toHaveAttribute(
+    "href",
+    "/intelligence/vehicle/1MEN83%20blue%20Mercedes-Benz%20GLC%20station%20sedan"
+  );
 });

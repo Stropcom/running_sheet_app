@@ -160,6 +160,11 @@ export function detectVehicleMentionTrigger(
   if (NON_VEHICLE_PLACEHOLDER_CODE_RE.test(word)) return null;
   const wordStart = cursorPos - word.length;
   if (usedVehicleRegos.has(word.toUpperCase())) return null;
+  // "Vehicle 1MEN83" is already a vehicle's short form: a bracket repeating it
+  // ("Vehicle 1MEN83 (Vehicle 1MEN83)") adds nothing, and it was what made the
+  // Intelligence folder name the vehicle wrongly. A rego typed after a
+  // description ("grey Toyota 1ABC123") still gets its introducing bracket.
+  if (/\bVehicle\s+$/i.test(text.slice(0, wordStart))) return null;
   // A model or trim written straight after its make ("Mercedes Benz C200",
   // "Toyota Hilux SR5") is the same shape as a plate but is not one.
   if (followsVehicleMake(text.slice(0, wordStart))) return null;
@@ -369,14 +374,19 @@ export function computeUsedBracketCodes(
   return codes;
 }
 
-/** Vehicle regos ("(1FCC987)") already introduced somewhere in a set of
- * rows — same idea as computeUsedBracketCodes, for detectVehicleMention
- * Trigger's suppression. */
+/** Vehicle regos already introduced somewhere in a set of rows — same idea as
+ * computeUsedBracketCodes, for detectVehicleMentionTrigger's suppression. The
+ * introduction is the bracket: "(1FCC987)" or the "(Vehicle 1FCC987)" the
+ * space-bar trigger writes. Only the bare form was counted before, so a vehicle
+ * already introduced as "(Vehicle 1FCC987)" was introduced again every time its
+ * rego was typed in a later row. A plain "Vehicle 1FCC987" (how the Target
+ * Logger's chips write it) is NOT an introduction: the Intelligence folder takes
+ * a vehicle in from its bracket, so the first typed mention still gets one. */
 export function computeUsedVehicleRegos(
   rows: Array<{ observation?: string | null }>
 ): Set<string> {
   const regos = new Set<string>();
-  const regoRe = /\(([0-9][A-Za-z0-9]{2,7})\)/g;
+  const regoRe = /\((?:Vehicle\s+)?([0-9][A-Za-z0-9]{2,7})\)/g;
   for (const r of rows) {
     if (!r.observation) continue;
     let m: RegExpExecArray | null;

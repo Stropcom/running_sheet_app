@@ -2,7 +2,7 @@ import { useLocation } from "wouter";
 import { useRef } from "react";
 import { HereProvider, isHere, useHere } from "@/lib/currentProfiles";
 import { trpc } from "@/lib/trpc";
-import { formatIntelAddress } from "@/lib/addressFormat";
+import { formatIntelAddress, tidyRepeatedPlaceName } from "@/lib/addressFormat";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -159,7 +159,7 @@ export function LocationProfileContent({
 }) {
   const [, navigate] = useLocation();
   const utils = trpc.useUtils();
-  const displayLabel = formatIntelAddress(label);
+  const displayLabel = tidyRepeatedPlaceName(formatIntelAddress(label));
   const { data, isLoading, error } = trpc.intelligence.locationProfile.useQuery(
     { label },
     { enabled: !!label }

@@ -812,6 +812,22 @@ export function extractEntitiesFromText(text: string): Array<{
           .indexOf(rawRego.toUpperCase());
         let descSource =
           regoIdx > 0 ? fullDescription.slice(0, regoIdx) : fullDescription;
+        // "...walked towards Vehicle 1MEN83 (Vehicle 1MEN83)": the bracket only
+        // repeats the "Vehicle REGO" written just before it (a vehicle sentence
+        // or chip), so there is NO description in front of it. Without this the
+        // whole sentence up to the rego ("exited Crown Towers Perth and walked
+        // towards Vehicle") was kept as the vehicle's description and showed in
+        // the Intelligence folder as "1MEN83 exited Crown Towers Perth and walked
+        // towards Vehicle". A real description never ends with the word
+        // "Vehicle" straight before the plate ("a grey Toyota, bearing WA
+        // registration 1ABC123", "grey Toyota 1ABC123").
+        if (
+          new RegExp(
+            `\\bvehicle\\s+${rawRego.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`,
+            "i"
+          ).test(fullDescription)
+        )
+          descSource = "";
 
         const STATE_CODES = "WA|NSW|VIC|QLD|SA|TAS|NT|ACT";
         descSource = descSource

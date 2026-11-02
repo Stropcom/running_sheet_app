@@ -697,3 +697,21 @@ A related trap: `git merge` there also fails first with _"Committer
 identity unknown"_ because git has no `user.email`/`user.name` on the
 droplet. Don't fix that identity error and retry — the push would fail
 anyway. Merge somewhere else.
+
+## Security check script (2026-11-02)
+
+`scripts/ops/security-check.sh` is a **read-only** audit of the droplet, written so
+the "not covered, confirm on the live server" list in the security inventory can be
+answered without giving anyone access to the server. It checks: pending security
+updates and auto-updates, SSH settings and which keys can log in, fail2ban, the
+firewall and every listening port, nginx (TLS versions, redirects, headers, body
+size), the certificate and renewal, the app's folder/`.env` permissions and that the
+signing and vault keys are set (lengths only, never values), who runs the app,
+where the database listens, the backup folder (age, encryption, off-server copy),
+and logging. It changes nothing and prints no secret. **To use it:** on the droplet,
+`sudo bash scripts/ops/security-check.sh --domain runlog.com.au --out ~/security-report.txt`
+(add `--app-dir /opt/runlog` if different), then paste the output. Lines are marked
+`[OK]`, `[CHECK]`, `[INFO]`, `[NOPE]` (could not read it, usually needs sudo).
+Things it cannot see: the DigitalOcean cloud firewall, two-factor on the hosting and
+Apple accounts, who receives the alerts, and whether a copy of the vault key is kept
+off the server — those are answered from the control panels and by the owner.

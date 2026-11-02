@@ -96,3 +96,28 @@ Intelligence folder re-reads the rows), and a Merge Entities / alias can tidy an
 "(1FCC987)" bracket, not the "(Vehicle 1FCC987)" the trigger itself writes, so a
 vehicle already introduced that way was bracketed again each time its rego was typed
 in a later row. It now counts both. Tests: `server/entityClassification.test.ts`.
+
+## Profile pills for vehicles and locations on photos; a place name shown once (v2.49.7)
+
+**Images folder pills.** A photo linked to a person already showed a purple **Profile
+SURNAME** pill under its green link pills. A photo linked to a **vehicle** or a
+**location** now gets one too: **Profile 1MEN83** (the rego, the first word of the
+vehicle's label) and **Profile 12 Amherst Street** (the part of the label before the
+first comma), linking to `/intelligence/vehicle/<label>` and
+`/intelligence/location/<label>` (`components/LinkedEntityPills.tsx`,
+`showProfileLinks`, only the Images folder passes it). Vehicles and locations have no
+id here, so — like an associate — each links by its exact label, which is how the
+Intelligence profile pages find them; a photo linked with a label that matches no
+Intelligence entity opens a "not found" profile. Test: `e2e/screens.spec.ts`.
+
+**"Terminal 4, Terminal 4" is shown as "Terminal 4".** An address entity's label is the
+address, a comma, then the bracket the officer wrote, so a bracket that repeats the
+address doubled the name (and the Google form read "Terminal 4, Perth Airport WA,
+Terminal 4"). `tidyRepeatedPlaceName` (`shared/addressFormat.ts`) drops a last
+segment that repeats an earlier one. **Display only**: the Intelligence folder list,
+its headings and chips, and the Location profile title use it (`placeLabel` in
+`pages/Intelligence.tsx`); the stored label is the entity's key and is untouched, so
+photo links, profiles and map marker settings keyed by it still work. **Not changed:**
+a bare "Terminal 4" and "Terminal 4, Perth Airport…" are still two entities (the
+airport rule — a bare terminal could be a port or bus terminal); merging them by rule
+was offered and not asked for. Tests: `server/placeLabelTidy.test.ts`.

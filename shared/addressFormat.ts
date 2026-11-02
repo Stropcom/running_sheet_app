@@ -259,3 +259,25 @@ export function shortPersonDisplayName(name: string): string {
     .split(/,\s*born\b/i)[0]
     .trim();
 }
+
+/**
+ * Shows a place name once when the entity's label repeats it.
+ *
+ * An address entity's label is the address, a comma, then the bracket the officer
+ * wrote, so "arrived at Terminal 4 (Terminal 4)" is labelled "Terminal 4, Terminal
+ * 4" and "Terminal 4, Perth Airport WA 6105, Australia (Terminal 4)" is labelled
+ * "Terminal 4, Perth Airport, Terminal 4". A last segment that repeats an earlier
+ * one is dropped for display: "Terminal 4" and "Terminal 4, Perth Airport".
+ * Display only: the stored label is the entity's key and is left alone, so
+ * links, profiles and marker settings keyed by it keep working.
+ */
+export function tidyRepeatedPlaceName(label: string): string {
+  const parts = label.split(",").map(p => p.trim());
+  const norm = (p: string) => p.toLowerCase().replace(/\s+/g, " ");
+  while (parts.length >= 2) {
+    const last = norm(parts[parts.length - 1]);
+    if (last && parts.slice(0, -1).some(p => norm(p) === last)) parts.pop();
+    else break;
+  }
+  return parts.join(", ");
+}

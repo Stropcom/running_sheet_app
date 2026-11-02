@@ -53,6 +53,7 @@ import {
   transitLabelText,
 } from "./transitPatterns";
 import { expandRowSegments } from "./rowSegments";
+import { isAreaWithinPlace } from "./insideAreas";
 import { fullStreetTypes } from "./streetTypes";
 import {
   entrySeat,
@@ -686,6 +687,16 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       }
     }
   };
+  // Everyone named is logged inside a place right now (and has not walked out
+  // of it). Entering or leaving a lift, lobby, gym or pool changes nothing for
+  // them then: they are still in the building (shared/insideAreas.ts).
+  const insideSomewhere = (names: string): boolean => {
+    const who = tok(names);
+    if (who.length === 0) return false;
+    return Array.from(lastWalkIn.entries()).some(
+      ([k, v]) => !walkedOut.has(k) && who.every(t => tok(v.names).includes(t))
+    );
+  };
   // Some or all of the people logged inside a place walk out of it. When only
   // some do, the rest are still inside.
   const leavePlace = (place: string, walkers: string) => {
@@ -924,6 +935,14 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       if (onward && !/\bVehicle\b/i.test(onward[1])) exitMatch = onward;
     }
     if (exitMatch && isVehicleSubject(exitMatch[1])) exitMatch = null;
+    // Out of a lift, the gym or the pool while still inside the building: not
+    // leaving it.
+    if (
+      exitMatch &&
+      isAreaWithinPlace(exitMatch[2]) &&
+      insideSomewhere(cleanWalkerNames(exitMatch[1]))
+    )
+      exitMatch = null;
     if (exitMatch) {
       const from = exitMatch[2].trim();
       leavePlace(from, cleanWalkerNames(exitMatch[1]));
@@ -1014,6 +1033,13 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     }
 
     const record = (names: string, location: string, route: string) => {
+      // Into a lift, lobby, gym or pool while already inside a building: still
+      // in that building, so nothing moves (and any "walked to the gym" in the
+      // same sentence is finished).
+      if (isAreaWithinPlace(location) && insideSomewhere(names)) {
+        clearHeadingFor(names);
+        return;
+      }
       setAt(names, location);
       const k = key(location);
       // Someone else already inside this place is still there when another
@@ -1203,7 +1229,11 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
     // A sighting: "BAIG seated ... inside <Place>." — inside that place now,
     // and so no longer wherever they were last logged.
     const presence = matchPresenceInside(text, knownSurnames);
-    if (presence && !isVehicleSubject(presence.names)) {
+    if (
+      presence &&
+      !isVehicleSubject(presence.names) &&
+      !(isAreaWithinPlace(presence.place) && insideSomewhere(presence.names))
+    ) {
       const who = new Set(tok(presence.names));
       for (const [k, v] of Array.from(lastWalkIn.entries())) {
         if (k === key(presence.place)) continue;
@@ -1222,7 +1252,11 @@ export function scanWalkEvents(rows: WalkScanRow[]): {
       if (
         anyExit &&
         !/^\(?Vehicle\b/i.test(anyExit[2]) &&
-        !isVehicleSubject(anyExit[1])
+        !isVehicleSubject(anyExit[1]) &&
+        !(
+          isAreaWithinPlace(anyExit[2]) &&
+          insideSomewhere(cleanWalkerNames(anyExit[1]))
+        )
       ) {
         const walkers = cleanWalkerNames(anyExit[1]);
         const from = placeName(anyExit[2]);

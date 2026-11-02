@@ -1820,3 +1820,40 @@ test("Add on a row opens the list of team CINs straight away, on laptop and phon
     await page.keyboard.press("Escape");
   }
 });
+
+test("Target Logger keeps people at the building when they enter a lift", async ({
+  page,
+}) => {
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  await page.goto("/");
+  const post = async (path: string, json: unknown) => {
+    const r = await page.request.post(`/api/trpc/${path}`, { data: { json } });
+    expect(r.ok(), await r.text()).toBeTruthy();
+    return (await r.json()).result.data.json;
+  };
+  const op = await post("operation.create", { name: `Lift ${Date.now()}` });
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Australia/Perth",
+  });
+  const sheet = await post("sheet.create", {
+    operationId: op.id ?? op.operationId ?? op,
+    sheetDate: today,
+    sheetCins: [{ cin, hasImages: false, isTeamLeader: true, isAuthor: true }],
+  });
+  const sheetId = sheet.id ?? sheet.sheetId;
+  await post("row.create", {
+    sheetId,
+    observation:
+      "Vehicle 1MEN83, MENON driver, VALE front passenger and LANGLEY rear passenger, arrived at Crown Towers Perth (Crown Towers Perth) and stopped in the valet parking area.\n\nMENON, VALE and LANGLEY exited the vehicle, entered Crown Towers Perth and continued out of sight.",
+  });
+  await post("row.create", {
+    sheetId,
+    observation:
+      "MENON, VALE and LANGLEY checked in, entered the elevators and continued out of sight.",
+  });
+  await page.goto(`/sheet/${sheetId}`);
+  await page.getByText("Target Logger", { exact: true }).first().click();
+  // Still inside the building they went into: the lift is not a place of its own.
+  await expect(page.getByText(/Crown Towers Perth · since/)).toBeVisible();
+  await expect(page.getByText(/elevators/i)).toHaveCount(1); // the row's own text
+});

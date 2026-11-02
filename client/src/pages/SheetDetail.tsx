@@ -1247,6 +1247,19 @@ function CinCertifyCell({
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [newNameValid, setNewNameValid] = useState(false);
+  // Pressing Add shows the dropdown with its list already open, so picking a
+  // CIN is one tap, not two. Opened a moment after the dropdown appears: opened
+  // in the same breath as the press, the tap that pressed Add also reaches the
+  // new list and shuts it again.
+  const [listOpen, setListOpen] = useState(false);
+  useEffect(() => {
+    if (!adding) {
+      setListOpen(false);
+      return;
+    }
+    const t = setTimeout(() => setListOpen(true), 60);
+    return () => clearTimeout(t);
+  }, [adding]);
 
   const handleAdd = () => {
     if (!newName.trim()) return;
@@ -1319,6 +1332,8 @@ function CinCertifyCell({
         /* Dropdown mode: pick from team roster — Space at top, duplicates allowed */
         <div className="flex items-center gap-1.5">
           <Select
+            open={listOpen}
+            onOpenChange={setListOpen}
             value={newName}
             onValueChange={v => {
               if (v === "__all__") {
@@ -3183,9 +3198,7 @@ export default function SheetDetail({
   // whatever the Target Logger's own switches say: where the Logger has the
   // target (only when he is at a place), else where the team commenced
   // (shared/ceaseRow.ts).
-  // It is a chip at the end of the target / shortcuts chips; the toolbar button
-  // is only for a sheet that has no chip row showing (no chips, or collapsed).
-  const [ceaseChipShown, setCeaseChipShown] = useState(false);
+  // It is a chip at the end of the target / shortcuts chips, nowhere else.
   const ceaseOpenForTyping = (rowId: number) => {
     setJustAddedKeyboard(true);
     setJustAddedRowId(rowId);
@@ -6405,12 +6418,10 @@ export default function SheetDetail({
                                           look. Press it for the ceased row. */}
                                       {ceaseAvailable && (
                                         <CeaseRowButton
-                                          variant="chip"
                                           sheetId={sheetId}
                                           getPlace={ceasePlace}
                                           onChanged={invalidateRows}
                                           onOpenForTyping={ceaseOpenForTyping}
-                                          onPresence={setCeaseChipShown}
                                         />
                                       )}
                                     </div>
@@ -6560,16 +6571,6 @@ export default function SheetDetail({
               <Plus className="w-4 h-4" />
               Add<span className="hidden sm:inline"> Row</span>
             </Button>
-          )}
-          {/* Cease — the ceased row for everyone still on, beside Add Row;
-              only while there is something to cease. */}
-          {ceaseAvailable && !ceaseChipShown && (
-            <CeaseRowButton
-              sheetId={sheetId}
-              getPlace={ceasePlace}
-              onChanged={invalidateRows}
-              onOpenForTyping={ceaseOpenForTyping}
-            />
           )}
           <Tooltip>
             <TooltipTrigger asChild>

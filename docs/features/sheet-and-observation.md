@@ -81,3 +81,32 @@ Detailed per-feature notes moved out of `CLAUDE.md` (text unchanged, original or
 - **The toolbar button only covers for it.** A sheet with **no chip row showing** — no target and no shortcut / entity chips, or the target panel **collapsed** — would otherwise have no Cease, so the toolbar button (the old one beside Add Row) appears **only then**. `CeaseRowButton` takes `variant="chip" | "button"` and tells the sheet when the chip is on screen (`onPresence`, a layout effect so the two never show together); `ceaseChipShown` in `SheetDetail.tsx`. Exactly one Cease control shows at a time. With the chip in place the toolbar is back to Add Row, sort, undo, search (the shortened search hint on a phone is gone).
 - **The RACK chip is unchanged** — it still only inserts "Surveillance ceased in the vicinity of" into the open row. (Making RACK itself do the one-tap row when no row is open was discussed and **not** done: "leave the rack button as is".) Whether Cease should replace or merge with RACK later is open.
 - **Checked:** `e2e/screens.spec.ts` ("Cease is the last of the target chips, and the toolbar button only covers for it": one control, in the chips not the toolbar, last chip; collapsing the panel moves it to the toolbar; the chip writes the whole row with the place and the officer) and the other two Cease tests (sheets with no chips use the toolbar); looked at on laptop and phone widths.
+
+## Cease: only a chip, and in RS Quick Entry too (v2.49.0)
+
+The Cease button beside **Add Row** is gone: Cease is only the **last chip of the
+target chips** (same look as the others, same rules — `shared/ceaseRow.ts`, row
+written by `row.cease`). So with the target panel collapsed, or a sheet with no
+target chips, there is no Cease on the running sheet page until the chips are
+showing. **RS Quick Entry on the Map** now has the same chip at the end of its
+target chips, in that popup's own chip look (`chipClassName` on
+`CeaseRowButton`). It shows for officers who can edit, online, once the sheet has
+a row and surveillance hasn't ended (`rsSurveillance`, loaded while Quick Entry is
+open); the place is worked out the same way as on the sheet (where the Logger has
+the target, else where the team commenced). Undo is in the toast; the row appears
+in the Last Entry banner, where it can be edited. `CeaseRowButton` is now chip-only
+(the toolbar `variant="button"` and `onPresence` are removed). Tests:
+`e2e/screens.spec.ts` (Cease on the sheet now needs a target with chips; Cease not
+in the toolbar; Quick Entry chip).
+
+## Add (CIN) opens the list straight away (v2.49.2)
+
+On a row's CIN column, **Add** now shows the CIN dropdown with its list already
+open (Space, each team CIN, ★ Add all team CINs) — one tap to pick a CIN instead of
+tap Add, then tap the dropdown. Same on the laptop table and the phone/tablet card
+layout (one `CinCell` panel, `listOpen` in `SheetDetail.tsx`). The list is opened
+~60 ms after the dropdown appears: opened in the same breath, the tap that pressed
+Add also reached the new list and closed it again (Radix `defaultOpen` did exactly
+that). A sheet with no team roster still gets the typed-CIN box (nothing to list).
+Checked in e2e at 1280 and 390 px, and with touch taps in a headless mobile
+browser; **not tried on a real iPhone/Safari** — check there after deploy.

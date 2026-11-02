@@ -7,6 +7,8 @@ import {
   useState,
 } from "react";
 import { fillRoute } from "@shared/parkingRoute";
+import { ceasePlaceFor } from "@shared/ceaseRow";
+import { CeaseRowButton } from "@/components/CeaseRowButton";
 import { placeLinkedToTarget } from "@shared/targetLocation";
 import {
   createTargetLocationTile,
@@ -13608,6 +13610,72 @@ export default function IntelligenceMapping() {
                                                 : s.display}
                                           </button>
                                         ))}
+                                        {/* Cease — last of the chips, as on the
+                                            running sheet: the ceased row for
+                                            everyone still on, only while there
+                                            is something to cease. */}
+                                        {(user?.role === "member" ||
+                                          user?.role === "admin") &&
+                                          navigator.onLine &&
+                                          !!rsSelectedSheetId &&
+                                          (rsInlineRows?.length ?? 0) > 0 &&
+                                          !rsSurveillance?.ended && (
+                                            <CeaseRowButton
+                                              sheetId={rsSelectedSheetId}
+                                              chipClassName="cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold border border-blue-500/30 bg-blue-500/5 text-blue-400 hover:bg-blue-500/15 active:scale-95 transition-all select-none disabled:opacity-50 md:px-3 md:py-1.5 md:text-xs md:rounded-md"
+                                              getPlace={() =>
+                                                ceasePlaceFor(
+                                                  locateTargetFromPending({
+                                                    subject: rsTrackedTarget,
+                                                    arrivals:
+                                                      rsPendingArrivals ?? [],
+                                                    departures:
+                                                      rsPendingDepartures ?? [],
+                                                    walkIns:
+                                                      rsPendingWalkIns ?? [],
+                                                    headingTo:
+                                                      rsPendingHeadingTo ?? [],
+                                                    placements:
+                                                      rsPendingPlacements ?? [],
+                                                    extractNames:
+                                                      extractOccupantNames,
+                                                  }),
+                                                  rsInlineRows ?? []
+                                                )
+                                              }
+                                              onChanged={() => {
+                                                const sheetId =
+                                                  rsSelectedSheetId;
+                                                void utils.row.list.invalidate({
+                                                  sheetId,
+                                                });
+                                                void utils.row.entityChips.invalidate(
+                                                  { sheetId }
+                                                );
+                                                void utils.row.pendingVehicleDepartures.invalidate(
+                                                  { sheetId }
+                                                );
+                                                void utils.row.pendingVehicleArrivals.invalidate(
+                                                  { sheetId }
+                                                );
+                                                void utils.row.pendingWalkIns.invalidate(
+                                                  { sheetId }
+                                                );
+                                                void utils.row.pendingHeadingTo.invalidate(
+                                                  { sheetId }
+                                                );
+                                                void utils.row.pendingPlacements.invalidate(
+                                                  { sheetId }
+                                                );
+                                                void utils.row.surveillanceState.invalidate(
+                                                  { sheetId }
+                                                );
+                                              }}
+                                              // The Last Entry banner below shows
+                                              // the new row, where it can be edited.
+                                              onOpenForTyping={() => {}}
+                                            />
+                                          )}
                                       </div>
                                     );
                                   })()}

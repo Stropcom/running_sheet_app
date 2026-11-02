@@ -429,3 +429,34 @@ street parking in the same arrival is left for the officer. `PARKING_ROUTES`
 and each place's "parked" test is a list of patterns (the named-street pattern is
 case-sensitive so "the drive way" isn't read as "… Way"). Tests:
 `server/parkingRoute.test.ts`; `e2e/screens.spec.ts` (driveway arrival).
+
+## Lifts, gyms and pools: still inside the building (v2.49.5)
+
+**The fault.** A row such as "MENON, VALE and LANGLEY checked in, entered the
+elevators and continued out of sight." was read as a walk-in to a new place, "the
+elevators". The Logger card changed to "Inside the elevators" and the map flag over
+Crown Towers disappeared (a lift is nowhere on a map), although they never left
+the building.
+
+**The rule (`shared/insideAreas.ts`, `isAreaWithinPlace`).** A name made only of
+generic area words — lift / elevator, lobby, foyer, reception, stairs, corridor,
+room, suite, gym, pool, spa, sauna, bar, lounge, restaurant, balcony, toilets,
+floor, level, desk, concierge — with only describing words around it ("the hotel
+room", "the swimming pool area", "the 12th floor", "level 3", "room 1204") is *an
+area within a place*. `scanWalkEvents` (`shared/walkEventPatterns.ts`) then, when
+the same people are **already logged inside a place**, treats entering such an
+area ("entered the gym and continued out of sight"), exiting it, or a "seated inside
+the lobby" sighting as nothing: they stay at the building, the flag stays, and a
+"walked to the gym" in the same sentence is finished (no "heading to" card). Leaving
+the building itself ("exited Crown Towers Perth") still leaves it.
+
+**Deliberately narrow.** Any other word makes it a place of its own, as before: a
+name ("Crown Towers lobby", "The Camfield", "Town Hall"), "the shop", "the car
+park", an address. And with nobody logged inside anywhere, entering "the lift" is
+read as before. To teach another area, add the word to `AREA_WORDS` and a test.
+
+**Not done.** "checked in" (a verb phrase) still ends up in the Logger card's name
+text when a row puts it before "entered …" and the place is a real new one; only
+the lift case no longer reaches the card. Tests: `server/insideAreas.test.ts` (the
+real sheet, gym, pool, lobby, lift → gym → pool, leaving the building, a named place,
+nobody inside); `e2e/screens.spec.ts` (card keeps Crown Towers).

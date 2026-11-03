@@ -36,7 +36,10 @@ import {
 import { formatIntelAddress, formatIntelVehicle } from "@shared/addressFormat";
 
 import { parseExtraAddresses } from "@shared/extraAddresses";
-import { fullAddressForGeocode } from "@shared/geocodeQuery";
+import {
+  fullAddressForGeocode,
+  fullDescriptionsByLabel,
+} from "@shared/geocodeQuery";
 import { insideCapsSuburb } from "@shared/suburbMention";
 
 import {
@@ -120,7 +123,7 @@ import {
   isRowSignedOff,
 } from "./governance";
 import { teamNameMap, visitorTeamMap } from "./accounts";
-import { getOutstandingSheetsForCin } from "./operations";
+import { getOutstandingSheetsForCin, getRowsBySheetId } from "./operations";
 
 // ─── Intelligence Heat Map ──────────────────────────────────────────────────
 // Aggregates address/business entities extracted from a scoped set of running
@@ -568,6 +571,49 @@ export async function geocodeAddressList(
     })
   );
 
+  return results.filter(
+    (r): r is { address: string; lat: number; lng: number } => r !== null
+  );
+}
+
+/** The Supervisor Summary export's map: geocodes each Location the Summary
+ * shows, but uses the fuller "<street>, SUBURB STATE" the officer wrote for it
+ * on this sheet when there is one (same rule as the Heat Map and the Location
+ * profile). A bare place name such as "Terminal 4, Terminal 4" would otherwise
+ * be placed anywhere in the State. A location with no fuller form is geocoded
+ * as written, as before. */
+export async function geocodeSummaryAddresses(
+  sheetId: number,
+  addresses: string[]
+): Promise<{ address: string; lat: number; lng: number }[]> {
+  const rows = await getRowsBySheetId(sheetId);
+  const entities = rows.flatMap(r =>
+    r.observation ? extractEntitiesFromText(r.observation) : []
+  );
+  const fullByLabel = fullDescriptionsByLabel(entities, normalizeEntityLabel);
+
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const raw of addresses) {
+    const address = raw.trim();
+    const key = normalizeEntityLabel(address);
+    if (!address || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(address);
+  }
+
+  const results = await Promise.all(
+    unique.map(async address => {
+      const key = normalizeEntityLabel(address);
+      const coords = await resolvePlaceLatLng(
+        key,
+        address,
+        fullByLabel.get(key) ?? []
+      );
+      if (!coords) return null;
+      return { address, lat: coords.lat, lng: coords.lng };
+    })
+  );
   return results.filter(
     (r): r is { address: string; lat: number; lng: number } => r !== null
   );

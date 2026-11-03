@@ -277,6 +277,7 @@ export {
   getIntelligenceHeatMapLocations,
   resolveLatLng,
   geocodeAddressList,
+  geocodeSummaryAddresses,
   getIntelTargetPatternOfLife,
   getIntelTargetPlaces,
   getIntelTargetPredictor,

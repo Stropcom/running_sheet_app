@@ -5,6 +5,7 @@ import {
   getRsMappingWaypoints,
   upsertRsMappingWaypoint,
   geocodeAddressList,
+  geocodeSummaryAddresses,
 } from "../db";
 
 export const rsMappingRouter = router({
@@ -99,6 +100,14 @@ export const rsMappingRouter = router({
     .input(z.object({ addresses: z.array(z.string()) }))
     .query(async ({ input }) => {
       return geocodeAddressList(input.addresses);
+    }),
+
+  /** The Supervisor Summary's map: like geocodeAddresses, but a bare place
+   * name is placed using the fuller address written on this sheet. */
+  geocodeSummaryAddresses: protectedProcedure
+    .input(z.object({ sheetId: z.number(), addresses: z.array(z.string()) }))
+    .query(async ({ input }) => {
+      return geocodeSummaryAddresses(input.sheetId, input.addresses);
     }),
 
   getWaypoints: protectedProcedure

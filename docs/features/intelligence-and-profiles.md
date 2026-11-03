@@ -121,3 +121,9 @@ photo links, profiles and map marker settings keyed by it still work. **Not chan
 a bare "Terminal 4" and "Terminal 4, Perth Airport…" are still two entities (the
 airport rule — a bare terminal could be a port or bus terminal); merging them by rule
 was offered and not asked for. Tests: `server/placeLabelTidy.test.ts`.
+
+## Summary export map: a bare place is placed by its fuller address (v2.49.8)
+
+The Supervisor Summary PDF plots its Location column on a map page. It used to geocode the Location text on its own, so a place name with no street ("Terminal 4, Terminal 4") landed in the middle of the State, while the Intelligence folder (which uses the fuller address the officer wrote) had it right. The export now calls `rsMapping.geocodeSummaryAddresses({ sheetId, addresses })` (`geocodeSummaryAddresses` in `server/db/reports.ts`): it reads this sheet's rows, finds the fuller "<street>, SUBURB STATE" written for each label (`fullDescriptionsByLabel` in `shared/geocodeQuery.ts`, then `fullAddressForGeocode`), and geocodes that through the same cache and key as the Heat Map. A location with no fuller form is geocoded as written, as before. The Address column in the Summary print/PDF also shows a repeated place name once ("Terminal 4, Terminal 4" is shown "Terminal 4", display only).
+
+Limit: a map click does not store its coordinates on the row, so the position comes from the written address, the same as the Intelligence folder. Tests: `server/geocodeQuery.test.ts`.

@@ -1,4 +1,5 @@
 import { trpc, trpcClient } from "@/lib/trpc";
+import { tidyRepeatedPlaceName } from "@/lib/addressFormat";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -566,7 +567,7 @@ function exportSummaryToPDF(params: {
         <tbody>${entries
           .map(
             e =>
-              `<tr><td>${esc(e.time || "—")}</td><td>${esc(e.location || "")}</td><td>${esc(e.text)}</td></tr>`
+              `<tr><td>${esc(e.time || "—")}</td><td>${esc(tidyRepeatedPlaceName(e.location || ""))}</td><td>${esc(e.text)}</td></tr>`
           )
           .join("")}</tbody>
       </table>`
@@ -1099,9 +1100,11 @@ export default function SheetSummaryPage() {
       );
       if (addresses.length > 0) {
         try {
-          const geocoded = await trpcClient.rsMapping.geocodeAddresses.query({
-            addresses,
-          });
+          const geocoded =
+            await trpcClient.rsMapping.geocodeSummaryAddresses.query({
+              sheetId,
+              addresses,
+            });
           if (geocoded.length > 0) {
             const waypoints = geocoded.map((g, i) => ({
               lat: g.lat,

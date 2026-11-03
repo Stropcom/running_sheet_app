@@ -644,6 +644,120 @@ test("Summary PDF: the Day Route (this sheet only, no gap lines) replaces the Lo
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
+test("Weekly Surveillance Report PDF: full width, a card for each target, a new page for each next target, rectangular pills", async ({
+  page,
+}) => {
+  const target = (id: number, name: string, withIntel: boolean) => ({
+    targetId: id,
+    targetName: name,
+    officers: ["459", "484"],
+    teamLabel: "Team 1",
+    days: ["2026-10-21"],
+    coverageHours: 8.5,
+    investigator: "Ted NUGENT",
+    intelSupport: "Ted NUGENT",
+    contacted: "Day prior — Text",
+    specialProjects: [{ key: "LBS", detail: "AFP" }],
+    objectives: ["associate meets"],
+    criticalDecisions: [],
+    issues: [],
+    targetActivity: [
+      { label: "9 Etwell Street, EAST VICTORIA PARK", count: 2 },
+    ],
+    newIntel: {
+      persons: withIntel ? ["Lucas Minh NGUYEN (NGUYEN)"] : [],
+      vehicles: [],
+      locations: withIntel
+        ? ["Hawaiian's Park Centre, 789 Albany Highway"]
+        : [],
+      images: [],
+    },
+  });
+  const operations = [
+    {
+      operationId: 1,
+      operationName: "AURORA",
+      sheetsCount: 3,
+      rowsCount: 71,
+      targets: [
+        target(11, "Amadou TRAORE", true),
+        target(12, "Kieran DOYLE", false),
+        target(13, "Third TARGET", false),
+      ],
+    },
+    {
+      operationId: 2,
+      operationName: "RAVEN",
+      sheetsCount: 1,
+      rowsCount: 9,
+      targets: [
+        target(21, "Sahana MENON", false),
+        target(22, "Other PERSON", false),
+      ],
+    },
+  ];
+  await page.route(/\/api\/trpc\//, async route => {
+    const resp = await route.fetch();
+    const json = await resp.json();
+    const procs = new URL(route.request().url()).pathname
+      .replace(/^.*\/api\/trpc\//, "")
+      .split(",");
+    const patch = (entry: any, name: string) => {
+      if (name !== "reports.weeklyActivity") return;
+      delete entry.error;
+      entry.result = { data: { json: { operations } } };
+    };
+    if (Array.isArray(json)) json.forEach((e, i) => patch(e, procs[i]));
+    else patch(json, procs[0]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
+  });
+
+  await page.goto("/reports/weekly-activity");
+  const popupP = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Export PDF" }).click();
+  const pop = await popupP;
+  await pop.waitForLoadState();
+
+  const blocks = pop.locator(".target-block");
+  await expect(blocks).toHaveCount(5);
+  // Each target is its own card with its own header band, naming the operation.
+  await expect(pop.locator(".target-subhead")).toHaveCount(5);
+  await expect(pop.locator(".tgt-op").first()).toHaveText("AURORA");
+  // The first target stays on the header page; the next target in an operation
+  // starts a new page (a new operation already does).
+  const breakOf = (i: number) =>
+    blocks.nth(i).evaluate(el => getComputedStyle(el).breakBefore);
+  expect(await breakOf(0)).not.toBe("page");
+  expect(await breakOf(1)).toBe("page");
+  expect(await breakOf(2)).toBe("page");
+  expect(await breakOf(3)).not.toBe("page"); // first target of RAVEN: its operation card breaks
+  expect(await breakOf(4)).toBe("page");
+  expect(
+    await pop
+      .locator(".op-card")
+      .nth(1)
+      .evaluate(el => getComputedStyle(el).breakBefore)
+  ).toBe("page");
+  // As wide as the header band.
+  const head = await pop.locator(".cover-header").boundingBox();
+  const card = await blocks.first().boundingBox();
+  expect(Math.round(card!.x)).toBe(Math.round(head!.x));
+  expect(Math.round(card!.width)).toBe(Math.round(head!.width));
+  // Pills are rectangles, not circles.
+  for (const sel of [".team-pill", ".day-chip", ".coverage-total", ".chip"]) {
+    const radius = await pop
+      .locator(sel)
+      .first()
+      .evaluate(el => parseFloat(getComputedStyle(el).borderTopLeftRadius));
+    expect(radius).toBeLessThan(8);
+  }
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 test("Intelligence Package has Places as a ticked section between Heat Map and Pattern of Life", async ({
   page,
 }) => {

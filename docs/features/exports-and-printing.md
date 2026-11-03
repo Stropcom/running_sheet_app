@@ -45,3 +45,7 @@ The Supervisor Summary PDF is now Summary, then **Day Route**, then Ego Network.
 - The place name is shown once ("Terminal 4", not "Terminal 4, Terminal 4").
 - Falls back to the Locations map when: the sheet has no target, the report is unavailable to the user, the sheet has no visits, or no place could be located. A day whose map cannot be made still prints its table.
 - Check: `e2e/screens.spec.ts` "Summary PDF: the Day Route…" (made-up answers); `server/dayRoute.test.ts` for the rules.
+
+## Weekly Surveillance Report PDF layout (v2.51.1)
+
+`WeeklyActivityReportPage.tsx` (`exportWeeklyActivityToPDF`): the content is as wide as the navy header band (no side padding on `.content`); each **target is its own card** (navy border, solid navy header band with the target name and the operation's name at the right, so a target's page still says which operation it belongs to); the operation is a header strip above its targets rather than a box around them; **every target after the first in an operation starts a new page** (`.target-block + .target-block`), a new operation already starts one, and the very first target stays on the header page; all pills and chips are rectangles with a small radius (not 999px circles), and the image-card name pills wrap their text instead of clipping. Check: `e2e/screens.spec.ts` "Weekly Surveillance Report PDF…" (made-up data; checks page breaks, width, pill radius).

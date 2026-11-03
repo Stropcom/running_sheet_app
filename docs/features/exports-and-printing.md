@@ -49,3 +49,13 @@ The Supervisor Summary PDF is now Summary, then **Day Route**, then Ego Network.
 ## Weekly Surveillance Report PDF layout (v2.51.1)
 
 `WeeklyActivityReportPage.tsx` (`exportWeeklyActivityToPDF`): the content is as wide as the navy header band (no side padding on `.content`); each **target is its own card** (navy border, solid navy header band with the target name and the operation's name at the right, so a target's page still says which operation it belongs to); the operation is a header strip above its targets rather than a box around them; **every target after the first in an operation starts a new page** (`.target-block + .target-block`), a new operation already starts one, and the very first target stays on the header page; all pills and chips are rectangles with a small radius (not 999px circles), and the image-card name pills wrap their text instead of clipping. Check: `e2e/screens.spec.ts` "Weekly Surveillance Report PDF…" (made-up data; checks page breaks, width, pill radius).
+
+## Weekly Surveillance Report: overview at the top (v2.52.0)
+
+For an executive reading the report: **each target, the days and times they were worked (start – finish), and their total hours**, per operation.
+
+- **On the page:** at the top of each operation's dropdown ("Overview"): a line of totals (targets · days worked · hours) and a box for each target with its hours and a rectangular chip for each day worked ("Wed 21 Oct 07:00 – 14:00").
+- **In the PDF:** the first page, under the header band, is the Overview: one navy-headed table for each operation (Target / Days and times worked / Hours). The operations' own pages then start on page 2, as before (each target still on its own page).
+- **Where it comes from:** `WeeklyActivityTargetBlock.shifts` (`server/db/reports.ts`) — one entry per sheet worked, with the start and finish times from that sheet's Supervisor Summary, the same times `coverageHours` adds up. The rules and formatting are in `shared/weeklyOverview.ts` (`overviewOperation`, `shiftTimes`, `hoursText`; tests in `server/weeklyOverview.test.ts`). Sheets with no target show as "No target assigned".
+- **Nothing is estimated.** A sheet with no times shows "times not recorded" and adds nothing to the hours; a missing finish shows "07:00 – (no finish time)". Known limit (unchanged from the coverage hours): a shift whose finish is earlier than its start (past midnight) is shown with its times but adds no hours.
+- Check: `e2e/screens.spec.ts` "Weekly Surveillance Report PDF…".

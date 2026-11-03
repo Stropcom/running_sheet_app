@@ -654,6 +654,14 @@ test("Weekly Surveillance Report PDF: full width, a card for each target, a new 
     teamLabel: "Team 1",
     days: ["2026-10-21"],
     coverageHours: 8.5,
+    shifts: [
+      { date: "2026-10-21", startMinutes: 7 * 60, finishMinutes: 14 * 60 },
+      {
+        date: "2026-10-22",
+        startMinutes: 13 * 60,
+        finishMinutes: 20 * 60 + 30,
+      },
+    ],
     investigator: "Ted NUGENT",
     intelSupport: "Ted NUGENT",
     contacted: "Day prior — Text",
@@ -717,11 +725,31 @@ test("Weekly Surveillance Report PDF: full width, a card for each target, a new 
   });
 
   await page.goto("/reports/weekly-activity");
+  // On the page: the overview is the first thing inside each operation's dropdown.
+  await page.getByRole("button", { name: /AURORA/ }).click();
+  await expect(
+    page.getByText("Overview", { exact: true }).first()
+  ).toBeVisible();
+  await expect(
+    page.getByText("3 targets · 2 days worked · 25.5 h")
+  ).toBeVisible();
+  await expect(page.getByText("Wed 21 Oct").first()).toBeVisible();
+  await expect(page.getByText("07:00 – 14:00").first()).toBeVisible();
   const popupP = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Export PDF" }).click();
   const pop = await popupP;
   await pop.waitForLoadState();
 
+  // The overview leads the report: every operation, every target, the days and
+  // times worked and the hours, before the operations' own pages.
+  await expect(pop.locator(".ov-op")).toHaveCount(2);
+  await expect(pop.locator(".ov-target")).toHaveCount(5);
+  await expect(pop.locator(".ov-op").first()).toContainText("07:00 – 14:00");
+  await expect(pop.locator(".ov-op").first()).toContainText("13:00 – 20:30");
+  await expect(pop.locator(".ov-hours").first()).toHaveText("8.5 h");
+  const overviewTop = await pop.locator(".overview").boundingBox();
+  const firstOp = await pop.locator(".op-card").first().boundingBox();
+  expect(overviewTop!.y).toBeLessThan(firstOp!.y);
   const blocks = pop.locator(".target-block");
   await expect(blocks).toHaveCount(5);
   // Each target is its own card with its own header band, naming the operation.

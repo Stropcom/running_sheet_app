@@ -1730,6 +1730,10 @@ export interface WeeklyActivityTargetBlock {
   days: string[];
   /** Sum of (finish - start) across the week's sheets for this target, in hours. */
   coverageHours: number | null;
+  /** Each sheet worked this week, earliest first: its date and the start and
+   * finish times from its Supervisor Summary (minutes after midnight; null
+   * where the Summary has none). The same times the coverage hours add up. */
+  shifts: { date: string; startMinutes: number | null; finishMinutes: number | null }[];
   investigator: string | null;
   intelSupport: string | null;
   contacted: string | null;
@@ -1923,6 +1927,7 @@ export async function getWeeklyActivityReport(
   const teamLabelsByGroup = new Map<GroupKey, Set<string>>();
   const daysByGroup = new Map<GroupKey, Set<string>>();
   const coverageMinutesByGroup = new Map<GroupKey, number>();
+  const shiftsByGroup = new Map<GroupKey, WeeklyActivityTargetBlock["shifts"]>();
   const investigatorByGroup = new Map<GroupKey, string>();
   const intelSupportByGroup = new Map<GroupKey, string>();
   const contactedByGroup = new Map<GroupKey, string>();
@@ -1965,6 +1970,14 @@ export async function getWeeklyActivityReport(
       }
 
       const summary = summaryBySheetId.get(sheetId);
+      if (date) {
+        if (!shiftsByGroup.has(key)) shiftsByGroup.set(key, []);
+        shiftsByGroup.get(key)!.push({
+          date,
+          startMinutes: parseHHMMToMinutes(summary?.startTime),
+          finishMinutes: parseHHMMToMinutes(summary?.finishTime),
+        });
+      }
       if (!summary) continue;
 
       if (summary.teamLabel) {
@@ -2226,6 +2239,11 @@ export async function getWeeklyActivityReport(
         coverageMinutes !== null
           ? Math.round((coverageMinutes / 60) * 10) / 10
           : null,
+      shifts: (shiftsByGroup.get(key) ?? []).sort(
+        (a, b) =>
+          a.date.localeCompare(b.date) ||
+          (a.startMinutes ?? 0) - (b.startMinutes ?? 0)
+      ),
       investigator: investigatorByGroup.get(key) ?? null,
       intelSupport: intelSupportByGroup.get(key) ?? null,
       contacted: contactedByGroup.get(key) ?? null,

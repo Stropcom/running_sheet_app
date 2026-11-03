@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import { hoursText, overviewOperation } from "@shared/weeklyOverview";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import {
   TrendingUp,
@@ -72,6 +73,11 @@ interface TargetBlock {
   teamLabel: string | null;
   days: string[];
   coverageHours: number | null;
+  shifts: {
+    date: string;
+    startMinutes: number | null;
+    finishMinutes: number | null;
+  }[];
   investigator: string | null;
   intelSupport: string | null;
   contacted: string | null;
@@ -221,6 +227,41 @@ function exportWeeklyActivityToPDF(params: {
     </div>`;
   };
 
+  // The overview at the top of the report: every operation, each target, the
+  // days and times they were worked, and the total hours (shared/weeklyOverview.ts).
+  const overviewHtml = operations.length
+    ? `<div class="overview">
+  <div class="ov-title">Overview</div>
+  ${operations
+    .map(o => {
+      const ov = overviewOperation(o);
+      return `<div class="ov-op">
+    <div class="ov-op-head"><span class="ov-op-name">${esc(ov.operationName)}</span><span class="ov-op-stats">${ov.targetCount} target${ov.targetCount === 1 ? "" : "s"} &middot; ${ov.days} day${ov.days === 1 ? "" : "s"} worked &middot; ${esc(hoursText(ov.hours))}</span></div>
+    ${
+      ov.targets.length
+        ? `<table class="ov-table"><thead><tr><th style="width:30%">Target</th><th>Days and times worked</th><th style="width:70px">Hours</th></tr></thead><tbody>${ov.targets
+            .map(
+              t =>
+                `<tr><td class="ov-target">${esc(t.name)}</td><td>${
+                  t.shifts.length
+                    ? t.shifts
+                        .map(
+                          sh =>
+                            `<div class="ov-shift"><span class="ov-day">${esc(formatDayChip(sh.date))}</span> ${esc(sh.times)}</div>`
+                        )
+                        .join("")
+                    : `<span class="muted-note">No days recorded.</span>`
+                }</td><td class="ov-hours">${esc(hoursText(t.hours))}</td></tr>`
+            )
+            .join("")}</tbody></table>`
+        : `<p class="muted-note">No activity recorded this week.</p>`
+    }
+  </div>`;
+    })
+    .join("")}
+</div>`
+    : "";
+
   const opsHtml = operations.length
     ? operations
         .map(
@@ -260,7 +301,23 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 tfoot { display:table-footer-group; }
 .content { padding:20px 0 8px; }
 .op-card { margin-bottom:16px; }
-.op-card:not(:first-child) { break-before:page; page-break-before:always; }
+/* The overview is the first page; every operation's pages start after it. */
+.op-card { break-before:page; page-break-before:always; }
+.overview { margin-bottom:16px; }
+.ov-title { font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:7px 12px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; }
+.ov-op { border:1.5px solid ${BLUE_DARK}; border-radius:8px; overflow:hidden; margin-bottom:12px; break-inside:avoid; }
+.ov-op-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:8px 14px; background:${BLUE_DARK} !important; color:#fff !important; }
+.ov-op-name { font-size:12px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; }
+.ov-op-stats { font-size:9.5px; font-weight:600; color:${BLUE_MID} !important; white-space:nowrap; }
+.ov-table { width:100%; border-collapse:collapse; }
+.ov-table th { text-align:left; font-size:8.5px; text-transform:uppercase; letter-spacing:0.05em; color:${BLUE_DARK} !important; padding:5px 14px; border-bottom:2px solid ${BLUE_DARK}; background:#f8fafc !important; }
+.ov-table td { vertical-align:top; padding:6px 14px; border-bottom:1px solid ${GREY_BORDER}; font-size:10.5px; }
+.ov-table tr:last-child td { border-bottom:none; }
+.ov-table th:last-child { text-align:right; }
+.ov-target { font-weight:700; }
+.ov-shift { padding:1px 0; font-variant-numeric:tabular-nums; }
+.ov-day { display:inline-block; min-width:62px; font-weight:700; color:#475569 !important; }
+.ov-hours { font-weight:800; text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .op-head { display:flex; align-items:baseline; justify-content:space-between; padding:10px 16px; background:#f8fafc; border:1px solid ${GREY_BORDER}; border-radius:8px; margin-bottom:12px; }
 .op-name { font-size:13px; font-weight:800; letter-spacing:0.03em; color:${BLUE_DARK} !important; }
 .op-stats { display:flex; gap:14px; }
@@ -333,6 +390,7 @@ tfoot { display:table-footer-group; }
 </td></tr></tfoot>
 <tbody><tr><td>
 <div class="content">
+  ${overviewHtml}
   ${opsHtml}
   <div class="footer-note">
     <span>Generated: ${generatedAt}</span>
@@ -649,6 +707,59 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
   );
 }
 
+// The summary at the top of each operation's dropdown: each target, the days
+// they were worked with start and finish times, and their total hours. The same
+// figures lead the PDF (see overviewHtml above).
+function OperationOverview({ op }: { op: OperationBlock }) {
+  const ov = overviewOperation(op);
+  if (!ov.targets.length) return null;
+  return (
+    <div className="border-b border-border px-4 py-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-bold uppercase tracking-wide text-foreground/70">
+          Overview
+        </p>
+        <p className="text-xs font-semibold text-foreground">
+          {ov.targetCount} target{ov.targetCount === 1 ? "" : "s"} · {ov.days}{" "}
+          day{ov.days === 1 ? "" : "s"} worked · {hoursText(ov.hours)}
+        </p>
+      </div>
+      <div className="grid gap-2">
+        {ov.targets.map((t, i) => (
+          <div
+            key={`${t.name}-${i}`}
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 rounded-lg border border-border bg-background px-3 py-2"
+          >
+            <p className="min-w-0 truncate text-sm font-semibold text-foreground">
+              {t.name}
+            </p>
+            <p className="text-sm font-bold tabular-nums text-foreground">
+              {hoursText(t.hours)}
+            </p>
+            <div className="col-span-full flex flex-wrap gap-1.5">
+              {t.shifts.length === 0 ? (
+                <span className="text-xs italic text-foreground/70">
+                  No days recorded.
+                </span>
+              ) : (
+                t.shifts.map((sh, j) => (
+                  <span
+                    key={`${sh.date}-${j}`}
+                    className="rounded border border-border bg-card px-2 py-0.5 text-xs tabular-nums text-foreground"
+                  >
+                    <b className="font-semibold">{formatDayChip(sh.date)}</b>{" "}
+                    {sh.times}
+                  </span>
+                ))
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Closed by default — an officer opens the operation(s) they actually want
 // to read on screen. This only affects the on-screen accordion state; the
 // PDF export builds its own HTML straight from the query data (see
@@ -689,6 +800,7 @@ function OperationCard({ op }: { op: OperationBlock }) {
           </div>
         </div>
       </button>
+      {expanded && <OperationOverview op={op} />}
       {expanded &&
         (op.targets.length > 0 ? (
           op.targets.map((t, i) => (

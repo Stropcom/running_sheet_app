@@ -278,7 +278,8 @@ export const ROUTE_GAP = "#b45309";
  */
 export function staticMapInput(
   route: DayRoute,
-  at: (placeKey: string) => { lat: number; lng: number } | null | undefined
+  at: (placeKey: string) => { lat: number; lng: number } | null | undefined,
+  options: { plainLines?: boolean } = {}
 ): {
   waypoints: {
     lat: number;
@@ -307,7 +308,7 @@ export function staticMapInput(
   });
   if (!waypoints.length) return null;
   const paths = routeSegments(route, at).map(s => ({
-    colour: s.gap ? ROUTE_GAP : ROUTE_RED,
+    colour: s.gap && !options.plainLines ? ROUTE_GAP : ROUTE_RED,
     points: [s.from, s.to],
   }));
   const spots = new Set(waypoints.map(w => `${w.lat},${w.lng}`));
@@ -318,4 +319,25 @@ export function staticMapInput(
       ? { center: { lat: waypoints[0].lat, lng: waypoints[0].lng }, zoom: 15 }
       : {}),
   };
+}
+
+/**
+ * The routes for one running sheet: its own visits only, one route per day the
+ * sheet covers (a sheet can run past midnight), earliest day first. Used by the
+ * Supervisor Summary, which is a document about one sheet and so never shows
+ * another sheet's movements, even on the same day.
+ */
+export function routesForSheet(
+  places: readonly DayRoutePlace[],
+  sheetId: number
+): DayRoute[] {
+  const own = places.map(p => ({
+    ...p,
+    visits: p.visits.filter(v => v.sheetId === sheetId),
+  }));
+  return routeDays(own)
+    .map(d => d.dateISO)
+    .sort()
+    .map(day => buildDayRoute(own, day))
+    .filter((r): r is DayRoute => r !== null);
 }

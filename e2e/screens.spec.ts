@@ -525,6 +525,125 @@ test("Day Route sits between Places and Pattern of Life and shows one day's stop
   void stops;
 });
 
+test("Summary PDF: the Day Route (this sheet only, no gap lines) replaces the Locations map when the sheet has a target", async ({
+  page,
+}) => {
+  const { opId, sheetId } = await createOperationAndSheet(page);
+  const day = "2026-11-03";
+  const visit = (
+    key: string,
+    start: number,
+    end: number,
+    rowId: number,
+    sid = sheetId
+  ) => ({
+    placeKey: key,
+    sheetId: sid,
+    sheetTitle: "Sheet",
+    rowId,
+    dateISO: day,
+    startMinutes: start,
+    endMinutes: end,
+    endDayOffset: 0,
+    dwellMinutes: end - start,
+  });
+  const place = (name: string, kind: string, visits: any[]) => ({
+    placeKey: name,
+    name,
+    kind,
+    source: "none",
+    registeredAs: null,
+    officerKind: null,
+    visits,
+  });
+  const places = {
+    targetName: "Sahana Priya MENON",
+    operationName: "RAVEN",
+    todayISO: day,
+    places: [
+      place("14 lawley crescent", "home", [
+        visit("14 lawley crescent", 402, 438, 1),
+      ]),
+      // 85 minutes later: the report would call this a gap; the Summary must not.
+      place("88 hay street", "work", [visit("88 hay street", 523, 580, 2)]),
+      // Another sheet's visit the same day: never in this sheet's summary.
+      place("terminal 4, terminal 4", "travel", [
+        visit("terminal 4, terminal 4", 665, 750, 3, sheetId + 999),
+      ]),
+    ],
+  };
+  const coords = [
+    { placeKey: "14 lawley crescent", lat: -31.99, lng: 115.78 },
+    { placeKey: "88 hay street", lat: -31.95, lng: 115.83 },
+    { placeKey: "terminal 4, terminal 4", lat: -31.94, lng: 115.97 },
+  ];
+  const png =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+  let withTarget = true;
+  await page.route(/\/api\/trpc\//, async route => {
+    const resp = await route.fetch();
+    const json = await resp.json();
+    const procs = new URL(route.request().url()).pathname
+      .replace(/^.*\/api\/trpc\//, "")
+      .split(",");
+    const patch = (entry: any, name: string) => {
+      if (!withTarget) return;
+      if (name === "sheet.get" && entry.result) {
+        entry.result.data.json = {
+          ...entry.result.data.json,
+          targetId: 987655,
+        };
+        return;
+      }
+      const data =
+        name === "target.getById"
+          ? { id: 987655, name: "Sahana Priya MENON" }
+          : name === "intelligence.getTargetPlaces"
+            ? places
+            : name === "intelligence.getPlaceCoords"
+              ? coords
+              : name === "rsMapping.getStaticMapImage"
+                ? { dataUrl: png }
+                : undefined;
+      if (data === undefined) return;
+      delete entry.error;
+      entry.result = { data: { json: data } };
+    };
+    if (Array.isArray(json)) json.forEach((e, i) => patch(e, procs[i]));
+    else patch(json, procs[0]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
+  });
+  void opId;
+
+  await page.goto(`/summary/${sheetId}`);
+  await page.getByRole("button", { name: "Export PDF" }).click();
+  const pop = await page.waitForEvent("popup");
+  await pop.waitForLoadState();
+  const html = await pop.content();
+  expect(html).toContain("Day Route");
+  expect(html).toContain("14 lawley crescent");
+  expect(html).toContain("88 hay street");
+  // Only what the rows say: no gap wording, no other sheet's place.
+  expect(html).not.toContain("No rows for");
+  expect(html).not.toContain("terminal 4");
+  expect(html).not.toContain("Location Map");
+  await pop.close();
+
+  // No target on the sheet: the Day Route is left out.
+  withTarget = false;
+  await page.goto(`/summary/${sheetId}`);
+  await page.getByRole("button", { name: "Export PDF" }).click();
+  const pop2 = await page.waitForEvent("popup");
+  await pop2.waitForLoadState();
+  expect(await pop2.content()).not.toContain("Day Route");
+  await pop2.close();
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 test("Intelligence Package has Places as a ticked section between Heat Map and Pattern of Life", async ({
   page,
 }) => {

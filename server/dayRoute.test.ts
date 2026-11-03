@@ -8,6 +8,7 @@ import {
   legText,
   pinLabel,
   routeDays,
+  routesForSheet,
   routeSegments,
   stopTimes,
   type DayRoutePlace,
@@ -214,5 +215,45 @@ describe("staticMapInput", () => {
     const m = staticMapInput(r, k => pos[k])!;
     expect(m.center).toEqual(pos.a);
     expect(m.zoom).toBe(15);
+  });
+});
+
+describe("routesForSheet (Supervisor Summary)", () => {
+  it("keeps only this sheet's visits, one route per day, earliest first", () => {
+    const home = place("home", [
+      visit("home", t(6), t(7), { sheetId: 1, dateISO: "2026-11-02" }),
+      visit("home", t(23), t(25), { sheetId: 1, dateISO: "2026-11-02" }),
+      visit("home", t(8), t(9), { sheetId: 1, dateISO: "2026-11-03" }),
+      // Another team's sheet the same day: never part of this sheet's summary.
+      visit("home", t(10), t(11), { sheetId: 2, dateISO: "2026-11-03" }),
+    ]);
+    const cafe = place("cafe", [
+      visit("cafe", t(9, 30), t(10), { sheetId: 1, dateISO: "2026-11-03" }),
+      visit("cafe", t(12), t(13), { sheetId: 2, dateISO: "2026-11-03" }),
+    ]);
+    const routes = routesForSheet([home, cafe], 1);
+    expect(routes.map(r => r.dateISO)).toEqual(["2026-11-02", "2026-11-03"]);
+    expect(routes[1].stops.map(s => s.placeKey)).toEqual(["home", "cafe"]);
+    expect(routes[1].stops.every(s => s.sheetId === 1)).toBe(true);
+  });
+
+  it("is empty for a sheet with no places, so the old location map is used", () => {
+    const a = place("a", [visit("a", t(8), t(9), { sheetId: 2 })]);
+    expect(routesForSheet([a], 1)).toEqual([]);
+    expect(routesForSheet([], 1)).toEqual([]);
+  });
+
+  it("plain lines draws every leg red, with no gap colour", () => {
+    const a = place("a", [visit("a", t(8), t(9))]);
+    const c = place("c", [visit("c", t(12), t(13))]);
+    const r = buildDayRoute([a, c], DAY)!;
+    const pos = { a: { lat: 1, lng: 2 }, c: { lat: 3, lng: 4 } } as Record<
+      string,
+      { lat: number; lng: number }
+    >;
+    expect(staticMapInput(r, k => pos[k])!.paths[0].colour).toBe(ROUTE_GAP);
+    expect(
+      staticMapInput(r, k => pos[k], { plainLines: true })!.paths[0].colour
+    ).toBe(ROUTE_RED);
   });
 });

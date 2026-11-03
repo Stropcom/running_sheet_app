@@ -35,3 +35,13 @@ The Places Report PDF (and the Places section of the Intelligence Package) used 
 ## Places Report and Day Route exports: full width (v2.50.1)
 
 The page body of these two exports had a 32px inset on each side while the navy cover band ran the full width of the page, so the cards looked narrower than the header. `.content` now has no side padding, so the cards, section bars and footer line up with the band's edges. Same fix in `dayRouteExport.ts`.
+
+## Summary PDF: the Day Route replaces the Locations map (v2.51.0)
+
+The Supervisor Summary PDF is now Summary, then **Day Route**, then Ego Network. The Day Route page takes the place of the old Locations map when the sheet has a target and places to plot; otherwise the Locations map is used exactly as before.
+
+- It is about **this sheet only**: `routesForSheet` (`shared/dayRoute.ts`) keeps just the sheet's own visits, so another team's movements the same day never appear. A sheet that runs past midnight gets one page per day, with the date above each.
+- It **says only what the rows say** (the "plain" version of `buildDayRouteBodyHtml`, `client/src/lib/dayRouteExport.ts`): the pin, the times the rows give and the place, in order, with the Google map picture and a red line between places. No stay lengths, no "No rows for 1 h 25 min" lines and no amber gap colour on the map (`staticMapInput(..., { plainLines: true })`). The Day Route report on the Intelligence page still shows those.
+- The place name is shown once ("Terminal 4", not "Terminal 4, Terminal 4").
+- Falls back to the Locations map when: the sheet has no target, the report is unavailable to the user, the sheet has no visits, or no place could be located. A day whose map cannot be made still prints its table.
+- Check: `e2e/screens.spec.ts` "Summary PDF: the Day Route…" (made-up answers); `server/dayRoute.test.ts` for the rules.

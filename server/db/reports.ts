@@ -1733,7 +1733,11 @@ export interface WeeklyActivityTargetBlock {
   /** Each sheet worked this week, earliest first: its date and the start and
    * finish times from its Supervisor Summary (minutes after midnight; null
    * where the Summary has none). The same times the coverage hours add up. */
-  shifts: { date: string; startMinutes: number | null; finishMinutes: number | null }[];
+  shifts: {
+    date: string;
+    startMinutes: number | null;
+    finishMinutes: number | null;
+  }[];
   investigator: string | null;
   intelSupport: string | null;
   contacted: string | null;
@@ -1927,7 +1931,10 @@ export async function getWeeklyActivityReport(
   const teamLabelsByGroup = new Map<GroupKey, Set<string>>();
   const daysByGroup = new Map<GroupKey, Set<string>>();
   const coverageMinutesByGroup = new Map<GroupKey, number>();
-  const shiftsByGroup = new Map<GroupKey, WeeklyActivityTargetBlock["shifts"]>();
+  const shiftsByGroup = new Map<
+    GroupKey,
+    WeeklyActivityTargetBlock["shifts"]
+  >();
   const investigatorByGroup = new Map<GroupKey, string>();
   const intelSupportByGroup = new Map<GroupKey, string>();
   const contactedByGroup = new Map<GroupKey, string>();

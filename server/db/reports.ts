@@ -1258,6 +1258,50 @@ export async function getIntelTargetPlaces(
   return { ...empty, places };
 }
 
+/** Where the places one target goes are on the map — for the Day Route. Each
+ * place is geocoded from the fuller "<street>, SUBURB STATE" an officer wrote
+ * for it when there is one (same rule as the Heat Map), cache-first. A place
+ * that cannot be located is left out, and the route simply has no line to it. */
+export async function getIntelPlaceCoords(
+  operationId: number,
+  targetId: number,
+  placeKeys: string[]
+): Promise<{ placeKey: string; lat: number; lng: number }[]> {
+  // Only places this target's own rows put them at, on an operation the
+  // caller can reach — never an arbitrary label from anywhere in the system.
+  const report = await getIntelTargetPlaces(operationId, targetId);
+  const ownKeys = new Set((report?.places ?? []).map(p => p.placeKey));
+  const wanted = new Set(placeKeys.filter(k => ownKeys.has(k)));
+  if (!wanted.size) return [];
+  const allEntities = await getAllIntelligenceEntities();
+  const fullByKey = new Map<string, string[]>();
+  const nameByKey = new Map<string, string>();
+  for (const entity of allEntities) {
+    if (entity.type !== "address" && entity.type !== "business") continue;
+    const key = normalizeEntityLabel(entity.shortForm);
+    if (!wanted.has(key)) continue;
+    nameByKey.set(key, entity.shortForm);
+    const list = fullByKey.get(key) ?? [];
+    for (const occ of entity.occurrences) list.push(occ.fullDescription);
+    fullByKey.set(key, list);
+  }
+  const results = await Promise.all(
+    Array.from(nameByKey.entries()).map(async ([key, name]) => {
+      const coords = await resolvePlaceLatLng(
+        key,
+        name,
+        fullByKey.get(key) ?? []
+      );
+      return coords
+        ? { placeKey: key, lat: coords.lat, lng: coords.lng }
+        : null;
+    })
+  );
+  return results.filter(
+    (r): r is { placeKey: string; lat: number; lng: number } => r !== null
+  );
+}
+
 // ─── Target Predictor ────────────────────────────────────────────────────────
 // What the Map page's Target Predictor needs for one target on one operation:
 // the places he goes (located on the map, cache-first like the Heat Map), the

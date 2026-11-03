@@ -324,6 +324,16 @@ export interface PlaceSummary {
   isNew: boolean;
 }
 
+/** What each source of a place's kind reads as on the page and in the exports. */
+export const PLACE_SOURCE_TEXT: Record<PlaceKindSource, string> = {
+  "registry-home": "Registered home address",
+  "registry-label": "Registered address, labelled in the registry",
+  "registry-generic": "Registered address, no label",
+  sign: "Recognised from its name or saved sign",
+  officer: "Labelled on this report",
+  none: "Name not recognised",
+};
+
 export function weekdayIndex(dateISO: string): number {
   // 1970-01-01 was a Thursday; Monday = 0.
   return (((dayNumber(dateISO) + 3) % 7) + 7) % 7;

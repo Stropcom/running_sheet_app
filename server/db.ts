@@ -280,6 +280,7 @@ export {
   geocodeSummaryAddresses,
   getIntelTargetPatternOfLife,
   getIntelTargetPlaces,
+  getIntelPlaceCoords,
   getIntelTargetPredictor,
   getSharedSeen,
   setPredictorLastSeen,

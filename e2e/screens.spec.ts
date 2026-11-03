@@ -408,6 +408,121 @@ test("Places Report lists where a target goes, by kind, with the visits behind e
   // The home evening visit has no departure logged; the list says so.
   await home.getByRole("button", { name: /Show the 1 visit/ }).click();
   await expect(home.locator("table")).toContainText("no departure logged");
+  // The PDF export reads like the page: a card for each place, with its kind,
+  // its weekday bars and its visits, not a plain table.
+  const popupP = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Export PDF" }).click();
+  const pop = await popupP;
+  await pop.waitForLoadState();
+  await expect(pop.locator(".pl-card")).toHaveCount(3);
+  await expect(pop.locator(".pl-card").first()).toContainText("Usually");
+  await expect(pop.locator(".pl-card svg").first()).toBeVisible();
+  await pop.close();
+});
+
+test("Day Route sits between Places and Pattern of Life and shows one day's stops, gaps and map", async ({
+  page,
+}) => {
+  const day = "2026-11-03";
+  const visit = (
+    key: string,
+    start: number,
+    end: number | null,
+    rowId: number
+  ) => ({
+    placeKey: key,
+    sheetId: 7,
+    sheetTitle: "20261103 - 701 - RAVEN (MENON)",
+    rowId,
+    dateISO: day,
+    startMinutes: start,
+    endMinutes: end,
+    endDayOffset: 0,
+    dwellMinutes: end === null ? null : end - start,
+  });
+  const place = (name: string, kind: string, visits: any[]) => ({
+    placeKey: name.toLowerCase(),
+    name,
+    kind,
+    source: "none",
+    registeredAs: null,
+    officerKind: null,
+    visits,
+  });
+  const places = {
+    targetName: "Sahana Priya MENON",
+    operationName: "RAVEN",
+    todayISO: day,
+    places: [
+      place("14 lawley crescent", "home", [
+        visit("14 lawley crescent", 402, 438, 1),
+        visit("14 lawley crescent", 790, null, 4),
+      ]),
+      place("terminal 4", "travel", [visit("terminal 4", 665, 750, 3)]),
+      place("88 hay street", "work", [visit("88 hay street", 511, 580, 2)]),
+    ],
+  };
+  const coords = [
+    { placeKey: "14 lawley crescent", lat: -31.99, lng: 115.78 },
+    { placeKey: "88 hay street", lat: -31.95, lng: 115.83 },
+    { placeKey: "terminal 4", lat: -31.94, lng: 115.97 },
+  ];
+  const png =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+  await page.route(/\/api\/trpc\//, async route => {
+    const resp = await route.fetch();
+    const json = await resp.json();
+    const procs = new URL(route.request().url()).pathname
+      .replace(/^.*\/api\/trpc\//, "")
+      .split(",");
+    const patch = (entry: any, name: string) => {
+      const data =
+        name === "operation.list"
+          ? [{ id: 987654, name: "RAVEN" }]
+          : name === "target.list"
+            ? [{ id: 987655, name: "Sahana Priya MENON" }]
+            : name === "intelligence.getTargetPlaces"
+              ? places
+              : name === "intelligence.getPlaceCoords"
+                ? coords
+                : name === "rsMapping.getStaticMapImage"
+                  ? { dataUrl: png }
+                  : undefined;
+      if (data === undefined) return;
+      delete entry.error;
+      entry.result = { data: { json: data } };
+    };
+    if (Array.isArray(json)) json.forEach((e, i) => patch(e, procs[i]));
+    else patch(json, procs[0]);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
+  });
+
+  await page.goto("/intelligence");
+  const tabs = page.getByRole("button", {
+    name: /^(Places|Day Route|Pattern of Life)$/,
+  });
+  await expect(tabs).toHaveText(["Places", "Day Route", "Pattern of Life"]);
+  await page.getByRole("button", { name: "Day Route", exact: true }).click();
+  await page.getByText("Select an operation…").click();
+  await page.getByRole("option", { name: "RAVEN" }).click();
+  await page.getByText("Select a target…").click();
+  await page.getByRole("option", { name: /MENON/ }).click();
+
+  // Four stops: home, work, the airport, home again (a second visit).
+  const stops = page.getByRole("listitem").filter({ hasText: /Visit|min/ });
+  await expect(page.getByText("14 lawley crescent").first()).toBeVisible();
+  await expect(page.getByText("Visit 2")).toBeVisible();
+  // 12:40 (stop 3 starts 11:05) follows work ending 09:40: an hour and a bit
+  // with no rows is a gap, and is said so.
+  await expect(page.getByText(/No rows for 1 h 25 min/)).toBeVisible();
+  // The last stop has no departure logged and says so.
+  await expect(page.getByText(/13:10 \(no departure logged\)/)).toBeVisible();
+  await expect(page.getByRole("img", { name: /Route on/ })).toBeVisible();
+  void stops;
 });
 
 test("Intelligence Package has Places as a ticked section between Heat Map and Pattern of Life", async ({

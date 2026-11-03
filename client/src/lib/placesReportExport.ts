@@ -154,7 +154,7 @@ export function buildPlacesReportHtml(params: {
 .cover-header { background:${BLUE_DARK} !important; color:#fff !important; padding:26px 32px 20px; }
 .brand-label { font-size:10px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:${BLUE_MID} !important; margin-bottom:12px; }
 .entity-name { font-size:22px; font-weight:700; } .gen-time { font-size:9px; opacity:0.7; margin-top:10px; }
-.content { padding:18px 32px 70px; }
+.content { padding:18px 0 70px; }
 .section-title { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:6px 10px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin:14px 0 8px; }
 table, .data-table { border-collapse:collapse; width:100%; }
 .visits-h { font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK}; margin:16px 0 6px; }

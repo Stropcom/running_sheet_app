@@ -31,3 +31,7 @@ Detailed per-feature notes moved out of `CLAUDE.md` (text unchanged, original or
 ## Places Report export looks like the page (v2.50.0)
 
 The Places Report PDF (and the Places section of the Intelligence Package) used to print a plain table, then a list of visits. It now prints what the page shows: four summary tiles, then a card for each place with its kind icon and colour, kind / registered / source / "New this week" / "no departure" labels, visits by weekday, "Usually Mon · Thu around 21:47", and visits / time recorded / average stay, with that place's visits listed under it. Places nothing recognises come last under their own heading, as on the page. `buildPlacesBodyHtml` in `client/src/lib/placesReportExport.ts` carries its own styles so it looks the same in the standalone export and in the Package; the kind icons and colours for paper are in `client/src/lib/placeKindPrint.tsx` (the page's Tailwind colours written as hex). The source labels are shared (`PLACE_SOURCE_TEXT` in `shared/placesReport.ts`). Check: `e2e/screens.spec.ts` "Places Report lists where a target goes…".
+
+## Places Report and Day Route exports: full width (v2.50.1)
+
+The page body of these two exports had a 32px inset on each side while the navy cover band ran the full width of the page, so the cards looked narrower than the header. `.content` now has no side padding, so the cards, section bars and footer line up with the band's edges. Same fix in `dayRouteExport.ts`.

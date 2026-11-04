@@ -1413,6 +1413,9 @@ export default function RosterPage() {
       const content = gridContentRef.current;
       if (content) content.style.zoom = String(z);
       if (box) {
+        // One screen pixel in the zoomed grid, for sizes that must not shrink
+        // with the zoom (the team cards' corners; RosterTeamFrame.tsx).
+        box.style.setProperty("--rpx", `${1 / z}px`);
         box.classList.toggle("roster-zoomed-out", labelsHidden(z));
         box.dataset.rosterZoomedOut = z < 1 ? "true" : "false";
         const before = appliedZoomRef.current;
@@ -2487,7 +2490,7 @@ export default function RosterPage() {
                     width: `${nameColWidthForGrid}px`,
                     height: `${HEADER_HEIGHT}px`,
                     position: "sticky",
-                    left: 0,
+                    left: ROSTER_FRAME_EDGE,
                     zIndex: 40,
                     background: "var(--color-card)",
                   }}
@@ -2498,7 +2501,7 @@ export default function RosterPage() {
                 <div
                   style={{
                     position: "sticky",
-                    left: `${nameColWidthForGrid + 10}px`,
+                    left: `calc(${nameColWidthForGrid + 10}px + ${ROSTER_FRAME_EDGE})`,
                     width: 0,
                     height: `${HEADER_HEIGHT}px`,
                     zIndex: 35,
@@ -2645,7 +2648,7 @@ export default function RosterPage() {
                         style={{
                           width: `${nameColWidthForGrid}px`,
                           position: "sticky",
-                          left: 0,
+                          left: ROSTER_FRAME_EDGE,
                           zIndex: 20,
                         }}
                       >
@@ -2711,7 +2714,7 @@ export default function RosterPage() {
                           style={{
                             width: `${nameColWidthForGrid}px`,
                             position: "sticky",
-                            left: 0,
+                            left: ROSTER_FRAME_EDGE,
                             zIndex: 20,
                           }}
                         >
@@ -2802,7 +2805,7 @@ export default function RosterPage() {
                       width: `${NAME_COL_WIDTH}px`,
                       height: `${HEADER_HEIGHT}px`,
                       position: "sticky",
-                      left: 0,
+                      left: ROSTER_FRAME_EDGE,
                       zIndex: 40,
                       background: "var(--color-card)",
                     }}
@@ -2818,7 +2821,7 @@ export default function RosterPage() {
                   <div
                     style={{
                       position: "sticky",
-                      left: `${NAME_COL_WIDTH + 10}px`,
+                      left: `calc(${NAME_COL_WIDTH + 10}px + ${ROSTER_FRAME_EDGE})`,
                       width: 0,
                       height: `${HEADER_HEIGHT}px`,
                       zIndex: 35,
@@ -2990,7 +2993,7 @@ export default function RosterPage() {
                           style={{
                             width: `${NAME_COL_WIDTH}px`,
                             position: "sticky",
-                            left: 0,
+                            left: ROSTER_FRAME_EDGE,
                             zIndex: 20,
                           }}
                         >
@@ -3056,7 +3059,7 @@ export default function RosterPage() {
                             style={{
                               width: `${NAME_COL_WIDTH}px`,
                               position: "sticky",
-                              left: 0,
+                              left: ROSTER_FRAME_EDGE,
                               zIndex: 20,
                             }}
                           >
@@ -3344,7 +3347,7 @@ const MemberRow = memo(function MemberRow({
           width: `${nameColWidth}px`,
           height: `${rowHeight}px`,
           position: "sticky",
-          left: 0,
+          left: ROSTER_FRAME_EDGE,
           zIndex: 10,
           background: "var(--color-card)",
         }}
@@ -3595,7 +3598,7 @@ const SortableMemberRow = memo(function SortableMemberRow({
           width: `${nameColWidth}px`,
           height: `${rowHeight}px`,
           position: "sticky",
-          left: 0,
+          left: ROSTER_FRAME_EDGE,
           zIndex: 10,
           background: "var(--color-card)",
         }}

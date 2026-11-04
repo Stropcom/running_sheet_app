@@ -150,3 +150,11 @@ The roster is about 230 date columns by every member, and each date was drawn al
 ## Roster: the section's left end is rounded while scrolled (v2.62.2)
 
 In v2.62.1 the sections had rounded corners, but the left corners are at the far left of the dates, off screen once you scroll, so what you saw was the square end of the colour spine. The spine is now the section's left edge itself (`RosterTeamFrame.tsx`): 10px wide, sticky, running the full height including over the top and bottom border, with the same rounded left corners as the frame, so a rounded end is always on screen. The frame has no left border of its own, and no `overflow: clip` (the spine has to extend over the border).
+
+## Roster: team sections are soft cards (v2.62.3)
+
+After a mock-up of four looks ("B · Soft card" chosen), each team is a **soft card** (`RosterTeamFrame.tsx`): rounded corners (22px), a tint of the team's colour, a fine outline (a 2px `box-shadow`, so it takes no room), and a **wide colour end (22px) at the left that is sticky**, with the rounded left corners, so the card always shows where it begins while the dates scroll. The header band is just the team's name and count in its colour with the fold arrow. The v2.62.1 and v2.62.2 looks (heavy outline, thin spine) are gone.
+
+- **Sizes that must not shrink with the zoom** (the corners, the colour end, the outline) use `--rpx`, one screen pixel in the zoomed grid: `RosterPage.tsx` sets `--rpx = 1/zoom` on the scroller whenever the zoom changes, and `RosterTeamFrame.tsx` writes `calc(22 * var(--rpx))`. At 40% zoom the corners are still 22 screen pixels (before, they shrank to about 9 and looked square).
+- The name column now **sticks 22 screen pixels in** from the left (its `left` is `ROSTER_FRAME_EDGE`, not 0), beside the colour end rather than under it; the date header and the ON DUTY / ON CALL labels do the same, and the month badge is moved in to match. The grid is that much wider than its columns.
+- The e2e roster test checks the colour end's background is the User Management colour.

@@ -2746,7 +2746,11 @@ test("Team Duty Roster: zoom, team cards and team colours that follow User Manag
       "xpath=ancestor::div[contains(@class,'mb-5')][1]"
     );
     // The team's section is drawn in the colour set in User Management.
-    await expect(card).toHaveCSS("border-top-color", "rgb(0, 170, 85)");
+    // (the colour end at the card's left, which stays on screen when scrolled)
+    await expect(card.locator("> div").first()).toHaveCSS(
+      "background-color",
+      "rgb(0, 170, 85)"
+    );
 
     // Zoom: 100% to start, the slider zooms the grid and it is remembered.
     const grid = card.locator("xpath=..");

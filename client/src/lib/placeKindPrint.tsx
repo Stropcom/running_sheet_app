@@ -56,6 +56,9 @@ const cache = new Map<PlaceKind, string>();
 export function kindIconSvg(kind: PlaceKind): string {
   const hit = cache.get(kind);
   if (hit) return hit;
+  // No page to draw on (the unit tests build these pages in Node): the card
+  // is the same without its icon.
+  if (typeof document === "undefined") return "";
   const { Icon, fg } = KIND_PRINT[kind];
   const host = document.createElement("div");
   const root = createRoot(host);

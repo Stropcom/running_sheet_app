@@ -1,13 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { Skeleton } from "@/components/ui/skeleton";
-import DashboardLayout from "@/components/DashboardLayout";
-import {
-  TodoGroup,
-  TodoHeader,
-  TodoRow,
-  TodoTile,
-  TODO_TONES,
-} from "@/components/TodoKit";
+import { TodoGroup, TodoRow, TodoTile, TODO_TONES } from "@/components/TodoKit";
 import {
   ClipboardCheck,
   ChevronRight,
@@ -235,9 +228,16 @@ function GovernanceTileCard({
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ── The list ──────────────────────────────────────────────────────────────────
 
-export default function GovernanceListPage() {
+/**
+ * The Governance checklist list — every operation with its running sheets and
+ * how far each is — as one card per operation (list view) or one tile per
+ * operation (tile view), following the sidebar's list/tile switch. It is the
+ * body of the dropdown on the Outstanding Actions page (the Governance
+ * folder's main page); selecting a sheet opens its write-off checklist.
+ */
+export default function GovernanceSheetList() {
   const [, navigate] = useLocation();
   const { viewMode } = useViewMode();
   const { data: operations, isLoading } =
@@ -245,61 +245,47 @@ export default function GovernanceListPage() {
 
   if (isLoading) {
     return (
-      <DashboardLayout>
-        <div className="space-y-3 px-4 py-8">
-          {[...Array(3)].map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full rounded-xl" />
-          ))}
-        </div>
-      </DashboardLayout>
+      <div className="space-y-3">
+        {[...Array(3)].map((_, i) => (
+          <Skeleton key={i} className="h-20 w-full rounded-xl" />
+        ))}
+      </div>
     );
   }
 
-  return (
-    <DashboardLayout>
-      <div className="px-4 py-8">
-        <TodoHeader
-          tone={TONE}
-          icon={
-            <ClipboardCheck className={`h-5 w-5 ${TODO_TONES[TONE].icon}`} />
-          }
-          title="Governance"
-          subtitle="Running sheet write-off checklist — select a sheet to review"
-          count={0}
-        />
-
-        {!operations || operations.length === 0 ? (
-          <div className="py-16 text-center text-foreground/70">
-            <ClipboardCheck className="mx-auto mb-3 h-10 w-10 opacity-30" />
-            <p className="text-sm">No operations found.</p>
-            <p className="mt-1 text-xs">
-              Create an operation and running sheet first.
-            </p>
-          </div>
-        ) : viewMode === "tile" ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {operations.map(op => (
-              <GovernanceTileCard
-                key={op.id}
-                operationId={op.id}
-                operationName={op.name}
-                onNavigate={navigate}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {operations.map(op => (
-              <OperationGroup
-                key={op.id}
-                operationId={op.id}
-                operationName={op.name}
-                onNavigate={navigate}
-              />
-            ))}
-          </div>
-        )}
+  if (!operations || operations.length === 0) {
+    return (
+      <div className="py-10 text-center text-foreground/70">
+        <ClipboardCheck className="mx-auto mb-3 h-10 w-10 opacity-30" />
+        <p className="text-sm">No operations found.</p>
+        <p className="mt-1 text-xs">
+          Create an operation and running sheet first.
+        </p>
       </div>
-    </DashboardLayout>
+    );
+  }
+
+  return viewMode === "tile" ? (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {operations.map(op => (
+        <GovernanceTileCard
+          key={op.id}
+          operationId={op.id}
+          operationName={op.name}
+          onNavigate={navigate}
+        />
+      ))}
+    </div>
+  ) : (
+    <div className="space-y-3">
+      {operations.map(op => (
+        <OperationGroup
+          key={op.id}
+          operationId={op.id}
+          operationName={op.name}
+          onNavigate={navigate}
+        />
+      ))}
+    </div>
   );
 }

@@ -116,14 +116,38 @@ test("the operation page opens each of its tabs", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("Governance lists the new sheet as needing attention", async ({
+test("Governance is the Outstanding Actions page: the banner opens the checklist list", async ({
   page,
 }) => {
   await page.goto("/governance");
   await expect(
-    page.getByText("Running sheet write-off checklist")
+    page.getByRole("heading", { name: "Outstanding Actions" })
   ).toBeVisible();
+  // The banner counts incomplete sheets and officers; the checklist list is
+  // closed until it is clicked.
+  const banner = page.getByRole("button", { name: /incomplete sheet/ });
+  await expect(banner).toBeVisible();
+  await expect(banner).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByText(/\d+ to review/)).toHaveCount(0);
+  await banner.click();
+  await expect(banner).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText(/\d+ to review/).first()).toBeVisible();
+  // A sheet in the list opens its write-off checklist.
+  await page
+    .getByText(/^\d{8} - /)
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/governance\/\d+/);
+});
+
+test("The old Outstanding Actions address goes to the Governance page", async ({
+  page,
+}) => {
+  await page.goto("/reports/outstanding-actions");
+  await expect(page).toHaveURL(/\/governance$/);
+  await expect(
+    page.getByRole("heading", { name: "Outstanding Actions" })
+  ).toBeVisible();
 });
 
 test("Add Target opens with its four steps", async ({ page }) => {

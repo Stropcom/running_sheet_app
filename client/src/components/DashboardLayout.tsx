@@ -625,15 +625,6 @@ function SortableNavItem({
               </>
             )}
             <button
-              onClick={() => setLocation("/reports/outstanding-actions")}
-              className={subItemClass(
-                location === "/reports/outstanding-actions"
-              )}
-            >
-              <ClipboardCheck className="h-3.5 w-3.5 shrink-0 text-purple-500" />
-              Outstanding Actions
-            </button>
-            <button
               onClick={() => setLocation("/reports/weekly-activity")}
               className={subItemClass(location === "/reports/weekly-activity")}
             >
@@ -1151,12 +1142,6 @@ function SortableNavTile({
               </DropdownMenuSubContent>
             </DropdownMenuSub>
           )}
-          <DropdownMenuItem
-            onClick={() => setLocation("/reports/outstanding-actions")}
-          >
-            <ClipboardCheck className="h-4 w-4 mr-2 text-purple-500" />
-            Outstanding Actions
-          </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => setLocation("/reports/weekly-activity")}
           >

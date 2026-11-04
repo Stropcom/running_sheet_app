@@ -474,6 +474,8 @@ export {
   saveOpManagerSupervisorContacts,
   listAllOpManagerWeeks,
   copyOpManagerWeek,
+  deleteOpManagerWeek,
+  findOpManagerCopySourceWeek,
   getPostedWeeks,
   isWeekPosted,
   markWeekPosted,

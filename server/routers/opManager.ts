@@ -15,6 +15,8 @@ import {
   markWeekPosted,
   listAllOpManagerWeeks,
   copyOpManagerWeek,
+  deleteOpManagerWeek,
+  findOpManagerCopySourceWeek,
 } from "../db";
 
 import { certifierOrAdminProcedure, adminProcedure } from "./_helpers";
@@ -117,6 +119,22 @@ export const opManagerRouter = router({
   listAllWeeks: protectedProcedure.query(async () => {
     return listAllOpManagerWeeks();
   }),
+
+  /** The most recent week before this one that has contacts or a priority
+   * board — what "Copy Last Week" copies from (null when none). */
+  copySourceWeek: certifierOrAdminProcedure
+    .input(z.object({ beforeWeekStart: z.string() }))
+    .query(async ({ input }) => {
+      return findOpManagerCopySourceWeek(input.beforeWeekStart);
+    }),
+
+  /** Deletes a whole weekly tasking (contacts, priority board, calendar and
+   * its posted marker). Admin only; limited to the caller's Command. */
+  deleteWeek: adminProcedure
+    .input(z.object({ weekStart: z.string() }))
+    .mutation(async ({ input }) => {
+      return deleteOpManagerWeek(input.weekStart);
+    }),
 
   copyWeek: adminProcedure
     .input(z.object({ fromWeekStart: z.string(), toWeekStart: z.string() }))

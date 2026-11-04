@@ -1,4 +1,9 @@
-import { and, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
+
+import {
+  pickCopySourceWeek,
+  type WeekContentCounts,
+} from "@shared/opManagerWeeks";
 
 import { rosterCommand, rosterCommandForWrite } from "../rosterContext";
 
@@ -208,6 +213,52 @@ export async function listAllOpManagerWeeks() {
     }));
 }
 
+/** The most recent week before `beforeWeekStart` that has supervisor contacts
+ * or a priority board — what "Copy Last Week" copies from. A week can be
+ * listed with only its calendar saved, so the latest listed week is not always
+ * one with something to copy (see shared/opManagerWeeks.ts). */
+export async function findOpManagerCopySourceWeek(
+  beforeWeekStart: string
+): Promise<WeekContentCounts | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const [contactWeeks, priorityWeeks] = await Promise.all([
+    db
+      .select({
+        weekStart: opManagerSupervisorContacts.weekStart,
+        n: count(),
+      })
+      .from(opManagerSupervisorContacts)
+      .where(inOpCommand(opManagerSupervisorContacts.command))
+      .groupBy(opManagerSupervisorContacts.weekStart),
+    db
+      .select({
+        weekStart: opManagerPriorityRows.weekStart,
+        n: count(),
+      })
+      .from(opManagerPriorityRows)
+      .where(inOpCommand(opManagerPriorityRows.command))
+      .groupBy(opManagerPriorityRows.weekStart),
+  ]);
+  const byWeek = new Map<string, WeekContentCounts>();
+  const get = (weekStart: string) => {
+    let w = byWeek.get(weekStart);
+    if (!w) {
+      w = { weekStart, contacts: 0, priority: 0 };
+      byWeek.set(weekStart, w);
+    }
+    return w;
+  };
+  for (const r of contactWeeks) get(r.weekStart).contacts = Number(r.n);
+  for (const r of priorityWeeks) get(r.weekStart).priority = Number(r.n);
+  return pickCopySourceWeek(Array.from(byWeek.values()), beforeWeekStart);
+}
+
+/** Copies the supervisor contacts and the priority board from one week to
+ * another — what the New Weekly Tasking dialog promises. The calendar is not
+ * copied: its shift times come from the rotation and its tasks are set fresh
+ * each week. Returns how many of each were copied (0 when the source had none,
+ * in which case the destination is left as it was). */
 export async function copyOpManagerWeek(
   fromWeekStart: string,
   toWeekStart: string
@@ -248,25 +299,46 @@ export async function copyOpManagerWeek(
       }))
     );
   }
-  // Copy task names only — shiftTime always comes from auto-population
-  const tasking = await getOpManagerTaskingCalendar(fromWeekStart);
-  if (tasking.length > 0) {
-    await db
-      .delete(opManagerTaskingCells)
-      .where(
-        and(
-          eq(opManagerTaskingCells.weekStart, toWeekStart),
-          inOpCommand(opManagerTaskingCells.command)
-        )
-      );
-    await db.insert(opManagerTaskingCells).values(
-      tasking.map(({ id: _id, weekStart: _ws, shiftTime: _st, ...rest }) => ({
-        ...rest,
-        weekStart: toWeekStart,
-        shiftTime: null,
-      }))
+  return { ok: true, contacts: contacts.length, priority: priority.length };
+}
+
+/** Removes one weekly tasking: its contacts, priority board, calendar and its
+ * posted marker, for the request's Command only. */
+export async function deleteOpManagerWeek(weekStart: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .delete(opManagerSupervisorContacts)
+    .where(
+      and(
+        eq(opManagerSupervisorContacts.weekStart, weekStart),
+        inOpCommand(opManagerSupervisorContacts.command)
+      )
     );
-  }
+  await db
+    .delete(opManagerPriorityRows)
+    .where(
+      and(
+        eq(opManagerPriorityRows.weekStart, weekStart),
+        inOpCommand(opManagerPriorityRows.command)
+      )
+    );
+  await db
+    .delete(opManagerTaskingCells)
+    .where(
+      and(
+        eq(opManagerTaskingCells.weekStart, weekStart),
+        inOpCommand(opManagerTaskingCells.command)
+      )
+    );
+  await db
+    .delete(opManagerPostedWeeks)
+    .where(
+      and(
+        eq(opManagerPostedWeeks.weekStart, weekStart),
+        inOpCommand(opManagerPostedWeeks.command)
+      )
+    );
   return { ok: true };
 }
 

@@ -60,6 +60,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { DeleteWeekDialog } from "@/components/opManager/DeleteWeekDialog";
 import {
   Popover,
   PopoverContent,
@@ -256,6 +257,8 @@ export default function OperationManagerPage() {
 
   // ── New-week dialog state ─────────────────────────────────────────────────────
   const [newWeekDialogOpen, setNewWeekDialogOpen] = useState(false);
+  // The week being deleted (null = no delete dialog).
+  const [deleteWeekFor, setDeleteWeekFor] = useState<string | null>(null);
   const [isCreatingWeek, setIsCreatingWeek] = useState(false);
 
   // ── Queries ───────────────────────────────────────────────────────────────────
@@ -613,6 +616,15 @@ export default function OperationManagerPage() {
     return addWeeks(all[0].weekStart, 1);
   })();
 
+  // The week "Copy Last Week" copies from: the most recent week before the new
+  // one that actually has contacts or a priority board (a listed week can hold
+  // only its calendar).
+  const copySourceQuery = trpc.opManager.copySourceWeek.useQuery(
+    { beforeWeekStart: nextNewWeekStart },
+    { staleTime: 5_000 }
+  );
+  const copySource = copySourceQuery.data ?? null;
+
   const handleCreateBlankWeek = async () => {
     setIsCreatingWeek(true);
     setWeekStart(nextNewWeekStart);
@@ -623,16 +635,16 @@ export default function OperationManagerPage() {
 
   const handleCopyLastWeek = async () => {
     setIsCreatingWeek(true);
-    const all = allWeeksQuery.data ?? [];
-    if (all.length === 0) {
-      toast.error("No previous week to copy from.");
+    if (!copySource) {
+      toast.error(
+        "No earlier week has contacts or a priority board to copy. Use Create New instead."
+      );
       setIsCreatingWeek(false);
       return;
     }
-    const fromWeek = all[0].weekStart;
     try {
-      await copyWeekMut.mutateAsync({
-        fromWeekStart: fromWeek,
+      const result = await copyWeekMut.mutateAsync({
+        fromWeekStart: copySource.weekStart,
         toWeekStart: nextNewWeekStart,
       });
       await utils.opManager.listAllWeeks.invalidate();
@@ -642,12 +654,44 @@ export default function OperationManagerPage() {
       setViewMode("edit");
       setNewWeekDialogOpen(false);
       toast.success(
-        `Copied contacts & priority from ${formatWeekLabel(fromWeek)}.`
+        `Copied ${result.contacts} contact${result.contacts === 1 ? "" : "s"} and ${result.priority} priority row${result.priority === 1 ? "" : "s"} from ${formatWeekLabel(copySource.weekStart)}.`
       );
     } catch {
       toast.error("Failed to copy week.");
     }
     setIsCreatingWeek(false);
+  };
+
+  // The edit page of a week with no contacts, on-call or priority rows offers
+  // to pull them in from the most recent earlier week that has them.
+  const emptyWeekSourceQuery = trpc.opManager.copySourceWeek.useQuery(
+    { beforeWeekStart: weekStart },
+    { staleTime: 5_000, enabled: viewMode === "edit" }
+  );
+  const weekHasNoContactsOrPriority =
+    !contactsQuery.isLoading &&
+    !priorityQuery.isLoading &&
+    (contactsQuery.data ?? []).length === 0 &&
+    (priorityQuery.data ?? []).length === 0;
+  const [isFillingWeek, setIsFillingWeek] = useState(false);
+  const handleFillFromEarlierWeek = async () => {
+    const source = emptyWeekSourceQuery.data;
+    if (!source) return;
+    setIsFillingWeek(true);
+    try {
+      const result = await copyWeekMut.mutateAsync({
+        fromWeekStart: source.weekStart,
+        toWeekStart: weekStart,
+      });
+      await utils.opManager.getSupervisorContacts.invalidate();
+      await utils.opManager.getPriorityBoard.invalidate();
+      toast.success(
+        `Copied ${result.contacts} contact${result.contacts === 1 ? "" : "s"} and ${result.priority} priority row${result.priority === 1 ? "" : "s"} from ${formatWeekLabel(source.weekStart)}.`
+      );
+    } catch {
+      toast.error("Failed to copy from the earlier week.");
+    }
+    setIsFillingWeek(false);
   };
 
   // ── Copy to Next Week ──────────────────────────────────────────────────────────
@@ -841,6 +885,20 @@ export default function OperationManagerPage() {
     </Dialog>
   );
 
+  // ── Delete a weekly tasking (admin) ─────────────────────────────────────────────
+  // Rendered in the folder, view and edit branches alike (each is an early
+  // return), so it is mounted wherever the Delete button was pressed.
+  const deleteWeekDialog = (
+    <DeleteWeekDialog
+      weekStart={deleteWeekFor}
+      label={deleteWeekFor ? formatWeekLabel(deleteWeekFor) : ""}
+      onOpenChange={open => {
+        if (!open) setDeleteWeekFor(null);
+      }}
+      onDeleted={() => setViewMode("folder")}
+    />
+  );
+
   // ── Create operation inline ───────────────────────────────────────────────────
   const handleCreateOp = async (
     name: string,
@@ -951,49 +1009,66 @@ export default function OperationManagerPage() {
             ) : (
               <div className="space-y-2">
                 {allWeeks.map((week, idx) => (
-                  <button
+                  <div
                     key={week.weekStart}
-                    onClick={() => {
-                      setWeekStart(week.weekStart);
-                      setViewMode("view");
-                    }}
-                    className="w-full text-left rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors px-4 py-3 flex items-center justify-between group"
+                    className="flex items-stretch gap-2"
                   >
-                    <div className="flex items-center gap-3">
-                      <FileText className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                      <div>
-                        <p className="font-medium text-sm">
-                          CTO Weekly Tasking — {formatWeekLabel(week.weekStart)}
-                        </p>
-                        {week.postedAt && (
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            Posted{" "}
-                            {new Date(week.postedAt).toLocaleDateString(
-                              "en-AU",
-                              { dateStyle: "medium" }
-                            )}
+                    <button
+                      onClick={() => {
+                        setWeekStart(week.weekStart);
+                        setViewMode("view");
+                      }}
+                      className="min-w-0 flex-1 text-left rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors px-4 py-3 flex items-center justify-between group"
+                    >
+                      <div className="flex items-center gap-3">
+                        <FileText className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                        <div>
+                          <p className="font-medium text-sm">
+                            CTO Weekly Tasking —{" "}
+                            {formatWeekLabel(week.weekStart)}
                           </p>
-                        )}
+                          {week.postedAt && (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Posted{" "}
+                              {new Date(week.postedAt).toLocaleDateString(
+                                "en-AU",
+                                { dateStyle: "medium" }
+                              )}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {idx === 0 && (
-                        <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
-                          Latest
-                        </span>
-                      )}
-                      {week.posted ? (
-                        <span className="text-xs bg-green-500/10 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
-                          <CheckCircle2 className="h-3 w-3" /> Posted
-                        </span>
-                      ) : (
-                        <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium">
-                          Draft
-                        </span>
-                      )}
-                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                    </div>
-                  </button>
+                      <div className="flex items-center gap-2">
+                        {idx === 0 && (
+                          <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+                            Latest
+                          </span>
+                        )}
+                        {week.posted ? (
+                          <span className="text-xs bg-green-500/10 text-green-600 dark:text-green-400 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                            <CheckCircle2 className="h-3 w-3" /> Posted
+                          </span>
+                        ) : (
+                          <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium">
+                            Draft
+                          </span>
+                        )}
+                        <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                      </div>
+                    </button>
+                    {isAdmin && (
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        aria-label={`Delete the weekly tasking for ${formatWeekLabel(week.weekStart)}`}
+                        title="Delete this weekly tasking"
+                        onClick={() => setDeleteWeekFor(week.weekStart)}
+                        className="h-auto w-11 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
@@ -1018,9 +1093,7 @@ export default function OperationManagerPage() {
               <div className="flex flex-col gap-2 pt-2">
                 <Button
                   onClick={handleCopyLastWeek}
-                  disabled={
-                    isCreatingWeek || (allWeeksQuery.data ?? []).length === 0
-                  }
+                  disabled={isCreatingWeek || !copySource}
                   className="gap-2 justify-start"
                   variant="outline"
                 >
@@ -1028,12 +1101,9 @@ export default function OperationManagerPage() {
                   <div className="text-left">
                     <p className="font-medium">Copy Last Week</p>
                     <p className="text-xs text-muted-foreground font-normal">
-                      Copies contacts & priority board from{" "}
-                      {(allWeeksQuery.data ?? []).length > 0
-                        ? formatWeekLabel(
-                            (allWeeksQuery.data ?? [])[0].weekStart
-                          )
-                        : "previous week"}
+                      {copySource
+                        ? `Copies contacts & priority board from ${formatWeekLabel(copySource.weekStart)}`
+                        : "No earlier week has contacts or a priority board to copy"}
                     </p>
                   </div>
                 </Button>
@@ -1060,6 +1130,7 @@ export default function OperationManagerPage() {
             </DialogContent>
           </Dialog>
         </div>
+        {deleteWeekDialog}
       </DashboardLayout>
     );
   }
@@ -1100,6 +1171,14 @@ export default function OperationManagerPage() {
                         className="gap-1"
                       >
                         <Printer className="h-3.5 w-3.5" /> Print
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setDeleteWeekFor(weekStart)}
+                        className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
                       </Button>
                       <Button
                         size="sm"
@@ -1181,6 +1260,7 @@ export default function OperationManagerPage() {
           )}
         </div>
         {notifyDialog}
+        {deleteWeekDialog}
       </DashboardLayout>
     );
   }
@@ -1197,16 +1277,46 @@ export default function OperationManagerPage() {
           onNext={() => setWeekStart(ws => addWeeks(ws, 1))}
           onBack={() => setViewMode("folder")}
           rightSlot={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setViewMode("view")}
-              className="gap-1"
-            >
-              <Eye className="h-3.5 w-3.5" /> Full View
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setViewMode("view")}
+                className="gap-1"
+              >
+                <Eye className="h-3.5 w-3.5" /> Full View
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeleteWeekFor(weekStart)}
+                className="gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </Button>
+            </div>
           }
         />
+
+        {weekHasNoContactsOrPriority && emptyWeekSourceQuery.data && (
+          <div className="mx-4 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+            <span>
+              This week has no contacts or priority board yet. The latest
+              earlier week with them is{" "}
+              <b>{formatWeekLabel(emptyWeekSourceQuery.data.weekStart)}</b>.
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleFillFromEarlierWeek}
+              disabled={isFillingWeek}
+              className="gap-1"
+            >
+              <Copy className="h-3.5 w-3.5" />
+              {isFillingWeek ? "Copying…" : "Copy them in"}
+            </Button>
+          </div>
+        )}
 
         <div className="p-4">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -1573,6 +1683,7 @@ export default function OperationManagerPage() {
       </div>
 
       {notifyDialog}
+      {deleteWeekDialog}
     </DashboardLayout>
   );
 }
@@ -2225,9 +2336,10 @@ function FullViewOnCall({
     );
   };
 
+  // Always shown, even with nothing saved for the week — the full view is the
+  // whole page (supervisors & contacts, priority board and calendar), and an
+  // empty section says so rather than disappearing.
   const hasOnCall = onCallEntries.length > 0;
-  const hasContacts = contacts.length > 0;
-  if (!hasOnCall && !hasContacts) return null;
 
   return (
     <section>
@@ -2519,7 +2631,6 @@ function FullViewTasking({
 }
 
 function FullViewPriority({ priorityRows }: { priorityRows: PriorityRow[] }) {
-  if (priorityRows.length === 0) return null;
   return (
     <section>
       <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
@@ -2528,6 +2639,11 @@ function FullViewPriority({ priorityRows }: { priorityRows: PriorityRow[] }) {
             Priority Board
           </h2>
         </div>
+        {priorityRows.length === 0 && (
+          <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+            No priorities set for this week.
+          </p>
+        )}
         {/* Mobile: stacked cards */}
         <div className="block sm:hidden p-3 space-y-2">
           {priorityRows.map((row, i) => (
@@ -2567,7 +2683,9 @@ function FullViewPriority({ priorityRows }: { priorityRows: PriorityRow[] }) {
           ))}
         </div>
         {/* Desktop: table */}
-        <div className="hidden sm:block overflow-x-auto">
+        <div
+          className={`hidden overflow-x-auto ${priorityRows.length === 0 ? "" : "sm:block"}`}
+        >
           <table className="w-full text-xs">
             <thead className="bg-muted/40">
               <tr>

@@ -810,6 +810,119 @@ test("Weekly Surveillance Report PDF: full width, a card for each target, a new 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
+test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has contacts, the full view shows every section, a week can be deleted", async ({
+  page,
+}) => {
+  // Three made-up weeks far from real ones: one with contacts and a priority
+  // board, a later one with only its calendar, and the new week the dialog makes.
+  const W1 = "2040-01-02";
+  const W2 = "2040-01-09";
+  const W3 = "2040-01-16";
+  const call = (proc: string, input: unknown) =>
+    page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+  const wipe = async () => {
+    for (const w of [W1, W2, W3])
+      await call("opManager.deleteWeek", { weekStart: w });
+  };
+  await wipe();
+  try {
+    await call("opManager.saveSupervisorContacts", {
+      weekStart: W1,
+      contacts: [
+        {
+          role: "CTO Inspector",
+          userId: null,
+          phone: "0400 111 222",
+          sortOrder: 0,
+        },
+      ],
+    });
+    await call("opManager.savePriorityBoard", {
+      weekStart: W1,
+      rows: [
+        {
+          category: "A-TACC",
+          priority: 1,
+          operationName: "RAVEN",
+          sortOrder: 0,
+        },
+        { category: "WC", priority: 2, operationName: "AURORA", sortOrder: 1 },
+      ],
+    });
+    await call("opManager.saveTaskingCell", {
+      weekStart: W2,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0600-1400",
+    });
+
+    // New week: copies from the 2 Jan week, not the calendar-only 9 Jan one.
+    await page.goto("/operation-manager");
+    await page
+      .getByRole("button", { name: "New CTO Weekly Tasking" })
+      .first()
+      .click();
+    await expect(
+      page.getByText(/Copies contacts & priority board from 02 Jan . 08 Jan/)
+    ).toBeVisible();
+    await page.getByRole("button", { name: /Copy Last Week/ }).click();
+    await expect(
+      page.getByText(
+        /Copied 1 contact and 2 priority rows from 02 Jan . 08 Jan/
+      )
+    ).toBeVisible();
+    await page.getByRole("tab", { name: "Priority" }).click();
+    await page.getByRole("button", { name: "Full View" }).click();
+    await expect(page.getByText("RAVEN").first()).toBeAttached();
+    await expect(page.getByText("AURORA").first()).toBeAttached();
+
+    // A week with only its calendar still shows the whole page.
+    await page.goto("/operation-manager");
+    await page.getByText("CTO Weekly Tasking — 09 Jan – 15 Jan").click();
+    await expect(page.getByText("Supervisors & Contacts")).toBeVisible();
+    await expect(page.getByText("Priority Board")).toBeVisible();
+    await expect(
+      page.getByText("No priorities set for this week.")
+    ).toBeVisible();
+    await expect(page.getByText("Weekly Tasking Calendar")).toBeVisible();
+
+    // Its edit page is not blank: it offers to copy the earlier week in.
+    await page.getByRole("button", { name: "Edit" }).click();
+    await expect(
+      page.getByText(/This week has no contacts or priority board yet/)
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Copy them in" }).click();
+    await expect(
+      page.getByText(/This week has no contacts or priority board yet/)
+    ).toHaveCount(0);
+
+    // Delete a week from the list.
+    await page.goto("/operation-manager");
+    await expect(
+      page.getByText("CTO Weekly Tasking — 16 Jan – 22 Jan")
+    ).toBeVisible();
+    await page
+      .getByRole("button", {
+        name: /Delete the weekly tasking for 16 Jan . 22 Jan/,
+      })
+      .click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Delete" })
+      .click();
+    await expect(
+      page.getByText("CTO Weekly Tasking — 16 Jan – 22 Jan")
+    ).toHaveCount(0);
+    await expect(
+      page.getByText("CTO Weekly Tasking — 09 Jan – 15 Jan")
+    ).toBeVisible();
+  } finally {
+    await wipe();
+  }
+});
+
 test("Intelligence Package has Places as a ticked section between Heat Map and Pattern of Life", async ({
   page,
 }) => {

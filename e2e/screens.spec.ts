@@ -2806,3 +2806,48 @@ test("Team Duty Roster: zoom, team cards and team colours that follow User Manag
       await call("ctoRoster.teams.delete", { teamId: rosterTeam.id });
   }
 });
+
+test("CTO Weekly Tasking on a phone: only Day tiles and Timeline, no colour or letter key", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const W = "2040-05-07";
+  const call = (proc: string, input: unknown) =>
+    page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+  await call("opManager.deleteWeek", { weekStart: W });
+  try {
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0700-1500",
+      primaryTask: "RAVEN",
+    });
+    // A saved Banded columns choice (made on a laptop) shows as Day tiles on a phone.
+    await page.addInitScript(() =>
+      localStorage.setItem("runlog.taskingView", "panel-banded")
+    );
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/operation-manager");
+    await page.getByText(/CTO Weekly Tasking — 07 May/).click();
+    const picker = page.getByRole("combobox", { name: "Calendar view" });
+    await expect(picker).toContainText("Day tiles");
+    await expect(page.locator(".tcv-legend")).toHaveCount(0);
+    await picker.click();
+    await expect(page.getByRole("option")).toHaveText([
+      "Day tiles",
+      "Timeline",
+    ]);
+    await page.keyboard.press("Escape");
+
+    // A laptop still has all four, and the key.
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await expect(page.locator(".tcv-legend")).toHaveCount(1);
+    await page.getByRole("combobox", { name: "Calendar view" }).click();
+    await expect(page.getByRole("option")).toHaveCount(4);
+  } finally {
+    await call("opManager.deleteWeek", { weekStart: W });
+  }
+});

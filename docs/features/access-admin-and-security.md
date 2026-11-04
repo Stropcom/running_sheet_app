@@ -162,3 +162,7 @@ After a mock-up of four looks ("B · Soft card" chosen), each team is a **soft c
 ## User Management: an OIC team (v2.63.1)
 
 Every Command now has an **OIC** team in User Management → Teams (migration `0139_oic_team.sql`, which adds it only where it is missing, after the Command's other teams, in dark slate `#374151`, and not offered on a new sheet). People can be put in it like any other team, and its colour can be changed there like any other; the CTO roster's OIC section and anything else that looks a team up by name (`shared/teamColours.ts`, which also has OIC's colour as the fallback) uses that colour. A Command that had already made its own team called OIC keeps it as it was.
+
+## CTO Weekly Tasking on a phone: two layouts, no key (v2.63.2)
+
+On a phone (the app's usual mobile width, `useIsMobile`) the weekly tasking calendar's dropdown offers only **Day tiles** and **Timeline** (the wide Banded columns and Schedule tables are left out), and the **team colour key and the "P = primary task, S = secondary task, RDO = rostered day off" line are not shown**. A saved choice of one of the left-out layouts shows as Day tiles on a phone; the saved choice itself is not changed, so a laptop still opens on the layout picked there (`viewOnPhone` / `PHONE_VIEWS` in `shared/taskingView.ts`, tested in `server/taskingView.test.ts`). The colour stripes on the tiles and the team names are unchanged. A laptop or tablet-width screen keeps all four layouts and the key; the PDF is unaffected. Check: `e2e/screens.spec.ts` "CTO Weekly Tasking on a phone…".

@@ -23,7 +23,7 @@
 .tcv-tag { width: 18px; height: 18px; border-radius: 4px; background: var(--ink); color: var(--card); font-style: normal; font-size: 11px; font-weight: 700; display: grid; place-items: center; flex: none; }
 .tcv-tag.s { background: transparent; color: var(--muted-foreground); border: 1px solid var(--border); }
 
-/* Panel: banded columns */
+/* Banded columns */
 .tcv-pa { display: grid; grid-template-columns: repeat(7, minmax(116px, 1fr)); min-width: 812px; }
 .tcv-pa-col { border-right: 1px solid var(--border); display: flex; flex-direction: column; }
 .tcv-pa-col:last-child { border-right: 0; }
@@ -38,7 +38,7 @@
 .tcv-pa-task.hide { visibility: hidden; }
 .tcv-pa-task .v { min-width: 0; overflow-wrap: anywhere; }
 
-/* Panel: schedule tables */
+/* Schedule tables */
 .tcv-pb { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .tcv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tcv-table th { text-align: left; font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-foreground); font-weight: 600; padding: 7px 12px; background: var(--muted); border-bottom: 1px solid var(--border); }
@@ -51,7 +51,7 @@
 .tcv-table td.s { color: var(--muted-foreground); }
 .tcv-table .off { color: var(--muted-foreground); font-style: italic; }
 
-/* Tile: day tiles */
+/* Day tiles */
 .tcv-ta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .tcv-tile { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
 .tcv-tile.today { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
@@ -76,25 +76,7 @@
 .tcv-sum .ops { padding: 10px 12px; display: grid; gap: 6px; font-size: 13px; }
 .tcv-sum .ops div { display: flex; justify-content: space-between; gap: 8px; }
 
-/* Calendar: weekly calendar */
-.tcv-ca { display: grid; grid-template-columns: repeat(7, minmax(122px, 1fr)); min-width: 854px; }
-.tcv-ca-col { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 330px; }
-.tcv-ca-col:last-child { border-right: 0; }
-.tcv-ca-col.wk { background: var(--tcv-weekend); }
-.tcv-ca-h { padding: 9px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; background: var(--muted); }
-.tcv-ca-h .w { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-foreground); }
-.tcv-ca-h .n { margin-left: auto; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-variant-numeric: tabular-nums; }
-.tcv-ca-col.today .tcv-ca-h .n { background: var(--primary); color: var(--primary-foreground); }
-.tcv-ca-body { padding: 8px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
-.tcv-pill { display: grid; grid-template-columns: 26px 1fr; gap: 7px; align-items: start; padding: 5px 7px 5px 5px; border-radius: 7px; background: var(--tint); border: 1px solid var(--edge); border-left: 4px solid var(--tc); }
-.tcv-pill .ab { font-size: 10.5px; font-weight: 700; color: var(--ink); background: var(--card); border-radius: 4px; padding: 2px 0; text-align: center; margin-top: 1px; }
-.tcv-pill .t { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 600; font-size: 12px; line-height: 1.25; }
-.tcv-pill .o { font-size: 12.5px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
-.tcv-pill .o2 { font-size: 12px; color: var(--muted-foreground); }
-.tcv-offrow { margin-top: auto; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 12px; color: var(--muted-foreground); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
-.tcv-ab { font-size: 10.5px; font-weight: 700; border: 1px dashed var(--border); border-radius: 4px; padding: 0 5px; }
-
-/* Calendar: timeline */
+/* Timeline */
 .tcv-cb { min-width: 780px; display: grid; grid-template-columns: 92px 1fr; }
 .tcv-cb-axis { position: relative; height: 34px; border-bottom: 1px solid var(--border); background: var(--muted); }
 .tcv-cb-axis span { position: absolute; top: 9px; font-size: 11.5px; font-weight: 600; color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
@@ -125,10 +107,10 @@
   .tcv-ta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
-  /* On a phone the seven columns become a list of days. */
-  .tcv-pa, .tcv-ca { grid-template-columns: minmax(0, 1fr); min-width: 0; }
-  .tcv-pa-col, .tcv-ca-col { border-right: 0; border-bottom: 1px solid var(--border); min-height: 0; }
-  .tcv-pa-col:last-child, .tcv-ca-col:last-child { border-bottom: 0; }
+  /* On a phone the seven columns of the banded panel become a list of days. */
+  .tcv-pa { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+  .tcv-pa-col { border-right: 0; border-bottom: 1px solid var(--border); min-height: 0; }
+  .tcv-pa-col:last-child { border-bottom: 0; }
 }
 @media (max-width: 520px) {
   .tcv-ta { grid-template-columns: minmax(0, 1fr); }

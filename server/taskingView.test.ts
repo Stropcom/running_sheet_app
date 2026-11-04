@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_EXPORT_VIEWS,
   cellHasOp,
   formatShiftText,
   parseShiftRange,
   readCell,
   readWeek,
   timelineSpan,
+  toggleExportView,
   todayIndex,
   weekDays,
   weekOps,
@@ -122,5 +124,17 @@ describe("week helpers", () => {
     expect(timelineSpan(w)).toEqual([300, 1380]);
     const wide = readWeek({ "t1-0": { shiftTime: "0400-2330" } }, ["t1"]);
     expect(timelineSpan(wide)).toEqual([240, 1440]);
+  });
+});
+
+describe("toggleExportView", () => {
+  it("adds and removes, keeping the order ticked", () => {
+    expect(toggleExportView([], "a")).toEqual(["a"]);
+    expect(toggleExportView(["a"], "b")).toEqual(["a", "b"]);
+    expect(toggleExportView(["a", "b"], "a")).toEqual(["b"]);
+  });
+  it("refuses a third layout and drops nothing", () => {
+    expect(toggleExportView(["a", "b"], "c")).toEqual(["a", "b"]);
+    expect(MAX_EXPORT_VIEWS).toBe(2);
   });
 });

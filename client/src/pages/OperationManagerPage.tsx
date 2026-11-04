@@ -61,12 +61,14 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { DeleteWeekDialog } from "@/components/opManager/DeleteWeekDialog";
+import { ExportTaskingDialog } from "@/components/opManager/ExportTaskingDialog";
+import { readWeek } from "@shared/taskingView";
+import type { TaskingViewId } from "@/lib/taskingViewPref";
 import { buildCtoTaskingHtml } from "@/lib/ctoTaskingExport";
 import {
   TaskingCalendarViews,
   type TaskingTeam,
 } from "@/components/opManager/TaskingViews";
-import { taskingCellText } from "@shared/opManagerWeeks";
 import {
   Popover,
   PopoverContent,
@@ -354,6 +356,7 @@ export default function OperationManagerPage() {
   const [activeTab, setActiveTab] = useState("contacts");
   const [isSavingTasking, setIsSavingTasking] = useState(false);
   const [notifyDialogOpen, setNotifyDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(
     new Set()
   );
@@ -786,7 +789,7 @@ export default function OperationManagerPage() {
   };
 
   // ── Export (the same preview window as every other export) ───────────────────
-  const handleExportTasking = () => {
+  const handleExportTasking = (views: TaskingViewId[]) => {
     const users = usersQuery.data ?? [];
     const contactOf = (role: string) => {
       const c = contacts.find(x => x.role === role);
@@ -814,13 +817,12 @@ export default function OperationManagerPage() {
         team: r.team ?? "",
         requestType: r.requestType ?? "",
       })),
-      calendar: TEAM_ROWS.map(teamRow => ({
-        label: TEAM_LABELS[teamRow],
-        colour: TEAM_COLOURS[teamRow].border,
-        days: DAYS.map((_, dayIndex) =>
-          taskingCellText(taskingGrid[`${teamRow}-${dayIndex}`] ?? {})
-        ),
-      })),
+      calendar: {
+        weekStart,
+        teams: TASKING_TEAMS,
+        week: readWeek(taskingGrid, TEAM_ROWS),
+      },
+      views,
     });
     const win = window.open("", "_blank");
     if (!win) {
@@ -1233,7 +1235,7 @@ export default function OperationManagerPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={handleExportTasking}
+                        onClick={() => setExportDialogOpen(true)}
                         className="gap-1"
                       >
                         <Download className="h-3.5 w-3.5" /> Export PDF
@@ -1339,6 +1341,11 @@ export default function OperationManagerPage() {
           )}
         </div>
         {notifyDialog}
+        <ExportTaskingDialog
+          open={exportDialogOpen}
+          onOpenChange={setExportDialogOpen}
+          onExport={handleExportTasking}
+        />
         {deleteWeekDialog}
       </DashboardLayout>
     );

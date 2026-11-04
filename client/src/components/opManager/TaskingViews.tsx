@@ -81,7 +81,7 @@ function localISO(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** Panel · Banded columns */
+/** Banded columns */
 function PanelBanded({ week, days, today, teams, dim, warn }: Ctx) {
   return (
     <div className="tcv">
@@ -147,7 +147,7 @@ function PanelBanded({ week, days, today, teams, dim, warn }: Ctx) {
   );
 }
 
-/** Panel · Schedule tables (two panels across) */
+/** Schedule tables (two panels across) */
 function PanelTables({ week, days, teams, dim, warn }: Ctx) {
   return (
     <div className="tcv-pb">
@@ -220,7 +220,7 @@ function PanelTables({ week, days, teams, dim, warn }: Ctx) {
   );
 }
 
-/** Tile · Day tiles (seven days and a week summary: four across, two rows) */
+/** Day tiles (seven days and a week summary: four across, two rows) */
 function DayTiles({ week, days, today, teams, dim, warn }: Ctx) {
   const sum = weekSummary(week);
   const ops = Object.keys(sum.primaryByOp);
@@ -303,76 +303,7 @@ function DayTiles({ week, days, today, teams, dim, warn }: Ctx) {
   );
 }
 
-/** Calendar · Weekly calendar */
-function WeekCalendar({ week, days, today, teams, dim, warn }: Ctx) {
-  return (
-    <div className="tcv-card tcv-scroll">
-      <div className="tcv-ca">
-        {days.map((d, i) => {
-          const tasked = teams
-            .map(t => ({ t, c: week[t.id][i] }))
-            .filter(x => !x.c.off && (x.c.shift || x.c.primary))
-            .sort((a, b) => (a.c.range?.[0] ?? 1e9) - (b.c.range?.[0] ?? 1e9));
-          const off = teams.filter(t => week[t.id][i].off);
-          return (
-            <div
-              key={i}
-              className={`tcv-ca-col ${i > 4 ? "wk" : ""} ${i === today ? "today" : ""}`}
-            >
-              <div className="tcv-ca-h">
-                <span className="w">{d.name}</span>
-                <span className="n">{String(d.day).padStart(2, "0")}</span>
-              </div>
-              <div className="tcv-ca-body">
-                {tasked.map(({ t, c }) => (
-                  <div
-                    key={t.id}
-                    className={`tcv-pill tcv-team ${dim(c)}`}
-                    style={teamStyle(t)}
-                  >
-                    <span className="ab">{t.ab}</span>
-                    <div>
-                      <div className="t">{formatShiftText(c.shift)}</div>
-                      <div className="o">
-                        {c.primary ? <Op name={c.primary} /> : null}
-                      </div>
-                      {c.secondary && (
-                        <div className="o2">
-                          + <Op name={c.secondary} />
-                        </div>
-                      )}
-                      {warn(t.id, i, c.primary)}
-                    </div>
-                  </div>
-                ))}
-                {tasked.length === 0 && (
-                  <div
-                    className="tcv-rdo"
-                    style={{ fontSize: 12.5, fontWeight: 600 }}
-                  >
-                    Nobody tasked
-                  </div>
-                )}
-                {off.length > 0 && (
-                  <div className="tcv-offrow">
-                    Off
-                    {off.map(t => (
-                      <span key={t.id} className="tcv-ab">
-                        {t.ab}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/** Calendar · Timeline (hours across, a lane for each team) */
+/** Timeline (hours across, a lane for each team) */
 function Timeline({ week, days, today, teams, dim, warn }: Ctx) {
   const [lo, hi] = timelineSpan(week);
   const ticks: number[] = [];
@@ -509,7 +440,7 @@ function TimelineRow({
 
 /**
  * The Weekly Tasking Calendar of the full view: a dropdown chooses how it is
- * laid out (panel, tile or calendar, two ways for panel and calendar; the
+ * laid out (banded columns, schedule tables, day tiles or a timeline; the
  * choice is remembered on this device) and a row of buttons highlights one
  * operation across it. Read-only; the edit page keeps its own grid.
  */
@@ -635,7 +566,6 @@ export function TaskingCalendarViews({
         {view === "panel-banded" && <PanelBanded {...ctx} />}
         {view === "panel-tables" && <PanelTables {...ctx} />}
         {view === "tile-days" && <DayTiles {...ctx} />}
-        {view === "cal-week" && <WeekCalendar {...ctx} />}
         {view === "cal-timeline" && <Timeline {...ctx} />}
       </ToggleOp.Provider>
     </section>

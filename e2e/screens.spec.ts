@@ -905,18 +905,17 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
       page.getByText(/This week has no contacts or priority board yet/)
     ).toHaveCount(0);
 
-    // The Weekly Tasking Calendar can be laid out five ways, the choice is
+    // The Weekly Tasking Calendar can be laid out four ways, the choice is
     // remembered, and an operation can be highlighted across it.
     await page.goto("/operation-manager");
     await page.getByText("CTO Weekly Tasking — 02 Jan – 08 Jan").click();
     const picker = page.getByRole("combobox", { name: "Calendar view" });
-    await expect(picker).toContainText("Panel · Banded columns");
+    await expect(picker).toContainText("Banded columns");
     await expect(page.locator(".tcv-pa").first()).toBeVisible();
     for (const [label, marker] of [
-      ["Panel · Schedule tables", ".tcv-table"],
-      ["Tile · Day tiles", ".tcv-ta"],
-      ["Calendar · Weekly calendar", ".tcv-ca"],
-      ["Calendar · Timeline", ".tcv-cb"],
+      ["Schedule tables", ".tcv-table"],
+      ["Day tiles", ".tcv-ta"],
+      ["Timeline", ".tcv-cb"],
     ] as const) {
       await picker.click();
       await page.getByRole("option", { name: label }).click();
@@ -937,7 +936,7 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
     await page.getByText("CTO Weekly Tasking — 02 Jan – 08 Jan").click();
     await expect(
       page.getByRole("combobox", { name: "Calendar view" })
-    ).toContainText("Calendar · Timeline");
+    ).toContainText("Timeline");
     await expect(page.locator(".tcv-cb").first()).toBeVisible();
 
     // The full view has Export PDF (the same preview window as every other
@@ -945,12 +944,36 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
     await page.goto("/operation-manager");
     await page.getByText("CTO Weekly Tasking — 02 Jan – 08 Jan").click();
     await expect(page.getByRole("button", { name: "Print" })).toHaveCount(0);
-    const exportPopup = page.waitForEvent("popup");
     await page.getByRole("button", { name: "Export PDF" }).click();
+    // The export asks which layout (one or two): the one on screen is ticked,
+    // a third cannot be ticked, and at least one is needed.
+    const layouts = page.getByRole("group", {
+      name: "Calendar layouts to export",
+    });
+    const timeline = layouts.getByRole("checkbox", { name: "Timeline" });
+    const banded = layouts.getByRole("checkbox", { name: "Banded columns" });
+    const tiles = layouts.getByRole("checkbox", { name: "Day tiles" });
+    await expect(timeline).toBeChecked();
+    await banded.click();
+    await expect(banded).toBeChecked();
+    await expect(tiles).toBeDisabled();
+    await timeline.click();
+    await expect(tiles).toBeEnabled();
+    await banded.click();
+    await expect(
+      page.getByRole("button", { name: "Export", exact: true })
+    ).toBeDisabled();
+    await banded.click();
+    await timeline.click();
+    const exportPopup = page.waitForEvent("popup");
+    await page.getByRole("button", { name: "Export", exact: true }).click();
     const pop = await exportPopup;
     await pop.waitForLoadState();
     const html = await pop.content();
     expect(html).toContain("CTO Weekly Tasking");
+    expect(html).toContain("Weekly Tasking Calendar · Banded columns");
+    expect(html).toContain("Weekly Tasking Calendar · Timeline");
+    expect(html).not.toContain("Weekly Tasking Calendar · Day tiles");
     expect(html).toContain("02 Jan – 08 Jan 2040");
     expect(html).toContain("0400 111 222");
     expect(html).toContain("RAVEN");

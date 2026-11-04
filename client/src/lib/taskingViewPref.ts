@@ -1,12 +1,13 @@
 import { useCallback, useState } from "react";
 
-/** The ways the CTO Weekly Tasking calendar can be shown (full view). */
+/** The ways the CTO Weekly Tasking calendar can be shown (full view) and
+ * exported (up to two of them in one PDF). A choice saved for a layout that no
+ * longer exists falls back to the default. */
 export const TASKING_VIEWS = [
-  { id: "panel-banded", label: "Panel · Banded columns" },
-  { id: "panel-tables", label: "Panel · Schedule tables" },
-  { id: "tile-days", label: "Tile · Day tiles" },
-  { id: "cal-week", label: "Calendar · Weekly calendar" },
-  { id: "cal-timeline", label: "Calendar · Timeline" },
+  { id: "panel-banded", label: "Banded columns" },
+  { id: "panel-tables", label: "Schedule tables" },
+  { id: "tile-days", label: "Day tiles" },
+  { id: "cal-timeline", label: "Timeline" },
 ] as const;
 export type TaskingViewId = (typeof TASKING_VIEWS)[number]["id"];
 

@@ -164,3 +164,21 @@ export function timelineSpan(
       }
   return [lo, hi];
 }
+
+/** The most calendar layouts one Export PDF carries. */
+export const MAX_EXPORT_VIEWS = 2;
+
+/**
+ * Ticking or unticking one layout for the Export PDF. Ticking is refused once
+ * `max` are chosen (the box is shown disabled; the choice never silently drops
+ * another one), and the list keeps the order the layouts were ticked in.
+ */
+export function toggleExportView<T>(
+  chosen: readonly T[],
+  id: T,
+  max: number = MAX_EXPORT_VIEWS
+): T[] {
+  if (chosen.includes(id)) return chosen.filter(x => x !== id);
+  if (chosen.length >= max) return [...chosen];
+  return [...chosen, id];
+}

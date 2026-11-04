@@ -1893,10 +1893,17 @@ function TaskingCellEditor({
   const shiftVal = cell.shiftTime ?? "";
   const isCustom = shiftVal === "Custom";
 
+  // Fixed choices first (Training, Admin, Other), then the active operations.
+  // An operation that happens to be called Admin or Training is not listed a
+  // second time (two options with one value).
+  const FIXED_TASKS = ["training", "admin"];
   const taskOpts = [
     { value: "Training", label: "📋 Training" },
+    { value: "Admin", label: "🗂️ Admin" },
     { value: "Other", label: "✏️ Other (free text)" },
-    ...opOptions.map(op => ({ value: op.name, label: op.name })),
+    ...opOptions
+      .filter(op => !FIXED_TASKS.includes(op.name.trim().toLowerCase()))
+      .map(op => ({ value: op.name, label: op.name })),
   ];
 
   return (

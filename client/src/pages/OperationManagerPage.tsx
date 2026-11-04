@@ -62,6 +62,10 @@ import {
 import { Label } from "@/components/ui/label";
 import { DeleteWeekDialog } from "@/components/opManager/DeleteWeekDialog";
 import { buildCtoTaskingHtml } from "@/lib/ctoTaskingExport";
+import {
+  TaskingCalendarViews,
+  type TaskingTeam,
+} from "@/components/opManager/TaskingViews";
 import { taskingCellText } from "@shared/opManagerWeeks";
 import {
   Popover,
@@ -100,6 +104,15 @@ const TEAM_COLOURS: Record<
   ptt: { bg: "#fef3c7", border: "#f9a825", text: "#78350f" },
   cap: { bg: "#ede9fe", border: "#7c3aed", text: "#4c1d95" },
 };
+
+// The teams of the calendar for the read-only views (TaskingViews.tsx): their
+// label, the short form for pills and the same colour as the edit grid.
+const TASKING_TEAMS: TaskingTeam[] = TEAM_ROWS.map(id => ({
+  id,
+  label: TEAM_LABELS[id],
+  ab: { surv1: "T1", surv2: "T2", ptt: "PTT", cap: "CAP" }[id],
+  colour: TEAM_COLOURS[id].border,
+}));
 const SHIFT_OPTIONS = [
   "RDO",
   "0600-1400",
@@ -1206,7 +1219,7 @@ export default function OperationManagerPage() {
               }
               onBack={() => setViewMode("folder")}
               rightSlot={
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-center gap-2">
                   {isAdmin && (
                     <>
                       <Button
@@ -1304,10 +1317,23 @@ export default function OperationManagerPage() {
                 users={usersQuery.data ?? []}
               />
               <FullViewPriority priorityRows={priorityRows} />
-              <FullViewTasking
-                taskingGrid={taskingGrid}
+              <TaskingCalendarViews
                 weekStart={weekStart}
-                taskingCoverage={taskingCoverage}
+                teams={TASKING_TEAMS}
+                grid={taskingGrid}
+                issueCount={taskingIssueCount}
+                renderWarning={(teamId, dayIndex, primary) => {
+                  const cv = taskingCoverage[`${teamId}-${dayIndex}`];
+                  return cv?.short ? (
+                    <CoverageWarningBadge
+                      teamName={TEAM_LABELS[teamId as TeamRow]}
+                      day={DAYS[dayIndex]}
+                      onDuty={cv.onDuty}
+                      min={cv.min}
+                      primaryTask={primary || null}
+                    />
+                  ) : null;
+                }}
               />
             </div>
           )}
@@ -1330,7 +1356,7 @@ export default function OperationManagerPage() {
           onNext={() => setWeekStart(ws => addWeeks(ws, 1))}
           onBack={() => setViewMode("folder")}
           rightSlot={
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -2480,214 +2506,6 @@ function FullViewContacts(_props: {
   users: { id: number; name: string; cin: string | null }[];
 }) {
   return null;
-}
-
-function FullViewTasking({
-  taskingGrid,
-  taskingCoverage,
-}: {
-  taskingGrid: Record<string, TaskingCell>;
-  weekStart: string;
-  taskingCoverage: Record<
-    string,
-    { onDuty: number; min: number; short: boolean }
-  >;
-}) {
-  const issueCount = Object.values(taskingCoverage).filter(c => c.short).length;
-  return (
-    <section className="space-y-3">
-      <div className="px-1 flex items-center gap-2">
-        <h2 className="text-sm font-bold tracking-widest uppercase text-muted-foreground">
-          Weekly Tasking Calendar
-        </h2>
-        {issueCount > 0 && (
-          <Badge
-            variant="outline"
-            className="gap-1 text-amber-600 border-amber-500/40 bg-amber-500/5"
-          >
-            <AlertTriangle className="h-3 w-3" />
-            {issueCount} tasking issue{issueCount !== 1 ? "s" : ""}
-          </Badge>
-        )}
-      </div>
-      {TEAM_ROWS.map(teamRow => {
-        const tc = TEAM_COLOURS[teamRow];
-        return (
-          <div
-            key={teamRow}
-            className="rounded-xl shadow-sm overflow-hidden bg-card"
-            style={{ border: `1px solid ${tc.border}60` }}
-          >
-            {/* Team header */}
-            <div
-              className="px-4 py-2 flex items-center gap-2"
-              style={{
-                background: "transparent",
-                borderBottom: `1px solid ${tc.border}40`,
-              }}
-            >
-              <span
-                className="text-sm font-bold tracking-wide"
-                style={{ color: tc.border }}
-              >
-                {TEAM_LABELS[teamRow]}
-              </span>
-            </div>
-            {/* Mobile: day list */}
-            <div className="block sm:hidden bg-card divide-y divide-border">
-              {DAYS.map((day, dayIndex) => {
-                const key = `${teamRow}-${dayIndex}`;
-                const cell = taskingGrid[key] ?? {};
-                const shift =
-                  cell.shiftTime === "Custom"
-                    ? (cell.customTime ?? "Custom")
-                    : (cell.shiftTime ?? "");
-                const primary =
-                  cell.primaryTask === "Other"
-                    ? (cell.primaryOther ?? "")
-                    : (cell.primaryTask ?? "");
-                const secondary =
-                  cell.secondaryTask === "Other"
-                    ? (cell.secondaryOther ?? "")
-                    : (cell.secondaryTask ?? "");
-                return (
-                  <div
-                    key={dayIndex}
-                    className={cn(
-                      "flex items-start gap-3 px-4 py-2.5",
-                      shift === "RDO" && "opacity-40"
-                    )}
-                  >
-                    <span className="text-xs font-bold text-muted-foreground w-8 shrink-0 pt-0.5">
-                      {day}
-                    </span>
-                    <div className="min-w-0">
-                      {shift && (
-                        <span
-                          className={cn(
-                            "text-xs font-bold",
-                            shift === "RDO" ? "text-muted-foreground" : ""
-                          )}
-                          style={shift !== "RDO" ? { color: tc.border } : {}}
-                        >
-                          {shift}
-                        </span>
-                      )}
-                      {primary && (
-                        <p className="text-xs mt-0.5 text-foreground">
-                          {primary}
-                        </p>
-                      )}
-                      {secondary && (
-                        <p className="text-xs text-muted-foreground">
-                          {secondary}
-                        </p>
-                      )}
-                      {taskingCoverage[key]?.short && (
-                        <div className="mt-1">
-                          <CoverageWarningBadge
-                            teamName={TEAM_LABELS[teamRow]}
-                            day={day}
-                            onDuty={taskingCoverage[key].onDuty}
-                            min={taskingCoverage[key].min}
-                            primaryTask={primary || null}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {/* Desktop: 7-column grid */}
-            <div className="hidden sm:block bg-card overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr style={{ background: "transparent" }}>
-                    {DAYS.map(d => (
-                      <th
-                        key={d}
-                        className="text-center px-3 py-2 font-bold border-r border-border last:border-r-0"
-                        style={{
-                          color: tc.text,
-                          width: `${100 / 7}%`,
-                          minWidth: 110,
-                        }}
-                      >
-                        {d}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    {DAYS.map((_, dayIndex) => {
-                      const key = `${teamRow}-${dayIndex}`;
-                      const cell = taskingGrid[key] ?? {};
-                      const shift =
-                        cell.shiftTime === "Custom"
-                          ? (cell.customTime ?? "Custom")
-                          : (cell.shiftTime ?? "");
-                      const primary =
-                        cell.primaryTask === "Other"
-                          ? (cell.primaryOther ?? "")
-                          : (cell.primaryTask ?? "");
-                      const secondary =
-                        cell.secondaryTask === "Other"
-                          ? (cell.secondaryOther ?? "")
-                          : (cell.secondaryTask ?? "");
-                      return (
-                        <td
-                          key={dayIndex}
-                          className={cn(
-                            "px-3 py-2 border-r border-border last:border-r-0 align-top",
-                            shift === "RDO" ? "opacity-40" : ""
-                          )}
-                          style={{ width: `${100 / 7}%`, minWidth: 110 }}
-                        >
-                          {shift && (
-                            <p
-                              className="font-bold text-xs leading-tight"
-                              style={{
-                                color: shift === "RDO" ? undefined : tc.border,
-                              }}
-                            >
-                              {shift}
-                            </p>
-                          )}
-                          {primary && (
-                            <p className="mt-1 text-xs leading-snug text-foreground break-words">
-                              {primary}
-                            </p>
-                          )}
-                          {secondary && (
-                            <p className="mt-0.5 text-xs leading-snug text-muted-foreground break-words">
-                              {secondary}
-                            </p>
-                          )}
-                          {taskingCoverage[key]?.short && (
-                            <div className="mt-1">
-                              <CoverageWarningBadge
-                                teamName={TEAM_LABELS[teamRow]}
-                                day={DAYS[dayIndex]}
-                                onDuty={taskingCoverage[key].onDuty}
-                                min={taskingCoverage[key].min}
-                                primaryTask={primary || null}
-                              />
-                            </div>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-      })}
-    </section>
-  );
 }
 
 function FullViewPriority({ priorityRows }: { priorityRows: PriorityRow[] }) {

@@ -96,3 +96,13 @@ Op Manager → CTO Weekly Tasking (`OperationManagerPage.tsx`, `server/db/opMana
 ## Weekly Tasking: "Admin" is a task choice (v2.56.0)
 
 The Primary / Secondary task list on the Tasking tab now offers **Admin** beside Training and Other (free text), before the operations (`TaskingCellEditor` in `client/src/pages/OperationManagerPage.tsx`). It is stored as the text "Admin" like Training is, so the full view, print and the roster-minimum check treat it the same way as Training (a team tasked with Admin counts as tasked). An operation that is itself called Admin or Training is not listed a second time.
+
+## CTO Weekly Tasking: choose how the calendar is shown (v2.58.0)
+
+The **Weekly Tasking Calendar** in the full view (the read-only page, not the edit grid) has a dropdown beside its heading with five layouts, picked from mock-ups: **Panel · Banded columns** (the default; a panel per team, each day a column with the shift chip, then Primary P and Secondary S on their own labelled lines), **Panel · Schedule tables** (a table per team, a row per day with Shift / Primary / Secondary columns), **Tile · Day tiles** (a tile per day with the four teams in it, plus a week summary tile so the grid is 4 × 2), **Calendar · Weekly calendar** (a calendar week with a coloured pill per team shift, teams on RDO as a quiet "Off" line) and **Calendar · Timeline** (days down, hours across, a lane per team). A row of **Highlight** buttons (All and each operation or task named that week) dims everything else; clicking an operation's name does the same.
+
+- Code: `client/src/components/opManager/TaskingViews.tsx` (+ `taskingViews.css`, which follows the app's theme tokens); the rules (reading cells, shift ranges, today's column, the operations in the week, totals, the timeline's hour span) are pure in `shared/taskingView.ts`, tested in `server/taskingView.test.ts`. The old `FullViewTasking` was removed from `OperationManagerPage.tsx`. The "short of the roster minimum" warning badge still shows on tasked cells in every layout, and the issue count by the heading.
+- **Memory**: the chosen layout is kept in this browser (`localStorage` key `runlog.taskingView`, `client/src/lib/taskingViewPref.ts`), like the list/tile switch, so it is per device, not per person. Storage that is blocked falls back to the default.
+- On a phone the seven columns of the banded panel and the weekly calendar become a list of days; the timeline scrolls sideways inside its card.
+- Also fixed: the Edit / Export PDF / Delete / Post & Notify buttons of the full view's header now wrap on a narrow screen (Post & Notify was cut off).
+- Check: `e2e/screens.spec.ts` "CTO Weekly Tasking…" (dropdown, all five layouts, highlight, remembered).

@@ -852,6 +852,13 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
       ],
     });
     await call("opManager.saveTaskingCell", {
+      weekStart: W1,
+      dayIndex: 1,
+      teamRow: "surv2",
+      shiftTime: "0700-1500",
+      primaryTask: "RAVEN",
+    });
+    await call("opManager.saveTaskingCell", {
       weekStart: W2,
       dayIndex: 0,
       teamRow: "surv1",
@@ -897,6 +904,41 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
     await expect(
       page.getByText(/This week has no contacts or priority board yet/)
     ).toHaveCount(0);
+
+    // The Weekly Tasking Calendar can be laid out five ways, the choice is
+    // remembered, and an operation can be highlighted across it.
+    await page.goto("/operation-manager");
+    await page.getByText("CTO Weekly Tasking — 02 Jan – 08 Jan").click();
+    const picker = page.getByRole("combobox", { name: "Calendar view" });
+    await expect(picker).toContainText("Panel · Banded columns");
+    await expect(page.locator(".tcv-pa").first()).toBeVisible();
+    for (const [label, marker] of [
+      ["Panel · Schedule tables", ".tcv-table"],
+      ["Tile · Day tiles", ".tcv-ta"],
+      ["Calendar · Weekly calendar", ".tcv-ca"],
+      ["Calendar · Timeline", ".tcv-cb"],
+    ] as const) {
+      await picker.click();
+      await page.getByRole("option", { name: label }).click();
+      await expect(picker).toContainText(label);
+      await expect(page.locator(marker).first()).toBeVisible();
+    }
+    const highlight = page.getByRole("group", {
+      name: "Highlight an operation",
+    });
+    const raven = highlight.getByRole("button", { name: "RAVEN", exact: true });
+    await expect(raven).toHaveAttribute("aria-pressed", "false");
+    await raven.click();
+    await expect(raven).toHaveAttribute("aria-pressed", "true");
+    await highlight.getByRole("button", { name: "All", exact: true }).click();
+    await expect(raven).toHaveAttribute("aria-pressed", "false");
+    // Remembered: back at the list and into the week again, it is still the timeline.
+    await page.goto("/operation-manager");
+    await page.getByText("CTO Weekly Tasking — 02 Jan – 08 Jan").click();
+    await expect(
+      page.getByRole("combobox", { name: "Calendar view" })
+    ).toContainText("Calendar · Timeline");
+    await expect(page.locator(".tcv-cb").first()).toBeVisible();
 
     // The full view has Export PDF (the same preview window as every other
     // export), not a bare browser Print.

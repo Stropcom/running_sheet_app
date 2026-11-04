@@ -268,6 +268,13 @@ export default function OperationManagerPage() {
   const usersQuery = trpc.opManager.listUsers.useQuery(undefined, {
     staleTime: 60_000,
   });
+  // Who a posted tasking can go to: this Command's people and the visitors it
+  // hosts (not everyone in the system, which listUsers returns).
+  const notifyRecipientsQuery = trpc.opManager.notifyRecipients.useQuery(
+    undefined,
+    { staleTime: 30_000, enabled: isAdmin }
+  );
+  const notifyRecipients = notifyRecipientsQuery.data ?? [];
   const priorityQuery = trpc.opManager.getPriorityBoard.useQuery(
     { weekStart },
     { staleTime: 5_000 }
@@ -766,7 +773,7 @@ export default function OperationManagerPage() {
   // ── Post & Notify ─────────────────────────────────────────────────────────────
   const openNotifyDialog = () => {
     // Pre-select all users
-    const allIds = new Set((usersQuery.data ?? []).map(u => u.id));
+    const allIds = new Set(notifyRecipients.map(u => u.id));
     setSelectedUserIds(allIds);
     setNotifyDialogOpen(true);
   };
@@ -776,8 +783,7 @@ export default function OperationManagerPage() {
     try {
       await postWeekMut.mutateAsync({
         weekStart,
-        userIds:
-          selectedUserIds.size > 0 ? Array.from(selectedUserIds) : undefined,
+        userIds: Array.from(selectedUserIds),
       });
       await utils.opManager.isWeekPosted.invalidate();
       toast.success(
@@ -808,14 +814,12 @@ export default function OperationManagerPage() {
             <Checkbox
               id="notify-all"
               checked={
-                (usersQuery.data ?? []).length > 0 &&
-                selectedUserIds.size === (usersQuery.data ?? []).length
+                notifyRecipients.length > 0 &&
+                selectedUserIds.size === notifyRecipients.length
               }
               onCheckedChange={checked => {
                 if (checked) {
-                  setSelectedUserIds(
-                    new Set((usersQuery.data ?? []).map(u => u.id))
-                  );
+                  setSelectedUserIds(new Set(notifyRecipients.map(u => u.id)));
                 } else {
                   setSelectedUserIds(new Set());
                 }
@@ -829,7 +833,7 @@ export default function OperationManagerPage() {
             </Label>
           </div>
           {/* User list sorted: CIN 667 first, then ascending */}
-          {[...(usersQuery.data ?? [])]
+          {[...notifyRecipients]
             .sort((a, b) => {
               const cinA = a.cin ?? "";
               const cinB = b.cin ?? "";

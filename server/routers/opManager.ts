@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { rosterCommandForWrite } from "../rosterContext";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getAllUsers, createNotificationsForUsers } from "../db";
+import {
+  getAllUsers,
+  createNotificationsForUsers,
+  visitorUserIdsOf,
+} from "../db";
+import { notifyRecipientIds } from "@shared/opManagerWeeks";
 
 import {
   getOpManagerPriorityBoard,
@@ -128,13 +133,28 @@ export const opManagerRouter = router({
       return findOpManagerCopySourceWeek(input.beforeWeekStart);
     }),
 
-  /** Deletes a whole weekly tasking (contacts, priority board, calendar and
-   * its posted marker). Admin only; limited to the caller's Command. */
+  /** Deletes a whole weekly tasking into the Recycle Bin (contacts, priority
+   * board, calendar and posted marker; 7 days, then purged). Admin only;
+   * limited to the caller's Command. */
   deleteWeek: adminProcedure
     .input(z.object({ weekStart: z.string() }))
-    .mutation(async ({ input }) => {
-      return deleteOpManagerWeek(input.weekStart);
+    .mutation(async ({ ctx, input }) => {
+      return deleteOpManagerWeek(input.weekStart, ctx.user.cin ?? null);
     }),
+
+  /** Who a posted tasking can be sent to: this Command's people and the
+   * visitors it currently hosts — not everyone in the system (listUsers). */
+  notifyRecipients: adminProcedure.query(async () => {
+    const command = rosterCommandForWrite();
+    const [users, hosted] = await Promise.all([
+      getAllUsers(),
+      visitorUserIdsOf(command),
+    ]);
+    const allowed = notifyRecipientIds(users, command, hosted);
+    return users
+      .filter(u => allowed.has(u.id))
+      .map(u => ({ id: u.id, name: u.name, cin: u.cin ?? null }));
+  }),
 
   copyWeek: adminProcedure
     .input(z.object({ fromWeekStart: z.string(), toWeekStart: z.string() }))
@@ -157,7 +177,7 @@ export const opManagerRouter = router({
     .input(
       z.object({
         weekStart: z.string(),
-        userIds: z.array(z.number()).optional(), // if provided, notify only these users
+        userIds: z.array(z.number()).optional(), // if provided (even empty), notify only these users
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -177,12 +197,19 @@ export const opManagerRouter = router({
       // on OS permissions/per-device subscriptions, broken outright on iOS
       // Safari unless installed as a home-screen PWA). See notifications
       // router / drizzle schema comment.
-      const targetUserIds =
-        input.userIds && input.userIds.length > 0
-          ? input.userIds
-          : (await getAllUsers())
-              .filter(u => u.command === rosterCommandForWrite())
-              .map(u => u.id);
+      // Only this Command's people and the visitors it hosts, whatever was
+      // asked for (the list the screen shows is the same notifyRecipients).
+      const command = rosterCommandForWrite();
+      const [allUsers, hosted] = await Promise.all([
+        getAllUsers(),
+        visitorUserIdsOf(command),
+      ]);
+      const allowed = notifyRecipientIds(allUsers, command, hosted);
+      // A chosen list is used as it stands (an empty one notifies nobody);
+      // none chosen at all means everyone allowed.
+      const targetUserIds = input.userIds
+        ? input.userIds.filter(id => allowed.has(id))
+        : Array.from(allowed);
       await createNotificationsForUsers(targetUserIds, {
         title,
         body,

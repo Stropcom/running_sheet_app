@@ -12,10 +12,11 @@ import {
 } from "@/components/ui/alert-dialog";
 
 /**
- * Confirms and deletes one CTO Weekly Tasking: its supervisor contacts,
- * priority board, calendar and posted marker (admin only; the server limits it
- * to the caller's Command). Notifications already sent stay in people's
- * inboxes. `label` is the week as shown ("26 Oct – 01 Nov").
+ * Confirms and deletes one CTO Weekly Tasking into the Recycle Bin: its
+ * supervisor contacts, priority board, calendar and posted marker (admin only;
+ * the server limits it to the caller's Command). It stays in the Recycle Bin
+ * for 7 days and can be reinstated from there. Notifications already sent
+ * stay in people's inboxes. `label` is the week as shown ("26 Oct – 01 Nov").
  */
 export function DeleteWeekDialog({
   weekStart,
@@ -44,8 +45,11 @@ export function DeleteWeekDialog({
         utils.opManager.getTaskingCalendar.invalidate(),
         utils.opManager.getSupervisorContacts.invalidate(),
         utils.opManager.copySourceWeek.invalidate(),
+        utils.recycleBin.list.invalidate(),
       ]);
-      toast.success(`Deleted the weekly tasking for ${label}.`);
+      toast.success(
+        `Moved the weekly tasking for ${label} to the Recycle Bin.`
+      );
       onDeleted(weekStart);
     } catch {
       toast.error("Couldn't delete the weekly tasking.");
@@ -59,9 +63,11 @@ export function DeleteWeekDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Delete this weekly tasking?</AlertDialogTitle>
           <AlertDialogDescription>
-            This removes the CTO Weekly Tasking for {label}: its supervisor
-            contacts, priority board and calendar. It can't be undone. If it was
-            posted, the notifications already sent stay in people's inboxes.
+            This moves the CTO Weekly Tasking for {label} (its supervisor
+            contacts, priority board and calendar) to the Recycle Bin. It stays
+            there for 7 days and can be reinstated; after that it is deleted for
+            good. If it was posted, the notifications already sent stay in
+            people's inboxes.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

@@ -810,7 +810,7 @@ test("Weekly Surveillance Report PDF: full width, a card for each target, a new 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
-test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has contacts, the full view shows every section, a week can be deleted", async ({
+test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has contacts, the full view shows every section, a deleted week goes to the Recycle Bin and can be reinstated", async ({
   page,
 }) => {
   // Three made-up weeks far from real ones: one with contacts and a priority
@@ -917,6 +917,23 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
     ).toHaveCount(0);
     await expect(
       page.getByText("CTO Weekly Tasking — 09 Jan – 15 Jan")
+    ).toBeVisible();
+
+    // It went to the Recycle Bin, and Reinstate brings it back with its contents.
+    await page.goto("/recycle-bin");
+    const binRow = page
+      .locator("div")
+      .filter({ hasText: "CTO Weekly Tasking — 16 Jan – 22 Jan" })
+      .filter({ has: page.getByRole("button", { name: "Reinstate" }) })
+      .last();
+    await expect(binRow).toContainText("Weekly Tasking");
+    await expect(binRow).toContainText("1 contact");
+    await expect(binRow).toContainText("2 priority rows");
+    await binRow.getByRole("button", { name: "Reinstate" }).click();
+    await expect(page.getByText(/reinstated successfully/)).toBeVisible();
+    await page.goto("/operation-manager");
+    await expect(
+      page.getByText("CTO Weekly Tasking — 16 Jan – 22 Jan")
     ).toBeVisible();
   } finally {
     await wipe();

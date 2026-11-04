@@ -11,6 +11,7 @@ import {
   uniqueIndex,
   date,
   index,
+  longtext,
 } from "drizzle-orm/mysql-core";
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -1826,6 +1827,30 @@ export const opManagerPostedWeeks = mysqlTable(
   ]
 );
 export type OpManagerPostedWeek = typeof opManagerPostedWeeks.$inferSelect;
+
+// ─── Op Manager Recycle Bin ──────────────────────────────────────────────────
+// A deleted CTO Weekly Tasking is kept here for the Recycle Bin's 7 days: one
+// row per deleted week holding a JSON snapshot of its contacts, priority board,
+// calendar and posted marker (the live rows are removed). Reinstating puts them
+// back; after 7 days the row is purged like every other Recycle Bin item.
+export const opManagerDeletedWeeks = mysqlTable(
+  "op_manager_deleted_weeks",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    command: rosterCommandColumn(),
+    weekStart: varchar("weekStart", { length: 10 }).notNull(), // YYYY-MM-DD (Monday)
+    snapshot: longtext("snapshot").notNull(), // JSON, see shared/opManagerWeekSnapshot.ts
+    deletedAt: bigint("deletedAt", { mode: "number" }).notNull(),
+    deletedByCIN: varchar("deletedByCIN", { length: 32 }),
+  },
+  t => [
+    index("op_manager_deleted_weeks_cmd_deleted_idx").on(
+      t.command,
+      t.deletedAt
+    ),
+  ]
+);
+export type OpManagerDeletedWeek = typeof opManagerDeletedWeeks.$inferSelect;
 
 // ─── Push Subscriptions ───────────────────────────────────────────────────────
 // In-app notification inbox. Deliberately not browser push (removed after

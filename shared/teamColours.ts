@@ -22,6 +22,7 @@ export const DEFAULT_TEAM_COLOURS: Record<string, string> = {
   "team 2": "#1976d2",
   ptt: "#f9a825",
   capability: "#7c3aed",
+  oic: "#374151",
 };
 
 /** A team with no colour anywhere (the map's "no team" grey). */

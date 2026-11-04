@@ -158,3 +158,7 @@ After a mock-up of four looks ("B · Soft card" chosen), each team is a **soft c
 - **Sizes that must not shrink with the zoom** (the corners, the colour end, the outline) use `--rpx`, one screen pixel in the zoomed grid: `RosterPage.tsx` sets `--rpx = 1/zoom` on the scroller whenever the zoom changes, and `RosterTeamFrame.tsx` writes `calc(22 * var(--rpx))`. At 40% zoom the corners are still 22 screen pixels (before, they shrank to about 9 and looked square).
 - The name column now **sticks 22 screen pixels in** from the left (its `left` is `ROSTER_FRAME_EDGE`, not 0), beside the colour end rather than under it; the date header and the ON DUTY / ON CALL labels do the same, and the month badge is moved in to match. The grid is that much wider than its columns.
 - The e2e roster test checks the colour end's background is the User Management colour.
+
+## User Management: an OIC team (v2.63.1)
+
+Every Command now has an **OIC** team in User Management → Teams (migration `0139_oic_team.sql`, which adds it only where it is missing, after the Command's other teams, in dark slate `#374151`, and not offered on a new sheet). People can be put in it like any other team, and its colour can be changed there like any other; the CTO roster's OIC section and anything else that looks a team up by name (`shared/teamColours.ts`, which also has OIC's colour as the fallback) uses that colour. A Command that had already made its own team called OIC keeps it as it was.

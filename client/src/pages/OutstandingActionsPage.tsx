@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
+import GovernanceSheetList from "@/components/GovernanceSheetList";
 import {
   BarChart3,
   ChevronDown,
@@ -436,6 +437,9 @@ function ByOutstandingTodos({ users }: { users: TodoUser[] }) {
 
 export default function ReportsPage() {
   const [, setLocation] = useLocation();
+  // The Governance checklist list (every operation and its running sheets)
+  // opens from the summary banner; closed until clicked.
+  const [governanceOpen, setGovernanceOpen] = useState(false);
   const [activeCategories, setActiveCategories] = useState<Set<CategoryId>>(
     new Set(CATEGORIES.map(c => c.id))
   );
@@ -496,29 +500,50 @@ export default function ReportsPage() {
           </button>
         </div>
 
-        {/* Summary bar */}
+        {/* Summary bar — click to open the Governance checklist list */}
         {!isLoading && (
-          <div className="flex items-center gap-4 flex-wrap px-4 py-3 rounded-xl bg-card shadow-sm border border-border">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-red-700 dark:text-red-300" />
-              <span className="text-sm font-semibold text-foreground">
-                {sheets.length}
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <button
+              type="button"
+              onClick={() => setGovernanceOpen(v => !v)}
+              aria-expanded={governanceOpen}
+              aria-controls="governance-checklist"
+              className={`flex w-full flex-wrap items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/50 ${governanceOpen ? "border-b border-border bg-muted/40" : ""}`}
+            >
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-red-700 dark:text-red-300" />
+                <span className="text-sm font-semibold text-foreground">
+                  {sheets.length}
+                </span>
+                <span className="text-xs text-foreground/70">
+                  incomplete sheet{sheets.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+              <div className="h-4 w-px bg-border max-sm:hidden" />
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-blue-700 dark:text-blue-300" />
+                <span className="text-sm font-semibold text-foreground">
+                  {todoUsers.length}
+                </span>
+                <span className="text-xs text-foreground/70">
+                  officer{todoUsers.length !== 1 ? "s" : ""} with outstanding
+                  actions
+                </span>
+              </div>
+              <span className="ml-auto flex items-center gap-1.5 text-xs font-semibold text-foreground/80">
+                Governance checklist
+                {governanceOpen ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
               </span>
-              <span className="text-xs text-foreground/70">
-                incomplete sheet{sheets.length !== 1 ? "s" : ""}
-              </span>
-            </div>
-            <div className="h-4 w-px bg-border/60" />
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-blue-700 dark:text-blue-300" />
-              <span className="text-sm font-semibold text-foreground">
-                {todoUsers.length}
-              </span>
-              <span className="text-xs text-foreground/70">
-                officer{todoUsers.length !== 1 ? "s" : ""} with outstanding
-                actions
-              </span>
-            </div>
+            </button>
+            {governanceOpen && (
+              <div id="governance-checklist" className="p-3">
+                <GovernanceSheetList />
+              </div>
+            )}
           </div>
         )}
 

@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { filterByOperationAccess, toAccessUser } from "../operationAccess";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -19,6 +20,8 @@ import {
   deleteSmeacBriefing,
   reinstateUcoGuideBriefing,
   deleteUcoGuideBriefing,
+  reinstateOpManagerWeek,
+  hardDeleteOpManagerWeek,
 } from "../db";
 
 import { adminProcedure } from "./_helpers";
@@ -26,7 +29,10 @@ import { adminProcedure } from "./_helpers";
 export const recycleBinRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     await purgeExpiredRecycleBinItems();
-    const items = await getRecycleBinItems();
+    // Deleted weekly taskings are for admins, who manage the tasking board.
+    const items = (await getRecycleBinItems()).filter(
+      i => i.type !== "weekly_tasking" || ctx.user.role === "admin"
+    );
     const me = toAccessUser(ctx.user);
     // An operation's own entry follows its id; everything else follows the
     // operation it belonged to. Items with neither (e.g. a deleted target)
@@ -59,11 +65,29 @@ export const recycleBinRouter = router({
           "attachment",
           "smeac_briefing",
           "uco_guide",
+          "weekly_tasking",
         ]),
         id: z.number(),
       })
     )
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      if (input.type === "weekly_tasking") {
+        if (ctx.user.role !== "admin")
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Only an admin can reinstate a weekly tasking.",
+          });
+        const result = await reinstateOpManagerWeek(input.id);
+        if (!result.ok)
+          throw new TRPCError({
+            code: result.reason === "gone" ? "NOT_FOUND" : "CONFLICT",
+            message:
+              result.reason === "gone"
+                ? "That weekly tasking is no longer in the Recycle Bin."
+                : "A weekly tasking for that week has been made since. Delete it first, then reinstate this one.",
+          });
+        return { success: true };
+      }
       if (input.type === "operation") await reinstateOperation(input.id);
       else if (input.type === "sheet") await reinstateSheet(input.id);
       else if (input.type === "map_marker")
@@ -87,12 +111,15 @@ export const recycleBinRouter = router({
           "attachment",
           "smeac_briefing",
           "uco_guide",
+          "weekly_tasking",
         ]),
         id: z.number(),
       })
     )
     .mutation(async ({ input, ctx }) => {
-      if (input.type === "operation") {
+      if (input.type === "weekly_tasking") {
+        await hardDeleteOpManagerWeek(input.id);
+      } else if (input.type === "operation") {
         await deleteOperation(input.id);
         await createAuditLog({
           sheetId: 0,

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import { hoursText, overviewOperation } from "@shared/weeklyOverview";
 import { LinkedEntityPills } from "@/components/LinkedEntityPills";
 import {
   TrendingUp,
@@ -72,6 +73,11 @@ interface TargetBlock {
   teamLabel: string | null;
   days: string[];
   coverageHours: number | null;
+  shifts: {
+    date: string;
+    startMinutes: number | null;
+    finishMinutes: number | null;
+  }[];
   investigator: string | null;
   intelSupport: string | null;
   contacted: string | null;
@@ -127,7 +133,7 @@ function exportWeeklyActivityToPDF(params: {
       ? `<div class="section"><div class="section-title">${esc(title)}</div><div class="section-body">${bodyHtml}</div></div>`
       : "";
 
-  const targetBlockHtml = (t: TargetBlock): string => {
+  const targetBlockHtml = (t: TargetBlock, operationName: string): string => {
     const deployHtml = `
       ${t.officers.length ? `<div class="detail-label">Officers</div><div class="detail-value">${esc(t.officers.join(", "))}</div>` : ""}
       <div class="team-row">
@@ -205,7 +211,7 @@ function exportWeeklyActivityToPDF(params: {
       : `<p class="muted-note">No newly-identified intelligence this week.</p>`;
 
     const targetHeaderHtml = t.targetName
-      ? `<div class="target-subhead"><span class="tgt-label">Target</span><span class="tgt-name">${esc(t.targetName)}</span></div>`
+      ? `<div class="target-subhead"><span class="tgt-label">Target</span><span class="tgt-name">${esc(t.targetName)}</span><span class="tgt-op">${esc(operationName)}</span></div>`
       : "";
 
     return `<div class="target-block">
@@ -221,6 +227,41 @@ function exportWeeklyActivityToPDF(params: {
     </div>`;
   };
 
+  // The overview at the top of the report: every operation, each target, the
+  // days and times they were worked, and the total hours (shared/weeklyOverview.ts).
+  const overviewHtml = operations.length
+    ? `<div class="overview">
+  <div class="ov-title">Overview</div>
+  ${operations
+    .map(o => {
+      const ov = overviewOperation(o);
+      return `<div class="ov-op">
+    <div class="ov-op-head"><span class="ov-op-name">${esc(ov.operationName)}</span><span class="ov-op-stats">${ov.targetCount} target${ov.targetCount === 1 ? "" : "s"} &middot; ${ov.days} day${ov.days === 1 ? "" : "s"} worked &middot; ${esc(hoursText(ov.hours))}</span></div>
+    ${
+      ov.targets.length
+        ? `<table class="ov-table"><thead><tr><th style="width:30%">Target</th><th>Days and times worked</th><th style="width:70px">Hours</th></tr></thead><tbody>${ov.targets
+            .map(
+              t =>
+                `<tr><td class="ov-target">${esc(t.name)}</td><td>${
+                  t.shifts.length
+                    ? t.shifts
+                        .map(
+                          sh =>
+                            `<div class="ov-shift"><span class="ov-day">${esc(formatDayChip(sh.date))}</span> ${esc(sh.times)}</div>`
+                        )
+                        .join("")
+                    : `<span class="muted-note">No days recorded.</span>`
+                }</td><td class="ov-hours">${esc(hoursText(t.hours))}</td></tr>`
+            )
+            .join("")}</tbody></table>`
+        : `<p class="muted-note">No activity recorded this week.</p>`
+    }
+  </div>`;
+    })
+    .join("")}
+</div>`
+    : "";
+
   const opsHtml = operations.length
     ? operations
         .map(
@@ -232,7 +273,7 @@ function exportWeeklyActivityToPDF(params: {
                 <div class="op-stat"><b>${op.rowsCount}</b><span>Rows</span></div>
               </div>
             </div>
-            ${op.targets.length ? op.targets.map(targetBlockHtml).join("") : `<div class="target-block"><p class="muted-note" style="padding:14px 24px">No activity recorded this week.</p></div>`}
+            ${op.targets.length ? op.targets.map(t => targetBlockHtml(t, op.operationName)).join("") : `<div class="target-block"><p class="muted-note" style="padding:14px 24px">No activity recorded this week.</p></div>`}
           </div>`
         )
         .join("")
@@ -258,35 +299,54 @@ body { font-family:-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; li
 .page-frame { width:100%; border-collapse:collapse; }
 .page-frame td { padding:0; border:none; }
 tfoot { display:table-footer-group; }
-.content { padding:20px 32px 8px; }
-.op-card { margin-bottom:16px; border:1px solid ${GREY_BORDER}; border-radius:8px; overflow:hidden; }
-.op-card:not(:first-child) { break-before:page; page-break-before:always; }
-.op-head { display:flex; align-items:baseline; justify-content:space-between; padding:10px 16px; background:#f8fafc; border-bottom:1px solid ${GREY_BORDER}; }
+.content { padding:20px 0 8px; }
+.op-card { margin-bottom:16px; }
+/* The overview is the first page; every operation's pages start after it. */
+.op-card { break-before:page; page-break-before:always; }
+.overview { margin-bottom:16px; }
+.ov-title { font-size:12px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; padding:7px 12px; background:${BLUE_LIGHT} !important; border-left:3px solid ${BLUE_MID}; margin-bottom:10px; }
+.ov-op { border:1.5px solid ${BLUE_DARK}; border-radius:8px; overflow:hidden; margin-bottom:12px; break-inside:avoid; }
+.ov-op-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:8px 14px; background:${BLUE_DARK} !important; color:#fff !important; }
+.ov-op-name { font-size:12px; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; }
+.ov-op-stats { font-size:9.5px; font-weight:600; color:${BLUE_MID} !important; white-space:nowrap; }
+.ov-table { width:100%; border-collapse:collapse; }
+.ov-table th { text-align:left; font-size:8.5px; text-transform:uppercase; letter-spacing:0.05em; color:${BLUE_DARK} !important; padding:5px 14px; border-bottom:2px solid ${BLUE_DARK}; background:#f8fafc !important; }
+.ov-table td { vertical-align:top; padding:6px 14px; border-bottom:1px solid ${GREY_BORDER}; font-size:10.5px; }
+.ov-table tr:last-child td { border-bottom:none; }
+.ov-table th:last-child { text-align:right; }
+.ov-target { font-weight:700; }
+.ov-shift { padding:1px 0; font-variant-numeric:tabular-nums; }
+.ov-day { display:inline-block; min-width:62px; font-weight:700; color:#475569 !important; }
+.ov-hours { font-weight:800; text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.op-head { display:flex; align-items:baseline; justify-content:space-between; padding:10px 16px; background:#f8fafc; border:1px solid ${GREY_BORDER}; border-radius:8px; margin-bottom:12px; }
 .op-name { font-size:13px; font-weight:800; letter-spacing:0.03em; color:${BLUE_DARK} !important; }
 .op-stats { display:flex; gap:14px; }
 .op-stat { text-align:center; }
 .op-stat b { display:block; font-size:12px; font-weight:800; color:${GREY_TEXT}; }
 .op-stat span { font-size:8px; text-transform:uppercase; letter-spacing:0.05em; color:#94a3b8; }
-.target-block { border-bottom:4px solid #f1f5f9; }
-.target-block:last-child { border-bottom:none; }
-.target-subhead { display:flex; align-items:center; gap:8px; padding:7px 16px; background:#eef2ff !important; border-bottom:1px solid #e0e7ff; }
-.tgt-label { font-size:7.5px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#4338ca !important; background:#e0e7ff !important; border-radius:4px; padding:1px 5px; }
-.tgt-name { font-size:11px; font-weight:700; color:#312e81 !important; }
+.target-block { margin:0 0 14px; border:1.5px solid ${BLUE_DARK}; border-radius:8px; overflow:hidden; background:#fff; }
+.target-block:last-child { margin-bottom:0; }
+/* Every target after the first in an operation starts a new page (the first target of the report stays on the header page; a new operation already starts one). */
+.target-block + .target-block { break-before:page; page-break-before:always; }
+.target-subhead { display:flex; align-items:center; gap:10px; padding:9px 16px; background:${BLUE_DARK} !important; border-bottom:1px solid ${BLUE_DARK}; }
+.tgt-label { font-size:8px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:${BLUE_DARK} !important; background:#fff !important; border-radius:3px; padding:2px 6px; }
+.tgt-name { font-size:12px; font-weight:700; color:#fff !important; }
+.tgt-op { margin-left:auto; font-size:9px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:${BLUE_MID} !important; white-space:nowrap; }
 .section { margin:0; padding:8px 16px; border-bottom:1px solid ${GREY_BORDER}; break-inside:avoid; }
-.target-block:last-child .section:last-child { border-bottom:none; }
+.target-block .section:last-child { border-bottom:none; }
 .section-title { font-size:8.5px; font-weight:700; letter-spacing:0.07em; text-transform:uppercase; color:${BLUE_DARK} !important; margin-bottom:5px; }
 .section-body { }
 .detail-label { color:#64748b; font-weight:600; font-size:9px; text-transform:uppercase; letter-spacing:0.03em; }
 .detail-value { color:${GREY_TEXT}; font-size:10.5px; margin-top:1px; margin-bottom:6px; }
 .team-row { display:flex; flex-wrap:wrap; align-items:center; gap:5px; margin-top:4px; }
-.team-pill { font-size:9.5px; font-weight:700; padding:2px 8px; border-radius:999px; background:#eef2ff !important; color:#4338ca !important; border:1px solid #c7d2fe; }
-.day-chip { font-size:9.5px; font-weight:600; padding:2px 8px; border-radius:999px; background:#f1f5f9 !important; color:#64748b !important; border:1px solid ${GREY_BORDER}; }
-.coverage-total { font-size:9.5px; font-weight:700; padding:2px 8px; border-radius:999px; background:#f0fdf4 !important; color:#15803d !important; border:1px solid #bbf7d0; margin-left:auto; }
+.team-pill { font-size:9.5px; font-weight:700; padding:2px 8px; border-radius:4px; background:#eef2ff !important; color:#4338ca !important; border:1px solid #c7d2fe; }
+.day-chip { font-size:9.5px; font-weight:600; padding:2px 8px; border-radius:4px; background:#f1f5f9 !important; color:#64748b !important; border:1px solid ${GREY_BORDER}; }
+.coverage-total { font-size:9.5px; font-weight:700; padding:2px 8px; border-radius:4px; background:#f0fdf4 !important; color:#15803d !important; border:1px solid #bbf7d0; margin-left:auto; }
 .liaison-row { display:flex; gap:16px; flex-wrap:wrap; }
 .liaison-item { font-size:10.5px; }
 .liaison-item span { display:block; font-size:8.5px; text-transform:uppercase; color:#94a3b8; }
 .chip-row { display:flex; flex-wrap:wrap; gap:5px; }
-.chip { font-size:9.5px; font-weight:600; padding:3px 8px; border-radius:999px; border:1px solid; }
+.chip { font-size:9.5px; font-weight:600; padding:3px 8px; border-radius:4px; border:1px solid; }
 .chip-project { color:#0369a1 !important; background:#e0f2fe !important; border-color:#7dd3fc; }
 .chip-person { color:#a21caf !important; background:#fae8ff !important; border-color:#f0abfc; }
 .chip-vehicle { color:#b45309 !important; background:#fef3c7 !important; border-color:#fcd34d; }
@@ -302,13 +362,13 @@ tfoot { display:table-footer-group; }
 .image-card { width:84px; }
 .image-thumb { width:84px; height:84px; object-fit:cover; border-radius:6px 6px 0 0; border:1px solid ${GREY_BORDER}; display:block; }
 .entity-pills { display:flex; flex-direction:column; gap:2px; padding:4px; background:#f1f5f9 !important; border:1px solid ${GREY_BORDER}; border-top:none; border-radius:0 0 6px 6px; }
-.entity-pill { font-size:7.5px; font-weight:700; padding:1px 6px; border-radius:999px; background:#059669 !important; color:#fff !important; text-align:center; }
+.entity-pill { font-size:7.5px; font-weight:700; line-height:1.3; padding:2px 5px; overflow-wrap:anywhere; border-radius:3px; background:#059669 !important; color:#fff !important; text-align:center; }
 .muted-note { font-size:10px; color:#94a3b8; font-style:italic; }
 .summary-table { width:100%; border-collapse:collapse; border:1px solid ${GREY_BORDER}; margin-top:4px; }
 .summary-table th { background:${BLUE_LIGHT} !important; color:${BLUE_DARK} !important; font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:5px 8px; border-bottom:2px solid ${BLUE_DARK}; }
 .summary-table td { vertical-align:top; font-size:10.5px; padding:5px 8px; border-bottom:1px solid ${GREY_BORDER}; }
 .summary-table tbody tr:last-child td { border-bottom:none; }
-.footer-note { margin:14px 32px 0; padding:12px 0; border-top:1px solid ${GREY_BORDER}; font-size:9px; color:#94a3b8; }
+.footer-note { margin:14px 0 0; padding:12px 0; border-top:1px solid ${GREY_BORDER}; font-size:9px; color:#94a3b8; }
 .footer-band { background:${BLUE_DARK} !important; color:#fff !important; padding:8px 32px; display:grid; grid-template-columns:1fr 1fr 1fr; align-items:center; font-size:9px; font-weight:700; letter-spacing:0.04em; }
 .footer-band span:first-child { text-align:left; }
 .footer-band span:last-child { text-align:right; color:rgba(255,255,255,0.85); text-transform:uppercase; }
@@ -330,6 +390,7 @@ tfoot { display:table-footer-group; }
 </td></tr></tfoot>
 <tbody><tr><td>
 <div class="content">
+  ${overviewHtml}
   ${opsHtml}
   <div class="footer-note">
     <span>Generated: ${generatedAt}</span>
@@ -646,6 +707,59 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
   );
 }
 
+// The summary at the top of each operation's dropdown: each target, the days
+// they were worked with start and finish times, and their total hours. The same
+// figures lead the PDF (see overviewHtml above).
+function OperationOverview({ op }: { op: OperationBlock }) {
+  const ov = overviewOperation(op);
+  if (!ov.targets.length) return null;
+  return (
+    <div className="border-b border-border px-4 py-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-bold uppercase tracking-wide text-foreground/70">
+          Overview
+        </p>
+        <p className="text-xs font-semibold text-foreground">
+          {ov.targetCount} target{ov.targetCount === 1 ? "" : "s"} · {ov.days}{" "}
+          day{ov.days === 1 ? "" : "s"} worked · {hoursText(ov.hours)}
+        </p>
+      </div>
+      <div className="grid gap-2">
+        {ov.targets.map((t, i) => (
+          <div
+            key={`${t.name}-${i}`}
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1.5 rounded-lg border border-border bg-background px-3 py-2"
+          >
+            <p className="min-w-0 truncate text-sm font-semibold text-foreground">
+              {t.name}
+            </p>
+            <p className="text-sm font-bold tabular-nums text-foreground">
+              {hoursText(t.hours)}
+            </p>
+            <div className="col-span-full flex flex-wrap gap-1.5">
+              {t.shifts.length === 0 ? (
+                <span className="text-xs italic text-foreground/70">
+                  No days recorded.
+                </span>
+              ) : (
+                t.shifts.map((sh, j) => (
+                  <span
+                    key={`${sh.date}-${j}`}
+                    className="rounded border border-border bg-card px-2 py-0.5 text-xs tabular-nums text-foreground"
+                  >
+                    <b className="font-semibold">{formatDayChip(sh.date)}</b>{" "}
+                    {sh.times}
+                  </span>
+                ))
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Closed by default — an officer opens the operation(s) they actually want
 // to read on screen. This only affects the on-screen accordion state; the
 // PDF export builds its own HTML straight from the query data (see
@@ -686,6 +800,7 @@ function OperationCard({ op }: { op: OperationBlock }) {
           </div>
         </div>
       </button>
+      {expanded && <OperationOverview op={op} />}
       {expanded &&
         (op.targets.length > 0 ? (
           op.targets.map((t, i) => (

@@ -1,4 +1,11 @@
 import { trpc, trpcClient } from "@/lib/trpc";
+import { tidyRepeatedPlaceName } from "@/lib/addressFormat";
+import { buildDayRouteBodyHtml, longDay } from "@/lib/dayRouteExport";
+import {
+  routesForSheet,
+  staticMapInput,
+  type DayRoutePlace,
+} from "@shared/dayRoute";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -488,6 +495,9 @@ function exportSummaryToPDF(params: {
   entries: SheetSummaryEntryLike[];
   record: SheetSummaryRecordLike | null | undefined;
   mapImageDataUrl: string | null;
+  /** The Day Route pages (one per day the sheet covers), as ready HTML. When
+   * present they replace the Locations map. */
+  dayRouteHtml: string | null;
   egoNetwork: EgoNetworkExportData | null;
 }) {
   const {
@@ -497,6 +507,7 @@ function exportSummaryToPDF(params: {
     entries,
     record,
     mapImageDataUrl,
+    dayRouteHtml,
     egoNetwork,
   } = params;
   const esc = (s: string | null | undefined) =>
@@ -566,7 +577,7 @@ function exportSummaryToPDF(params: {
         <tbody>${entries
           .map(
             e =>
-              `<tr><td>${esc(e.time || "—")}</td><td>${esc(e.location || "")}</td><td>${esc(e.text)}</td></tr>`
+              `<tr><td>${esc(e.time || "—")}</td><td>${esc(tidyRepeatedPlaceName(e.location || ""))}</td><td>${esc(e.text)}</td></tr>`
           )
           .join("")}</tbody>
       </table>`
@@ -697,12 +708,14 @@ tfoot { display:table-footer-group; }
     <span>Generated: ${generatedAt}</span>
   </div>
   ${
-    mapImageDataUrl
-      ? `<div class="page-break">${plainSection(
-          "Location Map",
-          `<img src="${mapImageDataUrl}" style="width:100%;border-radius:6px;display:block;border:1px solid ${GREY_BORDER}" />`
-        )}</div>`
-      : ""
+    dayRouteHtml
+      ? `<div class="page-break">${plainSection("Day Route", dayRouteHtml)}</div>`
+      : mapImageDataUrl
+        ? `<div class="page-break">${plainSection(
+            "Location Map",
+            `<img src="${mapImageDataUrl}" style="width:100%;border-radius:6px;display:block;border:1px solid ${GREY_BORDER}" />`
+          )}</div>`
+        : ""
   }
   ${
     egoNetwork
@@ -1084,24 +1097,83 @@ export default function SheetSummaryPage() {
     }, 800);
   }
 
+  // ── Day Route page for the PDF (replaces the Locations map) ───────────────
+  // Only this sheet's own rows, one page per day the sheet covers, saying only
+  // what the rows say. Null (so the old Locations map is used) when the sheet
+  // has no target, no places to plot, or the report is not available.
+  async function buildSheetDayRouteHtml(): Promise<string | null> {
+    if (!operationId || !sheetTargetId) return null;
+    try {
+      const report = await trpcClient.intelligence.getTargetPlaces.query({
+        operationId,
+        targetId: sheetTargetId,
+      });
+      const routes = routesForSheet(report.places as DayRoutePlace[], sheetId);
+      if (!routes.length) return null;
+      const placeKeys = Array.from(
+        new Set(routes.flatMap(r => r.places.map(p => p.placeKey)))
+      );
+      const coords = await trpcClient.intelligence.getPlaceCoords.query({
+        operationId,
+        targetId: sheetTargetId,
+        placeKeys,
+      });
+      const positions = new Map(
+        coords.map(c => [c.placeKey, { lat: c.lat, lng: c.lng }])
+      );
+      const at = (k: string) => positions.get(k) ?? null;
+      let anyMap = false;
+      const days: string[] = [];
+      for (const route of routes) {
+        let mapDataUrl: string | null = null;
+        const input = staticMapInput(route, at, { plainLines: true });
+        if (input) {
+          try {
+            const result = await trpcClient.rsMapping.getStaticMapImage.query({
+              ...input,
+              size: "800x500",
+            });
+            mapDataUrl = result.dataUrl;
+            anyMap = true;
+          } catch {
+            mapDataUrl = null;
+          }
+        }
+        days.push(
+          `<div style="${days.length ? "break-before:page;" : ""}"><p style="font-weight:700;margin:2px 0 8px">${longDay(route.dateISO)}</p>${buildDayRouteBodyHtml({ route, mapDataUrl, plain: true })}</div>`
+        );
+      }
+      return anyMap ? days.join("") : null;
+    } catch {
+      return null;
+    }
+  }
+
   // ── PDF export (with a geocoded map as its own final page) ────────────────
   const [exportingPdf, setExportingPdf] = useState(false);
   async function handleExportPdf() {
     setExportingPdf(true);
     try {
+      // The Day Route replaces the Locations map when this sheet has a target
+      // and places to plot (its own rows only); otherwise the map is as before.
+      const dayRouteHtml = await buildSheetDayRouteHtml();
       let mapImageDataUrl: string | null = null;
-      const addresses = Array.from(
-        new Set(
-          (entries ?? [])
-            .map(e => e.location?.trim())
-            .filter((loc): loc is string => !!loc)
-        )
-      );
+      const addresses = dayRouteHtml
+        ? []
+        : Array.from(
+            new Set(
+              (entries ?? [])
+                .map(e => e.location?.trim())
+                .filter((loc): loc is string => !!loc)
+            )
+          );
       if (addresses.length > 0) {
         try {
-          const geocoded = await trpcClient.rsMapping.geocodeAddresses.query({
-            addresses,
-          });
+          const geocoded =
+            await trpcClient.rsMapping.geocodeSummaryAddresses.query({
+              sheetId,
+              addresses,
+            });
           if (geocoded.length > 0) {
             const waypoints = geocoded.map((g, i) => ({
               lat: g.lat,
@@ -1152,6 +1224,7 @@ export default function SheetSummaryPage() {
         entries: entries ?? [],
         record,
         mapImageDataUrl,
+        dayRouteHtml,
         egoNetwork,
       });
     } finally {

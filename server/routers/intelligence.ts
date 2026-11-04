@@ -20,6 +20,7 @@ import {
   getIntelligenceHeatMapLocations,
   getIntelTargetPatternOfLife,
   getIntelTargetPlaces,
+  getIntelPlaceCoords,
   getIntelTargetPredictor,
   getOperationTrail,
   getSharedSeen,
@@ -268,6 +269,25 @@ export const intelligenceRouter = router({
           message: "Operation or target not found.",
         });
       return result;
+    }),
+
+  /** Day Route: where the given places are on the map (cache-first geocoding,
+   * by the fuller written address when there is one). The route itself is
+   * built on the page from getTargetPlaces, by shared/dayRoute.ts. */
+  getPlaceCoords: protectedProcedure
+    .input(
+      z.object({
+        operationId: z.number(),
+        targetId: z.number(),
+        placeKeys: z.array(z.string()).max(60),
+      })
+    )
+    .query(async ({ input }) => {
+      return getIntelPlaceCoords(
+        input.operationId,
+        input.targetId,
+        input.placeKeys
+      );
     }),
 
   /** Target Predictor: the places one target goes (located on the map), his

@@ -27,6 +27,10 @@ import { deleteSmeacBriefing, deleteUcoGuideBriefing } from "./court";
 import { deleteRowAttachment } from "./attachments";
 import { targetVehicleRegos } from "./crossOperation";
 import { invalidateIntelligenceCache } from "./reports";
+import {
+  getDeletedOpManagerWeeks,
+  purgeExpiredOpManagerWeeks,
+} from "./opManager";
 
 // ─── Recycle Bin ─────────────────────────────────────────────────────────────
 
@@ -41,7 +45,8 @@ export type RecycleBinItem = {
     | "map_marker"
     | "attachment"
     | "smeac_briefing"
-    | "uco_guide";
+    | "uco_guide"
+    | "weekly_tasking";
   label: string;
   sublabel?: string;
   deletedAt: number;
@@ -259,6 +264,20 @@ export async function getRecycleBinItems(): Promise<RecycleBinItem[]> {
     });
   }
 
+  // Deleted CTO Weekly Taskings (this Command's own; admins only see them —
+  // see recycleBin.list)
+  for (const w of await getDeletedOpManagerWeeks(cutoff)) {
+    items.push({
+      id: w.id,
+      type: "weekly_tasking",
+      label: `CTO Weekly Tasking — ${w.weekLabel}`,
+      sublabel: `${w.posted ? "Posted" : "Draft"} · ${w.contacts} contact${w.contacts === 1 ? "" : "s"} · ${w.priority} priority row${w.priority === 1 ? "" : "s"}`,
+      deletedAt: w.deletedAt,
+      deletedByCIN: w.deletedByCIN,
+      expiresAt: w.deletedAt + SEVEN_DAYS_MS,
+    });
+  }
+
   // Sort newest deleted first
   return items.sort((a, b) => b.deletedAt - a.deletedAt);
 }
@@ -356,6 +375,8 @@ export async function purgeExpiredRecycleBinItems() {
   for (const g of expiredUcoGuides) {
     await deleteUcoGuideBriefing(g.id);
   }
+  // Permanently delete expired CTO Weekly Taskings
+  await purgeExpiredOpManagerWeeks(cutoff);
   // Permanently delete expired photo attachments
   const expiredAttachments = await db
     .select({ id: rowAttachments.id })

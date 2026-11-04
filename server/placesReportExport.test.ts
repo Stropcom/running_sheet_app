@@ -44,6 +44,13 @@ describe("Places Report export", () => {
     expect(html).toContain("55 min");
   });
 
+  it("prints a card for each place, like the page, with its kind and figures", () => {
+    expect(html).toContain('class="pl-card"');
+    expect(html).toContain("Recognised from its name or saved sign");
+    expect(html).toContain("average stay");
+    expect(html).toContain("Places</p>"); // the summary tiles
+  });
+
   it("does not list the running sheets", () => {
     expect(html).not.toContain("20261022 - 701 - RAVEN");
     expect(html).not.toContain("Running sheet");

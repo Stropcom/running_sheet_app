@@ -5,6 +5,7 @@ import {
   getRsMappingWaypoints,
   upsertRsMappingWaypoint,
   geocodeAddressList,
+  geocodeSummaryAddresses,
 } from "../db";
 
 export const rsMappingRouter = router({
@@ -25,6 +26,20 @@ export const rsMappingRouter = router({
         zoom: z.number().optional(),
         size: z.string().optional(),
         routePath: z.string().optional(), // pipe-separated lat,lng pairs for route polyline
+        // Extra lines, each its own colour (the Day Route draws travel in red
+        // and a stretch no row covers in amber). Static Maps cannot dash a line.
+        paths: z
+          .array(
+            z.object({
+              colour: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+              points: z
+                .array(z.object({ lat: z.number(), lng: z.number() }))
+                .min(2)
+                .max(2),
+            })
+          )
+          .max(60)
+          .optional(),
       })
     )
     .query(async ({ input }) => {
@@ -60,6 +75,15 @@ export const rsMappingRouter = router({
         url.searchParams.append(
           "path",
           `color:0x1E88E5C0|weight:3|${input.routePath}`
+        );
+      }
+
+      for (const path of input.paths ?? []) {
+        url.searchParams.append(
+          "path",
+          `color:0x${path.colour.slice(1)}E6|weight:4|${path.points
+            .map(p => `${p.lat},${p.lng}`)
+            .join("|")}`
         );
       }
 
@@ -99,6 +123,14 @@ export const rsMappingRouter = router({
     .input(z.object({ addresses: z.array(z.string()) }))
     .query(async ({ input }) => {
       return geocodeAddressList(input.addresses);
+    }),
+
+  /** The Supervisor Summary's map: like geocodeAddresses, but a bare place
+   * name is placed using the fuller address written on this sheet. */
+  geocodeSummaryAddresses: protectedProcedure
+    .input(z.object({ sheetId: z.number(), addresses: z.array(z.string()) }))
+    .query(async ({ input }) => {
+      return geocodeSummaryAddresses(input.sheetId, input.addresses);
     }),
 
   getWaypoints: protectedProcedure

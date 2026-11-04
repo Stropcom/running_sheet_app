@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   ShieldAlert,
   Eye,
+  ClipboardList,
 } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useViewMode } from "@/contexts/ViewModeContext";
@@ -39,7 +40,8 @@ type RecycleBinItem = {
     | "map_marker"
     | "attachment"
     | "smeac_briefing"
-    | "uco_guide";
+    | "uco_guide"
+    | "weekly_tasking";
   label: string;
   sublabel?: string;
   deletedAt: number;
@@ -62,6 +64,10 @@ function typeIcon(type: RecycleBinItem["type"]) {
     );
   if (type === "uco_guide")
     return <Eye className="w-5 h-5 text-indigo-700 dark:text-indigo-300" />;
+  if (type === "weekly_tasking")
+    return (
+      <ClipboardList className="w-5 h-5 text-violet-700 dark:text-violet-300" />
+    );
   return <User className="w-5 h-5 text-purple-700 dark:text-purple-300" />;
 }
 
@@ -72,6 +78,7 @@ function typeLabel(type: RecycleBinItem["type"]) {
   if (type === "attachment") return "Photo";
   if (type === "smeac_briefing") return "SMEAC Briefing";
   if (type === "uco_guide") return "UCO Guide";
+  if (type === "weekly_tasking") return "Weekly Tasking";
   return "Target";
 }
 
@@ -85,6 +92,8 @@ function typeBadgeClass(type: RecycleBinItem["type"]) {
     return "bg-amber-100 text-amber-700 border-amber-200";
   if (type === "uco_guide")
     return "bg-indigo-100 text-indigo-700 border-indigo-200";
+  if (type === "weekly_tasking")
+    return "bg-violet-100 text-violet-700 border-violet-200";
   return "bg-purple-100 text-purple-700 border-purple-200";
 }
 
@@ -125,6 +134,14 @@ export default function RecycleBin() {
       if (variables.type === "smeac_briefing")
         utils.smeacBriefing.list.invalidate();
       if (variables.type === "uco_guide") utils.ucoGuide.list.invalidate();
+      if (variables.type === "weekly_tasking") {
+        utils.opManager.listAllWeeks.invalidate();
+        utils.opManager.getPostedWeeks.invalidate();
+        utils.opManager.isWeekPosted.invalidate();
+        utils.opManager.getPriorityBoard.invalidate();
+        utils.opManager.getTaskingCalendar.invalidate();
+        utils.opManager.getSupervisorContacts.invalidate();
+      }
     },
     onError: err => {
       toast.error(err.message ?? "Failed to reinstate item.");

@@ -40,6 +40,7 @@ import {
 import { buildPlacesReportHtml } from "@/lib/placesReportExport";
 import {
   LABELLABLE_KINDS,
+  PLACE_SOURCE_TEXT,
   PLACE_KINDS,
   WEEKDAY_SHORT,
   addDaysISO,
@@ -49,7 +50,6 @@ import {
   sortPlaces,
   summarisePlaces,
   type PlaceKind,
-  type PlaceKindSource,
   type PlaceRecord,
   type PlaceSort,
   type PlaceSummary,
@@ -132,15 +132,6 @@ const KIND_STYLE: Record<
     pill: "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-500/40 dark:bg-slate-500/10 dark:text-slate-300",
     dot: "bg-slate-500 dark:bg-slate-400",
   },
-};
-
-const SOURCE_TEXT: Record<PlaceKindSource, string> = {
-  "registry-home": "Registered home address",
-  "registry-label": "Registered address, labelled in the registry",
-  "registry-generic": "Registered address, no label",
-  sign: "Recognised from its name or saved sign",
-  officer: "Labelled on this report",
-  none: "Name not recognised",
 };
 
 const PERIODS: Array<{ days: number | null; label: string }> = [
@@ -272,7 +263,7 @@ function PlaceRow({
               </span>
             )}
             <span className="inline-flex items-center rounded-full border border-border bg-card px-2 text-xs font-medium text-foreground/70">
-              {SOURCE_TEXT[place.source]}
+              {PLACE_SOURCE_TEXT[place.source]}
             </span>
             {place.isNew && (
               <span className="inline-flex items-center rounded-full border border-primary bg-primary/10 px-2 text-xs font-semibold text-primary">

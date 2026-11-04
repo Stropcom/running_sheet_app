@@ -95,6 +95,7 @@ export const CLEAR_TABLES = [
   "op_manager_tasking_cells",
   "op_manager_supervisor_contacts",
   "op_manager_posted_weeks",
+  "op_manager_deleted_weeks",
   "notifications",
   "audit_logs",
 ];

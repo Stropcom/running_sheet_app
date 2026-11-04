@@ -22,3 +22,26 @@ export function fullAddressForGeocode(
   }
   return null;
 }
+
+/** Groups the written forms of each place by the place's label, so a caller
+ * that only has the label (the Supervisor Summary's Location column) can find
+ * the fuller "<street>, SUBURB STATE" the officer wrote for it. `normalize` is
+ * the same label key the Heat Map uses. Only address / business places count. */
+export function fullDescriptionsByLabel(
+  entities: readonly {
+    type: string;
+    shortForm: string;
+    fullDescription: string;
+  }[],
+  normalize: (label: string) => string
+): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const e of entities) {
+    if (e.type !== "address" && e.type !== "business") continue;
+    const key = normalize(e.shortForm);
+    const list = out.get(key);
+    if (list) list.push(e.fullDescription);
+    else out.set(key, [e.fullDescription]);
+  }
+  return out;
+}

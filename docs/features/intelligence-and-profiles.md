@@ -121,3 +121,21 @@ photo links, profiles and map marker settings keyed by it still work. **Not chan
 a bare "Terminal 4" and "Terminal 4, Perth Airport…" are still two entities (the
 airport rule — a bare terminal could be a port or bus terminal); merging them by rule
 was offered and not asked for. Tests: `server/placeLabelTidy.test.ts`.
+
+## Summary export map: a bare place is placed by its fuller address (v2.49.8)
+
+The Supervisor Summary PDF plots its Location column on a map page. It used to geocode the Location text on its own, so a place name with no street ("Terminal 4, Terminal 4") landed in the middle of the State, while the Intelligence folder (which uses the fuller address the officer wrote) had it right. The export now calls `rsMapping.geocodeSummaryAddresses({ sheetId, addresses })` (`geocodeSummaryAddresses` in `server/db/reports.ts`): it reads this sheet's rows, finds the fuller "<street>, SUBURB STATE" written for each label (`fullDescriptionsByLabel` in `shared/geocodeQuery.ts`, then `fullAddressForGeocode`), and geocodes that through the same cache and key as the Heat Map. A location with no fuller form is geocoded as written, as before. The Address column in the Summary print/PDF also shows a repeated place name once ("Terminal 4, Terminal 4" is shown "Terminal 4", display only).
+
+Limit: a map click does not store its coordinates on the row, so the position comes from the written address, the same as the Intelligence folder. Tests: `server/geocodeQuery.test.ts`.
+
+## Day Route report (v2.50.0)
+
+Intelligence → Reports → **Day Route** (between Places and Pattern of Life): pick an operation, a target and a day, and see where the target went that day, in order, with the time at each place and the stretches no row covers.
+
+- **Rules** are in `shared/dayRoute.ts` (tests: `server/dayRoute.test.ts`): `buildDayRoute` takes the same visits the Places Report works out (`getIntelTargetPlaces` → `buildVisits`), keeps the chosen day, orders them by arrival (by departure for a stop that opens with the target leaving), joins two stops in a row at the same place (a hand-over between sheets) into one, and numbers the pins by first visit (1-9 then A-Z, the only single characters Google's static map accepts; past 35 a pin is unlabelled). A leg between stops is `travel`, a `gap` (no row for 60 minutes or more, `GAP_MINUTES`) or `unknown` (the earlier stop has no logged departure, so the time between is never guessed). `staticMapInput` builds the Google request: one pin per place that has a position, a red line for travel, an amber line for a gap or unknown leg (static maps cannot dash a line).
+- **Positions**: `intelligence.getPlaceCoords` (`getIntelPlaceCoords` in `server/db/reports.ts`) geocodes each place by the fuller written address, cache-first, the same rule as the Heat Map (`resolvePlaceLatLng`). It only answers for places this target's own rows put them at on an operation the caller can reach, never an arbitrary label. A place that cannot be located is listed but has no pin.
+- **Map picture**: `rsMapping.getStaticMapImage` gained an optional `paths` list (one colour per line). The page and the PDF use the same picture.
+- **Page**: `client/src/pages/IntelligenceDayRoute.tsx`; **PDF**: `client/src/lib/dayRouteExport.ts` (same shell as the other report exports: cover band, PROTECTED header, map, stops table with gap rows).
+- Reads uncertified rows too, like the Places Report. Nothing is filled in.
+- Not built yet: clicking a stop to light its pin (needs the live map), and an interactive illustrative file. The static map is a picture, so the pins are not clickable.
+- Check: `e2e/screens.spec.ts` "Day Route sits between Places and Pattern of Life…" (made-up answers; the Google picture is replaced). The real Google picture could not be fetched in the build sandbox, so look at it on the live site.

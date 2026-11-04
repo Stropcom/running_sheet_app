@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { normalizeChromeStyle, normalizeColorPalette } from "@shared/const";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Redirect, Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { NativeLocationSharing } from "./components/NativeLocationSharing";
@@ -24,7 +24,6 @@ import ShortcutsPage from "./pages/ShortcutsPage";
 import IntelligencePage from "./pages/Intelligence";
 import GovernancePage from "./pages/Governance";
 import SheetSummaryPage from "./pages/SheetSummary";
-import GovernanceListPage from "./pages/GovernanceList";
 import TargetRegistryPage from "./pages/TargetRegistry";
 import OperationManagementPage from "./pages/OperationManagementPage";
 import CalendarPage from "./pages/CalendarPage";
@@ -42,7 +41,7 @@ import IntelligenceLocationProfile from "@/pages/IntelligenceLocationProfile";
 import IntelligenceMapping from "@/pages/IntelligenceMapping";
 import RSMapping from "@/pages/RSMapping";
 import DraftSheetPage from "@/pages/DraftSheetPage";
-import ReportsPage from "@/pages/ReportsPage";
+import OutstandingActionsPage from "@/pages/OutstandingActionsPage";
 import WeeklyActivityReportPage from "@/pages/WeeklyActivityReportPage";
 import WeeklyTaskingReportPage from "@/pages/WeeklyTaskingReportPage";
 import ImagesPage from "@/pages/ImagesPage";
@@ -284,7 +283,7 @@ function Router() {
       />
       <Route path="/intelligence/mapping" component={IntelligenceMapping} />
       <Route path="/intelligence/rs-mapping" component={RSMapping} />
-      <Route path="/governance" component={GovernanceListPage} />
+      <Route path="/governance" component={OutstandingActionsPage} />
       <Route path="/governance/:sheetId" component={GovernancePage} />
       <Route path="/summary/:sheetId" component={SheetSummaryPage} />
       <Route path="/target-registry" component={TargetRegistryPage} />
@@ -336,7 +335,10 @@ function Router() {
       <Route path="/recycle-bin" component={RecycleBin} />
       <Route path="/draft" component={DraftHubPage} />
       <Route path="/draft/sheet/:localId" component={DraftSheetPage} />
-      <Route path="/reports/outstanding-actions" component={ReportsPage} />
+      {/* Outstanding Actions is now the Governance folder's main page. */}
+      <Route path="/reports/outstanding-actions">
+        <Redirect to="/governance" replace />
+      </Route>
       <Route
         path="/reports/weekly-activity"
         component={WeeklyActivityReportPage}

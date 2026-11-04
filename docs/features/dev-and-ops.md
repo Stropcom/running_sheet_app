@@ -106,3 +106,7 @@ Detailed per-feature notes moved out of `CLAUDE.md` (text unchanged, original or
 3. **The screens themselves, one section per release,** each checked by the tests above plus a look at laptop, tablet and phone width.
 4. **Keep them small.** A CI note when a file passes about 2,000 lines; ESLint and fewer `any` at the same time.
 *Standing rule, in `CLAUDE.md`:* when a feature has to change a very large file, move the piece being changed into its own file as part of that change (same code, new file) instead of adding to the big one — the files shrink over time without a risky big-bang split.
+
+## CI red from v2.50.0 to v2.57.0: a unit test could not build the Places export (fixed v2.57.1)
+
+`check-and-test` failed on every push from v2.50.0 (the Places Report export drew its kind icons by rendering them into a page element, `document.createElement`), because `server/placesReportExport.test.ts` builds that export in Node where there is no `document`. The browser tests (`e2e`) were green throughout, so only the unit-test job was red. It went unnoticed because the local test run was piped through `tail`, which hid the "Test Files … failed" line and the exit code. **When running the suite, read the "Test Files" line and the exit code (e.g. `pnpm vitest run > /tmp/vt.log; echo $?`), not just the tail.** `kindIconSvg` now returns no icon when there is no `document`, and the test also checks the card layout. Also run `pnpm check` and `scripts/check-no-runtime-ai.sh` the same way.

@@ -123,10 +123,12 @@ test("Governance is the Outstanding Actions page: the banner opens the checklist
   await expect(
     page.getByRole("heading", { name: "Outstanding Actions" })
   ).toBeVisible();
-  // The banner counts incomplete sheets and officers; the checklist list is
-  // closed until it is clicked.
+  // The banner counts incomplete sheets, overdue sheets and members; the
+  // checklist list is closed until it is clicked.
   const banner = page.getByRole("button", { name: /incomplete sheet/ });
   await expect(banner).toBeVisible();
+  await expect(banner).toContainText(/\d+\s*overdue/);
+  await expect(banner).toContainText(/members? with outstanding actions/);
   await expect(banner).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByText(/\d+ to review/)).toHaveCount(0);
   await banner.click();

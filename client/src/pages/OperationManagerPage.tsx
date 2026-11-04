@@ -26,7 +26,7 @@ import {
   Send,
   Eye,
   Edit2,
-  Printer,
+  Download,
   CheckCircle2,
   GripVertical,
   Copy,
@@ -61,6 +61,8 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { DeleteWeekDialog } from "@/components/opManager/DeleteWeekDialog";
+import { buildCtoTaskingHtml } from "@/lib/ctoTaskingExport";
+import { taskingCellText } from "@shared/opManagerWeeks";
 import {
   Popover,
   PopoverContent,
@@ -770,6 +772,53 @@ export default function OperationManagerPage() {
     setIsCopying(false);
   };
 
+  // ── Export (the same preview window as every other export) ───────────────────
+  const handleExportTasking = () => {
+    const users = usersQuery.data ?? [];
+    const contactOf = (role: string) => {
+      const c = contacts.find(x => x.role === role);
+      const user = users.find(u => u.id === c?.userId);
+      return {
+        role,
+        name: user?.name ?? "",
+        phone: c?.phone ?? user?.phone ?? null,
+      };
+    };
+    const html = buildCtoTaskingHtml({
+      weekLabel: `${formatWeekLabel(weekStart)} ${new Date(addDaysUTC(weekStart, 6) + "T00:00:00Z").getUTCFullYear()}`,
+      weekStart,
+      onCall: onCallEntries.map(oc => {
+        const user = users.find(u => u.id === oc.userId);
+        return {
+          name: user?.name ?? "",
+          phone: oc.mobile ?? user?.phone ?? null,
+        };
+      }),
+      supervisors: ["CTO Inspector", "PTT", "Team 1", "Team 2"].map(contactOf),
+      priority: priorityRows.map(r => ({
+        category: r.category,
+        operation: r.operationName ?? "",
+        team: r.team ?? "",
+        requestType: r.requestType ?? "",
+      })),
+      calendar: TEAM_ROWS.map(teamRow => ({
+        label: TEAM_LABELS[teamRow],
+        colour: TEAM_COLOURS[teamRow].border,
+        days: DAYS.map((_, dayIndex) =>
+          taskingCellText(taskingGrid[`${teamRow}-${dayIndex}`] ?? {})
+        ),
+      })),
+    });
+    const win = window.open("", "_blank");
+    if (!win) {
+      // Popup blocked — same failure mode/messaging as every other export in the app.
+      alert("Pop-up blocked. Please allow pop-ups and try again.");
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+  };
+
   // ── Post & Notify ─────────────────────────────────────────────────────────────
   const openNotifyDialog = () => {
     // Pre-select all users
@@ -1171,10 +1220,10 @@ export default function OperationManagerPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => window.print()}
+                        onClick={handleExportTasking}
                         className="gap-1"
                       >
-                        <Printer className="h-3.5 w-3.5" /> Print
+                        <Download className="h-3.5 w-3.5" /> Export PDF
                       </Button>
                       <Button
                         variant="outline"

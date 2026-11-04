@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   notifyRecipientIds,
   pickCopySourceWeek,
+  taskingCellText,
   weekRangeLabel,
 } from "@shared/opManagerWeeks";
 
@@ -75,5 +76,35 @@ describe("notifyRecipientIds", () => {
     expect(ids.has(4)).toBe(false);
     expect(ids.has(3)).toBe(false);
     expect(ids.has(2)).toBe(false);
+  });
+});
+
+describe("taskingCellText", () => {
+  it("reads a plain cell as it is stored", () => {
+    expect(
+      taskingCellText({
+        shiftTime: "0700-1500",
+        primaryTask: "RAVEN",
+        secondaryTask: "Training",
+      })
+    ).toEqual({ shift: "0700-1500", primary: "RAVEN", secondary: "Training" });
+  });
+  it("uses the typed time for a custom shift and the typed text for Other", () => {
+    expect(
+      taskingCellText({
+        shiftTime: "Custom",
+        customTime: "0800-1600",
+        primaryTask: "Other",
+        primaryOther: "Court",
+        secondaryTask: "Other",
+      })
+    ).toEqual({ shift: "0800-1600", primary: "Court", secondary: "" });
+  });
+  it("is empty for an empty cell", () => {
+    expect(taskingCellText({})).toEqual({
+      shift: "",
+      primary: "",
+      secondary: "",
+    });
   });
 });

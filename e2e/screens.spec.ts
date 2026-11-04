@@ -898,6 +898,26 @@ test("CTO Weekly Tasking: Copy Last Week copies from the latest week that has co
       page.getByText(/This week has no contacts or priority board yet/)
     ).toHaveCount(0);
 
+    // The full view has Export PDF (the same preview window as every other
+    // export), not a bare browser Print.
+    await page.goto("/operation-manager");
+    await page.getByText("CTO Weekly Tasking — 02 Jan – 08 Jan").click();
+    await expect(page.getByRole("button", { name: "Print" })).toHaveCount(0);
+    const exportPopup = page.waitForEvent("popup");
+    await page.getByRole("button", { name: "Export PDF" }).click();
+    const pop = await exportPopup;
+    await pop.waitForLoadState();
+    const html = await pop.content();
+    expect(html).toContain("CTO Weekly Tasking");
+    expect(html).toContain("02 Jan – 08 Jan 2040");
+    expect(html).toContain("0400 111 222");
+    expect(html).toContain("RAVEN");
+    expect(html).toContain("Weekly Tasking Calendar");
+    await expect(
+      pop.getByRole("button", { name: /Close Preview/ })
+    ).toBeVisible();
+    await pop.close();
+
     // Delete a week from the list.
     await page.goto("/operation-manager");
     await expect(

@@ -76,3 +76,32 @@ export function notifyRecipientIds(
   }
   return out;
 }
+
+/**
+ * What one calendar cell of the CTO Weekly Tasking reads as: its shift
+ * ("Custom" is the typed time), its primary task and its secondary task ("Other"
+ * is the typed text). Used by the full view and the export, so they agree.
+ */
+export function taskingCellText(cell: {
+  shiftTime?: string | null;
+  customTime?: string | null;
+  primaryTask?: string | null;
+  primaryOther?: string | null;
+  secondaryTask?: string | null;
+  secondaryOther?: string | null;
+}): { shift: string; primary: string; secondary: string } {
+  return {
+    shift:
+      cell.shiftTime === "Custom"
+        ? (cell.customTime ?? "Custom")
+        : (cell.shiftTime ?? ""),
+    primary:
+      cell.primaryTask === "Other"
+        ? (cell.primaryOther ?? "")
+        : (cell.primaryTask ?? ""),
+    secondary:
+      cell.secondaryTask === "Other"
+        ? (cell.secondaryOther ?? "")
+        : (cell.secondaryTask ?? ""),
+  };
+}

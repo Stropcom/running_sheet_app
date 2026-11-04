@@ -1,4 +1,10 @@
 import { buildExportPreviewCloseBar } from "@/lib/exportPreviewCloseBar";
+import type { TaskingViewId } from "@/lib/taskingViewPref";
+import {
+  VIEWS_PRINT_CSS,
+  printViewHtml,
+  type PrintWeek,
+} from "@/lib/ctoTaskingViewsPrint";
 
 const esc = (s: string | null | undefined) =>
   (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -17,26 +23,17 @@ export interface CtoTaskingExportData {
     team: string;
     requestType: string;
   }[];
-  /** One row per team: its label, colour and seven days (Mon first). */
-  calendar: {
-    label: string;
-    colour: string;
-    days: { shift: string; primary: string; secondary: string }[];
-  }[];
-}
-
-const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-function dayHeading(weekStart: string, i: number): string {
-  const d = new Date(weekStart + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + i);
-  return `${DAY_NAMES[i]} ${String(d.getUTCDate()).padStart(2, "0")} ${d.toLocaleDateString("en-AU", { month: "short", timeZone: "UTC" })}`;
+  /** The teams and their seven days, for the calendar layouts. */
+  calendar: PrintWeek;
+  /** The calendar layouts to print, one or two, in the order given. */
+  views: TaskingViewId[];
 }
 
 /** The CTO Weekly Tasking as a printable page — the same shell as the other
  * report exports (navy cover band, PROTECTED header and footer, the shared
  * Close Preview / Print bar): supervisors and contacts, the priority board and
- * the weekly tasking calendar, in landscape so the seven days fit. */
+ * the weekly tasking calendar in one or two of its layouts (each layout
+ * starts its own page), in landscape so the seven days fit. */
 export function buildCtoTaskingHtml(data: CtoTaskingExportData): string {
   const BLUE_DARK = "#1e3a8a";
   const BLUE_MID = "#93c5fd";
@@ -75,17 +72,9 @@ export function buildCtoTaskingHtml(data: CtoTaskingExportData): string {
         .join("")}</tbody></table>`
     : `<p class="note">No priorities set for this week.</p>`;
 
-  const calendarHtml = `<table class="grid cal"><thead><tr><th style="width:84px"></th>${DAY_NAMES.map((_, i) => `<th class="day">${esc(dayHeading(data.weekStart, i))}</th>`).join("")}</tr></thead><tbody>${data.calendar
-    .map(
-      team =>
-        `<tr><td class="team" style="color:${team.colour} !important;border-left:4px solid ${team.colour}">${esc(team.label)}</td>${team.days
-          .map(
-            d =>
-              `<td class="cell${d.shift === "RDO" ? " rdo" : ""}">${d.shift ? `<div class="shift" style="color:${d.shift === "RDO" ? "#94a3b8" : team.colour} !important">${esc(d.shift)}</div>` : ""}${d.primary ? `<div class="primary">${esc(d.primary)}</div>` : ""}${d.secondary ? `<div class="secondary">${esc(d.secondary)}</div>` : ""}</td>`
-          )
-          .join("")}</tr>`
-    )
-    .join("")}</tbody></table>`;
+  const calendarHtml = data.views
+    .map(v => printViewHtml(v, data.calendar, data.weekLabel))
+    .join("");
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>RunLog CTO Weekly Tasking — ${esc(data.weekLabel)}</title>
 <style>
@@ -112,14 +101,8 @@ tr { break-inside:avoid; }
 .grid { width:100%; border-collapse:collapse; border:1px solid ${GREY_BORDER}; }
 .grid th { background:#f8fafc !important; color:${BLUE_DARK} !important; font-size:9.5px; text-transform:uppercase; letter-spacing:0.04em; text-align:left; padding:5px 8px; border-bottom:2px solid ${BLUE_DARK}; }
 .grid td { vertical-align:top; padding:4px 8px; border-bottom:1px solid ${GREY_BORDER}; font-size:10.5px; }
-.cal { table-layout:fixed; }
-.cal th.day { text-align:center; border-left:1px solid ${GREY_BORDER}; }
-.cal td.cell { border-left:1px solid ${GREY_BORDER}; height:48px; }
-.cal td.team { font-weight:800; font-size:11px; background:#f8fafc !important; }
-.shift { font-weight:800; font-size:10.5px; }
-.primary { margin-top:2px; font-weight:600; }
-.secondary { color:#64748b; }
-.rdo { opacity:0.55; }
+${VIEWS_PRINT_CSS}
+.tp { break-before:page; page-break-before:always; }
 .footer-note { margin-top:10px; padding-top:8px; border-top:1px solid ${GREY_BORDER}; font-size:9px; color:#94a3b8; }
 </style></head><body>
 <div class="cover-header">
@@ -140,10 +123,7 @@ tr { break-inside:avoid; }
     <div class="section-title">Priority Board</div>
     ${priorityHtml}
   </div>
-  <div class="section">
-    <div class="section-title">Weekly Tasking Calendar</div>
-    ${calendarHtml}
-  </div>
+  ${calendarHtml}
   <div class="footer-note">Generated: ${esc(generatedAt)}</div>
 </div>
 ${buildExportPreviewCloseBar()}

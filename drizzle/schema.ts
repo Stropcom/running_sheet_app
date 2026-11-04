@@ -1786,6 +1786,10 @@ export const opManagerTaskingCells = mysqlTable("op_manager_tasking_cells", {
   shiftTime: varchar("shiftTime", { length: 32 }), // "RDO" | "0600-1400" | custom
   primaryTask: varchar("primaryTask", { length: 255 }),
   secondaryTask: varchar("secondaryTask", { length: 255 }),
+  // Surveillance Team 1 and 2 working as one blended team that day: set on BOTH
+  // the "surv1" and "surv2" cells of the day, which hold the same shift and tasks
+  // (see shared/taskingBlend.ts).
+  blended: boolean("blended").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

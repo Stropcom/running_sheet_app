@@ -138,6 +138,9 @@ This file holds only the standing rules. The per-feature detail — what each ve
 - `/local-uploads/…` and `/manus-storage/…` require a signed-in user (`requireSignedIn`, `server/uploadAccess.ts`). Built-file caching: never widen the long cache beyond hashed `/assets/` files — `index.html`, `sw.js`, `workbox-*.js` and the manifest stay `no-cache` (`server/staticCache.ts`).
 - The Nearmap key stays on the server; Google Maps goes through the platform proxy.
 
+**Team colours**
+- A team's colour is the one set in User Management → Teams — never a hard-coded hex. Screens that know a team only by name (the CTO roster and weekly tasking: "Team 1", "Team 2", "PTT", "Capability") use `useTeamColour()` (`client/src/lib/teams.ts`) / `teamColourFor` (`shared/teamColours.ts`); the PDF exports take the colours from the same call. Individual user pills on the Mapping page are the one exception.
+
 **Access, Commands and admin switches**
 - Who can reach an operation is one rule (`shared/operationAccess.ts`), enforced centrally in the `requireUser` middleware (`server/operationAccess.ts`). A new procedure that takes an operation / sheet / row / member / attachment id must be covered by that guard — check it is.
 - Per-Command roster or tasking endpoint: filter by `rosterCommand()` in the data function, stamp new rows with `rosterCommandForWrite()`, and add its id fields to `ROSTER_ID_REFS` (`server/rosterScope.test.ts` enforces it).

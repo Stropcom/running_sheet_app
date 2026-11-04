@@ -74,6 +74,7 @@ describe("week snapshot", () => {
         shiftTime: null,
         primaryTask: null,
         secondaryTask: null,
+        blended: false,
       },
     ]);
     expect(odd.posted).toBeNull();

@@ -85,6 +85,7 @@ export const opManagerRouter = router({
         shiftTime: z.string().nullable().optional(),
         primaryTask: z.string().nullable().optional(),
         secondaryTask: z.string().nullable().optional(),
+        blended: z.boolean().optional(),
       })
     )
     .mutation(async ({ input }) => {

@@ -61,8 +61,25 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { DeleteWeekDialog } from "@/components/opManager/DeleteWeekDialog";
+import { BlendTeamsDialog } from "@/components/opManager/BlendTeamsDialog";
+import { useTeamColour } from "@/lib/teams";
+import { blendGradients, teamShades } from "@shared/teamColours";
+import {
+  blendFields,
+  blendPartner,
+  cellShift,
+  isBlendTeam,
+  shouldAskBlend,
+  tasksDiffer,
+} from "@shared/taskingBlend";
+import { ExportTaskingDialog } from "@/components/opManager/ExportTaskingDialog";
+import { readWeek, weekDays } from "@shared/taskingView";
+import type { TaskingViewId } from "@/lib/taskingViewPref";
 import { buildCtoTaskingHtml } from "@/lib/ctoTaskingExport";
-import { taskingCellText } from "@shared/opManagerWeeks";
+import {
+  TaskingCalendarViews,
+  type TaskingTeam,
+} from "@/components/opManager/TaskingViews";
 import {
   Popover,
   PopoverContent,
@@ -90,15 +107,13 @@ const TASKING_TEAM_MIN_FALLBACK: Record<string, number> = {
   Capability: 1,
 };
 const TASKING_DEFAULT_MIN_FALLBACK = 3;
-// Colours matching map/team tags (from IntelligenceMapping TEAM_COLOURS)
-const TEAM_COLOURS: Record<
-  TeamRow,
-  { bg: string; border: string; text: string }
-> = {
-  surv1: { bg: "#fce7f3", border: "#ec4899", text: "#9d174d" },
-  surv2: { bg: "#dbeafe", border: "#1976d2", text: "#1e3a8a" },
-  ptt: { bg: "#fef3c7", border: "#f9a825", text: "#78350f" },
-  cap: { bg: "#ede9fe", border: "#7c3aed", text: "#4c1d95" },
+// Short forms for pills and labels. Colours are not here: a team's colour is
+// the one set in User Management → Teams (useTeamColour, shared/teamColours.ts).
+const TASKING_AB: Record<TeamRow, string> = {
+  surv1: "T1",
+  surv2: "T2",
+  ptt: "PTT",
+  cap: "CAP",
 };
 const SHIFT_OPTIONS = [
   "RDO",
@@ -210,6 +225,13 @@ interface PriorityRow {
   sortOrder: number;
 }
 
+/** "Operation RAVEN + Training", or "no task" — for the blend question. */
+function taskText(c: TaskingCell | undefined): string {
+  const p = c?.primaryTask === "Other" ? c.primaryOther : c?.primaryTask;
+  const q = c?.secondaryTask === "Other" ? c.secondaryOther : c?.secondaryTask;
+  return [p, q].filter(Boolean).join(" + ") || "no task";
+}
+
 interface TaskingCell {
   shiftTime?: string | null;
   customTime?: string;
@@ -217,6 +239,8 @@ interface TaskingCell {
   primaryOther?: string;
   secondaryTask?: string | null;
   secondaryOther?: string;
+  /** Team 1 and Team 2 working as one blended team that day (both cells). */
+  blended?: boolean;
 }
 
 interface ContactEntry {
@@ -320,6 +344,22 @@ export default function OperationManagerPage() {
     { staleTime: 5_000 }
   );
 
+  // ── Team colours: the ones set in User Management → Teams ───────────────────
+  const teamColourOf = useTeamColour();
+  const TEAM_COLOURS = Object.fromEntries(
+    TEAM_ROWS.map(id => [id, teamShades(teamColourOf(TEAM_LABELS[id]))])
+  ) as Record<TeamRow, { bg: string; border: string; text: string }>;
+  const taskingTeams: TaskingTeam[] = TEAM_ROWS.map(id => ({
+    id,
+    label: TEAM_LABELS[id],
+    ab: TASKING_AB[id],
+    colour: TEAM_COLOURS[id].border,
+  }));
+  const blendLook = blendGradients(
+    TEAM_COLOURS.surv1.border,
+    TEAM_COLOURS.surv2.border
+  );
+
   // ── Mutations ─────────────────────────────────────────────────────────────────
   const savePriorityMut = trpc.opManager.savePriorityBoard.useMutation();
   const saveTaskingCellMut = trpc.opManager.saveTaskingCell.useMutation();
@@ -341,6 +381,13 @@ export default function OperationManagerPage() {
   const [activeTab, setActiveTab] = useState("contacts");
   const [isSavingTasking, setIsSavingTasking] = useState(false);
   const [notifyDialogOpen, setNotifyDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  // Blending Team 1 and Team 2: the day being asked about, and the shift an
+  // earlier No was given for (per day), so a No is not asked again.
+  const [blendAsk, setBlendAsk] = useState<number | null>(null);
+  const [declinedBlend, setDeclinedBlend] = useState<Record<number, string>>(
+    {}
+  );
   const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(
     new Set()
   );
@@ -374,6 +421,7 @@ export default function OperationManagerPage() {
           customTime: isCustomShift ? (storedShift ?? "") : "",
           primaryTask: cell.primaryTask ?? null,
           secondaryTask: cell.secondaryTask ?? null,
+          blended: cell.blended === true,
         };
       });
     }
@@ -547,7 +595,132 @@ export default function OperationManagerPage() {
     patch: Partial<TaskingCell>
   ) => {
     const key = `${teamRow}-${dayIndex}`;
-    setTaskingGrid(prev => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+    setTaskingGrid(prev => {
+      const next = { ...prev, [key]: { ...prev[key], ...patch } };
+      // A blended day is one shared entry: an edit goes to both teams' cells.
+      if (isBlendTeam(teamRow)) {
+        const pKey = `${blendPartner(teamRow)}-${dayIndex}`;
+        if (prev[key]?.blended && prev[pKey]?.blended)
+          next[pKey] = { ...prev[pKey], ...patch };
+      }
+      return next;
+    });
+    // Same working shift for Team 1 and Team 2? Ask whether to blend them.
+    if (
+      isBlendTeam(teamRow) &&
+      ("shiftTime" in patch || "customTime" in patch)
+    ) {
+      const partnerKey = `${blendPartner(teamRow)}-${dayIndex}`;
+      const mine = { ...taskingGrid[key], ...patch };
+      const theirs = taskingGrid[partnerKey];
+      const surv1 = teamRow === "surv1" ? mine : theirs;
+      const surv2 = teamRow === "surv2" ? mine : theirs;
+      if (cellShift(surv1) !== cellShift(surv2)) {
+        // Shifts differ again: a No for the earlier shift no longer applies.
+        setDeclinedBlend(d => (d[dayIndex] ? { ...d, [dayIndex]: "" } : d));
+      } else if (
+        shouldAskBlend({
+          surv1,
+          surv2,
+          declinedShift: declinedBlend[dayIndex] || null,
+        })
+      ) {
+        setBlendAsk(dayIndex);
+      }
+    }
+  };
+
+  /** Yes: both teams carry the chosen team's shift and tasks, flagged blended. */
+  const blendDay = (dayIndex: number, keep: "surv1" | "surv2") => {
+    const fields = {
+      ...blendFields(taskingGrid[`${keep}-${dayIndex}`]),
+      blended: true,
+    };
+    setTaskingGrid(prev => ({
+      ...prev,
+      [`surv1-${dayIndex}`]: { ...prev[`surv1-${dayIndex}`], ...fields },
+      [`surv2-${dayIndex}`]: { ...prev[`surv2-${dayIndex}`], ...fields },
+    }));
+    setBlendAsk(null);
+  };
+  /** No (or closed): keep the teams apart, and do not ask again for this shift. */
+  const keepApart = (dayIndex: number) => {
+    setDeclinedBlend(d => ({
+      ...d,
+      [dayIndex]: cellShift(taskingGrid[`surv1-${dayIndex}`]),
+    }));
+    setBlendAsk(null);
+  };
+  /** Split a blended day back into two teams (each keeps the shared entry to edit). */
+  const splitDay = (dayIndex: number) => {
+    setDeclinedBlend(d => ({
+      ...d,
+      [dayIndex]: cellShift(taskingGrid[`surv1-${dayIndex}`]),
+    }));
+    setTaskingGrid(prev => ({
+      ...prev,
+      [`surv1-${dayIndex}`]: { ...prev[`surv1-${dayIndex}`], blended: false },
+      [`surv2-${dayIndex}`]: { ...prev[`surv2-${dayIndex}`], blended: false },
+    }));
+  };
+
+  /** Day `dayIndex` is blended (Team 1 and Team 2 both flagged). */
+  const isBlendedDay = (dayIndex: number) =>
+    !!taskingGrid[`surv1-${dayIndex}`]?.blended &&
+    !!taskingGrid[`surv2-${dayIndex}`]?.blended;
+
+  /** The editor of one team-day: the normal one, or for a blended day one
+   * combined editor under Team 1 (with Split) and a pointer under Team 2. */
+  const renderCellBody = (teamRow: TeamRow, dayIndex: number) => {
+    const cell = taskingGrid[`${teamRow}-${dayIndex}`] ?? {};
+    const editor = (
+      <TaskingCellEditor
+        cell={cell}
+        onChange={patch => updateCell(teamRow, dayIndex, patch)}
+        opOptions={activeOps}
+        onCreateOp={handleCreateOp}
+      />
+    );
+    if (!isBlendTeam(teamRow) || !isBlendedDay(dayIndex)) return editor;
+    if (teamRow === "surv2")
+      return (
+        <div
+          className="flex min-h-24 items-center justify-center rounded-md border border-dashed px-2 py-3 text-center text-xs text-muted-foreground"
+          style={{
+            background:
+              "repeating-linear-gradient(135deg, transparent 0 6px, hsl(var(--border)) 6px 7px)",
+          }}
+        >
+          Combined with Team 1. Edit it in the Team 1 panel.
+        </div>
+      );
+    return (
+      <div className="overflow-hidden rounded-md border bg-card">
+        <div
+          className="flex items-center gap-2 px-2 py-1.5 text-xs font-bold text-blue-950"
+          style={{ background: blendLook.band }}
+        >
+          <span
+            aria-hidden
+            className="inline-block h-3.5 w-5 rounded-[3px]"
+            style={{ background: blendLook.swatch }}
+          />
+          T1 + T2 combined
+        </div>
+        <div className="space-y-2 p-2">
+          {editor}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full text-xs"
+            onClick={() => splitDay(dayIndex)}
+          >
+            Split into two teams
+          </Button>
+        </div>
+      </div>
+    );
   };
 
   const saveAllTaskingCells = async () => {
@@ -576,6 +749,7 @@ export default function OperationManagerPage() {
             shiftTime,
             primaryTask,
             secondaryTask,
+            blended: cell.blended === true,
           });
         })
       );
@@ -738,6 +912,7 @@ export default function OperationManagerPage() {
             shiftTime: getDefaultShift(teamRow, dayIndex, nextWeekStart),
             primaryTask: null,
             secondaryTask: null,
+            blended: false,
           })
         )
       );
@@ -773,7 +948,7 @@ export default function OperationManagerPage() {
   };
 
   // ── Export (the same preview window as every other export) ───────────────────
-  const handleExportTasking = () => {
+  const handleExportTasking = (views: TaskingViewId[]) => {
     const users = usersQuery.data ?? [];
     const contactOf = (role: string) => {
       const c = contacts.find(x => x.role === role);
@@ -801,13 +976,12 @@ export default function OperationManagerPage() {
         team: r.team ?? "",
         requestType: r.requestType ?? "",
       })),
-      calendar: TEAM_ROWS.map(teamRow => ({
-        label: TEAM_LABELS[teamRow],
-        colour: TEAM_COLOURS[teamRow].border,
-        days: DAYS.map((_, dayIndex) =>
-          taskingCellText(taskingGrid[`${teamRow}-${dayIndex}`] ?? {})
-        ),
-      })),
+      calendar: {
+        weekStart,
+        teams: taskingTeams,
+        week: readWeek(taskingGrid, TEAM_ROWS),
+      },
+      views,
     });
     const win = window.open("", "_blank");
     if (!win) {
@@ -851,6 +1025,32 @@ export default function OperationManagerPage() {
   // branch is actually mounted, not just one of them — otherwise clicking
   // "Post & Notify" from view mode sets notifyDialogOpen but there's no
   // <Dialog> mounted anywhere to show it).
+  const blendDialog = (
+    <BlendTeamsDialog
+      open={blendAsk !== null}
+      colours={[TEAM_COLOURS.surv1.border, TEAM_COLOURS.surv2.border]}
+      dayLabel={
+        blendAsk === null
+          ? ""
+          : (() => {
+              const d = weekDays(weekStart)[blendAsk];
+              return `${d.name} ${String(d.day).padStart(2, "0")} ${d.month}`;
+            })()
+      }
+      shift={cellShift(taskingGrid[`surv1-${blendAsk ?? 0}`])}
+      tasks={{
+        surv1: taskText(taskingGrid[`surv1-${blendAsk ?? 0}`]),
+        surv2: taskText(taskingGrid[`surv2-${blendAsk ?? 0}`]),
+        differ: tasksDiffer(
+          taskingGrid[`surv1-${blendAsk ?? 0}`],
+          taskingGrid[`surv2-${blendAsk ?? 0}`]
+        ),
+      }}
+      onYes={keep => blendDay(blendAsk ?? 0, keep)}
+      onNo={() => keepApart(blendAsk ?? 0)}
+    />
+  );
+
   const notifyDialog = (
     <Dialog open={notifyDialogOpen} onOpenChange={setNotifyDialogOpen}>
       <DialogContent className="max-w-sm">
@@ -1206,7 +1406,7 @@ export default function OperationManagerPage() {
               }
               onBack={() => setViewMode("folder")}
               rightSlot={
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-center gap-2">
                   {isAdmin && (
                     <>
                       <Button
@@ -1220,7 +1420,7 @@ export default function OperationManagerPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={handleExportTasking}
+                        onClick={() => setExportDialogOpen(true)}
                         className="gap-1"
                       >
                         <Download className="h-3.5 w-3.5" /> Export PDF
@@ -1304,15 +1504,33 @@ export default function OperationManagerPage() {
                 users={usersQuery.data ?? []}
               />
               <FullViewPriority priorityRows={priorityRows} />
-              <FullViewTasking
-                taskingGrid={taskingGrid}
+              <TaskingCalendarViews
                 weekStart={weekStart}
-                taskingCoverage={taskingCoverage}
+                teams={taskingTeams}
+                grid={taskingGrid}
+                issueCount={taskingIssueCount}
+                renderWarning={(teamId, dayIndex, primary) => {
+                  const cv = taskingCoverage[`${teamId}-${dayIndex}`];
+                  return cv?.short ? (
+                    <CoverageWarningBadge
+                      teamName={TEAM_LABELS[teamId as TeamRow]}
+                      day={DAYS[dayIndex]}
+                      onDuty={cv.onDuty}
+                      min={cv.min}
+                      primaryTask={primary || null}
+                    />
+                  ) : null;
+                }}
               />
             </div>
           )}
         </div>
         {notifyDialog}
+        <ExportTaskingDialog
+          open={exportDialogOpen}
+          onOpenChange={setExportDialogOpen}
+          onExport={handleExportTasking}
+        />
         {deleteWeekDialog}
       </DashboardLayout>
     );
@@ -1330,7 +1548,7 @@ export default function OperationManagerPage() {
           onNext={() => setWeekStart(ws => addWeeks(ws, 1))}
           onBack={() => setViewMode("folder")}
           rightSlot={
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -1575,14 +1793,7 @@ export default function OperationManagerPage() {
                                   />
                                 )}
                               </div>
-                              <TaskingCellEditor
-                                cell={cell}
-                                onChange={patch =>
-                                  updateCell(teamRow, dayIndex, patch)
-                                }
-                                opOptions={activeOps}
-                                onCreateOp={handleCreateOp}
-                              />
+                              {renderCellBody(teamRow, dayIndex)}
                             </div>
                           );
                         })}
@@ -1664,14 +1875,7 @@ export default function OperationManagerPage() {
                                         />
                                       </div>
                                     )}
-                                    <TaskingCellEditor
-                                      cell={cell}
-                                      onChange={patch =>
-                                        updateCell(teamRowEdit, dayIndex, patch)
-                                      }
-                                      opOptions={activeOps}
-                                      onCreateOp={handleCreateOp}
-                                    />
+                                    {renderCellBody(teamRowEdit, dayIndex)}
                                   </td>
                                 );
                               })}
@@ -1735,6 +1939,7 @@ export default function OperationManagerPage() {
         </div>
       </div>
 
+      {blendDialog}
       {notifyDialog}
       {deleteWeekDialog}
     </DashboardLayout>
@@ -2480,214 +2685,6 @@ function FullViewContacts(_props: {
   users: { id: number; name: string; cin: string | null }[];
 }) {
   return null;
-}
-
-function FullViewTasking({
-  taskingGrid,
-  taskingCoverage,
-}: {
-  taskingGrid: Record<string, TaskingCell>;
-  weekStart: string;
-  taskingCoverage: Record<
-    string,
-    { onDuty: number; min: number; short: boolean }
-  >;
-}) {
-  const issueCount = Object.values(taskingCoverage).filter(c => c.short).length;
-  return (
-    <section className="space-y-3">
-      <div className="px-1 flex items-center gap-2">
-        <h2 className="text-sm font-bold tracking-widest uppercase text-muted-foreground">
-          Weekly Tasking Calendar
-        </h2>
-        {issueCount > 0 && (
-          <Badge
-            variant="outline"
-            className="gap-1 text-amber-600 border-amber-500/40 bg-amber-500/5"
-          >
-            <AlertTriangle className="h-3 w-3" />
-            {issueCount} tasking issue{issueCount !== 1 ? "s" : ""}
-          </Badge>
-        )}
-      </div>
-      {TEAM_ROWS.map(teamRow => {
-        const tc = TEAM_COLOURS[teamRow];
-        return (
-          <div
-            key={teamRow}
-            className="rounded-xl shadow-sm overflow-hidden bg-card"
-            style={{ border: `1px solid ${tc.border}60` }}
-          >
-            {/* Team header */}
-            <div
-              className="px-4 py-2 flex items-center gap-2"
-              style={{
-                background: "transparent",
-                borderBottom: `1px solid ${tc.border}40`,
-              }}
-            >
-              <span
-                className="text-sm font-bold tracking-wide"
-                style={{ color: tc.border }}
-              >
-                {TEAM_LABELS[teamRow]}
-              </span>
-            </div>
-            {/* Mobile: day list */}
-            <div className="block sm:hidden bg-card divide-y divide-border">
-              {DAYS.map((day, dayIndex) => {
-                const key = `${teamRow}-${dayIndex}`;
-                const cell = taskingGrid[key] ?? {};
-                const shift =
-                  cell.shiftTime === "Custom"
-                    ? (cell.customTime ?? "Custom")
-                    : (cell.shiftTime ?? "");
-                const primary =
-                  cell.primaryTask === "Other"
-                    ? (cell.primaryOther ?? "")
-                    : (cell.primaryTask ?? "");
-                const secondary =
-                  cell.secondaryTask === "Other"
-                    ? (cell.secondaryOther ?? "")
-                    : (cell.secondaryTask ?? "");
-                return (
-                  <div
-                    key={dayIndex}
-                    className={cn(
-                      "flex items-start gap-3 px-4 py-2.5",
-                      shift === "RDO" && "opacity-40"
-                    )}
-                  >
-                    <span className="text-xs font-bold text-muted-foreground w-8 shrink-0 pt-0.5">
-                      {day}
-                    </span>
-                    <div className="min-w-0">
-                      {shift && (
-                        <span
-                          className={cn(
-                            "text-xs font-bold",
-                            shift === "RDO" ? "text-muted-foreground" : ""
-                          )}
-                          style={shift !== "RDO" ? { color: tc.border } : {}}
-                        >
-                          {shift}
-                        </span>
-                      )}
-                      {primary && (
-                        <p className="text-xs mt-0.5 text-foreground">
-                          {primary}
-                        </p>
-                      )}
-                      {secondary && (
-                        <p className="text-xs text-muted-foreground">
-                          {secondary}
-                        </p>
-                      )}
-                      {taskingCoverage[key]?.short && (
-                        <div className="mt-1">
-                          <CoverageWarningBadge
-                            teamName={TEAM_LABELS[teamRow]}
-                            day={day}
-                            onDuty={taskingCoverage[key].onDuty}
-                            min={taskingCoverage[key].min}
-                            primaryTask={primary || null}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {/* Desktop: 7-column grid */}
-            <div className="hidden sm:block bg-card overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr style={{ background: "transparent" }}>
-                    {DAYS.map(d => (
-                      <th
-                        key={d}
-                        className="text-center px-3 py-2 font-bold border-r border-border last:border-r-0"
-                        style={{
-                          color: tc.text,
-                          width: `${100 / 7}%`,
-                          minWidth: 110,
-                        }}
-                      >
-                        {d}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    {DAYS.map((_, dayIndex) => {
-                      const key = `${teamRow}-${dayIndex}`;
-                      const cell = taskingGrid[key] ?? {};
-                      const shift =
-                        cell.shiftTime === "Custom"
-                          ? (cell.customTime ?? "Custom")
-                          : (cell.shiftTime ?? "");
-                      const primary =
-                        cell.primaryTask === "Other"
-                          ? (cell.primaryOther ?? "")
-                          : (cell.primaryTask ?? "");
-                      const secondary =
-                        cell.secondaryTask === "Other"
-                          ? (cell.secondaryOther ?? "")
-                          : (cell.secondaryTask ?? "");
-                      return (
-                        <td
-                          key={dayIndex}
-                          className={cn(
-                            "px-3 py-2 border-r border-border last:border-r-0 align-top",
-                            shift === "RDO" ? "opacity-40" : ""
-                          )}
-                          style={{ width: `${100 / 7}%`, minWidth: 110 }}
-                        >
-                          {shift && (
-                            <p
-                              className="font-bold text-xs leading-tight"
-                              style={{
-                                color: shift === "RDO" ? undefined : tc.border,
-                              }}
-                            >
-                              {shift}
-                            </p>
-                          )}
-                          {primary && (
-                            <p className="mt-1 text-xs leading-snug text-foreground break-words">
-                              {primary}
-                            </p>
-                          )}
-                          {secondary && (
-                            <p className="mt-0.5 text-xs leading-snug text-muted-foreground break-words">
-                              {secondary}
-                            </p>
-                          )}
-                          {taskingCoverage[key]?.short && (
-                            <div className="mt-1">
-                              <CoverageWarningBadge
-                                teamName={TEAM_LABELS[teamRow]}
-                                day={DAYS[dayIndex]}
-                                onDuty={taskingCoverage[key].onDuty}
-                                min={taskingCoverage[key].min}
-                                primaryTask={primary || null}
-                              />
-                            </div>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-      })}
-    </section>
-  );
 }
 
 function FullViewPriority({ priorityRows }: { priorityRows: PriorityRow[] }) {

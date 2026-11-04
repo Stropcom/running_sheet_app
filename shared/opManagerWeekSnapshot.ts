@@ -27,6 +27,8 @@ export interface SnapshotTaskingCell {
   shiftTime: string | null;
   primaryTask: string | null;
   secondaryTask: string | null;
+  /** Surveillance Team 1 and 2 blended that day (older snapshots: false). */
+  blended: boolean;
 }
 export interface WeekSnapshot {
   contacts: SnapshotContact[];
@@ -65,6 +67,7 @@ export function buildWeekSnapshot(input: {
     shiftTime?: string | null;
     primaryTask?: string | null;
     secondaryTask?: string | null;
+    blended?: boolean | null;
   }[];
   posted: { postedAt: Date | number; postedBy: number } | null;
 }): WeekSnapshot {
@@ -91,6 +94,7 @@ export function buildWeekSnapshot(input: {
       shiftTime: t.shiftTime ?? null,
       primaryTask: t.primaryTask ?? null,
       secondaryTask: t.secondaryTask ?? null,
+      blended: t.blended === true,
     })),
     posted: input.posted
       ? {
@@ -164,6 +168,7 @@ export function parseWeekSnapshot(json: string): WeekSnapshot {
               shiftTime: str(t.shiftTime),
               primaryTask: str(t.primaryTask),
               secondaryTask: str(t.secondaryTask),
+              blended: t.blended === true,
             },
           ]
         : []

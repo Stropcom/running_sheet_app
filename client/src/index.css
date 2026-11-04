@@ -1118,3 +1118,9 @@ html.app-no-scroll body.app-vv-shifted {
     opacity: 0.6;
   }
 }
+
+/* Team Duty Roster, zoomed out: the shift names inside the cells are too small
+   to read, so only the colours stay (RosterPage.tsx, shared/rosterZoom.ts). */
+.roster-zoomed-out .roster-cell-label {
+  display: none;
+}

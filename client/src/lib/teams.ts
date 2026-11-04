@@ -6,7 +6,13 @@
  */
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import type { CommandCode } from "@shared/commands";
+import {
+  DEFAULT_COMMAND,
+  isCommandCode,
+  type CommandCode,
+} from "@shared/commands";
+import { getPickedRosterCommand } from "@/lib/rosterCommand";
+import { teamColourFor } from "@shared/teamColours";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "../../../server/routers";
 
@@ -67,4 +73,21 @@ export function useMustShareLocation(): boolean {
   return (
     (user as { mustShareLocation?: boolean } | null)?.mustShareLocation === true
   );
+}
+
+/**
+ * The colour of a team by its NAME, as set in User Management → Teams for the
+ * roster / tasking Command being shown (the caller's own, or the one an
+ * all-region admin picked). Change a team's colour there and every screen that
+ * uses this changes with it. A name with no matching team keeps its standing
+ * colour (shared/teamColours.ts).
+ */
+export function useTeamColour(): (teamName: string) => string {
+  const { user } = useAuth();
+  const home: CommandCode =
+    user && isCommandCode(user.command) ? user.command : DEFAULT_COMMAND;
+  const command: CommandCode =
+    user?.allRegions === true ? (getPickedRosterCommand() ?? home) : home;
+  const teams = useTeams(command);
+  return (teamName: string) => teamColourFor(teams, teamName);
 }

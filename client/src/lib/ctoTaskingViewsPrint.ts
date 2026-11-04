@@ -5,6 +5,7 @@ import {
   weekSummary,
   type DayCell,
 } from "@shared/taskingView";
+import { isBlendDay, isBlendTeam } from "@shared/taskingBlend";
 import { TASKING_VIEWS, type TaskingViewId } from "@/lib/taskingViewPref";
 
 /**
@@ -59,6 +60,21 @@ export const VIEWS_PRINT_CSS = `
 .tp-tag { display:inline-grid; place-items:center; width:13px; height:13px; border-radius:3px; background:var(--ink) !important; color:#fff !important; font-style:normal; font-size:8.5px; font-weight:700; margin-right:5px; }
 .tp-tag.s { background:transparent !important; color:#64748b !important; border:1px solid #cbd5e1; }
 .wk { background:#f1f5f9 !important; }
+.tp-btag { display:inline-flex; border-radius:3px; overflow:hidden; font-size:8px; font-weight:800; line-height:1; margin-left:5px; vertical-align:middle; }
+.tp-btag i { font-style:normal; padding:2px 4px; color:#fff !important; }
+.tp-btag i:first-child { background:#db2777 !important; }
+.tp-btag i:last-child { background:#1565c0 !important; }
+.tp-col.bl > div { background:#eceffc !important; }
+.tp-col.bl .tp-day { border-bottom:3px solid; border-image:linear-gradient(90deg,#ec4899 50%,#1976d2 50%) 1; }
+.tp-table tr.bl td { background:#eceffc !important; }
+.tp-table tr.bl td.d { box-shadow:inset 4px 0 0 #ec4899, inset 8px 0 0 #1976d2; }
+.tp-tl.merged { min-height:84px; }
+.tp-tl.merged > i { background:linear-gradient(180deg,#ec4899 50%,#1976d2 50%) !important; }
+.tp-tl.merged .tp-tl-b { background:#eceffc !important; }
+.tp-tl.merged .tp-tl-team { color:#1e3a8a !important; }
+.tp-bar.merged { background:#eceffc !important; border:1px solid #cbd5e1; border-left-width:1px; flex-direction:column; align-items:flex-start; justify-content:center; padding-left:10px; gap:0; line-height:1.15; }
+.tp-bar.merged::before { content:""; position:absolute; left:0; top:0; bottom:0; width:5px; background:linear-gradient(180deg,#ec4899 50%,#1976d2 50%) !important; }
+.tp-bar.merged .ab { color:#1e3a8a !important; }
 
 .tp-pa { display:grid; grid-template-columns:repeat(7,1fr); }
 .tp-col { border-right:1px solid #cbd5e1; }
@@ -117,6 +133,11 @@ export const VIEWS_PRINT_CSS = `
 .tp-key i { width:9px; height:9px; border-radius:2px; background:var(--tc) !important; display:inline-block; }
 `;
 
+const blendTag = `<span class="tp-btag"><i>T1</i><i>T2</i></span>`;
+/** This team's day is a blended T1 + T2 day. */
+const blendedFor = (w: PrintWeek, teamId: string, i: number) =>
+  isBlendTeam(teamId) && isBlendDay(w.week, i);
+
 const none = `<span class="tp-none">—</span>`;
 const shiftHtml = (c: DayCell) =>
   c.shift
@@ -131,7 +152,8 @@ function bandedHtml(w: PrintWeek): string {
         `<div class="tp-card" style="${teamVars(t)}"><div class="tp-title"><i></i><b>${esc(t.label)}</b></div><div class="tp-pa">${days
           .map((d, i) => {
             const c = w.week[t.id][i];
-            return `<div class="tp-col${i > 4 ? " wk" : ""}"><div class="tp-day">${d.name}<small>${String(d.day).padStart(2, "0")} ${d.month}</small></div><div class="tp-cell">${shiftHtml(c)}</div><div class="tp-cell${c.off ? " hide" : ""}"><i class="tp-tag">P</i>${c.primary ? esc(c.primary) : none}</div><div class="tp-cell sec${c.off ? " hide" : ""}"><i class="tp-tag s">S</i>${c.secondary ? esc(c.secondary) : none}</div></div>`;
+            const bl = blendedFor(w, t.id, i);
+            return `<div class="tp-col${i > 4 ? " wk" : ""}${bl ? " bl" : ""}"><div class="tp-day">${d.name}<small>${String(d.day).padStart(2, "0")} ${d.month}</small></div><div class="tp-cell">${shiftHtml(c)}${bl && !c.off ? blendTag : ""}</div><div class="tp-cell${c.off ? " hide" : ""}"><i class="tp-tag">P</i>${c.primary ? esc(c.primary) : none}</div><div class="tp-cell sec${c.off ? " hide" : ""}"><i class="tp-tag s">S</i>${c.secondary ? esc(c.secondary) : none}</div></div>`;
           })
           .join("")}</div></div>`
     )
@@ -146,10 +168,11 @@ function tablesHtml(w: PrintWeek): string {
         `<div class="tp-card" style="${teamVars(t)}"><div class="tp-title"><i></i><b>${esc(t.label)}</b></div><table class="tp-table"><thead><tr><th>Day</th><th>Shift</th><th>Primary</th><th>Secondary</th></tr></thead><tbody>${days
           .map((d, i) => {
             const c = w.week[t.id][i];
-            return `<tr class="${i > 4 ? "wk" : ""}"><td class="d">${d.name}<small>${String(d.day).padStart(2, "0")}</small></td>${
+            const bl = blendedFor(w, t.id, i);
+            return `<tr class="${i > 4 ? "wk" : ""}${bl ? " bl" : ""}"><td class="d">${d.name}<small>${String(d.day).padStart(2, "0")}</small></td>${
               c.off
                 ? `<td colspan="3" class="offc">Rostered day off</td>`
-                : `<td>${shiftHtml(c)}</td><td>${c.primary ? `<b>${esc(c.primary)}</b>` : none}</td><td class="s">${c.secondary ? esc(c.secondary) : none}</td>`
+                : `<td>${shiftHtml(c)}${bl ? blendTag : ""}</td><td>${c.primary ? `<b>${esc(c.primary)}</b>` : none}</td><td class="s">${c.secondary ? esc(c.secondary) : none}</td>`
             }</tr>`;
           })
           .join("")}</tbody></table></div>`
@@ -164,12 +187,15 @@ function tilesHtml(w: PrintWeek): string {
     const rows = w.teams
       .map(t => {
         const c = w.week[t.id][i];
+        const bl = blendedFor(w, t.id, i);
+        // Blended: Team 1 and Team 2 are one lane, drawn once on Team 1's place.
+        if (bl && t.id === "surv2") return "";
         const body = c.off
           ? `<span style="color:#64748b;font-weight:600">RDO</span>`
           : !c.shift && !c.primary
             ? none
             : `<span class="tp-tl-time">${esc(formatShiftText(c.shift))}</span><b>${esc(c.primary)}</b>${c.secondary ? `<div class="tp-tl-sec">+ ${esc(c.secondary)}</div>` : ""}`;
-        return `<div class="tp-tl${c.off ? " off" : ""}" style="${teamVars(t)}"><i></i><div class="tp-tl-b"><div class="tp-tl-team">${esc(t.label)}</div>${body}</div></div>`;
+        return `<div class="tp-tl${c.off ? " off" : ""}${bl ? " merged" : ""}"${bl ? "" : ` style="${teamVars(t)}"`}><i></i><div class="tp-tl-b"><div class="tp-tl-team">${bl ? "T1 + T2 combined" : esc(t.label)}</div>${body}</div></div>`;
       })
       .join("");
     return `<div class="tp-tile"><div class="tp-tile-h"><span class="n">${String(d.day).padStart(2, "0")}</span><span class="w">${d.name}</span><span class="m">${d.month}</span></div>${rows}</div>`;
@@ -205,6 +231,9 @@ function timelineHtml(w: PrintWeek): string {
         .map((t, li) => {
           const c = w.week[t.id][i];
           const top = 4 + li * 14;
+          const bl = blendedFor(w, t.id, i) && !!c.range;
+          // Blended: one tall bar across the Team 1 and Team 2 lanes.
+          if (bl && t.id === "surv2") return "";
           if (c.off)
             return `<div class="tp-offtag" style="top:${top}px">${esc(t.ab)} · RDO</div>`;
           if (!c.range) {
@@ -213,6 +242,8 @@ function timelineHtml(w: PrintWeek): string {
               : "";
           }
           const label = `${esc(c.primary)}${c.secondary ? " + " + esc(c.secondary) : ""}`;
+          if (bl)
+            return `<div class="tp-bar merged" style="left:${pct(c.range![0])}%;width:${pct(c.range![1]) - pct(c.range![0])}%;top:${top}px;height:27px"><span><span class="ab">T1 + T2</span>${label}</span><span class="t" style="margin-left:0">${esc(formatShiftText(c.shift))}</span></div>`;
           return `<div class="tp-bar" style="${teamVars(t)};left:${pct(c.range[0])}%;width:${pct(c.range[1]) - pct(c.range[0])}%;top:${top}px"><span class="ab">${esc(t.ab)}</span>${label}<span class="t">${esc(formatShiftText(c.shift))}</span></div>`;
         })
         .join("");

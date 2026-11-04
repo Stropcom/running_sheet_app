@@ -1,3 +1,4 @@
+import { isBlendDay, isBlendTeam } from "@shared/taskingBlend";
 import {
   createContext,
   useContext,
@@ -75,6 +76,23 @@ function Op({ name }: { name: string }) {
   );
 }
 
+/** The pink-and-blue "T1 T2" mark on a blended day. */
+function BlendTag() {
+  return (
+    <span className="tcv-btag" title="Team 1 and Team 2 combined">
+      <i>T1</i>
+      <i>T2</i>
+    </span>
+  );
+}
+
+/** Day `i` is a blended day for this team (Surveillance Team 1 and 2 working as one). */
+const blendedFor = (
+  week: Record<string, DayCell[]>,
+  teamId: string,
+  i: number
+) => isBlendTeam(teamId) && isBlendDay(week, i);
+
 const teamStyle = (t: TaskingTeam) => ({ "--tc": t.colour }) as CSSProperties;
 
 function localISO(d = new Date()): string {
@@ -95,10 +113,11 @@ function PanelBanded({ week, days, today, teams, dim, warn }: Ctx) {
             <div className="tcv-pa">
               {days.map((d, i) => {
                 const c = week[t.id][i];
+                const bl = blendedFor(week, t.id, i);
                 return (
                   <div
                     key={i}
-                    className={`tcv-pa-col ${i > 4 ? "wk" : ""} ${dim(c)}`}
+                    className={`tcv-pa-col ${i > 4 ? "wk" : ""} ${bl ? "bl" : ""} ${dim(c)}`}
                   >
                     <div className={`tcv-pa-day ${i === today ? "today" : ""}`}>
                       {d.name}
@@ -114,6 +133,7 @@ function PanelBanded({ week, days, today, teams, dim, warn }: Ctx) {
                       ) : (
                         <span className="tcv-none">—</span>
                       )}
+                      {bl && !c.off && <BlendTag />}
                       {warn(t.id, i, c.primary)}
                     </div>
                     <div className={`tcv-pa-task ${c.off ? "hide" : ""}`}>
@@ -169,8 +189,12 @@ function PanelTables({ week, days, teams, dim, warn }: Ctx) {
             <tbody>
               {days.map((d, i) => {
                 const c = week[t.id][i];
+                const bl = blendedFor(week, t.id, i);
                 return (
-                  <tr key={i} className={`${i > 4 ? "wk" : ""} ${dim(c)}`}>
+                  <tr
+                    key={i}
+                    className={`${i > 4 ? "wk" : ""} ${bl ? "bl" : ""} ${dim(c)}`}
+                  >
                     <td className="d">
                       {d.name}
                       <small>{String(d.day).padStart(2, "0")}</small>
@@ -189,6 +213,7 @@ function PanelTables({ week, days, teams, dim, warn }: Ctx) {
                           ) : (
                             <span className="tcv-none">—</span>
                           )}
+                          {bl && <BlendTag />}
                           {warn(t.id, i, c.primary)}
                         </td>
                         <td>
@@ -236,15 +261,20 @@ function DayTiles({ week, days, today, teams, dim, warn }: Ctx) {
           </div>
           {teams.map(t => {
             const c = week[t.id][i];
+            const bl = blendedFor(week, t.id, i);
+            // Blended: Team 1 and Team 2 are one lane, drawn once (on Team 1's place).
+            if (bl && t.id === "surv2") return null;
             return (
               <div
                 key={t.id}
-                className={`tcv-tl tcv-team ${c.off ? "off" : ""} ${dim(c)}`}
-                style={teamStyle(t)}
+                className={`tcv-tl ${bl ? "tcv-blend merged" : "tcv-team"} ${c.off ? "off" : ""} ${dim(c)}`}
+                style={bl ? undefined : teamStyle(t)}
               >
                 <i />
                 <div className="tcv-tl-body">
-                  <div className="tcv-tl-team">{t.label}</div>
+                  <div className="tcv-tl-team">
+                    {bl ? "T1 + T2 combined" : t.label}
+                  </div>
                   {c.off ? (
                     <span className="tcv-rdo" style={{ fontWeight: 600 }}>
                       RDO
@@ -261,6 +291,7 @@ function DayTiles({ week, days, today, teams, dim, warn }: Ctx) {
                           {c.primary ? <Op name={c.primary} /> : null}
                         </span>
                         {warn(t.id, i, c.primary)}
+                        {bl && warn("surv2", i, c.primary)}
                       </div>
                       {c.secondary && (
                         <div className="tcv-tl-sec">
@@ -389,6 +420,9 @@ function TimelineRow({
         {teams.map((t, li) => {
           const c = week[t.id][i];
           const top = 8 + li * 21;
+          const bl = blendedFor(week, t.id, i) && !!c.range;
+          // Blended: one tall bar across the Team 1 and Team 2 lanes.
+          if (bl && t.id === "surv2") return null;
           if (c.off)
             return (
               <div key={t.id} className="tcv-offtag" style={{ top }}>
@@ -411,25 +445,48 @@ function TimelineRow({
           return (
             <div
               key={t.id}
-              className={`tcv-bar tcv-team ${dim(c)}`}
+              className={`tcv-bar ${bl ? "tcv-blend merged" : "tcv-team"} ${dim(c)}`}
               style={{
-                ...teamStyle(t),
+                ...(bl ? {} : teamStyle(t)),
+                ...(bl ? { height: 39 } : {}),
                 left: `${pct(c.range[0])}%`,
                 width: `${pct(c.range[1]) - pct(c.range[0])}%`,
                 top,
               }}
-              title={`${t.label} ${formatShiftText(c.shift)}`}
+              title={`${bl ? "Team 1 + Team 2" : t.label} ${formatShiftText(c.shift)}`}
             >
-              <span className="ab">{t.ab}</span>
-              {c.primary ? <Op name={c.primary} /> : null}
-              {c.secondary ? (
+              {bl ? (
                 <>
-                  {" + "}
-                  <Op name={c.secondary} />
+                  <span>
+                    <span className="ab">T1 + T2</span>
+                    {c.primary ? <Op name={c.primary} /> : null}
+                    {c.secondary ? (
+                      <>
+                        {" + "}
+                        <Op name={c.secondary} />
+                      </>
+                    ) : null}
+                  </span>
+                  <span className="t" style={{ marginLeft: 0 }}>
+                    {formatShiftText(c.shift)}
+                  </span>
+                  {warn("surv1", i, c.primary)}
+                  {warn("surv2", i, c.primary)}
                 </>
-              ) : null}
-              <span className="t">{formatShiftText(c.shift)}</span>
-              {warn(t.id, i, c.primary)}
+              ) : (
+                <>
+                  <span className="ab">{t.ab}</span>
+                  {c.primary ? <Op name={c.primary} /> : null}
+                  {c.secondary ? (
+                    <>
+                      {" + "}
+                      <Op name={c.secondary} />
+                    </>
+                  ) : null}
+                  <span className="t">{formatShiftText(c.shift)}</span>
+                  {warn(t.id, i, c.primary)}
+                </>
+              )}
             </div>
           );
         })}

@@ -37,6 +37,8 @@ export interface TaskingCellInput {
   primaryOther?: string | null;
   secondaryTask?: string | null;
   secondaryOther?: string | null;
+  /** Surveillance Team 1 and 2 working as one blended team that day. */
+  blended?: boolean | null;
 }
 
 export interface DayCell {
@@ -48,6 +50,9 @@ export interface DayCell {
   off: boolean;
   /** Start and end in minutes after midnight; null for RDO, blank or unreadable. */
   range: [number, number] | null;
+  /** This team is blended with its partner team that day (shared/taskingBlend.ts
+   * decides which days are really blended, from both teams' cells). */
+  blended: boolean;
 }
 
 /** "0700-1500" (also "07:00-15:00", an en dash or spaces) as minutes; null when
@@ -75,7 +80,12 @@ export function formatShiftText(shift: string): string {
 export function readCell(cell: TaskingCellInput | undefined): DayCell {
   const t = taskingCellText(cell ?? {});
   const off = t.shift === "RDO";
-  return { ...t, off, range: off ? null : parseShiftRange(t.shift) };
+  return {
+    ...t,
+    off,
+    range: off ? null : parseShiftRange(t.shift),
+    blended: cell?.blended === true,
+  };
 }
 
 /** The week as one row of seven cells for each team id. */

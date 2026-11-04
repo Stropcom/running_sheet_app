@@ -107,6 +107,7 @@ export async function saveOpManagerTaskingCell(
     shiftTime?: string | null;
     primaryTask?: string | null;
     secondaryTask?: string | null;
+    blended?: boolean;
   }
 ) {
   const db = await getDb();

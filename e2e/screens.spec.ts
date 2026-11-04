@@ -2524,3 +2524,148 @@ test("Images: a photo linked to a vehicle or a location has a purple Profile pil
     "/intelligence/vehicle/1MEN83%20blue%20Mercedes-Benz%20GLC%20station%20sedan"
   );
 });
+
+test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, and a blended day shows in every layout and the PDF", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  // One made-up week far from real ones; Monday: Team 1 on 0600-1400 (RAVEN),
+  // Team 2 on 1400-2200 (FALCON).
+  const W = "2040-02-06";
+  const call = (proc: string, input: unknown) =>
+    page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+  const cells = async () => {
+    const res = await page.request.get(
+      `/api/trpc/opManager.getTaskingCalendar?batch=1&input=${encodeURIComponent(JSON.stringify({ "0": { json: { weekStart: W } } }))}`
+    );
+    const body = await res.json();
+    return body[0].result.data.json as {
+      dayIndex: number;
+      teamRow: string;
+      shiftTime: string | null;
+      primaryTask: string | null;
+      blended: boolean;
+    }[];
+  };
+  await call("opManager.deleteWeek", { weekStart: W });
+  try {
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0600-1400",
+      primaryTask: "RAVEN",
+    });
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv2",
+      shiftTime: "1400-2200",
+      primaryTask: "FALCON",
+    });
+
+    await page.goto("/operation-manager");
+    await page.getByText("CTO Weekly Tasking — 06 Feb – 12 Feb").click();
+    await page.getByRole("button", { name: "Edit" }).click();
+    await page.getByRole("tab", { name: "Tasking" }).click();
+    const team2 = page.locator(".rounded-xl:visible", {
+      has: page.getByText("Team 2", { exact: true }),
+    });
+    const team1 = page.locator(".rounded-xl:visible", {
+      has: page.getByText("Team 1", { exact: true }),
+    });
+    const setT2Shift = async (shift: string) => {
+      await team2.getByRole("combobox").first().click();
+      await page.getByRole("option", { name: shift, exact: true }).click();
+    };
+    const dialog = page.getByRole("dialog");
+
+    // Same shift as Team 1: asked. The tasks differ, so it also asks whose to keep.
+    await setT2Shift("0600-1400");
+    await expect(
+      dialog.getByText("Blend Team 1 and Team 2 on Mon 06 Feb?")
+    ).toBeVisible();
+    await expect(dialog.getByText("Team 1's tasks")).toBeVisible();
+    await expect(dialog.getByText("Team 2's tasks")).toBeVisible();
+    // No: kept apart, and not asked again for that shift.
+    await dialog.getByRole("button", { name: "No, keep separate" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(team2.getByText(/Combined with Team 1/)).toHaveCount(0);
+    // A different shift and back is a new question.
+    await setT2Shift("1000-1800");
+    await expect(dialog).toHaveCount(0);
+    await setT2Shift("0600-1400");
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Yes, blend" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(team2.getByText(/Combined with Team 1/)).toBeVisible();
+    await expect(team1.getByText("T1 + T2 combined")).toBeVisible();
+    await expect(
+      team1.getByRole("button", { name: "Split into two teams" })
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText("Tasking calendar saved.")).toBeVisible();
+    const saved = await cells();
+    const mon = saved.filter(c => c.dayIndex === 0);
+    expect(mon.find(c => c.teamRow === "surv1")).toMatchObject({
+      blended: true,
+      shiftTime: "0600-1400",
+      primaryTask: "RAVEN",
+    });
+    // Team 2 carries the shared entry (Team 1's tasks, as picked by default).
+    expect(mon.find(c => c.teamRow === "surv2")).toMatchObject({
+      blended: true,
+      shiftTime: "0600-1400",
+      primaryTask: "RAVEN",
+    });
+
+    // The full view shows the blended day in each layout.
+    await page.goto("/operation-manager");
+    await page.getByText("CTO Weekly Tasking — 06 Feb – 12 Feb").click();
+    const picker = page.getByRole("combobox", { name: "Calendar view" });
+    await picker.click();
+    await page.getByRole("option", { name: "Banded columns" }).click();
+    await expect(page.locator(".tcv-pa-col.bl")).toHaveCount(2);
+    await picker.click();
+    await page.getByRole("option", { name: "Schedule tables" }).click();
+    await expect(page.locator(".tcv-table tr.bl")).toHaveCount(2);
+    await picker.click();
+    await page.getByRole("option", { name: "Day tiles" }).click();
+    await expect(page.locator(".tcv-tl.merged")).toHaveCount(1);
+    await picker.click();
+    await page.getByRole("option", { name: "Timeline" }).click();
+    await expect(page.locator(".tcv-bar.merged")).toHaveCount(1);
+
+    // And in the PDF.
+    await page.getByRole("button", { name: "Export PDF" }).click();
+    const layouts = page.getByRole("group", {
+      name: "Calendar layouts to export",
+    });
+    await layouts.getByRole("checkbox", { name: "Banded columns" }).click();
+    const popup = page.waitForEvent("popup");
+    await page.getByRole("button", { name: "Export", exact: true }).click();
+    const pop = await popup;
+    await pop.waitForLoadState();
+    const html = await pop.content();
+    expect(html).toContain("tp-btag");
+    expect(html).toContain("tp-bar merged");
+    await pop.close();
+
+    // Split puts the day back to two teams.
+    await page.goto("/operation-manager");
+    await page.getByText("CTO Weekly Tasking — 06 Feb – 12 Feb").click();
+    await page.getByRole("button", { name: "Edit" }).click();
+    await page.getByRole("tab", { name: "Tasking" }).click();
+    await team1.getByRole("button", { name: "Split into two teams" }).click();
+    await expect(team2.getByText(/Combined with Team 1/)).toHaveCount(0);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText("Tasking calendar saved.")).toBeVisible();
+    const after = (await cells()).filter(c => c.dayIndex === 0);
+    expect(after.every(c => !c.blended)).toBe(true);
+  } finally {
+    await call("opManager.deleteWeek", { weekStart: W });
+  }
+});

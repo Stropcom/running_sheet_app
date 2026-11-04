@@ -61,8 +61,21 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { DeleteWeekDialog } from "@/components/opManager/DeleteWeekDialog";
+import {
+  BLEND_BAND,
+  BLEND_SWATCH,
+  BlendTeamsDialog,
+} from "@/components/opManager/BlendTeamsDialog";
+import {
+  blendFields,
+  blendPartner,
+  cellShift,
+  isBlendTeam,
+  shouldAskBlend,
+  tasksDiffer,
+} from "@shared/taskingBlend";
 import { ExportTaskingDialog } from "@/components/opManager/ExportTaskingDialog";
-import { readWeek } from "@shared/taskingView";
+import { readWeek, weekDays } from "@shared/taskingView";
 import type { TaskingViewId } from "@/lib/taskingViewPref";
 import { buildCtoTaskingHtml } from "@/lib/ctoTaskingExport";
 import {
@@ -225,6 +238,13 @@ interface PriorityRow {
   sortOrder: number;
 }
 
+/** "Operation RAVEN + Training", or "no task" — for the blend question. */
+function taskText(c: TaskingCell | undefined): string {
+  const p = c?.primaryTask === "Other" ? c.primaryOther : c?.primaryTask;
+  const q = c?.secondaryTask === "Other" ? c.secondaryOther : c?.secondaryTask;
+  return [p, q].filter(Boolean).join(" + ") || "no task";
+}
+
 interface TaskingCell {
   shiftTime?: string | null;
   customTime?: string;
@@ -232,6 +252,8 @@ interface TaskingCell {
   primaryOther?: string;
   secondaryTask?: string | null;
   secondaryOther?: string;
+  /** Team 1 and Team 2 working as one blended team that day (both cells). */
+  blended?: boolean;
 }
 
 interface ContactEntry {
@@ -357,6 +379,12 @@ export default function OperationManagerPage() {
   const [isSavingTasking, setIsSavingTasking] = useState(false);
   const [notifyDialogOpen, setNotifyDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  // Blending Team 1 and Team 2: the day being asked about, and the shift an
+  // earlier No was given for (per day), so a No is not asked again.
+  const [blendAsk, setBlendAsk] = useState<number | null>(null);
+  const [declinedBlend, setDeclinedBlend] = useState<Record<number, string>>(
+    {}
+  );
   const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(
     new Set()
   );
@@ -390,6 +418,7 @@ export default function OperationManagerPage() {
           customTime: isCustomShift ? (storedShift ?? "") : "",
           primaryTask: cell.primaryTask ?? null,
           secondaryTask: cell.secondaryTask ?? null,
+          blended: cell.blended === true,
         };
       });
     }
@@ -563,7 +592,132 @@ export default function OperationManagerPage() {
     patch: Partial<TaskingCell>
   ) => {
     const key = `${teamRow}-${dayIndex}`;
-    setTaskingGrid(prev => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+    setTaskingGrid(prev => {
+      const next = { ...prev, [key]: { ...prev[key], ...patch } };
+      // A blended day is one shared entry: an edit goes to both teams' cells.
+      if (isBlendTeam(teamRow)) {
+        const pKey = `${blendPartner(teamRow)}-${dayIndex}`;
+        if (prev[key]?.blended && prev[pKey]?.blended)
+          next[pKey] = { ...prev[pKey], ...patch };
+      }
+      return next;
+    });
+    // Same working shift for Team 1 and Team 2? Ask whether to blend them.
+    if (
+      isBlendTeam(teamRow) &&
+      ("shiftTime" in patch || "customTime" in patch)
+    ) {
+      const partnerKey = `${blendPartner(teamRow)}-${dayIndex}`;
+      const mine = { ...taskingGrid[key], ...patch };
+      const theirs = taskingGrid[partnerKey];
+      const surv1 = teamRow === "surv1" ? mine : theirs;
+      const surv2 = teamRow === "surv2" ? mine : theirs;
+      if (cellShift(surv1) !== cellShift(surv2)) {
+        // Shifts differ again: a No for the earlier shift no longer applies.
+        setDeclinedBlend(d => (d[dayIndex] ? { ...d, [dayIndex]: "" } : d));
+      } else if (
+        shouldAskBlend({
+          surv1,
+          surv2,
+          declinedShift: declinedBlend[dayIndex] || null,
+        })
+      ) {
+        setBlendAsk(dayIndex);
+      }
+    }
+  };
+
+  /** Yes: both teams carry the chosen team's shift and tasks, flagged blended. */
+  const blendDay = (dayIndex: number, keep: "surv1" | "surv2") => {
+    const fields = {
+      ...blendFields(taskingGrid[`${keep}-${dayIndex}`]),
+      blended: true,
+    };
+    setTaskingGrid(prev => ({
+      ...prev,
+      [`surv1-${dayIndex}`]: { ...prev[`surv1-${dayIndex}`], ...fields },
+      [`surv2-${dayIndex}`]: { ...prev[`surv2-${dayIndex}`], ...fields },
+    }));
+    setBlendAsk(null);
+  };
+  /** No (or closed): keep the teams apart, and do not ask again for this shift. */
+  const keepApart = (dayIndex: number) => {
+    setDeclinedBlend(d => ({
+      ...d,
+      [dayIndex]: cellShift(taskingGrid[`surv1-${dayIndex}`]),
+    }));
+    setBlendAsk(null);
+  };
+  /** Split a blended day back into two teams (each keeps the shared entry to edit). */
+  const splitDay = (dayIndex: number) => {
+    setDeclinedBlend(d => ({
+      ...d,
+      [dayIndex]: cellShift(taskingGrid[`surv1-${dayIndex}`]),
+    }));
+    setTaskingGrid(prev => ({
+      ...prev,
+      [`surv1-${dayIndex}`]: { ...prev[`surv1-${dayIndex}`], blended: false },
+      [`surv2-${dayIndex}`]: { ...prev[`surv2-${dayIndex}`], blended: false },
+    }));
+  };
+
+  /** Day `dayIndex` is blended (Team 1 and Team 2 both flagged). */
+  const isBlendedDay = (dayIndex: number) =>
+    !!taskingGrid[`surv1-${dayIndex}`]?.blended &&
+    !!taskingGrid[`surv2-${dayIndex}`]?.blended;
+
+  /** The editor of one team-day: the normal one, or for a blended day one
+   * combined editor under Team 1 (with Split) and a pointer under Team 2. */
+  const renderCellBody = (teamRow: TeamRow, dayIndex: number) => {
+    const cell = taskingGrid[`${teamRow}-${dayIndex}`] ?? {};
+    const editor = (
+      <TaskingCellEditor
+        cell={cell}
+        onChange={patch => updateCell(teamRow, dayIndex, patch)}
+        opOptions={activeOps}
+        onCreateOp={handleCreateOp}
+      />
+    );
+    if (!isBlendTeam(teamRow) || !isBlendedDay(dayIndex)) return editor;
+    if (teamRow === "surv2")
+      return (
+        <div
+          className="flex min-h-24 items-center justify-center rounded-md border border-dashed px-2 py-3 text-center text-xs text-muted-foreground"
+          style={{
+            background:
+              "repeating-linear-gradient(135deg, transparent 0 6px, hsl(var(--border)) 6px 7px)",
+          }}
+        >
+          Combined with Team 1. Edit it in the Team 1 panel.
+        </div>
+      );
+    return (
+      <div className="overflow-hidden rounded-md border bg-card">
+        <div
+          className="flex items-center gap-2 px-2 py-1.5 text-xs font-bold text-blue-950"
+          style={{ background: BLEND_BAND }}
+        >
+          <span
+            aria-hidden
+            className="inline-block h-3.5 w-5 rounded-[3px]"
+            style={{ background: BLEND_SWATCH }}
+          />
+          T1 + T2 combined
+        </div>
+        <div className="space-y-2 p-2">
+          {editor}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full text-xs"
+            onClick={() => splitDay(dayIndex)}
+          >
+            Split into two teams
+          </Button>
+        </div>
+      </div>
+    );
   };
 
   const saveAllTaskingCells = async () => {
@@ -592,6 +746,7 @@ export default function OperationManagerPage() {
             shiftTime,
             primaryTask,
             secondaryTask,
+            blended: cell.blended === true,
           });
         })
       );
@@ -754,6 +909,7 @@ export default function OperationManagerPage() {
             shiftTime: getDefaultShift(teamRow, dayIndex, nextWeekStart),
             primaryTask: null,
             secondaryTask: null,
+            blended: false,
           })
         )
       );
@@ -866,6 +1022,31 @@ export default function OperationManagerPage() {
   // branch is actually mounted, not just one of them — otherwise clicking
   // "Post & Notify" from view mode sets notifyDialogOpen but there's no
   // <Dialog> mounted anywhere to show it).
+  const blendDialog = (
+    <BlendTeamsDialog
+      open={blendAsk !== null}
+      dayLabel={
+        blendAsk === null
+          ? ""
+          : (() => {
+              const d = weekDays(weekStart)[blendAsk];
+              return `${d.name} ${String(d.day).padStart(2, "0")} ${d.month}`;
+            })()
+      }
+      shift={cellShift(taskingGrid[`surv1-${blendAsk ?? 0}`])}
+      tasks={{
+        surv1: taskText(taskingGrid[`surv1-${blendAsk ?? 0}`]),
+        surv2: taskText(taskingGrid[`surv2-${blendAsk ?? 0}`]),
+        differ: tasksDiffer(
+          taskingGrid[`surv1-${blendAsk ?? 0}`],
+          taskingGrid[`surv2-${blendAsk ?? 0}`]
+        ),
+      }}
+      onYes={keep => blendDay(blendAsk ?? 0, keep)}
+      onNo={() => keepApart(blendAsk ?? 0)}
+    />
+  );
+
   const notifyDialog = (
     <Dialog open={notifyDialogOpen} onOpenChange={setNotifyDialogOpen}>
       <DialogContent className="max-w-sm">
@@ -1608,14 +1789,7 @@ export default function OperationManagerPage() {
                                   />
                                 )}
                               </div>
-                              <TaskingCellEditor
-                                cell={cell}
-                                onChange={patch =>
-                                  updateCell(teamRow, dayIndex, patch)
-                                }
-                                opOptions={activeOps}
-                                onCreateOp={handleCreateOp}
-                              />
+                              {renderCellBody(teamRow, dayIndex)}
                             </div>
                           );
                         })}
@@ -1697,14 +1871,7 @@ export default function OperationManagerPage() {
                                         />
                                       </div>
                                     )}
-                                    <TaskingCellEditor
-                                      cell={cell}
-                                      onChange={patch =>
-                                        updateCell(teamRowEdit, dayIndex, patch)
-                                      }
-                                      opOptions={activeOps}
-                                      onCreateOp={handleCreateOp}
-                                    />
+                                    {renderCellBody(teamRowEdit, dayIndex)}
                                   </td>
                                 );
                               })}
@@ -1768,6 +1935,7 @@ export default function OperationManagerPage() {
         </div>
       </div>
 
+      {blendDialog}
       {notifyDialog}
       {deleteWeekDialog}
     </DashboardLayout>

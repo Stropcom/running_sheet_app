@@ -146,3 +146,7 @@ The roster is about 230 date columns by every member, and each date was drawn al
 - **Fit all teams** was taken out of the zoom control (the slider, − and + and Ctrl + scroll / pinch remain), with `fitZoom` and its test.
 - The team sections have **rounded corners** (v2.62.0 had square ones).
 - A team called **Admin** has no ON CALL totals row, only ON DUTY: its people are never on call (`teamShowsOnCall` in `shared/rosterTeams.ts`, by team name, tested in `server/teamColours.test.ts`). To change which teams, edit that one list.
+
+## Roster: the section's left end is rounded while scrolled (v2.62.2)
+
+In v2.62.1 the sections had rounded corners, but the left corners are at the far left of the dates, off screen once you scroll, so what you saw was the square end of the colour spine. The spine is now the section's left edge itself (`RosterTeamFrame.tsx`): 10px wide, sticky, running the full height including over the top and bottom border, with the same rounded left corners as the frame, so a rounded end is always on screen. The frame has no left border of its own, and no `overflow: clip` (the spine has to extend over the border).

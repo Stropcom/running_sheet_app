@@ -1,4 +1,5 @@
 import {
+  memo,
   useState,
   useMemo,
   useCallback,
@@ -6,16 +7,31 @@ import {
   useEffect,
   useLayoutEffect,
 } from "react";
-import { RosterZoomControl } from "@/components/roster/RosterZoomControl";
+import {
+  RosterScrubber,
+  RosterZoomControl,
+} from "@/components/roster/RosterZoomControl";
 import {
   ROSTER_FRAME_CHROME,
   ROSTER_FRAME_EDGE,
   RosterTeamBand,
   RosterTeamFrame,
 } from "@/components/roster/RosterTeamFrame";
-import { useCollapsedTeams, useRosterZoom } from "@/lib/rosterZoomPref";
+import {
+  getRosterZoom,
+  setRosterZoom,
+  subscribeRosterZoom,
+  useCollapsedTeams,
+} from "@/lib/rosterZoomPref";
 import { useTeamColour } from "@/lib/teams";
-import { fitZoom, labelsHidden, stepZoom } from "@shared/rosterZoom";
+import {
+  WINDOW_BLOCK,
+  dateWindowFor,
+  fitZoom,
+  labelsHidden,
+  stepZoom,
+  windowSpacers,
+} from "@shared/rosterZoom";
 import {
   DndContext,
   DragOverlay,
@@ -107,6 +123,8 @@ function shouldHandleEvent(element: EventTarget | null): boolean {
   let cur = element as HTMLElement | null;
   while (cur) {
     if (cur.dataset?.noDnd === "true") return false;
+    // Reordering is off while the roster is zoomed out (the drag maths is for 100%).
+    if (cur.dataset?.rosterZoomedOut === "true") return false;
     cur = cur.parentElement;
   }
   return true;
@@ -244,6 +262,13 @@ const ALL_DATES = eachDayOfInterval({
   end: ROSTER_END_DATE,
 });
 const TOTAL_DAYS = ALL_DATES.length;
+
+/** Empty space standing in for date columns that are not drawn. */
+function DateSpacer({ width }: { width: number | null }) {
+  return width === null ? null : (
+    <div aria-hidden style={{ width, flexShrink: 0 }} />
+  );
+}
 const COL_WIDTH = 68; // px per date column
 const NAME_COL_WIDTH = 152; // px for frozen name column
 const ROW_HEIGHT = 48; // px per member row
@@ -1342,32 +1367,88 @@ export default function RosterPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
 
-  // Zoom (100% = the grid as it always was), the team colours from User
-  // Management → Teams, and which teams are folded down to their totals.
-  const [zoom, setZoom] = useRosterZoom();
-  const zoomRef = useRef(zoom);
-  zoomRef.current = zoom;
-  // Zooming keeps the same dates in view: the scroll position is in screen
-  // pixels, so it is rescaled by the change in zoom.
-  const previousZoomRef = useRef(zoom);
-  useLayoutEffect(() => {
-    const before = previousZoomRef.current;
-    previousZoomRef.current = zoom;
-    const el = scrollRef.current;
-    if (!el || before === zoom) return;
-    el.scrollLeft = (el.scrollLeft * zoom) / before;
-    el.scrollTop = (el.scrollTop * zoom) / before;
-  }, [zoom]);
+  // Zoom (100% = the grid as it always was). It is applied straight to the
+  // grid (applyZoom below), not through React state: the grid is thousands of
+  // cells and re-rendering it on every step took seconds. The team colours come
+  // from User Management → Teams, and some teams can be folded down to totals.
   const [collapsedTeams, toggleTeam] = useCollapsedTeams();
   const teamColourOf = useTeamColour();
   // The grid's content (inside the zoom), measured by "Fit all teams".
   const gridContentRef = useRef<HTMLDivElement>(null);
 
+  // Only the date columns near the screen are drawn (the roster runs for about
+  // 230 days; drawing them all made every scroll and zoom slow). The rest are
+  // empty space of the same width, so the scroll bar and positions are the same.
+  const [dateWindow, setDateWindow] = useState(() => ({
+    start: 0,
+    end: Math.min(TOTAL_DAYS, WINDOW_BLOCK * 6),
+  }));
+  const updateDateWindow = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const next = dateWindowFor(
+      el.scrollLeft,
+      el.clientWidth,
+      getRosterZoom(),
+      TOTAL_DAYS
+    );
+    setDateWindow(prev =>
+      prev.start === next.start && prev.end === next.end ? prev : next
+    );
+  }, []);
+
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     setScrollLeft(el.scrollLeft);
-  }, []);
+    updateDateWindow();
+  }, [updateDateWindow]);
+
+  // Applies the zoom to the grid and the scroller, keeping the same dates in
+  // view (the scroll position is in screen pixels, so it is rescaled).
+  const appliedZoomRef = useRef(1);
+  const applyZoom = useCallback(
+    (z: number, rescale: boolean) => {
+      const box = scrollRef.current;
+      const content = gridContentRef.current;
+      if (content) content.style.zoom = String(z);
+      if (box) {
+        box.classList.toggle("roster-zoomed-out", labelsHidden(z));
+        box.dataset.rosterZoomedOut = z < 1 ? "true" : "false";
+        const before = appliedZoomRef.current;
+        if (rescale && before !== z) {
+          box.scrollLeft = (box.scrollLeft * z) / before;
+          box.scrollTop = (box.scrollTop * z) / before;
+        }
+      }
+      appliedZoomRef.current = z;
+      updateDateWindow();
+    },
+    [updateDateWindow]
+  );
+  // A grid that has just appeared (after loading, or the mobile and desktop
+  // layouts swapping) gets the current zoom straight away.
+  useLayoutEffect(() => {
+    const content = gridContentRef.current;
+    const z = getRosterZoom();
+    if (content && content.style.zoom !== String(z)) applyZoom(z, false);
+  });
+  useEffect(() => subscribeRosterZoom(z => applyZoom(z, true)), [applyZoom]);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => updateDateWindow());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [updateDateWindow]);
+  const windowDates = useMemo(
+    () => ALL_DATES.slice(dateWindow.start, dateWindow.end),
+    [dateWindow]
+  );
+  const spacers = useMemo(
+    () => windowSpacers(dateWindow, TOTAL_DAYS),
+    [dateWindow]
+  );
 
   // Drag-to-scroll (mouse/pointer drag on the grid background)
   const dragScrollRef = useRef<{
@@ -1423,7 +1504,7 @@ export default function RosterPage() {
   const scrollToDate = useCallback((dateStr: string) => {
     const idx = ALL_DATES.findIndex(d => format(d, "yyyy-MM-dd") === dateStr);
     if (idx < 0) return;
-    const target = idx * COL_WIDTH * zoomRef.current;
+    const target = idx * COL_WIDTH * getRosterZoom();
     if (scrollRef.current) scrollRef.current.scrollLeft = target;
     setScrollLeft(target);
   }, []);
@@ -1435,7 +1516,9 @@ export default function RosterPage() {
   // Month navigation
   const visibleMonthIndex = useMemo(() => {
     if (ALL_DATES.length === 0) return 0;
-    const visibleDayIdx = Math.floor(scrollLeft / (COL_WIDTH * zoom));
+    const visibleDayIdx = Math.floor(
+      scrollLeft / (COL_WIDTH * getRosterZoom())
+    );
     const visibleDate =
       ALL_DATES[Math.min(Math.max(0, visibleDayIdx), ALL_DATES.length - 1)];
     if (!visibleDate) return 0;
@@ -1443,7 +1526,7 @@ export default function RosterPage() {
     if (!monthStr) return 0;
     const idx = MONTHS.findIndex(m => m === monthStr);
     return idx >= 0 ? idx : 0;
-  }, [scrollLeft, zoom]);
+  }, [scrollLeft]);
 
   /** Zoom out just far enough to see every team (the grid's height scales with
    * the zoom, so one measurement does it). */
@@ -1454,11 +1537,11 @@ export default function RosterPage() {
     const next = fitZoom(
       box.clientHeight - 14,
       content.getBoundingClientRect().height,
-      zoomRef.current
+      getRosterZoom()
     );
-    setZoom(next);
+    setRosterZoom(next);
     box.scrollTop = 0;
-  }, [setZoom]);
+  }, []);
 
   // Ctrl + scroll and a two-finger pinch zoom the grid (the scroll container
   // is a callback-less ref, so these are attached by hand, not as props: the
@@ -1469,19 +1552,19 @@ export default function RosterPage() {
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      setZoom(stepZoom(zoomRef.current, e.deltaY < 0 ? 1 : -1));
+      setRosterZoom(stepZoom(getRosterZoom(), e.deltaY < 0 ? 1 : -1));
     };
     let pinch: { dist: number; zoom: number } | null = null;
     const dist = (t: TouchList) =>
       Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2)
-        pinch = { dist: dist(e.touches), zoom: zoomRef.current };
+        pinch = { dist: dist(e.touches), zoom: getRosterZoom() };
     };
     const onTouchMove = (e: TouchEvent) => {
       if (!pinch || e.touches.length !== 2) return;
       e.preventDefault();
-      setZoom((pinch.zoom * dist(e.touches)) / pinch.dist);
+      setRosterZoom((pinch.zoom * dist(e.touches)) / pinch.dist);
     };
     const onTouchEnd = (e: TouchEvent) => {
       if (e.touches.length < 2) pinch = null;
@@ -1496,7 +1579,7 @@ export default function RosterPage() {
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
     };
-  }, [setZoom]);
+  }, []);
 
   const goToPrevMonth = () => {
     const newIdx = Math.max(0, visibleMonthIndex - 1);
@@ -2199,11 +2282,7 @@ export default function RosterPage() {
             <h1 className="text-lg font-semibold tracking-tight mr-auto">
               Team Duty Roster
             </h1>
-            <RosterZoomControl
-              zoom={zoom}
-              onZoom={setZoom}
-              onFit={fitAllTeams}
-            />
+            <RosterZoomControl onFit={fitAllTeams} />
             <Button
               variant="outline"
               size="sm"
@@ -2385,8 +2464,7 @@ export default function RosterPage() {
           onPointerUp={handleGridPointerUp}
           onPointerCancel={handleGridPointerUp}
           className={cn(
-            "flex-1 min-h-0 overflow-auto cursor-grab active:cursor-grabbing",
-            labelsHidden(zoom) && "roster-zoomed-out"
+            "flex-1 min-h-0 overflow-auto cursor-grab active:cursor-grabbing"
           )}
           style={{ WebkitOverflowScrolling: "touch" }}
         >
@@ -2403,7 +2481,6 @@ export default function RosterPage() {
               ref={gridContentRef}
               style={{
                 minWidth: `${totalContentWidth + ROSTER_FRAME_CHROME}px`,
-                zoom,
               }}
               className="relative pb-2"
             >
@@ -2447,7 +2524,8 @@ export default function RosterPage() {
                     {MONTHS[visibleMonthIndex]}
                   </span>
                 </div>
-                {ALL_DATES.map(d => {
+                <DateSpacer width={spacers.lead} />
+                {windowDates.map(d => {
                   const ds = format(d, "yyyy-MM-dd");
                   const isToday = ds === today;
                   const isWeekend = d.getDay() === 0 || d.getDay() === 6;
@@ -2482,6 +2560,7 @@ export default function RosterPage() {
                     </div>
                   );
                 })}
+                <DateSpacer width={spacers.trail} />
               </div>
 
               {/* ── Team sections ─────────────────────────────────────────── */}
@@ -2521,7 +2600,8 @@ export default function RosterPage() {
                         <MemberRow
                           key={member.id}
                           member={member}
-                          allDates={ALL_DATES}
+                          allDates={windowDates}
+                          spacers={spacers}
                           today={today}
                           shiftMap={shiftMap}
                           isAdmin={isAdmin}
@@ -2549,7 +2629,8 @@ export default function RosterPage() {
                         <MemberRow
                           key={`acting-${member.id}`}
                           member={member}
-                          allDates={ALL_DATES}
+                          allDates={windowDates}
+                          spacers={spacers}
                           today={today}
                           shiftMap={shiftMap}
                           isAdmin={isAdmin}
@@ -2575,18 +2656,18 @@ export default function RosterPage() {
                     {/* On Duty row */}
                     <div className="flex gap-[3px] mt-[3px] mb-2">
                       <div
-                        className="flex-shrink-0 flex items-center px-3 h-9 rounded-md font-bold text-[10px] uppercase tracking-widest text-slate-400"
+                        className="flex-shrink-0 flex items-center px-3 h-9 rounded-md font-bold text-[10px] uppercase tracking-widest text-slate-600 bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
                         style={{
                           width: `${nameColWidthForGrid}px`,
                           position: "sticky",
                           left: 0,
                           zIndex: 20,
-                          background: "#1e293b",
                         }}
                       >
                         On Duty
                       </div>
-                      {ALL_DATES.map(d => {
+                      <DateSpacer width={spacers.lead} />
+                      {windowDates.map(d => {
                         const ds = format(d, "yyyy-MM-dd");
                         const isToday = ds === today;
                         const count = getEffectiveCountableMembers(
@@ -2601,23 +2682,25 @@ export default function RosterPage() {
                         ).length;
                         const numClass = isSurveillance
                           ? count > 5
-                            ? "text-emerald-400"
+                            ? "text-emerald-700 dark:text-emerald-400"
                             : count === 5
-                              ? "text-yellow-400"
+                              ? "text-amber-600 dark:text-yellow-400"
                               : count >= 1
-                                ? "text-red-400"
-                                : "text-slate-600"
+                                ? "text-red-600 dark:text-red-400"
+                                : "text-slate-400 dark:text-slate-600"
                           : count >= 5
-                            ? "text-emerald-400"
+                            ? "text-emerald-700 dark:text-emerald-400"
                             : count >= 1
-                              ? "text-slate-300"
-                              : "text-slate-600";
+                              ? "text-slate-700 dark:text-slate-300"
+                              : "text-slate-400 dark:text-slate-600";
                         return (
                           <div
                             key={ds}
                             className={cn(
                               "flex-shrink-0 h-9 rounded-md flex items-center justify-center",
-                              isToday ? "bg-primary/20" : "bg-slate-800/70"
+                              isToday
+                                ? "bg-primary/25"
+                                : "bg-slate-200 dark:bg-slate-800/70"
                             )}
                             style={{ width: `${COL_WIDTH}px` }}
                           >
@@ -2632,23 +2715,24 @@ export default function RosterPage() {
                           </div>
                         );
                       })}
+                      <DateSpacer width={spacers.trail} />
                     </div>
 
                     {/* On Call row */}
                     <div className="flex gap-[3px] mt-[3px] mb-2">
                       <div
-                        className="flex-shrink-0 flex items-center px-3 h-9 rounded-md font-bold text-[10px] uppercase tracking-widest text-slate-400"
+                        className="flex-shrink-0 flex items-center px-3 h-9 rounded-md font-bold text-[10px] uppercase tracking-widest text-slate-600 bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
                         style={{
                           width: `${nameColWidthForGrid}px`,
                           position: "sticky",
                           left: 0,
                           zIndex: 20,
-                          background: "#334155",
                         }}
                       >
                         On Call
                       </div>
-                      {ALL_DATES.map(d => {
+                      <DateSpacer width={spacers.lead} />
+                      {windowDates.map(d => {
                         const ds = format(d, "yyyy-MM-dd");
                         const isToday = ds === today;
                         const count = getEffectiveCountableMembers(
@@ -2662,13 +2746,17 @@ export default function RosterPage() {
                           )
                         ).length;
                         const numClass =
-                          count >= 5 ? "text-emerald-400" : "text-red-400";
+                          count >= 5
+                            ? "text-emerald-700 dark:text-emerald-400"
+                            : "text-red-600 dark:text-red-400";
                         return (
                           <div
                             key={ds}
                             className={cn(
                               "flex-shrink-0 h-9 rounded-md flex items-center justify-center",
-                              isToday ? "bg-primary/20" : "bg-slate-700/60"
+                              isToday
+                                ? "bg-primary/25"
+                                : "bg-slate-200 dark:bg-slate-700/60"
                             )}
                             style={{ width: `${COL_WIDTH}px` }}
                           >
@@ -2683,6 +2771,7 @@ export default function RosterPage() {
                           </div>
                         );
                       })}
+                      <DateSpacer width={spacers.trail} />
                     </div>
                   </RosterTeamFrame>
                 );
@@ -2704,7 +2793,6 @@ export default function RosterPage() {
                   // As wide as the rows (the columns' gaps are not in
                   // totalContentWidth), so each team card spans them all.
                   width: "max-content",
-                  zoom,
                 }}
                 className="relative pb-2"
               >
@@ -2755,7 +2843,8 @@ export default function RosterPage() {
                     </span>
                   </div>
                   {/* Date columns */}
-                  {ALL_DATES.map(d => {
+                  <DateSpacer width={spacers.lead} />
+                  {windowDates.map(d => {
                     const ds = format(d, "yyyy-MM-dd");
                     const isToday = ds === today;
                     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
@@ -2790,6 +2879,7 @@ export default function RosterPage() {
                       </div>
                     );
                   })}
+                  <DateSpacer width={spacers.trail} />
                 </div>
 
                 {/* ── Team sections ─────────────────────────────────────────── */}
@@ -2837,13 +2927,12 @@ export default function RosterPage() {
                             <SortableMemberRow
                               key={member.id}
                               member={member}
-                              allDates={ALL_DATES}
+                              allDates={windowDates}
+                              spacers={spacers}
                               today={today}
                               shiftMap={shiftMap}
                               isAdmin={isAdmin}
                               isDragging={activeDragId === member.id}
-                              // Dragging is off while zoomed out (the drag maths is for 100%).
-                              dragDisabled={zoom < 1}
                               bulkMode={bulkMode}
                               bulkCopyMode={bulkCopyMode}
                               copiedBlock={copiedBlock}
@@ -2881,7 +2970,8 @@ export default function RosterPage() {
                           <MemberRow
                             key={`acting-${member.id}`}
                             member={member}
-                            allDates={ALL_DATES}
+                            allDates={windowDates}
+                            spacers={spacers}
                             today={today}
                             shiftMap={shiftMap}
                             isAdmin={isAdmin}
@@ -2909,18 +2999,18 @@ export default function RosterPage() {
                       {/* On Duty row */}
                       <div className="flex gap-[3px] mt-[3px] mb-2">
                         <div
-                          className="flex-shrink-0 flex items-center px-3 h-9 rounded-md font-bold text-[10px] uppercase tracking-widest text-slate-400"
+                          className="flex-shrink-0 flex items-center px-3 h-9 rounded-md font-bold text-[10px] uppercase tracking-widest text-slate-600 bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
                           style={{
                             width: `${NAME_COL_WIDTH}px`,
                             position: "sticky",
                             left: 0,
                             zIndex: 20,
-                            background: "#1e293b",
                           }}
                         >
                           On Duty
                         </div>
-                        {ALL_DATES.map(d => {
+                        <DateSpacer width={spacers.lead} />
+                        {windowDates.map(d => {
                           const ds = format(d, "yyyy-MM-dd");
                           const isToday = ds === today;
                           const count = getEffectiveCountableMembers(
@@ -2935,23 +3025,25 @@ export default function RosterPage() {
                           ).length;
                           const numClass = isSurveillance
                             ? count > 5
-                              ? "text-emerald-400"
+                              ? "text-emerald-700 dark:text-emerald-400"
                               : count === 5
-                                ? "text-yellow-400"
+                                ? "text-amber-600 dark:text-yellow-400"
                                 : count >= 1
-                                  ? "text-red-400"
-                                  : "text-slate-600"
+                                  ? "text-red-600 dark:text-red-400"
+                                  : "text-slate-400 dark:text-slate-600"
                             : count >= 5
-                              ? "text-emerald-400"
+                              ? "text-emerald-700 dark:text-emerald-400"
                               : count >= 1
-                                ? "text-slate-300"
-                                : "text-slate-600";
+                                ? "text-slate-700 dark:text-slate-300"
+                                : "text-slate-400 dark:text-slate-600";
                           return (
                             <div
                               key={ds}
                               className={cn(
                                 "flex-shrink-0 h-9 rounded-md flex items-center justify-center",
-                                isToday ? "bg-primary/20" : "bg-slate-800/70"
+                                isToday
+                                  ? "bg-primary/25"
+                                  : "bg-slate-200 dark:bg-slate-800/70"
                               )}
                               style={{ width: `${COL_WIDTH}px` }}
                             >
@@ -2966,23 +3058,24 @@ export default function RosterPage() {
                             </div>
                           );
                         })}
+                        <DateSpacer width={spacers.trail} />
                       </div>
 
                       {/* On Call row */}
                       <div className="flex gap-[3px] mt-[3px] mb-2">
                         <div
-                          className="flex-shrink-0 flex items-center px-3 h-9 rounded-md font-bold text-[10px] uppercase tracking-widest text-slate-400"
+                          className="flex-shrink-0 flex items-center px-3 h-9 rounded-md font-bold text-[10px] uppercase tracking-widest text-slate-600 bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
                           style={{
                             width: `${NAME_COL_WIDTH}px`,
                             position: "sticky",
                             left: 0,
                             zIndex: 20,
-                            background: "#334155",
                           }}
                         >
                           On Call
                         </div>
-                        {ALL_DATES.map(d => {
+                        <DateSpacer width={spacers.lead} />
+                        {windowDates.map(d => {
                           const ds = format(d, "yyyy-MM-dd");
                           const isToday = ds === today;
                           const count = getEffectiveCountableMembers(
@@ -2996,13 +3089,17 @@ export default function RosterPage() {
                             )
                           ).length;
                           const numClass =
-                            count >= 5 ? "text-emerald-400" : "text-red-400";
+                            count >= 5
+                              ? "text-emerald-700 dark:text-emerald-400"
+                              : "text-red-600 dark:text-red-400";
                           return (
                             <div
                               key={ds}
                               className={cn(
                                 "flex-shrink-0 h-9 rounded-md flex items-center justify-center",
-                                isToday ? "bg-primary/20" : "bg-slate-700/60"
+                                isToday
+                                  ? "bg-primary/25"
+                                  : "bg-slate-200 dark:bg-slate-700/60"
                               )}
                               style={{ width: `${COL_WIDTH}px` }}
                             >
@@ -3017,6 +3114,7 @@ export default function RosterPage() {
                             </div>
                           );
                         })}
+                        <DateSpacer width={spacers.trail} />
                       </div>
                     </RosterTeamFrame>
                   );
@@ -3040,22 +3138,15 @@ export default function RosterPage() {
 
         {/* ── Bottom slider (Excel-style) ────────────────────────────────────── */}
         <div className="flex-shrink-0 pt-2 pb-1 px-1">
-          <input
-            type="range"
-            min={0}
-            max={Math.max(
-              1,
-              (totalContentWidth + ROSTER_FRAME_CHROME - nameColWidthForGrid) *
-                zoom
-            )}
-            value={scrollLeft}
-            onChange={e => {
-              const v = Number(e.target.value);
+          <RosterScrubber
+            scrollLeft={scrollLeft}
+            baseWidth={
+              totalContentWidth + ROSTER_FRAME_CHROME - nameColWidthForGrid
+            }
+            onScrub={v => {
               setScrollLeft(v);
               if (scrollRef.current) scrollRef.current.scrollLeft = v;
             }}
-            className="w-full h-2 accent-primary cursor-pointer"
-            style={{ appearance: "auto" }}
           />
         </div>
 
@@ -3187,9 +3278,10 @@ function TeamDropZoneRow({
 }
 
 /* ── Plain member row (mobile — no DnD hooks) ────────────────────────────── */
-function MemberRow({
+const MemberRow = memo(function MemberRow({
   member,
   allDates,
+  spacers,
   today,
   shiftMap,
   isAdmin,
@@ -3212,6 +3304,8 @@ function MemberRow({
 }: {
   member: Member;
   allDates: Date[];
+  /** Empty space for the date columns left out of the window (RosterPage). */
+  spacers: { lead: number | null; trail: number | null };
   today: string;
   shiftMap: Map<number, Map<string, ShiftData>>;
   isAdmin: boolean;
@@ -3287,6 +3381,7 @@ function MemberRow({
       </div>
 
       {/* Shift cells */}
+      <DateSpacer width={spacers.lead} />
       {allDates.map(d => {
         const ds = format(d, "yyyy-MM-dd");
         if (isDateOutsideRowScope(rowMode, secondmentWindow, ds)) {
@@ -3409,15 +3504,16 @@ function MemberRow({
           </button>
         );
       })}
+      <DateSpacer width={spacers.trail} />
     </div>
   );
-}
+});
 
 /* ── Sortable member row ──────────────────────────────────────────────────── */
-function SortableMemberRow({
-  dragDisabled = false,
+const SortableMemberRow = memo(function SortableMemberRow({
   member,
   allDates,
+  spacers,
   today,
   shiftMap,
   isAdmin,
@@ -3440,12 +3536,12 @@ function SortableMemberRow({
 }: {
   member: Member;
   allDates: Date[];
+  /** Empty space for the date columns left out of the window (RosterPage). */
+  spacers: { lead: number | null; trail: number | null };
   today: string;
   shiftMap: Map<number, Map<string, ShiftData>>;
   isAdmin: boolean;
   isDragging: boolean;
-  /** Reordering is switched off (the roster is zoomed out). */
-  dragDisabled?: boolean;
   bulkMode: boolean;
   bulkCopyMode: boolean;
   copiedBlock: {
@@ -3486,7 +3582,7 @@ function SortableMemberRow({
     transform,
     transition,
     isDragging: isSortableDragging,
-  } = useSortable({ id: member.id, disabled: dragDisabled });
+  } = useSortable({ id: member.id });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -3542,6 +3638,7 @@ function SortableMemberRow({
       </div>
 
       {/* Shift cells */}
+      <DateSpacer width={spacers.lead} />
       {allDates.map(d => {
         const ds = format(d, "yyyy-MM-dd");
         if (isDateOutsideRowScope("home", secondmentWindow, ds)) {
@@ -3665,6 +3762,7 @@ function SortableMemberRow({
           </button>
         );
       })}
+      <DateSpacer width={spacers.trail} />
     </div>
   );
-}
+});

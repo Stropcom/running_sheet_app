@@ -2,16 +2,18 @@ import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** Border (2px) and padding (5px) either side of a team card; the grid is this
- * much wider than its columns, and the date header starts this far in so its
+/** The colour spine down the left of a team is this wide; the grid is this much
+ * wider than its columns, and the date header starts this far in so its
  * columns line up with the cells. */
 export const ROSTER_FRAME_EDGE = 7;
-export const ROSTER_FRAME_CHROME = ROSTER_FRAME_EDGE * 2;
+export const ROSTER_FRAME_CHROME = ROSTER_FRAME_EDGE;
 
 /**
- * One team on the roster as its own card: a frame in the team's colour (from
- * User Management → Teams) with a clear gap before the next team. Holds the
- * band, the member rows and the ON DUTY / ON CALL rows.
+ * One team on the roster as its own section: a heavy line in the team's colour
+ * (from User Management → Teams) above and below it, a light tint behind its
+ * rows, and a colour spine down the left edge that stays on screen while the
+ * dates scroll, so you can always see which team you are in and where it ends.
+ * Holds the band, the member rows and the ON DUTY / ON CALL rows.
  */
 export function RosterTeamFrame({
   colour,
@@ -22,20 +24,33 @@ export function RosterTeamFrame({
 }) {
   return (
     <div
-      className="mb-4 rounded-2xl"
+      className="mb-5 flex"
       style={{
-        border: `2px solid ${colour}`,
-        padding: 5,
-        background: `color-mix(in srgb, ${colour} 7%, transparent)`,
+        borderTop: `3px solid ${colour}`,
+        borderBottom: `3px solid ${colour}`,
+        background: `color-mix(in srgb, ${colour} 9%, transparent)`,
       }}
     >
-      {children}
+      {/* The spine: sticky to the left edge, full height of the team, above the
+          name cells (which also stick there). */}
+      <div
+        aria-hidden
+        className="flex-none"
+        style={{
+          position: "sticky",
+          left: 0,
+          zIndex: 25,
+          width: ROSTER_FRAME_EDGE,
+          background: colour,
+        }}
+      />
+      <div className="min-w-0 flex-1 pt-[3px]">{children}</div>
     </div>
   );
 }
 
 /**
- * The card's header band, in place of the old grey team label row: the team's
+ * The team's header band, in place of the old grey team label row: the team's
  * name and member count on a tint of its colour, with an arrow to fold the
  * team down to its ON DUTY / ON CALL totals. The name part stays at the left
  * edge while the dates scroll.

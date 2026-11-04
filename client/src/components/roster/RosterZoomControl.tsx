@@ -1,5 +1,6 @@
 import { Minus, Plus, ScanSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useRosterZoom } from "@/lib/rosterZoomPref";
 import {
   MAX_ZOOM,
   MIN_ZOOM,
@@ -14,15 +15,8 @@ import {
  * picks the zoom that shows every team on the screen. Ctrl + scroll and a
  * two-finger pinch on the grid zoom too (RosterPage).
  */
-export function RosterZoomControl({
-  zoom,
-  onZoom,
-  onFit,
-}: {
-  zoom: number;
-  onZoom: (z: number) => void;
-  onFit: () => void;
-}) {
+export function RosterZoomControl({ onFit }: { onFit: () => void }) {
+  const [zoom, onZoom] = useRosterZoom();
   return (
     <div
       className="flex items-center gap-1.5"
@@ -80,5 +74,35 @@ export function RosterZoomControl({
         <span className="sm:hidden">Fit</span>
       </Button>
     </div>
+  );
+}
+
+/**
+ * The slider along the bottom of the roster that scrolls through the dates.
+ * It is its own component so it can follow the zoom (the zoomed grid is
+ * shorter or longer to scroll) without the whole roster re-rendering.
+ */
+export function RosterScrubber({
+  scrollLeft,
+  baseWidth,
+  onScrub,
+}: {
+  scrollLeft: number;
+  /** The scrollable width of the grid at 100% (the dates, not the name column). */
+  baseWidth: number;
+  onScrub: (value: number) => void;
+}) {
+  const [zoom] = useRosterZoom();
+  return (
+    <input
+      type="range"
+      aria-label="Scroll through the dates"
+      min={0}
+      max={Math.max(1, Math.round(baseWidth * zoom))}
+      value={scrollLeft}
+      onChange={e => onScrub(Number(e.target.value))}
+      className="w-full h-2 accent-primary cursor-pointer"
+      style={{ appearance: "auto" }}
+    />
   );
 }

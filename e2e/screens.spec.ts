@@ -2743,9 +2743,9 @@ test("Team Duty Roster: zoom, team cards and team colours that follow User Manag
     const fold = page.getByRole("button", { name: "Collapse Team 1" });
     await expect(fold).toBeVisible();
     const card = fold.locator(
-      "xpath=ancestor::div[contains(@class,'rounded-2xl')][1]"
+      "xpath=ancestor::div[contains(@class,'mb-5')][1]"
     );
-    // The card is drawn in the colour set in User Management.
+    // The team's section is drawn in the colour set in User Management.
     await expect(card).toHaveCSS("border-top-color", "rgb(0, 170, 85)");
 
     // Zoom: 100% to start, the slider zooms the grid and it is remembered.
@@ -2760,7 +2760,15 @@ test("Team Duty Roster: zoom, team cards and team colours that follow User Manag
     await page.getByRole("button", { name: "Zoom in" }).click();
     await expect(page.getByText("55%", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Fit all teams" }).click();
-    await expect(page.getByText("100%", { exact: true })).toBeVisible(); // already fits
+    // Fit never zooms in past 100% (a small roster already fits, a big one zooms out).
+    await expect
+      .poll(async () =>
+        parseFloat(await grid.evaluate(el => getComputedStyle(el).zoom))
+      )
+      .toBeGreaterThanOrEqual(0.25);
+    expect(
+      parseFloat(await grid.evaluate(el => getComputedStyle(el).zoom))
+    ).toBeLessThanOrEqual(1);
 
     // A team folds down to its totals and back.
     await page.getByRole("button", { name: "Collapse Team 1" }).click();

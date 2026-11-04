@@ -11,7 +11,11 @@ import {
   tintOf,
 } from "@shared/teamColours";
 import {
+  DATE_STRIDE,
+  WINDOW_BLOCK,
   clampZoom,
+  dateWindowFor,
+  windowSpacers,
   fitZoom,
   labelsHidden,
   readSavedZoom,
@@ -96,5 +100,45 @@ describe("roster zoom", () => {
     expect(readSavedZoom(null)).toBe(1);
     expect(readSavedZoom("abc")).toBe(1);
     expect(readSavedZoom("7")).toBe(1);
+  });
+});
+
+describe("roster date window", () => {
+  it("draws the columns on screen plus a margin, in whole blocks", () => {
+    const w = dateWindowFor(0, 1000, 1, 228);
+    expect(w.start).toBe(0);
+    expect(w.end % WINDOW_BLOCK).toBe(0);
+    // 1000px is about 15 columns; at least a block of margin lies beyond
+    expect(w.end).toBeGreaterThanOrEqual(15 + 8);
+    const mid = dateWindowFor(100 * DATE_STRIDE, 1000, 1, 228);
+    expect(mid.start % WINDOW_BLOCK).toBe(0);
+    expect(mid.start).toBeLessThanOrEqual(100 - 8);
+    expect(mid.end).toBeGreaterThanOrEqual(100 + 15 + 8);
+  });
+  it("draws more columns when zoomed out, and never past the ends", () => {
+    const full = dateWindowFor(0, 1000, 1, 228);
+    const out = dateWindowFor(0, 1000, 0.25, 228);
+    expect(out.end).toBeGreaterThan(full.end);
+    const last = dateWindowFor(10_000_000, 1000, 1, 228);
+    expect(last.end).toBe(228);
+    expect(last.start).toBeLessThanOrEqual(last.end);
+    const short = dateWindowFor(0, 1000, 1, 10);
+    expect(short).toEqual({ start: 0, end: 10 });
+  });
+  it("makes up the columns left out with spacers that keep the width", () => {
+    // a row has 3px between items: spacers are 3px short of their columns
+    expect(windowSpacers({ start: 0, end: 228 }, 228)).toEqual({
+      lead: null,
+      trail: null,
+    });
+    expect(windowSpacers({ start: 16, end: 228 }, 228)).toEqual({
+      lead: 16 * DATE_STRIDE - 3,
+      trail: null,
+    });
+    const both = windowSpacers({ start: 16, end: 48 }, 228);
+    // name + lead + 32 cells + trail with 3px gaps = name + all 228 columns
+    const width =
+      (both.lead as number) + (both.trail as number) + 32 * 68 + 3 * (32 + 2);
+    expect(width).toBe(228 * DATE_STRIDE);
   });
 });

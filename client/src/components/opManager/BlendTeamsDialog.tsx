@@ -9,12 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { BlendTeam } from "@shared/taskingBlend";
-
-/** The pink-and-blue mark for "Team 1 + Team 2" (the two team colours). */
-export const BLEND_BAND =
-  "linear-gradient(90deg, #fce7f3 0 50%, #dbeafe 50% 100%)";
-export const BLEND_SWATCH =
-  "linear-gradient(90deg, #ec4899 0 50%, #1976d2 50% 100%)";
+import { blendGradients } from "@shared/teamColours";
 
 /**
  * Asked in the weekly tasking's edit page when Surveillance Team 1 and Team 2
@@ -26,6 +21,7 @@ export const BLEND_SWATCH =
  */
 export function BlendTeamsDialog({
   open,
+  colours,
   dayLabel,
   shift,
   tasks,
@@ -33,6 +29,8 @@ export function BlendTeamsDialog({
   onNo,
 }: {
   open: boolean;
+  /** Team 1's and Team 2's colours (from User Management → Teams). */
+  colours: [string, string];
   /** "Thu 05 Nov" */
   dayLabel: string;
   shift: string;
@@ -41,6 +39,7 @@ export function BlendTeamsDialog({
   onYes: (keep: BlendTeam) => void;
   onNo: () => void;
 }) {
+  const look = blendGradients(colours[0], colours[1]);
   const [keep, setKeep] = useState<BlendTeam>("surv1");
   useEffect(() => {
     if (open) setKeep("surv1");
@@ -51,13 +50,13 @@ export function BlendTeamsDialog({
       <DialogContent className="max-w-md overflow-hidden p-0">
         <DialogHeader
           className="px-4 py-3 border-b"
-          style={{ background: BLEND_BAND }}
+          style={{ background: look.band }}
         >
           <DialogTitle className="flex items-center gap-2 text-base text-blue-950">
             <span
               aria-hidden
               className="inline-block h-4 w-6 rounded-[3px]"
-              style={{ background: BLEND_SWATCH }}
+              style={{ background: look.swatch }}
             />
             Blend Team 1 and Team 2 on {dayLabel}?
           </DialogTitle>

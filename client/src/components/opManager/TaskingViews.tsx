@@ -1,4 +1,5 @@
 import { isBlendDay, isBlendTeam } from "@shared/taskingBlend";
+import { readableOn } from "@shared/teamColours";
 import {
   createContext,
   useContext,
@@ -540,8 +541,18 @@ export function TaskingCalendarViews({
     warn: renderWarning,
   };
 
+  // The pink-and-blue of a blended day are Team 1's and Team 2's own colours.
+  const b1 = teams.find(t => t.id === "surv1")?.colour ?? "#ec4899";
+  const b2 = teams.find(t => t.id === "surv2")?.colour ?? "#1976d2";
+  const blendVars = {
+    "--b1": b1,
+    "--b2": b2,
+    "--b1t": readableOn(b1),
+    "--b2t": readableOn(b2),
+  } as CSSProperties;
+
   return (
-    <section className="space-y-3">
+    <section className="space-y-3" style={blendVars}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="px-1 flex items-center gap-2">
           <h2 className="text-sm font-bold tracking-widest uppercase text-muted-foreground">

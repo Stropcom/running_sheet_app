@@ -5,9 +5,10 @@
   --ink: color-mix(in srgb, var(--tc) 62%, var(--foreground));
   --edge: color-mix(in srgb, var(--tc) 45%, var(--card));
 }
-/* Blended day (Surveillance Team 1 + 2 as one): T1 pink and T2 blue, the same
-   hexes as the team colours in OperationManagerPage.tsx (TEAM_COLOURS). */
-.tcv { --b1: #ec4899; --b2: #1976d2; --tcv-blend-flat: color-mix(in srgb, var(--b2) 7%, color-mix(in srgb, var(--b1) 6%, var(--card))); --tcv-weekend: color-mix(in srgb, var(--muted) 60%, var(--card)); --tcv-faint: color-mix(in srgb, var(--muted-foreground) 75%, var(--card)); display: flex; flex-direction: column; gap: 12px; }
+/* Blended day (Surveillance Team 1 + 2 as one): --b1 / --b2 are Team 1's and
+   Team 2's colours from User Management → Teams (set by TaskingViews.tsx; the
+   hexes below are only the fallback). */
+.tcv { --tcv-blend-flat: color-mix(in srgb, var(--b2) 7%, color-mix(in srgb, var(--b1) 6%, var(--card))); --tcv-weekend: color-mix(in srgb, var(--muted) 60%, var(--card)); --tcv-faint: color-mix(in srgb, var(--muted-foreground) 75%, var(--card)); display: flex; flex-direction: column; gap: 12px; }
 .tcv-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .tcv-scroll { overflow-x: auto; }
 .tcv-dim { opacity: 0.22; }
@@ -120,9 +121,9 @@
 
 /* Blended day: Team 1 + Team 2 working as one */
 .tcv-btag { display: inline-flex; border-radius: 4px; overflow: hidden; font-size: 10.5px; font-weight: 800; letter-spacing: 0.03em; line-height: 1; flex: none; }
-.tcv-btag i { font-style: normal; padding: 4px 6px; color: #fff; }
-.tcv-btag i:first-child { background: #db2777; }
-.tcv-btag i:last-child { background: #1565c0; }
+.tcv-btag i { font-style: normal; padding: 4px 6px; }
+.tcv-btag i:first-child { background: var(--b1); color: var(--b1t, #fff); }
+.tcv-btag i:last-child { background: var(--b2); color: var(--b2t, #fff); }
 .tcv-blend { --tint: var(--tcv-blend-flat); --ink: var(--primary); --edge: var(--border); }
 .tcv-pa-col.bl > div { background: var(--tcv-blend-flat); }
 .tcv-pa-col.bl .tcv-pa-day { border-bottom: 3px solid; border-image: linear-gradient(90deg, var(--b1) 50%, var(--b2) 50%) 1; }

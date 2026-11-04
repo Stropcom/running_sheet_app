@@ -1,4 +1,21 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import {
+  useState,
+  useMemo,
+  useCallback,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+} from "react";
+import { RosterZoomControl } from "@/components/roster/RosterZoomControl";
+import {
+  ROSTER_FRAME_CHROME,
+  ROSTER_FRAME_EDGE,
+  RosterTeamBand,
+  RosterTeamFrame,
+} from "@/components/roster/RosterTeamFrame";
+import { useCollapsedTeams, useRosterZoom } from "@/lib/rosterZoomPref";
+import { useTeamColour } from "@/lib/teams";
+import { fitZoom, labelsHidden, stepZoom } from "@shared/rosterZoom";
 import {
   DndContext,
   DragOverlay,
@@ -1325,6 +1342,27 @@ export default function RosterPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollLeft, setScrollLeft] = useState(0);
 
+  // Zoom (100% = the grid as it always was), the team colours from User
+  // Management → Teams, and which teams are folded down to their totals.
+  const [zoom, setZoom] = useRosterZoom();
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
+  // Zooming keeps the same dates in view: the scroll position is in screen
+  // pixels, so it is rescaled by the change in zoom.
+  const previousZoomRef = useRef(zoom);
+  useLayoutEffect(() => {
+    const before = previousZoomRef.current;
+    previousZoomRef.current = zoom;
+    const el = scrollRef.current;
+    if (!el || before === zoom) return;
+    el.scrollLeft = (el.scrollLeft * zoom) / before;
+    el.scrollTop = (el.scrollTop * zoom) / before;
+  }, [zoom]);
+  const [collapsedTeams, toggleTeam] = useCollapsedTeams();
+  const teamColourOf = useTeamColour();
+  // The grid's content (inside the zoom), measured by "Fit all teams".
+  const gridContentRef = useRef<HTMLDivElement>(null);
+
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -1385,7 +1423,7 @@ export default function RosterPage() {
   const scrollToDate = useCallback((dateStr: string) => {
     const idx = ALL_DATES.findIndex(d => format(d, "yyyy-MM-dd") === dateStr);
     if (idx < 0) return;
-    const target = idx * COL_WIDTH;
+    const target = idx * COL_WIDTH * zoomRef.current;
     if (scrollRef.current) scrollRef.current.scrollLeft = target;
     setScrollLeft(target);
   }, []);
@@ -1397,7 +1435,7 @@ export default function RosterPage() {
   // Month navigation
   const visibleMonthIndex = useMemo(() => {
     if (ALL_DATES.length === 0) return 0;
-    const visibleDayIdx = Math.floor(scrollLeft / COL_WIDTH);
+    const visibleDayIdx = Math.floor(scrollLeft / (COL_WIDTH * zoom));
     const visibleDate =
       ALL_DATES[Math.min(Math.max(0, visibleDayIdx), ALL_DATES.length - 1)];
     if (!visibleDate) return 0;
@@ -1405,7 +1443,60 @@ export default function RosterPage() {
     if (!monthStr) return 0;
     const idx = MONTHS.findIndex(m => m === monthStr);
     return idx >= 0 ? idx : 0;
-  }, [scrollLeft]);
+  }, [scrollLeft, zoom]);
+
+  /** Zoom out just far enough to see every team (the grid's height scales with
+   * the zoom, so one measurement does it). */
+  const fitAllTeams = useCallback(() => {
+    const box = scrollRef.current;
+    const content = gridContentRef.current;
+    if (!box || !content) return;
+    const next = fitZoom(
+      box.clientHeight - 14,
+      content.getBoundingClientRect().height,
+      zoomRef.current
+    );
+    setZoom(next);
+    box.scrollTop = 0;
+  }, [setZoom]);
+
+  // Ctrl + scroll and a two-finger pinch zoom the grid (the scroll container
+  // is a callback-less ref, so these are attached by hand, not as props: the
+  // browser needs them non-passive to stop the page zooming instead).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      setZoom(stepZoom(zoomRef.current, e.deltaY < 0 ? 1 : -1));
+    };
+    let pinch: { dist: number; zoom: number } | null = null;
+    const dist = (t: TouchList) =>
+      Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2)
+        pinch = { dist: dist(e.touches), zoom: zoomRef.current };
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      setZoom((pinch.zoom * dist(e.touches)) / pinch.dist);
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) pinch = null;
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [setZoom]);
 
   const goToPrevMonth = () => {
     const newIdx = Math.max(0, visibleMonthIndex - 1);
@@ -2104,10 +2195,15 @@ export default function RosterPage() {
         {/* ── Toolbar ───────────────────────────────────────────────────────── */}
         <div className="flex flex-col gap-1.5 mb-3 flex-shrink-0">
           {/* Row 1: title + Today button (Today visible on mobile only here) */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-lg font-semibold tracking-tight mr-auto">
               Team Duty Roster
             </h1>
+            <RosterZoomControl
+              zoom={zoom}
+              onZoom={setZoom}
+              onFit={fitAllTeams}
+            />
             <Button
               variant="outline"
               size="sm"
@@ -2288,7 +2384,10 @@ export default function RosterPage() {
           onPointerMove={handleGridPointerMove}
           onPointerUp={handleGridPointerUp}
           onPointerCancel={handleGridPointerUp}
-          className="flex-1 min-h-0 overflow-auto cursor-grab active:cursor-grabbing"
+          className={cn(
+            "flex-1 min-h-0 overflow-auto cursor-grab active:cursor-grabbing",
+            labelsHidden(zoom) && "roster-zoomed-out"
+          )}
           style={{ WebkitOverflowScrolling: "touch" }}
         >
           {isLoading ? (
@@ -2301,7 +2400,11 @@ export default function RosterPage() {
             // On mobile: render grid WITHOUT DndContext to avoid iOS Pointer Events crash.
             // Drag-to-reorder is a desktop-only admin feature.
             <div
-              style={{ minWidth: `${totalContentWidth}px` }}
+              ref={gridContentRef}
+              style={{
+                minWidth: `${totalContentWidth + ROSTER_FRAME_CHROME}px`,
+                zoom,
+              }}
               className="relative pb-2"
             >
               {/* ── Frozen date header row ─────────────────────────────────── */}
@@ -2313,6 +2416,7 @@ export default function RosterPage() {
                   zIndex: 30,
                   background: "var(--color-background)",
                   paddingBottom: "2px",
+                  paddingLeft: ROSTER_FRAME_EDGE,
                 }}
               >
                 <div
@@ -2397,84 +2501,76 @@ export default function RosterPage() {
                 const isSurveillance =
                   team.name === "Team 1" || team.name === "Team 2";
                 return (
-                  <div key={team.id} className="mb-1">
-                    {/* Team label row */}
-                    <div className="flex gap-[3px] mb-[3px]">
-                      <div
-                        className="flex-shrink-0 flex items-center px-3 h-7 rounded-md text-[10px] font-bold uppercase tracking-widest bg-sidebar text-sidebar-foreground"
-                        style={{
-                          width: `${nameColWidthForGrid}px`,
-                          position: "sticky",
-                          left: 0,
-                          zIndex: 20,
-                          background: "var(--color-sidebar)",
-                        }}
-                      >
-                        {team.name}
-                      </div>
-                      {ALL_DATES.map(d => (
-                        <div
-                          key={format(d, "yyyy-MM-dd")}
-                          className="flex-shrink-0 h-7 rounded-md bg-sidebar/50"
-                          style={{ width: `${COL_WIDTH}px` }}
-                        />
-                      ))}
-                    </div>
+                  <RosterTeamFrame
+                    key={team.id}
+                    colour={teamColourOf(team.name)}
+                  >
+                    {/* Team band: name, member count, fold arrow */}
+                    <RosterTeamBand
+                      colour={teamColourOf(team.name)}
+                      name={team.name}
+                      memberCount={teamMembers.length}
+                      collapsed={collapsedTeams.has(team.id)}
+                      onToggle={() => toggleTeam(team.id)}
+                      nameColWidth={nameColWidthForGrid}
+                    />
 
                     {/* Member rows (no DnD on mobile) */}
-                    {teamMembers.map(member => (
-                      <MemberRow
-                        key={member.id}
-                        member={member}
-                        allDates={ALL_DATES}
-                        today={today}
-                        shiftMap={shiftMap}
-                        isAdmin={isAdmin}
-                        bulkMode={bulkMode}
-                        bulkCopyMode={bulkCopyMode}
-                        copiedBlock={copiedBlock}
-                        selectedCells={selectedCells}
-                        nameColWidth={nameColWidthForGrid}
-                        colWidth={COL_WIDTH}
-                        rowHeight={ROW_HEIGHT}
-                        clipboard={clipboard}
-                        onCellTap={handleCellTap}
-                        onCellPointerDown={handleCellPointerDown}
-                        onCellPointerEnter={handleCellPointerEnter}
-                        onCopyCell={handleCopyCell}
-                        onPasteCell={handlePasteCell}
-                        secondmentWindow={secondmentByMemberId.get(member.id)}
-                        issueCells={issueCells}
-                      />
-                    ))}
+                    {!collapsedTeams.has(team.id) &&
+                      teamMembers.map(member => (
+                        <MemberRow
+                          key={member.id}
+                          member={member}
+                          allDates={ALL_DATES}
+                          today={today}
+                          shiftMap={shiftMap}
+                          isAdmin={isAdmin}
+                          bulkMode={bulkMode}
+                          bulkCopyMode={bulkCopyMode}
+                          copiedBlock={copiedBlock}
+                          selectedCells={selectedCells}
+                          nameColWidth={nameColWidthForGrid}
+                          colWidth={COL_WIDTH}
+                          rowHeight={ROW_HEIGHT}
+                          clipboard={clipboard}
+                          onCellTap={handleCellTap}
+                          onCellPointerDown={handleCellPointerDown}
+                          onCellPointerEnter={handleCellPointerEnter}
+                          onCopyCell={handleCopyCell}
+                          onPasteCell={handlePasteCell}
+                          secondmentWindow={secondmentByMemberId.get(member.id)}
+                          issueCells={issueCells}
+                        />
+                      ))}
 
                     {/* Acting (secondment) rows */}
-                    {secondedInMembers.map(member => (
-                      <MemberRow
-                        key={`acting-${member.id}`}
-                        member={member}
-                        allDates={ALL_DATES}
-                        today={today}
-                        shiftMap={shiftMap}
-                        isAdmin={isAdmin}
-                        bulkMode={bulkMode}
-                        bulkCopyMode={bulkCopyMode}
-                        copiedBlock={copiedBlock}
-                        selectedCells={selectedCells}
-                        nameColWidth={nameColWidthForGrid}
-                        colWidth={COL_WIDTH}
-                        rowHeight={ROW_HEIGHT}
-                        clipboard={clipboard}
-                        onCellTap={handleCellTap}
-                        onCellPointerDown={handleCellPointerDown}
-                        onCellPointerEnter={handleCellPointerEnter}
-                        onCopyCell={handleCopyCell}
-                        onPasteCell={handlePasteCell}
-                        rowMode="acting"
-                        secondmentWindow={secondmentByMemberId.get(member.id)}
-                        issueCells={issueCells}
-                      />
-                    ))}
+                    {!collapsedTeams.has(team.id) &&
+                      secondedInMembers.map(member => (
+                        <MemberRow
+                          key={`acting-${member.id}`}
+                          member={member}
+                          allDates={ALL_DATES}
+                          today={today}
+                          shiftMap={shiftMap}
+                          isAdmin={isAdmin}
+                          bulkMode={bulkMode}
+                          bulkCopyMode={bulkCopyMode}
+                          copiedBlock={copiedBlock}
+                          selectedCells={selectedCells}
+                          nameColWidth={nameColWidthForGrid}
+                          colWidth={COL_WIDTH}
+                          rowHeight={ROW_HEIGHT}
+                          clipboard={clipboard}
+                          onCellTap={handleCellTap}
+                          onCellPointerDown={handleCellPointerDown}
+                          onCellPointerEnter={handleCellPointerEnter}
+                          onCopyCell={handleCopyCell}
+                          onPasteCell={handlePasteCell}
+                          rowMode="acting"
+                          secondmentWindow={secondmentByMemberId.get(member.id)}
+                          issueCells={issueCells}
+                        />
+                      ))}
 
                     {/* On Duty row */}
                     <div className="flex gap-[3px] mt-[3px] mb-2">
@@ -2588,7 +2684,7 @@ export default function RosterPage() {
                         );
                       })}
                     </div>
-                  </div>
+                  </RosterTeamFrame>
                 );
               })}
             </div>
@@ -2602,9 +2698,13 @@ export default function RosterPage() {
             >
               {/* Grid: min-width forces horizontal scroll when content overflows */}
               <div
+                ref={gridContentRef}
                 style={{
-                  minWidth: `${totalContentWidth}px`,
-                  width: `${totalContentWidth}px`,
+                  minWidth: `${totalContentWidth + ROSTER_FRAME_CHROME}px`,
+                  // As wide as the rows (the columns' gaps are not in
+                  // totalContentWidth), so each team card spans them all.
+                  width: "max-content",
+                  zoom,
                 }}
                 className="relative pb-2"
               >
@@ -2617,6 +2717,7 @@ export default function RosterPage() {
                     zIndex: 30,
                     background: "var(--color-background)",
                     paddingBottom: "2px",
+                    paddingLeft: ROSTER_FRAME_EDGE,
                   }}
                 >
                   {/* Corner cell — frozen top-left */}
@@ -2711,73 +2812,57 @@ export default function RosterPage() {
                     team.name === "Team 1" || team.name === "Team 2";
 
                   return (
-                    <div key={team.id} className="mb-1">
-                      {/* Team label row */}
-                      <div className="flex gap-[3px] mb-[3px]">
-                        <div
-                          className={cn(
-                            "flex-shrink-0 flex items-center px-3 h-7 rounded-md text-[10px] font-bold uppercase tracking-widest transition-colors",
-                            isDropTarget
-                              ? "bg-primary/20 text-primary"
-                              : "bg-sidebar text-sidebar-foreground"
-                          )}
-                          style={{
-                            width: `${NAME_COL_WIDTH}px`,
-                            position: "sticky",
-                            left: 0,
-                            zIndex: 20,
-                            background: isDropTarget
-                              ? undefined
-                              : "var(--color-sidebar)",
-                          }}
-                        >
-                          {team.name}
-                        </div>
-                        {ALL_DATES.map(d => (
-                          <div
-                            key={format(d, "yyyy-MM-dd")}
-                            className={cn(
-                              "flex-shrink-0 h-7 rounded-md",
-                              isDropTarget ? "bg-primary/10" : "bg-sidebar/50"
-                            )}
-                            style={{ width: `${COL_WIDTH}px` }}
-                          />
-                        ))}
-                      </div>
+                    <RosterTeamFrame
+                      key={team.id}
+                      colour={teamColourOf(team.name)}
+                    >
+                      {/* Team band: name, member count, fold arrow */}
+                      <RosterTeamBand
+                        colour={teamColourOf(team.name)}
+                        name={team.name}
+                        memberCount={teamMembers.length}
+                        collapsed={collapsedTeams.has(team.id)}
+                        onToggle={() => toggleTeam(team.id)}
+                        nameColWidth={NAME_COL_WIDTH}
+                        highlight={isDropTarget}
+                      />
 
                       {/* Member rows */}
                       <SortableContext
                         items={teamMembers.map(m => m.id)}
                         strategy={verticalListSortingStrategy}
                       >
-                        {teamMembers.map(member => (
-                          <SortableMemberRow
-                            key={member.id}
-                            member={member}
-                            allDates={ALL_DATES}
-                            today={today}
-                            shiftMap={shiftMap}
-                            isAdmin={isAdmin}
-                            isDragging={activeDragId === member.id}
-                            bulkMode={bulkMode}
-                            bulkCopyMode={bulkCopyMode}
-                            copiedBlock={copiedBlock}
-                            selectedCells={selectedCells}
-                            nameColWidth={NAME_COL_WIDTH}
-                            colWidth={COL_WIDTH}
-                            rowHeight={ROW_HEIGHT}
-                            clipboard={clipboard}
-                            onCellTap={handleCellTap}
-                            onCellPointerDown={handleCellPointerDown}
-                            onCellPointerEnter={handleCellPointerEnter}
-                            onCopyCell={handleCopyCell}
-                            onPasteCell={handlePasteCell}
-                            secondmentWindow={secondmentByMemberId.get(
-                              member.id
-                            )}
-                            issueCells={issueCells}
-                          />
-                        ))}
+                        {!collapsedTeams.has(team.id) &&
+                          teamMembers.map(member => (
+                            <SortableMemberRow
+                              key={member.id}
+                              member={member}
+                              allDates={ALL_DATES}
+                              today={today}
+                              shiftMap={shiftMap}
+                              isAdmin={isAdmin}
+                              isDragging={activeDragId === member.id}
+                              // Dragging is off while zoomed out (the drag maths is for 100%).
+                              dragDisabled={zoom < 1}
+                              bulkMode={bulkMode}
+                              bulkCopyMode={bulkCopyMode}
+                              copiedBlock={copiedBlock}
+                              selectedCells={selectedCells}
+                              nameColWidth={NAME_COL_WIDTH}
+                              colWidth={COL_WIDTH}
+                              rowHeight={ROW_HEIGHT}
+                              clipboard={clipboard}
+                              onCellTap={handleCellTap}
+                              onCellPointerDown={handleCellPointerDown}
+                              onCellPointerEnter={handleCellPointerEnter}
+                              onCopyCell={handleCopyCell}
+                              onPasteCell={handlePasteCell}
+                              secondmentWindow={secondmentByMemberId.get(
+                                member.id
+                              )}
+                              issueCells={issueCells}
+                            />
+                          ))}
                         {isAdmin && activeDragId !== null && (
                           <TeamDropZoneRow
                             key={`dropzone-${team.id}`}
@@ -2791,32 +2876,35 @@ export default function RosterPage() {
                       {/* Acting (secondment) rows — not part of the
                           SortableContext above, since they don't actually
                           belong to this team's member order. */}
-                      {secondedInMembers.map(member => (
-                        <MemberRow
-                          key={`acting-${member.id}`}
-                          member={member}
-                          allDates={ALL_DATES}
-                          today={today}
-                          shiftMap={shiftMap}
-                          isAdmin={isAdmin}
-                          bulkMode={bulkMode}
-                          bulkCopyMode={bulkCopyMode}
-                          copiedBlock={copiedBlock}
-                          selectedCells={selectedCells}
-                          nameColWidth={NAME_COL_WIDTH}
-                          colWidth={COL_WIDTH}
-                          rowHeight={ROW_HEIGHT}
-                          clipboard={clipboard}
-                          onCellTap={handleCellTap}
-                          onCellPointerDown={handleCellPointerDown}
-                          onCellPointerEnter={handleCellPointerEnter}
-                          onCopyCell={handleCopyCell}
-                          onPasteCell={handlePasteCell}
-                          rowMode="acting"
-                          secondmentWindow={secondmentByMemberId.get(member.id)}
-                          issueCells={issueCells}
-                        />
-                      ))}
+                      {!collapsedTeams.has(team.id) &&
+                        secondedInMembers.map(member => (
+                          <MemberRow
+                            key={`acting-${member.id}`}
+                            member={member}
+                            allDates={ALL_DATES}
+                            today={today}
+                            shiftMap={shiftMap}
+                            isAdmin={isAdmin}
+                            bulkMode={bulkMode}
+                            bulkCopyMode={bulkCopyMode}
+                            copiedBlock={copiedBlock}
+                            selectedCells={selectedCells}
+                            nameColWidth={NAME_COL_WIDTH}
+                            colWidth={COL_WIDTH}
+                            rowHeight={ROW_HEIGHT}
+                            clipboard={clipboard}
+                            onCellTap={handleCellTap}
+                            onCellPointerDown={handleCellPointerDown}
+                            onCellPointerEnter={handleCellPointerEnter}
+                            onCopyCell={handleCopyCell}
+                            onPasteCell={handlePasteCell}
+                            rowMode="acting"
+                            secondmentWindow={secondmentByMemberId.get(
+                              member.id
+                            )}
+                            issueCells={issueCells}
+                          />
+                        ))}
 
                       {/* On Duty row */}
                       <div className="flex gap-[3px] mt-[3px] mb-2">
@@ -2930,7 +3018,7 @@ export default function RosterPage() {
                           );
                         })}
                       </div>
-                    </div>
+                    </RosterTeamFrame>
                   );
                 })}
               </div>
@@ -2955,7 +3043,11 @@ export default function RosterPage() {
           <input
             type="range"
             min={0}
-            max={Math.max(1, totalContentWidth - nameColWidthForGrid)}
+            max={Math.max(
+              1,
+              (totalContentWidth + ROSTER_FRAME_CHROME - nameColWidthForGrid) *
+                zoom
+            )}
             value={scrollLeft}
             onChange={e => {
               const v = Number(e.target.value);
@@ -3279,7 +3371,7 @@ function MemberRow({
             onPointerEnter={() => onCellPointerEnter(member.id, ds)}
           >
             {code && !isSelected && (
-              <span className="absolute inset-x-1 bottom-1 text-[7px] leading-tight opacity-90 truncate text-center block font-medium">
+              <span className="roster-cell-label absolute inset-x-1 bottom-1 text-[7px] leading-tight opacity-90 truncate text-center block font-medium">
                 {label}
                 {time ? ` · ${time}` : ""}
               </span>
@@ -3323,6 +3415,7 @@ function MemberRow({
 
 /* ── Sortable member row ──────────────────────────────────────────────────── */
 function SortableMemberRow({
+  dragDisabled = false,
   member,
   allDates,
   today,
@@ -3351,6 +3444,8 @@ function SortableMemberRow({
   shiftMap: Map<number, Map<string, ShiftData>>;
   isAdmin: boolean;
   isDragging: boolean;
+  /** Reordering is switched off (the roster is zoomed out). */
+  dragDisabled?: boolean;
   bulkMode: boolean;
   bulkCopyMode: boolean;
   copiedBlock: {
@@ -3391,7 +3486,7 @@ function SortableMemberRow({
     transform,
     transition,
     isDragging: isSortableDragging,
-  } = useSortable({ id: member.id });
+  } = useSortable({ id: member.id, disabled: dragDisabled });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -3532,7 +3627,7 @@ function SortableMemberRow({
             onPointerEnter={() => onCellPointerEnter(member.id, ds)}
           >
             {code && !isSelected && (
-              <span className="absolute inset-x-1 bottom-1 text-[7px] leading-tight opacity-90 truncate text-center block font-medium">
+              <span className="roster-cell-label absolute inset-x-1 bottom-1 text-[7px] leading-tight opacity-90 truncate text-center block font-medium">
                 {label}
                 {time ? ` · ${time}` : ""}
               </span>

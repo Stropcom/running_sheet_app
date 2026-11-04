@@ -2669,3 +2669,129 @@ test("CTO Weekly Tasking: Team 1 and Team 2 on the same shift can be blended, an
     await call("opManager.deleteWeek", { weekStart: W });
   }
 });
+
+test("Team Duty Roster: zoom, team cards and team colours that follow User Management", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const W = "2040-03-05"; // a made-up CTO Weekly Tasking week
+  const NEW_COLOUR = "#00aa55";
+  const call = async (proc: string, input: unknown) => {
+    const res = await page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+    return (await res.json())[0];
+  };
+  const get = async (proc: string) => {
+    const res = await page.request.get(
+      `/api/trpc/${proc}?batch=1&input=${encodeURIComponent(JSON.stringify({ "0": { json: null } }))}`
+    );
+    return (await res.json())[0].result.data.json;
+  };
+  const cin = process.env.E2E_CIN ?? "E2E1";
+
+  // A roster team called "Team 1" with one member (kept if it is already there).
+  let rosterTeams = (await get("ctoRoster.teams.list")) as {
+    id: number;
+    name: string;
+  }[];
+  let addedTeam = false;
+  if (!rosterTeams.some(t => t.name === "Team 1")) {
+    await call("ctoRoster.teams.add", { name: "Team 1" });
+    addedTeam = true;
+    rosterTeams = await get("ctoRoster.teams.list");
+  }
+  const rosterTeam = rosterTeams.find(t => t.name === "Team 1")!;
+  const members = (await get("ctoRoster.members.list")) as {
+    id: number;
+    cin: string;
+  }[];
+  let addedMemberId: number | null = null;
+  if (!members.some(m => m.cin === cin)) {
+    const r = await call("ctoRoster.members.add", {
+      cin,
+      teamId: rosterTeam.id,
+    });
+    addedMemberId = r.result?.data.json.memberId ?? null;
+  }
+
+  // The User Management team called "Team 1" gets a new colour.
+  const umTeams = (await get("users.listTeams")) as {
+    id: number;
+    name: string;
+    colour: string | null;
+    aiPhones: string[] | null;
+    mapVisibility: "always" | "online";
+    forceShare: boolean;
+    offerOnNewSheet: boolean;
+  }[];
+  const um = umTeams.find(t => t.name === "Team 1")!;
+  const setColour = (colour: string | null) =>
+    call("admin.updateTeam", {
+      id: um.id,
+      name: um.name,
+      colour,
+      aiPhones: um.aiPhones ?? [],
+      mapVisibility: um.mapVisibility,
+      forceShare: um.forceShare,
+      offerOnNewSheet: um.offerOnNewSheet,
+    });
+  await call("opManager.deleteWeek", { weekStart: W });
+  try {
+    await setColour(NEW_COLOUR);
+    await page.goto("/cto-roster");
+    const fold = page.getByRole("button", { name: "Collapse Team 1" });
+    await expect(fold).toBeVisible();
+    const card = fold.locator(
+      "xpath=ancestor::div[contains(@class,'rounded-2xl')][1]"
+    );
+    // The card is drawn in the colour set in User Management.
+    await expect(card).toHaveCSS("border-top-color", "rgb(0, 170, 85)");
+
+    // Zoom: 100% to start, the slider zooms the grid and it is remembered.
+    const grid = card.locator("xpath=..");
+    await expect(page.getByText("100%", { exact: true })).toBeVisible();
+    await expect(grid).toHaveCSS("zoom", "1");
+    await page.getByRole("slider", { name: "Zoom level" }).fill("50");
+    await expect(page.getByText("50%", { exact: true })).toBeVisible();
+    await expect(grid).toHaveCSS("zoom", "0.5");
+    await page.reload();
+    await expect(page.getByText("50%", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await expect(page.getByText("55%", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Fit all teams" }).click();
+    await expect(page.getByText("100%", { exact: true })).toBeVisible(); // already fits
+
+    // A team folds down to its totals and back.
+    await page.getByRole("button", { name: "Collapse Team 1" }).click();
+    await expect(
+      page.getByRole("button", { name: "Expand Team 1" })
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Expand Team 1" }).click();
+    await expect(
+      page.getByRole("button", { name: "Collapse Team 1" })
+    ).toBeVisible();
+
+    // The CTO Weekly Tasking draws Team 1 in the same colour.
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0600-1400",
+      primaryTask: "RAVEN",
+    });
+    await page.goto("/operation-manager");
+    await page.getByText("CTO Weekly Tasking — 05 Mar – 11 Mar").click();
+    await expect(page.locator(".tcv-team").first()).toHaveAttribute(
+      "style",
+      /--tc:\s*(#00aa55|rgb\(0,\s*170,\s*85\))/
+    );
+  } finally {
+    await setColour(um.colour);
+    await call("opManager.deleteWeek", { weekStart: W });
+    if (addedMemberId !== null)
+      await call("ctoRoster.members.delete", { memberId: addedMemberId });
+    if (addedTeam)
+      await call("ctoRoster.teams.delete", { teamId: rosterTeam.id });
+  }
+});

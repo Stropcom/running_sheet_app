@@ -61,11 +61,9 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { DeleteWeekDialog } from "@/components/opManager/DeleteWeekDialog";
-import {
-  BLEND_BAND,
-  BLEND_SWATCH,
-  BlendTeamsDialog,
-} from "@/components/opManager/BlendTeamsDialog";
+import { BlendTeamsDialog } from "@/components/opManager/BlendTeamsDialog";
+import { useTeamColour } from "@/lib/teams";
+import { blendGradients, teamShades } from "@shared/teamColours";
 import {
   blendFields,
   blendPartner,
@@ -109,25 +107,14 @@ const TASKING_TEAM_MIN_FALLBACK: Record<string, number> = {
   Capability: 1,
 };
 const TASKING_DEFAULT_MIN_FALLBACK = 3;
-// Colours matching map/team tags (from IntelligenceMapping TEAM_COLOURS)
-const TEAM_COLOURS: Record<
-  TeamRow,
-  { bg: string; border: string; text: string }
-> = {
-  surv1: { bg: "#fce7f3", border: "#ec4899", text: "#9d174d" },
-  surv2: { bg: "#dbeafe", border: "#1976d2", text: "#1e3a8a" },
-  ptt: { bg: "#fef3c7", border: "#f9a825", text: "#78350f" },
-  cap: { bg: "#ede9fe", border: "#7c3aed", text: "#4c1d95" },
+// Short forms for pills and labels. Colours are not here: a team's colour is
+// the one set in User Management → Teams (useTeamColour, shared/teamColours.ts).
+const TASKING_AB: Record<TeamRow, string> = {
+  surv1: "T1",
+  surv2: "T2",
+  ptt: "PTT",
+  cap: "CAP",
 };
-
-// The teams of the calendar for the read-only views (TaskingViews.tsx): their
-// label, the short form for pills and the same colour as the edit grid.
-const TASKING_TEAMS: TaskingTeam[] = TEAM_ROWS.map(id => ({
-  id,
-  label: TEAM_LABELS[id],
-  ab: { surv1: "T1", surv2: "T2", ptt: "PTT", cap: "CAP" }[id],
-  colour: TEAM_COLOURS[id].border,
-}));
 const SHIFT_OPTIONS = [
   "RDO",
   "0600-1400",
@@ -355,6 +342,22 @@ export default function OperationManagerPage() {
   const rosterShiftsQuery = trpc.ctoRoster.roster.getRange.useQuery(
     { startDate: weekStart, endDate: addDaysUTC(weekStart, 6) },
     { staleTime: 5_000 }
+  );
+
+  // ── Team colours: the ones set in User Management → Teams ───────────────────
+  const teamColourOf = useTeamColour();
+  const TEAM_COLOURS = Object.fromEntries(
+    TEAM_ROWS.map(id => [id, teamShades(teamColourOf(TEAM_LABELS[id]))])
+  ) as Record<TeamRow, { bg: string; border: string; text: string }>;
+  const taskingTeams: TaskingTeam[] = TEAM_ROWS.map(id => ({
+    id,
+    label: TEAM_LABELS[id],
+    ab: TASKING_AB[id],
+    colour: TEAM_COLOURS[id].border,
+  }));
+  const blendLook = blendGradients(
+    TEAM_COLOURS.surv1.border,
+    TEAM_COLOURS.surv2.border
   );
 
   // ── Mutations ─────────────────────────────────────────────────────────────────
@@ -695,12 +698,12 @@ export default function OperationManagerPage() {
       <div className="overflow-hidden rounded-md border bg-card">
         <div
           className="flex items-center gap-2 px-2 py-1.5 text-xs font-bold text-blue-950"
-          style={{ background: BLEND_BAND }}
+          style={{ background: blendLook.band }}
         >
           <span
             aria-hidden
             className="inline-block h-3.5 w-5 rounded-[3px]"
-            style={{ background: BLEND_SWATCH }}
+            style={{ background: blendLook.swatch }}
           />
           T1 + T2 combined
         </div>
@@ -975,7 +978,7 @@ export default function OperationManagerPage() {
       })),
       calendar: {
         weekStart,
-        teams: TASKING_TEAMS,
+        teams: taskingTeams,
         week: readWeek(taskingGrid, TEAM_ROWS),
       },
       views,
@@ -1025,6 +1028,7 @@ export default function OperationManagerPage() {
   const blendDialog = (
     <BlendTeamsDialog
       open={blendAsk !== null}
+      colours={[TEAM_COLOURS.surv1.border, TEAM_COLOURS.surv2.border]}
       dayLabel={
         blendAsk === null
           ? ""
@@ -1502,7 +1506,7 @@ export default function OperationManagerPage() {
               <FullViewPriority priorityRows={priorityRows} />
               <TaskingCalendarViews
                 weekStart={weekStart}
-                teams={TASKING_TEAMS}
+                teams={taskingTeams}
                 grid={taskingGrid}
                 issueCount={taskingIssueCount}
                 renderWarning={(teamId, dayIndex, primary) => {

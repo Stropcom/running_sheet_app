@@ -6,6 +6,7 @@ import {
   type DayCell,
 } from "@shared/taskingView";
 import { isBlendDay, isBlendTeam } from "@shared/taskingBlend";
+import { mixHex, readableOn, tintOf } from "@shared/teamColours";
 import { TASKING_VIEWS, type TaskingViewId } from "@/lib/taskingViewPref";
 
 /**
@@ -61,19 +62,19 @@ export const VIEWS_PRINT_CSS = `
 .tp-tag.s { background:transparent !important; color:#64748b !important; border:1px solid #cbd5e1; }
 .wk { background:#f1f5f9 !important; }
 .tp-btag { display:inline-flex; border-radius:3px; overflow:hidden; font-size:8px; font-weight:800; line-height:1; margin-left:5px; vertical-align:middle; }
-.tp-btag i { font-style:normal; padding:2px 4px; color:#fff !important; }
-.tp-btag i:first-child { background:#db2777 !important; }
-.tp-btag i:last-child { background:#1565c0 !important; }
-.tp-col.bl > div { background:#eceffc !important; }
-.tp-col.bl .tp-day { border-bottom:3px solid; border-image:linear-gradient(90deg,#ec4899 50%,#1976d2 50%) 1; }
-.tp-table tr.bl td { background:#eceffc !important; }
-.tp-table tr.bl td.d { box-shadow:inset 4px 0 0 #ec4899, inset 8px 0 0 #1976d2; }
+.tp-btag i { font-style:normal; padding:2px 4px; }
+.tp-btag i:first-child { background:var(--b1) !important; color:var(--b1t) !important; }
+.tp-btag i:last-child { background:var(--b2) !important; color:var(--b2t) !important; }
+.tp-col.bl > div { background:var(--bflat) !important; }
+.tp-col.bl .tp-day { border-bottom:3px solid; border-image:linear-gradient(90deg,var(--b1) 50%,var(--b2) 50%) 1; }
+.tp-table tr.bl td { background:var(--bflat) !important; }
+.tp-table tr.bl td.d { box-shadow:inset 4px 0 0 var(--b1), inset 8px 0 0 var(--b2); }
 .tp-tl.merged { min-height:84px; }
-.tp-tl.merged > i { background:linear-gradient(180deg,#ec4899 50%,#1976d2 50%) !important; }
-.tp-tl.merged .tp-tl-b { background:#eceffc !important; }
+.tp-tl.merged > i { background:linear-gradient(180deg,var(--b1) 50%,var(--b2) 50%) !important; }
+.tp-tl.merged .tp-tl-b { background:var(--bflat) !important; }
 .tp-tl.merged .tp-tl-team { color:#1e3a8a !important; }
-.tp-bar.merged { background:#eceffc !important; border:1px solid #cbd5e1; border-left-width:1px; flex-direction:column; align-items:flex-start; justify-content:center; padding-left:10px; gap:0; line-height:1.15; }
-.tp-bar.merged::before { content:""; position:absolute; left:0; top:0; bottom:0; width:5px; background:linear-gradient(180deg,#ec4899 50%,#1976d2 50%) !important; }
+.tp-bar.merged { background:var(--bflat) !important; border:1px solid #cbd5e1; border-left-width:1px; flex-direction:column; align-items:flex-start; justify-content:center; padding-left:10px; gap:0; line-height:1.15; }
+.tp-bar.merged::before { content:""; position:absolute; left:0; top:0; bottom:0; width:5px; background:linear-gradient(180deg,var(--b1) 50%,var(--b2) 50%) !important; }
 .tp-bar.merged .ab { color:#1e3a8a !important; }
 
 .tp-pa { display:grid; grid-template-columns:repeat(7,1fr); }
@@ -271,5 +272,9 @@ export function printViewHtml(
   const key = w.teams
     .map(t => `<span style="${teamVars(t)}"><i></i>${esc(t.label)}</span>`)
     .join("");
-  return `<div class="section tp"><div class="section-title">Weekly Tasking Calendar · ${esc(label)}${weekLabel ? ` · ${esc(weekLabel)}` : ""}</div><div class="tp-key">${key}<span>P = primary task, S = secondary task, RDO = rostered day off</span></div>${body}</div>`;
+  // The pink-and-blue of a blended day are Team 1's and Team 2's own colours.
+  const b1 = w.teams.find(t => t.id === "surv1")?.colour ?? "#ec4899";
+  const b2 = w.teams.find(t => t.id === "surv2")?.colour ?? "#1976d2";
+  const blendVars = `--b1:${b1};--b2:${b2};--b1t:${readableOn(b1)};--b2t:${readableOn(b2)};--bflat:${tintOf(mixHex(b1, b2), 0.9)}`;
+  return `<div class="section tp" style="${blendVars}"><div class="section-title">Weekly Tasking Calendar · ${esc(label)}${weekLabel ? ` · ${esc(weekLabel)}` : ""}</div><div class="tp-key">${key}<span>P = primary task, S = secondary task, RDO = rostered day off</span></div>${body}</div>`;
 }

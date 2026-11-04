@@ -759,6 +759,14 @@ test("Weekly Surveillance Report PDF: full width, a card for each target, a new 
   ).toBeVisible();
   await expect(page.getByText("Wed 21 Oct").first()).toBeVisible();
   await expect(page.getByText("07:00 – 14:00").first()).toBeVisible();
+  // The dropdown has sections like the PDF: the overview is its own card and
+  // each target is its own card, each section in it under a titled band.
+  await expect(page.getByTestId("wk-overview")).toHaveCount(1);
+  const wkTargets = page.getByTestId("wk-target");
+  await expect(wkTargets).toHaveCount(3);
+  await expect(
+    wkTargets.first().getByText("Deployment", { exact: true })
+  ).toBeVisible();
   const popupP = page.waitForEvent("popup");
   await page.getByRole("button", { name: "Export PDF" }).click();
   const pop = await popupP;

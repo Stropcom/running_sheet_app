@@ -447,14 +447,14 @@ function SectionRow({
   children: React.ReactNode;
 }) {
   return (
-    <div className="px-4 py-3 border-b border-border last:border-b-0">
-      <div className="flex items-center gap-1.5 mb-2">
-        <Icon className="h-3 w-3 text-blue-700" />
-        <span className="text-xs font-bold uppercase tracking-wide text-blue-700">
+    <div className="border-t border-border first:border-t-0">
+      <div className="flex items-center gap-1.5 border-b border-border bg-muted/50 px-4 py-1.5">
+        <Icon className="h-3.5 w-3.5 text-blue-700 dark:text-blue-300" />
+        <span className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">
           {label}
         </span>
       </div>
-      {children}
+      <div className="px-4 py-3">{children}</div>
     </div>
   );
 }
@@ -467,7 +467,10 @@ function TargetBlockView({ t }: { t: TargetBlock }) {
     t.newIntel.images.length;
 
   return (
-    <div className="border-b-4 border-muted/40 last:border-b-0">
+    <div
+      data-testid="wk-target"
+      className="overflow-hidden rounded-xl border-2 border-indigo-300 bg-card shadow-sm dark:border-indigo-500/50"
+    >
       {t.targetName && (
         <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-500/10 border-b border-indigo-300 dark:border-indigo-500/40">
           <Target className="h-3.5 w-3.5 text-indigo-700 dark:text-indigo-300 shrink-0" />
@@ -714,9 +717,12 @@ function OperationOverview({ op }: { op: OperationBlock }) {
   const ov = overviewOperation(op);
   if (!ov.targets.length) return null;
   return (
-    <div className="border-b border-border px-4 py-3">
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-bold uppercase tracking-wide text-foreground/70">
+    <div
+      data-testid="wk-overview"
+      className="overflow-hidden rounded-xl border border-border bg-card shadow-sm"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/70 px-4 py-2.5">
+        <p className="text-[13px] font-bold uppercase tracking-wide text-foreground">
           Overview
         </p>
         <p className="text-xs font-semibold text-foreground">
@@ -724,7 +730,7 @@ function OperationOverview({ op }: { op: OperationBlock }) {
           day{ov.days === 1 ? "" : "s"} worked · {hoursText(ov.hours)}
         </p>
       </div>
-      <div className="grid gap-2">
+      <div className="grid gap-2 p-3">
         {ov.targets.map((t, i) => (
           <div
             key={`${t.name}-${i}`}
@@ -800,17 +806,22 @@ function OperationCard({ op }: { op: OperationBlock }) {
           </div>
         </div>
       </button>
-      {expanded && <OperationOverview op={op} />}
-      {expanded &&
-        (op.targets.length > 0 ? (
-          op.targets.map((t, i) => (
-            <TargetBlockView key={t.targetId ?? `none-${i}`} t={t} />
-          ))
-        ) : (
-          <p className="text-sm text-foreground/70 text-center py-4">
-            No activity recorded this week.
-          </p>
-        ))}
+      {expanded && (
+        // Each part is its own card with a gap between, like the PDF: the
+        // overview, then one card per target.
+        <div className="space-y-3 bg-muted/30 p-3">
+          <OperationOverview op={op} />
+          {op.targets.length > 0 ? (
+            op.targets.map((t, i) => (
+              <TargetBlockView key={t.targetId ?? `none-${i}`} t={t} />
+            ))
+          ) : (
+            <p className="py-4 text-center text-sm text-foreground/70">
+              No activity recorded this week.
+            </p>
+          )}
+        </div>
+      )}
     </section>
   );
 }

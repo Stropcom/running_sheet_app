@@ -1,4 +1,4 @@
-import { Minus, Plus, ScanSearch } from "lucide-react";
+import { Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRosterZoom } from "@/lib/rosterZoomPref";
 import {
@@ -11,11 +11,10 @@ import {
 
 /**
  * Zoom for the Team Duty Roster: − and + buttons and a slider from 100% (the
- * grid as it always was, the default) down to 25%, plus "Fit all teams", which
- * picks the zoom that shows every team on the screen. Ctrl + scroll and a
+ * grid as it always was, the default) down to 25%. Ctrl + scroll and a
  * two-finger pinch on the grid zoom too (RosterPage).
  */
-export function RosterZoomControl({ onFit }: { onFit: () => void }) {
+export function RosterZoomControl() {
   const [zoom, onZoom] = useRosterZoom();
   return (
     <div
@@ -61,18 +60,6 @@ export function RosterZoomControl({ onFit }: { onFit: () => void }) {
       >
         {Math.round(zoom * 100)}%
       </span>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-8 gap-1"
-        onClick={onFit}
-        title="Zoom out just far enough to see every team"
-      >
-        <ScanSearch className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">Fit all teams</span>
-        <span className="sm:hidden">Fit</span>
-      </Button>
     </div>
   );
 }

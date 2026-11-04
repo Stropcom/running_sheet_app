@@ -2759,17 +2759,6 @@ test("Team Duty Roster: zoom, team cards and team colours that follow User Manag
     await expect(page.getByText("50%", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Zoom in" }).click();
     await expect(page.getByText("55%", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Fit all teams" }).click();
-    // Fit never zooms in past 100% (a small roster already fits, a big one zooms out).
-    await expect
-      .poll(async () =>
-        parseFloat(await grid.evaluate(el => getComputedStyle(el).zoom))
-      )
-      .toBeGreaterThanOrEqual(0.25);
-    expect(
-      parseFloat(await grid.evaluate(el => getComputedStyle(el).zoom))
-    ).toBeLessThanOrEqual(1);
-
     // A team folds down to its totals and back.
     await page.getByRole("button", { name: "Collapse Team 1" }).click();
     await expect(

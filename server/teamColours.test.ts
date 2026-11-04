@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { teamShowsOnCall } from "@shared/rosterTeams";
 import {
   blendGradients,
   mixHex,
@@ -16,7 +17,6 @@ import {
   clampZoom,
   dateWindowFor,
   windowSpacers,
-  fitZoom,
   labelsHidden,
   readSavedZoom,
   stepZoom,
@@ -83,18 +83,6 @@ describe("roster zoom", () => {
     expect(labelsHidden(0.55)).toBe(false);
     expect(labelsHidden(0.5)).toBe(true);
   });
-  it("fits the grid to the height, rounding down so it really fits", () => {
-    // 1000px tall at 100%; 450px available → 45%
-    expect(fitZoom(450, 1000, 1)).toBe(0.45);
-    // measured at 50% (500px) is the same grid
-    expect(fitZoom(450, 500, 0.5)).toBe(0.45);
-    expect(fitZoom(460, 1000, 1)).toBe(0.45);
-    // already fits: never zooms in past 100%
-    expect(fitZoom(2000, 1000, 1)).toBe(1);
-    // too tall even at the minimum
-    expect(fitZoom(100, 1000, 1)).toBe(0.25);
-    expect(fitZoom(0, 1000, 1)).toBe(1);
-  });
   it("reads a saved zoom, falling back to 100%", () => {
     expect(readSavedZoom("0.5")).toBe(0.5);
     expect(readSavedZoom(null)).toBe(1);
@@ -140,5 +128,14 @@ describe("roster date window", () => {
     const width =
       (both.lead as number) + (both.trail as number) + 32 * 68 + 3 * (32 + 2);
     expect(width).toBe(228 * DATE_STRIDE);
+  });
+});
+
+describe("roster teams", () => {
+  it("has no ON CALL row for the Admin team, which is never on call", () => {
+    expect(teamShowsOnCall("Admin")).toBe(false);
+    expect(teamShowsOnCall("  admin ")).toBe(false);
+    expect(teamShowsOnCall("Team 1")).toBe(true);
+    expect(teamShowsOnCall("OIC")).toBe(true);
   });
 });

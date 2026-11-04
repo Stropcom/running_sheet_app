@@ -24,10 +24,10 @@ import {
   useCollapsedTeams,
 } from "@/lib/rosterZoomPref";
 import { useTeamColour } from "@/lib/teams";
+import { teamShowsOnCall } from "@shared/rosterTeams";
 import {
   WINDOW_BLOCK,
   dateWindowFor,
-  fitZoom,
   labelsHidden,
   stepZoom,
   windowSpacers,
@@ -1373,7 +1373,7 @@ export default function RosterPage() {
   // from User Management → Teams, and some teams can be folded down to totals.
   const [collapsedTeams, toggleTeam] = useCollapsedTeams();
   const teamColourOf = useTeamColour();
-  // The grid's content (inside the zoom), measured by "Fit all teams".
+  // The grid's content, which the zoom is applied to.
   const gridContentRef = useRef<HTMLDivElement>(null);
 
   // Only the date columns near the screen are drawn (the roster runs for about
@@ -1527,21 +1527,6 @@ export default function RosterPage() {
     const idx = MONTHS.findIndex(m => m === monthStr);
     return idx >= 0 ? idx : 0;
   }, [scrollLeft]);
-
-  /** Zoom out just far enough to see every team (the grid's height scales with
-   * the zoom, so one measurement does it). */
-  const fitAllTeams = useCallback(() => {
-    const box = scrollRef.current;
-    const content = gridContentRef.current;
-    if (!box || !content) return;
-    const next = fitZoom(
-      box.clientHeight - 14,
-      content.getBoundingClientRect().height,
-      getRosterZoom()
-    );
-    setRosterZoom(next);
-    box.scrollTop = 0;
-  }, []);
 
   // Ctrl + scroll and a two-finger pinch zoom the grid (the scroll container
   // is a callback-less ref, so these are attached by hand, not as props: the
@@ -2282,7 +2267,7 @@ export default function RosterPage() {
             <h1 className="text-lg font-semibold tracking-tight mr-auto">
               Team Duty Roster
             </h1>
-            <RosterZoomControl onFit={fitAllTeams} />
+            <RosterZoomControl />
             <Button
               variant="outline"
               size="sm"
@@ -2719,60 +2704,62 @@ export default function RosterPage() {
                     </div>
 
                     {/* On Call row */}
-                    <div className="flex gap-[3px] mt-[3px] mb-2">
-                      <div
-                        className="flex-shrink-0 flex items-center px-3 h-9 rounded-md font-bold text-[10px] uppercase tracking-widest text-slate-600 bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                        style={{
-                          width: `${nameColWidthForGrid}px`,
-                          position: "sticky",
-                          left: 0,
-                          zIndex: 20,
-                        }}
-                      >
-                        On Call
-                      </div>
-                      <DateSpacer width={spacers.lead} />
-                      {windowDates.map(d => {
-                        const ds = format(d, "yyyy-MM-dd");
-                        const isToday = ds === today;
-                        const count = getEffectiveCountableMembers(
-                          team,
-                          ds,
-                          displayMembers,
-                          secondmentByMemberId
-                        ).filter(m =>
-                          ON_CALL_CODES.has(
-                            shiftMap.get(m.id)?.get(ds)?.shiftCode ?? ""
-                          )
-                        ).length;
-                        const numClass =
-                          count >= 5
-                            ? "text-emerald-700 dark:text-emerald-400"
-                            : "text-red-600 dark:text-red-400";
-                        return (
-                          <div
-                            key={ds}
-                            className={cn(
-                              "flex-shrink-0 h-9 rounded-md flex items-center justify-center",
-                              isToday
-                                ? "bg-primary/25"
-                                : "bg-slate-200 dark:bg-slate-700/60"
-                            )}
-                            style={{ width: `${COL_WIDTH}px` }}
-                          >
-                            <span
+                    {teamShowsOnCall(team.name) && (
+                      <div className="flex gap-[3px] mt-[3px] mb-2">
+                        <div
+                          className="flex-shrink-0 flex items-center px-3 h-9 rounded-md font-bold text-[10px] uppercase tracking-widest text-slate-600 bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                          style={{
+                            width: `${nameColWidthForGrid}px`,
+                            position: "sticky",
+                            left: 0,
+                            zIndex: 20,
+                          }}
+                        >
+                          On Call
+                        </div>
+                        <DateSpacer width={spacers.lead} />
+                        {windowDates.map(d => {
+                          const ds = format(d, "yyyy-MM-dd");
+                          const isToday = ds === today;
+                          const count = getEffectiveCountableMembers(
+                            team,
+                            ds,
+                            displayMembers,
+                            secondmentByMemberId
+                          ).filter(m =>
+                            ON_CALL_CODES.has(
+                              shiftMap.get(m.id)?.get(ds)?.shiftCode ?? ""
+                            )
+                          ).length;
+                          const numClass =
+                            count >= 5
+                              ? "text-emerald-700 dark:text-emerald-400"
+                              : "text-red-600 dark:text-red-400";
+                          return (
+                            <div
+                              key={ds}
                               className={cn(
-                                "text-sm font-bold tabular-nums",
-                                numClass
+                                "flex-shrink-0 h-9 rounded-md flex items-center justify-center",
+                                isToday
+                                  ? "bg-primary/25"
+                                  : "bg-slate-200 dark:bg-slate-700/60"
                               )}
+                              style={{ width: `${COL_WIDTH}px` }}
                             >
-                              {count}
-                            </span>
-                          </div>
-                        );
-                      })}
-                      <DateSpacer width={spacers.trail} />
-                    </div>
+                              <span
+                                className={cn(
+                                  "text-sm font-bold tabular-nums",
+                                  numClass
+                                )}
+                              >
+                                {count}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        <DateSpacer width={spacers.trail} />
+                      </div>
+                    )}
                   </RosterTeamFrame>
                 );
               })}
@@ -3062,60 +3049,62 @@ export default function RosterPage() {
                       </div>
 
                       {/* On Call row */}
-                      <div className="flex gap-[3px] mt-[3px] mb-2">
-                        <div
-                          className="flex-shrink-0 flex items-center px-3 h-9 rounded-md font-bold text-[10px] uppercase tracking-widest text-slate-600 bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                          style={{
-                            width: `${NAME_COL_WIDTH}px`,
-                            position: "sticky",
-                            left: 0,
-                            zIndex: 20,
-                          }}
-                        >
-                          On Call
-                        </div>
-                        <DateSpacer width={spacers.lead} />
-                        {windowDates.map(d => {
-                          const ds = format(d, "yyyy-MM-dd");
-                          const isToday = ds === today;
-                          const count = getEffectiveCountableMembers(
-                            team,
-                            ds,
-                            displayMembers,
-                            secondmentByMemberId
-                          ).filter(m =>
-                            ON_CALL_CODES.has(
-                              shiftMap.get(m.id)?.get(ds)?.shiftCode ?? ""
-                            )
-                          ).length;
-                          const numClass =
-                            count >= 5
-                              ? "text-emerald-700 dark:text-emerald-400"
-                              : "text-red-600 dark:text-red-400";
-                          return (
-                            <div
-                              key={ds}
-                              className={cn(
-                                "flex-shrink-0 h-9 rounded-md flex items-center justify-center",
-                                isToday
-                                  ? "bg-primary/25"
-                                  : "bg-slate-200 dark:bg-slate-700/60"
-                              )}
-                              style={{ width: `${COL_WIDTH}px` }}
-                            >
-                              <span
+                      {teamShowsOnCall(team.name) && (
+                        <div className="flex gap-[3px] mt-[3px] mb-2">
+                          <div
+                            className="flex-shrink-0 flex items-center px-3 h-9 rounded-md font-bold text-[10px] uppercase tracking-widest text-slate-600 bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                            style={{
+                              width: `${NAME_COL_WIDTH}px`,
+                              position: "sticky",
+                              left: 0,
+                              zIndex: 20,
+                            }}
+                          >
+                            On Call
+                          </div>
+                          <DateSpacer width={spacers.lead} />
+                          {windowDates.map(d => {
+                            const ds = format(d, "yyyy-MM-dd");
+                            const isToday = ds === today;
+                            const count = getEffectiveCountableMembers(
+                              team,
+                              ds,
+                              displayMembers,
+                              secondmentByMemberId
+                            ).filter(m =>
+                              ON_CALL_CODES.has(
+                                shiftMap.get(m.id)?.get(ds)?.shiftCode ?? ""
+                              )
+                            ).length;
+                            const numClass =
+                              count >= 5
+                                ? "text-emerald-700 dark:text-emerald-400"
+                                : "text-red-600 dark:text-red-400";
+                            return (
+                              <div
+                                key={ds}
                                 className={cn(
-                                  "text-sm font-bold tabular-nums",
-                                  numClass
+                                  "flex-shrink-0 h-9 rounded-md flex items-center justify-center",
+                                  isToday
+                                    ? "bg-primary/25"
+                                    : "bg-slate-200 dark:bg-slate-700/60"
                                 )}
+                                style={{ width: `${COL_WIDTH}px` }}
                               >
-                                {count}
-                              </span>
-                            </div>
-                          );
-                        })}
-                        <DateSpacer width={spacers.trail} />
-                      </div>
+                                <span
+                                  className={cn(
+                                    "text-sm font-bold tabular-nums",
+                                    numClass
+                                  )}
+                                >
+                                  {count}
+                                </span>
+                              </div>
+                            );
+                          })}
+                          <DateSpacer width={spacers.trail} />
+                        </div>
+                      )}
                     </RosterTeamFrame>
                   );
                 })}

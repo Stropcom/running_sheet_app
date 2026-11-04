@@ -25,23 +25,6 @@ export const stepZoom = (z: number, dir: 1 | -1) =>
 
 export const labelsHidden = (z: number) => z < LABELS_OFF_BELOW;
 
-/** The zoom that makes the whole grid fit the height available. The grid's
- * size is in proportion to the zoom, so one measurement is enough:
- * `contentHeight` is its height now, at `currentZoom`. Never zooms in past
- * 100% or out past the minimum. */
-export function fitZoom(
-  availableHeight: number,
-  contentHeight: number,
-  currentZoom: number
-): number {
-  if (!(availableHeight > 0) || !(contentHeight > 0) || !(currentZoom > 0))
-    return MAX_ZOOM;
-  const atFull = contentHeight / currentZoom;
-  // Round DOWN to a step so it really fits.
-  const z = Math.floor(availableHeight / atFull / ZOOM_STEP) * ZOOM_STEP;
-  return clampZoom(Math.max(MIN_ZOOM, z));
-}
-
 /** Reads a saved zoom (a number as text); anything else is 100%. */
 export function readSavedZoom(raw: string | null): number {
   if (raw === null) return MAX_ZOOM;

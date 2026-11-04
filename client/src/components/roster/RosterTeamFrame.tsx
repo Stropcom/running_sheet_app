@@ -2,15 +2,18 @@ import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** The colour spine down the left of a team is this wide; the grid is this much
- * wider than its columns, and the date header starts this far in so its
- * columns line up with the cells. */
-export const ROSTER_FRAME_EDGE = 7;
-export const ROSTER_FRAME_CHROME = ROSTER_FRAME_EDGE;
+/** The team's border and the colour spine down its left edge. The grid is wider
+ * than its columns by the left edge plus the right border, and the date header
+ * starts the left edge in so its columns line up with the cells. */
+const FRAME_BORDER = 3;
+const SPINE_WIDTH = 7;
+export const ROSTER_FRAME_EDGE = FRAME_BORDER + SPINE_WIDTH;
+export const ROSTER_FRAME_CHROME = ROSTER_FRAME_EDGE + FRAME_BORDER;
 
 /**
  * One team on the roster as its own section: a heavy line in the team's colour
- * (from User Management → Teams) above and below it, a light tint behind its
+ * (from User Management → Teams) around it with rounded corners like the other
+ * sections of the app, a light tint behind its
  * rows, and a colour spine down the left edge that stays on screen while the
  * dates scroll, so you can always see which team you are in and where it ends.
  * Holds the band, the member rows and the ON DUTY / ON CALL rows.
@@ -24,11 +27,13 @@ export function RosterTeamFrame({
 }) {
   return (
     <div
-      className="mb-5 flex"
+      className="mb-5 flex rounded-xl"
       style={{
-        borderTop: `3px solid ${colour}`,
-        borderBottom: `3px solid ${colour}`,
+        border: `${FRAME_BORDER}px solid ${colour}`,
         background: `color-mix(in srgb, ${colour} 9%, transparent)`,
+        // Clips the spine and the band to the rounded corners; unlike
+        // overflow: hidden it keeps the spine and name column sticky.
+        overflow: "clip",
       }}
     >
       {/* The spine: sticky to the left edge, full height of the team, above the
@@ -40,7 +45,7 @@ export function RosterTeamFrame({
           position: "sticky",
           left: 0,
           zIndex: 25,
-          width: ROSTER_FRAME_EDGE,
+          width: SPINE_WIDTH,
           background: colour,
         }}
       />

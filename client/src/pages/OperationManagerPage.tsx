@@ -62,10 +62,14 @@ import {
 import { Label } from "@/components/ui/label";
 import { DeleteWeekDialog } from "@/components/opManager/DeleteWeekDialog";
 import { BlendTeamsDialog } from "@/components/opManager/BlendTeamsDialog";
+import { RosterSyncDialog } from "@/components/opManager/RosterSyncDialog";
+import { toClock } from "@shared/taskingRosterSync";
+import type { SyncGroup } from "@shared/taskingRosterSync";
 import {
   SHIFT_PRESETS,
   changedCellKeys,
   describeTimelineChanges,
+  shiftStart,
   shiftToCellFields,
 } from "@shared/taskingTimeline";
 import { useTeamColour } from "@/lib/teams";
@@ -390,6 +394,16 @@ export default function OperationManagerPage() {
   const [declinedBlend, setDeclinedBlend] = useState<Record<number, string>>(
     {}
   );
+  // "Update the roster too?": the question being asked (and how to answer the
+  // step waiting on it), and the starts already answered No this visit.
+  const [rosterAsk, setRosterAsk] = useState<{
+    groups: SyncGroup[];
+    members: number;
+    answer: (yes: boolean) => void;
+  } | null>(null);
+  const declinedRoster = useRef(new Set<string>());
+  const applyRosterSyncMut =
+    trpc.ctoRoster.roster.applyTaskingSync.useMutation();
   const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(
     new Set()
   );
@@ -755,6 +769,76 @@ export default function OperationManagerPage() {
     };
   };
 
+  // ── Carry the tasking's start times to the roster ───────────────────────────
+  /** Each team's start time on the tasking, by day (a shift with no time, such
+   * as RDO, has none). */
+  const rosterTargets = () => {
+    const out: { teamName: string; date: string; start: string }[] = [];
+    for (const teamRow of TEAM_ROWS)
+      DAYS.forEach((_, dayIndex) => {
+        const start = shiftStart(
+          cellShift(taskingGrid[`${teamRow}-${dayIndex}`])
+        );
+        if (start === null) return;
+        out.push({
+          teamName: TEAM_LABELS[teamRow],
+          date: addDaysUTC(weekStart, dayIndex),
+          start: toClock(start),
+        });
+      });
+    return out;
+  };
+  /**
+   * If the on-duty members' roster start times differ from the tasking's (today
+   * and later), asks whether to update the roster; Yes updates it and notifies
+   * them. Resolves when the question is answered (or there was nothing to ask),
+   * so Save and Re-post can carry on after it. A No is not asked again for the
+   * same start this visit.
+   */
+  const checkRosterAgainstTasking = async () => {
+    if (!isAdmin) return;
+    const keyOf = (t: { teamName: string; date: string; start: string }) =>
+      `${t.teamName}|${t.date}|${t.start}`;
+    const targets = rosterTargets().filter(
+      t => !declinedRoster.current.has(keyOf(t))
+    );
+    if (targets.length === 0) return;
+    try {
+      const plan = await utils.ctoRoster.roster.previewTaskingSync.fetch(
+        { targets },
+        { staleTime: 0 }
+      );
+      if (plan.shifts === 0) return;
+      const yes = await new Promise<boolean>(resolve =>
+        setRosterAsk({
+          groups: plan.groups,
+          members: plan.members,
+          answer: resolve,
+        })
+      );
+      if (!yes) {
+        const asked = new Set(plan.groups.map(g => `${g.teamName}|${g.date}`));
+        for (const t of targets)
+          if (asked.has(`${t.teamName}|${t.date}`))
+            declinedRoster.current.add(keyOf(t));
+        return;
+      }
+      const done = await applyRosterSyncMut.mutateAsync({ targets });
+      await utils.ctoRoster.roster.getRange.invalidate();
+      await utils.ctoRoster.eba.liveFindings.invalidate();
+      toast.success(
+        `Roster updated: ${done.shifts} shift${done.shifts === 1 ? "" : "s"} for ${done.members} ${done.members === 1 ? "person" : "people"}. They have been notified in the app.`
+      );
+    } catch {
+      toast.error("Could not update the roster from the tasking.");
+    }
+  };
+  /** Post / Re-post: the roster question first, then who to notify. */
+  const postWithRosterCheck = async () => {
+    await checkRosterAgainstTasking();
+    openNotifyDialog();
+  };
+
   const saveAllTaskingCells = async () => {
     setIsSavingTasking(true);
     try {
@@ -767,6 +851,7 @@ export default function OperationManagerPage() {
       await utils.opManager.getTaskingCalendar.invalidate();
       setSavedGrid(taskingGrid);
       toast.success("Tasking calendar saved.");
+      await checkRosterAgainstTasking();
     } catch {
       toast.error("Failed to save tasking calendar.");
     }
@@ -829,6 +914,7 @@ export default function OperationManagerPage() {
       toast.success(
         keys.length === 1 ? "Saved 1 change." : `Saved ${keys.length} changes.`
       );
+      await checkRosterAgainstTasking();
       if (repost) openNotifyDialog();
     } catch {
       toast.error("Failed to save the changes.");
@@ -1122,6 +1208,22 @@ export default function OperationManagerPage() {
       }}
       onYes={keep => blendDay(blendAsk ?? 0, keep)}
       onNo={() => keepApart(blendAsk ?? 0)}
+    />
+  );
+
+  const rosterSyncDialog = (
+    <RosterSyncDialog
+      open={rosterAsk !== null}
+      groups={rosterAsk?.groups ?? []}
+      members={rosterAsk?.members ?? 0}
+      onYes={() => {
+        rosterAsk?.answer(true);
+        setRosterAsk(null);
+      }}
+      onNo={() => {
+        rosterAsk?.answer(false);
+        setRosterAsk(null);
+      }}
     />
   );
 
@@ -1509,7 +1611,7 @@ export default function OperationManagerPage() {
                       </Button>
                       <Button
                         size="sm"
-                        onClick={openNotifyDialog}
+                        onClick={() => void postWithRosterCheck()}
                         disabled={postWeekMut.isPending}
                         className="gap-1"
                         variant={
@@ -1668,6 +1770,7 @@ export default function OperationManagerPage() {
           </div>
         )}
         {blendDialog}
+        {rosterSyncDialog}
         {notifyDialog}
         <ExportTaskingDialog
           open={exportDialogOpen}
@@ -2083,6 +2186,7 @@ export default function OperationManagerPage() {
       </div>
 
       {blendDialog}
+      {rosterSyncDialog}
       {notifyDialog}
       {deleteWeekDialog}
     </DashboardLayout>

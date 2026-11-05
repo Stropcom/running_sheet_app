@@ -27,25 +27,48 @@ describe("tasking shift hours", () => {
     expect(normaliseShift(null)).toBe("");
   });
 
-  it("choosing Admin makes a standard Day or Arvo shift 0700-1500", () => {
+  it("choosing Admin makes a 9-hour shift 8 hours", () => {
+    // the standard Day becomes the 0700-1500 Admin shift
     expect(shiftAfterTaskChange("0600-1500", "RAVEN", "Admin")).toBe(
       ADMIN_SHIFT
     );
-    expect(shiftAfterTaskChange("1300-2200", "RAVEN", "admin")).toBe(
-      ADMIN_SHIFT
+    expect(shiftAfterTaskChange("0600-1500", null, "admin")).toBe(ADMIN_SHIFT);
+    // any other 9-hour shift keeps its start and loses its last hour
+    expect(shiftAfterTaskChange("1300-2200", "RAVEN", "Admin")).toBe(
+      "1300-2100"
     );
-    expect(shiftAfterTaskChange("0600-1500", null, "Admin")).toBe(ADMIN_SHIFT);
+    expect(shiftAfterTaskChange("0800-1700", "RAVEN", "Admin")).toBe(
+      "0800-1600"
+    );
   });
 
-  it("changing from Admin to an operation makes it the 9-hour Day shift", () => {
+  it("changing from Admin to an operation makes an 8-hour shift 9 hours", () => {
     expect(shiftAfterTaskChange("0700-1500", "Admin", "RAVEN")).toBe(DAY_SHIFT);
     expect(shiftAfterTaskChange("0700-1500", "Admin", "Other")).toBe(DAY_SHIFT);
+    // the Friday shifts: start kept, a hour added
+    expect(shiftAfterTaskChange("0600-1400", "Admin", "AURORA")).toBe(
+      "0600-1500"
+    );
+    expect(shiftAfterTaskChange("1300-2100", "Admin", "AURORA")).toBe(
+      "1300-2200"
+    );
+    expect(shiftAfterTaskChange("1000-1800", "Admin", "RAVEN")).toBe(
+      "1000-1900"
+    );
   });
 
-  it("leaves other shifts and other changes alone", () => {
-    // a shift set to some other time is never changed
-    expect(shiftAfterTaskChange("0930-1730", "RAVEN", "Admin")).toBeNull();
-    expect(shiftAfterTaskChange("1000-1800", "Admin", "RAVEN")).toBeNull();
+  it("going to Admin and back returns to where it started", () => {
+    for (const start of ["0600-1500", "1300-2200"]) {
+      const admin = shiftAfterTaskChange(start, "RAVEN", "Admin")!;
+      expect(shiftAfterTaskChange(admin, "Admin", "RAVEN")).toBe(start);
+    }
+  });
+
+  it("leaves other shift lengths and other changes alone", () => {
+    expect(shiftAfterTaskChange("0600-1600", "RAVEN", "Admin")).toBeNull(); // 10 h
+    expect(shiftAfterTaskChange("0600-1600", "Admin", "RAVEN")).toBeNull();
+    expect(shiftAfterTaskChange("0600-1400", "RAVEN", "Admin")).toBeNull(); // already 8 h
+    expect(shiftAfterTaskChange("0600-1500", "Admin", "RAVEN")).toBeNull(); // already 9 h
     // operation to operation, Admin to Admin, RDO, clearing the task
     expect(shiftAfterTaskChange("0600-1500", "RAVEN", "FALCON")).toBeNull();
     expect(shiftAfterTaskChange("0700-1500", "Admin", "Admin")).toBeNull();
@@ -59,6 +82,9 @@ describe("tasking shift hours", () => {
     expect(legacyShiftTo9h("07:00-15:00", null)).toBe(DAY_SHIFT);
     expect(legacyShiftTo9h("1400-2200", "FALCON")).toBe(ARVO_SHIFT);
     expect(legacyShiftTo9h("0700-1500", "Admin")).toBeNull();
+    expect(legacyShiftTo9h("0600-1400", "RAVEN")).toBe(DAY_SHIFT);
+    expect(legacyShiftTo9h("1300-2100", "RAVEN")).toBe(ARVO_SHIFT);
+    expect(legacyShiftTo9h("1300-2100", "Admin")).toBeNull();
     expect(legacyShiftTo9h("1000-1800", "RAVEN")).toBeNull();
     expect(legacyShiftTo9h("RDO", "RAVEN")).toBeNull();
     expect(legacyShiftTo9h("0600-1500", "RAVEN")).toBeNull();

@@ -988,6 +988,13 @@
       "when": 1793864137998,
       "tag": "0140_nine_hour_day_arvo_shifts",
       "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "5",
+      "when": 1793879680176,
+      "tag": "0141_nine_hour_leftover_8h_shifts",
+      "breakpoints": true
     }
   ]
 }

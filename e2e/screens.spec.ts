@@ -3594,6 +3594,13 @@ test("CTO Weekly Tasking Timeline: a Day shift is 9 hours (0600-1500) and choosi
       shiftTime: "1300-2200",
       primaryTask: opName,
     });
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 2,
+      teamRow: "surv1",
+      shiftTime: "0600-1400",
+      primaryTask: "Admin",
+    });
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.goto("/operation-manager");
     await page.getByText(/CTO Weekly Tasking — 03 Sep/).click();
@@ -3619,12 +3626,27 @@ test("CTO Weekly Tasking Timeline: a Day shift is 9 hours (0600-1500) and choosi
       page.locator(".tcv-bar", { hasText: opName }).first()
     ).toContainText("0600–1500");
 
-    // An Arvo shift chosen as Admin is the same 8-hour Admin shift.
+    // An Arvo shift chosen as Admin keeps its start and is 8 hours.
     await tuesday.click();
     await menu.getByRole("menuitemradio", { name: "Admin" }).click();
     await expect(
       page.locator(".tcv-bar", { hasText: "Admin" }).first()
-    ).toContainText("0700–1500");
+    ).toContainText("1300–2100");
+
+    // An 8-hour Admin shift at another start (0600-1400) gains its hour back
+    // when changed to an operation.
+    const wed = page.locator(".tcv-bar", { hasText: "0600–1400" });
+    await expect(wed).toHaveCount(1);
+    // Scroll it into view first and let the scroll settle: a scroll that lands
+    // after the click would close the menu again.
+    await wed.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    await wed.click();
+    await menu.getByRole("menuitemradio", { name: opName }).click();
+    await expect(
+      page.locator(".tcv-bar", { hasText: "0600–1500" })
+    ).toHaveCount(2);
+    await expect(wed).toHaveCount(0);
   } finally {
     await call("opManager.deleteWeek", { weekStart: W });
     await call("operation.delete", { id: opId });

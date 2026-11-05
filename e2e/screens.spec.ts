@@ -3439,3 +3439,126 @@ test("CTO Weekly Tasking Timeline: Save after sliding a bar asks about the roste
       await call("ctoRoster.teams.delete", { teamId: rosterTeam.id });
   }
 });
+
+test("CTO Weekly Tasking: an EA breach on the roster shows as a red dot on the team-day in every layout, with the issue in a popover", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const W = "2040-07-02"; // a Monday, a made-up week
+  const call = async (proc: string, input: unknown) => {
+    const res = await page.request.post(`/api/trpc/${proc}?batch=1`, {
+      data: { "0": { json: input } },
+    });
+    return (await res.json())[0];
+  };
+  const get = async (proc: string, input: unknown = null) => {
+    const res = await page.request.get(
+      `/api/trpc/${proc}?batch=1&input=${encodeURIComponent(JSON.stringify({ "0": { json: input } }))}`
+    );
+    return (await res.json())[0].result.data.json;
+  };
+  const cin = process.env.E2E_CIN ?? "E2E1";
+  let rosterTeams = (await get("ctoRoster.teams.list")) as {
+    id: number;
+    name: string;
+  }[];
+  let addedTeam = false;
+  if (!rosterTeams.some(t => t.name === "Team 1")) {
+    await call("ctoRoster.teams.add", { name: "Team 1" });
+    addedTeam = true;
+    rosterTeams = await get("ctoRoster.teams.list");
+  }
+  const rosterTeam = rosterTeams.find(t => t.name === "Team 1")!;
+  let members = (await get("ctoRoster.members.list")) as {
+    id: number;
+    cin: string;
+  }[];
+  let addedMemberId: number | null = null;
+  if (!members.some(m => m.cin === cin)) {
+    const r = await call("ctoRoster.members.add", {
+      cin,
+      teamId: rosterTeam.id,
+    });
+    addedMemberId = r.result?.data.json.memberId ?? null;
+    members = (await get("ctoRoster.members.list")) as typeof members;
+  }
+  const member = members.find(m => m.cin === cin)!;
+
+  await call("opManager.deleteWeek", { weekStart: W });
+  try {
+    // A 14-hour Day shift on the Monday breaks the 12-hour limit; Team 1 is
+    // tasked that day.
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "d",
+      shiftTime: null,
+      shiftDurationHours: 14,
+      memberName: "E2E Officer",
+    });
+    await call("opManager.saveTaskingCell", {
+      weekStart: W,
+      dayIndex: 0,
+      teamRow: "surv1",
+      shiftTime: "0700-1500",
+      primaryTask: "RAVEN",
+    });
+    // The server finds the breach, and a plain (non-admin) read works too.
+    const found = (await get("ctoRoster.eba.taskingBreaches")) as {
+      memberId: number;
+      dates: string[];
+    }[];
+    expect(
+      found.some(f => f.memberId === member.id && f.dates.includes(W))
+    ).toBe(true);
+
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.goto("/operation-manager");
+    await page.getByText(/CTO Weekly Tasking — 02 Jul/).click();
+    await expect(page.getByTestId("tasking-breach-chip")).toContainText(
+      /EA breach/
+    );
+    const picker = page.getByRole("combobox", { name: "Calendar view" });
+    for (const layout of [
+      "Banded columns",
+      "Schedule tables",
+      "Day tiles",
+      "Timeline",
+    ]) {
+      await picker.click();
+      await page.getByRole("option", { name: layout }).click();
+      await expect(page.getByTestId("tasking-breach-dot")).toHaveCount(1);
+    }
+
+    // Click the dot: the rule, its reference and who it is about.
+    await page.getByTestId("tasking-breach-dot").click();
+    const pop = page.getByTestId("tasking-breach-popover");
+    await expect(pop).toContainText("EA compliance issue");
+    await expect(pop).toContainText("Open Mon on the roster");
+
+    // It is the same on a phone.
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 390, height: 800 });
+    await expect(page.getByTestId("tasking-breach-dot")).toHaveCount(1);
+
+    // The roster link opens the roster.
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.getByTestId("tasking-breach-dot").click();
+    await page.getByRole("button", { name: "Open Mon on the roster" }).click();
+    await expect(page).toHaveURL(/\/cto-roster\?date=2040-07-02/);
+  } finally {
+    await call("ctoRoster.roster.updateShift", {
+      memberId: member.id,
+      shiftDate: W,
+      shiftCode: "",
+      shiftTime: null,
+      shiftDurationHours: null,
+      memberName: "E2E Officer",
+    });
+    await call("opManager.deleteWeek", { weekStart: W });
+    if (addedMemberId !== null)
+      await call("ctoRoster.members.delete", { memberId: addedMemberId });
+    if (addedTeam)
+      await call("ctoRoster.teams.delete", { teamId: rosterTeam.id });
+  }
+});

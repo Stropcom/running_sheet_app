@@ -64,6 +64,10 @@ import { DeleteWeekDialog } from "@/components/opManager/DeleteWeekDialog";
 import { BlendTeamsDialog } from "@/components/opManager/BlendTeamsDialog";
 import { RosterSyncDialog } from "@/components/opManager/RosterSyncDialog";
 import { toClock } from "@shared/taskingRosterSync";
+import {
+  distinctBreachCount,
+  taskingBreachCells,
+} from "@shared/taskingBreaches";
 import type { SyncGroup } from "@shared/taskingRosterSync";
 import {
   SHIFT_PRESETS,
@@ -525,6 +529,49 @@ export default function OperationManagerPage() {
     rosterShiftMap,
     outlookSettingsQuery.data,
   ]);
+
+  // ── EA breaches (the roster's red dots, carried onto the calendar) ──────────
+  // Open to everyone who can see the calendar. If the roster is switched off
+  // for this Command the query is refused and the calendar just shows no dots.
+  const breachQuery = trpc.ctoRoster.eba.taskingBreaches.useQuery(undefined, {
+    staleTime: 30_000,
+    retry: false,
+  });
+  const taskingBreaches = useMemo(() => {
+    const teams = rosterTeamsQuery.data;
+    const members = rosterMembersQuery.data;
+    if (!breachQuery.data || !teams || !members) return {};
+    const dates = DAYS.map((_, i) => addDaysUTC(weekStart, i));
+    const cells = taskingBreachCells(
+      breachQuery.data,
+      teams,
+      members,
+      rosterSecondmentsQuery.data ?? [],
+      (memberId, date) => rosterShiftMap.get(memberId)?.get(date) ?? "",
+      TEAM_ROWS.map(r => TEAM_LABELS[r]),
+      dates
+    );
+    // Re-key by the calendar's own `teamRow-dayIndex`.
+    const byCell: Record<string, (typeof cells)[string]> = {};
+    for (const r of TEAM_ROWS) {
+      dates.forEach((date, i) => {
+        const list = cells[`${TEAM_LABELS[r]}|${date}`];
+        if (list) byCell[`${r}-${i}`] = list;
+      });
+    }
+    return byCell;
+  }, [
+    breachQuery.data,
+    rosterTeamsQuery.data,
+    rosterMembersQuery.data,
+    rosterSecondmentsQuery.data,
+    rosterShiftMap,
+    weekStart,
+  ]);
+  const taskingBreachCount = useMemo(
+    () => distinctBreachCount(taskingBreaches),
+    [taskingBreaches]
+  );
 
   const taskingIssueCount = useMemo(
     () => Object.values(taskingCoverage).filter(c => c.short).length,
@@ -1676,6 +1723,11 @@ export default function OperationManagerPage() {
                 grid={taskingGrid}
                 issueCount={taskingIssueCount}
                 counts={taskingCoverage}
+                breaches={taskingBreaches}
+                breachCount={taskingBreachCount}
+                onOpenRoster={i =>
+                  navigate(`/cto-roster?date=${addDaysUTC(weekStart, i)}`)
+                }
                 edit={
                   isAdmin
                     ? {

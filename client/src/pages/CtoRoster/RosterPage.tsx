@@ -1542,8 +1542,16 @@ export default function RosterPage() {
   useEffect(() => {
     if (scrolledToToday.current) return;
     if (!shiftsData || !scrollRef.current) return;
+    // Opened from a tasking-calendar breach dot: /cto-roster?date=YYYY-MM-DD.
+    let linked: string | null = null;
+    try {
+      const q = new URLSearchParams(window.location.search).get("date");
+      if (q && /^\d{4}-\d{2}-\d{2}$/.test(q)) linked = q;
+    } catch {
+      /* no query string */
+    }
     const raf = requestAnimationFrame(() => {
-      scrollToDate(today);
+      scrollToDate(linked ?? today);
       scrolledToToday.current = true;
     });
     return () => cancelAnimationFrame(raf);

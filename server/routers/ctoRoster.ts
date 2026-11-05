@@ -1133,6 +1133,15 @@ export const ctoRosterRouter = router({
     liveFindings: adminProcedure.query(async () =>
       runCtoRosterEbaCheck("main")
     ),
+
+    // The same findings for the red dots on the CTO Weekly Tasking calendar.
+    // Anyone who can see the calendar sees the dots (the roster's own dots stay
+    // admin-only), so this is open to every signed-in user. Findings only;
+    // the team-day mapping is the pure rule in shared/taskingBreaches.ts.
+    taskingBreaches: protectedProcedure.query(async () => {
+      const r = await runCtoRosterEbaCheck("main");
+      return r.findings;
+    }),
   }),
 
   // Team coverage minimums shown on the roster "Outlook" projection view.

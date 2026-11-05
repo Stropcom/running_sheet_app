@@ -2851,3 +2851,31 @@ test("CTO Weekly Tasking on a phone: only Day tiles and Timeline, no colour or l
     await call("opManager.deleteWeek", { weekStart: W });
   }
 });
+
+test("Calendar: month grid by default, List view is selectable and remembered", async ({
+  page,
+}) => {
+  await page.goto("/calendar");
+  await page.evaluate(() => localStorage.removeItem("runlog.calendarView"));
+  await page.reload();
+  const group = page.getByRole("group", { name: "Calendar layout" });
+  await expect(group.getByRole("button", { name: "Month" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await expect(page.locator(".rbc-month-view")).toBeVisible();
+
+  await group.getByRole("button", { name: "List" }).click();
+  await expect(group.getByRole("button", { name: "List" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  await expect(page.locator(".rbc-month-view")).toHaveCount(0);
+
+  // Remembered on this device.
+  await page.reload();
+  await expect(group.getByRole("button", { name: "List" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+});

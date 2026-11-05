@@ -16,11 +16,11 @@ import {
  * grid as it always was, the default) down to 25%. Ctrl + scroll and a
  * two-finger pinch on the grid zoom too (RosterPage).
  */
-export function RosterZoomControl() {
+export function RosterZoomControl({ className }: { className?: string }) {
   const [zoom, onZoom] = useRosterZoom();
   return (
     <div
-      className="flex items-center gap-1.5"
+      className={cn("flex items-center gap-1.5", className)}
       role="group"
       aria-label="Roster zoom"
     >

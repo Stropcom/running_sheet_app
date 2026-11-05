@@ -29,6 +29,8 @@ import { teamShowsOnCall } from "@shared/rosterTeams";
 import {
   WINDOW_BLOCK,
   dateWindowFor,
+  dayIndexAtScroll,
+  scrollLeftForDay,
   labelsHidden,
   stepZoom,
   windowSpacers,
@@ -1210,7 +1212,7 @@ export default function RosterPage() {
   const scrollToDate = useCallback((dateStr: string) => {
     const idx = ALL_DATES.findIndex(d => format(d, "yyyy-MM-dd") === dateStr);
     if (idx < 0) return;
-    const target = idx * COL_WIDTH * getRosterZoom();
+    const target = scrollLeftForDay(idx, getRosterZoom());
     if (scrollRef.current) scrollRef.current.scrollLeft = target;
     setScrollLeft(target);
   }, []);
@@ -1242,9 +1244,7 @@ export default function RosterPage() {
   // Month navigation
   const visibleMonthIndex = useMemo(() => {
     if (ALL_DATES.length === 0) return 0;
-    const visibleDayIdx = Math.floor(
-      scrollLeft / (COL_WIDTH * getRosterZoom())
-    );
+    const visibleDayIdx = dayIndexAtScroll(scrollLeft, getRosterZoom());
     const visibleDate =
       ALL_DATES[Math.min(Math.max(0, visibleDayIdx), ALL_DATES.length - 1)];
     if (!visibleDate) return 0;
@@ -2039,7 +2039,9 @@ export default function RosterPage() {
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
-            <RosterZoomControl />
+            {/* Tablet and laptop: at the right end of this line, straight
+                under Full screen. A phone keeps it beside the month. */}
+            <RosterZoomControl className="sm:order-last sm:ml-auto" />
             <div
               className={cn(
                 "grid basis-full gap-1.5 sm:contents",

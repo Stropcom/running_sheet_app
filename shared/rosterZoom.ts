@@ -39,6 +39,24 @@ export const WINDOW_BLOCK = 8;
 export const DATE_STRIDE = 71;
 
 /**
+ * Where "go to a date" puts it: the SECOND date column from the names (the
+ * first is left as a lead-in, so the day before is still in view). One column
+ * is DATE_STRIDE × zoom screen pixels, so this is the scroll position for the
+ * date at `dayIndex` (0 = the first date on the roster), never below 0. Today
+ * and the month arrows both use it.
+ */
+export const DATE_SLOT_FROM_NAMES = 1;
+export function scrollLeftForDay(dayIndex: number, zoom: number): number {
+  return Math.max(0, (dayIndex - DATE_SLOT_FROM_NAMES) * DATE_STRIDE * zoom);
+}
+
+/** The reverse: the index of the date sitting in that second column when the
+ * grid is scrolled to `scrollLeft` (what the month label follows). */
+export function dayIndexAtScroll(scrollLeft: number, zoom: number): number {
+  return Math.round(scrollLeft / (DATE_STRIDE * zoom)) + DATE_SLOT_FROM_NAMES;
+}
+
+/**
  * Which date columns to draw: those on screen plus a margin either side, in
  * whole blocks. `scrollLeft` and `viewWidth` are screen pixels; the grid is
  * zoomed, so a column is DATE_STRIDE × zoom wide. `start` is inclusive and

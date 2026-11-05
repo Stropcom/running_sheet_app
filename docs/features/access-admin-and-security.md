@@ -215,3 +215,7 @@ The operation menu of a Timeline bar closed itself on any scroll anywhere on the
 ## Timeline bars: steadier while sliding (v2.66.5)
 
 A user saw bars turn solid team colours in places while moving them. It could not be reproduced in a headless browser, so the slide was made steadier in the ways that cause that kind of paint glitch: the bar is moved with a transform (its own layer, no layout on every pointer move) instead of by changing `left`, and lands on its new place in one step when released; the browser's own text selection and drag image are switched off on editable bars and the Timeline (`user-select: none`, mouse-down and drag-start cancelled), which can paint highlight blocks across a drag; the lifted bar has an outline instead of a large shadow; and a slide the browser cancels (`pointercancel`) now puts the bar back instead of leaving it half moved. If the odd colours come back, a screenshot taken straight after, and the browser and graphics card, would help narrow it down.
+
+## Timeline: the combined T1 + T2 bar is split 50/50 (v2.66.6)
+
+On the Timeline (screen and the PDF) the combined Team 1 + Team 2 bar is now two horizontal halves: Team 1's tint on the top half and Team 2's underneath, like the two team bars joined into one (before it was one flat colour with a two-colour strip at its left edge, which is still there). The colours are the teams' own from User Management → Teams (`--b1` / `--b2`; `--b1tint` / `--b2tint` in the PDF). Day tiles, Banded columns and Schedule tables are unchanged.

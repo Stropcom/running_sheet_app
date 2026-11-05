@@ -132,7 +132,8 @@
 .tcv-tl.merged { min-height: 112px; }
 .tcv-tl.merged > i { background: linear-gradient(180deg, var(--b1) 50%, var(--b2) 50%); }
 .tcv-tl.merged .tcv-tl-body { background: var(--tcv-blend-flat); display: flex; flex-direction: column; justify-content: center; }
-.tcv-bar.merged { background: var(--tcv-blend-flat); border: 1px solid var(--border); border-left-width: 1px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding-left: 12px; }
+/* The combined bar is split 50/50 across its height: Team 1's tint on top, Team 2's underneath, like the two team bars joined. */
+.tcv-bar.merged { background: linear-gradient(180deg, color-mix(in srgb, var(--b1) 13%, var(--card)) 50%, color-mix(in srgb, var(--b2) 13%, var(--card)) 50%); border: 1px solid var(--border); border-left-width: 1px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding-left: 12px; }
 .tcv-bar.merged::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: linear-gradient(180deg, var(--b1) 50%, var(--b2) 50%); }
 
 /* Timeline bars: team tag in a fixed slot so the operation names line up, the time in the middle of the bar. */

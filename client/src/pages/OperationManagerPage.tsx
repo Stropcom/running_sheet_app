@@ -790,11 +790,20 @@ export default function OperationManagerPage() {
   );
   const slideTeamShift = (teamId: string, dayIndex: number, shift: string) =>
     updateCell(teamId as TeamRow, dayIndex, shiftToCellFields(shift));
-  const pickTeamOp = (teamId: string, dayIndex: number, op: string) =>
-    updateCell(teamId as TeamRow, dayIndex, {
-      primaryTask: op,
-      primaryOther: "",
-    });
+  const pickTeamOp = (
+    teamId: string,
+    dayIndex: number,
+    op: string,
+    other?: string
+  ) =>
+    updateCell(
+      teamId as TeamRow,
+      dayIndex,
+      // "Other" keeps its typed text, as the edit grid does.
+      other !== undefined
+        ? { primaryTask: "Other", primaryOther: other }
+        : { primaryTask: op, primaryOther: "" }
+    );
   const discardTimelineChanges = () => {
     setTaskingGrid(savedGrid);
     setDeclinedBlend({});

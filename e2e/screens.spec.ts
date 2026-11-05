@@ -3009,6 +3009,25 @@ test("CTO Weekly Tasking Timeline: an admin slides a bar, sees Save and re-post,
     await expect(
       menu.getByRole("menuitemradio", { name: /RAVEN/ })
     ).toHaveAttribute("aria-checked", "true");
+    // Admin and Other (free text) sit under the operations, as in the edit grid.
+    await expect(
+      menu.getByRole("menuitemradio", { name: "Admin" })
+    ).toBeVisible();
+    await menu.getByRole("menuitem", { name: /Other/ }).click();
+    await menu.getByLabel("Describe the task").fill("Training day");
+    await menu.getByRole("button", { name: "Set" }).click();
+    await expect(menu).toHaveCount(0);
+    const savebar2 = page.getByRole("region", {
+      name: "Unsaved timeline changes",
+    });
+    await expect(savebar2).toContainText("operation RAVEN to Training day");
+    await expect(
+      page.locator(".tcv-bar", { hasText: "Training day" })
+    ).toHaveCount(1);
+    await savebar2.getByRole("button", { name: "Discard" }).click();
+    await expect(bar).toContainText("RAVEN");
+    // Escape closes the menu without changing anything.
+    await bar.click();
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
 

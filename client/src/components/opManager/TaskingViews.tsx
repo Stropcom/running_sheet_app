@@ -67,8 +67,9 @@ export interface TimelineEdit {
   ops: readonly string[];
   /** A bar was slid; `shift` is the new "HHMM-HHMM". */
   onSlide: (teamId: string, dayIndex: number, shift: string) => void;
-  /** An operation was picked from a bar's menu. */
-  onOp: (teamId: string, dayIndex: number, op: string) => void;
+  /** An operation was picked from a bar's menu. "Other" comes with the typed
+   * description in `other`; "Admin" and the operations are plain names. */
+  onOp: (teamId: string, dayIndex: number, op: string, other?: string) => void;
   /** Split a blended day back into Team 1 and Team 2. */
   onSplit: (dayIndex: number) => void;
   /** Cells (`team-day`) with a change not saved yet. */
@@ -544,7 +545,19 @@ function TimelineBar({
   );
 }
 
-/** The operation menu of a clicked bar (and Split, for a blended day). */
+/** Timeline bar height and the distance from one team lane to the next, in
+ * pixels. Keep taskingViews.css (.tcv-bar height, the lane minimum height) in
+ * step. */
+const BAR_H = 24;
+const BAR_PITCH = 28;
+
+/** The fixed choices the edit grid lists above the operations; here they sit
+ * under them. An operation that is itself called Admin or Training is not
+ * listed twice. */
+const FIXED_TASKS = ["admin", "training"];
+
+/** The operation menu of a clicked bar: the active operations, then Admin and
+ * Other (free text) as in the edit grid, and Split on a blended day. */
 function BarMenu({
   target,
   week,
@@ -561,7 +574,15 @@ function BarMenu({
   const current = cell?.primary ?? "";
   const blended =
     isBlendTeam(target.teamId) && isBlendDay(week, target.dayIndex);
-  const ops = Array.from(new Set([...(current ? [current] : []), ...edit.ops]));
+  const opNames = edit.ops.filter(
+    o => !FIXED_TASKS.includes(o.trim().toLowerCase())
+  );
+  const isAdmin = current.trim().toLowerCase() === "admin";
+  // What is on the bar now but is not in the list (a free-text task, Training).
+  const custom =
+    current && !isAdmin && !opNames.includes(current) ? current : "";
+  const [typing, setTyping] = useState(false);
+  const [text, setText] = useState(custom);
   useEffect(() => {
     const down = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
@@ -590,9 +611,25 @@ function BarMenu({
   );
   const below = target.rect.bottom + 6;
   const top =
-    below + 280 > window.innerHeight
-      ? Math.max(8, target.rect.top - 280 - 6)
+    below + 340 > window.innerHeight
+      ? Math.max(8, target.rect.top - 340 - 6)
       : below;
+  const pick = (op: string, other?: string) => {
+    edit.onOp(target.teamId, target.dayIndex, op, other);
+    onClose();
+  };
+  const item = (label: string, checked: boolean, onPick: () => void) => (
+    <button
+      key={label}
+      type="button"
+      role="menuitemradio"
+      aria-checked={checked}
+      onClick={onPick}
+    >
+      <span>{label}</span>
+      {checked && <span aria-hidden>✓</span>}
+    </button>
+  );
   return createPortal(
     <div
       ref={ref}
@@ -602,22 +639,38 @@ function BarMenu({
       style={{ left, top }}
     >
       <div className="tcv-menu-h">Operation · {target.label}</div>
-      {ops.length === 0 && <div className="tcv-menu-empty">No operations</div>}
-      {ops.map(o => (
-        <button
-          key={o}
-          type="button"
-          role="menuitemradio"
-          aria-checked={o === current}
-          onClick={() => {
-            if (o !== current) edit.onOp(target.teamId, target.dayIndex, o);
-            onClose();
+      {opNames.length === 0 && !custom && (
+        <div className="tcv-menu-empty">No operations</div>
+      )}
+      {opNames.map(o => item(o, o === current, () => pick(o)))}
+      <hr />
+      {item("Admin", isAdmin, () => pick("Admin"))}
+      {custom && item(custom, true, onClose)}
+      {typing ? (
+        <form
+          className="tcv-menu-other"
+          onSubmit={e => {
+            e.preventDefault();
+            const v = text.trim();
+            if (v) pick("Other", v);
           }}
         >
-          <span>{o}</span>
-          {o === current && <span aria-hidden>✓</span>}
+          <input
+            autoFocus
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder="Describe task…"
+            aria-label="Describe the task"
+          />
+          <button type="submit" disabled={!text.trim()}>
+            Set
+          </button>
+        </form>
+      ) : (
+        <button type="button" role="menuitem" onClick={() => setTyping(true)}>
+          Other (free text)…
         </button>
-      ))}
+      )}
       {blended && (
         <>
           <hr />
@@ -743,7 +796,7 @@ function TimelineRow({
         </div>
         {teams.map((t, li) => {
           const c = week[t.id][i];
-          const top = 8 + li * 21;
+          const top = 8 + li * BAR_PITCH;
           const bl = blendedFor(week, t.id, i) && !!c.range;
           // Blended: one tall bar across the Team 1 and Team 2 lanes.
           if (bl && t.id === "surv2") return null;
@@ -784,7 +837,7 @@ function TimelineRow({
               }
               style={{
                 ...(bl ? {} : teamStyle(t)),
-                ...(bl ? { height: 39 } : {}),
+                ...(bl ? { height: BAR_PITCH + BAR_H } : {}),
                 left: `${pct(c.range[0])}%`,
                 width: `${pct(c.range[1]) - pct(c.range[0])}%`,
                 top,

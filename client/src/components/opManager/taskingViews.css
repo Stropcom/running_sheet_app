@@ -163,3 +163,8 @@
 .tcv-menu .tcv-menu-other input:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
 .tcv-menu .tcv-menu-other button { width: auto; flex: none; height: 34px; padding: 0 12px; justify-content: center; background: var(--primary); color: var(--primary-foreground); font-weight: 600; }
 .tcv-menu .tcv-menu-other button:disabled { opacity: 0.5; cursor: default; }
+/* The on-duty count ("4/5") at the right end of a Timeline bar. */
+.tcv-count { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; font-weight: 700; color: var(--ink, var(--foreground)); pointer-events: none; }
+.tcv-count.short { color: #dc2626; }
+.tcv-count-pair { position: absolute; right: 14px; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: space-around; align-items: flex-end; padding: 2px 0; pointer-events: none; }
+.tcv-count-pair .tcv-count { position: static; transform: none; }

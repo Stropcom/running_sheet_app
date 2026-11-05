@@ -78,6 +78,7 @@ export interface TimelineEdit {
 
 interface Ctx {
   edit?: TimelineEdit;
+  counts?: Record<string, { onDuty: number; min: number } | undefined>;
   week: Record<string, DayCell[]>;
   days: ReturnType<typeof weekDays>;
   today: number;
@@ -722,8 +723,46 @@ function BarMenu({
   );
 }
 
+/** "4/5" at the end of a Timeline bar: the team's people rostered on duty that
+ * day (counted the way Outlook does) over its minimum; red below the minimum. */
+function TeamCount({
+  counts,
+  teamId,
+  dayIndex,
+  prefix = "",
+}: {
+  counts?: Ctx["counts"];
+  teamId: string;
+  dayIndex: number;
+  prefix?: string;
+}) {
+  const c = counts?.[`${teamId}-${dayIndex}`];
+  if (!c) return null;
+  return (
+    <span className={`tcv-count${c.onDuty < c.min ? " short" : ""}`}>
+      {prefix}
+      {c.onDuty}/{c.min}
+    </span>
+  );
+}
+
+/** The counts as words for a bar's tooltip. */
+function countTitle(
+  counts: Ctx["counts"],
+  teamIds: string[],
+  dayIndex: number
+): string {
+  const parts = teamIds
+    .map(id => {
+      const c = counts?.[`${id}-${dayIndex}`];
+      return c ? `${c.onDuty} of ${c.min} on duty` : "";
+    })
+    .filter(Boolean);
+  return parts.length ? `. ${parts.join(", ")}` : "";
+}
+
 /** Timeline (hours across, a lane for each team) */
-function Timeline({ week, days, today, teams, dim, warn, edit }: Ctx) {
+function Timeline({ week, days, today, teams, dim, warn, edit, counts }: Ctx) {
   const [lo, hi0] = timelineSpan(week);
   // Editable: always reach midnight, so a bar slid to a 23:00 start has room.
   const hi = edit?.editable ? Math.max(hi0, 24 * 60) : hi0;
@@ -769,6 +808,7 @@ function Timeline({ week, days, today, teams, dim, warn, edit }: Ctx) {
             dim={dim}
             warn={warn}
             edit={edit}
+            counts={counts}
             openMenu={setMenu}
           />
         ))}
@@ -797,8 +837,10 @@ function TimelineRow({
   dim,
   warn,
   edit,
+  counts,
   openMenu,
 }: {
+  counts?: Ctx["counts"];
   span: [number, number];
   edit?: TimelineEdit;
   openMenu: (t: BarMenuTarget) => void;
@@ -875,7 +917,7 @@ function TimelineRow({
                 width: `${pct(c.range[1]) - pct(c.range[0])}%`,
                 top,
               }}
-              title={`${bl ? "Team 1 + Team 2" : t.label} ${formatShiftText(c.shift)}`}
+              title={`${bl ? "Team 1 + Team 2" : t.label} ${formatShiftText(c.shift)}${countTitle(counts, bl ? ["surv1", "surv2"] : [t.id], i)}`}
             >
               {bl ? (
                 <>
@@ -892,8 +934,20 @@ function TimelineRow({
                   <span className="t" style={{ marginLeft: 0 }}>
                     {formatShiftText(c.shift)}
                   </span>
-                  {warn("surv1", i, c.primary)}
-                  {warn("surv2", i, c.primary)}
+                  <span className="tcv-count-pair">
+                    <TeamCount
+                      counts={counts}
+                      teamId="surv1"
+                      dayIndex={i}
+                      prefix="T1 "
+                    />
+                    <TeamCount
+                      counts={counts}
+                      teamId="surv2"
+                      dayIndex={i}
+                      prefix="T2 "
+                    />
+                  </span>
                 </>
               ) : (
                 <>
@@ -906,7 +960,7 @@ function TimelineRow({
                     </>
                   ) : null}
                   <span className="t">{formatShiftText(c.shift)}</span>
-                  {warn(t.id, i, c.primary)}
+                  <TeamCount counts={counts} teamId={t.id} dayIndex={i} />
                 </>
               )}
             </TimelineBar>
@@ -930,9 +984,13 @@ export function TaskingCalendarViews({
   issueCount,
   renderWarning,
   edit,
+  counts,
 }: {
   /** Admin editing on the Timeline (slide a bar, pick an operation). */
   edit?: TimelineEdit;
+  /** People rostered on duty against the team's minimum for each `team-day`
+   * (as Outlook counts them); the Timeline shows it at the end of each bar. */
+  counts?: Record<string, { onDuty: number; min: number } | undefined>;
   weekStart: string;
   teams: readonly TaskingTeam[];
   grid: Record<string, TaskingCellInput | undefined>;
@@ -964,6 +1022,7 @@ export function TaskingCalendarViews({
   const toggle = (name: string) => setFocus(f => (f === name ? null : name));
   const ctx: Ctx = {
     edit,
+    counts,
     week,
     days,
     today,

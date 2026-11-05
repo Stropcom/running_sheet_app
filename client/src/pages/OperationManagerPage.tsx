@@ -480,7 +480,7 @@ export default function OperationManagerPage() {
         const key = `${teamRow}-${dayIndex}`;
         const cell = taskingGrid[key];
         const hasTask = !!(cell?.primaryTask || cell?.secondaryTask);
-        if (!hasTask || !team) {
+        if (!team) {
           coverage[key] = { onDuty: 0, min, short: false };
           return;
         }
@@ -497,7 +497,9 @@ export default function OperationManagerPage() {
           const code = rosterShiftMap.get(m.id)?.get(dateStr) ?? "";
           return ON_DUTY_CODES.has(code);
         }).length;
-        coverage[key] = { onDuty, min, short: onDuty < min };
+        // The count is worked out for every day (the Timeline shows it on each
+        // bar); it only counts as a tasking issue when the day has a task.
+        coverage[key] = { onDuty, min, short: hasTask && onDuty < min };
       });
     }
     return coverage;
@@ -1581,6 +1583,7 @@ export default function OperationManagerPage() {
                 teams={taskingTeams}
                 grid={taskingGrid}
                 issueCount={taskingIssueCount}
+                counts={taskingCoverage}
                 edit={
                   isAdmin
                     ? {

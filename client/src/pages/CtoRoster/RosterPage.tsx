@@ -2281,8 +2281,10 @@ export default function RosterPage() {
               Today
             </Button>
           </div>
-          {/* Row 2: month nav + bulk buttons (all on one line, scrollable on mobile) */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
+          {/* Row 2: month nav + bulk buttons. On a phone the three admin
+              buttons drop to their own row as equal thirds (they used to be
+              squeezed onto the month picker's line and overlapped it). */}
+          <div className="flex flex-wrap items-center gap-1.5 pb-0.5">
             {/* Month navigator */}
             <div className="flex items-center gap-1">
               <Button
@@ -2317,61 +2319,59 @@ export default function RosterPage() {
               <CalendarDays className="h-3.5 w-3.5" />
               Today
             </Button>
-            {/* Bulk Edit */}
             {isAdmin && (
-              <button
-                onClick={() => {
-                  setBulkMode(v => !v);
-                  setSelectedCells(new Map());
-                }}
-                className={cn(
-                  "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors h-8",
-                  bulkMode
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "border-border text-muted-foreground hover:bg-muted"
-                )}
-              >
-                <CheckSquare2 className="h-3.5 w-3.5" />
-                {bulkMode ? `${selectedCells.size} sel` : "Bulk Edit"}
-              </button>
-            )}
-            {/* Bulk Copy */}
-            {isAdmin && (
-              <button
-                onClick={() => {
-                  if (bulkCopyMode) {
-                    setBulkCopyMode(false);
+              <div className="grid basis-full grid-cols-3 gap-1.5 sm:contents">
+                {/* Bulk Edit */}
+                <button
+                  onClick={() => {
+                    setBulkMode(v => !v);
                     setSelectedCells(new Map());
-                  } else {
-                    setBulkCopyMode(true);
-                    setBulkMode(false);
-                    setSelectedCells(new Map());
-                    setCopiedBlock(null);
-                  }
-                }}
-                className={cn(
-                  "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors h-8",
-                  bulkCopyMode
-                    ? "bg-blue-600 text-white border-blue-600"
-                    : "border-border text-muted-foreground hover:bg-muted"
-                )}
-              >
-                <Scissors className="h-3.5 w-3.5" />
-                {bulkCopyMode ? `${selectedCells.size} sel` : "Bulk Copy"}
-              </button>
-            )}
-            {/* Repeat Cycle → Team */}
-            {isAdmin && (
-              <button
-                onClick={() => {
-                  setRepeatCycleResult(null);
-                  setRepeatCycleOpen(true);
-                }}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground hover:bg-muted transition-colors h-8"
-              >
-                <Repeat className="h-3.5 w-3.5" />
-                Repeat Cycle
-              </button>
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-1 whitespace-nowrap px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors h-8",
+                    bulkMode
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border text-muted-foreground hover:bg-muted"
+                  )}
+                >
+                  <CheckSquare2 className="h-3.5 w-3.5" />
+                  {bulkMode ? `${selectedCells.size} sel` : "Bulk Edit"}
+                </button>
+                {/* Bulk Copy */}
+                <button
+                  onClick={() => {
+                    if (bulkCopyMode) {
+                      setBulkCopyMode(false);
+                      setSelectedCells(new Map());
+                    } else {
+                      setBulkCopyMode(true);
+                      setBulkMode(false);
+                      setSelectedCells(new Map());
+                      setCopiedBlock(null);
+                    }
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-1 whitespace-nowrap px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors h-8",
+                    bulkCopyMode
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "border-border text-muted-foreground hover:bg-muted"
+                  )}
+                >
+                  <Scissors className="h-3.5 w-3.5" />
+                  {bulkCopyMode ? `${selectedCells.size} sel` : "Bulk Copy"}
+                </button>
+                {/* Repeat Cycle → Team */}
+                <button
+                  onClick={() => {
+                    setRepeatCycleResult(null);
+                    setRepeatCycleOpen(true);
+                  }}
+                  className="flex items-center justify-center gap-1 whitespace-nowrap px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border text-muted-foreground hover:bg-muted transition-colors h-8"
+                >
+                  <Repeat className="h-3.5 w-3.5" />
+                  Repeat Cycle
+                </button>
+              </div>
             )}
             {/* Copy block button */}
             {bulkCopyMode && selectedCells.size > 0 && (
@@ -2497,21 +2497,9 @@ export default function RosterPage() {
                 >
                   Member
                 </div>
-                {/* Floating month badge — see desktop header row for why. */}
-                <div
-                  style={{
-                    position: "sticky",
-                    left: `calc(${nameColWidthForGrid + 10}px + ${ROSTER_FRAME_EDGE})`,
-                    width: 0,
-                    height: `${HEADER_HEIGHT}px`,
-                    zIndex: 35,
-                  }}
-                  className="flex items-center pointer-events-none"
-                >
-                  <span className="whitespace-nowrap rounded-full bg-primary text-primary-foreground text-xs font-semibold px-3 py-1 shadow-md">
-                    {MONTHS[visibleMonthIndex]}
-                  </span>
-                </div>
+                {/* No floating month badge on a phone: it sat over the day
+                    headers, and the month picker above already says which
+                    month this is. */}
                 <DateSpacer width={spacers.lead} />
                 {windowDates.map(d => {
                   const ds = format(d, "yyyy-MM-dd");
@@ -2644,7 +2632,7 @@ export default function RosterPage() {
                     {/* On Duty row */}
                     <div className="flex gap-[3px] mt-[3px] mb-2">
                       <div
-                        className="flex-shrink-0 flex items-center px-3 h-9 rounded-md font-bold text-[10px] uppercase tracking-widest text-slate-600 bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                        className="flex-shrink-0 flex items-center whitespace-nowrap px-2 h-9 rounded-md font-bold text-[10px] uppercase tracking-wider text-slate-600 bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
                         style={{
                           width: `${nameColWidthForGrid}px`,
                           position: "sticky",
@@ -2710,7 +2698,7 @@ export default function RosterPage() {
                     {teamShowsOnCall(team.name) && (
                       <div className="flex gap-[3px] mt-[3px] mb-2">
                         <div
-                          className="flex-shrink-0 flex items-center px-3 h-9 rounded-md font-bold text-[10px] uppercase tracking-widest text-slate-600 bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                          className="flex-shrink-0 flex items-center whitespace-nowrap px-2 h-9 rounded-md font-bold text-[10px] uppercase tracking-wider text-slate-600 bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
                           style={{
                             width: `${nameColWidthForGrid}px`,
                             position: "sticky",

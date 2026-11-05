@@ -102,7 +102,9 @@ export function RosterTeamBand({
         onPointerDown={e => e.stopPropagation()}
         className="flex h-8 flex-shrink-0 items-center gap-1.5 pl-2 pr-2 text-left text-[11px] font-extrabold uppercase tracking-wider"
         style={{
-          width: nameColWidth,
+          // Wider than the name column when that is narrow (a phone), so the
+          // team name is not cut to "A…" / "TE…"; the band row has no cells.
+          width: Math.max(nameColWidth, 168),
           position: "sticky",
           left: ROSTER_FRAME_EDGE,
           zIndex: 20,
